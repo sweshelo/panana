@@ -25,6 +25,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
+import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
 
 const sha1 = (b: Uint8Array): string => createHash('sha1').update(b).digest('hex');
 
@@ -626,5 +627,53 @@ describe.skipIf(!hasCia)('messages', () => {
     expect(ids.size).toBeGreaterThan(1000);
     // the D01 conversation is named by an event row, not by the code
     expect(ids.has(0x1c84)).toBe(false);
+  });
+});
+
+describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
+  let game: Game;
+  beforeAll(async () => {
+    game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+  });
+
+  test('the world table, the entrances of W01 and its terrain', () => {
+    const w01 = game.code.world(0xa8654391)!;
+    expect(w01.code).toBe('W01');
+    expect(game.worldMaps().map((w) => w.code)).toContain('W01');
+    for (const h of w01.sections) expect(game.db.has(h)).toBe(true);
+    const ents = parseEntrances(game.db.get(w01.sections[2]!));
+    expect(ents.length).toBe(54);
+    expect(equalBytes(buildEntrances(ents), game.db.get(w01.sections[2]!))).toBe(true);
+    // Most entrances lead to a map of the table, at a section 3 point of it.
+    const known = ents.filter((r) => game.code.byHash(ENT.destMap(r)));
+    expect(known.length).toBeGreaterThan(40);
+    for (const r of known) expect(ENT.x(r) >= 0 && ENT.x(r) < WORLD_SIZE && ENT.y(r) >= 0 && ENT.y(r) < WORLD_SIZE).toBe(true);
+    expect(game.worldMaps().map((w) => w.code)).toEqual(['W01', 'W02', 'W99']); // W98 has no entrances
+    expect(game.worldPartFlags()?.length).toBe(81);
+    const g = game.ground(w01)!;
+    expect(g).not.toBeNull();
+    expect(g.parts.filter((p) => p > 0).length).toBe(10024);
+    const flags = game.worldPartFlags()!;
+    expect(coveredParts(g, (p) => flags[p] ?? 0).filter((p) => p > 0).length).toBeGreaterThan(10024);
+    // Dungeon exits to W01 name one of its entrances.
+    const ids = new Set(ents.map(ENT.id));
+    const exits = game.code.maps.flatMap((m) => (game.doc(m).recs[3] ?? []).filter((p) => P3.destMap(p.raw) === w01.hash));
+    expect(exits.length).toBeGreaterThan(40);
+    expect(exits.filter((p) => ids.has(P3.destPoint(p.raw))).length).toBe(exits.length);
+  });
+
+  test('unedited entrances change nothing; a moved one is the only change in the map DB', () => {
+    const w01 = game.code.world(0xa8654391)!;
+    const ents = parseEntrances(game.db.get(w01.sections[2]!));
+    expect(equalBytes(buildMapDb(game, [], [[w01.sections[2]!, buildEntrances(ents)]]).db, game.dbBytes)).toBe(true);
+    const moved = ents.slice();
+    moved[0] = moveEntrance(ents[0]!, ENT.x(ents[0]!) + 1, ENT.y(ents[0]!));
+    const { db, changed } = buildMapDb(game, [], [[w01.sections[2]!, buildEntrances(moved)]]);
+    expect(changed).toBe(1);
+    const back = new MapDb(db);
+    expect(ENT.x(parseEntrances(back.get(w01.sections[2]!))[0]!)).toBe(ENT.x(ents[0]!) + 1);
+    for (const m of game.code.maps) expect(equalBytes(back.get(m.sections[0]!), game.db.get(m.sections[0]!))).toBe(true);
+    const files = buildModFiles(game, [], [], false, [[w01.sections[2]!, buildEntrances(moved)]]);
+    expect([...files.keys()]).toEqual(['A90C8038']);
   });
 });

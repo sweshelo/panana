@@ -10,6 +10,11 @@ import { MessagePreview } from '../src/ui/message';
 import type { MessageStore } from '../src/game/gmsg';
 import { textToUnits } from '../src/game/msgtext';
 import { w32 } from '../src/util/bytes';
+import { WorldPage } from '../src/pages/world';
+import { PAGES } from '../src/ui/Shell';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Session } from '../src/session';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x22);
@@ -68,5 +73,55 @@ describe('shared pieces', () => {
     const edited = renderToString(<Radar {...props} axes={[{ label: 'A', value: 5, original: 0 }, { label: 'B', value: 1, original: 1 }, { label: 'C', value: 2, original: 2 }]} />);
     expect(edited).toContain('handle edited');
     expect(edited).toContain('shape original');
+  });
+});
+
+describe('world map page', () => {
+  test('entrance list, fields and the lead-back note', () => {
+    const W = 0xa8654391;
+    const D = 0x98ec3fef;
+    const ent = new Uint8Array(0x24);
+    w32(ent, 4, 0x11);
+    w32(ent, 8, D);
+    w32(ent, 0x0c, 0x22);
+    ent[0x1c] = 10;
+    ent[0x1e] = 20;
+    const p3 = new Uint8Array(28);
+    w32(p3, 0, 0x22);
+    w32(p3, 4, W);
+    w32(p3, 8, 0x11);
+    const info = { hash: D, name: 'D01B02001', dungeon: 1, dungeonCode: 'D01', floor: -2, mapDataKey: 0, sections: [D] };
+    const world = { index: 0, hash: W, code: 'W01', dungeon: 0x34, sections: [0, 0, 2, 3, 0, 0, 0, 0], groundFile: 'W01_ground.bin', groundEntry: 0 };
+    const game = {
+      worldMaps: () => [world],
+      editableMaps: () => [info],
+      ground: () => null,
+      code: { maps: [info], byHash: (h: number) => (h === D ? info : undefined), world: (h: number) => (h === W ? world : undefined) },
+      db: { get: () => new Uint8Array(0) },
+      master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 } },
+    } as unknown as Game;
+    const doc = { hash: D, recs: { 3: [{ raw: p3, x: 3, y: 4 }] } };
+    const session = {
+      game,
+      st: { docs: new Map() },
+      docOf: () => doc,
+      entrancesOf: () => [ent],
+      originalEntrances: () => [ent],
+      changedWorlds: () => [],
+    } as unknown as Session;
+    const html = renderToString(<WorldPage session={session} arg="W01" visit={1} />);
+    expect(html).toContain('1 / 1 入口');
+    expect(html).toContain('入口 00000011');
+    expect(html).toContain('10, 20');
+    expect(html).toContain('ワールドマップ W01');
+    expect(html).toContain('この入口に戻ります');
+    expect(html).toContain('<canvas');
+  });
+});
+
+describe('shell', () => {
+  test('every page has a CSS rule that shows it', () => {
+    const css = readFileSync(join(import.meta.dir, '..', 'src', 'style.css'), 'utf8');
+    for (const [id] of PAGES) expect(css).toContain(`.shell[data-page='${id}'] .page-${id}`);
   });
 });

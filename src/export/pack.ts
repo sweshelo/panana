@@ -9,10 +9,18 @@ import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
 import { equalBytes } from '../util/bytes';
 
-/** Rebuild the map database with the sections of the given documents. */
-export function buildMapDb(game: Game, docs: Iterable<MapDoc>): { db: Uint8Array; changed: number } {
+/** Map DB entries replaced as they are: [hash, bytes] (the edited sections of the world maps). */
+export type DbEntries = [number, Uint8Array][];
+
+/** Rebuild the map database with the sections of the given documents (and the given entries). */
+export function buildMapDb(game: Game, docs: Iterable<MapDoc>, entries: DbEntries = []): { db: Uint8Array; changed: number } {
   const db = new MapDb(game.dbBytes);
   let changed = 0;
+  for (const [h, bytes] of entries) {
+    if (equalBytes(bytes, game.db.get(h))) continue;
+    db.set(h, bytes);
+    changed++;
+  }
   for (const doc of docs) {
     const info = game.code.byHash(doc.hash);
     if (!info) throw new Error(`マップ ${doc.name} が code.bin の表にありません`);
@@ -32,8 +40,8 @@ export function buildMapDb(game: Game, docs: Iterable<MapDoc>): { db: Uint8Array
 }
 
 /** The new A90C8038 archive (only the map DB entry is re-packed). */
-export function buildArchive(game: Game, docs: Iterable<MapDoc>): { archive: Uint8Array; changed: number } {
-  const { db, changed } = buildMapDb(game, docs);
+export function buildArchive(game: Game, docs: Iterable<MapDoc>, entries: DbEntries = []): { archive: Uint8Array; changed: number } {
+  const { db, changed } = buildMapDb(game, docs, entries);
   const archive = rebuildArchive(game.dbArchive, new Map([[game.dbEntry.index, db]]));
   return { archive, changed };
 }
@@ -42,12 +50,12 @@ export const MOD_ROOT = `${TITLE_ID}/romfs`;
 export const MOD_PATH = `${MOD_ROOT}/${MAPDB_ARCHIVE}`;
 
 /**
- * RomFS files of the MOD: A90C8038 when maps changed, the event archives of edited dungeons, and the
+ * RomFS files of the MOD: A90C8038 when maps (or world map entries) changed, the event archives of edited dungeons, and the
  * master archive (56562135, built on game.masterBytes) when its tables or messages changed.
  */
-export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean): Map<string, Uint8Array> {
+export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean, entries: DbEntries = []): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
-  if (docs.length) out.set(MAPDB_ARCHIVE, buildArchive(game, docs).archive);
+  if (docs.length || entries.length) out.set(MAPDB_ARCHIVE, buildArchive(game, docs, entries).archive);
   for (const t of events) out.set(t.archiveName, t.buildArchive());
   if (treasure || game.master.texts.changed()) out.set(MASTER_ARCHIVE, game.master.buildArchive());
   return out;

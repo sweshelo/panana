@@ -1,5 +1,5 @@
 // Everything the editor reads from a dump (docs/map-editor-design.md §4).
-import { findEntry, parseArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
+import { findByName, findEntry, parseArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { switchPatchVersion } from '../rom/ips';
 import { hex8, u32 } from '../util/bytes';
@@ -12,6 +12,7 @@ import { isIndoor } from './objects';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
+import { groundFromTiles, parseGround, type Ground, type WorldInfo } from './worldmap';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
 
 export interface TilesetSource {
@@ -132,6 +133,47 @@ export class Game {
   /** Dungeon maps (D, K, S... that have tiles), grouped for the map list. */
   editableMaps(): MapInfo[] {
     return this.code.maps.filter((m) => m.dungeon >= 0 && this.db.get(m.sections[0]!).length > 0);
+  }
+
+  /** World maps with entrances (section 2) in the map DB. */
+  worldMaps(): WorldInfo[] {
+    return this.code.worlds.filter((w) => this.db.get(w.sections[2]!).length > 0);
+  }
+
+  private readonly grounds = new Map<number, Ground | null>();
+
+  /** Terrain of a world map (Wxx_ground.bin of the master archive, or section 0 for W98 / W99), or null. */
+  ground(w: WorldInfo): Ground | null {
+    if (!this.grounds.has(w.hash)) {
+      let g: Ground | null = null;
+      if (w.groundFile) {
+        const arc = this.master.archive;
+        const e = findEntry(arc, w.groundEntry);
+        const body = findByName(arc, w.groundFile)?.body ?? (e ? unpackEntry(arc, e).body : null);
+        g = body ? parseGround(body) : null;
+      } else if (this.db.get(w.sections[0]!).length) g = groundFromTiles(this.db.get(w.sections[0]!));
+      this.grounds.set(w.hash, g);
+    }
+    return this.grounds.get(w.hash)!;
+  }
+
+  private partFlags: Uint8Array | null | undefined;
+
+  /** worldmapParts +4 flags per row (null when the table is not found). docs/worldmap.md §4. */
+  worldPartFlags(): Uint8Array | null {
+    if (this.partFlags === undefined) {
+      this.partFlags = null;
+      for (const name of ['worldmapParts.bin', 'WorldmapParts.bin']) {
+        try {
+          const t = this.master.table(name);
+          this.partFlags = Uint8Array.from({ length: t.rows }, (_, i) => t.row(i)[4] ?? 0);
+          break;
+        } catch {
+          /* try the next name */
+        }
+      }
+    }
+    return this.partFlags;
   }
 
   doc(info: MapInfo): MapDoc {

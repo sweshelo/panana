@@ -58,7 +58,7 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .page { flex: 1; min-height: 0; display: none; }
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='messages'] .page-messages,
-.shell[data-page='shops'] .page-shops { display: block; }
+.shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world { display: block; }
 a { color: #8fb6ff; }
 
 /* editor layout */
@@ -287,3 +287,13 @@ input.edited { border-color: var(--warn); }
 .msg-page { color: var(--muted); font-size: 11px; margin-left: 2px; }
 .msg-page-rule { border: 0; border-top: 1px dashed var(--border); margin: 4px 0; }
 .msg-dot { color: #999; }
+
+/* world map */
+.world-detail { display: flex; flex-direction: column; gap: 8px; }
+.world-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 16px; max-width: 1100px; }
+.world-fields .issue { grid-column: 1 / -1; cursor: default; }
+.world-fields .issue button, .world-fields .muted button { margin-left: 8px; }
+.world-scroll { overflow: auto; max-height: 72vh; border: 1px solid var(--border); background: #0c1a30; }
+.world-scroll canvas { display: block; image-rendering: pixelated; touch-action: none; }
+.world-hover { height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.warn-mark { color: var(--warn); }

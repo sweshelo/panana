@@ -6,7 +6,7 @@ import { norm } from './controller';
 import { bytesToHex, clear, h, hexToBytes, parseHex } from './dom';
 import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt, type EditorState } from './state';
-import { fillMapSelect, mapLabel, pointLabel } from './labels';
+import { fillMapSelect, mapLabel, pointLabel, worldHref } from './labels';
 import { treasureEditor } from './treasure';
 import { eventPanel, openEventList } from './events';
 import { encounterPanel } from './encounters';
@@ -14,6 +14,7 @@ import type { MonsterBook } from '../game/monsters';
 import type { SoundNames } from '../game/sound';
 import { mapTitle } from '../game/names';
 import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
+import { ENT, parseEntrances } from '../game/worldmap';
 
 export class Inspector {
   readonly el = h('div', { class: 'inspector' });
@@ -245,6 +246,15 @@ export class Inspector {
       if (!ids.some((p) => p.id === destPoint)) sel.append(h('option', { value: destPoint, selected: true }, `${hex8(destPoint)} (行き先にない)`));
       for (const p of ids) sel.append(h('option', { value: p.id, selected: p.id === destPoint }, p.label));
       pointSel = sel;
+    } else if (destMap && game.code.world(destMap)) {
+      // Leaving to the world map: the point is the ID of one of its entrances (docs/worldmap.md §6).
+      const w = game.code.world(destMap)!;
+      const sel = h('select', { onchange: (e: Event) => setU32(8)(Number((e.target as HTMLSelectElement).value) >>> 0) });
+      const ents = parseEntrances(game.db.get(w.sections[2]!));
+      if (!ents.some((r) => ENT.id(r) === destPoint)) sel.append(h('option', { value: destPoint, selected: true }, `${hex8(destPoint)} (ワールドマップにない)`));
+      for (const r of ents)
+        sel.append(h('option', { value: ENT.id(r), selected: ENT.id(r) === destPoint }, `入口 ${hex8(ENT.id(r))} (${ENT.x(r)}, ${ENT.y(r)}) → ${mapLabel(game, ENT.destMap(r))}`));
+      pointSel = sel;
     } else pointSel = this.hexInput(destPoint, setU32(8));
 
     const kindInput = this.num(P3.kind(r.raw), (v) => upd((rec) => (rec.raw[0x14] = v & 0xff)), { min: 0, max: 255 });
@@ -252,6 +262,7 @@ export class Inspector {
       this.field('地点 ID (+0x00)', this.hexInput(P3.id(r.raw), setU32(0))),
       this.field('行き先マップ (+0x04)', mapSel),
       destMap ? h('div', { class: 'muted small' }, `${mapLabel(game, destMap)}  ${game.code.byHash(destMap)?.name ?? ''}`) : '',
+      destMap && game.code.world(destMap) ? h('a', { class: 'small', href: worldHref(game.code.world(destMap)!.code, destPoint) }, 'ワールドマップでこの入口を開く') : '',
       this.field('行き先の地点 (+0x08)', pointSel),
       this.field('イベントの行 (+0x0C、扉・ワープなど。0 = なし)', this.num(P3.door(r.raw), (v) => setU32(0x0c)(v >>> 0))),
       this.field(`種類 (+0x14) ${pointKindLabel(P3.kind(r.raw))}`, kindInput),

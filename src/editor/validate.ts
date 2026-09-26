@@ -3,6 +3,7 @@ import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
 import type { Game } from '../game/game';
 import { LAYOUTS, P3, loadDoc, type MapDoc } from '../game/sections';
+import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
 import { GRID, tileAt, type Selection } from './state';
 
@@ -18,6 +19,9 @@ const DOOR_KINDS = new Set([11, 12, 13, 14, 15, 16, 17]);
 
 /** Section 3 point IDs of a map (edited document if opened). */
 function pointIds(game: Game, docs: Map<number, MapDoc>, map: number): Set<number> | null {
+  // World map: the IDs of its entrances (the world page does not change them). docs/worldmap.md §6.
+  const w = game.code.world(map);
+  if (w) return new Set(parseEntrances(game.db.get(w.sections[2]!)).map(ENT.id));
   const doc = docs.get(map) ?? (game.code.byHash(map) ? loadDoc(game.db, game.code.byHash(map)!) : null);
   if (!doc) return null;
   return new Set((doc.recs[3] ?? []).map((r) => P3.id(r.raw)));
@@ -143,12 +147,12 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
     if (!tileAt(doc, r.x, r.y))
       out.push({ level: 'error', msg: `出入口 #${i}: セル (${r.x}, ${r.y}) にタイルがありません`, target, key: `p3tile/${hex8(id)}/${r.x},${r.y}` });
     const dest = P3.destMap(r.raw);
-    // Destinations outside the map table (world map, towns' special maps) cannot be checked here.
+    // Destinations outside the map tables (towns' special maps) cannot be checked here.
     const ids = dest ? pointIds(game, docs, dest) : null;
     if (ids && !ids.has(P3.destPoint(r.raw)))
       out.push({
         level: 'error',
-        msg: `出入口 #${i}: 行き先 ${game.code.byHash(dest)?.name ?? hex8(dest)} に地点 ${hex8(P3.destPoint(r.raw))} がありません`,
+        msg: `出入口 #${i}: 行き先 ${game.code.byHash(dest)?.name ?? game.code.world(dest)?.code ?? hex8(dest)} に地点 ${hex8(P3.destPoint(r.raw))} がありません`,
         target,
         key: `dest/${hex8(dest)}/${hex8(P3.destPoint(r.raw))}`,
       });
@@ -181,6 +185,49 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
   // Section 6 cells should be on tiles.
   doc.cells6.forEach((c) => {
     if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
+  });
+  return out;
+}
+
+/** A problem of a world map entrance (index into the entrance list). */
+export interface WorldIssue extends Issue {
+  index: number;
+}
+
+/**
+ * Checks of the edited entrances of a world map (the unedited ones are left alone: in the ROM, 18 of the 64
+ * dungeon exits to W01 do not lead back to the entrance that leads to them).
+ */
+export function validateWorld(game: Game, world: number, list: Uint8Array[], original: Uint8Array[], docs: Map<number, MapDoc>): WorldIssue[] {
+  const out: WorldIssue[] = [];
+  const ids = new Map<number, number>();
+  for (const r of list) ids.set(ENT.id(r), (ids.get(ENT.id(r)) ?? 0) + 1);
+  list.forEach((r, index) => {
+    const o = original[index];
+    if (o && o.every((b, i) => b === r[i])) return;
+    const id = ENT.id(r);
+    const name = `入口 ${hex8(id)}`;
+    if (ids.get(id)! > 1) out.push({ level: 'error', msg: `${name}: 同じ ID の入口がほかにもあります`, index, key: `wdup/${hex8(id)}` });
+    const dest = ENT.destMap(r);
+    const info = game.code.byHash(dest);
+    if (!info && !game.code.world(dest)) {
+      out.push({ level: 'error', msg: `${name}: 行き先のマップ ${hex8(dest)} が表にありません`, index, key: `wmap/${hex8(id)}` });
+      return;
+    }
+    if (!info) return;
+    const doc = docs.get(dest) ?? loadDoc(game.db, info);
+    const p = (doc.recs[3] ?? []).find((q) => P3.id(q.raw) === ENT.destPoint(r));
+    if (!p) {
+      out.push({ level: 'error', msg: `${name}: 行き先 ${info.name} に地点 ${hex8(ENT.destPoint(r))} がありません`, index, key: `wpoint/${hex8(id)}` });
+      return;
+    }
+    if (P3.destMap(p.raw) !== world || P3.destPoint(p.raw) !== id)
+      out.push({
+        level: 'warn',
+        msg: `${name}: 行き先 ${info.name} の地点 ${hex8(P3.id(p.raw))} から出ると、この入口には戻りません (${game.code.world(P3.destMap(p.raw)) ? `入口 ${hex8(P3.destPoint(p.raw))}` : hex8(P3.destMap(p.raw))} へ)`,
+        index,
+        key: `wback/${hex8(id)}`,
+      });
   });
   return out;
 }
