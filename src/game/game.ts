@@ -8,6 +8,7 @@ import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
 import { Master, MASTER_ARCHIVE, type MapRef } from './master';
+import { isIndoor } from './objects';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
@@ -137,6 +138,11 @@ export class Game {
     return loadDoc(this.db, info);
   }
 
+  /** What picks the map's mapData row, with the indoor flag from its tiles (the edited doc when given). */
+  mapRef(info: MapInfo, doc: MapDoc = this.doc(info)): MapRef {
+    return { hash: info.hash, dungeon: info.dungeon, mapDataKey: info.mapDataKey, indoor: isIndoor(doc) };
+  }
+
   tilesetSource(map: MapRef): TilesetSource {
     const resource = this.master.resourceRow(map);
     const a = this.master.resourceArchives(resource);
@@ -153,7 +159,7 @@ export class Game {
   neededFiles(): string[] {
     const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE, MONSTER_DESIGN_ARCHIVE, SHOP_ARCHIVE, MONSTER_MODEL_ARCHIVE, ...ITEM_MODEL_ARCHIVES]);
     for (const m of this.editableMaps()) {
-      const s = this.tilesetSource(m);
+      const s = this.tilesetSource(this.mapRef(m));
       if (s.modelArchive !== '00000000') out.add(s.modelArchive);
       if (s.textureArchive !== '00000000') out.add(s.textureArchive);
       const ev = this.master.eventArchive(m.dungeon);

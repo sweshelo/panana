@@ -37,7 +37,7 @@ export function groupDetail(book: MonsterBook, g: MonsterGroup): HTMLElement {
 export function encounterPanel(st: EditorState, book: MonsterBook | null, sounds: SoundNames | null): HTMLElement {
   const doc = st.current!;
   const master = st.game.master;
-  const s = master.sounds(st.info!);
+  const s = master.sounds(st.ref!);
   const label = (row: number): string => sounds?.label(row) ?? `サウンド ${row}`;
   const box = h('div', { class: 'enc-box' },
     h('h3', {}, 'BGM・効果音'),
@@ -45,7 +45,7 @@ export function encounterPanel(st: EditorState, book: MonsterBook | null, sounds
       h('tr', {}, h('td', {}, 'フィールド'), h('td', {}, label(s.bgm))),
       h('tr', {}, h('td', {}, '戦闘'), h('td', {}, label(s.battle))),
       h('tr', {}, h('td', {}, '足音'), h('td', {}, label(s.steps)))),
-    h('div', { class: 'muted small' }, `マップごと (mapData 行 ${master.mapDataRow(st.info!)} の [4] / [5] / [6])`),
+    h('div', { class: 'muted small' }, `マップごと (mapData 行 ${master.mapDataRow(st.ref!)} の [4] / [5] / [6])`),
     h('h3', {}, '出現する敵'));
   if (!book) {
     box.append(h('div', { class: 'muted' }, 'モンスターのデータを読めませんでした'));
