@@ -5,6 +5,10 @@ import { decodeAction, type Action, type ActionRefs } from '../src/game/actions'
 import { EditorState } from '../src/editor/state';
 import type { Game } from '../src/game/game';
 import { ActionView } from '../src/pages/actions';
+import { Radar } from '../src/ui/Radar';
+import { MessagePreview } from '../src/ui/message';
+import type { MessageStore } from '../src/game/gmsg';
+import { textToUnits } from '../src/game/msgtext';
 import { w32 } from '../src/util/bytes';
 
 function action(row: number, w0: number, name: string): Action {
@@ -41,5 +45,28 @@ describe('editor state', () => {
     st.emit('tool');
     expect(seen).toEqual(['doc']);
     expect(st.revision).toBe(2);
+  });
+});
+
+describe('shared pieces', () => {
+  test('message preview: ruby, page break (eats its line break), referenced message', () => {
+    const texts = { units: (id: number) => (id === 0x66 ? textToUnits({ kind: 1, text: 'デンパタウン', tail: new Uint16Array([0]) }) : undefined) } as unknown as MessageStore;
+    const units = textToUnits({ kind: 1, text: 'ここ、{msg:0066}。{page}\n{ruby:祠|ほこら}', tail: new Uint16Array([0]) });
+    const html = renderToString(<MessagePreview texts={texts} units={units} />);
+    expect(html).toContain('<ruby>祠<rp>(</rp><rt>ほこら</rt><rp>)</rp></ruby>');
+    expect(html).toContain('href="#/messages/0x0066"');
+    expect(html).toContain('デンパタウン');
+    expect(html).toContain('▼');
+    expect(html).not.toContain('<br/>');
+  });
+
+  test('radar: one handle per axis, edited ones marked, original outline only when changed', () => {
+    const props = { min: -9, max: 10, rings: [-9, 0, 10], format: String, onChange: () => {} };
+    const same = renderToString(<Radar {...props} axes={[{ label: 'A', value: 0, original: 0 }, { label: 'B', value: 1, original: 1 }, { label: 'C', value: 2, original: 2 }]} />);
+    expect(same.match(/class="handle"/g)?.length).toBe(3);
+    expect(same).not.toContain('shape original');
+    const edited = renderToString(<Radar {...props} axes={[{ label: 'A', value: 5, original: 0 }, { label: 'B', value: 1, original: 1 }, { label: 'C', value: 2, original: 2 }]} />);
+    expect(edited).toContain('handle edited');
+    expect(edited).toContain('shape original');
   });
 });

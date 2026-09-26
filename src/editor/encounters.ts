@@ -1,37 +1,21 @@
 // Inspector block of a map: BGM (mapData of the dungeon) and the enemies (section 6 monster groups).
-import { countLabel, mapEncounters, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import { createElement } from 'react';
+import { mapEncounters, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import type { SoundNames } from '../game/sound';
 import { hex8, w32 } from '../util/bytes';
 import { h } from './dom';
 import type { EditorState } from './state';
-
-export const monsterHref = (row: number): string => `#/monsters/${row}`;
+import { GroupDetail } from '../ui/GroupDetail';
+import { reactElement } from '../ui/mount';
 
 function groupSummary(book: MonsterBook, g: MonsterGroup): string {
   const names = book.groupMonsters(g).map((r) => book.monster(r)?.name ?? `#${r}`);
   return `群れ #${g.row}${names.length ? `: ${names.join('・')}` : ' (敵なし)'}`;
 }
 
-function slotTable(book: MonsterBook, title: string, slots: GroupSlot[]): HTMLElement {
-  const total = slots.reduce((a, s) => a + s.weight, 0);
-  return h('table', { class: 'enc-table' },
-    h('tr', {}, h('th', { colspan: 3 }, title)),
-    ...slots.map((s) => {
-      const m = book.monster(s.monster);
-      return h('tr', {},
-        h('td', {}, h('a', { href: monsterHref(s.monster) }, m ? `${m.name} Lv${m.level}` : `#${s.monster}`)),
-        h('td', { class: 'num' }, `${Math.round((s.weight / total) * 100)}%`),
-        h('td', { class: 'num muted' }, `×${countLabel(s.count)}`));
-    }),
-    slots.length ? '' : h('tr', {}, h('td', { class: 'muted', colspan: 3 }, 'なし')));
-}
-
+/** The group's candidates (src/ui/GroupDetail.tsx) as an element. */
 export function groupDetail(book: MonsterBook, g: MonsterGroup): HTMLElement {
-  return h('div', { class: 'enc-group' },
-    h('div', { class: 'small' }, h('a', { href: `#/groups/${g.row}` }, `群れ #${g.row} を開く (編集)`)),
-    slotTable(book, '先頭 (マップで見える敵)・3 体目', g.leads),
-    slotTable(book, '2・4 体目', g.mates),
-    h('div', { class: 'muted small' }, `+0x28〜: ${g.extra.join(' ')} (未解析)`));
+  return reactElement(createElement(GroupDetail, { book, group: g }));
 }
 
 export function encounterPanel(st: EditorState, book: MonsterBook | null, sounds: SoundNames | null): HTMLElement {

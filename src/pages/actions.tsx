@@ -1,9 +1,8 @@
 // Action list: every actionData row with the fields known so far, its raw words, and what refers to it
 // (items' use effect, monsters' skills).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { h } from '../editor/dom';
-import { ACTION_KIND, itemEffect, type Action, type ActionBook } from '../game/actions';
-import { mountReact } from '../ui/mount';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ACTION_KIND, ActionBook, itemEffect, type Action } from '../game/actions';
+import { useSticky, type PageProps } from '../ui/book';
 import { hex8, s16, u32 } from '../util/bytes';
 
 export const actionHref = (row: number): string => `#/actions/${row}`;
@@ -14,19 +13,21 @@ const KNOWN: Record<number, string> = { 0x00: 'w0 (種類・効果・付与・�
 type Filter = 'item' | 'used-item' | 'skill' | 'all';
 type Book = Pick<ActionBook, 'actions' | 'action' | 'refsOf'>;
 
-/** The page as app.ts uses it: a `.book` element and show(row) from the router. */
-export class ActionPage {
-  readonly el = h('div', { class: 'book' });
-  private readonly render = mountReact(this.el);
-  private selected = -1;
-
-  constructor(private readonly book: Book) {}
-
-  show(row?: number): void {
-    if (row !== undefined && this.book.action(row)) this.selected = row;
-    if (this.selected < 0) this.selected = this.book.actions.find((a) => a.kind === 2)?.row ?? 0;
-    this.render(<ActionView book={this.book} selected={this.selected} />);
-  }
+export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
+  const { game, book: monsters } = session;
+  // Rebuilt on every visit: the items that use each action may have been edited in the item book.
+  const book = useMemo((): Book | string => {
+    try {
+      return new ActionBook(game.master, (row) => monsters?.monster(row)?.name ?? '');
+    } catch (err) {
+      return `アクションの表を読めませんでした: ${(err as Error).message}`;
+    }
+  }, [game, monsters, visit]);
+  const row = arg ? Number(arg) : undefined;
+  const selected = useSticky(row, (r) => typeof book !== 'string' && !!book.action(r),
+    () => (typeof book === 'string' ? 0 : book.actions.find((a) => a.kind === 2)?.row ?? 0));
+  if (typeof book === 'string') return <div className="start"><div className="error">{book}</div></div>;
+  return <div className="book"><ActionView book={book} selected={selected} /></div>;
 }
 
 export function ActionView({ book, selected }: { book: Book; selected: number }): ReactNode {
