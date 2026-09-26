@@ -1,5 +1,5 @@
 // Items (itemData, 713 rows x 0x30) with their use effect (actionData) and the shops that sell them
-// (ShopItem 0x67297400 in 49A43B63). Fields: elpulse docs/analysis.md "itemData.bin", "ShopItem".
+// (ShopItem, see shops.ts). Fields: elpulse docs/analysis.md "itemData.bin".
 import { GsTable } from '../archive/gstable';
 import { findEntry, unpackEntry } from '../archive/gsarc';
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
@@ -7,8 +7,7 @@ import { cleanActionName, decodeAction, itemEffect } from './actions';
 import type { Game } from './game';
 import type { Master } from './master';
 
-export const SHOP_ARCHIVE = '49A43B63';
-const SHOP_ITEM = 0x67297400;
+export { loadShops, SHOP_ARCHIVE } from './shops';
 
 export const ITEM_CATEGORY: Record<number, string> = { 1: '道具', 2: 'ゴールド', 3: '装備', 4: 'つりざお', 5: 'エサ' };
 /** Equipment slot by the full category byte. */
@@ -92,24 +91,6 @@ export function categoryLabel(b: number): string {
   return main;
 }
 
-export async function loadShops(game: Game): Promise<Map<number, number[]>> {
-  const shops = new Map<number, number[]>();
-  const arc = await game.archive(SHOP_ARCHIVE);
-  const e = findEntry(arc, SHOP_ITEM);
-  if (!e) return shops;
-  const t = new GsTable(unpackEntry(arc, e).body);
-  let cur = -1;
-  for (let i = 0; i < t.rows; i++) {
-    const r = t.row(i);
-    const shop = u32(r, 0) | 0;
-    if (shop >= 0) {
-      cur = shop;
-      shops.set(cur, []);
-    } else if (cur >= 0) shops.get(cur)!.push(u32(r, 4));
-  }
-  return shops;
-}
-
 const ITEM_TABLE = 'itemData.bin';
 
 export class ItemBook {
@@ -120,7 +101,7 @@ export class ItemBook {
 
   constructor(game: Game, shops: Map<number, number[]>) {
     this.master = game.master;
-    for (const [shop, ids] of shops) for (const id of ids) this.soldAt.set(id, [...(this.soldAt.get(id) ?? []), shop]);
+    this.indexShops(shops);
     const t = this.master.itemData;
     for (let id = 1; id < t.rows; id++) {
       const it = this.build(id);
@@ -156,6 +137,17 @@ export class ItemBook {
       extra: [r[0x2d]!, r[0x2e]!],
       shops: this.soldAt.get(id) ?? [],
     };
+  }
+
+  private indexShops(shops: Map<number, number[]>): void {
+    this.soldAt.clear();
+    for (const [shop, ids] of shops) for (const id of ids) if (!this.soldAt.get(id)?.includes(shop)) this.soldAt.set(id, [...(this.soldAt.get(id) ?? []), shop]);
+  }
+
+  /** The shops' lists changed (shop edits): update where each item is sold. */
+  setShops(shops: Map<number, number[]>): void {
+    this.indexShops(shops);
+    for (const it of this.items) it.shops = this.soldAt.get(it.id) ?? [];
   }
 
   item(id: number): Item | undefined {

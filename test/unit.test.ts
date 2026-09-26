@@ -193,6 +193,82 @@ describe('actions', () => {
   });
 });
 
+describe('shops', () => {
+  test('decode Shop rows and merge them with ShopItem', async () => {
+    const { buildShops, decodeShopRow, shopLabel } = await import('../src/game/shops');
+    const { GsTable } = await import('../src/archive/gstable');
+    const row = new Uint8Array(0x38);
+    for (let i = 0; i < 10; i++) w32(row, 0x0c + i * 4, 0xe3 + i);
+    row[0x34] = 2;
+    expect(decodeShopRow(row)).toEqual({ messages: [0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec], variant: 2 });
+    // a table of 2 rows (header 0x40 bytes): shop 0 and shop 1
+    const data = new Uint8Array(0x40 + 2 * 0x38);
+    w32(data, 0, 2);
+    w32(data, 4, 0x38);
+    w32(data, 0x10, 0x40);
+    data.set(row, 0x40 + 0x38);
+    const shops = buildShops(new Map([[1, [2, 12]], [3, [5]]]), new GsTable(data));
+    expect(shops.map((s) => [s.id, s.items, s.variant])).toEqual([[0, [], 0], [1, [2, 12], 2], [3, [5], -1]]);
+    expect(shops[1]!.messages[0]).toBe(0xe3);
+    expect(shops[2]!.messages).toEqual([]);
+    expect(buildShops(new Map([[0, [1]]]), null)[0]!.variant).toBe(-1);
+    expect([shopLabel(3), shopLabel(17)]).toEqual(['店 3', '店 17 (妖精の里)']);
+  });
+
+  test('drops on a shop list: rows move, new items are inserted, sold items move', async () => {
+    const { dropInto } = await import('../src/game/shops');
+    const l = [1, 2, 3, 4];
+    expect(dropInto(l, { kind: 'row', index: 0 }, 4)).toEqual([2, 3, 4, 1]);
+    expect(dropInto(l, { kind: 'row', index: 3 }, 0)).toEqual([4, 1, 2, 3]);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 1)).toEqual(l);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 2)).toEqual(l);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 3)).toEqual([1, 3, 2, 4]);
+    expect(dropInto(l, { kind: 'item', id: 9 }, 2)).toEqual([1, 2, 9, 3, 4]);
+    expect(dropInto(l, { kind: 'item', id: 9 }, 99)).toEqual([1, 2, 3, 4, 9]);
+    expect(dropInto(l, { kind: 'item', id: 4 }, 0)).toEqual([4, 1, 2, 3]);
+    expect(dropInto([], { kind: 'item', id: 5 }, 0)).toEqual([5]);
+  });
+
+  test('ShopItem rows round trip, and withRows rebuilds a table with a hash index', async () => {
+    const { parseShopItems, shopItemRows } = await import('../src/game/shops');
+    const { GsTable } = await import('../src/archive/gstable');
+    const lists = new Map([[0, [1, 12, 28]], [1, []], [2, [93]]]);
+    const rows = shopItemRows(lists);
+    expect(rows.length).toBe(3 + 3 + 0 + 1);
+    // a ShopItem-like table (8-byte rows) with a hash index: {hash, row} sorted, then {0, 0}
+    const n = rows.length;
+    const idx = 0x40 + n * 8;
+    const data = new Uint8Array(idx + (n + 1) * 8);
+    w32(data, 0, n);
+    w32(data, 4, 8);
+    w32(data, 0x10, 0x40);
+    w32(data, 0x14, n * 8);
+    w32(data, 0x18, data.length);
+    w32(data, 0x20, idx);
+    rows.forEach((r, i) => data.set(r, 0x40 + i * 8));
+    for (let i = 0; i < n; i++) {
+      w32(data, idx + i * 8, 0x1000 + i);
+      w32(data, idx + i * 8 + 4, i);
+    }
+    const t = new GsTable(data);
+    expect([...parseShopItems(t)]).toEqual([...lists]);
+    // one item more: every row keeps its hash, the new row gets a new one
+    const more = new GsTable(t.withRows(shopItemRows(new Map([[0, [1, 12, 28, 5]], [1, []], [2, [93]]]))));
+    expect(more.rows).toBe(n + 1);
+    expect(parseShopItems(more).get(0)).toEqual([1, 12, 28, 5]);
+    const index = more.hashIndex();
+    expect(index.size).toBe(n + 1);
+    expect(new Set(index.values())).toEqual(new Set([...Array(n + 1).keys()]));
+    expect(u32(more.data, 0x18)).toBe(more.data.length);
+    expect(more.indexOffset % 8).toBe(0);
+    // fewer rows: the index drops the rows that are gone
+    const fewer = new GsTable(t.withRows(shopItemRows(new Map([[0, [1]], [1, []], [2, [93]]]))));
+    expect(fewer.rows).toBe(n - 2);
+    expect([...fewer.hashIndex().values()].every((r) => r < fewer.rows)).toBe(true);
+    expect(fewer.hashIndex().size).toBe(n - 2);
+  });
+});
+
 describe('item fields', () => {
   test('read and write the editable fields of an itemData row', async () => {
     const { readItemFields, writeItemFields } = await import('../src/game/items');

@@ -487,6 +487,43 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     for (const list of chests.values()) for (const c of list) expect(c.chance).toBeGreaterThan(0);
   });
 
+  test('shops: 18 shops with their settings', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { loadShops } = await import('../src/game/items');
+    const { buildShops, loadShopTable } = await import('../src/game/shops');
+    const shops = buildShops(await loadShops(game), await loadShopTable(game));
+    expect(shops.map((s) => s.id)).toEqual([...Array(18).keys()]);
+    expect(shops.reduce((a, s) => a + s.items.length, 0) + shops.length).toBe(443); // ShopItem rows
+    const fairy = shops[17]!;
+    expect(fairy.variant).toBe(2);
+    expect(fairy.messages[0]).toBeGreaterThanOrEqual(0xe3);
+    expect(fairy.items).toContain(480); // ようせいのはね
+    for (const s of shops) expect(s.messages.length).toBe(10);
+  });
+
+  test('shop edits are written to both archives, and an unchanged stock rebuilds the same table', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { ShopStock, parseShopItems } = await import('../src/game/shops');
+    const stock = (await ShopStock.load(game))!;
+    expect(stock.archiveNames()).toEqual(['49A43B63', '1D37838B']);
+    const arc = await game.archive('49A43B63');
+    const orig = unpackEntry(arc, arc.entries.find((e) => e.hash === 0x67297400)!).body;
+    expect(equalBytes(stock.build(), orig)).toBe(true);
+    expect(stock.buildArchives().size).toBe(0);
+    stock.set(0, [...stock.items(0), 480]);
+    expect(stock.saved()).toEqual([[0, [...stock.originalItems(0), 480]]]);
+    const files = stock.buildArchives();
+    expect([...files.keys()]).toEqual(['49A43B63', '1D37838B']);
+    for (const bytes of files.values()) {
+      const a = parseArchive(bytes);
+      const t = new GsTable(unpackEntry(a, a.entries.find((e) => e.hash === 0x67297400)!).body);
+      expect(parseShopItems(t).get(0)).toContain(480);
+      expect(t.rows).toBe(444);
+    }
+    stock.revert(0);
+    expect(stock.changed()).toBe(false);
+  });
+
   test('item edits are exported in itemData.bin and can be reverted', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { ItemBook } = await import('../src/game/items');
