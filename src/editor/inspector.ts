@@ -9,6 +9,9 @@ import { tileAt, type EditorState } from './state';
 import { fillMapSelect, mapLabel, pointLabel } from './labels';
 import { treasureEditor } from './treasure';
 import { eventPanel, openEventList } from './events';
+import { encounterPanel } from './encounters';
+import type { MonsterBook } from '../game/monsters';
+import type { SoundNames } from '../game/sound';
 import { mapTitle } from '../game/names';
 import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
 
@@ -18,6 +21,9 @@ export class Inspector {
   objectName: (row: number) => string = () => '';
   /** Open a map and select one of its records (set by the app). */
   gotoRecord: (map: number, section: number, index: number) => void = () => {};
+  /** Monsters and sound names (set by the app; null when they could not be read). */
+  book: MonsterBook | null = null;
+  sounds: SoundNames | null = null;
 
   constructor(
     private readonly st: EditorState,
@@ -298,7 +304,7 @@ export class Inspector {
             h('td', {}, changed.includes(k) ? '変更' : ''),
           ),
         ),
-        h('tr', {}, h('td', {}, '6 部屋のセル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
+        h('tr', {}, h('td', {}, '6 敵の出現セル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
         h('tr', {}, h('td', {}, '7 (未対応・保持)'), h('td', {}, `${doc.raw[7]?.length ?? 0} B`), h('td', {}, '')),
       ),
       st.currentEvents
@@ -307,6 +313,7 @@ export class Inspector {
       changed.length
         ? h('button', { class: 'danger', onclick: () => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash) }, 'このマップの変更を元に戻す')
         : h('div', { class: 'muted' }, '変更なし'),
+      encounterPanel(st, this.book, this.sounds),
     );
   }
 }

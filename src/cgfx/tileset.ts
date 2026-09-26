@@ -1,5 +1,5 @@
 // A tileset's models and textures: every CGFX in the model archive + the texture bcres of mapResource [2].
-import { findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
+import { findEntry, parseArchive, unpackEntry, type Archive } from '../archive/gsarc';
 import { hex8 } from '../util/bytes';
 import { parseCgfx, unwrapT8, type CgfxModel, type CgfxTexture } from './cgfx';
 
@@ -65,6 +65,30 @@ export function buildObjects(archive: Uint8Array, entries: number[]): Map<number
     out.set(h, set);
   }
   return out;
+}
+
+/**
+ * A model bcres combined with a texture bcres of the same archive (monsters: MonsterDesign w4 = model with
+ * its animations, w5 = textures of the colour variant, which win by name). texture 0 = the model's own.
+ */
+export function buildComposite(arc: Archive, model: number, texture: number): TilesetModels {
+  const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
+  try {
+    const e = findEntry(arc, model);
+    if (!e) throw new Error('モデルのエントリがありません');
+    const f = parseCgfx(unpackEntry(arc, e).body);
+    for (const t of f.textures) set.textures.set(t.name, t);
+    const te = texture ? findEntry(arc, texture) : undefined;
+    if (te) for (const t of parseCgfx(unpackEntry(arc, te).body).textures) if (t.name !== 'dummy') set.textures.set(t.name, t);
+    const m = f.models[0];
+    if (m) {
+      set.models.set(model, m);
+      set.paths.set(model, m.name);
+    }
+  } catch (err) {
+    set.errors.push(`${hex8(model)}: ${(err as Error).message}`);
+  }
+  return set;
 }
 
 /** Typed arrays of a tileset (for transferring from the worker). */

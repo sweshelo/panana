@@ -25,7 +25,10 @@ export class GmsgFile {
     let s = '';
     for (let o = base + a; o + 1 < base + b; o += 2) {
       const c = u16(this.data, o);
-      if (c === 0) break;
+      if (c === 0) {
+        if (s) break;
+        continue; // some messages start with 0 (e.g. conditionData names)
+      }
       if (c === 0x0a) s += ' ';
       else if (c >= 0x20 && !(c >= 0xe000 && c < 0xf900)) s += String.fromCharCode(c);
       else s += '\u0001';
@@ -82,6 +85,46 @@ export class Master {
         }
       }
     }
+  }
+
+  /** Any other table of the archive (e.g. 'monsterParameter.bin'); edits to it are exported. */
+  table(name: string): GsTable {
+    let t = this.extra.get(name);
+    if (!t) {
+      const f = findByName(this.archive, name);
+      if (!f) throw new Error(`マスター (56562135) に ${name} がありません`);
+      t = { table: new GsTable(f.body), entry: f.entry, original: f.body.slice() };
+      this.extra.set(name, t);
+    }
+    return t.table;
+  }
+  private readonly extra = new Map<string, { table: GsTable; entry: ArcEntry; original: Uint8Array }>();
+
+  /** Names of the tables (besides treasureGroup) that differ from the archive. */
+  changedTables(): string[] {
+    return [...this.extra].filter(([, t]) => !equalBytes(t.table.data, t.original)).map(([n]) => n);
+  }
+
+  /** Original bytes of a row of a table (before any edit). */
+  originalRow(name: string, row: number): Uint8Array {
+    const t = this.table(name);
+    const o = t.offset + row * t.rowSize;
+    return this.extra.get(name)!.original.subarray(o, o + t.rowSize);
+  }
+
+  restoreTable(name: string, bytes: Uint8Array): void {
+    this.table(name).data = bytes.slice();
+  }
+
+  /** Anything to export in this archive. */
+  changed(): boolean {
+    return this.treasureChanged() || this.changedTables().length > 0;
+  }
+
+  /** mapData [4] = field BGM, [5] = battle BGM, [6] = footsteps (soundData rows) of a dungeon. */
+  sounds(dungeon: number): { bgm: number; battle: number; steps: number } {
+    const r = this.mapData.row(this.mapDataRow(dungeon));
+    return { bgm: r[4]!, battle: r[5]!, steps: r[6]! };
   }
 
   message(id: number): string | undefined {
@@ -146,9 +189,11 @@ export class Master {
     return !equalBytes(this.treasureGroup.row(row), this.treasureOriginal.subarray(o, o + this.treasureGroup.rowSize));
   }
 
-  /** This master archive with treasureGroup.bin re-packed (every other entry copied verbatim). */
+  /** This master archive with the edited tables re-packed (every other entry copied verbatim). */
   buildArchive(): Uint8Array {
-    return rebuildArchive(this.archive, new Map([[this.treasureEntry.index, this.treasureGroup.data]]));
+    const repl = new Map([[this.treasureEntry.index, this.treasureGroup.data]]);
+    for (const [, t] of this.extra) if (!equalBytes(t.table.data, t.original)) repl.set(t.entry.index, t.table.data);
+    return rebuildArchive(this.archive, repl);
   }
 
   itemName(id: number): string {

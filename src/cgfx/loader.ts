@@ -110,3 +110,59 @@ export async function loadObjectModels(
 }
 
 export { objKey };
+
+// ---- model + texture pairs of one archive (monsters)
+
+const compositeKey = (name: string, model: number, tex: number): string => `composite/${name}/${hex8(model)}/${hex8(tex)}/v${CACHE_VERSION}`;
+/** Archives the worker already keeps. */
+const sentArchives = new Set<string>();
+const queues = new Map<string, Map<string, { model: number; tex: number; resolve: (t: TilesetModels) => void; reject: (e: Error) => void }>>();
+
+/** A model of an archive with the textures of another entry (0 = its own); batched per archive. */
+export function loadComposite(game: Game, name: string, model: number, tex: number): Promise<TilesetModels> {
+  const key = compositeKey(name, model, tex);
+  let p = memory.get(key);
+  if (!p) {
+    p = (async () => {
+      const cached = await idbGet<TilesetModels>(key).catch(() => undefined);
+      if (cached && cached.models instanceof Map) return cached;
+      return new Promise<TilesetModels>((resolve, reject) => {
+        let q = queues.get(name);
+        if (!q) {
+          q = new Map();
+          queues.set(name, q);
+          setTimeout(() => flush(game, name), 0);
+        }
+        q.set(`${model}/${tex}`, { model, tex, resolve, reject });
+      });
+    })();
+    memory.set(key, p);
+    p.catch(() => memory.delete(key));
+  }
+  return p;
+}
+
+async function flush(game: Game, name: string): Promise<void> {
+  const q = queues.get(name);
+  queues.delete(name);
+  if (!q?.size) return;
+  try {
+    const archive = sentArchives.has(name) ? null : (await game.dump.readRomfs(name)).slice();
+    const res = await run<Map<string, TilesetModels>>(
+      { kind: 'composite', name, archive, pairs: [...q.values()].map((x) => [x.model, x.tex] as [number, number]) },
+      archive ? [archive.buffer as ArrayBuffer] : [],
+    );
+    sentArchives.add(name);
+    for (const [k, w] of q) {
+      const t = res.get(k);
+      if (!t) {
+        w.reject(new Error('変換できませんでした'));
+        continue;
+      }
+      w.resolve(t);
+      idbSet(compositeKey(name, w.model, w.tex), t).catch(() => {});
+    }
+  } catch (err) {
+    for (const w of q.values()) w.reject(err as Error);
+  }
+}

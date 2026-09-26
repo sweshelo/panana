@@ -11,6 +11,13 @@ export class AddPanel {
   private templatesFor = -1;
   /** Model name of a mapObject row once loaded (set by the app). */
   objectName: (row: number) => string = () => '';
+  /** Loads the models of mapObject rows, and renders a thumbnail of one (set by the app). */
+  loadObjects: (rows: number[]) => Promise<void> = async () => {};
+  objectThumb: (row: number) => Promise<string | null> = async () => null;
+  /** Direction of new props. */
+  private dir = 0;
+  /** Groups (<details>) the user opened. */
+  private readonly open = new Set<string>();
 
   constructor(private readonly st: EditorState) {}
 
@@ -36,31 +43,47 @@ export class AddPanel {
     const room = ev ? ev.roomLeft() : 0;
     const active = st.tool === 'place' && st.stamp ? st.stamp : null;
 
-    // props: mapObject rows of placeable objects
-    const propSel = h('select', { class: 'grow' });
+    // props: mapObject rows of placeable objects, grouped by category
     const master = st.game.master;
-    let group = null as HTMLOptGroupElement | null;
+    const cats = new Map<string, number[]>();
     for (let row = 69; row < master.mapObject.rows; row++) {
       const cat = objectCategory(row);
       if (['ワールドマップ', 'NPC', '見えない', 'オブジェクト'].includes(cat) || !master.objectModel(row)) continue;
-      if (group?.label !== cat) {
-        group = h('optgroup', { label: cat });
-        propSel.append(group);
-      }
-      const name = this.objectName(row);
-      group.append(h('option', { value: row, selected: active?.type === 'prop' && active.row === row }, `#${row}${name ? ' ' + name : ''}`));
+      cats.set(cat, [...(cats.get(cat) ?? []), row]);
     }
-    const dirSel = h('select', {}, ...['↑ 0', '→ 1', '↓ 2', '← 3'].map((l, i) => h('option', { value: i }, l)));
+    const dirs = h('div', { class: 'row' }, h('span', { class: 'muted small' }, '向き'),
+      ...['↑', '→', '↓', '←'].map((l, i) => h('button', {
+        class: this.dir === i ? 'active' : '',
+        title: `${i * 90}°`,
+        onclick: () => {
+          this.dir = i;
+          if (active?.type === 'prop') this.use({ ...active, dir: i });
+          else this.render();
+        },
+      }, l)));
+    const props = [...cats].map(([cat, rows]) => this.group(`prop/${cat}`, `${cat} (${rows.length})`, rows,
+      rows.map((row) => ({
+        row,
+        label: `#${row}`,
+        title: () => `mapObject #${row} ${this.objectName(row)}`,
+        active: active?.type === 'prop' && active.row === row,
+        pick: () => this.use({ type: 'prop', row, dir: this.dir }),
+      }))));
 
-    const tmplSel = h('select', { class: 'grow' });
-    if (!this.templates.length) tmplSel.append(h('option', { value: '' }, '読み込み中…'));
-    for (const [section, label] of [[5, 'ギミック (区画 5)'], [3, '出入口・扉・穴 (区画 3)']] as const) {
-      const g = h('optgroup', { label });
-      this.templates.forEach((t, i) => {
-        if (t.section === section) g.append(h('option', { value: i, selected: active?.type === 'template' && active.t === t }, `${t.label} — ${t.source}`));
-      });
-      tmplSel.append(g);
-    }
+    // gimmicks: copies of existing records
+    const gimmicks = this.templates.length
+      ? ([[5, 'ギミック (区画 5)'], [3, '出入口・扉・穴 (区画 3)']] as const).map(([section, label]) => {
+          const list = this.templates.filter((t) => t.section === section);
+          return this.group(`tmpl/${section}`, `${label} (${list.length})`, list.map((t) => t.objectRow).filter((r) => r),
+            list.map((t) => ({
+              row: t.objectRow,
+              label: t.label,
+              title: () => `${t.label} — ${t.source}`,
+              active: active?.type === 'template' && active.t === t,
+              pick: () => this.use({ type: 'template', t }),
+            })));
+        })
+      : [h('div', { class: 'muted small' }, 'ギミックを読み込み中…')];
 
     this.el.append(
       h('h3', {}, '追加'),
@@ -70,16 +93,8 @@ export class AddPanel {
         h('button', { class: active?.type === 'floor' && active.kind === 0 ? 'active' : '', onclick: () => this.use({ type: 'floor', kind: 0 }) }, 'ダメージ床'),
         h('button', { class: active?.type === 'floor' && active.kind === 1 ? 'active' : '', onclick: () => this.use({ type: 'floor', kind: 1 }) }, '凍った床'),
       ),
-      h('div', { class: 'row' }, propSel, dirSel,
-        h('button', { onclick: () => this.use({ type: 'prop', row: Number(propSel.value), dir: Number(dirSel.value) }) }, '置物')),
-      h('div', { class: 'row' }, tmplSel,
-        h('button', {
-          disabled: !this.templates.length,
-          onclick: () => {
-            const t = this.templates[Number(tmplSel.value)];
-            if (t) this.use({ type: 'template', t });
-          },
-        }, 'ギミック')),
+      h('h4', {}, '置物'), dirs, ...props,
+      h('h4', {}, 'ギミック (ゲーム中のものの写し)'), ...gimmicks,
       st.game.switchVersion
         ? h('div', { class: 'row' },
             h('button', { class: active?.type === 'switchgate' ? 'active' : '', disabled: room < 2, onclick: () => this.use({ type: 'switchgate' }) }, 'スイッチと柵'),
@@ -89,5 +104,36 @@ export class AddPanel {
       h('p', { class: 'muted small' },
         '宝箱とギミックには新しいイベントの行 (状態を保存する枠つき) を作ります。宝箱の中身は新しい行 (最初は同じダンジョンの宝箱の中身の写し) で、右ペインで編集できます。ギミックはゲーム中の同じ種類のものを写すので、動き (つながる扉・行き先など) は写し元の設定のままです。'),
     );
+  }
+
+  /** A collapsible grid of thumbnails; thumbnails are rendered when it is open. */
+  private group(key: string, label: string, rows: number[], items: { row: number; label: string; title: () => string; active: boolean; pick: () => void }[]): HTMLElement {
+    const grid = h('div', { class: 'pal-items obj-items' });
+    const d = h('details', { class: 'obj-group', open: this.open.has(key) || items.some((i) => i.active) },
+      h('summary', {}, label), grid);
+    let filled = false;
+    const fill = (): void => {
+      if (filled || !d.open) return;
+      filled = true;
+      const load = this.loadObjects(rows);
+      for (const it of items) {
+        const img = h('div', { class: 'pal-swatch' });
+        const btn = h('button', { class: 'pal-item obj-item' + (it.active ? ' active' : ''), title: it.title(), onclick: it.pick },
+          img, h('span', { class: 'pal-label' }, it.label));
+        grid.append(btn);
+        if (!it.row) continue;
+        load.then(() => this.objectThumb(it.row)).then((url) => {
+          btn.title = it.title();
+          if (url) img.replaceWith(h('img', { src: url, alt: '' }));
+        });
+      }
+    };
+    d.addEventListener('toggle', () => {
+      if (d.open) this.open.add(key);
+      else this.open.delete(key);
+      fill();
+    });
+    fill();
+    return d;
   }
 }

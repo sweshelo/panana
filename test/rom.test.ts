@@ -292,3 +292,152 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(equalBytes(pkg.get('romfs/56562135')!, mod.romfs.get('56562135')!)).toBe(true); // untouched base file
   });
 });
+
+describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
+  let game: Game;
+  beforeAll(async () => {
+    game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+  });
+
+  test('monster parameters match elpulse docs/reference/monsters.md', async () => {
+    const book = await game.monsters();
+    expect(book.monsters.length).toBe(184);
+    const m = book.monster(1)!;
+    expect(m.name).toBe('カビまんじゅう');
+    expect([m.level, m.hp.min, m.hp.max, m.attack.max, m.exp, m.gold]).toEqual([1, 8, 10, 18, 2, 2]);
+    expect(m.drops.map((d) => d.rate)).toEqual([3, 5, 10]);
+    expect(m.skills[0]!.name).toBe('ぶつかってきた');
+    const king = book.monster(15)!;
+    expect(king.name).toBe('キングウッキー');
+    expect(king.focus).toBe(true);
+    expect(book.monster(21)!.nextForm).toBe(20);
+  });
+
+  test('map encounter groups (section 6) resolve to monsterGroup rows', async () => {
+    const book = await game.monsters();
+    expect(book.groups.length).toBe(144);
+    const doc = game.doc(game.code.byName('D01B01001')!);
+    const { mapEncounters } = await import('../src/game/monsters');
+    const enc = mapEncounters(doc);
+    const g = book.group(enc.group)!;
+    expect(g.row).toBe(6);
+    expect(book.groupMonsters(g).map((r) => book.monster(r)!.name)).toContain('カビまんじゅう');
+    // every map group hash is in the table
+    for (const m of game.editableMaps()) {
+      const e = mapEncounters(game.doc(m));
+      if (e.group) expect(book.group(e.group)).toBeDefined();
+      for (const h of e.cells.keys()) if (h) expect(book.group(h)).toBeDefined();
+    }
+  });
+
+  test('BGM names from soundData + sound.bcsar', async () => {
+    const snd = await game.sounds();
+    const s = game.master.sounds(1);
+    expect(snd.name(s.bgm)).toBe('BGM_CAVE');
+    expect(snd.name(s.battle)).toBe('BGM_BATTLE_1');
+    expect(snd.name(s.steps)).toBe('SE_FLD_STEPS1');
+  });
+});
+
+describe.skipIf(!hasCia)('resistance edits and the item book', () => {
+  test('resistance: effect tables, edit, export and read back', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await game.monsters();
+    expect(book.battle.multiplier(-9)).toBe(4);
+    expect(book.battle.multiplier(0)).toBe(1);
+    expect(book.battle.multiplier(9)).toBeCloseTo(0.1, 5);
+    expect(book.battle.coefficient(-9)).toBe(200);
+    expect(book.battle.coefficient(9)).toBe(0);
+    expect(book.battle.chance(0, 0)).toBe(100);
+    expect(book.battle.chance(2, 0)).toBe(50);
+    // +10: an element is void, an ailment is clamped to +9 (0%)
+    expect(book.battle.multiplier(10)).toBe(0);
+    expect(book.battle.coefficient(10)).toBe(0);
+    expect(book.battle.coefficient(-12)).toBe(200);
+    const ham = book.monster(22)!;
+    expect(ham.name).toBe('ゴールデンハム');
+    expect(ham.resist.slice(0, 8).map((r) => r.value)).toEqual([10, 10, 10, 10, 10, 10, 10, 10]);
+    book.setResist(3, 1, 10);
+    expect(book.monster(3)!.resist[1]!.value).toBe(10);
+    book.setResist(3, 1, -9);
+    expect(book.monster(3)!.resist[1]!.value).toBe(-9);
+    book.revert(3);
+    const m = book.monster(1)!;
+    expect(m.resist[0]!.name).toBe('火');
+    expect(m.resist[0]!.value).toBe(-6);
+    const before = m.resist.map((r) => r.value);
+    book.setResist(1, 0, 7);
+    book.setResist(1, 24, -9);
+    expect(book.monster(1)!.resist[0]!.value).toBe(7);
+    expect(book.monster(1)!.resist[24]!.value).toBe(-9);
+    // other fields untouched
+    expect(book.monster(1)!.resist.map((r, i) => (i === 0 || i === 24 ? before[i] : r.value))).toEqual(before);
+    expect(book.monster(1)!.hp.max).toBe(10);
+    expect(book.changed(1)).toBe(true);
+    expect(game.master.changedTables()).toEqual(['monsterParameter.bin']);
+    const files = buildModFiles(game, [], [], game.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const b2 = await again.monsters();
+    expect(b2.monster(1)!.resist[0]!.value).toBe(7);
+    expect(b2.monster(1)!.resist[24]!.value).toBe(-9);
+    book.revert(1);
+    expect(book.changed(1)).toBe(false);
+    expect(game.master.changedTables()).toEqual([]);
+  });
+
+  test('items: names, effects, shops, chests', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { ItemBook, loadShops } = await import('../src/game/items');
+    const { chestSources } = await import('../src/pages/items');
+    const items = new ItemBook(game, await loadShops(game));
+    const potion = items.item(2)!;
+    expect(potion.name).toBe('キズぐすり+');
+    expect([potion.price, potion.sell, potion.rarity]).toEqual([80, 8, 1]);
+    expect(potion.shops).toEqual([1, 5, 6, 7, 10, 11, 17]);
+    expect(potion.effect).toStartWith('HP 回復');
+    const chests = await chestSources(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    expect(chests.size).toBeGreaterThan(20);
+    for (const list of chests.values()) for (const c of list) expect(c.chance).toBeGreaterThan(0);
+  });
+});
+
+describe.skipIf(!hasCia)('monster and item models', () => {
+  test('every monster model converts with all its textures', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await game.monsters();
+    const { buildComposite } = await import('../src/cgfx/tileset');
+    const { MONSTER_MODEL_ARCHIVE } = await import('../src/game/monsters');
+    const arc = parseArchive(await game.dump.readRomfs(MONSTER_MODEL_ARCHIVE));
+    const seen = new Set<string>();
+    let n = 0;
+    for (const m of book.monsters) {
+      const x = book.modelOf(m);
+      if (!x || seen.has(`${x.model}/${x.texture}`)) continue;
+      seen.add(`${x.model}/${x.texture}`);
+      const set = buildComposite(arc, x.model, x.texture);
+      expect(set.errors).toEqual([]);
+      const model = set.models.get(x.model)!;
+      expect(model.meshes.length).toBeGreaterThan(0);
+      for (const mat of model.materials) for (const t of mat.textures) if (t) expect(set.textures.has(t)).toBe(true);
+      n++;
+    }
+    expect(n).toBeGreaterThan(100);
+  });
+
+  test('every item model is in an item model archive', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { ItemBook, itemModelArchive } = await import('../src/game/items');
+    const { buildObjects } = await import('../src/cgfx/tileset');
+    const items = new ItemBook(game, new Map());
+    const models = new Set(items.items.map((i) => i.model).filter((h) => h));
+    for (const h of models) {
+      const name = await itemModelArchive(game, h);
+      expect(name).not.toBeNull();
+      const set = buildObjects(await game.dump.readRomfs(name!), [h]).get(h)!;
+      expect(set.errors).toEqual([]);
+      // clothing patterns (596〜696) are a texture only
+      if (set.models.size) expect(set.models.get(h)!.meshes.length).toBeGreaterThan(0);
+      else expect(set.textures.size).toBe(1);
+    }
+  });
+});

@@ -36,6 +36,18 @@ export class GsTable {
     return out;
   }
 
+  /** Hash index: hash -> row. */
+  hashIndex(): Map<number, number> {
+    const out = new Map<number, number>();
+    const idx = this.indexOffset;
+    if (idx)
+      for (let o = idx; o + 8 <= this.data.length; o += 8) {
+        const h = u32(this.data, o);
+        if (h) out.set(h, u32(this.data, o + 4));
+      }
+    return out;
+  }
+
   /** Append a row (and its hash to the index when the table has one). Returns the new row number. */
   append(row: Uint8Array, hash = 0): number {
     const size = this.rowSize;

@@ -3,7 +3,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { Dump } from './dump';
 
 const MANIFEST = 'dump/manifest';
-const VERSION = 1;
+const VERSION = 3; // 3: + 2713402F (MonsterDesign), 49A43B63 (ShopItem), monster / item models
 
 interface Manifest {
   version: number;

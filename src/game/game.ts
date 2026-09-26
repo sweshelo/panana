@@ -2,12 +2,16 @@
 import { findEntry, parseArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { switchPatchVersion } from '../rom/ips';
-import { hex8 } from '../util/bytes';
+import { hex8, u32 } from '../util/bytes';
+import { idbGet, idbSet } from '../util/idb';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
 import { Master, MASTER_ARCHIVE } from './master';
+import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
+import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
+import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
 
 export interface TilesetSource {
   /** mapResource row. */
@@ -86,6 +90,35 @@ export class Game {
     return p;
   }
 
+  private monsterBook: Promise<MonsterBook> | null = null;
+
+  /** Monsters and encounter groups (needs MonsterDesign from 2713402F). */
+  monsters(): Promise<MonsterBook> {
+    this.monsterBook ??= this.dump.readRomfs(MONSTER_DESIGN_ARCHIVE).then((b) => new MonsterBook(this.master, b));
+    return this.monsterBook;
+  }
+
+  private soundNames: Promise<SoundNames> | null = null;
+
+  /** Names of soundData rows (from sound/sound.bcsar when the dump has it; cached by name only). */
+  sounds(): Promise<SoundNames> {
+    this.soundNames ??= (async () => {
+      const t = this.master.table('soundData.bin');
+      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
+      const key = 'sound/names/v1';
+      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
+      if (!names)
+        try {
+          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
+          await idbSet(key, names).catch(() => {});
+        } catch {
+          names = null;
+        }
+      return new SoundNames(items, names);
+    })();
+    return this.soundNames;
+  }
+
   archive(name: string): Promise<Archive> {
     let a = this.archives.get(name);
     if (!a) {
@@ -118,7 +151,7 @@ export class Game {
 
   /** Root RomFS files the editor needs for every dungeon (to cache them). */
   neededFiles(): string[] {
-    const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE]);
+    const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE, MONSTER_DESIGN_ARCHIVE, SHOP_ARCHIVE, MONSTER_MODEL_ARCHIVE, ...ITEM_MODEL_ARCHIVES]);
     for (const m of this.editableMaps()) {
       const s = this.tilesetSource(m.dungeon);
       if (s.modelArchive !== '00000000') out.add(s.modelArchive);

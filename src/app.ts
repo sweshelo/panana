@@ -1,4 +1,5 @@
-// Application shell: loading a dump, map list, views, tools, export.
+// Application shell: loading a dump, the top bar with its pages (map editor, monster book), routing.
+// The map editor: map list, views, tools, export.
 import { loadTilesetModels } from './cgfx/loader';
 import { ModelFactory } from './cgfx/three';
 import { Controller } from './editor/controller';
@@ -22,8 +23,15 @@ import { LAYOUTS, loadDoc, POINT_SECTIONS, sectionBytes } from './game/sections'
 import { cachedDumpInfo, openCachedDump, saveDumpCache } from './rom/cache';
 import { baseModFromFiles, openFolder, openImage, TITLE_ID, type BaseMod, type Dump } from './rom/dump';
 import { idbClear, idbGet, idbSet } from './util/idb';
+import { MonsterPage } from './pages/monsters';
+import { ItemPage } from './pages/items';
+import { ItemBook, loadShops } from './game/items';
+import type { MonsterBook } from './game/monsters';
+import type { SoundNames } from './game/sound';
 
 type ViewMode = '2d' | '3d' | 'split';
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力' };
+const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 const BASEMOD_KEY = 'basemod/v1';
 
@@ -43,20 +51,32 @@ export class App {
   private factory: ModelFactory | null = null;
   private mode: ViewMode = 'split';
   private clipHeight = 400;
-  private readonly root: HTMLElement;
+  /** Element the app lives in. */
+  private readonly host: HTMLElement;
+  /** Element of the map editor page (the host itself on the start screen). */
+  private root: HTMLElement;
+  private shell: HTMLElement | null = null;
+  private monsterPage: MonsterPage | null = null;
+  private itemPage: ItemPage | null = null;
+  private book: MonsterBook | null = null;
+  private sounds: SoundNames | null = null;
   private status = h('div', { class: 'status' });
   private issuesEl = h('div', { class: 'issues' });
   private saveTimer = 0;
   private validateTimer = 0;
 
   constructor(root: HTMLElement) {
+    this.host = root;
     this.root = root;
+    window.addEventListener('hashchange', () => this.route());
     this.showStart();
   }
 
   // ---------------------------------------------------------------- start screen
 
   private async showStart(error?: string): Promise<void> {
+    this.shell = null;
+    this.root = this.host;
     clear(this.root);
     const cached = await cachedDumpInfo();
     const fileInput = h('input', { type: 'file', accept: '.cia,.cxi,.app,.bin', onchange: (e: Event) => {
@@ -79,8 +99,8 @@ export class App {
     });
     this.root.append(
       h('div', { class: 'start' },
-        h('h1', {}, '電波人間のRPG2 マップエディタ'),
-        h('p', {}, `v1.1.0 (${TITLE_ID}) のダンジョンのマップを編集し、LayeredFS 用の MOD として書き出します。`),
+        h('h1', {}, '電波人間のRPG2 ツール'),
+        h('p', {}, `v1.1.0 (${TITLE_ID}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`),
         h('p', { class: 'muted' }, 'ROM のデータはブラウザの中だけで読み取ります (どこにも送信しません)。読み取った一部のファイルは、この端末の IndexedDB にキャッシュします。'),
         error ? h('div', { class: 'error' }, error) : null,
         h('div', { class: 'choices' },
@@ -103,6 +123,7 @@ export class App {
   }
 
   private async load(open: () => Promise<Dump>): Promise<void> {
+    this.root = this.host;
     clear(this.root);
     this.root.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
     try {
@@ -113,11 +134,102 @@ export class App {
       const game = await Game.load(dump, await this.savedBaseMod());
       if (!dump.label.endsWith('(キャッシュ)')) saveDumpCache(dump, (await Game.load(dump)).neededFiles()).catch(() => {});
       this.game = game;
-      await this.showEditor();
+      await this.showPages();
     } catch (err) {
       console.error(err);
       this.showStart((err as Error).message);
     }
+  }
+
+  // ---------------------------------------------------------------- pages
+
+  /** Top bar + pages; the map editor is built now, the other pages when first shown. */
+  private async showPages(autoRestore = false): Promise<void> {
+    const game = this.game!;
+    const pageMap = h('div', { class: 'page page-map' });
+    const pageMonsters = h('div', { class: 'page page-monsters' });
+    const pageItems = h('div', { class: 'page page-items' });
+    const tab = (page: string, label: string): HTMLElement => h('a', { class: 'tab', 'data-page': page, href: `#/${page}` }, label);
+    const nav = h('nav', { class: 'topnav' },
+      h('b', { class: 'brand' }, '電波人間のRPG2 ツール'),
+      tab('map', 'マップ編集'),
+      tab('monsters', 'モンスター図鑑'),
+      tab('items', 'アイテム図鑑'),
+      h('span', { class: 'grow' }),
+      h('span', { class: 'muted small' }, game.dump.label),
+      h('button', { class: 'primary', title: 'マップ・イベント・宝箱の中身・モンスターの変更を MOD として書き出します', onclick: () => this.showExport() }, '書き出し…'),
+      h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
+      h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
+    );
+    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems);
+    clear(this.host);
+    this.host.append(this.shell);
+    this.root = pageMap;
+    this.monsterPage = null;
+    this.itemPage = null;
+    [this.book, this.sounds] = await Promise.all([
+      game.monsters().catch((err) => {
+        console.warn('monsters', err);
+        return null;
+      }),
+      game.sounds(),
+    ]);
+    await this.showEditor(autoRestore);
+    await this.route();
+  }
+
+  /** #/map[/MAPNAME] or #/monsters[/row]. */
+  private async route(): Promise<void> {
+    const shell = this.shell;
+    const game = this.game;
+    if (!shell || !game) return;
+    const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
+    const p = page === 'monsters' || page === 'items' ? page : 'map';
+    shell.dataset.page = p;
+    shell.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === p));
+    if (p === 'monsters') {
+      const el = shell.querySelector<HTMLElement>('.page-monsters')!;
+      if (!this.book) {
+        clear(el);
+        el.append(h('div', { class: 'start' }, h('div', { class: 'error' }, `モンスターのデータ (${'2713402F'}) を読めませんでした。展開済みのフォルダで開いた場合は、そのファイルも入れてください。`)));
+        return;
+      }
+      if (!this.monsterPage) {
+        const st = this.st!;
+        this.monsterPage = new MonsterPage(game, this.book, (m) => st.docs.get(m.hash) ?? game.doc(m), () => this.scheduleSave());
+        clear(el);
+        el.append(this.monsterPage.el);
+      }
+      this.monsterPage.show(Number(arg) || undefined);
+      document.title = '電波人間のRPG2 ツール — モンスター図鑑';
+      return;
+    }
+    if (p === 'items') {
+      const el = shell.querySelector<HTMLElement>('.page-items')!;
+      if (!this.itemPage) {
+        const st = this.st!;
+        clear(el);
+        el.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
+        const shops = await loadShops(game).catch(() => new Map<number, number[]>());
+        this.itemPage = new ItemPage(game, new ItemBook(game, shops), this.book, (m) => st.docs.get(m.hash) ?? game.doc(m),
+          async (d) => st.events.get(d) ?? game.eventTable(d));
+        clear(el);
+        el.append(this.itemPage.el);
+      }
+      document.title = '電波人間のRPG2 ツール — アイテム図鑑';
+      await this.itemPage.show(Number(arg) || undefined);
+      return;
+    }
+    document.title = '電波人間のRPG2 ツール — マップ編集';
+    if (arg) {
+      const info = game.code.byName(decodeURIComponent(arg));
+      if (info && this.st?.current?.hash !== info.hash) {
+        const sel = this.root.querySelector<HTMLSelectElement>('.map-select');
+        if (sel) sel.value = String(info.hash);
+        await this.openMap(info.hash);
+      }
+    }
+    this.setMode(this.mode);
   }
 
   // ---------------------------------------------------------------- editor
@@ -135,8 +247,12 @@ export class App {
     this.addPanel = new AddPanel(st);
 
     await this.restoreEdits(autoRestore);
+    this.inspector.book = this.book;
+    this.inspector.sounds = this.sounds;
     this.inspector.objectName = (row) => this.v3!.objectName(row);
     this.addPanel.objectName = (row) => this.v3!.objectName(row);
+    this.addPanel.loadObjects = (rows) => this.v3!.loadObjects(rows);
+    this.addPanel.objectThumb = (row) => this.v3!.objectThumb(row);
     this.inspector.gotoRecord = async (map, section, index) => {
       if (st.current?.hash !== map) {
         const sel = this.root.querySelector<HTMLSelectElement>('.map-select');
@@ -153,7 +269,6 @@ export class App {
     clear(this.root);
     const mapSel = h('select', { class: 'map-select', onchange: (e: Event) => this.openMap(Number((e.target as HTMLSelectElement).value)) });
     const header = h('header', {},
-      h('b', { class: 'title' }, 'マップエディタ'),
       mapSel,
       h('div', { class: 'seg' }, ...(['2d', '3d', 'split'] as ViewMode[]).map((m) =>
         h('button', { 'data-mode': m, onclick: () => this.setMode(m) }, m === '2d' ? '2D' : m === '3d' ? '3D' : '分割'))),
@@ -163,10 +278,6 @@ export class App {
       ),
       h('span', { class: 'map-title' }),
       h('span', { class: 'grow' }),
-      h('span', { class: 'muted small' }, game.dump.label),
-      h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
-      h('button', { class: 'primary', onclick: () => this.showExport() }, '書き出し…'),
-      h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
     );
 
     const tools = h('div', { class: 'tools' },
@@ -175,7 +286,7 @@ export class App {
         ['paint', 'タイルを置く', 'B'],
         ['erase', 'タイルを消す', 'E'],
         ['rect', '範囲選択', 'M'],
-        ['room', '部屋のセル (区画 6)', 'G'],
+        ['room', '敵の出現セル (区画 6)', 'G'],
       ] as [Tool, string, string][]).map(([t, label, key]) =>
         h('button', { 'data-tool': t, title: `${label} (${key})`, onclick: () => st.setTool(t) }, `${label} `, h('kbd', {}, key))),
     );
@@ -186,7 +297,7 @@ export class App {
     const layers = h('div', { class: 'layers' },
       h('h3', {}, '表示'),
       layerBox('タイル', () => ctl.layers.tiles, (v) => (ctl.layers.tiles = v)),
-      layerBox('部屋のセル (区画 6)', () => ctl.layers.room, (v) => (ctl.layers.room = v), 'rgba(80,200,255,0.6)'),
+      layerBox('敵の出現セル (区画 6)', () => ctl.layers.room, (v) => (ctl.layers.room = v), 'rgba(80,200,255,0.6)'),
       ...POINT_SECTIONS.map((k) => layerBox(LAYOUTS[k]!.label, () => ctl.layers.sections[k]!, (v) => (ctl.layers.sections[k] = v), SECTION_COLORS[k])),
       h('h3', {}, '2D'),
       h('div', { class: 'seg' },
@@ -233,7 +344,8 @@ export class App {
     };
     this.bindKeys();
     this.setMode(this.mode);
-    const first = game.code.byName('D01B02001') ?? game.editableMaps()[0]!;
+    const wanted = location.hash.match(/^#\/map\/(.+)$/)?.[1];
+    const first = (wanted && game.code.byName(decodeURIComponent(wanted))) || game.code.byName('D01B02001') || game.editableMaps()[0]!;
     mapSel.value = String(first.hash);
     await this.openMap(first.hash);
   }
@@ -361,7 +473,7 @@ export class App {
     window.addEventListener('keydown', (e) => {
       const st = this.st;
       const ctl = this.ctl;
-      if (!st || !ctl) return;
+      if (!st || !ctl || this.shell?.dataset.page !== 'map') return;
       const t = e.target as HTMLElement;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
       const mod = e.ctrlKey || e.metaKey;
@@ -413,19 +525,22 @@ export class App {
       const events: Record<number, Uint8Array> = {};
       for (const [d, t] of st.events) if (t.changed()) events[d] = t.data;
       const master = st.game.master;
-      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null });
+      const tables: Record<string, Uint8Array> = {};
+      for (const n of master.changedTables()) tables[n] = master.table(n).data;
+      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables });
     }
   }
 
   private async restoreEdits(auto = false): Promise<void> {
-    type Saved = { maps: Record<number, Record<number, Uint8Array>>; events: Record<number, Uint8Array>; treasure: Uint8Array | null };
+    type Saved = { maps: Record<number, Record<number, Uint8Array>>; events: Record<number, Uint8Array>; treasure: Uint8Array | null; tables?: Record<string, Uint8Array> };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
     const game = this.game!;
     const names = Object.keys(edits.maps).map((h) => mapLabel(game, Number(h)));
     const nEvents = Object.keys(edits.events).length;
-    if (!names.length && !nEvents && !edits.treasure) return;
-    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : ''].filter(Boolean).join(' / ');
+    const tables = Object.keys(edits.tables ?? {});
+    if (!names.length && !nEvents && !edits.treasure && !tables.length) return;
+    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', ')].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       await idbSet(EDITS_KEY, null);
       return;
@@ -445,13 +560,15 @@ export class App {
       }
     }
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
+    for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
+    if (tables.length) this.book?.reload();
   }
 
   // ---------------------------------------------------------------- base MOD (elpulse mod/out)
 
   private updateBaseUi(): void {
     const game = this.game!;
-    const b = this.root.querySelector('.base-btn');
+    const b = this.host.querySelector('.base-btn');
     if (b) b.textContent = `土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`;
   }
 
@@ -465,7 +582,7 @@ export class App {
     await idbSet(BASEMOD_KEY, mod ? { label: mod.label, romfs: [...mod.romfs], ips: mod.ips } satisfies SavedBaseMod : null);
     this.saveNow();
     this.game = await Game.load(this.rawDump!, mod);
-    await this.showEditor(true);
+    await this.showPages(true);
     this.setStatus(mod ? `土台の MOD: ${mod.label}` : '土台の MOD を外しました');
   }
 
@@ -498,7 +615,7 @@ export class App {
     const game = this.game!;
     const docs = st.modifiedDocs();
     const events = [...st.events.values()].filter((t) => t.changed());
-    const treasure = game.master.treasureChanged();
+    const treasure = game.master.changed();
     const issues: { map: string; issue: Issue }[] = [];
     for (const d of docs) {
       const info = game.code.byHash(d.hash)!;
@@ -530,7 +647,8 @@ export class App {
     const canFs = 'showDirectoryPicker' in window;
     const changes: string[] = docs.map((d) => `${mapLabel(game, d.hash)} (区画 ${st.changedSections(d).join(', ')})`);
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
-    if (treasure) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
+    if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
+    for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
     const dlg = h('div', { class: 'modal' },
       h('div', { class: 'dialog' },
         h('h2', {}, '書き出し'),

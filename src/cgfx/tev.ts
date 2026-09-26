@@ -174,7 +174,9 @@ ${alphaTest}
     mat.blendAlpha = bf.color[3]!;
     mat.transparent = true;
   }
-  mat.depthWrite = m.depthWrite && opaque;
+  // PICA writes depth by the material's depth flags, blending or not. Monster bodies blend (src alpha)
+  // and are double sided, so without depth writes their back faces would show through.
+  mat.depthWrite = m.depthWrite;
   // Decals lie on (or just above) the floor: pull them forward to avoid z-fighting.
   if (!opaque || m.polygonOffset || m.layer > 0) {
     mat.polygonOffset = true;

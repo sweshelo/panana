@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CELL, LAYOUTS, P3, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
 import { loadObjectModels, objKey } from '../cgfx/loader';
+import { renderObjectThumb } from './thumbs';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } from '../game/objects';
 import { norm, type Controller } from './controller';
 import { eventLinks } from './events';
@@ -274,24 +275,48 @@ export class View3D {
   private loadRequestedObjects(): void {
     const rows = [...this.objectRequest].filter((r) => !this.objects.has(r));
     this.objectRequest.clear();
-    if (!rows.length) return;
-    const master = this.st.game.master;
-    for (const r of rows) this.objects.set(r, null);
-    const refs = rows.map((r) => master.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
-    loadObjectModels(this.st.game, refs)
-      .then((sets) => {
-        for (const r of rows) {
-          const ref = master.objectModel(r);
-          const set = ref ? sets.get(objKey(ref.archive, ref.entry)) : undefined;
-          if (!set || !set.models.size) continue;
-          const f = new ModelFactory(set);
-          f.clipping = [this.clipPlane];
-          f.setCeilingVisible(true);
-          this.objects.set(r, f);
-        }
-        this.syncSelection();
-      })
-      .catch((err) => console.warn('object models', err));
+    if (rows.length) this.loadObjects(rows).then(() => this.syncSelection());
+  }
+
+  private readonly objectLoads = new Map<number, Promise<void>>();
+
+  /** Load the models of mapObject rows (once each). */
+  loadObjects(rows: number[]): Promise<void> {
+    const todo = rows.filter((r) => !this.objects.has(r));
+    if (todo.length) {
+      const master = this.st.game.master;
+      for (const r of todo) this.objects.set(r, null);
+      const refs = todo.map((r) => master.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
+      const job = loadObjectModels(this.st.game, refs)
+        .then((sets) => {
+          for (const r of todo) {
+            const ref = master.objectModel(r);
+            const set = ref ? sets.get(objKey(ref.archive, ref.entry)) : undefined;
+            if (!set || !set.models.size) continue;
+            const f = new ModelFactory(set);
+            f.clipping = [this.clipPlane];
+            f.setCeilingVisible(true);
+            this.objects.set(r, f);
+          }
+        })
+        .catch((err) => console.warn('object models', err));
+      for (const r of todo) this.objectLoads.set(r, job);
+    }
+    return Promise.all(rows.map((r) => this.objectLoads.get(r))).then(() => {});
+  }
+
+  private readonly objectThumbs = new Map<number, string | null>();
+
+  /** Thumbnail (data URL) of a mapObject row's model, or null when it has none. */
+  async objectThumb(row: number): Promise<string | null> {
+    const done = this.objectThumbs.get(row);
+    if (done !== undefined) return done;
+    await this.loadObjects([row]);
+    const f = this.objects.get(row);
+    const m = f ? this.objectModel(row) : null;
+    const url = f && m ? renderObjectThumb(f, m) : null;
+    this.objectThumbs.set(row, url);
+    return url;
   }
 
   private syncMarkers(doc: MapDoc): void {
