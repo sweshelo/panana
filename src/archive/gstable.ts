@@ -50,7 +50,8 @@ export class GsTable {
 
   /**
    * The table with its rows replaced (the header before the rows is kept). A hash index keeps the entries of the
-   * rows that remain and gets a new hash for each added row.
+   * rows that remain and gets a new hash for each added row. The rows are padded with zeros to 16 bytes, as in the
+   * game's tables (the index, when there is one, starts there).
    */
   withRows(rows: Uint8Array[]): Uint8Array {
     const size = this.rowSize;
@@ -76,8 +77,8 @@ export class GsTable {
       }
       entries.sort((a, b) => a[0] - b[0]);
     }
-    const dataEnd = this.offset + n * size;
-    const newIdx = idx ? align(dataEnd, 8) : 0;
+    const dataEnd = align(this.offset + n * size, 16);
+    const newIdx = idx ? dataEnd : 0;
     const total = idx ? newIdx + (entries.length + 1) * 8 : dataEnd;
     const out = new Uint8Array(total);
     out.set(this.data.subarray(0, this.offset));

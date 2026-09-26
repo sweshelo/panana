@@ -1,0 +1,94 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ROM なしのテストと型チェック。
+  # 同じリポジトリのブランチの PR は push のほうで走るので、PR ではフォークからのものだけ。
+  unit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+  # ROM が要るテスト (test/rom.test.ts)。
+  # 暗号化したダンプ (scripts/pack-rom-bundle.ps1) を非公開の R2 バケットから取ってきて復号する。
+  # シークレットが要るので push と手動実行だけ (フォークからの PR には渡らない)。未登録ならスキップ。
+  # ダンプはアーティファクトにもキャッシュにも載せない。
+  rom:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ROM_BUNDLE_PASSPHRASE: ${{ secrets.ROM_BUNDLE_PASSPHRASE }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      ROM_BUNDLE: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.ROM_BUNDLE_KEY || 'rom-bundle.tar.gpg' }}
+      ROM_DIR: ${{ github.workspace }}/../rom
+    steps:
+      - name: Check secrets
+        id: secrets
+        run: |
+          if [ -n "$ROM_BUNDLE_PASSPHRASE" ] && [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] && [ -n "$R2_ACCOUNT_ID" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=ROM tests skipped::ROM_BUNDLE_PASSPHRASE / R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY が未登録なので ROM のテストをスキップします"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.ok == 'true'
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.secrets.outputs.ok == 'true'
+
+      - name: Install dependencies
+        if: steps.secrets.outputs.ok == 'true'
+        run: bun install --frozen-lockfile
+
+      # 復号したダンプはワークスペースの外に置く
+      - name: Fetch and decrypt the dump
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          set -o pipefail
+          mkdir -p "$ROM_DIR"
+          aws s3 cp "$ROM_BUNDLE" "$RUNNER_TEMP/rom.gpg" --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" --no-progress
+          gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 --decrypt "$RUNNER_TEMP/rom.gpg" 3<<<"$ROM_BUNDLE_PASSPHRASE" \
+            | tar -x -C "$ROM_DIR"
+          rm -f "$RUNNER_TEMP/rom.gpg"
+          ls -l "$ROM_DIR"
+
+      - name: Test (ROM)
+        if: steps.secrets.outputs.ok == 'true'
+        env:
+          ELPULSE_ROOT: ${{ env.ROM_DIR }}
+          ROM_GOLDEN: ${{ env.ROM_DIR }}/golden.json
+          REQUIRE_ROM: '1'
+        run: bun test test/rom.test.ts
+
+      - name: Remove the dump
+        if: always()
+        run: rm -rf "$ROM_DIR" "$RUNNER_TEMP/rom.gpg"
