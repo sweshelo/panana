@@ -33,7 +33,7 @@ function writeSlots(master: Master, row: number, slots: Slot[]): void {
   }
 }
 
-function openDialog(title: string, body: HTMLElement, wide = true): HTMLDialogElement {
+export function openDialog(title: string, body: HTMLElement, wide = true): HTMLDialogElement {
   const dlg = h('dialog', { class: 'picker' + (wide ? ' wide' : '') },
     h('div', { class: 'picker-head' }, h('h2', {}, title), h('button', { onclick: () => dlg.close() }, '閉じる')),
     body,

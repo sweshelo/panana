@@ -234,7 +234,13 @@ select.edited { border-color: var(--warn); }
 .viewer.picture .viewer-picture { display: block; }
 
 /* Encounter groups */
-.group-slots select { max-width: 220px; }
+.group-slots select { max-width: 120px; }
+.group-photos { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.monster-pick { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; text-align: left; }
+.monster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 6px; }
+.monster-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; font-size: 12px; }
+.monster-cell.current { background: #2d4a7a; }
+.photo.photo-lg, .photo.photo-lg img { width: 64px; height: 64px; }
 .group-slots .num-input { width: 56px; }
 .group-cols { max-width: 1100px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
 .edited-mark { color: var(--warn); }

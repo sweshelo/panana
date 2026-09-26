@@ -7,6 +7,9 @@ import { countLabel, GROUP_SLOTS, mapEncounters, type GroupSlot, type MonsterBoo
 import { mapTitle } from '../game/names';
 import type { MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
+import { openDialog } from '../editor/treasure';
+import { lazyPhoto } from './modelview';
+import { monsterRef } from './monsters';
 
 export const groupHref = (row: number): string => `#/groups/${row}`;
 
@@ -65,8 +68,16 @@ export class GroupPage {
     this.renderDetail();
   }
 
-  private names(g: MonsterGroup): string {
-    return this.book.groupMonsters(g).map((r) => this.book.monster(r)?.name ?? `#${r}`).join('・');
+  private monsterName(row: number): string {
+    return this.book.monster(row)?.name ?? `#${row}`;
+  }
+
+  /** Photo (model) of a monster, with its name as the tooltip. */
+  private photo(row: number, cls = 'photo'): HTMLElement {
+    const m = this.book.monster(row);
+    const el = lazyPhoto(m ? monsterRef(this.game, this.book, m) : null, cls);
+    el.title = this.monsterName(row);
+    return el;
   }
 
   private matches(g: MonsterGroup): boolean {
@@ -88,7 +99,11 @@ export class GroupPage {
       const n = this.uses.get(g.hash)?.length ?? 0;
       body.append(h('tr', { class: g.row === this.selected ? 'active' : '', onclick: () => (location.hash = groupHref(g.row)) },
         h('td', { class: 'num muted' }, String(g.row)),
-        h('td', {}, this.names(g) || h('span', { class: 'muted' }, '(敵なし)'), this.book.groupChanged(g.row) ? h('span', { class: 'edited-mark' }, ' ●') : ''),
+        h('td', {},
+          h('div', { class: 'group-photos' },
+            ...this.book.groupMonsters(g).map((r) => this.photo(r)),
+            g.leads.length + g.mates.length ? '' : h('span', { class: 'muted' }, '(敵なし)'),
+            this.book.groupChanged(g.row) ? h('span', { class: 'edited-mark', title: '変更した' }, '●') : '')),
         h('td', { class: 'num muted' }, n ? String(n) : '')));
     }
     this.list.append(h('div', { class: 'muted small' }, `${rows.length} / ${this.book.groups.length} 件`),
@@ -150,12 +165,9 @@ export class GroupPage {
       this.edited();
     };
     const change = (k: number, patch: Partial<GroupSlot>): void => set(slots.map((s, i) => (i === k ? { ...s, ...patch } : s)));
-    const monsterSelect = (value: number, onchange: (row: number) => void): HTMLSelectElement => {
-      const sel = h('select', { onchange: (e: Event) => onchange(Number((e.target as HTMLSelectElement).value)) });
-      for (const m of this.book.monsters) sel.append(h('option', { value: m.row, selected: m.row === value }, `${m.name} Lv${m.level} (#${m.row})`));
-      if (!this.book.monster(value)) sel.append(h('option', { value, selected: true }, `#${value}`));
-      return sel;
-    };
+    const monsterButton = (value: number, onpick: (row: number) => void): HTMLElement =>
+      h('button', { class: 'monster-pick', title: 'モンスターを選び直す', onclick: () => this.pickMonster(value, onpick) },
+        this.photo(value), h('span', {}, this.monsterName(value)));
     const tbl = h('table', { class: 'enc-table group-slots' },
       h('tr', {}, h('th', {}, 'モンスター'), h('th', {}, '重み'), h('th', {}, '割合'), h('th', {}, '数'), h('th', {}, '')));
     slots.forEach((s, k) => {
@@ -163,7 +175,7 @@ export class GroupPage {
       for (let c = 0; c < 8; c++) count.append(h('option', { value: c, selected: c === s.count }, countLabel(c)));
       if (s.count >= 8) count.append(h('option', { value: s.count, selected: true }, countLabel(s.count)));
       tbl.append(h('tr', {},
-        h('td', {}, monsterSelect(s.monster, (row) => change(k, { monster: row })), ' ', h('a', { href: `#/monsters/${s.monster}`, title: 'モンスター図鑑で開く' }, '↗')),
+        h('td', {}, h('div', { class: 'row' }, monsterButton(s.monster, (row) => change(k, { monster: row })), h('a', { href: `#/monsters/${s.monster}`, title: 'モンスター図鑑で開く' }, '↗'))),
         h('td', {}, h('input', { type: 'number', min: 1, max: 255, value: s.weight, class: 'num-input', onchange: (e: Event) => {
           const v = Math.round(Number((e.target as HTMLInputElement).value));
           // weight 0 would drop the slot (the game skips it), so removing is done with ×
@@ -178,8 +190,29 @@ export class GroupPage {
     const add = h('button', {
       disabled: slots.length >= GROUP_SLOTS,
       title: slots.length >= GROUP_SLOTS ? `候補は ${GROUP_SLOTS} 個まで` : '',
-      onclick: () => set([...slots, { monster: slots[0]?.monster ?? g.leads[0]?.monster ?? 1, weight: 1, count: 0 }]),
+      onclick: () => this.pickMonster(0, (row) => set([...slots, { monster: row, weight: 1, count: 0 }])),
     }, '＋ 追加');
     return h('section', {}, h('h3', {}, title), tbl, add);
+  }
+
+  /** Pick a monster from the photos (names only: the level and the row are in the monster book). */
+  private pickMonster(current: number, onPick: (row: number) => void): void {
+    const search = h('input', { type: 'search', placeholder: '名前で絞り込み', class: 'picker-search' });
+    const grid = h('div', { class: 'monster-grid' });
+    const render = (): void => {
+      clear(grid);
+      const q = search.value.trim();
+      for (const m of this.book.monsters) {
+        if (q && !m.name.includes(q)) continue;
+        grid.append(h('button', { class: `monster-cell${m.row === current ? ' current' : ''}`, onclick: () => { dlg.close(); onPick(m.row); } },
+          lazyPhoto(monsterRef(this.game, this.book, m), 'photo photo-lg'), h('span', {}, m.name)));
+      }
+      if (!grid.firstChild) grid.append(h('div', { class: 'muted' }, '見つかりません'));
+    };
+    search.addEventListener('input', render);
+    const dlg = openDialog('モンスターを選ぶ', h('div', {}, h('div', { class: 'row' }, search), h('div', { class: 'picker-list' }, grid)));
+    render();
+    grid.querySelector('.current')?.scrollIntoView({ block: 'center' });
+    search.focus();
   }
 }

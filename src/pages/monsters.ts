@@ -44,6 +44,16 @@ export function appearances(game: Game, book: MonsterBook, docOf: (m: MapInfo) =
   return out;
 }
 
+/** Model of a monster (MonsterDesign +0x10 / +0x14 in 470D2848); its photo is shared by every page. */
+export function monsterRef(game: Game, book: MonsterBook, m: Monster): ModelRef | null {
+  const x = book.modelOf(m);
+  if (!x) return null;
+  return {
+    key: `monster/${hex8(x.model)}/${hex8(x.texture)}`,
+    load: async () => ({ set: await loadComposite(game, MONSTER_MODEL_ARCHIVE, x.model, x.texture), hash: x.model }),
+  };
+}
+
 const range = (r: { min: number; max: number }): string => (r.min === r.max || !r.min ? String(r.max) : `${r.min}〜${r.max}`);
 
 export class MonsterPage {
@@ -121,14 +131,8 @@ export class MonsterPage {
     this.detail.scrollTop = scroll;
   }
 
-  /** Model of a monster (MonsterDesign +0x10 / +0x14 in 470D2848). */
   private ref(m: Monster): ModelRef | null {
-    const x = this.book.modelOf(m);
-    if (!x) return null;
-    return {
-      key: `monster/${hex8(x.model)}/${hex8(x.texture)}`,
-      load: async () => ({ set: await loadComposite(this.game, MONSTER_MODEL_ARCHIVE, x.model, x.texture), hash: x.model }),
-    };
+    return monsterRef(this.game, this.book, m);
   }
 
   private renderDetailInner(): void {
