@@ -2,22 +2,9 @@
 import { cstr, s32, u32 } from '../util/bytes';
 import { readWorldTable, type WorldInfo } from './worldmap';
 
-export const BASE = 0x100000;
-export const MAP_SECTIONS = 0x4c1a74; // 205 x {map hash, section 1..9 hashes}
-export const MAP_SECTIONS_ROWS = 0xcd;
-export const MAP_TABLE = 0x4c3afc; // 56 x {dungeon, name ptr, count, map array}
-export const MAP_TABLE_ROWS = 0x38;
-/** Map rows (0x1C bytes each) of every dungeon, back to back in .data. Their +0x10 is filled at startup. */
-export const MAP_ROWS = 0x5204f4;
-/**
- * mapData keys copied into the map rows +0x10 by the static initializer FUN_00488264 (row k <- entry k).
- * The file itself has 0 there. docs/map.md §3.
- */
-export const MAP_DATA_KEYS = 0x4c1738;
-/** Key meaning "no mapData of its own" (mapData row 0; FUN_001c4ec4 compares against *(0x4C64E8 + 0x334)). */
-export const MAP_DATA_NONE = 0x4c681c;
-/** Known map D01B02001, used to check that the tables are where v1.1.0 has them. */
-export const PROBE_MAP = 0x98ec3fef;
+export * from './codeconst';
+import { BASE, MAP_DATA_KEYS, MAP_DATA_NONE, MAP_ROWS, MAP_SECTIONS, MAP_SECTIONS_ROWS, MAP_TABLE, MAP_TABLE_ROWS, PROBE_MAP } from './codeconst';
+import { readExtension } from './mappatch';
 
 export interface MapInfo {
   hash: number;
@@ -32,9 +19,14 @@ export interface MapInfo {
   mapDataKey: number;
   /** Section 0..9 hashes (section 0 = the map hash). */
   sections: number[];
+  /** Map row +0x14 (u32; the low byte goes to the map runtime +0xA8CB). */
+  extra: number;
+  /** Added by the editor (PNMP extension of code.bin or this session), not in the game. docs/new-map.md. */
+  added?: boolean;
 }
 
 export class CodeBin {
+  /** Every map: the 205 of 0x4C1A74 in table order, then the added ones. */
   readonly maps: MapInfo[];
   /** World maps (their own section table; not in {@link maps}). docs/worldmap.md. */
   readonly worlds: WorldInfo[];
@@ -52,11 +44,18 @@ export class CodeBin {
       for (let k = 0; k < 10; k++) row.push(u32(code, o + k * 4));
       sections.set(row[0]!, row);
     }
+    const ext = readExtension(code);
+    const added = new Set<number>();
+    for (const row of ext?.sections ?? []) {
+      sections.set(row[0]!, row);
+      added.add(row[0]!);
+    }
     const none = u32(code, at(MAP_DATA_NONE));
     const mapDataKey = (row: number): number => {
       const k = (row - MAP_ROWS) / 0x1c;
-      if (k < 0 || k >= MAP_SECTIONS_ROWS || !Number.isInteger(k)) return 0;
-      const key = u32(code, at(MAP_DATA_KEYS) + k * 4);
+      // Rows outside the table at 0x5204F4 were moved there by the extension, with the key already in +0x10.
+      const inTable = k >= 0 && k < MAP_SECTIONS_ROWS && Number.isInteger(k);
+      const key = inTable ? u32(code, at(MAP_DATA_KEYS) + k * 4) : u32(code, at(row) + 0x10);
       return key === none ? 0 : key;
     };
     const info = new Map<number, MapInfo>();
@@ -79,6 +78,8 @@ export class CodeBin {
           floor: s32(code, r + 4),
           mapDataKey: mapDataKey(arr + j * 0x1c),
           sections: secs,
+          extra: u32(code, r + 0x14),
+          ...(added.has(hash) ? { added: true } : {}),
         });
       }
     }
@@ -96,6 +97,7 @@ export class CodeBin {
           floor: 0,
           mapDataKey: 0,
           sections: secs,
+          extra: 0,
         },
     );
     this.worlds = readWorldTable(code, BASE);
@@ -104,6 +106,25 @@ export class CodeBin {
   /** World map of a map ID (A8654391 = W01 ...). */
   world(hash: number): WorldInfo | undefined {
     return this.worlds.find((w) => w.hash === hash);
+  }
+
+  /** Add a map made in the editor (it is written to code.bin by the export, docs/new-map.md). */
+  addMap(info: MapInfo): void {
+    if (this.byHash(info.hash)) throw new Error(`マップ ${info.name} はもうあります`);
+    this.maps.push({ ...info, added: true });
+  }
+
+  /** Undo {@link addMap} (saved edits that were then thrown away). */
+  removeMaps(hashes: number[]): void {
+    for (const h of hashes) {
+      const i = this.maps.findIndex((m) => m.hash === h && m.added);
+      if (i >= 0) this.maps.splice(i, 1);
+    }
+  }
+
+  /** Maps added by the editor (read from the PNMP extension, or added in this session). */
+  addedMaps(): MapInfo[] {
+    return this.maps.filter((m) => m.added);
   }
 
   byHash(hash: number): MapInfo | undefined {

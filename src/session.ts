@@ -8,6 +8,7 @@ import type { Game } from './game/game';
 import { ItemBook } from './game/items';
 import { MapDb } from './game/mapdb';
 import type { MonsterBook } from './game/monsters';
+import { makeMap, type NewMapSpec } from './game/newmap';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
 import type { SoundNames } from './game/sound';
@@ -84,6 +85,15 @@ export class Session {
     return this.changedWorlds().map((w) => [w.sections[2]!, buildEntrances(this.entrancesOf(w))]);
   }
 
+  /** Add a new map to a dungeon (docs/new-map.md): it is written to code.bin (code.ips) and the map DB by the export. */
+  addMap(spec: NewMapSpec): MapInfo {
+    const { info, doc } = makeMap(this.game, spec);
+    this.game.code.addMap(info);
+    this.st.docs.set(info.hash, doc);
+    this.saveNow();
+    return this.game.code.byHash(info.hash)!;
+  }
+
   items(): Promise<ItemData> {
     this.itemData ??= ShopStock.load(this.game)
       .catch(() => null)
@@ -116,7 +126,10 @@ export class Session {
     const shops = this.stock?.saved() ?? [];
     const worlds: Record<number, Uint8Array> = {};
     for (const w of this.changedWorlds()) worlds[w.hash] = buildEntrances(this.entrancesOf(w));
-    idbSet(EDITS_KEY, { worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops });
+    const added = this.game.code
+      .addedMaps()
+      .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
+    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -128,10 +141,14 @@ export class Session {
       messages?: [number, Uint16Array][];
       shops?: [number, number[]][];
       worlds?: Record<number, Uint8Array>;
+      added?: MapInfo[];
     };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
     const game = this.game;
+    // New maps first: the names below and the saved sections refer to them.
+    const added = (edits.added ?? []).filter((m) => !game.code.byHash(m.hash));
+    for (const m of added) game.code.addMap(m);
     const names = Object.keys(edits.maps).map((h) => mapLabel(game, Number(h)));
     const nEvents = Object.keys(edits.events).length;
     const tables = Object.keys(edits.tables ?? {});
@@ -141,6 +158,7 @@ export class Session {
     if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length) return;
     const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
+      game.code.removeMaps(added.map((m) => m.hash));
       await idbSet(EDITS_KEY, null);
       return;
     }
@@ -148,7 +166,11 @@ export class Session {
     for (const [hash, secs] of Object.entries(edits.maps)) {
       const info = game.code.byHash(Number(hash));
       if (!info) continue;
-      for (const [k, bytes] of Object.entries(secs)) tmp.set(info.sections[Number(k)]!, bytes);
+      for (const [k, bytes] of Object.entries(secs)) {
+        const h = info.sections[Number(k)]!;
+        if (tmp.has(h)) tmp.set(h, bytes);
+        else tmp.add(h, bytes); // a section of a new map
+      }
       this.st.docs.set(info.hash, loadDoc(tmp, info));
     }
     for (const [hash, bytes] of Object.entries(edits.worlds ?? {})) {

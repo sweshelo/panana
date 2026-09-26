@@ -50,7 +50,15 @@ export class MapDb {
   }
 
   set(hash: number, bytes: Uint8Array): void {
-    if (!this.has(hash)) throw new Error(`マップ DB に ${hash.toString(16)} がありません (区画の追加はフェーズ 2)`);
+    if (!this.has(hash)) throw new Error(`マップ DB に ${hash.toString(16)} がありません`);
+    this.changes.set(hash, bytes);
+  }
+
+  /** Add an entry (a section of a new map). The game finds it once the index is sorted again by {@link build}. */
+  add(hash: number, bytes: Uint8Array): void {
+    if (this.has(hash)) throw new Error(`マップ DB に ${hash.toString(16)} はもうあります`);
+    // After every original block, so the original data keeps its order.
+    this.index.push({ hash, offset: this.data.length, size: 0 });
     this.changes.set(hash, bytes);
   }
 

@@ -2,6 +2,7 @@
 import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
 import type { Game } from '../game/game';
+import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
 import { LAYOUTS, P3, loadDoc, type MapDoc } from '../game/sections';
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
@@ -38,7 +39,9 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
   let base = baselines.get(key);
   if (!base) {
     const info = game.code.byHash(doc.hash);
-    base = new Set(info ? validateAll(game, loadDoc(game.db, info), tileset, new Map(), events).map((i) => i.key) : []);
+    // A map added in the editor has nothing in the ROM to compare with: every problem counts.
+    const inRom = info && !(info.added && !game.db.has(info.hash));
+    base = new Set(inRom ? validateAll(game, loadDoc(game.db, info), tileset, new Map(), events).map((i) => i.key) : []);
     baselines.set(key, base);
   }
   return validateAll(game, doc, tileset, docs, events).filter((i) => !base!.has(i.key));
@@ -182,10 +185,31 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
     }
   }
 
+  if (info?.added) out.push(...validateNewMap(game, doc, docs));
+
   // Section 6 cells should be on tiles.
   doc.cells6.forEach((c) => {
     if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
   });
+  return out;
+}
+
+/** Checks of a map added in the editor (docs/new-map.md §6). */
+function validateNewMap(game: Game, doc: MapDoc, docs: Map<number, MapDoc>): Issue[] {
+  const out: Issue[] = [];
+  if (!doc.tiles.length) out.push({ level: 'error', msg: '新しいマップにタイルがありません', key: 'new/tiles' });
+  if (doc.sec6Header.length < 8) out.push({ level: 'error', msg: '新しいマップに敵の出現の見出し (区画 6) がありません', key: 'new/sec6' });
+  if (!(doc.recs[3] ?? []).length)
+    out.push({ level: 'warn', msg: '出入口 (区画 3) がありません。ほかのマップから来る地点と、戻る出口を置いてください', key: 'new/points' });
+  const reached = game.editableMaps().some((m) => {
+    if (m.hash === doc.hash) return false;
+    const d = docs.get(m.hash) ?? loadDoc(game.db, m);
+    return (d.recs[3] ?? []).some((r) => P3.destMap(r.raw) === doc.hash);
+  });
+  if (!reached) out.push({ level: 'warn', msg: 'このマップに来る出入口がほかのマップにありません (行き先をこのマップにしてください)', key: 'new/reach' });
+  const n = game.code.maps.filter((m) => m.dungeon === doc.dungeon).length;
+  if (hasAutomap(doc.dungeon) && n > AUTOMAP_LIMIT)
+    out.push({ level: 'warn', msg: `このダンジョンのマップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
   return out;
 }
 

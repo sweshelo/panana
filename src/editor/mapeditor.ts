@@ -11,6 +11,7 @@ import { Controller } from './controller';
 import { clear, h } from './dom';
 import { Inspector } from './inspector';
 import { fillMapSelect } from './labels';
+import { openNewMapDialog } from './newmapdialog';
 import { SECTION_COLORS } from './legend';
 import { Palette } from './palette';
 import type { EditorState, Tool } from './state';
@@ -108,6 +109,7 @@ export class MapEditor {
     const mapSel = this.mapSel;
     const header = h('header', {},
       mapSel,
+      h('button', { title: '既存のダンジョンに新しいマップ (階) を足す', onclick: () => this.addMap() }, '＋ マップを追加'),
       h('div', { class: 'seg' }, ...(['2d', '3d', 'split'] as ViewMode[]).map((m) =>
         h('button', { 'data-mode': m, onclick: () => this.setMode(m) }, m === '2d' ? '2D' : m === '3d' ? '3D' : '分割'))),
       h('div', { class: 'seg' },
@@ -185,6 +187,15 @@ export class MapEditor {
     const first = (wanted && game.code.byName(decodeURIComponent(wanted))) || game.code.byName('D01B02001') || game.editableMaps()[0]!;
     mapSel.value = String(first.hash);
     await this.openMap(first.hash);
+  }
+
+  private addMap(): void {
+    openNewMapDialog(this.session, this.st.info?.dungeon ?? null, (m) => {
+      clear(this.mapSel);
+      fillMapSelect(this.mapSel, this.game, m.hash, false, true);
+      this.markModified();
+      void this.openMap(m.hash);
+    });
   }
 
   private setMode(m: ViewMode): void {

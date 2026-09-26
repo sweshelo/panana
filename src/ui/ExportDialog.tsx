@@ -36,6 +36,8 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const w of worlds)
       for (const i of validateWorld(game, w.hash, session.entrancesOf(w), session.originalEntrances(w), st.docs)) issues.push({ map: mapLabel(game, w.hash), issue: i });
     const changes: string[] = docs.map((d) => `${mapLabel(game, d.hash)} (区画 ${st.changedSections(d).join(', ')})`);
+    const added = game.code.addedMaps();
+    if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
