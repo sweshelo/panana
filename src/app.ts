@@ -29,8 +29,8 @@ import { GroupPage } from './pages/groups';
 import { ActionPage } from './pages/actions';
 import { MessagePage } from './pages/messages';
 import { ActionBook } from './game/actions';
-import { ItemBook, loadShops } from './game/items';
-import { buildShops, loadShopTable } from './game/shops';
+import { ItemBook } from './game/items';
+import { buildShops, loadShopTable, ShopStock } from './game/shops';
 import { ShopPage } from './pages/shops';
 import type { MonsterBook } from './game/monsters';
 import type { SoundNames } from './game/sound';
@@ -69,7 +69,7 @@ export class App {
   private messagePage: MessagePage | null = null;
   private shopPage: ShopPage | null = null;
   /** Items and what each shop sells, shared by the item book and the shop list (built on first use). */
-  private itemBook: { items: ItemBook; stock: Map<number, number[]> } | null = null;
+  private itemBook: { items: ItemBook; stock: ShopStock | null } | null = null;
   private book: MonsterBook | null = null;
   private sounds: SoundNames | null = null;
   private status = h('div', { class: 'status' });
@@ -203,11 +203,11 @@ export class App {
     await this.route();
   }
 
-  private async items(): Promise<{ items: ItemBook; stock: Map<number, number[]> }> {
+  private async items(): Promise<{ items: ItemBook; stock: ShopStock | null }> {
     const game = this.game!;
     if (!this.itemBook) {
-      const stock = await loadShops(game).catch(() => new Map<number, number[]>());
-      this.itemBook = { items: new ItemBook(game, stock), stock };
+      const stock = await ShopStock.load(game).catch(() => null);
+      this.itemBook = { items: new ItemBook(game, stock?.lists ?? new Map()), stock };
     }
     return this.itemBook;
   }
@@ -293,7 +293,7 @@ export class App {
         el.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
         const { items, stock } = await this.items();
         const table = await loadShopTable(game).catch(() => null);
-        this.shopPage = new ShopPage(game, buildShops(stock, table), items);
+        this.shopPage = new ShopPage(game, buildShops(stock?.lists ?? new Map(), table), items, stock, () => this.scheduleSave());
         clear(el);
         el.append(this.shopPage.el);
       }
@@ -627,7 +627,8 @@ export class App {
       const master = st.game.master;
       const tables: Record<string, Uint8Array> = {};
       for (const n of master.changedTables()) tables[n] = master.table(n).data;
-      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved() });
+      const shops = this.itemBook?.stock?.saved() ?? [];
+      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops });
     }
   }
 
@@ -638,6 +639,7 @@ export class App {
       treasure: Uint8Array | null;
       tables?: Record<string, Uint8Array>;
       messages?: [number, Uint16Array][];
+      shops?: [number, number[]][];
     };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
@@ -646,8 +648,9 @@ export class App {
     const nEvents = Object.keys(edits.events).length;
     const tables = Object.keys(edits.tables ?? {});
     const nMessages = edits.messages?.length ?? 0;
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages) return;
-    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : ''].filter(Boolean).join(' / ');
+    const nShops = edits.shops?.length ?? 0;
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops) return;
+    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       await idbSet(EDITS_KEY, null);
       return;
@@ -670,6 +673,11 @@ export class App {
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
     if (edits.messages) game.master.texts.restore(edits.messages);
     if (tables.length) this.book?.reload();
+    if (nShops) {
+      const { items, stock } = await this.items(); // after the tables, so the items are read with their edits
+      stock?.restore(edits.shops!);
+      if (stock) items.setShops(stock.lists);
+    }
   }
 
   // ---------------------------------------------------------------- base MOD (elpulse mod/out)
@@ -736,6 +744,7 @@ export class App {
     const build = (): Map<string, Uint8Array> | null => {
       try {
         const files = buildModFiles(game, docs, events, treasure);
+        for (const [name, bytes] of shops?.buildArchives() ?? []) files.set(name, bytes);
         const pkg = modPackage(game, files);
         out.textContent = `書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`;
         return pkg;
@@ -757,6 +766,8 @@ export class App {
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
+    const shops = this.itemBook?.stock ?? null;
+    if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
     const texts = game.master.texts.editedIds();
     if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
     const dlg = h('div', { class: 'modal' },

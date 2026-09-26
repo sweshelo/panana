@@ -246,6 +246,9 @@ select.edited { border-color: var(--warn); }
 .group-cols { max-width: 1100px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
 .edited-mark { color: var(--warn); }
 .shop-items tr.hit { background: var(--panel2); }
+.shop-items tr.edited-row td:nth-child(3) { box-shadow: inset 2px 0 var(--warn); }
+.shop-ops { white-space: nowrap; }
+.shop-ops button { padding: 0 5px; }
 .mono { font-family: ui-monospace, monospace; }
 
 /* Actions */

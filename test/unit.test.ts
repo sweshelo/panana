@@ -214,6 +214,45 @@ describe('shops', () => {
     expect(buildShops(new Map([[0, [1]]]), null)[0]!.variant).toBe(-1);
     expect([shopLabel(3), shopLabel(17)]).toEqual(['店 3', '店 17 (妖精の里)']);
   });
+
+  test('ShopItem rows round trip, and withRows rebuilds a table with a hash index', async () => {
+    const { parseShopItems, shopItemRows } = await import('../src/game/shops');
+    const { GsTable } = await import('../src/archive/gstable');
+    const lists = new Map([[0, [1, 12, 28]], [1, []], [2, [93]]]);
+    const rows = shopItemRows(lists);
+    expect(rows.length).toBe(3 + 3 + 0 + 1);
+    // a ShopItem-like table (8-byte rows) with a hash index: {hash, row} sorted, then {0, 0}
+    const n = rows.length;
+    const idx = 0x40 + n * 8;
+    const data = new Uint8Array(idx + (n + 1) * 8);
+    w32(data, 0, n);
+    w32(data, 4, 8);
+    w32(data, 0x10, 0x40);
+    w32(data, 0x14, n * 8);
+    w32(data, 0x18, data.length);
+    w32(data, 0x20, idx);
+    rows.forEach((r, i) => data.set(r, 0x40 + i * 8));
+    for (let i = 0; i < n; i++) {
+      w32(data, idx + i * 8, 0x1000 + i);
+      w32(data, idx + i * 8 + 4, i);
+    }
+    const t = new GsTable(data);
+    expect([...parseShopItems(t)]).toEqual([...lists]);
+    // one item more: every row keeps its hash, the new row gets a new one
+    const more = new GsTable(t.withRows(shopItemRows(new Map([[0, [1, 12, 28, 5]], [1, []], [2, [93]]]))));
+    expect(more.rows).toBe(n + 1);
+    expect(parseShopItems(more).get(0)).toEqual([1, 12, 28, 5]);
+    const index = more.hashIndex();
+    expect(index.size).toBe(n + 1);
+    expect(new Set(index.values())).toEqual(new Set([...Array(n + 1).keys()]));
+    expect(u32(more.data, 0x18)).toBe(more.data.length);
+    expect(more.indexOffset % 8).toBe(0);
+    // fewer rows: the index drops the rows that are gone
+    const fewer = new GsTable(t.withRows(shopItemRows(new Map([[0, [1]], [1, []], [2, [93]]]))));
+    expect(fewer.rows).toBe(n - 2);
+    expect([...fewer.hashIndex().values()].every((r) => r < fewer.rows)).toBe(true);
+    expect(fewer.hashIndex().size).toBe(n - 2);
+  });
 });
 
 describe('item fields', () => {

@@ -471,6 +471,29 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     for (const s of shops) expect(s.messages.length).toBe(10);
   });
 
+  test('shop edits are written to both archives, and an unchanged stock rebuilds the same table', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { ShopStock, parseShopItems } = await import('../src/game/shops');
+    const stock = (await ShopStock.load(game))!;
+    expect(stock.archiveNames()).toEqual(['49A43B63', '1D37838B']);
+    const arc = await game.archive('49A43B63');
+    const orig = unpackEntry(arc, arc.entries.find((e) => e.hash === 0x67297400)!).body;
+    expect(equalBytes(stock.build(), orig)).toBe(true);
+    expect(stock.buildArchives().size).toBe(0);
+    stock.set(0, [...stock.items(0), 480]);
+    expect(stock.saved()).toEqual([[0, [...stock.originalItems(0), 480]]]);
+    const files = stock.buildArchives();
+    expect([...files.keys()]).toEqual(['49A43B63', '1D37838B']);
+    for (const bytes of files.values()) {
+      const a = parseArchive(bytes);
+      const t = new GsTable(unpackEntry(a, a.entries.find((e) => e.hash === 0x67297400)!).body);
+      expect(parseShopItems(t).get(0)).toContain(480);
+      expect(t.rows).toBe(444);
+    }
+    stock.revert(0);
+    expect(stock.changed()).toBe(false);
+  });
+
   test('item edits are exported in itemData.bin and can be reverted', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { ItemBook } = await import('../src/game/items');
