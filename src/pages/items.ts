@@ -161,7 +161,7 @@ export class ItemPage {
           h('div', { class: 'stats' },
             stat('買値', it.price ? `${it.price} G` : '—'), stat('売値', `${it.sell} G`), stat('☆', '★'.repeat(it.rarity) || '0'), stat('上限', String(it.limit)))),
         this.viewer.el),
-      it.effect ? h('div', { class: 'model-line' }, `効果: ${it.effect} (アクション #${it.action})`) : '',
+      it.effect ? h('div', { class: 'model-line' }, `効果: ${it.effect} (`, h('a', { href: `#/actions/${it.action}` }, `アクション #${it.action}`), ')') : '',
       chain ? h('div', {}, '上限に達すると: ', h('a', { href: `#/items/${chain.id}` }, chain.name)) : '',
       (it.categoryByte & 0xf) === 3 ? h('div', { class: 'muted small' }, `装備の値 +0x2D = ${it.extra[0]}、+0x2E = ${it.extra[1]} (未解析)`) : '',
       h('div', { class: 'book-cols' },

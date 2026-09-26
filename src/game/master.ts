@@ -112,6 +112,12 @@ export class Master {
     return this.extra.get(name)!.original.subarray(o, o + t.rowSize);
   }
 
+  /** Rows of a table in the archive (rows past it were appended by an edit). */
+  originalRows(name: string): number {
+    this.table(name);
+    return u32(this.extra.get(name)!.original, 0);
+  }
+
   restoreTable(name: string, bytes: Uint8Array): void {
     this.table(name).data = bytes.slice();
   }

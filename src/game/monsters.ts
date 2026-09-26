@@ -2,7 +2,8 @@
 // (section 6). Field positions: elpulse docs/battle.md §2〜§4 and docs/encounters.md.
 import { GsTable } from '../archive/gstable';
 import { findByName, parseArchive } from '../archive/gsarc';
-import { u16, u32, w32 } from '../util/bytes';
+import { u16, u32, w16, w32 } from '../util/bytes';
+import { cleanActionName } from './actions';
 import type { Master } from './master';
 import type { MapDoc } from './sections';
 
@@ -146,6 +147,32 @@ export function countLabel(code: number): string {
   return ['1', '2', '3', '4', '8', '1〜2', '1〜3', '1〜4'][code] ?? `コード ${code}`;
 }
 
+/** Candidates per side of a group row (5 x {u16 monster, u8 weight, u8 count}). */
+export const GROUP_SLOTS = 5;
+const MATES_OFFSET = 0x14;
+
+/** Slots of a monsterGroup row: leads (+0x00) and mates (+0x14); empty slots (no monster or weight 0) are left out. */
+export function decodeGroupSlots(r: Uint8Array): { leads: GroupSlot[]; mates: GroupSlot[] } {
+  const slots = (o: number): GroupSlot[] =>
+    Array.from({ length: GROUP_SLOTS }, (_, k) => ({ monster: u16(r, o + k * 4), weight: r[o + k * 4 + 2]!, count: r[o + k * 4 + 3]! })).filter((s) => s.monster && s.weight);
+  return { leads: slots(0), mates: slots(MATES_OFFSET) };
+}
+
+/** Write the slots of a monsterGroup row (packed to the front, the rest zeroed); other bytes are kept. */
+export function encodeGroupSlots(r: Uint8Array, leads: GroupSlot[], mates: GroupSlot[]): void {
+  if (leads.length > GROUP_SLOTS || mates.length > GROUP_SLOTS) throw new Error(`群れの候補は ${GROUP_SLOTS} 個までです`);
+  const put = (o: number, slots: GroupSlot[]): void => {
+    for (let k = 0; k < GROUP_SLOTS; k++) {
+      const s = slots[k];
+      w16(r, o + k * 4, s?.monster ?? 0);
+      r[o + k * 4 + 2] = s ? Math.max(0, Math.min(255, s.weight)) : 0;
+      r[o + k * 4 + 3] = s ? s.count & 0xff : 0;
+    }
+  };
+  put(0, leads);
+  put(MATES_OFFSET, mates);
+}
+
 /** Plain text of a message: color placeholder, actor placeholders. */
 function clean(s: string): string {
   return s.replace(/Ē/g, '(色)');
@@ -168,10 +195,9 @@ export class MonsterBook {
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));
     this.reload();
-    this.loadGroups();
   }
 
-  /** Decode every MonsterParameter row again (after edits or restoring saved edits). */
+  /** Decode every MonsterParameter and monsterGroup row again (after edits or restoring saved edits). */
   reload(): void {
     const master = this.master;
     const design = this.design;
@@ -182,8 +208,7 @@ export class MonsterBook {
     const msg = (id: number): string => (id ? clean(master.message(id) ?? '') : '');
     const condShort = Array.from({ length: cond.rows }, (_, i) => msg(u16(cond.row(i), 0x14)).replace('たいせい', ''));
     const skillName = (a: number): string => {
-      const s = a < actions.rows ? msg(u32(actions.row(a), 4)) : '';
-      return s.replace(/^[Ąą]+/, '').replace(/^[のは]　/, '').replace(/！$/, '') || `#${a}`;
+      return (a < actions.rows ? cleanActionName(msg(u32(actions.row(a), 4))) : '') || `#${a}`;
     };
     for (let i = 1; i < mp.rows; i++) {
       const r = mp.row(i);
@@ -221,20 +246,57 @@ export class MonsterBook {
         focus: bits(w[13]!, 10, 1) === 1,
       });
     }
+    this.loadGroups();
   }
 
   private loadGroups(): void {
     const mg = this.master.table('monsterGroup.bin');
     const hashOf = new Map<number, number>();
     for (const [h, row] of mg.hashIndex()) hashOf.set(row, h);
+    this.groups.length = 0;
+    this.groupByHash.clear();
     for (let i = 0; i < mg.rows; i++) {
       const r = mg.row(i);
-      const slots = (o: number): GroupSlot[] =>
-        Array.from({ length: 5 }, (_, k) => ({ monster: u16(r, o + k * 4), weight: r[o + k * 4 + 2]!, count: r[o + k * 4 + 3]! })).filter((s) => s.monster && s.weight);
-      const g: MonsterGroup = { row: i, hash: hashOf.get(i) ?? 0, leads: slots(0), mates: slots(0x14), extra: [...r.subarray(0x28, 0x2e)] };
+      const g: MonsterGroup = { row: i, hash: hashOf.get(i) ?? 0, ...decodeGroupSlots(r), extra: [...r.subarray(0x28, 0x2e)] };
       this.groups.push(g);
       if (g.hash) this.groupByHash.set(g.hash, g);
     }
+  }
+
+  /** Replace the candidates of a monsterGroup row. */
+  setGroupSlots(row: number, leads: GroupSlot[], mates: GroupSlot[]): void {
+    encodeGroupSlots(this.master.table('monsterGroup.bin').row(row), leads, mates);
+    this.loadGroups();
+  }
+
+  /** Append a copy of a group as a new row (with a new hash in the index). Returns the new row number. */
+  copyGroup(row: number): number {
+    const t = this.master.table('monsterGroup.bin');
+    const used = t.hashes();
+    let hash = (0x6d470000 + t.rows) >>> 0;
+    while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+    const n = t.append(t.row(row).slice(), hash);
+    this.loadGroups();
+    return n;
+  }
+
+  /** Whether a group row was added by an edit (copyGroup). */
+  groupAdded(row: number): boolean {
+    return row >= this.master.originalRows('monsterGroup.bin');
+  }
+
+  /** Whether a group row differs from the archive (added rows always do). */
+  groupChanged(row: number): boolean {
+    if (this.groupAdded(row)) return true;
+    const o = this.master.originalRow('monsterGroup.bin', row);
+    return this.master.table('monsterGroup.bin').row(row).some((v, i) => v !== o[i]);
+  }
+
+  /** Put an original group row back as in the archive (added rows are kept). */
+  revertGroup(row: number): void {
+    if (this.groupAdded(row)) return;
+    this.master.table('monsterGroup.bin').row(row).set(this.master.originalRow('monsterGroup.bin', row));
+    this.loadGroups();
   }
 
   /** Set resistance k (index in Monster.resist) of a row (5-bit signed field). */

@@ -2,7 +2,8 @@
 // (ShopItem 0x67297400 in 49A43B63). Fields: elpulse docs/analysis.md "itemData.bin", "ShopItem".
 import { GsTable } from '../archive/gstable';
 import { findEntry, unpackEntry } from '../archive/gsarc';
-import { s16, u16, u32 } from '../util/bytes';
+import { u16, u32 } from '../util/bytes';
+import { decodeAction, itemEffect } from './actions';
 import type { Game } from './game';
 
 export const SHOP_ARCHIVE = '49A43B63';
@@ -11,8 +12,6 @@ const SHOP_ITEM = 0x67297400;
 export const ITEM_CATEGORY: Record<number, string> = { 1: '道具', 2: 'ゴールド', 3: '装備', 4: 'つりざお', 5: 'エサ' };
 /** Equipment slot by the full category byte. */
 export const EQUIP_SLOT: Record<number, string> = { 0x03: '首', 0x13: '腕', 0x23: '足', 0x33: '背中', 0x43: '服' };
-/** Item effect by actionData type (category 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD. */
-const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
 
 export interface Item {
   id: number;
@@ -94,7 +93,7 @@ export class ItemBook {
         rarity: (flags >>> 5) & 7,
         limit: r[0x2f] || 99,
         action,
-        effect: (cat & 0xf) === 1 && action > 0 && action < actions.rows ? effectOf(actions.row(action)) : '',
+        effect: (cat & 0xf) === 1 && action > 0 && action < actions.rows ? itemEffect(decodeAction(actions.row(action))) : '',
         chain: u16(r, 0x2a),
         model: u32(r, 0x20),
         extra: [r[0x2d]!, r[0x2e]!],
@@ -108,17 +107,6 @@ export class ItemBook {
   item(id: number): Item | undefined {
     return this.byId.get(id);
   }
-}
-
-/** "HP 回復 30〜40 (フィールド・戦闘)" from an actionData row (docs/battle.md §8). */
-function effectOf(r: Uint8Array): string {
-  const w0 = u32(r, 0);
-  if (((w0 >>> 1) & 3) !== 2) return '';
-  const type = (w0 >>> 3) & 15;
-  const lo = s16(r, 0x18), hi = s16(r, 0x1a);
-  const amount = lo || hi ? ` ${Math.min(lo, hi)}〜${Math.max(lo, hi)}` : '';
-  const scenes = [[31, 'フィールド'], [30, 'ハウス'], [29, '戦闘']].filter(([b]) => (w0 >>> (b as number)) & 1).map(([, n]) => n);
-  return `${ITEM_EFFECT[type] ?? `種別 ${type}`}${type <= 1 ? amount : ''}${scenes.length ? ` (${scenes.join('・')})` : ''}`;
 }
 
 /** Archives that hold item models (itemData +0x20): tools, equipment, the master. */

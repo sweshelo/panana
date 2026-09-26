@@ -145,3 +145,48 @@ describe('CGFX animation curves', () => {
     expect(out).toEqual([5, 6, 7]);
   });
 });
+
+describe('monster groups', () => {
+  test('slots: decode skips empty slots, encode packs to the front and keeps the rest of the row', async () => {
+    const { decodeGroupSlots, encodeGroupSlots } = await import('../src/game/monsters');
+    const row = new Uint8Array(0x30);
+    row.fill(0xee, 0x28);
+    // leads: slot 0 = monster 3 (weight 10, count 5), slot 2 = monster 7 (weight 0: skipped), slot 4 = monster 9
+    row.set([3, 0, 10, 5], 0);
+    row.set([7, 0, 0, 1], 8);
+    row.set([9, 0, 20, 0], 16);
+    row.set([0x2c, 0x01, 1, 2], 0x14); // mate: monster 300
+    expect(decodeGroupSlots(row)).toEqual({
+      leads: [{ monster: 3, weight: 10, count: 5 }, { monster: 9, weight: 20, count: 0 }],
+      mates: [{ monster: 300, weight: 1, count: 2 }],
+    });
+    const leads = [{ monster: 9, weight: 300, count: 1 }];
+    const mates = [{ monster: 3, weight: 4, count: 6 }, { monster: 5, weight: 1, count: 0 }];
+    encodeGroupSlots(row, leads, mates);
+    expect(decodeGroupSlots(row)).toEqual({ leads: [{ monster: 9, weight: 255, count: 1 }], mates });
+    expect(Array.from(row.subarray(4, 0x14))).toEqual(new Array(16).fill(0));
+    expect(Array.from(row.subarray(0x28))).toEqual(new Array(8).fill(0xee));
+    expect(() => encodeGroupSlots(row, new Array(6).fill(leads[0]), [])).toThrow();
+  });
+});
+
+describe('actions', () => {
+  test('item action fields and effect text', async () => {
+    const { decodeAction, itemEffect, cleanActionName } = await import('../src/game/actions');
+    const r = new Uint8Array(0x20);
+    // kind 2 (item), type 0 (HP), level 3, usable on the field and in battle
+    w32(r, 0, ((2 << 1) | (0 << 3) | (3 << 13) | (1 << 31) | (1 << 29)) >>> 0);
+    w32(r, 4, 1234);
+    r.set([40, 0, 30, 0], 0x18);
+    const f = decodeAction(r);
+    expect([f.kind, f.type, f.level, f.nameId]).toEqual([2, 0, 3, 1234]);
+    expect(f.scenes).toEqual(['フィールド', '戦闘']);
+    expect(itemEffect(f)).toBe('HP 回復 30〜40 (フィールド・戦闘)');
+    // status recovery: no amount; other kinds: no item effect
+    w32(r, 0, ((2 << 1) | (2 << 3)) >>> 0);
+    expect(itemEffect(decodeAction(r))).toBe('状態の回復');
+    w32(r, 0, 1 << 1);
+    expect(itemEffect(decodeAction(r))).toBe('');
+    expect(cleanActionName('Ąは　ぶつかってきた！')).toBe('ぶつかってきた');
+  });
+});

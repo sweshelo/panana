@@ -28,6 +28,7 @@ function slotTable(book: MonsterBook, title: string, slots: GroupSlot[]): HTMLEl
 
 export function groupDetail(book: MonsterBook, g: MonsterGroup): HTMLElement {
   return h('div', { class: 'enc-group' },
+    h('div', { class: 'small' }, h('a', { href: `#/groups/${g.row}` }, `群れ #${g.row} を開く (編集)`)),
     slotTable(book, '先頭 (マップで見える敵)・3 体目', g.leads),
     slotTable(book, '2・4 体目', g.mates),
     h('div', { class: 'muted small' }, `+0x28〜: ${g.extra.join(' ')} (未解析)`));
