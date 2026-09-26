@@ -57,7 +57,7 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .topnav .tab.active { color: var(--text); background: var(--panel2); box-shadow: inset 0 -2px 0 var(--accent); }
 .page { flex: 1; min-height: 0; display: none; }
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
-.shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions { display: block; }
+.shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='messages'] .page-messages { display: block; }
 a { color: #8fb6ff; }
 
 /* editor layout */
@@ -255,3 +255,22 @@ select.edited { border-color: var(--warn); }
 .desc-table td { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .item-fields .stat .num-input { width: 90px; }
 input.edited { border-color: var(--warn); }
+
+/* messages */
+.msg-edit { margin: 4px 0 8px; }
+.msg-edit textarea.msg-text { font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+.msg-edit b.edited, .book-table b.edited { color: var(--warn); }
+.msg-slot { margin: 8px 0; }
+.msg-slot-head { font-size: 12px; color: var(--muted); }
+.book-table td.msg-cell { max-width: 28em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-preview { background: var(--panel2); border-radius: 4px; padding: 6px 8px; font-size: 14px; line-height: 2; margin-top: 2px; }
+.msg-preview rt { font-size: 9px; color: var(--muted); }
+.msg-kind { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-right: 6px; vertical-align: middle; }
+.msg-ph { color: #e0b050; border-bottom: 1px dotted currentColor; }
+.msg-ph::before { content: '〈'; } .msg-ph::after { content: '〉'; }
+.msg-ref { color: #7fb4ff; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.msg-ref .msg-render { color: inherit; }
+.msg-ctl { font-size: 9px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 2px; vertical-align: middle; }
+.msg-page { color: var(--muted); font-size: 11px; margin-left: 2px; }
+.msg-page-rule { border: 0; border-top: 1px dashed var(--border); margin: 4px 0; }
+.msg-dot { color: #999; }

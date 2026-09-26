@@ -2,6 +2,7 @@
 import { findByName, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { equalBytes, u16, u32, w16 } from '../util/bytes';
+import { Gmsg, MessageStore, type MessageFile } from './gmsg';
 
 export const MASTER_ARCHIVE = '56562135';
 export const TILESETS = 12;
@@ -31,7 +32,8 @@ export class GmsgFile {
     const a = u32(this.data, tbl + i * 4);
     const b = id < this.last ? u32(this.data, tbl + i * 4 + 4) : this.data.length - base;
     let s = '';
-    for (let o = base + a; o + 1 < base + b; o += 2) {
+    // the first unit is the type code (FUN_00310438 returns the position after it)
+    for (let o = base + a + 2; o + 1 < base + b; o += 2) {
       const c = u16(this.data, o);
       if (c === 0) {
         if (s) break;
@@ -63,6 +65,8 @@ export class Master {
   /** itemData.bin (edits to it are exported, like the tables of {@link table}). */
   readonly itemData: GsTable;
   private readonly messages: GmsgFile[] = [];
+  /** The same message files, for editing (edited messages are exported with this archive). */
+  readonly texts: MessageStore;
 
   constructor(bytes: Uint8Array) {
     this.archive = parseArchive(bytes);
@@ -83,6 +87,7 @@ export class Master {
     this.treasureOriginal = tg.body.slice();
     this.treasureGroup = new GsTable(tg.body);
     this.itemData = this.table('itemData.bin');
+    const gmsgs: MessageFile[] = [];
     for (const e of this.archive.entries) {
       if (e.type !== 6) continue;
       const { name, body } = unpackEntry(this.archive, e);
@@ -93,7 +98,14 @@ export class Master {
           /* other variants */
         }
       }
+      try {
+        const gmsg = new Gmsg(body);
+        gmsgs.push({ name: name ?? `エントリ ${e.index}`, entryIndex: e.index, gmsg, editable: gmsg.roundTrips() });
+      } catch {
+        /* not a message file */
+      }
     }
+    this.texts = new MessageStore(gmsgs);
   }
 
   /** Any other table of the archive (e.g. 'monsterParameter.bin'); edits to it are exported. */
@@ -143,6 +155,8 @@ export class Master {
   }
 
   message(id: number): string | undefined {
+    const t = this.texts.plain(id);
+    if (t !== undefined) return t;
     for (const m of this.messages) {
       const t = m.text(id);
       if (t !== undefined) return t;
@@ -208,6 +222,7 @@ export class Master {
   buildArchive(): Uint8Array {
     const repl = new Map([[this.treasureEntry.index, this.treasureGroup.data]]);
     for (const [, t] of this.extra) if (!equalBytes(t.table.data, t.original)) repl.set(t.entry.index, t.table.data);
+    for (const [i, b] of this.texts.replacements()) repl.set(i, b);
     return rebuildArchive(this.archive, repl);
   }
 

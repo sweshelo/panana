@@ -6,7 +6,9 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS, recCellPos } from '../src/game/sections';
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
-import { equalBytes, w32 } from '../src/util/bytes';
+import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
+import { fromUnits, Gmsg, MessageStore } from '../src/game/gmsg';
+import { parseBody, plainText, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
 describe('LZ10', () => {
@@ -256,5 +258,101 @@ describe('board facing', () => {
     for (const x of [0, 1]) for (const y of [0, 1]) for (const z of [0, 1]) cube.push(x, y, z);
     expect(boardNormal(cube, null)).toBeNull();
     expect(boardNormal([0, 0, 0, 1, 1, 1], null)).toBeNull();
+  });
+});
+
+describe('GMSG messages', () => {
+  /** A GMSG with IDs 100.. holding the given messages (units, or bytes for a reading file). */
+  const makeGmsg = (msgs: (number[] | Uint8Array)[], reading = false): Uint8Array => {
+    const tbl = 0x20;
+    const base = tbl + msgs.length * 4;
+    const bodies = msgs.map((m) => (m instanceof Uint8Array ? m : fromUnits(Uint16Array.from(m))));
+    const size = base + bodies.reduce((a, m) => a + m.length, 0);
+    const b = new Uint8Array(size);
+    b.set([0x47, 0x4d, 0x53, 0x47]);
+    w32(b, 4, size);
+    w32(b, 8, 100);
+    w32(b, 12, 100 + msgs.length - 1);
+    w32(b, 0x10, reading ? 1 : 0);
+    w32(b, 0x14, 1);
+    w32(b, 0x18, tbl);
+    w32(b, 0x1c, base);
+    let o = 0;
+    bodies.forEach((m, i) => {
+      w32(b, tbl + i * 4, o);
+      b.set(m, base + o);
+      o += m.length;
+    });
+    return b;
+  };
+  const u = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
+  const T = 1; // tag
+  const msgs = [
+    [0x0001, T, 0x10e, ...u('こんにちは'), 0x0a, ...u('元気?'), 0],
+    [0x0001, ...u('ここ、'), 2, 0x26, 102, 0, ...u('。'), T, 0x10, 0x0a, T, 0x101, ...u('の'), T, 0x27, ...u('祠'), T, 0x28, ...u('ほこら'), T, 0x29, T, 0x0a, 0],
+    [0x0001, ...u('デンパタウン'), 0],
+  ];
+
+  test('parse, round trip and rebuild with a longer message', () => {
+    const g = new Gmsg(makeGmsg(msgs));
+    expect(g.roundTrips()).toBe(true);
+    const longer = Uint16Array.from([0x0001, ...u('ずっと長い文になりました'), 0]);
+    const built = g.build(new Map([[100, fromUnits(longer)]]));
+    const out = new Gmsg(built);
+    expect([...out.units(100)!]).toEqual([...longer]);
+    expect([...out.units(101)!]).toEqual(msgs[1]!);
+    expect(u32(built, 4)).toBe(built.length);
+  });
+
+  test('text form: tags, ruby, page breaks and references are kept', () => {
+    for (const m of msgs) expect([...textToUnits(unitsToText(Uint16Array.from(m)))]).toEqual(m);
+    expect(unitsToText(Uint16Array.from(msgs[0]!)).text).toBe('{tag:010E}こんにちは\n元気?');
+    expect(unitsToText(Uint16Array.from(msgs[1]!)).text).toBe('ここ、{msg:0066}。{page}\n{tag:0101}の{ruby:祠|ほこら}{tag:000A}');
+    const br = Uint16Array.from([1, ...u('{a|b}'), 0]);
+    expect(unitsToText(br).text).toBe('{007B}a{007C}b{007D}');
+    expect([...textToUnits(unitsToText(br))]).toEqual([...br]);
+    expect(() => textToUnits({ kind: 1, text: '{zz}', tail: new Uint16Array([0]) })).toThrow();
+    expect(() => textToUnits({ kind: 1, text: 'a}', tail: new Uint16Array([0]) })).toThrow();
+    expect(() => textToUnits({ kind: 1, text: '{ruby:祠}', tail: new Uint16Array([0]) })).toThrow();
+    expect(() => textToUnits({ kind: 1, text: '{tag:0024}', tail: new Uint16Array([0]) })).toThrow(); // takes 2 arguments
+    expect([...textToUnits({ kind: 1, text: '{tag:0024,1,2}', tail: new Uint16Array([0]) })]).toEqual([1, T, 0x24, 1, 2, 0]);
+  });
+
+  test('previews and plain text', () => {
+    const m1 = Uint16Array.from(msgs[1]!);
+    expect(parseBody(m1).tokens.map((t) => t.t)).toEqual(['text', 'ref', 'text', 'tag', 'br', 'tag', 'text', 'ruby', 'tag']);
+    // the page break eats its line break; [0001][000A] is a number, not a line break
+    expect(previewText(m1, (id) => (id === 102 ? 'デンパタウン' : undefined))).toBe('ここ、デンパタウン。\n〈電波人間〉の祠〈数値〉');
+    expect(previewText(Uint16Array.from(msgs[0]!), () => undefined)).toBe('こんにちは\n元気?'); // the voice tag is not shown
+    expect(plainText(Uint16Array.from(msgs[0]!))).toBe('こんにちは 元気?');
+    expect(plainText(m1)).toBe('ここ、。 āの祠');
+  });
+
+  test('store: edits, readings blanked, revert and replacements', () => {
+    const reading = makeGmsg([new Uint8Array([0x41, 0x42, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0x45, 0x46, 0])], true);
+    const store = new MessageStore([
+      { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
+      { name: 'MessageTest_IN_JP.gsmb', entryIndex: 4, gmsg: new Gmsg(reading), editable: true },
+    ]);
+    expect(store.files.length).toBe(1);
+    expect(store.readings.length).toBe(1);
+    store.setText(100, '{tag:010F}やあ');
+    expect(store.plain(100)).toBe('やあ');
+    expect(store.preview(101, true)).toBe('ここ、デンパタウン。 〈電波人間〉の祠〈数値〉');
+    const rep = store.replacements();
+    expect([...rep.keys()].sort()).toEqual([3, 4]);
+    expect(plainText(new Gmsg(rep.get(3)!).units(100)!)).toBe('やあ');
+    const r = new Gmsg(rep.get(4)!);
+    expect([...r.raw[0]!]).toEqual([0, 0, 0]);
+    expect([...r.raw[2]!]).toEqual([0x44, 0x45, 0x46, 0]);
+    store.setText(100, '{tag:010E}こんにちは\n元気?'); // back to the original text
+    expect(store.changed()).toBe(false);
+    store.setKind(102, 0x000c);
+    const saved = store.saved();
+    store.revert(102);
+    expect(store.changed()).toBe(false);
+    store.restore(saved);
+    expect(store.text(102)!.kind).toBe(0x000c);
+    expect(() => store.setText(99, 'x')).toThrow();
   });
 });

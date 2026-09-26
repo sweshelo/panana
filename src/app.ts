@@ -27,6 +27,7 @@ import { MonsterPage } from './pages/monsters';
 import { ItemPage } from './pages/items';
 import { GroupPage } from './pages/groups';
 import { ActionPage } from './pages/actions';
+import { MessagePage } from './pages/messages';
 import { ActionBook } from './game/actions';
 import { ItemBook, loadShops } from './game/items';
 import type { MonsterBook } from './game/monsters';
@@ -63,6 +64,7 @@ export class App {
   private itemPage: ItemPage | null = null;
   private groupPage: GroupPage | null = null;
   private actionPage: ActionPage | null = null;
+  private messagePage: MessagePage | null = null;
   private book: MonsterBook | null = null;
   private sounds: SoundNames | null = null;
   private status = h('div', { class: 'status' });
@@ -156,6 +158,7 @@ export class App {
     const pageItems = h('div', { class: 'page page-items' });
     const pageGroups = h('div', { class: 'page page-groups' });
     const pageActions = h('div', { class: 'page page-actions' });
+    const pageMessages = h('div', { class: 'page page-messages' });
     const tab = (page: string, label: string): HTMLElement => h('a', { class: 'tab', 'data-page': page, href: `#/${page}` }, label);
     const nav = h('nav', { class: 'topnav' },
       h('b', { class: 'brand' }, 'Panana - 電波人間のRPG2 エディタ'),
@@ -164,13 +167,14 @@ export class App {
       tab('items', 'アイテム図鑑'),
       tab('groups', '群れ'),
       tab('actions', 'アクション'),
+      tab('messages', 'メッセージ'),
       h('span', { class: 'grow' }),
       h('span', { class: 'muted small' }, game.dump.label),
-      h('button', { class: 'primary', title: 'マップ・イベント・宝箱の中身・モンスターの変更を MOD として書き出します', onclick: () => this.showExport() }, '書き出し…'),
+      h('button', { class: 'primary', title: 'マップ・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します', onclick: () => this.showExport() }, '書き出し…'),
       h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
       h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
     );
-    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems, pageGroups, pageActions);
+    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems, pageGroups, pageActions, pageMessages);
     clear(this.host);
     this.host.append(this.shell);
     this.root = pageMap;
@@ -178,6 +182,7 @@ export class App {
     this.itemPage = null;
     this.groupPage = null;
     this.actionPage = null;
+    this.messagePage = null;
     [this.book, this.sounds] = await Promise.all([
       game.monsters().catch((err) => {
         console.warn('monsters', err);
@@ -189,13 +194,13 @@ export class App {
     await this.route();
   }
 
-  /** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row] or #/actions[/row]. */
+  /** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row] or #/messages[/dungeon.row | /0xID]. */
   private async route(): Promise<void> {
     const shell = this.shell;
     const game = this.game;
     if (!shell || !game) return;
     const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
-    const p = page === 'monsters' || page === 'items' || page === 'groups' || page === 'actions' ? page : 'map';
+    const p = page === 'monsters' || page === 'items' || page === 'groups' || page === 'actions' || page === 'messages' ? page : 'map';
     shell.dataset.page = p;
     shell.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === p));
     if (p === 'monsters') {
@@ -246,6 +251,21 @@ export class App {
       }
       this.actionPage.show(arg !== undefined && arg !== '' ? Number(arg) : undefined);
       document.title = 'Panana — アクション';
+      return;
+    }
+    if (p === 'messages') {
+      const el = shell.querySelector<HTMLElement>('.page-messages')!;
+      const st = this.st!;
+      if (!this.messagePage) {
+        clear(el);
+        this.messagePage = new MessagePage(game, (m) => st.docs.get(m.hash) ?? game.doc(m), async (d) => st.events.get(d) ?? game.eventTable(d), (f) => {
+          f();
+          st.emit('doc'); // saves, and refreshes the inspector
+        });
+        el.append(this.messagePage.el);
+      }
+      document.title = 'Panana — メッセージ';
+      await this.messagePage.show(arg ? decodeURIComponent(arg) : undefined);
       return;
     }
     if (p === 'items') {
@@ -574,20 +594,27 @@ export class App {
       const master = st.game.master;
       const tables: Record<string, Uint8Array> = {};
       for (const n of master.changedTables()) tables[n] = master.table(n).data;
-      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables });
+      idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved() });
     }
   }
 
   private async restoreEdits(auto = false): Promise<void> {
-    type Saved = { maps: Record<number, Record<number, Uint8Array>>; events: Record<number, Uint8Array>; treasure: Uint8Array | null; tables?: Record<string, Uint8Array> };
+    type Saved = {
+      maps: Record<number, Record<number, Uint8Array>>;
+      events: Record<number, Uint8Array>;
+      treasure: Uint8Array | null;
+      tables?: Record<string, Uint8Array>;
+      messages?: [number, Uint16Array][];
+    };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
     const game = this.game!;
     const names = Object.keys(edits.maps).map((h) => mapLabel(game, Number(h)));
     const nEvents = Object.keys(edits.events).length;
     const tables = Object.keys(edits.tables ?? {});
-    if (!names.length && !nEvents && !edits.treasure && !tables.length) return;
-    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', ')].filter(Boolean).join(' / ');
+    const nMessages = edits.messages?.length ?? 0;
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages) return;
+    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       await idbSet(EDITS_KEY, null);
       return;
@@ -608,6 +635,7 @@ export class App {
     }
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
+    if (edits.messages) game.master.texts.restore(edits.messages);
     if (tables.length) this.book?.reload();
   }
 
@@ -696,6 +724,8 @@ export class App {
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
+    const texts = game.master.texts.editedIds();
+    if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
     const dlg = h('div', { class: 'modal' },
       h('div', { class: 'dialog' },
         h('h2', {}, '書き出し'),
