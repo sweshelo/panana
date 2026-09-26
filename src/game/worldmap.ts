@@ -144,3 +144,36 @@ export function groundFromTiles(b: Uint8Array): Ground {
   }
   return { parts, rots };
 }
+
+/** worldmapParts +4 flags (docs/worldmap.md §4). */
+export const PART_2X2 = 0x10;
+export const PART_2 = 0x20;
+
+/**
+ * Cells covered by the parts: ground.bin only holds the cell each part starts at; 2 x 2 parts (flag 0x10) also
+ * cover x+1 / y+1, 2-cell parts (0x20) x+1 (rotation 0 / 2) or y+1 (1 / 3), wrapping around (FUN_002cf2dc).
+ * Cells that hold a part of their own keep it.
+ */
+export function coveredParts(g: Ground, flags: (part: number) => number): Uint8Array {
+  const N = WORLD_SIZE;
+  const out = g.parts.slice();
+  const fill = (x: number, y: number, part: number): void => {
+    const i = ((y + N) % N) * N + ((x + N) % N);
+    if (!g.parts[i]) out[i] = part;
+  };
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const part = g.parts[y * N + x]!;
+      if (!part) continue;
+      const f = flags(part);
+      if (f & PART_2X2) {
+        fill(x + 1, y, part);
+        fill(x, y + 1, part);
+        fill(x + 1, y + 1, part);
+      } else if (f & PART_2) {
+        if (g.rots[y * N + x]! & 1) fill(x, y + 1, part);
+        else fill(x + 1, y, part);
+      }
+    }
+  return out;
+}

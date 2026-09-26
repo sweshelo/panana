@@ -10,7 +10,7 @@ import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
 import { fromUnits, Gmsg, MessageStore } from '../src/game/gmsg';
 import { parseBody, plainText, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
-import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
+import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, coveredParts, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
 import { validateWorld } from '../src/editor/validate';
 import type { Game } from '../src/game/game';
 
@@ -494,6 +494,24 @@ describe('world maps', () => {
     const g2 = groundFromTiles(t);
     expect([g2.parts[WORLD_SIZE + 299], g2.rots[WORLD_SIZE + 299]]).toEqual([9, 2]);
     expect(g2.parts.reduce((a, v) => a + v, 0)).toBe(9);
+  });
+
+  test('parts cover 2 x 2 and 2 cells, wrapping, without overwriting other parts', () => {
+    const N = WORLD_SIZE;
+    const g = { parts: new Uint8Array(N * N), rots: new Uint8Array(N * N) };
+    const at = (x: number, y: number): number => y * N + x;
+    g.parts[at(299, 299)] = 1; // 2 x 2 at the corner: wraps to x 0 / y 0
+    g.parts[at(10, 10)] = 2; // 2 cells, rotation 0: x+1
+    g.parts[at(20, 20)] = 2;
+    g.rots[at(20, 20)] = 1; // rotation 1: y+1
+    g.parts[at(30, 30)] = 1;
+    g.parts[at(31, 31)] = 3; // a part of its own is kept
+    const c = coveredParts(g, (p) => (p === 1 ? 0x10 : p === 2 ? 0x20 : 0));
+    expect([c[at(0, 299)], c[at(299, 0)], c[at(0, 0)]]).toEqual([1, 1, 1]);
+    expect([c[at(11, 10)], c[at(10, 11)]]).toEqual([2, 0]);
+    expect([c[at(20, 21)], c[at(21, 20)]]).toEqual([2, 0]);
+    expect([c[at(31, 30)], c[at(30, 31)], c[at(31, 31)]]).toEqual([1, 1, 3]);
+    expect(g.parts[at(11, 10)]).toBe(0); // the ground itself is not changed
   });
 
   test('checks of edited entrances: missing point, lead back, duplicate IDs', () => {

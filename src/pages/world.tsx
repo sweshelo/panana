@@ -6,7 +6,7 @@ import { validateWorld, type WorldIssue } from '../editor/validate';
 import type { Game } from '../game/game';
 import { mapShortTitle } from '../game/names';
 import { P3 } from '../game/sections';
-import { ENT, WORLD_SIZE, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
+import { ENT, WORLD_SIZE, coveredParts, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
 import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
 import { equalBytes, hex8, w32 } from '../util/bytes';
@@ -251,16 +251,16 @@ function MapSelect({ game, value, className, onChange }: { game: Game; value: nu
   );
 }
 
-/** Colour of a worldmapParts row (0 = nothing: the sea). */
-function partColor(part: number): [number, number, number] {
-  if (!part) return [22, 48, 92];
-  const hue = (part * 47) % 360;
-  const [s, l] = [0.35, 0.42 + ((part * 13) % 5) * 0.03];
-  const f = (n: number): number => {
-    const k = (n + hue / 30) % 12;
-    return Math.round(255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
-  };
-  return [f(0), f(8), f(4)];
+/** Base colours by terrain type (worldmapParts +4 bits 0-1), and the sea (no part). */
+const TERRAIN_RGB: [number, number, number][] = [[84, 140, 76], [196, 176, 112], [118, 118, 126], [92, 146, 170]];
+const SEA_RGB: [number, number, number] = [22, 48, 92];
+
+/** Colour of a worldmapParts row: its terrain type, a little lighter or darker per row. */
+function partColor(part: number, flags: Uint8Array | null): [number, number, number] {
+  if (!part) return SEA_RGB;
+  const base = TERRAIN_RGB[flags ? (flags[part] ?? 0) & 3 : 0]!;
+  const k = 0.85 + ((part * 7) % 5) * 0.06;
+  return base.map((c) => Math.min(255, Math.round(c * k))) as [number, number, number];
 }
 
 /** The terrain (one pixel per cell, drawn scaled up) with the entrances and the section 3 points on top. */
@@ -290,13 +290,15 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
     const ctx = c.getContext('2d');
     if (!ctx) return;
     const img = ctx.createImageData(WORLD_SIZE, WORLD_SIZE);
+    const flags = game.worldPartFlags();
+    const parts = ground && flags ? coveredParts(ground, (p) => flags[p] ?? 0) : ground?.parts;
     for (let i = 0; i < WORLD_SIZE * WORLD_SIZE; i++) {
-      const [r, g, b] = partColor(ground?.parts[i] ?? 0);
+      const [r, g, b] = partColor(parts?.[i] ?? 0, flags);
       img.data.set([r, g, b, 255], i * 4);
     }
     ctx.putImageData(img, 0, 0);
     setTerrain(c);
-  }, [ground]);
+  }, [game, ground]);
 
   const pos = (i: number): [number, number] => (drag?.i === i ? [drag.x, drag.y] : [ENT.x(entrances[i]!), ENT.y(entrances[i]!)]);
 
@@ -366,7 +368,7 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
         <span className="muted small">
           {hover
             ? `(${hover[0]}, ${hover[1]})  地形: worldmapParts ${ground?.parts[cell] ?? '-'} 向き ${ground?.rots[cell] ?? '-'}${under >= 0 ? `  入口 ${hex8(ENT.id(entrances[under]!))} → ${mapLabel(game, ENT.destMap(entrances[under]!))}` : ''}`
-            : '入口 (赤、変更したものは黄) をクリックで選び、ドラッグで動かします。白い点は区画 3 の地点。'}
+            : '入口 (赤、変更したものは黄) をクリックで選び、ドラッグで動かします。白い点は区画 3 の地点。地形は worldmapParts の地形の種類 (+4 の下位 2 ビット) で色分け。'}
         </span>
       </div>
       {!ground && <div className="issue warn">{`地形 (${world.groundFile ?? '区画 0'}) を読めなかったので、海だけを表示しています。`}</div>}

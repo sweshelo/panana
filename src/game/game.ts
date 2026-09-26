@@ -157,6 +157,25 @@ export class Game {
     return this.grounds.get(w.hash)!;
   }
 
+  private partFlags: Uint8Array | null | undefined;
+
+  /** worldmapParts +4 flags per row (null when the table is not found). docs/worldmap.md §4. */
+  worldPartFlags(): Uint8Array | null {
+    if (this.partFlags === undefined) {
+      this.partFlags = null;
+      for (const name of ['worldmapParts.bin', 'WorldmapParts.bin']) {
+        try {
+          const t = this.master.table(name);
+          this.partFlags = Uint8Array.from({ length: t.rows }, (_, i) => t.row(i)[4] ?? 0);
+          break;
+        } catch {
+          /* try the next name */
+        }
+      }
+    }
+    return this.partFlags;
+  }
+
   doc(info: MapInfo): MapDoc {
     return loadDoc(this.db, info);
   }

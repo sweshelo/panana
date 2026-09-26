@@ -25,7 +25,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
-import { ENT, WORLD_SIZE, buildEntrances, moveEntrance, parseEntrances } from '../src/game/worldmap';
+import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
 
 const sha1 = (b: Uint8Array): string => createHash('sha1').update(b).digest('hex');
 
@@ -632,9 +632,13 @@ describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
     const known = ents.filter((r) => game.code.byHash(ENT.destMap(r)));
     expect(known.length).toBeGreaterThan(40);
     for (const r of known) expect(ENT.x(r) >= 0 && ENT.x(r) < WORLD_SIZE && ENT.y(r) >= 0 && ENT.y(r) < WORLD_SIZE).toBe(true);
+    expect(game.worldMaps().map((w) => w.code)).toEqual(['W01', 'W02', 'W99']); // W98 has no entrances
+    expect(game.worldPartFlags()?.length).toBe(81);
     const g = game.ground(w01)!;
     expect(g).not.toBeNull();
-    expect(g.parts.some((p) => p > 0)).toBe(true);
+    expect(g.parts.filter((p) => p > 0).length).toBe(10024);
+    const flags = game.worldPartFlags()!;
+    expect(coveredParts(g, (p) => flags[p] ?? 0).filter((p) => p > 0).length).toBeGreaterThan(10024);
     // Dungeon exits to W01 name one of its entrances.
     const ids = new Set(ents.map(ENT.id));
     const exits = game.code.maps.flatMap((m) => (game.doc(m).recs[3] ?? []).filter((p) => P3.destMap(p.raw) === w01.hash));
