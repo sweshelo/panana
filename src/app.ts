@@ -99,8 +99,8 @@ export class App {
     });
     this.root.append(
       h('div', { class: 'start' },
-        h('h1', {}, '電波人間のRPG2 ツール'),
-        h('p', {}, `v1.1.0 (${TITLE_ID}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`),
+        h('h1', {}, 'Panana'),
+        h('p', {}, `『電波人間のRPG2』v1.1.0 (${TITLE_ID}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`),
         h('p', { class: 'muted' }, 'ROM のデータはブラウザの中だけで読み取ります (どこにも送信しません)。読み取った一部のファイルは、この端末の IndexedDB にキャッシュします。'),
         error ? h('div', { class: 'error' }, error) : null,
         h('div', { class: 'choices' },
