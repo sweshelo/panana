@@ -47,7 +47,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-      ROM_BUNDLE: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana-ci' }}/${{ vars.ROM_BUNDLE_KEY || 'rom-bundle.tar.gpg' }}
+      ROM_BUNDLE: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.ROM_BUNDLE_KEY || 'rom-bundle.tar.gpg' }}
       ROM_DIR: ${{ github.workspace }}/../rom
     steps:
       - name: Check secrets
