@@ -282,7 +282,7 @@ export class Inspector {
     const game = st.game;
     const info = st.info!;
     const changed = st.changedSections(doc);
-    const def = game.master.tileset(doc.dungeon);
+    const def = game.master.tileset(info);
     const tsSel = h('select', {
       onchange: (e: Event) => {
         st.tileset = Number((e.target as HTMLSelectElement).value);

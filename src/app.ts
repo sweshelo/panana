@@ -421,7 +421,7 @@ export class App {
     if (title) title.textContent = '';
     this.setStatus(`${info.name} のモデルを読み込み中…`);
     try {
-      const set = await loadTilesetModels(game, info.dungeon);
+      const set = await loadTilesetModels(game, info);
       if (st.current?.hash !== hash) return;
       this.factory?.dispose();
       this.factory = new ModelFactory(set);
@@ -666,7 +666,7 @@ export class App {
     const issues: { map: string; issue: Issue }[] = [];
     for (const d of docs) {
       const info = game.code.byHash(d.hash)!;
-      for (const i of validate(game, d, game.master.tileset(d.dungeon), st.docs, st.events.get(d.dungeon) ?? null))
+      for (const i of validate(game, d, game.master.tileset(info), st.docs, st.events.get(d.dungeon) ?? null))
         issues.push({ map: mapTitle(info, game.code.maps, game.master), issue: i });
     }
     const errors = issues.filter((i) => i.issue.level === 'error').length;

@@ -73,7 +73,7 @@ export class EditorState {
     }
     this.current = doc;
     this.info = info;
-    this.tileset = this.game.master.tileset(info.dungeon);
+    this.tileset = this.game.master.tileset(info);
     this.selection = { type: 'none' };
     this.emit('map');
   }

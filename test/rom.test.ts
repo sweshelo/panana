@@ -144,7 +144,7 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
 
   test('validation: vanilla maps report nothing, edits are caught', () => {
     const docs = new Map();
-    for (const m of game.editableMaps()) expect(validate(game, game.doc(m), game.master.tileset(m.dungeon), docs)).toEqual([]);
+    for (const m of game.editableMaps()) expect(validate(game, game.doc(m), game.master.tileset(m), docs)).toEqual([]);
     const info = game.code.byName('D01B02001')!;
     const doc = game.doc(info);
     removeTile(doc, 19, 12); // under the door at (19, 12)
@@ -366,10 +366,33 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
 
   test('BGM names from soundData + sound.bcsar', async () => {
     const snd = await game.sounds();
-    const s = game.master.sounds(1);
+    const s = game.master.sounds(game.code.byName('D01B02001')!);
     expect(snd.name(s.bgm)).toBe('BGM_CAVE');
     expect(snd.name(s.battle)).toBe('BGM_BATTLE_1');
     expect(snd.name(s.steps)).toBe('SE_FLD_STEPS1');
+  });
+
+  test('mapData per map: デンパ島のどうくつ inside 海底トンネル (issue #6)', async () => {
+    const snd = await game.sounds();
+    const m = (name: string) => game.code.byName(name)!;
+    // Tunnel floors use the dungeon's mapData row 2 (tileset 1).
+    expect(m('D02B02001').mapDataKey).toBe(0);
+    expect(game.master.mapDataRow(m('D02B02001'))).toBe(2);
+    expect(game.master.tileset(m('D02B02001'))).toBe(1);
+    // The cave maps (H01/H02) have their own key -> mapData row 3 (tileset 0 = caveA, another BGM).
+    for (const n of ['D02B01H01', 'D02B01H02', 'D02B02H01', 'D02B03H01']) {
+      expect(game.master.mapDataRow(m(n))).toBe(3);
+      expect(game.master.tileset(m(n))).toBe(0);
+      expect(game.tilesetSource(m(n)).modelArchive).toBe(game.tilesetSource(m('D01B02001')).modelArchive);
+    }
+    expect(game.master.sounds(m('D02B01H01')).bgm).not.toBe(game.master.sounds(m('D02B02001')).bgm);
+    expect(snd.name(game.master.sounds(m('D02B01H01')).bgm)).not.toBe(snd.name(game.master.sounds(m('D02B02001')).bgm));
+    // The last one leads into 魔王の塔 and already uses its mapData row.
+    expect(game.master.mapDataRow(m('D02B03H02'))).toBe(game.master.dungeonMapDataRow(3));
+    // Maps without a key of their own keep the dungeon's row.
+    for (const i of game.editableMaps())
+      if (!i.mapDataKey && !['M01OUT000', 'M04F01AAA', 'M05OUT000'].includes(i.name))
+        expect(game.master.mapDataRow(i)).toBe(game.master.dungeonMapDataRow(i.dungeon));
   });
 });
 
