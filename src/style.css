@@ -250,3 +250,8 @@ select.edited { border-color: var(--warn); }
 .action-raw { max-width: 720px; }
 .action-raw tr.known td { color: var(--accent); }
 .action-raw .mono { font-family: ui-monospace, monospace; }
+.desc-table { max-width: 720px; font-size: 13px; }
+.desc-table th { width: 7em; vertical-align: top; padding: 4px 8px 4px 0; white-space: nowrap; }
+.desc-table td { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.item-fields .stat .num-input { width: 90px; }
+input.edited { border-color: var(--warn); }

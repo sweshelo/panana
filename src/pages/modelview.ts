@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { AnimatedModel, ANIMATION_FPS, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
+import { boardFacing } from '../cgfx/facing';
 import { renderObjectThumb } from '../editor/thumbs';
 import { clear, h } from '../editor/dom';
 import { idbGet, idbSet } from '../util/idb';
@@ -44,6 +45,13 @@ function factoryOf(ref: ModelRef): Promise<Loaded | null> {
   return p;
 }
 
+/** Default view directions (from the model to the camera) of the photos and the viewer. */
+const THUMB_VIEW: [number, number, number] = [0.55, 0.6, 1];
+const DEFAULT_YAW = 0.6;
+const DEFAULT_PITCH = 0.25;
+/** Highest pitch (just short of straight down, where the camera's up would be undefined). */
+const MAX_PITCH = 1.56;
+
 const photos = new Map<string, Promise<string | null>>();
 /** Thumbnails are made one at a time so the list stays responsive. */
 let chain: Promise<unknown> = Promise.resolve();
@@ -52,7 +60,7 @@ let chain: Promise<unknown> = Promise.resolve();
 export function modelPhoto(ref: ModelRef): Promise<string | null> {
   let p = photos.get(ref.key);
   if (!p) {
-    const idbKey = `photo/${ref.key}/v3`;
+    const idbKey = `photo/${ref.key}/v4`;
     p = (async () => {
       const cached = await idbGet<string>(idbKey).catch(() => undefined);
       if (cached !== undefined) return cached || null;
@@ -60,7 +68,7 @@ export function modelPhoto(ref: ModelRef): Promise<string | null> {
         const f = await factoryOf(ref);
         if (f && 'image' in f) return f.image;
         const m = f ? f.factory.instance(f.hash) : null;
-        return f && m ? renderObjectThumb(f.factory, m) : null;
+        return f && m ? renderObjectThumb(f.factory, m, boardFacing(m, THUMB_VIEW)) : null;
       });
       chain = job.catch(() => null);
       const url = await job;
@@ -99,8 +107,10 @@ export class ModelViewer {
   private model: THREE.Object3D | null = null;
   private center = new THREE.Vector3();
   private radius = 100;
-  private yaw = 0.6;
-  private pitch = 0.25;
+  private yaw = DEFAULT_YAW;
+  private pitch = DEFAULT_PITCH;
+  /** Front view of a board model (yaw, pitch), or null to use the default angle. */
+  private front: [number, number] | null = null;
   private zoom = 1;
   private name = 'model';
   private token = 0;
@@ -126,7 +136,7 @@ export class ModelViewer {
       let x = e.clientX, y = e.clientY;
       const move = (ev: PointerEvent): void => {
         this.yaw -= (ev.clientX - x) * 0.01;
-        this.pitch = Math.max(-1.4, Math.min(1.4, this.pitch + (ev.clientY - y) * 0.01));
+        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + (ev.clientY - y) * 0.01));
         x = ev.clientX;
         y = ev.clientY;
         this.render();
@@ -151,6 +161,7 @@ export class ModelViewer {
     this.name = name;
     if (this.model) this.scene.remove(this.model);
     this.model = null;
+    this.front = null;
     this.animated = null;
     this.playing = false;
     this.el.classList.remove('animated');
@@ -179,6 +190,9 @@ export class ModelViewer {
     const box = new THREE.Box3().setFromObject(m);
     this.center = box.getCenter(new THREE.Vector3());
     this.radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
+    const cp = Math.cos(DEFAULT_PITCH);
+    const n = animated ? null : boardFacing(m, [Math.sin(DEFAULT_YAW) * cp, Math.sin(DEFAULT_PITCH), Math.cos(DEFAULT_YAW) * cp]);
+    if (n) this.front = [Math.atan2(n.x, n.z), Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.asin(Math.max(-1, Math.min(1, n.y)))))];
     if (animated) this.showMotions(animated);
     this.reset();
   }
@@ -265,9 +279,9 @@ export class ModelViewer {
     requestAnimationFrame(tick);
   }
 
+  /** Default angle, or straight at the front of a board model. */
   private reset(): void {
-    this.yaw = 0.6;
-    this.pitch = 0.25;
+    [this.yaw, this.pitch] = this.front ?? [DEFAULT_YAW, DEFAULT_PITCH];
     this.zoom = 1;
     this.render();
   }

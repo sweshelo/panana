@@ -190,3 +190,71 @@ describe('actions', () => {
     expect(cleanActionName('Ąは　ぶつかってきた！')).toBe('ぶつかってきた');
   });
 });
+
+describe('item fields', () => {
+  test('read and write the editable fields of an itemData row', async () => {
+    const { readItemFields, writeItemFields } = await import('../src/game/items');
+    const r = new Uint8Array(0x30);
+    w32(r, 0, 80);
+    w32(r, 4, 8);
+    w32(r, 8, 0x12345601 | (1 << 5)); // other flag bits must survive a rarity change
+    w32(r, 0x24, 7);
+    r[0x2a] = 3;
+    expect(readItemFields(r)).toEqual({ price: 80, sell: 8, rarity: 1, limit: 99, action: 7, chain: 3 });
+    writeItemFields(r, { price: 120, rarity: 5, action: 9, chain: 0x1234 });
+    expect(readItemFields(r)).toEqual({ price: 120, sell: 8, rarity: 5, limit: 99, action: 9, chain: 0x1234 });
+    expect((new DataView(r.buffer).getUint32(8, true) & ~0xe0) >>> 0).toBe((0x12345601 & ~0xe0) >>> 0);
+    // 99 keeps a byte of 0 (it already means 99); other limits are written as they are
+    writeItemFields(r, { limit: 99 });
+    expect(r[0x2f]).toBe(0);
+    writeItemFields(r, { limit: 10 });
+    expect([r[0x2f], readItemFields(r).limit]).toEqual([10, 10]);
+    writeItemFields(r, { limit: 99 });
+    expect(r[0x2f]).toBe(99);
+  });
+});
+
+describe('board facing', () => {
+  const plane = (normal: [number, number, number], jitter = 0): number[] => {
+    // two in-plane axes of the normal, a 10 x 6 grid of points on them
+    const [nx, ny, nz] = normal;
+    const u = Math.abs(nx) < 0.9 ? [0, nz, -ny] : [-nz, 0, nx];
+    const ul = Math.hypot(...u);
+    const uu = u.map((x) => x / ul);
+    const v = [ny * uu[2]! - nz * uu[1]!, nz * uu[0]! - nx * uu[2]!, nx * uu[1]! - ny * uu[0]!];
+    const pts: number[] = [];
+    for (let i = 0; i < 10; i++) for (let j = 0; j < 6; j++) {
+      const a = i * 3 - 13, b = j * 2 - 5, c = ((i * 7 + j * 3) % 5 - 2) * jitter;
+      for (let k = 0; k < 3; k++) pts.push(a * uu[k]! + b * v[k]! + c * normal[k]! + [4, -2, 9][k]!);
+    }
+    return pts;
+  };
+  const unit = (x: number, y: number, z: number): [number, number, number] => {
+    const l = Math.hypot(x, y, z);
+    return [x / l, y / l, z / l];
+  };
+
+  test('finds the normal of a tilted board, on the side its faces look at', async () => {
+    const { boardNormal } = await import('../src/cgfx/facing');
+    for (const n of [unit(0, 0, 1), unit(1, 0, 0), unit(0.3, 0.2, 0.9), unit(-0.5, 0.7, 0.2), unit(0, 1, 0)]) {
+      const got = boardNormal(plane(n, 0.01), n)!;
+      expect(got).not.toBeNull();
+      for (let k = 0; k < 3; k++) expect(got[k]!).toBeCloseTo(n[k]!, 3);
+      // faces looking the other way flip it
+      const back = boardNormal(plane(n, 0.01), [-n[0], -n[1], -n[2]])!;
+      for (let k = 0; k < 3; k++) expect(back[k]!).toBeCloseTo(-n[k]!, 3);
+    }
+  });
+
+  test('two-sided boards take the preferred side; solid models are not boards', async () => {
+    const { boardNormal } = await import('../src/cgfx/facing');
+    const n = unit(0.2, 0.1, -0.95);
+    const got = boardNormal(plane(n), [0, 0, 0], [0, 0, 1])!;
+    for (let k = 0; k < 3; k++) expect(got[k]!).toBeCloseTo(-n[k]!, 4);
+    expect(boardNormal(plane(n, 2), null)).toBeNull();
+    const cube: number[] = [];
+    for (const x of [0, 1]) for (const y of [0, 1]) for (const z of [0, 1]) cube.push(x, y, z);
+    expect(boardNormal(cube, null)).toBeNull();
+    expect(boardNormal([0, 0, 0, 1, 1, 1], null)).toBeNull();
+  });
+});

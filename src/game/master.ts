@@ -52,6 +52,7 @@ export class Master {
   readonly treasureGroup: GsTable;
   private readonly treasureEntry: ArcEntry;
   private readonly treasureOriginal: Uint8Array;
+  /** itemData.bin (edits to it are exported, like the tables of {@link table}). */
   readonly itemData: GsTable;
   private readonly messages: GmsgFile[] = [];
 
@@ -73,7 +74,7 @@ export class Master {
     this.treasureEntry = tg.entry;
     this.treasureOriginal = tg.body.slice();
     this.treasureGroup = new GsTable(tg.body);
-    this.itemData = table('itemData.bin');
+    this.itemData = this.table('itemData.bin');
     for (const e of this.archive.entries) {
       if (e.type !== 6) continue;
       const { name, body } = unpackEntry(this.archive, e);

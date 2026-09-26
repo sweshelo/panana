@@ -433,6 +433,28 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     expect(chests.size).toBeGreaterThan(20);
     for (const list of chests.values()) for (const c of list) expect(c.chance).toBeGreaterThan(0);
   });
+
+  test('item edits are exported in itemData.bin and can be reverted', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { ItemBook } = await import('../src/game/items');
+    const items = new ItemBook(game, new Map());
+    const potion = items.item(2)!;
+    expect(potion.descriptions[0]!.text).not.toBe('');
+    expect(items.itemActions().some((a) => a.row === potion.action)).toBe(true);
+    items.set(2, { price: 999, rarity: 4, limit: 20 });
+    expect([potion.price, potion.sell, potion.rarity, potion.limit]).toEqual([999, 8, 4, 20]);
+    expect(items.changed(2)).toBe(true);
+    expect(items.original(2).price).toBe(80);
+    expect(game.master.changedTables()).toEqual(['itemData.bin']);
+    const files = buildModFiles(game, [], [], game.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const p2 = new ItemBook(again, new Map()).item(2)!;
+    expect([p2.price, p2.sell, p2.rarity, p2.limit, p2.name]).toEqual([999, 8, 4, 20, 'キズぐすり+']);
+    items.revert(2);
+    expect(items.changed(2)).toBe(false);
+    expect(potion.price).toBe(80);
+    expect(game.master.changedTables()).toEqual([]);
+  });
 });
 
 describe.skipIf(!hasCia)('monster and item models', () => {
