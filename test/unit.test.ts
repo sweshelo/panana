@@ -215,6 +215,20 @@ describe('shops', () => {
     expect([shopLabel(3), shopLabel(17)]).toEqual(['店 3', '店 17 (妖精の里)']);
   });
 
+  test('drops on a shop list: rows move, new items are inserted, sold items move', async () => {
+    const { dropInto } = await import('../src/game/shops');
+    const l = [1, 2, 3, 4];
+    expect(dropInto(l, { kind: 'row', index: 0 }, 4)).toEqual([2, 3, 4, 1]);
+    expect(dropInto(l, { kind: 'row', index: 3 }, 0)).toEqual([4, 1, 2, 3]);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 1)).toEqual(l);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 2)).toEqual(l);
+    expect(dropInto(l, { kind: 'row', index: 1 }, 3)).toEqual([1, 3, 2, 4]);
+    expect(dropInto(l, { kind: 'item', id: 9 }, 2)).toEqual([1, 2, 9, 3, 4]);
+    expect(dropInto(l, { kind: 'item', id: 9 }, 99)).toEqual([1, 2, 3, 4, 9]);
+    expect(dropInto(l, { kind: 'item', id: 4 }, 0)).toEqual([4, 1, 2, 3]);
+    expect(dropInto([], { kind: 'item', id: 5 }, 0)).toEqual([5]);
+  });
+
   test('ShopItem rows round trip, and withRows rebuilds a table with a hash index', async () => {
     const { parseShopItems, shopItemRows } = await import('../src/game/shops');
     const { GsTable } = await import('../src/archive/gstable');
