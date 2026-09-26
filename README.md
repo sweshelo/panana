@@ -186,6 +186,20 @@ bun test
 - 無編集で書き出したマップ DB・アーカイブが元とバイト一致、編集時は A2C14C00 以外のエントリが一致
 - バニラのマップで検証が何も出さず、壊した編集は検出する
 
+### CI (`.github/workflows/test.yml`)
+
+push ごとに型チェックと `bun test` (ROM なし) を実行します。フォークからの PR でも動きます。
+ROM のテストは `rom` ジョブで、暗号化したダンプを非公開の R2 バケットから取ってきて実行します (push と手動実行だけ。シークレットが未登録ならスキップ)。ダンプはリポジトリ・アーティファクト・キャッシュのどこにも置きません。
+
+準備 (一度だけ):
+1. `golden.json` を作ってから、暗号化したバンドルを作る: `ROM_BUNDLE_PASSPHRASE='長いパスフレーズ' scripts/pack-rom-bundle.sh ../elpulse` → `rom-bundle.tar.gpg` (CIA・`golden.json`・あれば `mod/out`)
+2. Cloudflare R2 に非公開バケット `panana-ci` を作り、`rom-bundle.tar.gpg` をアップロードする (300 MB を超えるときは `aws s3 cp` など S3 API で)
+3. R2 の API トークンを「Object Read only・このバケットだけ」で作る
+4. リポジトリの Settings → Secrets and variables → Actions に登録: `ROM_BUNDLE_PASSPHRASE`、`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
+   (バケット名・キーを変えるときは Variables の `ROM_BUNDLE_BUCKET`・`ROM_BUNDLE_KEY`)
+
+ダンプや `golden.json` を作り直したら、同じ名前で上書きアップロードするだけです。
+
 ## 未対応・今後
 
 - 扉・門の位置と向きは近似 (部屋の出入口のタイルでは開口側の辺に寄せる)。静止姿勢で床下にあるモデル (一部の門) は持ち上げて表示。
