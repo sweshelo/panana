@@ -25,12 +25,15 @@ import { baseModFromFiles, openFolder, openImage, TITLE_ID, type BaseMod, type D
 import { idbClear, idbGet, idbSet } from './util/idb';
 import { MonsterPage } from './pages/monsters';
 import { ItemPage } from './pages/items';
+import { GroupPage } from './pages/groups';
+import { ActionPage } from './pages/actions';
+import { ActionBook } from './game/actions';
 import { ItemBook, loadShops } from './game/items';
 import type { MonsterBook } from './game/monsters';
 import type { SoundNames } from './game/sound';
 
 type ViewMode = '2d' | '3d' | 'split';
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力' };
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ' };
 const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 const BASEMOD_KEY = 'basemod/v1';
@@ -58,6 +61,8 @@ export class App {
   private shell: HTMLElement | null = null;
   private monsterPage: MonsterPage | null = null;
   private itemPage: ItemPage | null = null;
+  private groupPage: GroupPage | null = null;
+  private actionPage: ActionPage | null = null;
   private book: MonsterBook | null = null;
   private sounds: SoundNames | null = null;
   private status = h('div', { class: 'status' });
@@ -149,24 +154,30 @@ export class App {
     const pageMap = h('div', { class: 'page page-map' });
     const pageMonsters = h('div', { class: 'page page-monsters' });
     const pageItems = h('div', { class: 'page page-items' });
+    const pageGroups = h('div', { class: 'page page-groups' });
+    const pageActions = h('div', { class: 'page page-actions' });
     const tab = (page: string, label: string): HTMLElement => h('a', { class: 'tab', 'data-page': page, href: `#/${page}` }, label);
     const nav = h('nav', { class: 'topnav' },
       h('b', { class: 'brand' }, 'Panana - 電波人間のRPG2 エディタ'),
       tab('map', 'マップ編集'),
       tab('monsters', 'モンスター図鑑'),
       tab('items', 'アイテム図鑑'),
+      tab('groups', '群れ'),
+      tab('actions', 'アクション'),
       h('span', { class: 'grow' }),
       h('span', { class: 'muted small' }, game.dump.label),
       h('button', { class: 'primary', title: 'マップ・イベント・宝箱の中身・モンスターの変更を MOD として書き出します', onclick: () => this.showExport() }, '書き出し…'),
       h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
       h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
     );
-    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems);
+    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems, pageGroups, pageActions);
     clear(this.host);
     this.host.append(this.shell);
     this.root = pageMap;
     this.monsterPage = null;
     this.itemPage = null;
+    this.groupPage = null;
+    this.actionPage = null;
     [this.book, this.sounds] = await Promise.all([
       game.monsters().catch((err) => {
         console.warn('monsters', err);
@@ -178,13 +189,13 @@ export class App {
     await this.route();
   }
 
-  /** #/map[/MAPNAME] or #/monsters[/row]. */
+  /** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row] or #/actions[/row]. */
   private async route(): Promise<void> {
     const shell = this.shell;
     const game = this.game;
     if (!shell || !game) return;
     const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
-    const p = page === 'monsters' || page === 'items' ? page : 'map';
+    const p = page === 'monsters' || page === 'items' || page === 'groups' || page === 'actions' ? page : 'map';
     shell.dataset.page = p;
     shell.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === p));
     if (p === 'monsters') {
@@ -202,6 +213,39 @@ export class App {
       }
       this.monsterPage.show(Number(arg) || undefined);
       document.title = 'Panana  — モンスター図鑑';
+      return;
+    }
+    if (p === 'groups') {
+      const el = shell.querySelector<HTMLElement>('.page-groups')!;
+      if (!this.book) {
+        clear(el);
+        el.append(h('div', { class: 'start' }, h('div', { class: 'error' }, 'モンスターのデータを読めませんでした。')));
+        return;
+      }
+      if (!this.groupPage) {
+        const st = this.st!;
+        this.groupPage = new GroupPage(game, this.book, (m) => st.docs.get(m.hash) ?? game.doc(m), () => this.scheduleSave());
+        clear(el);
+        el.append(this.groupPage.el);
+      }
+      this.groupPage.show(arg !== undefined && arg !== '' ? Number(arg) : undefined);
+      document.title = 'Panana — 群れ';
+      return;
+    }
+    if (p === 'actions') {
+      const el = shell.querySelector<HTMLElement>('.page-actions')!;
+      if (!this.actionPage) {
+        clear(el);
+        try {
+          this.actionPage = new ActionPage(new ActionBook(game.master, (row) => this.book?.monster(row)?.name ?? ''));
+        } catch (err) {
+          el.append(h('div', { class: 'start' }, h('div', { class: 'error' }, `アクションの表を読めませんでした: ${(err as Error).message}`)));
+          return;
+        }
+        el.append(this.actionPage.el);
+      }
+      this.actionPage.show(arg !== undefined && arg !== '' ? Number(arg) : undefined);
+      document.title = 'Panana — アクション';
       return;
     }
     if (p === 'items') {

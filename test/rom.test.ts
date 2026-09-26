@@ -330,6 +330,40 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     }
   });
 
+  test('group edits: slots, copy with a new hash, export and read back', async () => {
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    const g = book.groups[6]!;
+    book.setGroupSlots(6, [{ monster: 15, weight: 3, count: 0 }], g.mates);
+    expect(book.groups[6]!.leads).toEqual([{ monster: 15, weight: 3, count: 0 }]);
+    expect(book.groupChanged(6)).toBe(true);
+    const n = book.copyGroup(6);
+    expect(n).toBe(144);
+    expect(book.groupAdded(n)).toBe(true);
+    const copy = book.groups[n]!;
+    expect(book.group(copy.hash)).toBe(copy);
+    expect(g2.master.changedTables()).toEqual(['monsterGroup.bin']);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const b2 = await again.monsters();
+    expect(b2.groups.length).toBe(145);
+    expect(b2.group(copy.hash)!.leads).toEqual([{ monster: 15, weight: 3, count: 0 }]);
+    book.revertGroup(6);
+    expect(book.groupChanged(6)).toBe(false);
+  });
+
+  test('actions: item effects and references', async () => {
+    const { ActionBook } = await import('../src/game/actions');
+    const book = await game.monsters();
+    const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '');
+    const { ItemBook } = await import('../src/game/items');
+    const potion = new ItemBook(game, new Map()).item(2)!;
+    expect(actions.refsOf(potion.action).items.map((i) => i.id)).toContain(2);
+    const skill = book.monster(1)!.skills[0]!;
+    expect(actions.action(skill.action)!.name).toBe('ぶつかってきた');
+    expect(actions.refsOf(skill.action).monsters.map((m) => m.row)).toContain(1);
+  });
+
   test('BGM names from soundData + sound.bcsar', async () => {
     const snd = await game.sounds();
     const s = game.master.sounds(1);

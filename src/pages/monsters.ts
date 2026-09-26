@@ -168,7 +168,7 @@ export class MonsterPage {
         h('section', {}, h('h3', {}, 'ドロップ (率の値)'),
           m.drops.length ? h('ul', {}, ...m.drops.map((d) => h('li', {}, h('a', { href: `#/items/${d.item}` }, d.name), ' ', h('span', { class: 'muted' }, `(${d.rate})`)))) : h('div', { class: 'muted' }, 'なし')),
         h('section', {}, h('h3', {}, 'ワザ'),
-          h('ul', {}, ...m.skills.map((s) => h('li', {}, `${s.name} `, h('span', { class: 'muted' }, `#${s.action}`))))),
+          h('ul', {}, ...m.skills.map((s) => h('li', {}, `${s.name} `, h('a', { class: 'muted', href: `#/actions/${s.action}` }, `#${s.action}`))))),
         h('section', {}, h('h3', {}, '行動'),
           h('div', {}, `AI: ${m.ai} / 狙い ${m.target}`),
           h('div', {}, `行動回数 ${m.actions}${m.focus ? '、集中攻撃' : ''}`),

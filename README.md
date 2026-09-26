@@ -2,14 +2,16 @@
 Pananaとは、ハワイ語で羅針盤の意。
 
 電波人間のRPG2 (v1.1.0, TID 00040000000A7900) のデータを、ブラウザの中で読んで調べ・編集する静的サイトです。
-上のバーでページを切り替えます (URL は `#/map/<マップ名>`、`#/monsters/<行>`)。
+上のバーでページを切り替えます (URL は `#/map/<マップ名>`、`#/monsters/<行>`、`#/items/<ID>`、`#/groups/<行>`、`#/actions/<行>`)。
 
 - **マップ編集**: ダンジョンのマップを 2D / 3D を見ながら編集し、LayeredFS 用の MOD (`00040000000A7900/romfs/A90C8038` など) として書き出す。
   マップの BGM・出現する敵も右ペインで見られる。
 - **モンスター図鑑**: 全モンスターの能力・ドロップ・ワザ・耐性 (効果つき、編集できる) と、出現するマップ。
 - **アイテム図鑑**: 全アイテムの分類・価格・効果と、手に入る場所 (お店・宝箱・モンスターのドロップ)。
+- **群れ**: 敵の群れ (monsterGroup) の一覧と、それを使うマップ。候補のモンスター・重み・数を編集でき、写して新しい群れも作れる。
+- **アクション**: アクション (actionData) の一覧。アイテムの使用効果の内容・引数 (分かっている欄と生データ) と、使うアイテム・ワザとして持つモンスター。
 
-書き出し (上のバー) には、マップ・イベントの表・宝箱の中身・モンスターの変更がまとめて入ります。
+書き出し (上のバー) には、マップ・イベントの表・宝箱の中身・モンスター・群れの変更がまとめて入ります。
 
 設計: `../elpulse/docs/map-editor-design.md`、データ構造: `../elpulse/docs/map.md`、敵と BGM: `../elpulse/docs/encounters.md`。
 
@@ -105,6 +107,20 @@ MonsterParameter (185 行) を elpulse の `tools/gen_reference.py` と同じ読
   名前の先頭 4 文字が同じマテリアルアニメ (目のパターン) も一緒に動かします (ゲームと同じ照合)。1 秒 60 フレーム。解析と形式は `docs/monster-motion.md`。
 - アイテム: itemData +0x20 の bcres (`1D37838B` 道具、`302996EB` 装備、`56562135`)。服の柄 (596〜696) はテクスチャだけなので、その画像を出します。
 
+### 群れ
+
+マスターの monsterGroup (1 行 = 先頭の候補 5 個 +0x00、仲間の候補 5 個 +0x14、各 {u16 モンスター, u8 重み, u8 数のコード}、+0x28〜 未解析) を一覧します (`src/pages/groups.ts`)。
+- 左の一覧はモンスターの名前で検索し、「マップで使う」「どのマップも使わない」「変更した」で絞り込めます。使うマップは、今の (編集中の) マップの区画 6 (ヘッダーとセル) から計算します。
+- 候補のモンスター・重み (1〜255)・数を選び直し、「＋ 追加」(5 個まで) と「×」で増減できます。割合は重みから計算します。変更はマスター `56562135` として書き出し、編集は自動で保存します。
+- 「写して新しい群れを作る」: 今の群れを写した行を monsterGroup の末尾に足し、索引に新しいハッシュを入れます。マップ編集の右ペイン「出現する敵」で選べます。
+- マップ編集・モンスター図鑑の群れの表から「群れ #N を開く」でこのページへ移れます。
+
+### アクション
+
+マスターの actionData を一覧します (`src/game/actions.ts`、`src/pages/actions.ts`)。既定は「アイテムの効果 (種類 2)」で、「アイテムが使う」「モンスターのワザ」「すべて」に切り替えられます。
+- 分かっている欄: +0x00 の w0 (bit1-2 種類、bit3-6 効果の種別、bit13-15 付与の段階、bit29-31 使える場面)、+0x04 名前のメッセージ、+0x18 / +0x1A 量 (s16)。ほかの欄は生データ (u32・s16 × 2) で出します。
+- 参照: そのアクションを使う道具 (itemData +0x24) と、ワザとして持つモンスター (MonsterParameter +0x3C)。アイテム図鑑の効果とモンスター図鑑のワザからリンクします。
+
 ### アイテム図鑑
 
 itemData の名前・説明・分類 (+0x2C)・☆・買値 / 売値・上限・上限に達したときの置き換え先と、消耗品の効果 (+0x24 のアクション: HP / AP 回復の量、使える場面) を出します。
@@ -126,11 +142,11 @@ src/
   archive/  gsarc.ts lz10.ts zip.ts gstable.ts                          独自アーカイブ・LZ10・GS テーブル
   game/     codebin.ts mapdb.ts sections.ts master.ts game.ts          マップ表・マップ DB・区画・mapParts など
             events.ts objects.ts names.ts                              EventObject、オブジェクトのモデル、名前
-            monsters.ts sound.ts items.ts                              モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店
+            monsters.ts sound.ts items.ts actions.ts                   モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店、アクション
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts                                          アニメ (CANM) の読み込みと再生 (CPU スキニング)
   editor/   state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...
-  pages/    monsters.ts items.ts                                       モンスター図鑑、アイテム図鑑
+  pages/    monsters.ts items.ts groups.ts actions.ts                  モンスター図鑑、アイテム図鑑、群れ、アクション
   export/   pack.ts                                                    マップ DB → A90C8038、イベント、マスター → zip
 test/
   unit.test.ts   ROM なしで動くテスト
