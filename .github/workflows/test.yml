@@ -34,7 +34,7 @@ jobs:
         run: bun test
 
   # ROM が要るテスト (test/rom.test.ts)。
-  # 暗号化したダンプ (scripts/pack-rom-bundle.sh) を非公開の R2 バケットから取ってきて復号する。
+  # 暗号化したダンプ (scripts/pack-rom-bundle.ps1) を非公開の R2 バケットから取ってきて復号する。
   # シークレットが要るので push と手動実行だけ (フォークからの PR には渡らない)。未登録ならスキップ。
   # ダンプはアーティファクトにもキャッシュにも載せない。
   rom:

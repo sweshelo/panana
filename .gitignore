@@ -40,5 +40,5 @@ test/golden/golden.json
 !.dev.vars.example
 !.env.example
 
-# CI 用の暗号化したダンプ (scripts/pack-rom-bundle.sh)
+# CI 用の暗号化したダンプ (scripts/pack-rom-bundle.ps1)
 rom-bundle.tar.gpg
