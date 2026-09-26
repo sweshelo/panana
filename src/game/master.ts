@@ -1,0 +1,140 @@
+// Master data archive 56562135: map tables (docs/map.md §4) and message files.
+import { findByName, parseArchive, unpackEntry, type Archive } from '../archive/gsarc';
+import { GsTable } from '../archive/gstable';
+import { u16, u32 } from '../util/bytes';
+
+export const MASTER_ARCHIVE = '56562135';
+export const TILESETS = 12;
+export const LETTERS = 8;
+
+export class GmsgFile {
+  readonly first: number;
+  readonly last: number;
+  constructor(private readonly data: Uint8Array) {
+    if (String.fromCharCode(...data.subarray(0, 4)) !== 'GMSG') throw new Error('GMSG ではありません');
+    this.first = u32(data, 8);
+    this.last = u32(data, 12);
+  }
+  text(id: number): string | undefined {
+    if (id < this.first || id > this.last) return undefined;
+    const tbl = u32(this.data, 0x18);
+    const base = u32(this.data, 0x1c);
+    const i = id - this.first;
+    const a = u32(this.data, tbl + i * 4);
+    const b = id < this.last ? u32(this.data, tbl + i * 4 + 4) : this.data.length - base;
+    let s = '';
+    for (let o = base + a; o + 1 < base + b; o += 2) {
+      const c = u16(this.data, o);
+      if (c === 0) break;
+      if (c === 0x0a) s += ' ';
+      else if (c >= 0x20 && !(c >= 0xe000 && c < 0xf900)) s += String.fromCharCode(c);
+      else s += '\u0001';
+    }
+    // "[0001]'base[0001](ruby[0001])" -> base; drop the leading type code and other control codes.
+    return s.replace(/\u0001'(.*?)\u0001\((.*?)\u0001\)/g, '$1').replace(/\u0001/g, '');
+  }
+}
+
+export class Master {
+  readonly archive: Archive;
+  readonly mapGroup: GsTable;
+  readonly mapData: GsTable;
+  readonly mapResource: GsTable;
+  readonly mapParts: GsTable;
+  private readonly messages: GmsgFile[] = [];
+
+  constructor(bytes: Uint8Array) {
+    this.archive = parseArchive(bytes);
+    const table = (name: string): GsTable => {
+      const f = findByName(this.archive, name);
+      if (!f) throw new Error(`マスター (56562135) に ${name} がありません`);
+      return new GsTable(f.body);
+    };
+    this.mapGroup = table('mapGroup.bin');
+    this.mapData = table('mapData.bin');
+    this.mapResource = table('mapResource.bin');
+    this.mapParts = table('mapParts.bin');
+    for (const e of this.archive.entries) {
+      if (e.type !== 6) continue;
+      const { name, body } = unpackEntry(this.archive, e);
+      if (name && /_JP\.gsmb$/.test(name)) {
+        try {
+          this.messages.push(new GmsgFile(body));
+        } catch {
+          /* other variants */
+        }
+      }
+    }
+  }
+
+  message(id: number): string | undefined {
+    for (const m of this.messages) {
+      const t = m.text(id);
+      if (t !== undefined) return t;
+    }
+    return undefined;
+  }
+
+  dungeonName(dungeon: number): string {
+    if (dungeon < 0 || dungeon >= this.mapGroup.rows) return '';
+    return this.message(u32(this.mapGroup.row(dungeon), 0x14)) ?? '';
+  }
+
+  /** mapData row of a dungeon (mapGroup +0x26; FUN_001c4ec4). */
+  mapDataRow(dungeon: number): number {
+    if (dungeon < 0 || dungeon >= this.mapGroup.rows) return 0;
+    return this.mapGroup.row(dungeon)[0x26]!;
+  }
+
+  /** Tileset of a dungeon = mapData[mapGroup +0x26][0]. */
+  tileset(dungeon: number): number {
+    return this.mapData.row(this.mapDataRow(dungeon))[0]!;
+  }
+
+  /** mapResource row of a dungeon = mapData[...][1]. */
+  resourceRow(dungeon: number): number {
+    return this.mapData.row(this.mapDataRow(dungeon))[1]!;
+  }
+
+  /** Model archive of a mapResource row ([0], e.g. 46910AB6). */
+  modelArchive(resourceRow: number): number {
+    return u32(this.mapResource.row(resourceRow), 0);
+  }
+
+  resourceArchives(resourceRow: number): number[] {
+    const r = this.mapResource.row(resourceRow);
+    const out: number[] = [];
+    for (let i = 0; i + 4 <= r.length; i += 4) out.push(u32(r, i));
+    return out;
+  }
+
+  /** Model hash of (tile kind, tileset, letter index); 0 = cannot be placed. */
+  partModel(kind: number, tileset: number, letterIdx: number): number {
+    const row = kind + 1;
+    if (row < 0 || row >= this.mapParts.rows || tileset < 0 || tileset >= TILESETS) return 0;
+    return u32(this.mapParts.row(row), 8 + tileset * 0x20 + letterIdx * 4);
+  }
+
+  /**
+   * Tile kinds with a model: kind -> letter indices worth offering. Unused letters repeat the default
+   * model in mapParts, so only letter 0 and letters with a different model are listed.
+   */
+  palette(tileset: number): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    for (let kind = 0; kind + 1 < this.mapParts.rows; kind++) {
+      const base = this.partModel(kind, tileset, 0);
+      if (!base) continue;
+      const letters = [0];
+      const seen = new Set([base]);
+      for (let l = 1; l < LETTERS; l++) {
+        const h = this.partModel(kind, tileset, l);
+        if (h && !seen.has(h)) {
+          seen.add(h);
+          letters.push(l);
+        }
+      }
+      out.set(kind, letters);
+    }
+    return out;
+  }
+}

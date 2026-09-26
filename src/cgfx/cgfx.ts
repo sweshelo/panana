@@ -1,0 +1,413 @@
+// CGFX (bcmdl / bcres, revision 5) reader: models (shapes, meshes, materials, skeleton) and textures.
+// Layout follows Ohana3DS-Rebirth CGFX.cs. Only what the editor needs is read; materials are simplified
+// to a diffuse texture + vertex colour (docs/map-editor-design.md §5).
+import { ascii, cstr, f32, s32, u16, u32, u8 } from '../util/bytes';
+import { decodeTexture, textureDataSize } from './texture';
+
+export interface CgfxTexture {
+  name: string;
+  width: number;
+  height: number;
+  format: number;
+  rgba: Uint8Array;
+}
+
+export interface CgfxMaterial {
+  name: string;
+  /** Referenced texture names for units 0..2 (null = none). */
+  textures: (string | null)[];
+  /** Wrap modes of unit 0 (0 clamp, 1 border, 2 repeat, 3 mirror). */
+  wrapS: number;
+  wrapT: number;
+  /** Rasterization cull mode (0 never / 1 front / 2 back). */
+  cull: number;
+  /** Translucency kind (0 opaque, 1 translucent, 2 subtractive, 3 additive). */
+  layer: number;
+  blend: boolean;
+  alphaTest: boolean;
+  depthWrite: boolean;
+  /** Texture coordinator 0 transform. */
+  uv: { scaleU: number; scaleV: number; rotate: number; translateU: number; translateV: number };
+}
+
+export interface CgfxMesh {
+  name: string;
+  material: number;
+  priority: number;
+  visible: boolean;
+  positions: Float32Array; // xyz
+  normals: Float32Array | null;
+  uvs: Float32Array | null; // uv0
+  colors: Float32Array | null; // rgba 0..1
+  indices: Uint32Array;
+}
+
+export interface CgfxModel {
+  name: string;
+  meshes: CgfxMesh[];
+  materials: CgfxMaterial[];
+}
+
+export interface CgfxFile {
+  models: CgfxModel[];
+  textures: CgfxTexture[];
+}
+
+type Mat34 = number[]; // row-major 3x4
+
+const DEBUG_UNKNOWN = false;
+
+const ATTR = { position: 0, normal: 1, tangent: 2, color: 3, uv0: 4, uv1: 5, uv2: 6, boneIndex: 7, boneWeight: 8 };
+
+class Reader {
+  constructor(readonly b: Uint8Array) {}
+  u32 = (o: number): number => u32(this.b, o);
+  s32 = (o: number): number => s32(this.b, o);
+  f32 = (o: number): number => f32(this.b, o);
+  /** Self-relative pointer; 0 stays 0. */
+  rel = (o: number): number => {
+    const v = this.u32(o);
+    return v === 0 ? 0 : (o + v) >>> 0;
+  };
+  str = (o: number): string => {
+    const p = this.rel(o);
+    return p ? cstr(this.b, p) : '';
+  };
+  /** DICT reference {u32 count, rel offset} -> [{name, data}] */
+  dict = (o: number): { name: string; data: number }[] => {
+    const count = this.u32(o);
+    const d = this.rel(o + 4);
+    if (!count || !d) return [];
+    if (ascii(this.b, d, 4) !== 'DICT') throw new Error('CGFX: DICT がありません');
+    const out: { name: string; data: number }[] = [];
+    const n = this.u32(d + 8);
+    for (let i = 0; i < n; i++) {
+      const e = d + 0x1c + i * 16; // after the header (12) and the root node (16)
+      out.push({ name: this.str(e + 8), data: this.rel(e + 12) });
+    }
+    return out;
+  };
+  /** Pointer table {u32 count, rel table} -> absolute addresses. */
+  ptrs = (count: number, table: number): number[] => {
+    const out: number[] = [];
+    for (let i = 0; i < count; i++) out.push(this.rel(table + i * 4));
+    return out;
+  };
+  mat = (o: number): Mat34 => {
+    const m: number[] = [];
+    for (let i = 0; i < 12; i++) m.push(this.f32(o + i * 4));
+    return m;
+  };
+}
+
+function transformPoint(m: Mat34, x: number, y: number, z: number): [number, number, number] {
+  return [
+    m[0]! * x + m[1]! * y + m[2]! * z + m[3]!,
+    m[4]! * x + m[5]! * y + m[6]! * z + m[7]!,
+    m[8]! * x + m[9]! * y + m[10]! * z + m[11]!,
+  ];
+}
+function transformDir(m: Mat34, x: number, y: number, z: number): [number, number, number] {
+  return [m[0]! * x + m[1]! * y + m[2]! * z, m[4]! * x + m[5]! * y + m[6]! * z, m[8]! * x + m[9]! * y + m[10]! * z];
+}
+
+/** PICA command list -> register values (only the first write per register is kept). */
+function picaRegs(b: Uint8Array, o: number, words: number): Map<number, number> {
+  const regs = new Map<number, number>();
+  let i = 0;
+  while (i + 1 < words) {
+    const param = u32(b, o + i * 4);
+    const header = u32(b, o + i * 4 + 4);
+    const id = header & 0xffff;
+    const extra = (header >>> 20) & 0x7ff;
+    const consecutive = header >>> 31;
+    if (!regs.has(id)) regs.set(id, param);
+    for (let j = 0; j < extra; j++) {
+      const reg = consecutive ? id + j + 1 : id;
+      const v = u32(b, o + (i + 2 + j) * 4);
+      if (!regs.has(reg)) regs.set(reg, v);
+    }
+    i += 2 + extra;
+    if (extra & 1) i++; // padding keeps 8-byte alignment
+  }
+  return regs;
+}
+
+function readTexture(r: Reader, o: number): CgfxTexture | null {
+  // type, 'TXOB', revision, name, user data (2), height, width, glFormat, glType, mipmaps, texObj, location,
+  // format, 3 x u32, data length, rel data ...
+  if (ascii(r.b, o + 4, 4) !== 'TXOB') return null;
+  const name = r.str(o + 0x0c);
+  const height = r.u32(o + 0x18);
+  const width = r.u32(o + 0x1c);
+  const format = r.u32(o + 0x34);
+  const length = r.u32(o + 0x44);
+  const data = r.rel(o + 0x48);
+  if (!data || !width || !height || format > 13) return null;
+  const need = textureDataSize(format, width, height);
+  if (length < need) return null;
+  return { name, width, height, format, rgba: decodeTexture(r.b.subarray(data, data + need), width, height, format) };
+}
+
+function readMaterial(r: Reader, o: number): CgfxMaterial {
+  const name = r.str(o + 0x0c);
+  const layer = r.u32(o + 0x20);
+  const cull = r.u32(o + 0x104);
+  const depthFlags = r.u32(o + 0x118);
+  const blendMode = r.u32(o + 0x12c);
+  const coord = o + 0x16c; // 3 coordinators of 0x58 bytes
+  const uv = {
+    scaleU: r.f32(coord + 0x10),
+    scaleV: r.f32(coord + 0x14),
+    rotate: r.f32(coord + 0x18),
+    translateU: r.f32(coord + 0x1c),
+    translateV: r.f32(coord + 0x20),
+  };
+  const mappers = o + 0x16c + 3 * 0x58;
+  const textures: (string | null)[] = [];
+  let wrapS = 2, wrapT = 2;
+  for (let i = 0; i < 3; i++) {
+    const m = r.rel(mappers + i * 4);
+    if (!m) {
+      textures.push(null);
+      continue;
+    }
+    const texRef = r.rel(m + 8);
+    textures.push(texRef ? r.str(texRef + 0x18) || r.str(texRef + 0x0c) : null);
+    if (i === 0) {
+      const regs = picaRegs(r.b, m + 0x10, 13);
+      const param = regs.get(0x83);
+      if (param !== undefined) {
+        wrapT = (param >> 8) & 7;
+        wrapS = (param >> 12) & 7;
+      }
+    }
+  }
+  // Fragment operation: depth flags bit1 = depth write; blend mode 1/2 = blending.
+  // Alpha test lives in the fragment shader's command list; approximate by the translucency kind.
+  return {
+    name,
+    textures,
+    wrapS,
+    wrapT,
+    cull,
+    layer,
+    blend: blendMode === 1 || blendMode === 2,
+    alphaTest: layer === 0,
+    depthWrite: (depthFlags & 2) !== 0,
+    uv,
+  };
+}
+
+interface Attr {
+  usage: number;
+  type: number; // 0 s8, 1 u8, 2 s16, 6 f32
+  elements: number;
+  scale: number;
+  offset: number;
+  /** Fixed (constant) attribute value. */
+  fixed?: number[];
+}
+
+function readValue(b: Uint8Array, o: number, a: Attr, out: number[]): void {
+  for (let i = 0; i < 4; i++) out[i] = i === 3 ? 1 : 0;
+  for (let i = 0; i < a.elements && i < 4; i++) {
+    switch (a.type) {
+      case 0: out[i] = (b[o + i]! << 24) >> 24; break;
+      case 1: out[i] = b[o + i]!; break;
+      case 2: out[i] = (u16(b, o + i * 2) << 16) >> 16; break;
+      case 6: out[i] = f32(b, o + i * 4); break;
+    }
+  }
+}
+
+function readModel(r: Reader, o: number): CgfxModel {
+  const flags = r.u32(o);
+  const name = r.str(o + 0x0c);
+  const objCount = r.u32(o + 0xb4);
+  const objTable = r.rel(o + 0xb8);
+  const materials = r.dict(o + 0xbc).map((e) => readMaterial(r, e.data));
+  const shapeCount = r.u32(o + 0xc4);
+  const shapeTable = r.rel(o + 0xc8);
+  const objectNodes = r.dict(o + 0xcc).map((e) => ({ name: r.str(e.data), visible: r.u32(e.data + 4) === 1 }));
+
+  // Skeleton: bone world matrices (rigid skinning moves vertices by these).
+  const boneWorld: Mat34[] = [];
+  if (flags & 0x80) {
+    const sk = r.rel(o + 0xe0);
+    if (sk) for (const e of r.dict(sk + 0x18)) boneWorld[r.u32(e.data + 8)] = r.mat(e.data + 0x74);
+  }
+
+  const shapes = r.ptrs(shapeCount, shapeTable).map((s) => readShape(r, s, boneWorld));
+  const meshes: CgfxMesh[] = [];
+  for (const m of r.ptrs(objCount, objTable)) {
+    const shapeIndex = r.u32(m + 0x18);
+    const material = r.u32(m + 0x1c);
+    const visibleFlag = u8(r.b, m + 0x24) & 1;
+    const priority = u8(r.b, m + 0x25);
+    const nodeIndex = u16(r.b, m + 0x26);
+    const node = objectNodes[nodeIndex];
+    const shape = shapes[shapeIndex];
+    if (!shape) continue;
+    meshes.push({
+      ...shape,
+      name: node?.name ?? r.str(m + 0x0c),
+      material,
+      priority,
+      visible: node ? node.visible : visibleFlag === 1,
+    });
+  }
+  return { name, meshes, materials };
+}
+
+type Shape = Omit<CgfxMesh, 'name' | 'material' | 'priority' | 'visible'>;
+
+function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
+  const posOffset = [r.f32(s + 0x20), r.f32(s + 0x24), r.f32(s + 0x28)];
+  const faceCount = r.u32(s + 0x2c);
+  const faceTable = r.rel(s + 0x30);
+  const vgCount = r.u32(s + 0x38);
+  const vgTable = r.rel(s + 0x3c);
+
+  // Vertex buffers: one interleaved buffer (0x40000002, its attributes are 0x40000001) + fixed attributes
+  // (0x80000000).
+  let vbuf = 0, stride = 0;
+  const attrs: Attr[] = [];
+  for (const vg of r.ptrs(vgCount, vgTable)) {
+    const type = r.u32(vg);
+    if (type === 0x40000002) {
+      vbuf = r.rel(vg + 0x18);
+      stride = r.u32(vg + 0x24);
+      for (const a of r.ptrs(r.u32(vg + 0x28), r.rel(vg + 0x2c))) {
+        attrs.push({
+          usage: r.u32(a + 4),
+          type: r.u32(a + 0x24) & 0xf,
+          elements: r.u32(a + 0x28),
+          scale: r.f32(a + 0x2c),
+          offset: r.u32(a + 0x30),
+        });
+      }
+    } else if (type === 0x80000000) {
+      if (DEBUG_UNKNOWN) console.warn('fixed attribute', Array.from({ length: 10 }, (_, i) => r.u32(vg + i * 4).toString(16)));
+      // {type, usage, flags, format, elements, scale, count, rel values}
+      const usage = r.u32(vg + 4);
+      const elements = r.u32(vg + 0x10);
+      const scale = r.f32(vg + 0x14);
+      const count = r.u32(vg + 0x18);
+      const values = r.rel(vg + 0x1c);
+      const fixed: number[] = [0, 0, 0, 1];
+      if (values) for (let i = 0; i < Math.min(count, 4); i++) fixed[i] = r.f32(values + i * 4);
+      attrs.push({ usage, type: 6, elements, scale: scale || 1, offset: 0, fixed });
+    } else if (DEBUG_UNKNOWN) console.warn('vertex group type', type.toString(16));
+  }
+
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = [];
+  const has = (u: number): boolean => attrs.some((a) => a.usage === u);
+  const tmp = [0, 0, 0, 0];
+  const vmap = new Map<number, number>(); // (face group, vertex index) -> output vertex
+
+  let groupId = 0;
+  for (const fg of r.ptrs(faceCount, faceTable)) {
+    groupId++;
+    const nodeCount = r.u32(fg);
+    const nodeList = r.rel(fg + 4);
+    const skinning = r.u32(fg + 8);
+    const nodes: number[] = [];
+    for (let i = 0; i < nodeCount; i++) nodes.push(r.u32(nodeList + i * 4));
+    vmap.clear();
+    for (const fm of r.ptrs(r.u32(fg + 0x0c), r.rel(fg + 0x10))) {
+      for (const fd of r.ptrs(r.u32(fm), r.rel(fm + 4))) {
+        const shortIdx = (r.u32(fd) & 2) !== 0;
+        const len = r.u32(fd + 8);
+        const data = r.rel(fd + 0x0c);
+        const n = shortIdx ? len >> 1 : len;
+        for (let i = 0; i < n; i++) {
+          const vi = shortIdx ? u16(r.b, data + i * 2) : r.b[data + i]!;
+          let out = vmap.get(vi);
+          if (out === undefined) {
+            out = pos.length / 3;
+            vmap.set(vi, out);
+            const base = vbuf + vi * stride;
+            let p = [0, 0, 0], nn = [0, 1, 0], bone = -1;
+            let c = [1, 1, 1, 1], t = [0, 0];
+            for (const a of attrs) {
+              if (a.fixed) for (let k = 0; k < 4; k++) tmp[k] = a.fixed[k]! * a.scale;
+              else {
+                readValue(r.b, base + a.offset, a, tmp);
+                for (let k = 0; k < 4; k++) tmp[k] = tmp[k]! * a.scale;
+              }
+              switch (a.usage) {
+                case ATTR.position: p = [tmp[0]! + posOffset[0]!, tmp[1]! + posOffset[1]!, tmp[2]! + posOffset[2]!]; break;
+                case ATTR.normal: nn = [tmp[0]!, tmp[1]!, tmp[2]!]; break;
+                case ATTR.color: c = [tmp[0]!, tmp[1]!, tmp[2]!, a.elements > 3 || a.fixed ? tmp[3]! : 1]; break;
+                case ATTR.uv0: t = [tmp[0]!, tmp[1]!]; break;
+                case ATTR.boneIndex: {
+                  // Bone indices are raw integers (the scale applies to other attributes only).
+                  const raw = a.fixed ? a.fixed[0]! : tmp[0]! / (a.scale || 1);
+                  bone = nodes[Math.round(raw)] ?? -1;
+                  break;
+                }
+              }
+            }
+            if (bone < 0 && nodes.length === 1) bone = nodes[0]!;
+            // Rigid skinning (and unskinned shapes bound to a single bone) are stored in bone space.
+            if (skinning !== 2 && bone >= 0 && boneWorld[bone]) {
+              p = transformPoint(boneWorld[bone]!, p[0]!, p[1]!, p[2]!);
+              nn = transformDir(boneWorld[bone]!, nn[0]!, nn[1]!, nn[2]!);
+            }
+            pos.push(p[0]!, p[1]!, p[2]!);
+            nrm.push(nn[0]!, nn[1]!, nn[2]!);
+            uv.push(t[0]!, t[1]!);
+            col.push(c[0]!, c[1]!, c[2]!, c[3]!);
+          }
+          idx.push(out);
+        }
+      }
+    }
+  }
+  void groupId;
+  return {
+    positions: new Float32Array(pos),
+    normals: has(ATTR.normal) ? new Float32Array(nrm) : null,
+    uvs: has(ATTR.uv0) ? new Float32Array(uv) : null,
+    colors: has(ATTR.color) ? new Float32Array(col) : null,
+    indices: new Uint32Array(idx),
+  };
+}
+
+/** Parse a CGFX file (bytes must start at the 'CGFX' magic). */
+export function parseCgfx(b: Uint8Array): CgfxFile {
+  if (ascii(b, 0, 4) !== 'CGFX') throw new Error('CGFX ではありません');
+  const r = new Reader(b);
+  const data = u16(b, 6); // header length
+  if (ascii(b, data, 4) !== 'DATA') throw new Error('CGFX: DATA がありません');
+  const dicts = data + 8;
+  const models = r.dict(dicts).map((e) => readModel(r, e.data));
+  const textures: CgfxTexture[] = [];
+  for (const e of r.dict(dicts + 8)) {
+    const t = readTexture(r, e.data);
+    if (t) textures.push(t);
+  }
+  return { models, textures };
+}
+
+/** t8.bin entries in model archives: 0x180-byte header (path at +0x54, UTF-16) + CGFX. */
+export function unwrapT8(b: Uint8Array): { path: string; cgfx: Uint8Array } {
+  let path = '';
+  for (let o = 0x54; o + 1 < 0x180; o += 2) {
+    const c = b[o]! | (b[o + 1]! << 8);
+    if (!c) break;
+    path += String.fromCharCode(c);
+  }
+  const start = ascii(b, 0x180, 4) === 'CGFX' ? 0x180 : findMagic(b, 'CGFX');
+  if (start < 0) throw new Error('CGFX が見つかりません');
+  return { path, cgfx: b.subarray(start) };
+}
+
+function findMagic(b: Uint8Array, m: string): number {
+  outer: for (let i = 0; i + 4 <= b.length; i += 4) {
+    for (let j = 0; j < 4; j++) if (b[i + j] !== m.charCodeAt(j)) continue outer;
+    return i;
+  }
+  return -1;
+}
