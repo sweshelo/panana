@@ -80,21 +80,6 @@ export function modelPhoto(ref: ModelRef): Promise<string | null> {
   return p;
 }
 
-/** An <img> that gets the photo once it scrolls into view. */
-export function lazyPhoto(ref: ModelRef | null, cls = 'photo'): HTMLElement {
-  const box = h('span', { class: cls });
-  if (!ref) return box;
-  const io = new IntersectionObserver((entries) => {
-    if (!entries.some((e) => e.isIntersecting)) return;
-    io.disconnect();
-    modelPhoto(ref).then((url) => {
-      if (url) box.append(h('img', { src: url, alt: '' }));
-    });
-  });
-  io.observe(box);
-  return box;
-}
-
 /** Interactive viewer (one WebGL context, reused for every model). */
 export class ModelViewer {
   readonly el = h('div', { class: 'viewer' });

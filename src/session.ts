@@ -1,0 +1,140 @@
+// One opened dump: the game, the editing state shared by every page, the books, and the saving and restoring of
+// edits (IndexedDB).
+import { EditorState } from './editor/state';
+import { mapLabel } from './editor/labels';
+import type { MapInfo } from './game/codebin';
+import type { EventTable } from './game/events';
+import type { Game } from './game/game';
+import { ItemBook } from './game/items';
+import { MapDb } from './game/mapdb';
+import type { MonsterBook } from './game/monsters';
+import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
+import { ShopStock } from './game/shops';
+import type { SoundNames } from './game/sound';
+import { idbGet, idbSet } from './util/idb';
+
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム' };
+export const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
+const EDITS_KEY = 'edits/v2';
+
+export interface ItemData {
+  items: ItemBook;
+  stock: ShopStock | null;
+}
+
+export class Session {
+  readonly st: EditorState;
+  /** Items and what each shop sells, shared by the item book and the shop list (built on first use). */
+  private itemData: Promise<ItemData> | null = null;
+  /** The shop lists, once the item data was read (nothing to save or export before). */
+  stock: ShopStock | null = null;
+  private saveTimer = 0;
+
+  private constructor(
+    readonly game: Game,
+    readonly book: MonsterBook | null,
+    readonly sounds: SoundNames | null,
+  ) {
+    this.st = new EditorState(game);
+  }
+
+  /** Reads the books and restores the saved edits (asking first unless `autoRestore`). */
+  static async open(game: Game, autoRestore = false): Promise<Session> {
+    const [book, sounds] = await Promise.all([
+      game.monsters().catch((err) => {
+        console.warn('monsters', err);
+        return null;
+      }),
+      game.sounds(),
+    ]);
+    const s = new Session(game, book, sounds);
+    await s.restoreEdits(autoRestore);
+    return s;
+  }
+
+  /** The map as edited so far (or as in the game). */
+  readonly docOf = (m: MapInfo): MapDoc => this.st.docs.get(m.hash) ?? this.game.doc(m);
+  /** The event table of a dungeon as edited so far. */
+  readonly eventsOf = async (d: number): Promise<EventTable | null> => this.st.events.get(d) ?? this.game.eventTable(d);
+
+  items(): Promise<ItemData> {
+    this.itemData ??= ShopStock.load(this.game)
+      .catch(() => null)
+      .then((stock) => {
+        this.stock = stock;
+        return { items: new ItemBook(this.game, stock?.lists ?? new Map()), stock };
+      });
+    return this.itemData;
+  }
+
+  readonly scheduleSave = (): void => {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => this.saveNow(), 500);
+  };
+
+  saveNow(): void {
+    clearTimeout(this.saveTimer);
+    const st = this.st;
+    const maps: Record<number, Record<number, Uint8Array>> = {};
+    for (const d of st.modifiedDocs()) {
+      const secs: Record<number, Uint8Array> = {};
+      for (const k of st.changedSections(d)) secs[k] = sectionBytes(d, k);
+      maps[d.hash] = secs;
+    }
+    const events: Record<number, Uint8Array> = {};
+    for (const [d, t] of st.events) if (t.changed()) events[d] = t.data;
+    const master = this.game.master;
+    const tables: Record<string, Uint8Array> = {};
+    for (const n of master.changedTables()) tables[n] = master.table(n).data;
+    const shops = this.stock?.saved() ?? [];
+    idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops });
+  }
+
+  private async restoreEdits(auto: boolean): Promise<void> {
+    type Saved = {
+      maps: Record<number, Record<number, Uint8Array>>;
+      events: Record<number, Uint8Array>;
+      treasure: Uint8Array | null;
+      tables?: Record<string, Uint8Array>;
+      messages?: [number, Uint16Array][];
+      shops?: [number, number[]][];
+    };
+    const edits = await idbGet<Saved>(EDITS_KEY);
+    if (!edits) return;
+    const game = this.game;
+    const names = Object.keys(edits.maps).map((h) => mapLabel(game, Number(h)));
+    const nEvents = Object.keys(edits.events).length;
+    const tables = Object.keys(edits.tables ?? {});
+    const nMessages = edits.messages?.length ?? 0;
+    const nShops = edits.shops?.length ?? 0;
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops) return;
+    const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : ''].filter(Boolean).join(' / ');
+    if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
+      await idbSet(EDITS_KEY, null);
+      return;
+    }
+    const tmp = new MapDb(game.dbBytes);
+    for (const [hash, secs] of Object.entries(edits.maps)) {
+      const info = game.code.byHash(Number(hash));
+      if (!info) continue;
+      for (const [k, bytes] of Object.entries(secs)) tmp.set(info.sections[Number(k)]!, bytes);
+      this.st.docs.set(info.hash, loadDoc(tmp, info));
+    }
+    for (const [d, bytes] of Object.entries(edits.events)) {
+      const t = await game.eventTable(Number(d));
+      if (t) {
+        t.restore(bytes);
+        this.st.events.set(Number(d), t);
+      }
+    }
+    if (edits.treasure) game.master.restoreTreasure(edits.treasure);
+    for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
+    if (edits.messages) game.master.texts.restore(edits.messages);
+    if (tables.length) this.book?.reload();
+    if (nShops) {
+      const { items, stock } = await this.items(); // after the tables, so the items are read with their edits
+      stock?.restore(edits.shops!);
+      if (stock) items.setShops(stock.lists);
+    }
+  }
+}

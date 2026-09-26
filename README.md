@@ -113,7 +113,7 @@ MonsterParameter (185 行) を elpulse の `tools/gen_reference.py` と同じ読
 
 ### 群れ
 
-マスターの monsterGroup (1 行 = 先頭の候補 5 個 +0x00、仲間の候補 5 個 +0x14、各 {u16 モンスター, u8 重み, u8 数のコード}、+0x28〜 未解析) を一覧します (`src/pages/groups.ts`)。
+マスターの monsterGroup (1 行 = 先頭の候補 5 個 +0x00、仲間の候補 5 個 +0x14、各 {u16 モンスター, u8 重み, u8 数のコード}、+0x28〜 未解析) を一覧します (`src/pages/groups.tsx`)。
 - 左の一覧はモンスターの名前で検索し、「マップで使う」「どのマップも使わない」「変更した」で絞り込めます。使うマップは、今の (編集中の) マップの区画 6 (ヘッダーとセル) から計算します。
 - 一覧はモンスターを写真 (図鑑と同じ縮小画像) で出します。候補のモンスターは写真の一覧 (ダイアログ) から選び直し、重み (1〜255)・数も変えられ、「＋ 追加」(5 個まで) と「×」で増減できます。割合は重みから計算します。変更はマスター `56562135` として書き出し、編集は自動で保存します。
 - 「写して新しい群れを作る」: 今の群れを写した行を monsterGroup の末尾に足し、索引に新しいハッシュを入れます。マップ編集の右ペイン「出現する敵」で選べます。
@@ -121,7 +121,7 @@ MonsterParameter (185 行) を elpulse の `tools/gen_reference.py` と同じ読
 
 ### アクション
 
-マスターの actionData を一覧します (`src/game/actions.ts`、`src/pages/actions.ts`)。既定は「アイテムの効果 (種類 2)」で、「アイテムが使う」「モンスターのワザ」「すべて」に切り替えられます。
+マスターの actionData を一覧します (`src/game/actions.ts`、`src/pages/actions.tsx`)。既定は「アイテムの効果 (種類 2)」で、「アイテムが使う」「モンスターのワザ」「すべて」に切り替えられます。
 - 分かっている欄: +0x00 の w0 (bit1-2 種類、bit3-6 効果の種別、bit13-15 付与の段階、bit29-31 使える場面)、+0x04 名前のメッセージ、+0x18 / +0x1A 量 (s16)。ほかの欄は生データ (u32・s16 × 2) で出します。
 - 参照: そのアクションを使う道具 (itemData +0x24) と、ワザとして持つモンスター (MonsterParameter +0x3C)。アイテム図鑑の効果とモンスター図鑑のワザからリンクします。
 
@@ -149,14 +149,22 @@ src/
             monsters.ts sound.ts items.ts actions.ts                   モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店、アクション
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts                                          アニメ (CANM) の読み込みと再生 (CPU スキニング)
-  editor/   state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...
-  pages/    monsters.ts items.ts groups.ts actions.ts                  モンスター図鑑、アイテム図鑑、群れ、アクション
+  editor/   mapeditor.ts state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...  マップ編集 (h())
+  pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
+            modelview.ts                                               モデルの写真と 3D ビューア (three.js)
+  ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
+            book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx  ページの共通部品
+            mount.tsx useEditorState.ts                                React と h() の橋渡し、EditorState の購読
+  session.ts                                                           開いたダンプ: 編集の状態・図鑑・編集の保存と復元
   export/   pack.ts                                                    マップ DB → A90C8038、イベント、マスター → zip
 test/
   unit.test.ts   ROM なしで動くテスト
+  ui.test.tsx    React のページを文字列に描画して確かめるテスト (ROM なし)
   rom.test.ts    Python の参照実装との照合とラウンドトリップ (ダンプが必要)
   golden/export_golden.py
 ```
+
+UI は React (TSX) です。マップ編集だけは h() で DOM を組み立てるクラス (`src/editor/mapeditor.ts`) のままで、外枠 (`src/ui/Shell.tsx`) がその要素をマップのページに置きます。three.js のモデルビューアも同じくクラスのまま React から差し込みます。マップ編集と共有する部品 (メッセージの編集欄、群れの表) は React で書き、マップ編集には `src/ui/mount.tsx` の `reactElement` で要素として渡します。
 
 分かったこと (設計書からの補足):
 - mapResource の行 = `[0] モデルのアーカイブ, [1] テクスチャのアーカイブ (469B3DC6), [2] その中のテクスチャ (bcres), [3] 空のモデル`。
