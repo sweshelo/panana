@@ -10,6 +10,22 @@ import type { MapDoc } from './sections';
 export const MONSTER_DESIGN_ARCHIVE = '2713402F';
 /** Archive of the monster models (MonsterDesign +0x10 model, +0x14 textures). */
 export const MONSTER_MODEL_ARCHIVE = '470D2848';
+/**
+ * What the game plays each monster motion for (key = first 4 characters of the animation name). The numbers
+ * are rows of animData.bin (master, table hash B3314000); docs/monster-motion.md.
+ */
+export const MONSTER_MOTIONS: Record<string, string> = {
+  '001_': '0x41 ミュージアム・戦闘の待機',
+  '002_': '0x42 戦闘の待機 (+0x4A bit3 の個体)',
+  '003_': '0x43',
+  '004_': '0x44',
+  '005_': '0x45',
+  '006_': '0x46',
+  '007_': '0x47',
+  '010_': '0x48',
+  '008_': '0x49 攻撃を受けた',
+  '009_': '0x4A 倒れた',
+};
 
 const bits = (w: number, lo: number, n: number, signed = false): number => {
   const v = Math.floor(w / 2 ** lo) % 2 ** n;

@@ -115,7 +115,8 @@ export class ModelViewer {
   private readonly frameLabel = h('span', { class: 'viewer-frame small' });
   private readonly animBar = h('div', { class: 'viewer-anim' }, this.motionSelect, this.playButton, this.slider, this.frameLabel);
 
-  constructor() {
+  /** @param motionHints What a motion is used for, by the first 4 characters of its name ("001_"). */
+  constructor(private readonly motionHints: Record<string, string> = {}) {
     this.el.append(this.canvas, this.picture, this.note, this.animBar,
       h('div', { class: 'viewer-bar' },
         h('button', { title: '向きと大きさを戻す', onclick: () => this.reset() }, '正面'),
@@ -189,7 +190,10 @@ export class ModelViewer {
     clear(this.motionSelect);
     this.motionSelect.append(h('option', { value: '' }, '静止姿勢'));
     const motions = animated.motions;
-    for (const a of motions) this.motionSelect.append(h('option', { value: a.name }, motionLabel(a.name)));
+    for (const a of motions) {
+      const hint = this.motionHints[animationKey(a.name)];
+      this.motionSelect.append(h('option', { value: a.name, title: hint ?? '' }, motionLabel(a.name) + (hint ? ` (${hint})` : '')));
+    }
     const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions[0];
     this.motionSelect.value = first?.name ?? '';
     this.selectMotion(first?.name ?? null);
@@ -198,9 +202,30 @@ export class ModelViewer {
   private selectMotion(name: string | null): void {
     if (!this.animated) return;
     this.animated.select(name);
+    this.frameMotion();
     this.slider.max = String(Math.max(0, Math.floor(this.animated.frames)));
     this.seek(0);
     this.setPlaying(!!name);
+  }
+
+  /** Aim the camera at the space the motion covers (flying monsters leave the rest pose's box). */
+  private frameMotion(): void {
+    const a = this.animated;
+    if (!a || !this.model) return;
+    const box = new THREE.Box3();
+    const steps = a.frames > 0 ? 12 : 0;
+    for (let i = 0; i <= steps; i++) {
+      a.update((a.frames * i) / Math.max(steps, 1));
+      this.model.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.computeBoundingBox();
+          box.union(o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld));
+        }
+      });
+    }
+    if (box.isEmpty()) return;
+    this.center = box.getCenter(new THREE.Vector3());
+    this.radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
   }
 
   /** Go to a time (frames since the motion started; looping motions keep counting). */

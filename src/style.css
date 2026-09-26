@@ -219,8 +219,9 @@ select.edited { border-color: var(--warn); }
 .viewer canvas:active { cursor: grabbing; }
 .viewer-note { position: absolute; left: 8px; top: 6px; pointer-events: none; }
 .viewer-bar { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px; }
-.viewer-anim { display: none; position: absolute; left: 6px; bottom: 6px; align-items: center; gap: 4px; }
+.viewer-anim { display: none; position: absolute; right: 6px; top: 6px; align-items: center; gap: 4px; }
 .viewer.animated .viewer-anim { display: flex; }
+.viewer-anim select { max-width: 210px; }
 .viewer-anim input[type=range] { width: 110px; }
 .viewer-frame { color: var(--muted); min-width: 5.5em; font-variant-numeric: tabular-nums; }
 .photo-cell { width: 40px; padding: 1px 2px !important; }
