@@ -151,7 +151,7 @@ export class App {
     const pageItems = h('div', { class: 'page page-items' });
     const tab = (page: string, label: string): HTMLElement => h('a', { class: 'tab', 'data-page': page, href: `#/${page}` }, label);
     const nav = h('nav', { class: 'topnav' },
-      h('b', { class: 'brand' }, '電波人間のRPG2 ツール'),
+      h('b', { class: 'brand' }, 'Panana - 電波人間のRPG2 エディタ'),
       tab('map', 'マップ編集'),
       tab('monsters', 'モンスター図鑑'),
       tab('items', 'アイテム図鑑'),
@@ -201,7 +201,7 @@ export class App {
         el.append(this.monsterPage.el);
       }
       this.monsterPage.show(Number(arg) || undefined);
-      document.title = '電波人間のRPG2 ツール — モンスター図鑑';
+      document.title = 'Panana  — モンスター図鑑';
       return;
     }
     if (p === 'items') {
@@ -216,11 +216,11 @@ export class App {
         clear(el);
         el.append(this.itemPage.el);
       }
-      document.title = '電波人間のRPG2 ツール — アイテム図鑑';
+      document.title = 'Panana — アイテム図鑑';
       await this.itemPage.show(Number(arg) || undefined);
       return;
     }
-    document.title = '電波人間のRPG2 ツール — マップ編集';
+    document.title = 'Panana — マップ編集';
     if (arg) {
       const info = game.code.byName(decodeURIComponent(arg));
       if (info && this.st?.current?.hash !== info.hash) {
