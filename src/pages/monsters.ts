@@ -8,7 +8,7 @@ import { mapEncounters, RESIST_GROUPS, RESIST_MAX, RESIST_MIN, type Monster, typ
 import { radar } from './radar';
 import { lazyPhoto, ModelViewer, type ModelRef } from './modelview';
 import { loadComposite } from '../cgfx/loader';
-import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
+import { MONSTER_MODEL_ARCHIVE, MONSTER_MOTIONS } from '../game/monsters';
 import { hex8 } from '../util/bytes';
 import { mapTitle } from '../game/names';
 import type { MapDoc } from '../game/sections';
@@ -53,7 +53,7 @@ export class MonsterPage {
   private readonly search = h('input', { type: 'search', placeholder: '名前・ワザ・ドロップで検索' });
   private readonly filter = h('select', {});
   private selected = 0;
-  private readonly viewer = new ModelViewer();
+  private readonly viewer = new ModelViewer(MONSTER_MOTIONS);
   private shownModel = '';
   private where = new Map<number, Appearance[]>();
 

@@ -1,10 +1,11 @@
 // Models of the books: a "photo" (rendered thumbnail, cached as a data URL) and an interactive viewer
-// (drag to turn, wheel to zoom, save as PNG).
+// (drag to turn, wheel to zoom, save as PNG, play the motions of models that have them).
 import * as THREE from 'three';
+import { AnimatedModel, ANIMATION_FPS, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { renderObjectThumb } from '../editor/thumbs';
-import { h } from '../editor/dom';
+import { clear, h } from '../editor/dom';
 import { idbGet, idbSet } from '../util/idb';
 
 /** A model to show: the converted set and the hash of the model in it. */
@@ -103,9 +104,20 @@ export class ModelViewer {
   private zoom = 1;
   private name = 'model';
   private token = 0;
+  // Motions
+  private animated: AnimatedModel | null = null;
+  private frame = 0;
+  private playing = false;
+  private lastTime = 0;
+  private readonly motionSelect = h('select', { title: 'モーション', onchange: () => this.selectMotion(this.motionSelect.value || null) });
+  private readonly playButton = h('button', { title: '再生 / 一時停止', onclick: () => this.setPlaying(!this.playing) }, '⏸');
+  private readonly slider = h('input', { type: 'range', min: 0, max: 0, step: 1, title: 'フレーム', oninput: () => this.seek(Number(this.slider.value)) });
+  private readonly frameLabel = h('span', { class: 'viewer-frame small' });
+  private readonly animBar = h('div', { class: 'viewer-anim' }, this.motionSelect, this.playButton, this.slider, this.frameLabel);
 
-  constructor() {
-    this.el.append(this.canvas, this.picture, this.note,
+  /** @param motionHints What a motion is used for, by the first 4 characters of its name ("001_"). */
+  constructor(private readonly motionHints: Record<string, string> = {}) {
+    this.el.append(this.canvas, this.picture, this.note, this.animBar,
       h('div', { class: 'viewer-bar' },
         h('button', { title: '向きと大きさを戻す', onclick: () => this.reset() }, '正面'),
         h('button', { title: 'PNG で保存', onclick: () => this.save() }, '写真を保存')));
@@ -139,6 +151,9 @@ export class ModelViewer {
     this.name = name;
     if (this.model) this.scene.remove(this.model);
     this.model = null;
+    this.animated = null;
+    this.playing = false;
+    this.el.classList.remove('animated');
     this.el.classList.remove('picture');
     this.note.textContent = ref ? 'モデルを読み込み中…' : 'モデルがありません';
     this.render();
@@ -151,7 +166,9 @@ export class ModelViewer {
       this.note.textContent = `${f.name} (テクスチャ)`;
       return;
     }
-    const m = f?.factory.instance(f.hash) ?? null;
+    const hasMotions = !!f?.factory.set.models.get(f.hash)?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
+    const animated = f && hasMotions ? new AnimatedModel(f.factory, f.hash) : null;
+    const m = animated?.group ?? f?.factory.instance(f.hash) ?? null;
     if (!f || !m) {
       this.note.textContent = 'モデルを読めませんでした';
       return;
@@ -162,7 +179,90 @@ export class ModelViewer {
     const box = new THREE.Box3().setFromObject(m);
     this.center = box.getCenter(new THREE.Vector3());
     this.radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
+    if (animated) this.showMotions(animated);
     this.reset();
+  }
+
+  /** Motion list of an animated model; starts with "001_" (the waiting motion) when there is one. */
+  private showMotions(animated: AnimatedModel): void {
+    this.animated = animated;
+    this.el.classList.add('animated');
+    clear(this.motionSelect);
+    this.motionSelect.append(h('option', { value: '' }, '静止姿勢'));
+    const motions = animated.motions;
+    for (const a of motions) {
+      const hint = this.motionHints[animationKey(a.name)];
+      this.motionSelect.append(h('option', { value: a.name, title: hint ?? '' }, motionLabel(a.name) + (hint ? ` (${hint})` : '')));
+    }
+    const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions[0];
+    this.motionSelect.value = first?.name ?? '';
+    this.selectMotion(first?.name ?? null);
+  }
+
+  private selectMotion(name: string | null): void {
+    if (!this.animated) return;
+    this.animated.select(name);
+    this.frameMotion();
+    this.slider.max = String(Math.max(0, Math.floor(this.animated.frames)));
+    this.seek(0);
+    this.setPlaying(!!name);
+  }
+
+  /** Aim the camera at the space the motion covers (flying monsters leave the rest pose's box). */
+  private frameMotion(): void {
+    const a = this.animated;
+    if (!a || !this.model) return;
+    const box = new THREE.Box3();
+    const steps = a.frames > 0 ? 12 : 0;
+    for (let i = 0; i <= steps; i++) {
+      a.update((a.frames * i) / Math.max(steps, 1));
+      this.model.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.geometry.computeBoundingBox();
+          box.union(o.geometry.boundingBox!.clone().applyMatrix4(o.matrixWorld));
+        }
+      });
+    }
+    if (box.isEmpty()) return;
+    this.center = box.getCenter(new THREE.Vector3());
+    this.radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
+  }
+
+  /** Go to a time (frames since the motion started; looping motions keep counting). */
+  private seek(time: number): void {
+    const a = this.animated;
+    if (!a) return;
+    this.frame = time;
+    a.update(time);
+    const frames = a.frames;
+    const shown = frames > 0 && a.loop ? time % frames : Math.min(time, frames);
+    this.slider.value = String(Math.floor(shown));
+    this.frameLabel.textContent = `${Math.floor(shown)} / ${Math.floor(frames)}`;
+    this.render();
+  }
+
+  private setPlaying(on: boolean): void {
+    const a = this.animated;
+    if (on && a && a.frames > 0 && !a.loop && this.frame >= a.frames) this.frame = 0;
+    this.playing = on && !!a && a.frames > 0;
+    this.playButton.textContent = this.playing ? '⏸' : '▶';
+    if (!this.playing) return;
+    const token = this.token;
+    this.lastTime = performance.now();
+    const tick = (now: number): void => {
+      if (!this.playing || token !== this.token || !this.animated) return;
+      const frames = this.animated.frames;
+      let f = this.frame + ((now - this.lastTime) / 1000) * ANIMATION_FPS;
+      this.lastTime = now;
+      if (f >= frames && !this.animated.loop) {
+        f = frames;
+        this.setPlaying(false);
+      }
+      if (this.el.isConnected) this.seek(f);
+      else this.frame = f;
+      if (this.playing) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   private reset(): void {
@@ -211,4 +311,10 @@ export class ModelViewer {
     a.click();
     a.remove();
   }
+}
+
+/** "001_E03_wait" -> "001 wait". */
+function motionLabel(name: string): string {
+  const m = /^(\d{3})_[^_]+_(.+)$/.exec(name);
+  return m ? `${m[1]} ${m[2]}` : name;
 }
