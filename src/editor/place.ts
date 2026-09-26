@@ -5,12 +5,15 @@ import type { Master } from '../game/master';
 import type { GimmickTemplate } from '../game/templates';
 import { LAYOUTS, P3, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { u32, w16, w32 } from '../util/bytes';
+import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
 
 export type Stamp =
   | { type: 'chest' }
   | { type: 'prop'; row: number; dir: number }
   | { type: 'floor'; kind: number }
-  | { type: 'template'; t: GimmickTemplate };
+  | { type: 'template'; t: GimmickTemplate }
+  /** Generic switch + gate: first click places the gate, the second the switch that opens it. */
+  | { type: 'switchgate'; gate?: number };
 
 export function stampLabel(s: Stamp): string {
   switch (s.type) {
@@ -18,6 +21,7 @@ export function stampLabel(s: Stamp): string {
     case 'prop': return `置物 (mapObject #${s.row})`;
     case 'floor': return s.kind === 1 ? '凍った床' : 'ダメージ床';
     case 'template': return `${s.t.label} (${s.t.source} から)`;
+    case 'switchgate': return s.gate === undefined ? 'スイッチと柵: まず柵を置く場所 (タイル) をクリック' : `スイッチと柵: 次に柵 (イベント #${s.gate}) を開けるスイッチを置く場所をクリック`;
   }
 }
 
@@ -60,8 +64,9 @@ export interface PlaceContext {
 /** Add a record for `stamp` at cell coordinates (cx, cy). Returns [section, index]. */
 export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: number): [number, number] {
   const { doc, events, master } = ctx;
-  const needsRow = stamp.type === 'chest' || (stamp.type === 'template' && !!stamp.t.event);
-  if (needsRow && (!events || events.roomLeft() < 1))
+  const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || (stamp.type === 'template' && !!stamp.t.event);
+  const rows = stamp.type === 'switchgate' && stamp.gate === undefined ? 2 : 1;
+  if (needsRow && (!events || events.roomLeft() < rows))
     throw new Error(events ? `このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)` : 'このダンジョンにはイベントの表がありません');
   const add = (section: number, raw: Uint8Array): [number, number] => {
     const L = LAYOUTS[section]!;
@@ -104,8 +109,39 @@ export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: numb
       }
       return add(3, raw);
     }
+    case 'switchgate': {
+      const ev = events!;
+      if (stamp.gate === undefined) {
+        // gate: section 3 kind 17 (model gimk_03_gate_08), event row of kind 0 (like D01 row 13)
+        const evRow = ev.addRow(new Uint8Array(ev.table.rowSize));
+        const raw = new Uint8Array(28);
+        w32(raw, 0x00, newPointId(ctx.docs));
+        w32(raw, 0x0c, evRow);
+        raw[0x14] = 17;
+        w32(raw, 0x18, 0x400);
+        stamp.gate = evRow;
+        return add(3, raw);
+      }
+      // switch: section 5 kind 2, event kind 0x30 opening the gate (elpulse docs/events.md §7)
+      const row = new Uint8Array(ev.table.rowSize);
+      w32(row, 0x08, stamp.gate);
+      const preset = SWITCH_PRESETS[0]!;
+      row[0x10] = preset.loadAnim;
+      row[0x11] = preset.openAnim;
+      row[0x12] = preset.sound;
+      w16(row, 0x46, SWITCH_MODEL);
+      row[0x4d] = KIND_SWITCH;
+      const raw = new Uint8Array(16);
+      w32(raw, 0, ev.addRow(row));
+      raw[8] = 2;
+      stamp.gate = undefined;
+      return add(5, raw);
+    }
   }
 }
+
+/** mapObject row of the generic switch's model (gimk_12_switch_03; 0x27 has special handling). */
+export const SWITCH_MODEL = 29;
 
 /**
  * Copy a record. Records with an EventObject row (chests, gimmicks, doors) get a new row with their own

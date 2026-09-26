@@ -7,6 +7,7 @@ import { ModelFactory } from '../cgfx/three';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } from '../game/objects';
 import { norm, type Controller } from './controller';
+import { eventLinks } from './events';
 import { kindColor, SECTION_COLORS } from './legend';
 import { GRID, tileAt, type EditorState } from './state';
 
@@ -373,6 +374,17 @@ export class View3D {
       this.overlay.add(obj);
     };
     if (this.ctl.layers.room) for (const c of doc.cells6) addRect(c.x, c.y, c.x, c.y, 0x50c8ff, true);
+    for (const l of eventLinks(this.st)) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(l.from[0] * CELL, 120, l.from[1] * CELL),
+        new THREE.Vector3(l.to[0] * CELL, 120, l.to[1] * CELL),
+      ]);
+      const mat = new THREE.LineBasicMaterial({ color: l.generic ? 0x50dcff : 0xffffff, transparent: true, opacity: l.selected ? 1 : 0.6, depthTest: false });
+      const line = new THREE.Line(geo, mat);
+      line.renderOrder = 10;
+      this.overlay.add(line);
+      this.overlayTrash.push(geo, mat);
+    }
     if (sel.type === 'tiles') for (const [x, y] of sel.cells) addRect(x, y, x, y, 0xffeb3b);
     if (sel.type === 'rect') {
       const r = norm(sel);

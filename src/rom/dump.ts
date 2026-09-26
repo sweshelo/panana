@@ -2,6 +2,7 @@
 // Accepted inputs (docs/map-editor-design.md §2): decrypted CIA, decrypted NCCH (.cxi / .app),
 // or an extracted RomFS folder together with code.bin.
 import { ascii } from '../util/bytes';
+import { applyIps } from './ips';
 import { blzDecompress } from './blz';
 import { parseCia } from './cia';
 import { readExefsFile } from './exefs';
@@ -69,5 +70,35 @@ export async function openFolder(files: File[], label: string): Promise<Dump> {
       if (!f) throw new Error(`RomFS に ${name} がありません`);
       return new Uint8Array(await f.arrayBuffer());
     },
+  };
+}
+
+/** A MOD to build on (e.g. elpulse mod/out): RomFS files that replace the dump's, and a code.ips. */
+export interface BaseMod {
+  label: string;
+  romfs: Map<string, Uint8Array>;
+  ips: Uint8Array | null;
+}
+
+/** Collect a base MOD from the files of a folder (hash-named RomFS files, code.ips). */
+export function baseModFromFiles(label: string, files: { name: string; bytes: Uint8Array }[]): BaseMod {
+  const romfs = new Map<string, Uint8Array>();
+  let ips: Uint8Array | null = null;
+  for (const f of files) {
+    if (/^[0-9A-Fa-f]{8}$/.test(f.name)) romfs.set(f.name.toUpperCase(), f.bytes);
+    else if (/^code\.ips$/i.test(f.name)) ips = f.bytes;
+  }
+  if (!romfs.size && !ips) throw new Error('RomFS のファイル (56562135 など) も code.ips も見つかりません');
+  return { label, romfs, ips };
+}
+
+/** The dump with a base MOD on top: its RomFS files win, its code.ips is applied to code.bin. */
+export function overlayDump(dump: Dump, mod: BaseMod): Dump {
+  return {
+    label: `${dump.label} + ${mod.label}`,
+    titleVersion: dump.titleVersion,
+    code: mod.ips ? applyIps(dump.code, mod.ips) : dump.code,
+    names: () => [...new Set([...dump.names(), ...mod.romfs.keys()])],
+    readRomfs: async (name) => mod.romfs.get(name.toUpperCase())?.slice() ?? dump.readRomfs(name),
   };
 }

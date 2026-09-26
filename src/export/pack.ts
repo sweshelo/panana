@@ -53,8 +53,20 @@ export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], 
   return out;
 }
 
-export function buildModZip(files: Map<string, Uint8Array>): Uint8Array {
+/**
+ * Everything to install: the base MOD's RomFS files (unless rebuilt here) + the rebuilt ones, and its
+ * code.ips. Keys are paths below the title folder ("romfs/A90C8038", "exefs/code.ips").
+ */
+export function modPackage(game: Game, files: Map<string, Uint8Array>): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  for (const [name, data] of game.baseMod?.romfs ?? []) out.set(`romfs/${name}`, data);
+  for (const [name, data] of files) out.set(`romfs/${name}`, data);
+  if (game.baseMod?.ips) out.set('exefs/code.ips', game.baseMod.ips);
+  return out;
+}
+
+export function buildModZip(pkg: Map<string, Uint8Array>): Uint8Array {
   const entries: Record<string, [Uint8Array, { level: 0; mtime: Date }]> = {};
-  for (const [name, data] of files) entries[`${MOD_ROOT}/${name}`] = [data, { level: 0, mtime: new Date(1980, 0, 1) }];
+  for (const [path, data] of pkg) entries[`${TITLE_ID}/${path}`] = [data, { level: 0, mtime: new Date(1980, 0, 1) }];
   return zipSync(entries);
 }

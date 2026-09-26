@@ -15,20 +15,24 @@ import { mapTitle } from './game/names';
 import { MASTER_ARCHIVE } from './game/master';
 import { View2D } from './editor/view2d';
 import { View3D } from './editor/view3d';
-import { buildModFiles, buildModZip, MOD_ROOT } from './export/pack';
+import { buildModFiles, buildModZip, modPackage } from './export/pack';
 import { Game } from './game/game';
 import { MapDb, MAPDB_ARCHIVE } from './game/mapdb';
 import { LAYOUTS, loadDoc, POINT_SECTIONS, sectionBytes } from './game/sections';
 import { cachedDumpInfo, openCachedDump, saveDumpCache } from './rom/cache';
-import { openFolder, openImage, TITLE_ID, type Dump } from './rom/dump';
+import { baseModFromFiles, openFolder, openImage, TITLE_ID, type BaseMod, type Dump } from './rom/dump';
 import { idbClear, idbGet, idbSet } from './util/idb';
 
 type ViewMode = '2d' | '3d' | 'split';
 const EDITS_KEY = 'edits/v2';
-const MASTER_KEY = 'master/override';
+const BASEMOD_KEY = 'basemod/v1';
+
+type SavedBaseMod = { label: string; romfs: [string, Uint8Array][]; ips: Uint8Array | null };
 
 export class App {
   private game: Game | null = null;
+  /** The dump as opened (without the base MOD). */
+  private rawDump: Dump | null = null;
   private st: EditorState | null = null;
   private ctl: Controller | null = null;
   private v2: View2D | null = null;
@@ -105,8 +109,9 @@ export class App {
       const dump = await open();
       if (dump.titleVersion !== undefined && dump.titleVersion !== 1040)
         throw new Error(`TitleVersion が ${dump.titleVersion} です。このエディタは v1.1.0 (1040) 専用です。`);
-      const game = await Game.load(dump);
-      if (!dump.label.endsWith('(キャッシュ)')) saveDumpCache(dump, game.neededFiles()).catch(() => {});
+      this.rawDump = dump;
+      const game = await Game.load(dump, await this.savedBaseMod());
+      if (!dump.label.endsWith('(キャッシュ)')) saveDumpCache(dump, (await Game.load(dump)).neededFiles()).catch(() => {});
       this.game = game;
       await this.showEditor();
     } catch (err) {
@@ -117,7 +122,7 @@ export class App {
 
   // ---------------------------------------------------------------- editor
 
-  private async showEditor(): Promise<void> {
+  private async showEditor(autoRestore = false): Promise<void> {
     const game = this.game!;
     const st = new EditorState(game);
     const ctl = new Controller(st);
@@ -129,10 +134,17 @@ export class App {
     this.inspector = new Inspector(st, ctl);
     this.addPanel = new AddPanel(st);
 
-    await this.restoreMaster();
-    await this.restoreEdits();
+    await this.restoreEdits(autoRestore);
     this.inspector.objectName = (row) => this.v3!.objectName(row);
     this.addPanel.objectName = (row) => this.v3!.objectName(row);
+    this.inspector.gotoRecord = async (map, section, index) => {
+      if (st.current?.hash !== map) {
+        const sel = this.root.querySelector<HTMLSelectElement>('.map-select');
+        if (sel) sel.value = String(map);
+        await this.openMap(map);
+      }
+      st.select({ type: 'rec', section, index });
+    };
     this.v3.objectContext = () => {
       const doc = st.current;
       return doc ? { master: game.master, events: st.currentEvents, indoor: isIndoor(doc) } : null;
@@ -152,7 +164,7 @@ export class App {
       h('span', { class: 'map-title' }),
       h('span', { class: 'grow' }),
       h('span', { class: 'muted small' }, game.dump.label),
-      h('button', { class: 'master-btn', title: 'アイテム名と宝箱の表を読む 56562135。既存の MOD (アイテム MOD など) のものを読み込むと、それを土台に書き出します', onclick: () => this.pickMaster() }, ''),
+      h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
       h('button', { class: 'primary', onclick: () => this.showExport() }, '書き出し…'),
       h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
     );
@@ -206,7 +218,7 @@ export class App {
     const right = h('aside', { class: 'right' }, this.inspector.el, h('h3', {}, '検証'), this.issuesEl);
     this.root.append(h('div', { class: 'app' }, header, left, views, right, this.status));
     fillMapSelect(mapSel, game, 0, false, true);
-    this.updateMasterUi();
+    this.updateBaseUi();
     // Event tables of every dungeon (treasure sharing, validation); small files.
     for (const d of new Set(game.editableMaps().map((m) => m.dungeon)))
       game.eventTable(d).then((t) => {
@@ -385,7 +397,12 @@ export class App {
 
   private scheduleSave(): void {
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
+    this.saveTimer = window.setTimeout(() => this.saveNow(), 500);
+  }
+
+  private saveNow(): void {
+    clearTimeout(this.saveTimer);
+    {
       const st = this.st!;
       const maps: Record<number, Record<number, Uint8Array>> = {};
       for (const d of st.modifiedDocs()) {
@@ -397,10 +414,10 @@ export class App {
       for (const [d, t] of st.events) if (t.changed()) events[d] = t.data;
       const master = st.game.master;
       idbSet(EDITS_KEY, { maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null });
-    }, 500);
+    }
   }
 
-  private async restoreEdits(): Promise<void> {
+  private async restoreEdits(auto = false): Promise<void> {
     type Saved = { maps: Record<number, Record<number, Uint8Array>>; events: Record<number, Uint8Array>; treasure: Uint8Array | null };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
@@ -409,7 +426,7 @@ export class App {
     const nEvents = Object.keys(edits.events).length;
     if (!names.length && !nEvents && !edits.treasure) return;
     const what = [names.join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : ''].filter(Boolean).join(' / ');
-    if (!confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
+    if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       await idbSet(EDITS_KEY, null);
       return;
     }
@@ -430,51 +447,47 @@ export class App {
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
   }
 
-  // ---------------------------------------------------------------- master (56562135)
+  // ---------------------------------------------------------------- base MOD (elpulse mod/out)
 
-  private updateMasterUi(): void {
+  private updateBaseUi(): void {
     const game = this.game!;
-    const b = this.root.querySelector('.master-btn');
-    if (b) b.textContent = `マスター: ${game.masterLabel}`;
+    const b = this.root.querySelector('.base-btn');
+    if (b) b.textContent = `土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`;
   }
 
-  private async restoreMaster(): Promise<void> {
-    const saved = await idbGet<{ label: string; bytes: Uint8Array }>(MASTER_KEY);
-    if (!saved) return;
-    try {
-      this.game!.setMaster(saved.bytes, saved.label);
-    } catch (err) {
-      console.warn('saved master', err);
-    }
+  private async savedBaseMod(): Promise<BaseMod | null> {
+    const s = await idbGet<SavedBaseMod>(BASEMOD_KEY);
+    return s ? { label: s.label, romfs: new Map(s.romfs), ips: s.ips } : null;
   }
 
-  private pickMaster(): void {
+  /** Reload the game with another base MOD, keeping the edits (they are saved first). */
+  private async reloadWith(mod: BaseMod | null): Promise<void> {
+    await idbSet(BASEMOD_KEY, mod ? { label: mod.label, romfs: [...mod.romfs], ips: mod.ips } satisfies SavedBaseMod : null);
+    this.saveNow();
+    this.game = await Game.load(this.rawDump!, mod);
+    await this.showEditor(true);
+    this.setStatus(mod ? `土台の MOD: ${mod.label}` : '土台の MOD を外しました');
+  }
+
+  private pickBaseMod(): void {
     const game = this.game!;
-    const input = h('input', { type: 'file' });
-    input.addEventListener('change', async () => {
-      const f = input.files?.[0];
-      if (!f) return;
-      if (game.master.treasureChanged() && !confirm('宝箱の中身の変更は捨てられます。よろしいですか?')) return;
-      try {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        game.setMaster(bytes, f.name);
-        await idbSet(MASTER_KEY, { label: f.name, bytes });
-        this.updateMasterUi();
-        this.refresh('doc');
-        this.setStatus(`マスターを ${f.name} に切り替えました`);
-      } catch (err) {
-        alert(`56562135 として読めませんでした: ${(err as Error).message}`);
-      }
-    });
-    if (game.masterLabel !== 'ROM' && confirm(`今のマスター: ${game.masterLabel}\nROM のマスターに戻しますか? (「キャンセル」で別のファイルを選ぶ)`)) {
-      game.dump.readRomfs(MASTER_ARCHIVE).then(async (b) => {
-        game.setMaster(b, 'ROM');
-        await idbSet(MASTER_KEY, null);
-        this.updateMasterUi();
-        this.refresh('doc');
-      });
+    if (game.baseMod && confirm(`今の土台: ${game.baseMod.label}\n外しますか? (「キャンセル」で別のフォルダを選ぶ)`)) {
+      this.reloadWith(null);
       return;
     }
+    const input = h('input', { type: 'file' });
+    input.setAttribute('webkitdirectory', '');
+    input.addEventListener('change', async () => {
+      const files = [...(input.files ?? [])];
+      if (!files.length) return;
+      try {
+        const label = files[0]!.webkitRelativePath.split('/')[0] || 'MOD';
+        const mod = baseModFromFiles(label, await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))));
+        await this.reloadWith(mod);
+      } catch (err) {
+        alert(`MOD として読めませんでした: ${(err as Error).message}`);
+      }
+    });
     input.click();
   }
 
@@ -498,8 +511,9 @@ export class App {
     const build = (): Map<string, Uint8Array> | null => {
       try {
         const files = buildModFiles(game, docs, events, treasure);
-        out.textContent = `書き出すファイル: ${[...files].map(([n, b]) => `${n} (${(b.length / 1024).toFixed(0)} KB)`).join('、') || 'なし'}`;
-        return files;
+        const pkg = modPackage(game, files);
+        out.textContent = `書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`;
+        return pkg;
       } catch (err) {
         out.textContent = `書き出せませんでした: ${(err as Error).message}`;
         return null;
@@ -516,7 +530,7 @@ export class App {
     const canFs = 'showDirectoryPicker' in window;
     const changes: string[] = docs.map((d) => `${mapLabel(game, d.hash)} (区画 ${st.changedSections(d).join(', ')})`);
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
-    if (treasure) changes.push(`宝箱の中身 (${MASTER_ARCHIVE}、土台: ${game.masterLabel})`);
+    if (treasure) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     const dlg = h('div', { class: 'modal' },
       h('div', { class: 'dialog' },
         h('h2', {}, '書き出し'),
@@ -525,9 +539,9 @@ export class App {
           ? h('div', { class: 'issues' }, ...issues.map(({ map, issue }) => h('div', { class: `issue ${issue.level}` }, `${issue.level === 'error' ? '✖' : '⚠'} ${map}: ${issue.msg}`)))
           : h('div', { class: 'ok' }, '検証: 問題なし'),
         errors ? h('div', { class: 'error' }, `エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`) : '',
-        treasure && game.masterLabel === 'ROM'
-          ? h('div', { class: 'warn-box' }, `宝箱の中身は ${MASTER_ARCHIVE} (マスター) に入っています。アイテム MOD など、ほかの MOD も ${MASTER_ARCHIVE} を置き換える場合は、上の「マスター」ボタンでその MOD の ${MASTER_ARCHIVE} を読み込んでから書き出してください (読み込んだものを土台にします)。`)
-          : '',
+        game.baseMod
+          ? h('div', { class: 'muted' }, `土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`)
+          : h('div', { class: 'warn-box' }, `アイテム MOD など、ほかの MOD と一緒に使う場合は、ヘッダーの「土台の MOD」でその MOD のフォルダ (elpulse の mod/out など) を読み込んでから書き出してください。同じファイル (${MASTER_ARCHIVE} や code.ips) を置き換える MOD は同時に置けません。`),
         h('div', { class: 'row' },
           h('button', { class: 'primary', onclick: () => { const f = build(); if (f?.size) download(buildModZip(f), 'denpa2-map-mod.zip'); } }, 'MOD の zip をダウンロード'),
           canFs ? h('button', { onclick: () => this.writeToFolder(build, out) }, 'MOD フォルダに直接書き込む') : '',
@@ -535,7 +549,7 @@ export class App {
         ),
         out,
         h('div', { class: 'muted small' },
-          h('p', {}, `zip の中身: ${MOD_ROOT}/<ファイル名>`),
+          h('p', {}, `zip の中身: ${TITLE_ID}/romfs/… と ${TITLE_ID}/exefs/code.ips`),
           h('p', {}, 'Azahar: %APPDATA%/Azahar/load/mods/ に展開 (00040000000A7900/romfs/… になるように)。'),
           h('p', {}, 'Luma3DS: SD の /luma/titles/ に展開し、Luma の設定で「Enable game patching」を有効にする。'),
         ),
@@ -546,23 +560,21 @@ export class App {
   }
 
   private async writeToFolder(build: () => Map<string, Uint8Array> | null, out: HTMLElement): Promise<void> {
-    const files = build();
-    if (!files?.size) return;
+    const pkg = build();
+    if (!pkg?.size) return;
     try {
       const picker = (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
       let dir = await picker({ mode: 'readwrite' });
-      // Accept the mods folder, the title folder or its romfs folder.
-      if (dir.name.toUpperCase() !== 'ROMFS') {
-        if (dir.name.toUpperCase() !== TITLE_ID) dir = await dir.getDirectoryHandle(TITLE_ID, { create: true });
-        dir = await dir.getDirectoryHandle('romfs', { create: true });
-      }
-      for (const [name, data] of files) {
-        const fh = await dir.getFileHandle(name, { create: true });
-        const w = await fh.createWritable();
+      // Accept the mods folder or the title folder.
+      if (dir.name.toUpperCase() !== TITLE_ID) dir = await dir.getDirectoryHandle(TITLE_ID, { create: true });
+      for (const [path, data] of pkg) {
+        const [sub, name] = path.split('/') as [string, string];
+        const d = await dir.getDirectoryHandle(sub, { create: true });
+        const w = await (await d.getFileHandle(name, { create: true })).createWritable();
         await w.write(data as BlobPart);
         await w.close();
       }
-      out.textContent += ` 書き込みました: …/${dir.name}/{${[...files.keys()].join(', ')}}`;
+      out.textContent += ` 書き込みました: …/${TITLE_ID}/{${[...pkg.keys()].join(', ')}}`;
     } catch (err) {
       if ((err as Error).name !== 'AbortError') out.textContent = `書き込めませんでした: ${(err as Error).message}`;
     }

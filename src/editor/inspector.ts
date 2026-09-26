@@ -8,6 +8,7 @@ import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt, type EditorState } from './state';
 import { fillMapSelect, mapLabel, pointLabel } from './labels';
 import { treasureEditor } from './treasure';
+import { eventPanel, openEventList } from './events';
 import { mapTitle } from '../game/names';
 import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
 
@@ -15,6 +16,8 @@ export class Inspector {
   readonly el = h('div', { class: 'inspector' });
   /** Model name of a mapObject row once it is loaded (set by the app). */
   objectName: (row: number) => string = () => '';
+  /** Open a map and select one of its records (set by the app). */
+  gotoRecord: (map: number, section: number, index: number) => void = () => {};
 
   constructor(
     private readonly st: EditorState,
@@ -251,24 +254,11 @@ export class Inspector {
     );
   }
 
-  /** Raw bytes of an EventObject row (behaviour of gimmicks: links, messages, conditions). */
+  /** EventObject row of the record: kind, kind-specific fields, raw bytes (editor/events.ts). */
   private eventRow(evRow: number): void {
-    const st = this.st;
-    const ev = st.currentEvents;
+    const ev = this.st.currentEvents;
     if (!ev || !ev.has(evRow)) return;
-    const row = ev.table.row(evRow);
-    const raw = h('textarea', { class: 'raw', rows: 6, value: bytesToHex(row) });
-    raw.addEventListener('change', () => {
-      const b = hexToBytes(raw.value);
-      if (!b || b.length !== row.length) {
-        raw.classList.add('bad');
-        return;
-      }
-      st.editTables(() => ev.table.row(evRow).set(b));
-    });
-    this.el.append(
-      this.field(`イベントの行 #${evRow} の生データ (0x50 バイト。+0x08 中身・引数、+0x44 状態の枠 = ${ev.slot(evRow)}、+0x46 モデル、+0x4D 種類 0x${ev.kind(evRow).toString(16)})`, raw),
-    );
+    this.el.append(eventPanel(this.st, evRow));
   }
 
   /** Chest contents: EventObject +0x08 -> treasureGroup row (10 x {item, weight}; FUN_00305dc8). */
@@ -311,6 +301,9 @@ export class Inspector {
         h('tr', {}, h('td', {}, '6 部屋のセル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
         h('tr', {}, h('td', {}, '7 (未対応・保持)'), h('td', {}, `${doc.raw[7]?.length ?? 0} B`), h('td', {}, '')),
       ),
+      st.currentEvents
+        ? h('button', { onclick: () => openEventList(st, (m, sec, i) => this.gotoRecord(m, sec, i)) }, `イベントの一覧… (${st.currentEvents.rows} 行)`)
+        : '',
       changed.length
         ? h('button', { class: 'danger', onclick: () => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash) }, 'このマップの変更を元に戻す')
         : h('div', { class: 'muted' }, '変更なし'),

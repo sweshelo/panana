@@ -1,6 +1,7 @@
 // Top-down 2D view on a canvas: tiles, section 6 cells, points; pan (right / middle drag), zoom (wheel).
 import { LAYOUTS, P3, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import { norm, type Controller } from './controller';
+import { eventLinks } from './events';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from './legend';
 import { GRID, tileAt, type EditorState } from './state';
 
@@ -137,6 +138,7 @@ export class View2D {
       g.fillStyle = ROOM_COLOR;
       for (const cell of doc.cells6) g.fillRect(cell.x * s + 2, cell.y * s + 2, s - 4, s - 4);
     }
+    this.drawLinks(g, s);
     this.drawPoints(doc, g, s);
     this.drawSelection(doc, g, s);
 
@@ -276,6 +278,30 @@ export class View2D {
         }
       });
     }
+  }
+
+  /** Switch -> target lines (generic switches solid, hard-coded script pairs dashed). */
+  private drawLinks(g: CanvasRenderingContext2D, s: number): void {
+    for (const l of eventLinks(this.st)) {
+      g.strokeStyle = l.generic ? (l.selected ? '#7ff5ff' : 'rgba(80, 220, 255, 0.75)') : l.selected ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
+      g.lineWidth = l.selected ? 3 : 2;
+      g.setLineDash(l.generic ? [] : [5, 4]);
+      g.beginPath();
+      g.moveTo(l.from[0] * s, l.from[1] * s);
+      g.lineTo(l.to[0] * s, l.to[1] * s);
+      g.stroke();
+      // arrow head at the target
+      const ang = Math.atan2(l.to[1] - l.from[1], l.to[0] - l.from[0]);
+      const tx = l.to[0] * s, ty = l.to[1] * s, a = Math.max(6, s * 0.25);
+      g.setLineDash([]);
+      g.beginPath();
+      g.moveTo(tx, ty);
+      g.lineTo(tx - a * Math.cos(ang - 0.4), ty - a * Math.sin(ang - 0.4));
+      g.moveTo(tx, ty);
+      g.lineTo(tx - a * Math.cos(ang + 0.4), ty - a * Math.sin(ang + 0.4));
+      g.stroke();
+    }
+    g.setLineDash([]);
   }
 
   private drawSelection(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {

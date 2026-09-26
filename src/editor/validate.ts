@@ -1,5 +1,6 @@
 // Checks before export (docs/map-editor-design.md §7 "検証ルール").
 import type { EventTable } from '../game/events';
+import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
 import type { Game } from '../game/game';
 import { LAYOUTS, P3, loadDoc, type MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
@@ -58,6 +59,36 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
           if (row >= events.capacity || slot >= events.capacity)
             out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} (状態の枠 ${slot}) がダンジョンの枠 (${events.capacity}) を超えています。状態が別のダンジョンのものと混ざります`, target: { type: 'rec', section: k, index: i }, key: `evcap/${row}/${slot}` });
           slots.set(slot, [...(slots.get(slot) ?? []), row]);
+        }
+      });
+    }
+    // generic switches (elpulse docs/events.md §7)
+    const inMap = (row: number): { section: number; raw: Uint8Array }[] => {
+      const out: { section: number; raw: Uint8Array }[] = [];
+      for (const k of [3, 4, 5, 8])
+        for (const r of doc.recs[k] ?? []) {
+          const x = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
+          if (x === row) out.push({ section: k, raw: r.raw });
+        }
+      return out;
+    };
+    for (const k of [3, 4, 5, 8]) {
+      (doc.recs[k] ?? []).forEach((r, i) => {
+        const row = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
+        if (!events.has(row) || events.kind(row) !== KIND_SWITCH) return;
+        const target: Selection = { type: 'rec', section: k, index: i };
+        if (!game.switchVersion)
+          out.push({ level: 'error', msg: `汎用スイッチ (イベント #${row}) がありますが、土台の MOD に汎用スイッチの code.ips がありません`, target, key: `swpatch/${row}` });
+        if (k !== 5 || ![2, 3, 4, 8].includes(r.raw[8]!))
+          out.push({ level: 'error', msg: `汎用スイッチ (イベント #${row}) は区画 5 の種類 2 / 3 / 4 / 8 に置いてください`, target, key: `swsec/${row}` });
+        const tr = events.table.row(row);
+        const targets = [tr[8]! | (tr[9]! << 8) | (tr[10]! << 16) | (tr[11]! << 24), tr[12]! | (tr[13]! << 8) | (tr[14]! << 16) | (tr[15]! << 24)].filter((x) => x);
+        if (!targets.length) out.push({ level: 'warn', msg: `汎用スイッチ (イベント #${row}) に開ける対象がありません`, target, key: `swnone/${row}` });
+        for (const t of targets) {
+          const recs = inMap(t);
+          if (!recs.length) out.push({ level: 'error', msg: `汎用スイッチ (イベント #${row}) の対象 #${t} がこのマップにありません`, target, key: `swmiss/${row}/${t}` });
+          else if (!recs.some((x) => x.section === 3 && GATE_KINDS.has(x.raw[0x14]!)))
+            out.push({ level: 'warn', msg: `汎用スイッチ (イベント #${row}) の対象 #${t} が扉・門 (区画 3 の種類 11 / 16 / 17) ではありません`, target, key: `swkind/${row}/${t}` });
         }
       });
     }

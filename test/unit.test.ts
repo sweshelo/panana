@@ -6,6 +6,7 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS, recCellPos } from '../src/game/sections';
 import { decodeTexture } from '../src/cgfx/texture';
 import { equalBytes, w32 } from '../src/util/bytes';
+import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -93,5 +94,19 @@ describe('textures', () => {
     for (let b = 0; b < 4; b++) data.set([0, 0, 0, 0, 0x00, 0x88, 0x88, 0x88], b * 8);
     const out = decodeTexture(data, 8, 8, 12);
     expect(Array.from(out.subarray(0, 4))).toEqual([0x88 + 2, 0x88 + 2, 0x88 + 2, 255]);
+  });
+});
+
+describe('IPS', () => {
+  test('records, RLE and the switch marker', () => {
+    const base = new Uint8Array(0x3c0000 + 16);
+    const rec = (off: number, data: number[]) => [(off >> 16) & 255, (off >> 8) & 255, off & 255, data.length >> 8, data.length & 255, ...data];
+    const ips = new Uint8Array([...new TextEncoder().encode('PATCH'), ...rec(2, [9, 8]),
+      0, 0, 10, 0, 0, 0, 3, 7, // RLE: 3 x 7 at 10
+      ...rec(0x4bf680 - 0x100000, [0x50, 0x4e, 0x53, 0x57, 1, 0, 0, 0]), ...new TextEncoder().encode('EOF')]);
+    const out = applyIps(base, ips);
+    expect(Array.from(out.subarray(0, 14))).toEqual([0, 0, 9, 8, 0, 0, 0, 0, 0, 0, 7, 7, 7, 0]);
+    expect(switchPatchVersion(out)).toBe(1);
+    expect(switchPatchVersion(base)).toBe(0);
   });
 });

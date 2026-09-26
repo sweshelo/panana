@@ -1,6 +1,7 @@
 // Everything the editor reads from a dump (docs/map-editor-design.md §4).
 import { findEntry, parseArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
-import type { Dump } from '../rom/dump';
+import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
+import { switchPatchVersion } from '../rom/ips';
 import { hex8 } from '../util/bytes';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
@@ -23,6 +24,10 @@ export class Game {
   /** Master archive bytes the export starts from (the ROM's, or an existing MOD's 56562135). */
   masterBytes: Uint8Array;
   masterLabel = 'ROM';
+  /** MOD the edits are built on (elpulse mod/out), or null. */
+  baseMod: BaseMod | null = null;
+  /** Version of the generic switch patch in code.bin (0 = none; docs/events.md §7). */
+  switchVersion = 0;
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;
@@ -41,9 +46,15 @@ export class Game {
     this.db = new MapDb(this.dbBytes);
   }
 
-  static async load(dump: Dump): Promise<Game> {
+  /** Load from a dump, optionally with a base MOD on top (its RomFS files and code.ips). */
+  static async load(raw: Dump, baseMod: BaseMod | null = null): Promise<Game> {
+    const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     const [master, db] = await Promise.all([dump.readRomfs(MASTER_ARCHIVE), dump.readRomfs(MAPDB_ARCHIVE)]);
-    return new Game(dump, master, db);
+    const g = new Game(dump, master, db);
+    g.baseMod = baseMod;
+    g.switchVersion = switchPatchVersion(dump.code);
+    if (baseMod) g.masterLabel = baseMod.romfs.has(MASTER_ARCHIVE) ? baseMod.label : 'ROM';
+    return g;
   }
 
   /**

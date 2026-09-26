@@ -13,13 +13,18 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
+import { P3 } from '../src/game/sections';
 import { placeStamp, duplicateRecord } from '../src/editor/place';
 import { gimmickTemplates } from '../src/game/templates';
 import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes } from '../src/util/bytes';
-import { CIA, GOLDEN, hasCia, hasGolden } from './env';
+import { CIA, ELPULSE, GOLDEN, hasCia, hasGolden } from './env';
+import { existsSync, readdirSync } from 'node:fs';
+import { baseModFromFiles } from '../src/rom/dump';
+import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
+import { modPackage } from '../src/export/pack';
 
 const sha1 = (b: Uint8Array): string => createHash('sha1').update(b).digest('hex');
 
@@ -250,5 +255,40 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(equalBytes(tgBack.row(5), game.master.treasureGroup.row(5))).toBe(true);
     const db = new MapDb(unpackEntry(parseArchive(files.get('A90C8038')!), parseArchive(files.get('A90C8038')!).entries[g.dbEntry.index]!).body);
     expect(loadDoc(db, info).recs[4]!.length).toBe(game.doc(info).recs[4]!.length + 1);
+  });
+  test('every vanilla event kind has a name', async () => {
+    const missing = new Set<number>();
+    for (const d of new Set(game.editableMaps().map((m) => m.dungeon))) {
+      const ev = await game.eventTable(d);
+      if (ev) for (let i = 0; i < ev.rows; i++) if (!EVENT_KINDS[ev.kind(i)]) missing.add(ev.kind(i));
+    }
+    expect([...missing]).toEqual([]);
+  });
+
+  const MODOUT = `${ELPULSE}/mod/out`;
+  test.skipIf(!existsSync(`${MODOUT}/code.ips`))('base MOD (elpulse mod/out): switch patch, switch + gate, package', async () => {
+    const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({ name: n, bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)) }));
+    files.push({ name: 'code.ips', bytes: new Uint8Array(readFileSync(`${MODOUT}/code.ips`)) });
+    const mod = baseModFromFiles('out', files);
+    const g = await Game.load(await openImage(Bun.file(CIA), 'cia'), mod);
+    expect(g.switchVersion).toBe(1);
+    expect(g.master.itemName(34)).toBe('アンテナパワーＳ'); // item MOD's master
+    const info = g.code.byName('D01B02001')!;
+    const doc = g.doc(info);
+    const ev = (await g.eventTable(1))!;
+    const ctx = { doc, docs: [doc], events: ev, master: g.master };
+    const stamp = { type: 'switchgate' as const, gate: undefined as number | undefined };
+    const [s3, i3] = placeStamp(ctx, stamp, 14.5, 10.5); // gate on the tile (14, 10)
+    const gateRow = P3.door(doc.recs[s3]![i3]!.raw);
+    expect(stamp.gate).toBe(gateRow);
+    const [s5, i5] = placeStamp(ctx, stamp, 15.5, 11.5);
+    const swRow = doc.recs[s5]![i5]!.raw[0]!;
+    expect(ev.kind(swRow)).toBe(KIND_SWITCH);
+    expect(ev.table.row(swRow)[8]).toBe(gateRow);
+    expect(validate(g, doc, 0, new Map(), ev).filter((i) => i.level === 'error')).toEqual([]);
+    const pkg = modPackage(g, buildModFiles(g, [doc], [ev], false));
+    expect(pkg.has('exefs/code.ips')).toBe(true);
+    expect(pkg.has('romfs/A90C8038') && pkg.has('romfs/79B881BB') && pkg.has('romfs/56562135')).toBe(true);
+    expect(equalBytes(pkg.get('romfs/56562135')!, mod.romfs.get('56562135')!)).toBe(true); // untouched base file
   });
 });

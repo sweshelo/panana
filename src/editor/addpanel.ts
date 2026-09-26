@@ -80,6 +80,11 @@ export class AddPanel {
             if (t) this.use({ type: 'template', t });
           },
         }, 'ギミック')),
+      st.game.switchVersion
+        ? h('div', { class: 'row' },
+            h('button', { class: active?.type === 'switchgate' ? 'active' : '', disabled: room < 2, onclick: () => this.use({ type: 'switchgate' }) }, 'スイッチと柵'),
+            h('span', { class: 'muted small' }, '踏むと柵が開く (汎用スイッチ)'))
+        : h('div', { class: 'muted small' }, 'スイッチと柵: ヘッダーの「土台の MOD」で汎用スイッチ入りの MOD (elpulse の mod/out) を読み込むと使えます。'),
       active ? h('div', { class: 'place-hint' }, `置くもの: ${stampLabel(active)}。マップをクリックして置く (Esc で終わる)`) : '',
       h('p', { class: 'muted small' },
         '宝箱とギミックには新しいイベントの行 (状態を保存する枠つき) を作ります。宝箱の中身は新しい行 (最初は同じダンジョンの宝箱の中身の写し) で、右ペインで編集できます。ギミックはゲーム中の同じ種類のものを写すので、動き (つながる扉・行き先など) は写し元の設定のままです。'),
