@@ -1,8 +1,9 @@
 // Message list: the signs and characters of every dungeon with their messages (editable), the maps
-// that place them, and any message by ID.
+// that place them, the story conversations the game's code shows by ID (game/codemessages.ts), and any message by ID.
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { hexId, MESSAGE_HELP } from '../editor/message';
 import type { MapInfo } from '../game/codebin';
+import { fnName, STORY_FILE, storyGroups, type CodeMessageGroup } from '../game/codemessages';
 import { kindName } from '../game/eventkinds';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
@@ -31,6 +32,18 @@ const TALK_SLOTS = [
 ];
 
 type Filter = 'all' | 'talk' | 'sign' | 'other' | 'edited' | 'shared';
+type StoryFilter = 'all' | 'edited' | 'shared';
+
+/** A row of the story list: the messages one function shows, or (no group) the MessageField messages nothing names. */
+interface StoryRow {
+  key: string;
+  group?: CodeMessageGroup;
+  ids: number[];
+}
+
+/** Key of a story group ("fn:0019B564"). */
+const storyKey = (g: CodeMessageGroup): string => `fn:${g.fn.toString(16).toUpperCase().padStart(8, '0')}`;
+const UNLINKED = 'fn:none';
 
 export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
   const { game } = session;
@@ -39,6 +52,7 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
   const [edits, edited] = useEdits();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [storyFilter, setStoryFilter] = useState<StoryFilter>('all');
   const [idText, setIdText] = useState('');
   const [users, setUsers] = useState<MessageUser[] | null>(null);
   // Re-read on every visit: the message IDs of the event tables may have been edited in the map editor.
@@ -50,9 +64,28 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
     };
   }, [game, session, visit]);
   const byId = useMemo(() => usersById(users ?? []), [users]);
+  const storyFile = texts.files.find((f) => STORY_FILE.test(f.name));
+  const story = useMemo(() => (storyFile ? storyGroups(game.code.code, storyFile.gmsg.first, storyFile.gmsg.last) : []), [game, storyFile]);
+  /** MessageField messages that neither the code (as a literal) nor an event row names: IDs the code computes, unused text. */
+  const unlinked = useMemo(() => {
+    if (!storyFile || !users) return [];
+    const known = new Set(story.flatMap((g) => g.ids));
+    const out: number[] = [];
+    for (let id = storyFile.gmsg.first; id <= storyFile.gmsg.last; id++) if (!known.has(id) && !byId.has(id) && texts.plain(id)?.trim()) out.push(id);
+    return out;
+  }, [story, storyFile, users, byId, texts]);
+  const storyRows = useMemo(
+    (): StoryRow[] => [...story.map((g) => ({ key: storyKey(g), group: g, ids: g.ids })), ...(unlinked.length ? [{ key: UNLINKED, ids: unlinked }] : [])],
+    [story, unlinked],
+  );
   /** "dungeon.row" of an event row, or "id:N" for a single message. */
   const wanted = arg ? (/^0x/i.test(arg) ? `id:${parseInt(arg, 16)}` : arg) : undefined;
-  const selected = useSticky(wanted, (k) => k.startsWith('id:') || !users || users.some((u) => userKey(u) === k), () => (users?.[0] ? userKey(users[0]) : ''));
+  const selected = useSticky(
+    wanted,
+    (k) => k.startsWith('id:') || !users || (k.startsWith('fn:') ? storyRows.some((r) => r.key === k) : users.some((u) => userKey(u) === k)),
+    () => (users?.[0] ? userKey(users[0]) : ''),
+  );
+  const storyMode = selected.startsWith('fn:');
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${users?.length}`);
   /** Wraps an edit: an undo point in the map editor (its inspector shows the same messages) and saving. */
@@ -84,9 +117,57 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
   };
   const all = users ?? [];
   const rows = all.filter(matches);
+  const storyMatches = (r: StoryRow): boolean => {
+    if (storyFilter === 'edited' && !r.ids.some((id) => texts.isEdited(id))) return false;
+    if (storyFilter === 'shared' && !r.ids.some((id) => byId.has(id))) return false;
+    const q = query.trim();
+    if (!q) return true;
+    const hay = [r.group ? fnName(r.group.fn) : '', ...r.ids.flatMap((id) => [texts.preview(id, true) ?? '', hexId(id), String(id)])];
+    return hay.some((t) => t.includes(q));
+  };
+  const go = (key: string | undefined): void => {
+    if (key) location.hash = `#/messages/${key}`;
+  };
+  const modes = (
+    <div className="row msg-modes">
+      <button className={storyMode ? '' : 'active'} onClick={() => storyMode && go(users?.[0] && userKey(users[0]))}>マップのキャラ・看板</button>
+      <button className={storyMode ? 'active' : ''} onClick={() => !storyMode && go(storyRows[0]?.key)}>イベント・ストーリー</button>
+    </div>
+  );
+  if (storyMode) {
+    const shown = storyRows.filter(storyMatches);
+    return (
+      <div className="book">
+        <div className="book-side">
+          {modes}
+          <ListFilter query={query} setQuery={setQuery} placeholder="本文・関数・ID で検索" filter={storyFilter} setFilter={setStoryFilter}
+            options={[['all', 'すべて'], ['edited', '変更したもの'], ['shared', 'マップの行も使うメッセージを含む']]} />
+          <div className="book-list" ref={list}>
+            <Count shown={shown.length} total={storyRows.length} unit="まとまり" />
+            <table className="book-table">
+              <thead><tr><th>関数</th><th>件数</th><th>メッセージ</th></tr></thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.key} className={r.key === selected ? 'active' : ''} onClick={() => go(r.key)}>
+                    <td className="muted">{r.group ? fnName(r.group.fn) : '(参照なし)'}</td>
+                    <td className="num muted">{r.ids.length}</td>
+                    <td className="msg-cell">{r.ids.some((id) => texts.isEdited(id)) && <b className="edited">* </b>}{texts.preview(r.ids[0]!, true) ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="book-detail">
+          <StoryDetail key={edits} session={session} row={storyRows.find((r) => r.key === selected)} byId={byId} apply={apply} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="book">
       <div className="book-side">
+        {modes}
         <ListFilter query={query} setQuery={setQuery} placeholder="本文・マップ名・ID で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ['talk', 'キャラクター (会話・一言)'], ['sign', '看板・調べるもの'], ['other', 'ワールドマップ用'], ['edited', '変更したもの'], ['shared', 'ほかの行と同じメッセージを使う']]} />
         <div className="row">
@@ -187,6 +268,45 @@ function MessageDetail({ session, selected, users, byId, apply }: {
         );
       })}
       <div className="muted small">{MESSAGE_HELP} メッセージ ID を付け替えるときは、マップ編集でこの行を選んでください。</div>
+    </>
+  );
+}
+
+/** The messages one function of the code shows (or the MessageField messages nothing names), in ID order. */
+function StoryDetail({ session, row, byId, apply }: {
+  session: Session; row: StoryRow | undefined; byId: Map<number, MessageUser[]>; apply: (f: () => void) => void;
+}): ReactNode {
+  const master = session.game.master;
+  if (!row) return <div className="muted">MessageField が見つかりません</div>;
+  const g = row.group;
+  return (
+    <>
+      <div className="book-head">
+        <h2>{g ? `イベント ${fnName(g.fn)}` : 'どこから使われるか分からないメッセージ'}</h2>
+        <span className="muted">{`MessageField ${row.ids.length} 件`}</span>
+      </div>
+      <div className="muted small">
+        {g
+          ? `ゲームのコード (code.bin) がメッセージ ID を直接持っている関数ごとにまとめています。関数の区切りは直前の push 命令からの推定なので、小さな関数が前の関数とまとまることがあります。ID を読み込む命令: ${g.refs.map((r) => `0x${r.at.toString(16).toUpperCase()}`).join(', ')}`
+          : 'コードにもマップのイベント行にも ID が見つからない MessageField のメッセージです。「先頭の ID + n」で計算して引くもの (味の感想、施設の NPC の続きなど) や、使われていないテスト用の文が含まれます。'}
+      </div>
+      {row.ids.map((id) => {
+        const users = byId.get(id) ?? [];
+        return (
+          <div key={id} className="msg-slot">
+            <MessageEditor master={master} id={id} apply={apply} />
+            {users.length > 0 && (
+              <div className="muted small">
+                {'マップのイベント行でも使われています: '}
+                {users.map((o, i) => (
+                  <Fragment key={i}>{i ? '、' : ''}<a href={`#/messages/${userKey(o)}`}>{`${master.dungeonName(o.dungeon) || `D${o.dungeon}`} 行 ${o.row}`}</a></Fragment>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div className="muted small">{MESSAGE_HELP}</div>
     </>
   );
 }
