@@ -11,6 +11,9 @@ import type { MessageStore } from '../src/game/gmsg';
 import { textToUnits } from '../src/game/msgtext';
 import { w32 } from '../src/util/bytes';
 import { WorldPage } from '../src/pages/world';
+import { PAGES } from '../src/ui/Shell';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Session } from '../src/session';
 
 function action(row: number, w0: number, name: string): Action {
@@ -113,5 +116,12 @@ describe('world map page', () => {
     expect(html).toContain('ワールドマップ W01');
     expect(html).toContain('この入口に戻ります');
     expect(html).toContain('<canvas');
+  });
+});
+
+describe('shell', () => {
+  test('every page has a CSS rule that shows it', () => {
+    const css = readFileSync(join(import.meta.dir, '..', 'src', 'style.css'), 'utf8');
+    for (const [id] of PAGES) expect(css).toContain(`.shell[data-page='${id}'] .page-${id}`);
   });
 });

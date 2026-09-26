@@ -365,11 +365,13 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
       <div className="row">
         <span className="muted small">拡大</span>
         {SCALES.map((s) => <button key={s} className={s === scale ? 'active small' : 'small'} onClick={() => setScale(s)}>{`×${s}`}</button>)}
-        <span className="muted small">
-          {hover
-            ? `(${hover[0]}, ${hover[1]})  地形: worldmapParts ${ground?.parts[cell] ?? '-'} 向き ${ground?.rots[cell] ?? '-'}${under >= 0 ? `  入口 ${hex8(ENT.id(entrances[under]!))} → ${mapLabel(game, ENT.destMap(entrances[under]!))}` : ''}`
-            : '入口 (赤、変更したものは黄) をクリックで選び、ドラッグで動かします。白い点は区画 3 の地点。地形は worldmapParts の地形の種類 (+4 の下位 2 ビット) で色分け。'}
-        </span>
+        <span className="muted small">入口 (赤、変更したものは黄) をクリックで選び、ドラッグで動かします。白い点は区画 3 の地点。地形は worldmapParts の地形の種類 (+4 の下位 2 ビット) で色分け。</span>
+      </div>
+      {/* Fixed height, so that the map does not move while the pointer is over it. */}
+      <div className="world-hover muted small">
+        {hover
+          ? `(${hover[0]}, ${hover[1]})  地形: worldmapParts ${ground?.parts[cell] ?? '-'} 向き ${ground?.rots[cell] ?? '-'}${under >= 0 ? `  入口 ${hex8(ENT.id(entrances[under]!))} → ${mapLabel(game, ENT.destMap(entrances[under]!))}` : ''}`
+          : '\u00a0'}
       </div>
       {!ground && <div className="issue warn">{`地形 (${world.groundFile ?? '区画 0'}) を読めなかったので、海だけを表示しています。`}</div>}
       <div className="world-scroll" ref={box}>

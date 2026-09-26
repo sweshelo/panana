@@ -15,7 +15,7 @@ import { ExportDialog } from './ExportDialog';
 import { Dom } from './mount';
 import { useAsync } from './useAsync';
 
-const PAGES = [
+export const PAGES = [
   ['map', 'マップ編集'],
   ['world', 'ワールドマップ'],
   ['monsters', 'モンスター図鑑'],
