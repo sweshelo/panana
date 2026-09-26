@@ -5,7 +5,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { TilesetModels } from './tileset';
 import type { WorkerRequest } from './worker';
 
-const CACHE_VERSION = 6; // 6: materials carry the depth test and the combiner buffer
+const CACHE_VERSION = 7; // 7: skeletons, skin weights and animations
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<number, { resolve: (t: unknown) => void; reject: (e: Error) => void }>();

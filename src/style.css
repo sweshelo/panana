@@ -219,6 +219,10 @@ select.edited { border-color: var(--warn); }
 .viewer canvas:active { cursor: grabbing; }
 .viewer-note { position: absolute; left: 8px; top: 6px; pointer-events: none; }
 .viewer-bar { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 4px; }
+.viewer-anim { display: none; position: absolute; left: 6px; bottom: 6px; align-items: center; gap: 4px; }
+.viewer.animated .viewer-anim { display: flex; }
+.viewer-anim input[type=range] { width: 110px; }
+.viewer-frame { color: var(--muted); min-width: 5.5em; font-variant-numeric: tabular-nums; }
 .photo-cell { width: 40px; padding: 1px 2px !important; }
 .photo { display: block; width: 36px; height: 36px; border-radius: 4px; background: #0d0f13; }
 .photo img { width: 36px; height: 36px; display: block; }

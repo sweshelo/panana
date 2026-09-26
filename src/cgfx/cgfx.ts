@@ -2,6 +2,7 @@
 // Layout follows Ohana3DS-Rebirth CGFX.cs. Materials keep the PICA fragment pipeline settings (texture
 // combiners, blending, alpha test) so they can be reproduced in a shader (cgfx/tev.ts).
 import { ascii, cstr, f32, s32, u16, u32, u8 } from '../util/bytes';
+import { readAnimations, type CgfxAnimation } from './anim';
 import { decodeTexture, textureDataSize } from './texture';
 
 export interface CgfxTexture {
@@ -94,12 +95,32 @@ export interface CgfxMesh {
   uvs2: Float32Array | null;
   colors: Float32Array | null; // rgba 0..1
   indices: Uint32Array;
+  /**
+   * Skinning: 4 skeleton bone indices and weights per vertex (null when no vertex follows a bone). Positions
+   * stay in the rest pose (rigid vertices are moved there too), so a vertex moves by
+   * sum(weight x animated world x inverse rest world).
+   */
+  skinIndices: Uint16Array | null;
+  skinWeights: Float32Array | null;
+}
+
+export interface CgfxBone {
+  name: string;
+  parent: number;
+  scale: [number, number, number];
+  /** Euler angles (radians), R = Rz * Ry * Rx. */
+  rotation: [number, number, number];
+  translation: [number, number, number];
 }
 
 export interface CgfxModel {
   name: string;
   meshes: CgfxMesh[];
   materials: CgfxMaterial[];
+  /** Skeleton by bone index (empty without one). */
+  bones: CgfxBone[];
+  /** Animations of the file the model came from. */
+  animations: CgfxAnimation[];
 }
 
 export interface CgfxFile {
@@ -403,6 +424,7 @@ function readModel(r: Reader, o: number): CgfxModel {
   // Skeleton: bone world matrices (rigid skinning moves vertices by these). The stored world matrix is
   // often empty, so compose scale / rotation / translation up the parent chain (like Ohana3DS).
   const boneWorld: Mat34[] = [];
+  const skeleton: CgfxBone[] = [];
   if (flags & 0x80) {
     const sk = r.rel(o + 0xe0);
     const bones: { parent: number; local: Mat34 }[] = [];
@@ -410,7 +432,9 @@ function readModel(r: Reader, o: number): CgfxModel {
       for (const e of r.dict(sk + 0x18)) {
         const b = e.data;
         const v = (off: number): [number, number, number] => [r.f32(b + off), r.f32(b + off + 4), r.f32(b + off + 8)];
-        bones[r.u32(b + 8)] = { parent: r.s32(b + 0x0c), local: composeTRS(v(0x20), v(0x2c), v(0x38)) };
+        const index = r.u32(b + 8);
+        bones[index] = { parent: r.s32(b + 0x0c), local: composeTRS(v(0x20), v(0x2c), v(0x38)) };
+        skeleton[index] = { name: e.name, parent: r.s32(b + 0x0c), scale: v(0x20), rotation: v(0x2c), translation: v(0x38) };
       }
     const world = (i: number, depth = 0): Mat34 => {
       if (boneWorld[i]) return boneWorld[i]!;
@@ -441,7 +465,8 @@ function readModel(r: Reader, o: number): CgfxModel {
       visible: node ? node.visible : visibleFlag === 1,
     });
   }
-  return { name, meshes, materials };
+  for (let i = 0; i < skeleton.length; i++) skeleton[i] ??= { name: '', parent: -1, scale: [1, 1, 1], rotation: [0, 0, 0], translation: [0, 0, 0] };
+  return { name, meshes, materials, bones: skeleton, animations: [] };
 }
 
 type Shape = Omit<CgfxMesh, 'name' | 'material' | 'priority' | 'visible'>;
@@ -485,6 +510,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
   }
 
   const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
+  const skinIdx: number[] = [], skinW: number[] = [];
+  let skinned = false;
   const has = (u: number): boolean => attrs.some((a) => a.usage === u);
   const tmp = [0, 0, 0, 0];
   const vmap = new Map<number, number>(); // (face group, vertex index) -> output vertex
@@ -510,6 +537,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
             vmap.set(vi, out);
             const base = vbuf + vi * stride;
             let p = [0, 0, 0], nn = [0, 1, 0], bone = -1;
+            const bi = [-1, -1, -1, -1], bw = [0, 0, 0, 0];
+            let hasWeights = false;
             let c = [1, 1, 1, 1], t = [0, 0], t1 = [0, 0], t2 = [0, 0];
             for (const a of attrs) {
               if (a.fixed) for (let k = 0; k < 4; k++) tmp[k] = a.fixed[k]! * a.scale;
@@ -526,13 +555,31 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
                 case ATTR.uv2: t2 = [tmp[0]!, tmp[1]!]; break;
                 case ATTR.boneIndex: {
                   // Bone indices are raw integers (the scale applies to other attributes only).
-                  const raw = a.fixed ? a.fixed[0]! : tmp[0]! / (a.scale || 1);
-                  bone = nodes[Math.round(raw)] ?? -1;
+                  for (let k = 0; k < Math.min(a.elements, 4); k++) {
+                    const raw = a.fixed ? a.fixed[k]! : tmp[k]! / (a.scale || 1);
+                    bi[k] = nodes[Math.round(raw)] ?? -1;
+                  }
+                  bone = bi[0]!;
                   break;
                 }
+                case ATTR.boneWeight:
+                  hasWeights = true;
+                  for (let k = 0; k < Math.min(a.elements, 4); k++) bw[k] = tmp[k]!;
+                  break;
               }
             }
-            if (bone < 0 && nodes.length === 1) bone = nodes[0]!;
+            if (bone < 0 && nodes.length === 1) bone = bi[0] = nodes[0]!;
+            // Rigid (and unskinned, single-bone) vertices follow one bone; smooth ones use the weights.
+            if (skinning !== 2 || !hasWeights) {
+              bw[0] = bone >= 0 ? 1 : 0;
+              bw[1] = bw[2] = bw[3] = 0;
+            }
+            for (let k = 0; k < 4; k++) {
+              if (bi[k]! < 0) bw[k] = 0;
+              skinIdx.push(Math.max(0, bi[k]!));
+              skinW.push(bw[k]!);
+              if (bw[k]! > 0) skinned = true;
+            }
             // Rigid skinning (and unskinned shapes bound to a single bone) are stored in bone space.
             if (skinning !== 2 && bone >= 0 && boneWorld[bone]) {
               p = transformPoint(boneWorld[bone]!, p[0]!, p[1]!, p[2]!);
@@ -558,6 +605,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
     uvs2: has(ATTR.uv2) ? new Float32Array(uv2) : null,
     colors: has(ATTR.color) ? new Float32Array(col) : null,
     indices: new Uint32Array(idx),
+    skinIndices: skinned ? new Uint16Array(skinIdx) : null,
+    skinWeights: skinned ? new Float32Array(skinW) : null,
   };
 }
 
@@ -569,6 +618,8 @@ export function parseCgfx(b: Uint8Array): CgfxFile {
   if (ascii(b, data, 4) !== 'DATA') throw new Error('CGFX: DATA がありません');
   const dicts = data + 8;
   const models = r.dict(dicts).map((e) => readModel(r, e.data));
+  const animations = readAnimations(b, data);
+  for (const m of models) m.animations = animations;
   const textures: CgfxTexture[] = [];
   for (const e of r.dict(dicts + 8)) {
     const t = readTexture(r, e.data);

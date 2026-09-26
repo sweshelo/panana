@@ -5,6 +5,7 @@ import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc'
 import { MapDb } from '../src/game/mapdb';
 import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS, recCellPos } from '../src/game/sections';
 import { decodeTexture } from '../src/cgfx/texture';
+import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
 import { equalBytes, w32 } from '../src/util/bytes';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
@@ -108,5 +109,39 @@ describe('IPS', () => {
     expect(Array.from(out.subarray(0, 14))).toEqual([0, 0, 9, 8, 0, 0, 0, 0, 0, 0, 7, 7, 7, 0]);
     expect(switchPatchVersion(out)).toBe(1);
     expect(switchPatchVersion(base)).toBe(0);
+  });
+});
+
+describe('CGFX animation curves', () => {
+  const curve = (interp: number, keys: number[]): AnimCurve => ({ start: 0, end: 10, interp, keys: new Float32Array(keys) });
+
+  test('hermite passes through the keys and uses the slopes', () => {
+    const c = curve(2, [0, 0, 0, 1, 10, 10, 1, 0]);
+    expect(evalChannel(c, 0, 99)).toBe(0);
+    expect(evalChannel(c, 10, 99)).toBe(10);
+    // Slope 1 on both ends of a straight line: linear.
+    expect(evalChannel(c, 5, 99)).toBeCloseTo(5, 5);
+    expect(evalChannel(curve(2, [0, 0, 0, 0, 10, 10, 0, 0]), 5, 99)).toBeCloseTo(5, 5);
+    expect(evalChannel(curve(2, [0, 0, 0, 0, 10, 10, 0, 0]), 2, 99)).toBeCloseTo(10 * (3 * 0.04 - 2 * 0.008), 5);
+  });
+
+  test('step, linear, clamping, constants and absent channels', () => {
+    const keys = [0, 1, 0, 0, 4, 3, 0, 0, 8, 7, 0, 0];
+    expect(evalChannel(curve(0, keys), 5, 0)).toBe(3);
+    expect(evalChannel(curve(1, keys), 6, 0)).toBeCloseTo(5, 5);
+    expect(evalChannel(curve(1, keys), -3, 0)).toBe(1);
+    expect(evalChannel(curve(1, keys), 30, 0)).toBe(7);
+    expect(evalChannel(2.5, 3, 0)).toBe(2.5);
+    expect(evalChannel(null, 3, 0.75)).toBe(0.75);
+  });
+
+  test('baked values interpolate between frames and hold a single value', () => {
+    const out = [0, 0, 0];
+    evalBaked(new Float32Array([0, 0, 0, 2, 4, 6, 4, 8, 12]), 3, 0, 0.5, out);
+    expect(out).toEqual([1, 2, 3]);
+    evalBaked(new Float32Array([0, 0, 0, 2, 4, 6, 4, 8, 12]), 3, 0, 99, out);
+    expect(out).toEqual([4, 8, 12]);
+    evalBaked(new Float32Array([5, 6, 7]), 3, 0, 20, out);
+    expect(out).toEqual([5, 6, 7]);
   });
 });

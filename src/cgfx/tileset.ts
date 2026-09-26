@@ -100,6 +100,15 @@ export function transferables(t: TilesetModels): ArrayBuffer[] {
   for (const m of t.models.values())
     for (const me of m.meshes) {
       add(me.positions); add(me.normals); add(me.uvs); add(me.uvs1); add(me.uvs2); add(me.colors); add(me.indices);
+      add(me.skinIndices); add(me.skinWeights);
+    }
+  for (const m of t.models.values())
+    for (const a of m.animations) {
+      for (const tr of a.skeletal) {
+        for (const c of tr.channels ?? []) if (c && typeof c === 'object') add(c.keys);
+        if (tr.baked) { add(tr.baked.rotation); add(tr.baked.translation); add(tr.baked.scale); }
+      }
+      for (const tr of a.material) for (const c of tr.channels) if (c && typeof c === 'object') add(c.keys);
     }
   for (const x of t.textures.values()) add(x.rgba);
   return out;

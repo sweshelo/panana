@@ -2,7 +2,7 @@
 // (cgfx/tev.ts); the rest fall back to a diffuse texture x vertex colour. No lighting: the models bake
 // their shading into the vertex colours.
 import * as THREE from 'three';
-import type { CgfxMaterial, CgfxModel, CgfxTexture } from './cgfx';
+import type { CgfxMaterial, CgfxMesh, CgfxModel, CgfxTexture } from './cgfx';
 import { tevMaterial } from './tev';
 import type { TilesetModels } from './tileset';
 
@@ -99,7 +99,23 @@ export class ModelFactory {
     return mat;
   }
 
-  private build(model: CgfxModel): THREE.Group {
+  /**
+   * A model with its own geometry and materials (for animating), and the source mesh of each three.js mesh.
+   */
+  buildOwn(hash: number): { model: CgfxModel; group: THREE.Group; parts: { mesh: THREE.Mesh; src: CgfxMesh }[] } | null {
+    const model = this.set.models.get(hash);
+    if (!model) return null;
+    const parts: { mesh: THREE.Mesh; src: CgfxMesh }[] = [];
+    const group = this.build(model, parts);
+    for (const { mesh } of parts) {
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+      mesh.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos.array as Float32Array), 3));
+      mesh.frustumCulled = false;
+    }
+    return { model, group, parts };
+  }
+
+  private build(model: CgfxModel, parts?: { mesh: THREE.Mesh; src: CgfxMesh }[]): THREE.Group {
     const g = new THREE.Group();
     g.name = model.name;
     const mats = new Map<string, THREE.Material>();
@@ -143,6 +159,7 @@ export class ModelFactory {
       mesh.name = me.name;
       mesh.renderOrder = me.priority;
       g.add(mesh);
+      parts?.push({ mesh, src: me });
     }
     return g;
   }
