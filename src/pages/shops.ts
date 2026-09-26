@@ -1,8 +1,11 @@
 // Shop list: every shop (ShopItem / Shop) with what it sells, in the shop's order, at the item's current prices,
-// with the description the shop shows and the clerk's messages. The item lists can be edited by drag and drop
-// (rows move, items are dragged in from a palette, rows dragged onto the palette are removed).
+// and the clerk's messages. The item lists can be edited: rows move by drag and drop, items are added from a
+// <dialog> with their models.
 import { clear, h } from '../editor/dom';
 import { hexId, messagePreview } from '../editor/message';
+import { openDialog } from '../editor/treasure';
+import { itemRef } from './items';
+import { lazyPhoto } from './modelview';
 import type { Game } from '../game/game';
 import { ITEM_CATEGORY, type ItemBook } from '../game/items';
 import { DESCRIPTION_VARIANT, dropInto, shopLabel, type Shop, type ShopDrag, type ShopStock } from '../game/shops';
@@ -22,9 +25,6 @@ export class ShopPage {
   /** Shop shown in the detail (its scroll position is kept while it is edited). */
   private shown = -1;
   private drag: ShopDrag | null = null;
-  /** The item palette's search and category (kept across renders). */
-  private readonly paletteSearch = h('input', { type: 'search', placeholder: '追加するアイテムを検索' });
-  private readonly paletteCategory = h('select', {});
 
   constructor(
     private readonly game: Game,
@@ -36,7 +36,6 @@ export class ShopPage {
     private readonly onEdit: () => void = () => {},
   ) {
     this.filter.append(h('option', { value: 'all' }, 'すべて'), h('option', { value: 'changed' }, '変更した'));
-    this.paletteCategory.append(h('option', { value: '' }, 'すべての分類'), ...Object.entries(ITEM_CATEGORY).map(([k, v]) => h('option', { value: k }, v)));
     this.search.addEventListener('input', () => this.renderList());
     this.filter.addEventListener('change', () => this.renderList());
     this.el.append(h('div', { class: 'book-side' }, h('div', { class: 'row' }, this.search, this.filter), this.list), this.detail);
@@ -114,7 +113,7 @@ export class ShopPage {
       ...list.map((id, i) => {
         const it = this.items.item(id);
         const tr = h('tr', { class: [q && it?.name.includes(q) ? 'hit' : '', original[i] !== id ? 'edited-row' : ''].filter(Boolean).join(' ') },
-          stock ? h('td', { class: 'drag-handle', title: 'ドラッグで並べ替え (品物の一覧へ落とすと外す)' }, '⠿') : '',
+          stock ? h('td', { class: 'drag-handle', title: 'ドラッグで並べ替え' }, '⠿') : '',
           h('td', { class: 'num muted' }, String(i + 1)),
           h('td', {}, it ? h('a', { href: `#/items/${id}`, draggable: false }, it.name) : h('span', { class: 'error' }, `#${id} (ないアイテム)`),
             it && this.items.changed(id) ? h('span', { class: 'edited-mark', title: 'アイテム図鑑で変更した' }, ' ●') : ''),
@@ -135,7 +134,8 @@ export class ShopPage {
         h('h2', {}, shopLabel(s.id)),
         h('span', { class: 'muted' }, `${list.length} 品  商品の説明: ${s.variant < 0 ? '不明' : `${VARIANT_LABEL[s.variant] ?? `バリアント ${s.variant}`} (itemData +0x${(descOffset ?? 0).toString(16).toUpperCase()})`}`)),
       h('h3', {}, '品揃え'),
-      stock ? h('div', { class: 'shop-edit' }, h('div', {}, table, this.editor(s, list, stock)), this.palette(s, list)) : table,
+      table,
+      stock ? this.editor(s, list, stock) : '',
       h('div', { class: 'muted small' }, '並びは店での表示順 (ShopItem)。値段はアイテムごと (アイテム図鑑で編集できます)。'),
       h('h3', {}, '店員のメッセージ'),
       s.messages.length
@@ -165,7 +165,7 @@ export class ShopPage {
 
   private endDrag(): void {
     this.drag = null;
-    this.el.querySelectorAll('.dragging, .drop-before, .drop-after, .drop-remove').forEach((n) => n.classList.remove('dragging', 'drop-before', 'drop-after', 'drop-remove'));
+    this.el.querySelectorAll('.dragging, .drop-before, .drop-after').forEach((n) => n.classList.remove('dragging', 'drop-before', 'drop-after'));
   }
 
   /** Drops on the list: before or after the row under the pointer (below the last row: at the end). */
@@ -207,49 +207,33 @@ export class ShopPage {
     });
   }
 
-  /** Items to add: search, category, and a list to drag from; rows of the shop dropped here are removed. */
-  private palette(s: Shop, list: number[]): HTMLElement {
-    const box = h('div', { class: 'shop-palette' });
-    const body = h('div', { class: 'shop-palette-list' });
+  /** Pick an item to add, from the photos (like the monster picker); items the shop sells are marked. */
+  private pickItem(list: number[], onPick: (id: number) => void): void {
+    const search = h('input', { type: 'search', placeholder: '名前か ID で絞り込み', class: 'picker-search' });
+    const cat = h('select', {}, h('option', { value: '' }, 'すべての分類'), ...Object.entries(ITEM_CATEGORY).map(([k, v]) => h('option', { value: k }, v)));
+    const grid = h('div', { class: 'monster-grid' });
     const render = (): void => {
-      clear(body);
-      const q = this.paletteSearch.value.trim();
-      const cat = this.paletteCategory.value;
-      const shown = this.items.items.filter((it) => (!q || it.name.includes(q) || String(it.id) === q) && (!cat || (it.categoryByte & 0xf) === Number(cat)));
-      for (const it of shown.slice(0, 300)) {
+      clear(grid);
+      const q = search.value.trim();
+      const c = cat.value ? Number(cat.value) : 0;
+      for (const it of this.items.items) {
+        if (c && (it.categoryByte & 0xf) !== c) continue;
+        if (q && !it.name.includes(q) && String(it.id) !== q) continue;
         const sold = list.includes(it.id);
-        const row = h('div', { class: `shop-palette-item${sold ? ' sold' : ''}`, title: sold ? 'この店で売っています (ドラッグで位置を変えられます)' : 'ドラッグで追加 (ダブルクリックで末尾に追加)' },
-          h('span', { class: 'num muted' }, String(it.id)), ' ', it.name, ' ',
-          h('span', { class: 'muted small' }, `${it.category}${it.price ? `・${it.price} G` : ''}`));
-        row.draggable = true;
-        row.addEventListener('dragstart', (e) => this.startDrag(e, { kind: 'item', id: it.id }, row));
-        row.addEventListener('dragend', () => this.endDrag());
-        row.addEventListener('dblclick', () => { if (!sold) this.edit(s, [...list, it.id]); });
-        body.append(row);
+        grid.append(h('button', {
+          class: `monster-cell${sold ? ' sold' : ''}`,
+          disabled: sold,
+          title: sold ? 'この店で売っています' : `${it.category}${it.price ? `・${it.price} G` : '・買値 0'}`,
+          onclick: () => { dlg.close(); onPick(it.id); },
+        }, lazyPhoto(itemRef(this.game, it), 'photo photo-lg'), h('span', {}, it.name), h('span', { class: 'muted small' }, it.price ? `${it.price} G` : '0 G')));
       }
-      if (shown.length > 300) body.append(h('div', { class: 'muted small' }, `ほか ${shown.length - 300} 件 (検索で絞ってください)`));
-      if (!shown.length) body.append(h('div', { class: 'muted small' }, '該当なし'));
+      if (!grid.firstChild) grid.append(h('div', { class: 'muted' }, '見つかりません'));
     };
-    this.paletteSearch.oninput = render;
-    this.paletteCategory.onchange = render;
-    box.addEventListener('dragover', (e) => {
-      if (this.drag?.kind !== 'row') return;
-      e.preventDefault();
-      box.classList.add('drop-remove');
-    });
-    box.addEventListener('dragleave', (e) => {
-      if (!box.contains(e.relatedTarget as Node)) box.classList.remove('drop-remove');
-    });
-    box.addEventListener('drop', (e) => {
-      const drag = this.drag;
-      if (drag?.kind !== 'row') return;
-      e.preventDefault();
-      this.endDrag();
-      this.edit(s, list.filter((_, j) => j !== drag.index));
-    });
-    box.append(h('div', { class: 'row' }, this.paletteSearch, this.paletteCategory), body);
+    search.addEventListener('input', render);
+    cat.addEventListener('change', render);
+    const dlg = openDialog('追加するアイテムを選ぶ', h('div', {}, h('div', { class: 'row' }, search, cat), h('div', { class: 'picker-list' }, grid)));
     render();
-    return box;
+    search.focus();
   }
 
   /** Adding an item, reverting the shop, and warnings about lists the game was not seen with. */
@@ -261,7 +245,8 @@ export class ShopPage {
     if (list.some((id) => this.items.item(id)?.price === 0)) warnings.push('買値 0 のアイテムがあります (タダで買えます)。');
     return h('div', {},
       h('div', { class: 'row' },
-        h('span', { class: 'muted small' }, '行をドラッグして並べ替え、右の一覧からドラッグ (またはダブルクリック) で追加、一覧へドラッグで外します。'),
+        h('button', { onclick: () => this.pickItem(list, (id) => this.edit(s, [...list, id])) }, '＋ 追加'),
+        h('span', { class: 'muted small' }, '行をドラッグして並べ替え、× で外します。'),
         stock.changedShop(s.id) ? h('button', { onclick: () => this.edit(s, stock.originalItems(s.id)) }, 'この店の変更を元に戻す') : ''),
       h('div', { class: 'muted small' }, `変更は ShopItem として ${stock.archiveNames().join(' と ')} に書き出されます。`),
       ...warnings.map((w) => h('div', { class: 'issue warn' }, `⚠ ${w}`)));

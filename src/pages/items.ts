@@ -52,6 +52,22 @@ export async function chestSources(game: Game, docOf: (m: MapInfo) => MapDoc, ev
   return out;
 }
 
+/** Model of an item (itemData +0x20, an entry of one of the item model archives). */
+export function itemRef(game: Game, it: Item): ModelRef | null {
+  if (!it.model) return null;
+  return {
+    key: `item/${hex8(it.model)}`,
+    load: async () => {
+      const name = await itemModelArchive(game, it.model);
+      if (!name) return null;
+      const archive = parseInt(name, 16);
+      const sets = await loadObjectModels(game, [{ archive, entry: it.model }]);
+      const set = sets.get(objKey(archive, it.model));
+      return set ? { set, hash: it.model } : null;
+    },
+  };
+}
+
 export class ItemPage {
   readonly el = h('div', { class: 'book' });
   private readonly list = h('div', { class: 'book-list' });
@@ -129,21 +145,8 @@ export class ItemPage {
     this.list.querySelector('tr.active')?.scrollIntoView({ block: 'nearest' });
   }
 
-  /** Model of an item (itemData +0x20, an entry of one of the item model archives). */
   private ref(it: Item): ModelRef | null {
-    if (!it.model) return null;
-    const game = this.game;
-    return {
-      key: `item/${hex8(it.model)}`,
-      load: async () => {
-        const name = await itemModelArchive(game, it.model);
-        if (!name) return null;
-        const archive = parseInt(name, 16);
-        const sets = await loadObjectModels(game, [{ archive, entry: it.model }]);
-        const set = sets.get(objKey(archive, it.model));
-        return set ? { set, hash: it.model } : null;
-      },
-    };
+    return itemRef(this.game, it);
   }
 
   private edited(): void {
