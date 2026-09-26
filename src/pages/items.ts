@@ -12,6 +12,8 @@ import { hex8, u32 } from '../util/bytes';
 import { lazyPhoto, ModelViewer, type ModelRef } from './modelview';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { itemModelArchive } from '../game/items';
+import { shopLabel } from '../game/shops';
+import { shopHref } from './shops';
 
 const CHEST_KINDS = new Set([0x0c, 0x0d, 0x0e]);
 
@@ -177,7 +179,7 @@ export class ItemPage {
       (it.categoryByte & 0xf) === 3 ? h('div', { class: 'muted small' }, `装備の値 +0x2D = ${it.extra[0]}、+0x2E = ${it.extra[1]} (未解析)`) : '',
       h('div', { class: 'book-cols' },
         h('section', {}, h('h3', {}, `お店 (${it.shops.length})`),
-          it.shops.length ? h('div', {}, it.shops.map((s) => `店 ${s}${s === 17 ? ' (妖精の里)' : ''}`).join('、')) : h('div', { class: 'muted' }, 'なし')),
+          it.shops.length ? h('div', {}, ...it.shops.flatMap((s, i) => [i ? '、' : '', h('a', { href: shopHref(s) }, shopLabel(s))])) : h('div', { class: 'muted' }, 'なし')),
         h('section', {}, h('h3', {}, `落とすモンスター (${drops.length})`),
           drops.length
             ? h('ul', {}, ...drops.map((d) => h('li', {}, h('a', { href: `#/monsters/${d.row}` }, d.name), ' ', h('span', { class: 'muted' }, `(率の値 ${d.rate})`))))

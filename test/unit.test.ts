@@ -193,6 +193,29 @@ describe('actions', () => {
   });
 });
 
+describe('shops', () => {
+  test('decode Shop rows and merge them with ShopItem', async () => {
+    const { buildShops, decodeShopRow, shopLabel } = await import('../src/game/shops');
+    const { GsTable } = await import('../src/archive/gstable');
+    const row = new Uint8Array(0x38);
+    for (let i = 0; i < 10; i++) w32(row, 0x0c + i * 4, 0xe3 + i);
+    row[0x34] = 2;
+    expect(decodeShopRow(row)).toEqual({ messages: [0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec], variant: 2 });
+    // a table of 2 rows (header 0x40 bytes): shop 0 and shop 1
+    const data = new Uint8Array(0x40 + 2 * 0x38);
+    w32(data, 0, 2);
+    w32(data, 4, 0x38);
+    w32(data, 0x10, 0x40);
+    data.set(row, 0x40 + 0x38);
+    const shops = buildShops(new Map([[1, [2, 12]], [3, [5]]]), new GsTable(data));
+    expect(shops.map((s) => [s.id, s.items, s.variant])).toEqual([[0, [], 0], [1, [2, 12], 2], [3, [5], -1]]);
+    expect(shops[1]!.messages[0]).toBe(0xe3);
+    expect(shops[2]!.messages).toEqual([]);
+    expect(buildShops(new Map([[0, [1]]]), null)[0]!.variant).toBe(-1);
+    expect([shopLabel(3), shopLabel(17)]).toEqual(['店 3', '店 17 (妖精の里)']);
+  });
+});
+
 describe('item fields', () => {
   test('read and write the editable fields of an itemData row', async () => {
     const { readItemFields, writeItemFields } = await import('../src/game/items');

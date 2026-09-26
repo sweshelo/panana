@@ -30,6 +30,8 @@ import { ActionPage } from './pages/actions';
 import { MessagePage } from './pages/messages';
 import { ActionBook } from './game/actions';
 import { ItemBook, loadShops } from './game/items';
+import { buildShops, loadShopTable } from './game/shops';
+import { ShopPage } from './pages/shops';
 import type { MonsterBook } from './game/monsters';
 import type { SoundNames } from './game/sound';
 
@@ -65,6 +67,9 @@ export class App {
   private groupPage: GroupPage | null = null;
   private actionPage: ActionPage | null = null;
   private messagePage: MessagePage | null = null;
+  private shopPage: ShopPage | null = null;
+  /** Items and what each shop sells, shared by the item book and the shop list (built on first use). */
+  private itemBook: { items: ItemBook; stock: Map<number, number[]> } | null = null;
   private book: MonsterBook | null = null;
   private sounds: SoundNames | null = null;
   private status = h('div', { class: 'status' });
@@ -159,12 +164,14 @@ export class App {
     const pageGroups = h('div', { class: 'page page-groups' });
     const pageActions = h('div', { class: 'page page-actions' });
     const pageMessages = h('div', { class: 'page page-messages' });
+    const pageShops = h('div', { class: 'page page-shops' });
     const tab = (page: string, label: string): HTMLElement => h('a', { class: 'tab', 'data-page': page, href: `#/${page}` }, label);
     const nav = h('nav', { class: 'topnav' },
       h('b', { class: 'brand' }, 'Panana - 電波人間のRPG2 エディタ'),
       tab('map', 'マップ編集'),
       tab('monsters', 'モンスター図鑑'),
       tab('items', 'アイテム図鑑'),
+      tab('shops', 'ショップ'),
       tab('groups', '群れ'),
       tab('actions', 'アクション'),
       tab('messages', 'メッセージ'),
@@ -174,7 +181,7 @@ export class App {
       h('button', { class: 'base-btn', title: '既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります', onclick: () => this.pickBaseMod() }, ''),
       h('button', { onclick: () => this.showStart() }, 'ダンプを変える'),
     );
-    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems, pageGroups, pageActions, pageMessages);
+    this.shell = h('div', { class: 'shell' }, nav, pageMap, pageMonsters, pageItems, pageGroups, pageActions, pageMessages, pageShops);
     clear(this.host);
     this.host.append(this.shell);
     this.root = pageMap;
@@ -183,6 +190,8 @@ export class App {
     this.groupPage = null;
     this.actionPage = null;
     this.messagePage = null;
+    this.shopPage = null;
+    this.itemBook = null;
     [this.book, this.sounds] = await Promise.all([
       game.monsters().catch((err) => {
         console.warn('monsters', err);
@@ -194,13 +203,22 @@ export class App {
     await this.route();
   }
 
-  /** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row] or #/messages[/dungeon.row | /0xID]. */
+  private async items(): Promise<{ items: ItemBook; stock: Map<number, number[]> }> {
+    const game = this.game!;
+    if (!this.itemBook) {
+      const stock = await loadShops(game).catch(() => new Map<number, number[]>());
+      this.itemBook = { items: new ItemBook(game, stock), stock };
+    }
+    return this.itemBook;
+  }
+
+  /** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id] or #/messages[/dungeon.row | /0xID]. */
   private async route(): Promise<void> {
     const shell = this.shell;
     const game = this.game;
     if (!shell || !game) return;
     const [page, arg] = location.hash.replace(/^#\/?/, '').split('/');
-    const p = page === 'monsters' || page === 'items' || page === 'groups' || page === 'actions' || page === 'messages' ? page : 'map';
+    const p = page === 'monsters' || page === 'items' || page === 'groups' || page === 'actions' || page === 'messages' || page === 'shops' ? page : 'map';
     shell.dataset.page = p;
     shell.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.page === p));
     if (p === 'monsters') {
@@ -268,14 +286,29 @@ export class App {
       await this.messagePage.show(arg ? decodeURIComponent(arg) : undefined);
       return;
     }
+    if (p === 'shops') {
+      const el = shell.querySelector<HTMLElement>('.page-shops')!;
+      if (!this.shopPage) {
+        clear(el);
+        el.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
+        const { items, stock } = await this.items();
+        const table = await loadShopTable(game).catch(() => null);
+        this.shopPage = new ShopPage(game, buildShops(stock, table), items);
+        clear(el);
+        el.append(this.shopPage.el);
+      }
+      document.title = 'Panana — ショップ';
+      this.shopPage.show(arg !== undefined && arg !== '' ? Number(arg) : undefined);
+      return;
+    }
     if (p === 'items') {
       const el = shell.querySelector<HTMLElement>('.page-items')!;
       if (!this.itemPage) {
         const st = this.st!;
         clear(el);
         el.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
-        const shops = await loadShops(game).catch(() => new Map<number, number[]>());
-        this.itemPage = new ItemPage(game, new ItemBook(game, shops), this.book, (m) => st.docs.get(m.hash) ?? game.doc(m),
+        const { items } = await this.items();
+        this.itemPage = new ItemPage(game, items, this.book, (m) => st.docs.get(m.hash) ?? game.doc(m),
           async (d) => st.events.get(d) ?? game.eventTable(d), () => {
             this.scheduleSave();
             this.actionPage = null; // the items that use each action are rebuilt on the next visit
