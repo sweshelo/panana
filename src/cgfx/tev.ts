@@ -22,8 +22,9 @@ function source(s: number, k: number): string {
     case 3: return 't0';
     case 4: return 't1';
     case 5: return 't2';
+    case 0x0d: return 'buf';
     case 0x0e: return `konst[${k}]`;
-    default: return 'prev'; // 0x0D previous buffer, 0x0F previous
+    default: return 'prev'; // 0x0F previous
   }
 }
 
@@ -69,7 +70,7 @@ function combine(op: number, a: string, b: string, c: string, one: string, half:
   }
 }
 
-function stageCode(st: TevStage, k: number): string {
+function stageCode(st: TevStage, k: number, m: CgfxMaterial): string {
   const s = (i: number): string => source(i, k);
   const ra = st.srcRgb.map((x, i) => rgbOperand(st.opRgb[i]!, s(x)));
   const aa = st.srcA.map((x, i) => alphaOperand(st.opA[i]!, s(x)));
@@ -81,8 +82,15 @@ function stageCode(st: TevStage, k: number): string {
     vec3 rgb = clamp((${rgb}) * ${1 << st.scaleRgb}.0, 0.0, 1.0);
     float a = clamp((${alpha}) * ${1 << st.scaleA}.0, 0.0, 1.0);
     prev = vec4(rgb, a);
-  }`;
+  }
+  buf = nextBuf;${k < 4 && (m.tevBuffer.updateRgb >> k) & 1 ? '\n  nextBuf.rgb = prev.rgb;' : ''}${k < 4 && (m.tevBuffer.updateA >> k) & 1 ? '\n  nextBuf.a = prev.a;' : ''}`;
 }
+
+// PICA test functions (never, always, ==, !=, <, <=, >, >=) as three.js depth functions.
+const DEPTH_FUNC: THREE.DepthModes[] = [
+  THREE.NeverDepth, THREE.AlwaysDepth, THREE.EqualDepth, THREE.NotEqualDepth,
+  THREE.LessDepth, THREE.LessEqualDepth, THREE.GreaterDepth, THREE.GreaterEqualDepth,
+];
 
 const ALPHA_TEST = ['false', 'true', '==', '!=', '<', '<=', '>', '>='];
 
@@ -98,6 +106,7 @@ export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Pla
   const units = m.units;
   const uniforms: Record<string, THREE.IUniform> = {
     konst: { value: tev.map((st) => new THREE.Vector4(...(st.color as [number, number, number, number]))) },
+    bufColor: { value: new THREE.Vector4(...(m.tevBuffer.color as [number, number, number, number])) },
   };
   let sampling = '';
   for (let i = 0; i < 3; i++) {
@@ -142,6 +151,7 @@ void main() {
 }`;
   const fragmentShader = `
 uniform vec4 konst[6];
+uniform vec4 bufColor;
 ${[0, 1, 2].filter((i) => uniforms[`map${i}`]).map((i) => `uniform sampler2D map${i};\nuniform mat3 uvm${i};`).join('\n')}
 varying vec2 vUv0;
 varying vec2 vUv1;
@@ -152,7 +162,10 @@ void main() {
   #include <clipping_planes_fragment>
 ${sampling}
   vec4 prev = vec4(0.0);
-${tev.map(stageCode).join('\n')}
+  // Combiner buffer: a stage reads what the stages before the previous one wrote (as the PICA does).
+  vec4 buf = vec4(0.0);
+  vec4 nextBuf = bufColor;
+${tev.map((st, k) => stageCode(st, k, m)).join('\n')}
 ${alphaTest}
   gl_FragColor = prev;
 }`;
@@ -177,8 +190,13 @@ ${alphaTest}
   // PICA writes depth by the material's depth flags, blending or not. Monster bodies blend (src alpha)
   // and are double sided, so without depth writes their back faces would show through.
   mat.depthWrite = m.depthWrite;
-  // Decals lie on (or just above) the floor: pull them forward to avoid z-fighting.
-  if (!opaque || m.polygonOffset || m.layer > 0) {
+  // The game tests depth with "less" (0x107 = 0x41), so of two coplanar surfaces the first drawn stays:
+  // e.g. eyes and cheeks drawn before the (translucent) body they lie on.
+  mat.depthTest = m.depthTest.enabled;
+  mat.depthFunc = DEPTH_FUNC[m.depthTest.func] ?? THREE.LessEqualDepth;
+  // Decals lie on (or just above) the floor: pull them forward to avoid z-fighting. Only overlays that do
+  // not write depth: a blended body that writes depth pulled forward would cover the decals on it.
+  if (m.polygonOffset || (!opaque && !m.depthWrite) || (m.layer > 0 && !m.depthWrite)) {
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -1;
     mat.polygonOffsetUnits = -4;
