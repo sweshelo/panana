@@ -1,7 +1,7 @@
 // Master data archive 56562135: map tables (docs/map.md §4) and message files.
-import { findByName, parseArchive, unpackEntry, type Archive } from '../archive/gsarc';
+import { findByName, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
-import { u16, u32 } from '../util/bytes';
+import { equalBytes, u16, u32, w16 } from '../util/bytes';
 
 export const MASTER_ARCHIVE = '56562135';
 export const TILESETS = 12;
@@ -41,6 +41,15 @@ export class Master {
   readonly mapData: GsTable;
   readonly mapResource: GsTable;
   readonly mapParts: GsTable;
+  /** Object models: {u32 archive, u32 model entry, f32 radius, ...} (runtime master +0x3D4). */
+  readonly mapObject: GsTable;
+  /** Characters: +0 flags (bit0-2 = 0: NPC), +8 u16 mapObject row (runtime master +0x32C). */
+  readonly mapChara: GsTable;
+  /** Treasure: 10 x {u16 item, u16 weight} (runtime master +0x310, FUN_00305dc8). */
+  readonly treasureGroup: GsTable;
+  private readonly treasureEntry: ArcEntry;
+  private readonly treasureOriginal: Uint8Array;
+  readonly itemData: GsTable;
   private readonly messages: GmsgFile[] = [];
 
   constructor(bytes: Uint8Array) {
@@ -54,6 +63,14 @@ export class Master {
     this.mapData = table('mapData.bin');
     this.mapResource = table('mapResource.bin');
     this.mapParts = table('mapParts.bin');
+    this.mapObject = table('mapObject.bin');
+    this.mapChara = table('mapChara.bin');
+    const tg = findByName(this.archive, 'treasureGroup.bin');
+    if (!tg) throw new Error('マスター (56562135) に treasureGroup.bin がありません');
+    this.treasureEntry = tg.entry;
+    this.treasureOriginal = tg.body.slice();
+    this.treasureGroup = new GsTable(tg.body);
+    this.itemData = table('itemData.bin');
     for (const e of this.archive.entries) {
       if (e.type !== 6) continue;
       const { name, body } = unpackEntry(this.archive, e);
@@ -75,9 +92,56 @@ export class Master {
     return undefined;
   }
 
+  /** mapGroup +0x14 is a u16 message ID (+0x16 is another field, non-zero for K / M / S rows). */
   dungeonName(dungeon: number): string {
     if (dungeon < 0 || dungeon >= this.mapGroup.rows) return '';
-    return this.message(u32(this.mapGroup.row(dungeon), 0x14)) ?? '';
+    return this.message(u16(this.mapGroup.row(dungeon), 0x14)) ?? '';
+  }
+
+  /** Event archive of a dungeon (mapGroup +0x0C; holds dXX_EventObject.bin). */
+  eventArchive(dungeon: number): number {
+    if (dungeon < 0 || dungeon >= this.mapGroup.rows) return 0;
+    return u32(this.mapGroup.row(dungeon), 0x0c);
+  }
+
+  /** 10 slots of a treasureGroup row. */
+  treasureSlots(row: number): { item: number; weight: number }[] {
+    if (row < 0 || row >= this.treasureGroup.rows) return [];
+    const r = this.treasureGroup.row(row);
+    return Array.from({ length: 10 }, (_, i) => ({ item: u16(r, i * 4), weight: u16(r, i * 4 + 2) }));
+  }
+
+  setTreasureSlot(row: number, slot: number, item: number, weight: number): void {
+    const r = this.treasureGroup.row(row);
+    w16(r, slot * 4, item);
+    w16(r, slot * 4 + 2, weight);
+  }
+
+  treasureChanged(): boolean {
+    return !equalBytes(this.treasureGroup.data, this.treasureOriginal);
+  }
+
+  treasureRowChanged(row: number): boolean {
+    const o = this.treasureGroup.offset + row * this.treasureGroup.rowSize;
+    return !equalBytes(this.treasureGroup.row(row), this.treasureOriginal.subarray(o, o + this.treasureGroup.rowSize));
+  }
+
+  /** This master archive with treasureGroup.bin re-packed (every other entry copied verbatim). */
+  buildArchive(): Uint8Array {
+    return rebuildArchive(this.archive, new Map([[this.treasureEntry.index, this.treasureGroup.data]]));
+  }
+
+  itemName(id: number): string {
+    if (id <= 0 || id >= this.itemData.rows) return '';
+    return this.message(u32(this.itemData.row(id), 0x0c)) ?? '';
+  }
+
+  /** mapObject row -> {archive, entry} of its model (0 = none). */
+  objectModel(row: number): { archive: number; entry: number } | null {
+    if (row <= 0 || row >= this.mapObject.rows) return null;
+    const r = this.mapObject.row(row);
+    const archive = u32(r, 0);
+    return archive ? { archive, entry: u32(r, 4) } : null;
   }
 
   /** mapData row of a dungeon (mapGroup +0x26; FUN_001c4ec4). */

@@ -1,4 +1,4 @@
-// Parsed CGFX -> three.js objects. Materials are approximated: diffuse texture x vertex colour, simple
+// Parsed CGFX -> three.js objects. Materials are approximated: diffuse texture x vertex colour, no
 // lighting, translucency kinds mapped to blending (docs/map-editor-design.md §5).
 import * as THREE from 'three';
 import type { CgfxMaterial, CgfxModel, CgfxTexture } from './cgfx';
@@ -26,8 +26,8 @@ export class ModelFactory {
       tex.wrapS = WRAP[m.wrapS] ?? THREE.RepeatWrapping;
       tex.wrapT = WRAP[m.wrapT] ?? THREE.RepeatWrapping;
       tex.magFilter = THREE.LinearFilter;
-      tex.minFilter = THREE.LinearFilter;
-      tex.generateMipmaps = false;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
       tex.flipY = false;
       tex.repeat.set(m.uv.scaleU || 1, m.uv.scaleV || 1);
       tex.offset.set(m.uv.translateU, m.uv.translateV);
@@ -40,8 +40,8 @@ export class ModelFactory {
   private material(m: CgfxMaterial | undefined, hasColor: boolean): THREE.Material {
     const texName = m?.textures.find((t) => t && this.set.textures.has(t));
     const tex = m && texName ? this.texture(this.set.textures.get(texName)!, m) : null;
-    const Mat = typeof location !== 'undefined' && location.search.includes('basic') ? THREE.MeshBasicMaterial : THREE.MeshLambertMaterial;
-    const mat = new Mat({
+    // Shading is baked into the vertex colours (the models carry few or no normals), so no lighting.
+    const mat = new THREE.MeshBasicMaterial({
       map: tex,
       color: tex ? 0xffffff : 0x9a8f80,
       vertexColors: hasColor,
@@ -56,6 +56,7 @@ export class ModelFactory {
       mat.transparent = true;
       mat.depthWrite = false;
       mat.blending = layer === 3 ? THREE.AdditiveBlending : THREE.SubtractiveBlending;
+      if (layer === 2) mat.premultipliedAlpha = true;
     } else {
       mat.alphaTest = 0.5;
     }

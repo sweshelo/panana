@@ -55,8 +55,6 @@ export interface CgfxFile {
 
 type Mat34 = number[]; // row-major 3x4
 
-const DEBUG_UNKNOWN = false;
-
 const ATTR = { position: 0, normal: 1, tangent: 2, color: 3, uv0: 4, uv1: 5, uv2: 6, boneIndex: 7, boneWeight: 8 };
 
 class Reader {
@@ -98,6 +96,31 @@ class Reader {
     for (let i = 0; i < 12; i++) m.push(this.f32(o + i * 4));
     return m;
   };
+}
+
+/** Column-vector 3x4 matrix of T * Rz * Ry * Rx * S. */
+function composeTRS(sc: [number, number, number], rot: [number, number, number], t: [number, number, number]): Mat34 {
+  const [cx, cy, cz] = rot.map(Math.cos) as [number, number, number];
+  const [sx, sy, sz] = rot.map(Math.sin) as [number, number, number];
+  // R = Rz * Ry * Rx
+  const r = [
+    cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+    sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+    -sy, cy * sx, cy * cx,
+  ];
+  return [
+    r[0]! * sc[0], r[1]! * sc[1], r[2]! * sc[2], t[0],
+    r[3]! * sc[0], r[4]! * sc[1], r[5]! * sc[2], t[1],
+    r[6]! * sc[0], r[7]! * sc[1], r[8]! * sc[2], t[2],
+  ];
+}
+
+function mul34(a: Mat34, b: Mat34): Mat34 {
+  const o: number[] = [];
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 4; j++)
+      o.push(a[i * 4]! * b[j]! + a[i * 4 + 1]! * b[4 + j]! + a[i * 4 + 2]! * b[8 + j]! + (j === 3 ? a[i * 4 + 3]! : 0));
+  return o;
 }
 
 function transformPoint(m: Mat34, x: number, y: number, z: number): [number, number, number] {
@@ -231,11 +254,26 @@ function readModel(r: Reader, o: number): CgfxModel {
   const shapeTable = r.rel(o + 0xc8);
   const objectNodes = r.dict(o + 0xcc).map((e) => ({ name: r.str(e.data), visible: r.u32(e.data + 4) === 1 }));
 
-  // Skeleton: bone world matrices (rigid skinning moves vertices by these).
+  // Skeleton: bone world matrices (rigid skinning moves vertices by these). The stored world matrix is
+  // often empty, so compose scale / rotation / translation up the parent chain (like Ohana3DS).
   const boneWorld: Mat34[] = [];
   if (flags & 0x80) {
     const sk = r.rel(o + 0xe0);
-    if (sk) for (const e of r.dict(sk + 0x18)) boneWorld[r.u32(e.data + 8)] = r.mat(e.data + 0x74);
+    const bones: { parent: number; local: Mat34 }[] = [];
+    if (sk)
+      for (const e of r.dict(sk + 0x18)) {
+        const b = e.data;
+        const v = (off: number): [number, number, number] => [r.f32(b + off), r.f32(b + off + 4), r.f32(b + off + 8)];
+        bones[r.u32(b + 8)] = { parent: r.s32(b + 0x0c), local: composeTRS(v(0x20), v(0x2c), v(0x38)) };
+      }
+    const world = (i: number, depth = 0): Mat34 => {
+      if (boneWorld[i]) return boneWorld[i]!;
+      const bone = bones[i]!;
+      const m = bone.parent >= 0 && bones[bone.parent] && depth < 64 ? mul34(world(bone.parent, depth + 1), bone.local) : bone.local;
+      boneWorld[i] = m;
+      return m;
+    };
+    bones.forEach((b, i) => b && world(i));
   }
 
   const shapes = r.ptrs(shapeCount, shapeTable).map((s) => readShape(r, s, boneWorld));
@@ -288,8 +326,7 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
         });
       }
     } else if (type === 0x80000000) {
-      if (DEBUG_UNKNOWN) console.warn('fixed attribute', Array.from({ length: 10 }, (_, i) => r.u32(vg + i * 4).toString(16)));
-      // {type, usage, flags, format, elements, scale, count, rel values}
+      // {type, usage, flags, GL format, elements, scale (0 = 1), value count, rel values}
       const usage = r.u32(vg + 4);
       const elements = r.u32(vg + 0x10);
       const scale = r.f32(vg + 0x14);
@@ -298,7 +335,7 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
       const fixed: number[] = [0, 0, 0, 1];
       if (values) for (let i = 0; i < Math.min(count, 4); i++) fixed[i] = r.f32(values + i * 4);
       attrs.push({ usage, type: 6, elements, scale: scale || 1, offset: 0, fixed });
-    } else if (DEBUG_UNKNOWN) console.warn('vertex group type', type.toString(16));
+    }
   }
 
   const pos: number[] = [], nrm: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = [];
@@ -306,9 +343,7 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
   const tmp = [0, 0, 0, 0];
   const vmap = new Map<number, number>(); // (face group, vertex index) -> output vertex
 
-  let groupId = 0;
   for (const fg of r.ptrs(faceCount, faceTable)) {
-    groupId++;
     const nodeCount = r.u32(fg);
     const nodeList = r.rel(fg + 4);
     const skinning = r.u32(fg + 8);
@@ -365,7 +400,6 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
       }
     }
   }
-  void groupId;
   return {
     positions: new Float32Array(pos),
     normals: has(ATTR.normal) ? new Float32Array(nrm) : null,

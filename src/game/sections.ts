@@ -38,12 +38,12 @@ export interface RecordLayout {
   label: string;
 }
 export const LAYOUTS: Record<number, RecordLayout> = {
-  1: { size: 8, xo: 0, yo: 2, unit: 'cell', label: '置物 (区画 1)' },
-  2: { size: 12, xo: 4, yo: 6, unit: 'fine', label: '仕掛け (区画 2)' },
+  1: { size: 8, xo: 0, yo: 2, unit: 'cell', label: '床のギミック (区画 1)' },
+  2: { size: 12, xo: 4, yo: 6, unit: 'fine', label: '置物 (区画 2)' },
   3: { size: 28, xo: 0x10, yo: 0x12, unit: 'cell', label: '出入口 (区画 3)' },
   4: { size: 12, xo: 4, yo: 6, unit: 'fine', label: '宝箱 (区画 4)' },
-  5: { size: 16, xo: 4, yo: 6, unit: 'fine', label: 'オブジェクト (区画 5)' },
-  8: { size: 16, xo: 4, yo: 6, unit: 'fine', label: '条件つき (区画 8)' },
+  5: { size: 16, xo: 4, yo: 6, unit: 'fine', label: 'キャラ・オブジェクト (区画 5)' },
+  8: { size: 16, xo: 4, yo: 6, unit: 'fine', label: 'イベントの範囲 (区画 8)' },
   9: { size: 16, xo: 8, yo: 10, unit: 'fine', label: '区画 9' },
 };
 export const POINT_SECTIONS = [3, 4, 5, 8, 2, 1, 9] as const;
@@ -81,6 +81,7 @@ export const P3 = {
   id: (r: Uint8Array) => u32(r, 0),
   destMap: (r: Uint8Array) => u32(r, 4),
   destPoint: (r: Uint8Array) => u32(r, 8),
+  /** EventObject row (doors, warp holes …; 0 = none). */
   door: (r: Uint8Array) => u32(r, 0x0c),
   kind: (r: Uint8Array) => u8(r, 0x14),
   aux: (r: Uint8Array) => u8(r, 0x15),

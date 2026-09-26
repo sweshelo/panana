@@ -99,3 +99,12 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .dialog { width: min(760px, 92vw); max-height: 88vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
 .dialog h2 { margin-top: 0; font-size: 17px; }
 .export-result { margin: 8px 0; }
+
+.map-title { font-weight: 600; margin-left: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.warn-box { background: #3a3220; border: 1px solid #6b5a2c; padding: 6px 8px; border-radius: 4px; margin: 6px 0; font-size: 12px; }
+.model-line { margin: 6px 0; padding: 4px 6px; background: var(--panel2); border-radius: 4px; font-size: 12px; }
+.treasure { margin-top: 8px; border-top: 1px solid var(--border); }
+table.slots { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.slots td, table.slots th { padding: 2px 3px; text-align: left; }
+table.slots input.item { width: 150px; }
+table.slots input[type='number'] { width: 64px; }

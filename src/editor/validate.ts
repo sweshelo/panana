@@ -1,4 +1,5 @@
 // Checks before export (docs/map-editor-design.md §7 "検証ルール").
+import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
 import { LAYOUTS, P3, loadDoc, type MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
@@ -8,6 +9,8 @@ export interface Issue {
   level: 'error' | 'warn';
   msg: string;
   target?: Selection;
+  /** Index-independent identity, used to hide problems the unedited ROM already has. */
+  key: string;
 }
 
 const DOOR_KINDS = new Set([11, 12, 13, 14, 15, 16, 17]);
@@ -19,8 +22,41 @@ function pointIds(game: Game, docs: Map<number, MapDoc>, map: number): Set<numbe
   return new Set((doc.recs[3] ?? []).map((r) => P3.id(r.raw)));
 }
 
-export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<number, MapDoc>): Issue[] {
+const baselines = new Map<string, Set<string>>();
+
+/**
+ * Problems of an edited map that the unedited ROM does not already have (vanilla data has a few
+ * references this editor cannot resolve, e.g. points defined outside section 3).
+ */
+export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<number, MapDoc>, events: EventTable | null = null): Issue[] {
+  const key = `${doc.hash}/${tileset}/${events ? 1 : 0}`;
+  let base = baselines.get(key);
+  if (!base) {
+    const info = game.code.byHash(doc.hash);
+    base = new Set(info ? validateAll(game, loadDoc(game.db, info), tileset, new Map(), events).map((i) => i.key) : []);
+    baselines.set(key, base);
+  }
+  return validateAll(game, doc, tileset, docs, events).filter((i) => !base!.has(i.key));
+}
+
+export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<number, MapDoc>, events: EventTable | null): Issue[] {
   const out: Issue[] = [];
+
+  // Event rows (sections 4 / 5 / 8 at +0, section 3 at +0x0C) must exist in the dungeon's EventObject table.
+  if (events) {
+    const chests = new Map<number, number>();
+    for (const k of [3, 4, 5, 8]) {
+      (doc.recs[k] ?? []).forEach((r, i) => {
+        const row = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
+        if (k === 3 && !row) return;
+        if (!events.has(row))
+          out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} がありません (表は ${events.rows} 行)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
+        if (k === 4) chests.set(row, (chests.get(row) ?? 0) + 1);
+      });
+    }
+    for (const [row, n] of chests)
+      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じイベントの行 ${row} を使っています (中身と「開けた」フラグを共有します)`, key: `chestdup/${row}` });
+  }
   const cell = (x: number, y: number): Selection => ({ type: 'tiles', cells: [[x, y]] });
 
   // Tiles
@@ -29,29 +65,29 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
     const key = `${t.x},${t.y}`;
     seen.set(key, (seen.get(key) ?? 0) + 1);
     if (t.x < 0 || t.y < 0 || t.x >= GRID || t.y >= GRID)
-      out.push({ level: 'error', msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`, target: cell(t.x, t.y) });
+      out.push({ level: 'error', msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`, target: cell(t.x, t.y), key: `range/${key}` });
     const letter = t.letter >= 0x61 && t.letter <= 0x67 ? t.letter - 0x60 : 0;
     if (!game.master.partModel(t.kind, tileset, letter))
-      out.push({ level: 'warn', msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセットにモデルがありません`, target: cell(t.x, t.y) });
+      out.push({ level: 'warn', msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセットにモデルがありません`, target: cell(t.x, t.y), key: `model/${key}/${t.kind}/${letter}` });
   }
   for (const [key, n] of seen)
     if (n > 1) {
       const [x, y] = key.split(',').map(Number) as [number, number];
-      out.push({ level: 'warn', msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`, target: cell(x, y) });
+      out.push({ level: 'warn', msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`, target: cell(x, y), key: `dup/${key}` });
     }
-  if (!doc.tiles.length) out.push({ level: 'error', msg: 'タイルがありません' });
+  if (!doc.tiles.length) out.push({ level: 'error', msg: 'タイルがありません', key: 'empty' });
 
   // Fine coordinates: 0..299, otherwise the game rounds to 0.
   for (const k of [2, 4, 5, 8, 9]) {
     const L = LAYOUTS[k]!;
     (doc.recs[k] ?? []).forEach((r, i) => {
       if (r.x < 0 || r.x > 299 || r.y < 0 || r.y > 299)
-        out.push({ level: 'error', msg: `${L.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`, target: { type: 'rec', section: k, index: i } });
+        out.push({ level: 'error', msg: `${L.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`, target: { type: 'rec', section: k, index: i }, key: `fine/${k}/${r.x},${r.y}` });
     });
   }
   (doc.recs[1] ?? []).forEach((r, i) => {
     if (!tileAt(doc, r.x, r.y))
-      out.push({ level: 'warn', msg: `置物 (区画 1) #${i}: セル (${r.x}, ${r.y}) にタイルがありません`, target: { type: 'rec', section: 1, index: i } });
+      out.push({ level: 'warn', msg: `床のギミック (区画 1) #${i}: セル (${r.x}, ${r.y}) にタイルがありません`, target: { type: 'rec', section: 1, index: i }, key: `s1tile/${r.x},${r.y}` });
   });
 
   // Section 3
@@ -61,18 +97,22 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
     const target: Selection = { type: 'rec', section: 3, index: i };
     const id = P3.id(r.raw);
     idCount.set(id, (idCount.get(id) ?? 0) + 1);
-    if (!tileAt(doc, r.x, r.y)) out.push({ level: 'error', msg: `出入口 #${i}: セル (${r.x}, ${r.y}) にタイルがありません`, target });
+    if (!tileAt(doc, r.x, r.y))
+      out.push({ level: 'error', msg: `出入口 #${i}: セル (${r.x}, ${r.y}) にタイルがありません`, target, key: `p3tile/${hex8(id)}/${r.x},${r.y}` });
     const dest = P3.destMap(r.raw);
-    if (dest) {
-      const ids = pointIds(game, docs, dest);
-      if (!ids) out.push({ level: 'error', msg: `出入口 #${i}: 行き先のマップ ${hex8(dest)} がありません`, target });
-      else if (!ids.has(P3.destPoint(r.raw)))
-        out.push({ level: 'error', msg: `出入口 #${i}: 行き先 ${game.code.byHash(dest)?.name ?? hex8(dest)} に地点 ${hex8(P3.destPoint(r.raw))} がありません`, target });
-    }
+    // Destinations outside the map table (world map, towns' special maps) cannot be checked here.
+    const ids = dest ? pointIds(game, docs, dest) : null;
+    if (ids && !ids.has(P3.destPoint(r.raw)))
+      out.push({
+        level: 'error',
+        msg: `出入口 #${i}: 行き先 ${game.code.byHash(dest)?.name ?? hex8(dest)} に地点 ${hex8(P3.destPoint(r.raw))} がありません`,
+        target,
+        key: `dest/${hex8(dest)}/${hex8(P3.destPoint(r.raw))}`,
+      });
   });
   pts.forEach((r, i) => {
     if (DOOR_KINDS.has(P3.kind(r.raw)) && idCount.get(P3.id(r.raw)) === 1)
-      out.push({ level: 'warn', msg: `扉 #${i}: 同じ ID (${hex8(P3.id(r.raw))}) の相方がありません`, target: { type: 'rec', section: 3, index: i } });
+      out.push({ level: 'warn', msg: `扉 #${i}: 同じ ID (${hex8(P3.id(r.raw))}) の相方がありません`, target: { type: 'rec', section: 3, index: i }, key: `door/${hex8(P3.id(r.raw))}` });
   });
 
   // Points of the original map that other maps (or the original pairs) refer to must still exist.
@@ -82,7 +122,7 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
     const orig = loadDoc(game.db, info).recs[3] ?? [];
     for (const r of orig) {
       if (P3.destMap(r.raw) && !now.has(P3.id(r.raw)))
-        out.push({ level: 'warn', msg: `元の出入口 ${hex8(P3.id(r.raw))} (${game.code.byHash(P3.destMap(r.raw))?.name ?? ''} 行き) が消えています` });
+        out.push({ level: 'warn', msg: `元の出入口 ${hex8(P3.id(r.raw))} (${game.code.byHash(P3.destMap(r.raw))?.name ?? ''} 行き) が消えています`, key: `gone/${hex8(P3.id(r.raw))}` });
     }
     for (const other of game.editableMaps()) {
       if (other.hash === doc.hash) continue;
@@ -91,13 +131,13 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
       const list = recs ?? loadDoc(game.db, other).recs[3] ?? [];
       for (const r of list)
         if (P3.destMap(r.raw) === doc.hash && !now.has(P3.destPoint(r.raw)))
-          out.push({ level: 'error', msg: `${other.name} の出入口が、このマップの地点 ${hex8(P3.destPoint(r.raw))} を指していますが、その地点がありません` });
+          out.push({ level: 'error', msg: `${other.name} の出入口が、このマップの地点 ${hex8(P3.destPoint(r.raw))} を指していますが、その地点がありません`, key: `ref/${other.name}/${hex8(P3.destPoint(r.raw))}` });
     }
   }
 
   // Section 6 cells should be on tiles.
   doc.cells6.forEach((c) => {
-    if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y) });
+    if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
   });
   return out;
 }

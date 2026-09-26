@@ -3,10 +3,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CELL, LAYOUTS, P3, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
-import type { ModelFactory } from '../cgfx/three';
+import { ModelFactory } from '../cgfx/three';
+import { loadObjectModels, objKey } from '../cgfx/loader';
+import { OBJ_INVISIBLE, recordDirection, recordObjectRow, type ObjectContext } from '../game/objects';
 import { norm, type Controller } from './controller';
 import { kindColor, SECTION_COLORS } from './legend';
-import { GRID, type EditorState } from './state';
+import { GRID, tileAt, type EditorState } from './state';
 
 const MARKER_Y = 40;
 
@@ -33,6 +35,7 @@ export class View3D {
     stair: new THREE.ConeGeometry(120, 160, 4),
     sphere: new THREE.SphereGeometry(55, 16, 12),
     cyl: new THREE.CylinderGeometry(50, 50, 90, 12),
+    ring: new THREE.RingGeometry(70, 95, 24),
   };
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
   private readonly fallbackMats = new Map<number, THREE.MeshLambertMaterial>();
@@ -228,25 +231,102 @@ export class View3D {
     return m;
   }
 
+  /** Object models by mapObject row (loaded on demand). */
+  private readonly objects = new Map<number, ModelFactory | null>();
+  private objectRequest = new Set<number>();
+  objectContext: (() => ObjectContext | null) | null = null;
+  showObjects = true;
+
+  /** Model name of a mapObject row ('' until loaded). */
+  objectName(row: number): string {
+    const f = this.objects.get(row);
+    const ref = this.st.game.master.objectModel(row);
+    return f && ref ? f.modelName(ref.entry) : '';
+  }
+
+  private objectModel(row: number): THREE.Object3D | null {
+    const f = this.objects.get(row);
+    if (f === undefined) {
+      this.objectRequest.add(row);
+      return null;
+    }
+    if (!f) return null;
+    const ref = this.st.game.master.objectModel(row);
+    const m = ref ? f.instance(ref.entry) : null;
+    if (!m) return null;
+    // Some models rest below the floor in their bind pose (e.g. gates that rise when closed); lift them
+    // so they can be seen.
+    let lift = this.objectLift.get(row);
+    if (lift === undefined) {
+      const box = new THREE.Box3().setFromObject(m);
+      lift = box.max.y <= 1 ? -box.min.y : 0;
+      this.objectLift.set(row, lift);
+    }
+    const g = new THREE.Group();
+    m.position.y = lift;
+    g.add(m);
+    return g;
+  }
+  private readonly objectLift = new Map<number, number>();
+
+  /** Load the object models requested by the last sync, then sync again. */
+  private loadRequestedObjects(): void {
+    const rows = [...this.objectRequest].filter((r) => !this.objects.has(r));
+    this.objectRequest.clear();
+    if (!rows.length) return;
+    const master = this.st.game.master;
+    for (const r of rows) this.objects.set(r, null);
+    const refs = rows.map((r) => master.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
+    loadObjectModels(this.st.game, refs)
+      .then((sets) => {
+        for (const r of rows) {
+          const ref = master.objectModel(r);
+          const set = ref ? sets.get(objKey(ref.archive, ref.entry)) : undefined;
+          if (!set || !set.models.size) continue;
+          const f = new ModelFactory(set);
+          f.clipping = [this.clipPlane];
+          f.setCeilingVisible(true);
+          this.objects.set(r, f);
+        }
+        this.syncSelection();
+      })
+      .catch((err) => console.warn('object models', err));
+  }
+
   private syncMarkers(doc: MapDoc): void {
     this.markerGroup.clear();
     const sel = this.st.selection;
+    const ctx = this.showObjects ? this.objectContext?.() ?? null : null;
     for (const k of POINT_SECTIONS) {
       if (!this.ctl.layers.sections[k]) continue;
       const L = LAYOUTS[k]!;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, L);
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        // the game's model, when there is one
+        const row = ctx ? recordObjectRow(k, r, ctx) : 0;
+        const model = row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
+        let rotY = (-recordDirection(k, r) * Math.PI) / 2;
+        if (k === 3) rotY = pointRotation(doc, r.x, r.y, P3.kind(r.raw));
+        let ox = 0, oz = 0;
+        if (k === 3) [ox, oz] = pointOffset(doc, r.x, r.y, P3.kind(r.raw));
+        if (model) {
+          model.position.set(px * CELL + ox, 0, py * CELL + oz);
+          model.rotation.y = rotY;
+          this.markerGroup.add(model);
+          const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMat(SECTION_COLORS[k]!, selected));
+          ring.rotation.x = -Math.PI / 2;
+          ring.position.set(px * CELL, 4, py * CELL);
+          if (selected) ring.scale.setScalar(1.4);
+          this.markerGroup.add(ring);
+          return;
+        }
         let geo: THREE.BufferGeometry = this.markerGeo.sphere;
         let y = MARKER_Y + 60;
-        let rotY = 0;
         if (k === 3) {
-          const kind = P3.kind(r.raw);
-          if ([11, 16, 17].includes(kind)) {
+          if ([11, 16, 17].includes(P3.kind(r.raw))) {
             geo = this.markerGeo.door;
             y = 90;
-            // orient doors across the corridor: face the neighbour tile that is not a wall
-            rotY = doorRotation(doc, r.x, r.y);
           } else {
             geo = this.markerGeo.stair;
             y = 100;
@@ -265,6 +345,7 @@ export class View3D {
         this.markerGroup.add(m);
       });
     }
+    this.loadRequestedObjects();
   }
 
   private overlayTrash: { dispose(): void }[] = [];
@@ -318,8 +399,16 @@ export class View3D {
     }
   }
 
-  /** Called when only the hover / selection changed. */
+  /** Hover changed. */
   syncOverlayOnly(): void {
+    const doc = this.st.current;
+    if (!doc) return;
+    this.syncOverlay(doc);
+    this.draw();
+  }
+
+  /** Selection (or the loaded object models) changed. */
+  syncSelection(): void {
     const doc = this.st.current;
     if (!doc) return;
     this.syncOverlay(doc);
@@ -328,8 +417,25 @@ export class View3D {
   }
 }
 
-function doorRotation(doc: MapDoc, x: number, y: number): number {
-  const walk = (dx: number, dy: number): boolean => doc.tiles.some((t) => t.x === x + dx && t.y === y + dy && t.kind !== 0 && t.kind !== 6);
-  // A door spans the passage: if the passage runs north-south, the door faces along Z.
-  return walk(1, 0) || walk(-1, 0) ? Math.PI / 2 : 0;
+/**
+ * Rotation of an exit's model. Doors span the passage (the game's rule is not decoded yet): if the
+ * passage runs east-west the door turns 90°. Other exits follow the tile under them.
+ */
+const isDoor = (kind: number): boolean => kind >= 0x0b && kind <= 0x11;
+
+function pointRotation(doc: MapDoc, x: number, y: number, kind: number): number {
+  const t = tileAt(doc, x, y);
+  if (isDoor(kind) && t?.kind !== 9) {
+    const walk = (dx: number, dy: number): boolean => doc.tiles.some((u) => u.x === x + dx && u.y === y + dy && u.kind !== 0 && u.kind !== 6);
+    return walk(1, 0) || walk(-1, 0) ? Math.PI / 2 : 0;
+  }
+  return t ? (-t.rot * Math.PI) / 2 : 0;
+}
+
+/** Doors on a room's exit tile (kind 9) stand at the open edge (approximation of FUN_001cb4d4). */
+function pointOffset(doc: MapDoc, x: number, y: number, kind: number): [number, number] {
+  const t = tileAt(doc, x, y);
+  if (!isDoor(kind) || t?.kind !== 9) return [0, 0];
+  const d = CELL * 0.4;
+  return [[0, d, 0, -d][t.rot & 3]!, [-d, 0, d, 0][t.rot & 3]!];
 }

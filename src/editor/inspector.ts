@@ -6,9 +6,14 @@ import { norm } from './controller';
 import { bytesToHex, clear, h, hexToBytes, parseHex } from './dom';
 import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt, type EditorState } from './state';
+import { fillMapSelect, mapLabel, pointLabel } from './labels';
+import { mapTitle } from '../game/names';
+import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
 
 export class Inspector {
   readonly el = h('div', { class: 'inspector' });
+  /** Model name of a mapObject row once it is loaded (set by the app). */
+  objectName: (row: number) => string = () => '';
 
   constructor(
     private readonly st: EditorState,
@@ -150,8 +155,42 @@ export class Inspector {
       this.field(L.unit === 'cell' ? 'y (セル)' : 'y (細かい単位)', this.num(r.y, (v) => upd((rec) => (rec.y = v)))),
       h('div', { class: 'muted' }, `セル (${cx.toFixed(1)}, ${cy.toFixed(1)})` + (L.unit === 'fine' ? '  ワールド = 50 + 値 × 100 (0〜299)' : '')),
     );
+    const ctx = { master: st.game.master, events: st.currentEvents, indoor: isIndoor(doc) };
+    const row = recordObjectRow(k, r, ctx);
+    if (row) this.el.append(h('div', { class: 'model-line' }, `モデル: ${objectCategory(row)} ${row === OBJ_INVISIBLE ? '' : this.objectName(row)} (mapObject #${row})`));
     if (k === 3) this.point(r, setU32, upd);
-    else if (k !== 1) this.el.append(this.field('ID (+0)', this.hexInput(u32(r.raw, 0), setU32(0))));
+    else if (k === 1) {
+      const sel = h('select', { onchange: (e: Event) => upd((rec) => (rec.raw[5] = Number((e.target as HTMLSelectElement).value))) });
+      for (const [v, label] of Object.entries(SECTION1_KIND)) sel.append(h('option', { value: v, selected: Number(v) === r.raw[5] }, label));
+      if (!(r.raw[5]! in SECTION1_KIND)) sel.append(h('option', { value: r.raw[5]!, selected: true }, `種類 ${r.raw[5]}`));
+      this.el.append(this.field('種類 (+5)', sel));
+    } else if (k === 2) {
+      this.el.append(this.field('オブジェクト = mapObject の行 (+0)', this.num(u32(r.raw, 0), (v) => setU32(0)(v >>> 0), { min: 0 })));
+      this.el.append(this.field('向き (+8)', this.num(r.raw[8]!, (v) => upd((rec) => (rec.raw[8] = v & 0xff)), { min: 0, max: 3 })));
+    } else {
+      this.el.append(this.field('イベントの行 (+0)', this.num(u32(r.raw, 0), (v) => setU32(0)(v >>> 0), { min: 0 })));
+      if (k === 4) {
+        this.el.append(this.field('向き (+8)', this.num(r.raw[8]!, (v) => upd((rec) => (rec.raw[8] = v & 0xff)), { min: 0, max: 3 })));
+        this.treasure(u32(r.raw, 0));
+      }
+      if (k === 5) {
+        const kind = r.raw[8]!;
+        const label = kind === 0 ? 'キャラクター (mapChara)' : [1, 2, 3, 4, 5, 6, 8].includes(kind) ? 'オブジェクト' : '';
+        this.el.append(this.field(`種類 (+8) ${label}`, this.num(kind, (v) => upd((rec) => (rec.raw[8] = v & 0xff)), { min: 0, max: 255 })));
+        this.el.append(this.field('向き (+9)', this.num(r.raw[9]!, (v) => upd((rec) => (rec.raw[9] = v & 0xff)), { min: 0, max: 3 })));
+      }
+      if (k === 8) this.el.append(h('div', { class: 'muted' }, 'イベントの範囲 (モデルなし)'));
+      const ev = st.currentEvents;
+      const evRow = u32(r.raw, 0);
+      if (ev && (k === 4 || k === 5))
+        this.el.append(
+          this.field(
+            `モデルの上書き (イベント #${evRow} +0x46、0 = 既定)`,
+            this.num(ev.model(evRow), (v) => st.editTables(() => ev.setModel(evRow, v & 0xffff)), { min: 0 }),
+          ),
+        );
+      if (ev && !ev.has(evRow)) this.el.append(h('div', { class: 'error' }, `イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`));
+    }
     // raw bytes (x / y are overwritten from the fields above)
     const raw = h('textarea', { class: 'raw', rows: 3, value: bytesToHex(r.raw) });
     raw.addEventListener('change', () => {
@@ -182,9 +221,7 @@ export class Inspector {
     const mapSel = h('select', {
       onchange: (e: Event) => setU32(4)(Number((e.target as HTMLSelectElement).value) >>> 0),
     });
-    mapSel.append(h('option', { value: 0, selected: destMap === 0 }, '(なし)'));
-    for (const m of game.editableMaps()) mapSel.append(h('option', { value: m.hash, selected: m.hash === destMap }, m.name));
-    if (destMap && !game.code.byHash(destMap)) mapSel.append(h('option', { value: destMap, selected: true }, hex8(destMap)));
+    fillMapSelect(mapSel, game, destMap, true);
 
     const destPoint = P3.destPoint(r.raw);
     let pointSel: HTMLElement;
@@ -192,7 +229,7 @@ export class Inspector {
     if (destInfo) {
       const dd = st.docs.get(destMap) ?? loadDoc(game.db, destInfo);
       const sel = h('select', { onchange: (e: Event) => setU32(8)(Number((e.target as HTMLSelectElement).value) >>> 0) });
-      const ids = (dd.recs[3] ?? []).map((p) => ({ id: P3.id(p.raw), label: `${hex8(P3.id(p.raw))} ${pointKindLabel(P3.kind(p.raw))} (${p.x}, ${p.y})` }));
+      const ids = (dd.recs[3] ?? []).map((p) => ({ id: P3.id(p.raw), label: pointLabel(p.raw, p.x, p.y) }));
       if (!ids.some((p) => p.id === destPoint)) sel.append(h('option', { value: destPoint, selected: true }, `${hex8(destPoint)} (行き先にない)`));
       for (const p of ids) sel.append(h('option', { value: p.id, selected: p.id === destPoint }, p.label));
       pointSel = sel;
@@ -202,12 +239,69 @@ export class Inspector {
     this.el.append(
       this.field('地点 ID (+0x00)', this.hexInput(P3.id(r.raw), setU32(0))),
       this.field('行き先マップ (+0x04)', mapSel),
+      destMap ? h('div', { class: 'muted small' }, `${mapLabel(game, destMap)}  ${game.code.byHash(destMap)?.name ?? ''}`) : '',
       this.field('行き先の地点 (+0x08)', pointSel),
-      this.field('扉の番号 (+0x0C)', this.num(P3.door(r.raw), (v) => setU32(0x0c)(v >>> 0))),
+      this.field('イベントの行 (+0x0C、扉・ワープなど。0 = なし)', this.num(P3.door(r.raw), (v) => setU32(0x0c)(v >>> 0))),
       this.field(`種類 (+0x14) ${pointKindLabel(P3.kind(r.raw))}`, kindInput),
       this.field('補助 (+0x15)', this.num(P3.aux(r.raw), (v) => upd((rec) => (rec.raw[0x15] = v & 0xff)), { min: 0, max: 255 })),
       this.field('フラグ (+0x18)', this.hexInput(P3.flags(r.raw), setU32(0x18))),
     );
+  }
+
+  /** Chest contents: EventObject +0x08 -> treasureGroup row (10 x {item, weight}; FUN_00305dc8). */
+  private treasure(evRow: number): void {
+    const st = this.st;
+    const ev = st.currentEvents;
+    const master = st.game.master;
+    if (!ev) {
+      this.el.append(h('div', { class: 'muted' }, 'イベントの表を読み込み中…'));
+      return;
+    }
+    if (!ev.has(evRow)) return;
+    const row = ev.treasureRow(evRow);
+    const box = h('div', { class: 'treasure' });
+    box.append(h('h3', {}, '宝箱の中身'));
+    const rowInput = this.num(
+      row,
+      (v) => {
+        if (v >= 0 && v < master.treasureGroup.rows) st.editTables(() => ev.setTreasureRow(evRow, v));
+      },
+      { min: 0, max: master.treasureGroup.rows - 1 },
+    );
+    box.append(this.field(`中身の表の行 (イベント #${evRow} +0x08、0〜${master.treasureGroup.rows - 1})`, rowInput));
+    const users: string[] = [];
+    for (const [d, t] of st.events)
+      for (let i = 0; i < t.rows; i++)
+        if (t.kind(i) === ev.kind(evRow) && t.treasureRow(i) === row && !(d === ev.dungeon && i === evRow)) users.push(`${master.dungeonName(d)} #${i}`);
+    if (users.length)
+      box.append(
+        h('div', { class: 'warn-box' }, `この行はほかの宝箱と共有しています: ${users.slice(0, 6).join('、')}${users.length > 6 ? ` ほか ${users.length - 6} 個` : ''}。中身を変えると全部変わります。`),
+      );
+    if (row < 0 || row >= master.treasureGroup.rows) return;
+    const slots = master.treasureSlots(row);
+    const total = slots.reduce((a, sl) => a + (sl.item ? sl.weight : 0), 0);
+    const table = h('table', { class: 'slots' }, h('tr', {}, h('th', {}, '#'), h('th', {}, 'アイテム'), h('th', {}, '重み'), h('th', {}, '確率')));
+    slots.forEach((sl, i) => {
+      const item = h('input', { type: 'text', class: 'item', value: sl.item ? `${sl.item} ${master.itemName(sl.item)}` : '', placeholder: '(なし)' });
+      item.setAttribute('list', 'item-list');
+      item.addEventListener('change', () => {
+        const t = item.value.trim();
+        const id = t === '' ? 0 : Number(/^\d+/.exec(t)?.[0] ?? NaN);
+        if (!Number.isInteger(id) || id < 0 || id > 0xffff) {
+          item.classList.add('bad');
+          return;
+        }
+        st.editTables(() => master.setTreasureSlot(row, i, id, id && !sl.weight ? 1 : sl.weight));
+      });
+      const weight = this.num(sl.weight, (v) => st.editTables(() => master.setTreasureSlot(row, i, sl.item, Math.max(0, Math.min(0xffff, v)))), { min: 0, max: 65535 });
+      const pct = sl.item && total ? `${((sl.weight / total) * 100).toFixed(0)}%` : '';
+      table.append(h('tr', {}, h('td', {}, String(i)), h('td', {}, item), h('td', {}, weight), h('td', { class: 'muted' }, pct)));
+    });
+    box.append(table);
+    box.append(
+      h('div', { class: 'muted small' }, `開けると、アイテムのある枠から重みに比例して 1 つ選ばれます。開けたかどうかのフラグ (+0x44) = ${ev.flag(evRow)}。${master.treasureRowChanged(row) ? ' 中身は変更済み。' : ''}`),
+    );
+    this.el.append(box);
   }
 
   private map(doc: MapDoc): void {
@@ -224,9 +318,8 @@ export class Inspector {
     });
     for (let t = 0; t < 12; t++) tsSel.append(h('option', { value: t, selected: t === st.tileset }, `${t}${t === def ? ' (既定)' : ''}`));
     this.el.append(
-      h('h3', {}, `${doc.name}`),
-      h('div', {}, `${game.master.dungeonName(doc.dungeon)} (${info.dungeonCode})  ${doc.floor < 0 ? `地下${-doc.floor}階` : `${doc.floor}階`}`),
-      h('div', { class: 'muted' }, `ハッシュ ${hex8(doc.hash)}`),
+      h('h3', {}, mapTitle(info, game.code.maps, game.master)),
+      h('div', { class: 'muted' }, `${doc.name}  ダンジョン ${info.dungeon} (${info.dungeonCode})  ハッシュ ${hex8(doc.hash)}`),
       this.field('タイルセット (表示のみ)', tsSel),
       h('table', { class: 'sections' },
         h('tr', {}, h('th', {}, '区画'), h('th', {}, '件数'), h('th', {}, '')),

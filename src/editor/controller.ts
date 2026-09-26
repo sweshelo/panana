@@ -19,7 +19,7 @@ export class Controller {
     | { kind: 'rect'; x0: number; y0: number }
     | { kind: 'room'; on: boolean; last: string } = null;
 
-  layers: Layers = { tiles: true, sections: { 1: true, 2: true, 3: true, 4: true, 5: true, 8: true, 9: true }, room: true };
+  layers: Layers = { tiles: true, sections: { 1: true, 2: true, 3: true, 4: true, 5: true, 8: true, 9: false }, room: true };
   onHover: () => void = () => {};
 
   constructor(readonly st: EditorState) {}
@@ -262,17 +262,16 @@ export class Controller {
     st.select({ type: 'rect', x0: ox, y0: oy, x1: ox + clip.w - 1, y1: oy + clip.h - 1 });
   }
 
-  /** Move tiles (and cell-unit points on them) of the rectangle selection by (dx, dy). */
+  /** Move the selected record, or the tiles (with the points and room cells on them) of the rectangle. */
   shiftSelection(dx: number, dy: number): void {
     const st = this.st;
     const s = st.selection;
     if (s.type === 'rec') {
-      const L = LAYOUTS[s.section]!;
+      // one unit of the record (a cell, or 1/5 cell for fine coordinates)
       st.edit((doc) => {
         const r = doc.recs[s.section]![s.index]!;
-        const step = L.unit === 'cell' ? 1 : 1;
-        r.x += dx * step;
-        r.y += dy * step;
+        r.x += dx;
+        r.y += dy;
       });
       return;
     }

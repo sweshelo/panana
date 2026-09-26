@@ -43,6 +43,30 @@ export function buildTileset(modelArchive: Uint8Array, textureArchive: Uint8Arra
   return out;
 }
 
+/** Object models (mapObject rows): each entry is a bcres with its own textures. */
+export function buildObjects(archive: Uint8Array, entries: number[]): Map<number, TilesetModels> {
+  const arc = parseArchive(archive);
+  const out = new Map<number, TilesetModels>();
+  for (const h of entries) {
+    const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
+    try {
+      const e = findEntry(arc, h);
+      if (!e) throw new Error('エントリがありません');
+      const f = parseCgfx(unpackEntry(arc, e).body);
+      for (const t of f.textures) set.textures.set(t.name, t);
+      const m = f.models[0];
+      if (m) {
+        set.models.set(h, m);
+        set.paths.set(h, m.name);
+      }
+    } catch (err) {
+      set.errors.push(`${hex8(h)}: ${(err as Error).message}`);
+    }
+    out.set(h, set);
+  }
+  return out;
+}
+
 /** Typed arrays of a tileset (for transferring from the worker). */
 export function transferables(t: TilesetModels): ArrayBuffer[] {
   const out: ArrayBuffer[] = [];

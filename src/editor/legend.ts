@@ -29,12 +29,12 @@ export function kindColor(k: number): string {
 }
 
 export const SECTION_COLORS: Record<number, string> = {
-  1: '#a0522d', // placed props
-  2: '#ff8c1a', // gimmicks
+  1: '#a0522d', // floor gimmicks (damage / frozen)
+  2: '#ff8c1a', // props
   3: '#2f7bff', // exits / doors / warp holes
   4: '#ffd400', // treasure
-  5: '#26c26b', // objects
-  8: '#c04dff', // conditional objects
+  5: '#26c26b', // characters / objects
+  8: '#c04dff', // event areas
   9: '#9aa0a6',
 };
 export const ROOM_COLOR = 'rgba(80, 200, 255, 0.18)';

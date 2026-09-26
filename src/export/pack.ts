@@ -2,7 +2,9 @@
 import { zipSync } from 'fflate';
 import { rebuildArchive } from '../archive/gsarc';
 import type { Game } from '../game/game';
+import type { EventTable } from '../game/events';
 import { MapDb, MAPDB_ARCHIVE } from '../game/mapdb';
+import { MASTER_ARCHIVE } from '../game/master';
 import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
 import { equalBytes } from '../util/bytes';
@@ -36,8 +38,23 @@ export function buildArchive(game: Game, docs: Iterable<MapDoc>): { archive: Uin
   return { archive, changed };
 }
 
-export const MOD_PATH = `${TITLE_ID}/romfs/${MAPDB_ARCHIVE}`;
+export const MOD_ROOT = `${TITLE_ID}/romfs`;
+export const MOD_PATH = `${MOD_ROOT}/${MAPDB_ARCHIVE}`;
 
-export function buildModZip(archive: Uint8Array): Uint8Array {
-  return zipSync({ [MOD_PATH]: [archive, { level: 0, mtime: new Date(1980, 0, 1) }] });
+/**
+ * RomFS files of the MOD: A90C8038 when maps changed, the event archives of edited dungeons, and the
+ * master archive (56562135, built on game.masterBytes) when treasure contents changed.
+ */
+export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean): Map<string, Uint8Array> {
+  const out = new Map<string, Uint8Array>();
+  if (docs.length) out.set(MAPDB_ARCHIVE, buildArchive(game, docs).archive);
+  for (const t of events) out.set(t.archiveName, t.buildArchive());
+  if (treasure) out.set(MASTER_ARCHIVE, game.master.buildArchive());
+  return out;
+}
+
+export function buildModZip(files: Map<string, Uint8Array>): Uint8Array {
+  const entries: Record<string, [Uint8Array, { level: 0; mtime: Date }]> = {};
+  for (const [name, data] of files) entries[`${MOD_ROOT}/${name}`] = [data, { level: 0, mtime: new Date(1980, 0, 1) }];
+  return zipSync(entries);
 }

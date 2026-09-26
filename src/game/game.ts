@@ -3,6 +3,7 @@ import { findEntry, parseArchive, unpackEntry, type Archive, type ArcEntry } fro
 import type { Dump } from '../rom/dump';
 import { hex8 } from '../util/bytes';
 import { CodeBin, type MapInfo } from './codebin';
+import { EventTable } from './events';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
 import { Master, MASTER_ARCHIVE } from './master';
 import { loadDoc, type MapDoc } from './sections';
@@ -18,7 +19,10 @@ export interface TilesetSource {
 
 export class Game {
   readonly code: CodeBin;
-  readonly master: Master;
+  master: Master;
+  /** Master archive bytes the export starts from (the ROM's, or an existing MOD's 56562135). */
+  masterBytes: Uint8Array;
+  masterLabel = 'ROM';
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;
@@ -28,6 +32,7 @@ export class Game {
   private constructor(readonly dump: Dump, masterBytes: Uint8Array, dbArchiveBytes: Uint8Array) {
     this.code = new CodeBin(dump.code);
     this.master = new Master(masterBytes);
+    this.masterBytes = masterBytes;
     this.dbArchive = parseArchive(dbArchiveBytes);
     const e = findEntry(this.dbArchive, MAPDB_ENTRY);
     if (!e) throw new Error(`${MAPDB_ARCHIVE} にマップ DB (${hex8(MAPDB_ENTRY)}) がありません`);
@@ -39,6 +44,35 @@ export class Game {
   static async load(dump: Dump): Promise<Game> {
     const [master, db] = await Promise.all([dump.readRomfs(MASTER_ARCHIVE), dump.readRomfs(MAPDB_ARCHIVE)]);
     return new Game(dump, master, db);
+  }
+
+  /**
+   * Use another 56562135 (e.g. the item MOD's) for item names and treasure tables, and as the base of
+   * the exported master archive.
+   */
+  setMaster(bytes: Uint8Array, label: string): void {
+    const m = new Master(bytes);
+    this.master = m;
+    this.masterBytes = bytes;
+    this.masterLabel = label;
+  }
+
+  private readonly events = new Map<number, Promise<EventTable | null>>();
+
+  /** EventObject table of a dungeon (null when it has none). */
+  eventTable(dungeon: number): Promise<EventTable | null> {
+    let p = this.events.get(dungeon);
+    if (!p) {
+      const a = this.master.eventArchive(dungeon);
+      p = a
+        ? this.dump
+            .readRomfs(hex8(a))
+            .then((b) => EventTable.fromArchive(dungeon, hex8(a), b))
+            .catch(() => null)
+        : Promise.resolve(null);
+      this.events.set(dungeon, p);
+    }
+    return p;
   }
 
   archive(name: string): Promise<Archive> {
@@ -78,7 +112,14 @@ export class Game {
       const s = this.tilesetSource(m.dungeon);
       if (s.modelArchive !== '00000000') out.add(s.modelArchive);
       if (s.textureArchive !== '00000000') out.add(s.textureArchive);
+      const ev = this.master.eventArchive(m.dungeon);
+      if (ev) out.add(hex8(ev));
     }
-    return [...out];
+    for (let i = 1; i < this.master.mapObject.rows; i++) {
+      const o = this.master.objectModel(i);
+      if (o) out.add(hex8(o.archive));
+    }
+    const have = new Set(this.dump.names());
+    return [...out].filter((n) => have.has(n));
   }
 }

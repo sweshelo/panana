@@ -1,5 +1,6 @@
 // Editing model: one MapDoc per opened map, snapshot-based undo / redo, selection, tools.
 import type { MapInfo } from '../game/codebin';
+import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
 import { cloneDoc, LETTER_DEFAULT, sectionBytes, type MapDoc, type Tile } from '../game/sections';
 import { equalBytes } from '../util/bytes';
@@ -28,10 +29,19 @@ export const GRID = 30; // docs/map-editor-design.md §7: limit to 30 x 30
 
 type Listener = (what: 'doc' | 'selection' | 'tool' | 'map') => void;
 
+/** Undo point: the map, plus the tables shared between maps (events of loaded dungeons, treasure). */
+interface Snapshot {
+  doc: MapDoc;
+  events: [number, Uint8Array][];
+  treasure: Uint8Array;
+}
+
 export class EditorState {
   readonly docs = new Map<number, MapDoc>();
-  private readonly undoStacks = new Map<number, MapDoc[]>();
-  private readonly redoStacks = new Map<number, MapDoc[]>();
+  /** EventObject tables of the dungeons opened so far (edited in place). */
+  readonly events = new Map<number, EventTable>();
+  private readonly undoStacks = new Map<number, Snapshot[]>();
+  private readonly redoStacks = new Map<number, Snapshot[]>();
   current: MapDoc | null = null;
   info: MapInfo | null = null;
   tileset = 0;
@@ -72,12 +82,36 @@ export class EditorState {
     this.emit('doc');
   }
 
+  get currentEvents(): EventTable | null {
+    return this.current ? this.events.get(this.current.dungeon) ?? null : null;
+  }
+
+  private snapshot(doc: MapDoc): Snapshot {
+    return {
+      doc: cloneDoc(doc),
+      events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
+      treasure: this.game.master.treasureGroup.data.slice(),
+    };
+  }
+
+  private restore(s: Snapshot): void {
+    for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
+    if (s.treasure.length === this.game.master.treasureGroup.data.length) this.game.master.treasureGroup.data.set(s.treasure);
+  }
+
+  /** Change the shared tables (events / treasure) with an undo point on the current map. */
+  editTables(f: () => void): void {
+    this.checkpoint();
+    f();
+    this.emit('doc');
+  }
+
   /** Push an undo snapshot (for drags: call once at the start, then mutate with `touch`). */
   checkpoint(): void {
     const doc = this.current;
     if (!doc) return;
     const u = this.undoStacks.get(doc.hash) ?? [];
-    u.push(cloneDoc(doc));
+    u.push(this.snapshot(doc));
     if (u.length > 200) u.shift();
     this.undoStacks.set(doc.hash, u);
     this.redoStacks.set(doc.hash, []);
@@ -89,17 +123,18 @@ export class EditorState {
     this.emit('doc');
   }
 
-  private swap(from: Map<number, MapDoc[]>, to: Map<number, MapDoc[]>): void {
+  private swap(from: Map<number, Snapshot[]>, to: Map<number, Snapshot[]>): void {
     const doc = this.current;
     if (!doc) return;
     const s = from.get(doc.hash);
     const prev = s?.pop();
     if (!prev) return;
     const t = to.get(doc.hash) ?? [];
-    t.push(cloneDoc(doc));
+    t.push(this.snapshot(doc));
     to.set(doc.hash, t);
-    this.docs.set(doc.hash, prev);
-    this.current = prev;
+    this.restore(prev);
+    this.docs.set(doc.hash, prev.doc);
+    this.current = prev.doc;
     this.selection = { type: 'none' };
     this.emit('doc');
     this.emit('selection');
