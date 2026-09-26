@@ -8,8 +8,8 @@ export const hexId = (id: number): string => `0x${id.toString(16).toUpperCase().
 
 /**
  * The message as a reader sees it: ruby as <ruby>, page breaks as ▼ and a rule, references and fixed names expanded
- * (links to the message), run-time names and numbers as 〈placeholders〉, voice / emotion as small badges, colours
- * dropped.
+ * (links to the message), run-time names and numbers as 〈placeholders〉, voice / emotion as small badges, the
+ * coloured dot as a grey ●, colours dropped.
  */
 export function messagePreview(texts: MessageStore, units: Uint16Array, depth = 0): HTMLElement {
   const box = h('span', { class: 'msg-render' });
@@ -31,10 +31,11 @@ export function messagePreview(texts: MessageStore, units: Uint16Array, depth = 
       const title = `タグ ${hexId(t.x)}: ${tagLabel(t.x)}`;
       if (k === 'page') box.append(h('span', { class: 'msg-page', title }, '▼'), h('hr', { class: 'msg-page-rule' }));
       else if (k === 'fixed') box.append(nested(FIXED_NAMES[t.x]!, `${title} (メッセージ ${hexId(FIXED_NAMES[t.x]!)})`));
+      else if (k === 'deco') box.append(h('span', { class: 'msg-dot', title: `${title} (色はアイテムで決まる)` }, '●'));
       else if (k === 'name' || k === 'number') box.append(h('span', { class: 'msg-ph', title }, tagLabel(t.x)));
       else if (k === 'voice' || k === 'emotion') { if (!depth) box.append(h('span', { class: 'msg-kind', title: `${title} (画面には出ない)` }, tagLabel(t.x))); }
       else if (k === 'other') box.append(h('span', { class: 'msg-ctl', title }, hexId(t.x)));
-      // colour / decoration: not drawn
+      // colour: not drawn
     }
   });
   return box;

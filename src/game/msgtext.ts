@@ -169,8 +169,10 @@ export const NAME_TAGS: Record<number, string> = {
   0x0121: '入力',
 };
 
-/** Tags replaced by a fixed name: the message it comes from (the hero's family, inferred from the _IN readings). */
+/** Tags replaced by a fixed name: the message it comes from (0x10A-0x10C = $heroine$ / $child01$ / $child02$). */
 export const FIXED_NAMES: Record<number, number> = { 0x10a: 0x176a, 0x10b: 0x176b, 0x10c: 0x176c, 0x110: 0x1772, 0x111: 0x1773 };
+
+const FIXED_ROLES: Record<number, string> = { 0x10a: 'ヒロイン', 0x10b: '子供1', 0x10c: '子供2' };
 
 /** Voice tags: the sound of the text (FUN_00190660: 0x44 / 0x43 / 0x42). */
 export const VOICE_TAGS: Record<number, string> = { 0x10d: 'č その他の口調', 0x10e: 'Ď 地底人の片言', 0x10f: 'ď です調' };
@@ -181,11 +183,11 @@ export function tagLabel(x: number): string {
     case 'page': return 'ページ送り';
     case 'number': return '数値';
     case 'name': return NAME_TAGS[x] ?? `名前など ${hex4(x)}`;
-    case 'fixed': return `名前 ${hex4(x)}`;
+    case 'fixed': return FIXED_ROLES[x] ?? `名前 ${hex4(x)}`;
     case 'voice': return `声: ${VOICE_TAGS[x]}`;
     case 'emotion': return `感情${x - 0x121}`;
     case 'colour': return x === 0x11f ? '色を戻す' : `文字色 ${x - 0x113 + 0x20}`;
-    case 'deco': return '色の装飾';
+    case 'deco': return '色つきの ●';
     default: return `タグ ${hex4(x)}`;
   }
 }
