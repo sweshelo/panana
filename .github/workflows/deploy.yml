@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: deploy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  build-and-deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun test
+
+      # tsc --noEmit && vite build (dist/wrangler.json と .wrangler/deploy/config.json を生成)
+      - name: Build
+        run: bun run build
+
+      - name: Deploy (production)
+        if: github.event_name == 'push'
+        run: bunx wrangler deploy --message "${{ github.sha }}"
+
+      # Worker Previews (wrangler preview)。PR ごとに 1 つの Preview を作り、push のたびにデプロイを追加する。
+      # フォークからの PR にはシークレットが渡らないので、同じリポジトリの PR だけ。
+      - name: Deploy preview
+        id: preview
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.json
+        run: |
+          bunx wrangler preview --name "$PREVIEW_NAME" --message "${{ github.event.pull_request.head.sha }}"
+          out=$(grep '"type":"preview"' "$WRANGLER_OUTPUT_FILE_PATH" | tail -n 1)
+          echo "preview-url=$(jq -r '.preview_urls[0] // empty' <<<"$out")" >> "$GITHUB_OUTPUT"
+          echo "deployment-url=$(jq -r '.deployment_urls[0] // empty' <<<"$out")" >> "$GITHUB_OUTPUT"
+
+      - name: Comment preview URL
+        if: steps.preview.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_URL: ${{ steps.preview.outputs.preview-url }}
+          DEPLOYMENT_URL: ${{ steps.preview.outputs.deployment-url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const na = '(取得できませんでした)';
+            const marker = '<!-- panana-preview -->';
+            const body = [
+              marker,
+              '### Cloudflare Worker Preview',
+              '',
+              '| | URL |',
+              '|---|---|',
+              `| この PR (常に最新) | ${process.env.PREVIEW_URL || na} |`,
+              `| このコミット (\`${process.env.HEAD_SHA.slice(0, 7)}\`) | ${process.env.DEPLOYMENT_URL || na} |`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  # PR を閉じたら (マージ含む) Preview を消す
+  delete-preview:
+    if: github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Delete preview
+        run: bunx wrangler preview delete --name "$PREVIEW_NAME" --skip-confirmation
