@@ -260,12 +260,21 @@ describe('shops', () => {
     expect(index.size).toBe(n + 1);
     expect(new Set(index.values())).toEqual(new Set([...Array(n + 1).keys()]));
     expect(u32(more.data, 0x18)).toBe(more.data.length);
-    expect(more.indexOffset % 8).toBe(0);
+    expect(more.indexOffset % 16).toBe(0);
     // fewer rows: the index drops the rows that are gone
     const fewer = new GsTable(t.withRows(shopItemRows(new Map([[0, [1]], [1, []], [2, [93]]]))));
     expect(fewer.rows).toBe(n - 2);
     expect([...fewer.hashIndex().values()].every((r) => r < fewer.rows)).toBe(true);
     expect(fewer.hashIndex().size).toBe(n - 2);
+    // without an index, the rows are padded with zeros to 16 bytes (the file size counts the padding)
+    const plain = data.slice(0, idx);
+    w32(plain, 0x18, idx);
+    w32(plain, 0x20, 0);
+    const padded = new GsTable(new GsTable(plain).withRows(rows.slice(0, 5)));
+    expect(padded.data.length).toBe(0x40 + 5 * 8 + 8);
+    expect(u32(padded.data, 0x18)).toBe(padded.data.length);
+    expect(u32(padded.data, 0x14)).toBe(5 * 8);
+    expect(padded.data.subarray(0x40 + 5 * 8).every((b) => b === 0)).toBe(true);
   });
 });
 
