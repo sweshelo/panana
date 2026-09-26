@@ -13,6 +13,7 @@ import { applyIps, switchPatchVersion } from '../src/rom/ips';
 import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, coveredParts, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
 import { validateWorld } from '../src/editor/validate';
 import type { Game } from '../src/game/game';
+import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -542,6 +543,35 @@ describe('world maps', () => {
       [1, 'warn', 'wback/00000012'],
       [2, 'error', 'wdup/00000011'],
       [2, 'error', 'wpoint/00000011'],
+    ]);
+  });
+});
+
+describe('messages in code.bin', () => {
+  test('literal-pool loads and movw are found, and grouped by the push before them', () => {
+    const code = new Uint8Array(0x40);
+    const words = [
+      0xe92d4010, // 0x100000 push {r4, lr}
+      0xe59f0008, // 0x100004 ldr r0, [pc, #8] -> 0x100014
+      0xe3010c0b, // 0x100008 movw r0, #0x1c0b
+      0xe8bd8010, // 0x10000c pop {r4, pc}
+      0xe92d4000, // 0x100010 push {lr}
+      0x00001c0c, // 0x100014 literal (not an instruction: no push before it counts)
+      0xe51f0010, // 0x100018 ldr r0, [pc, #-16] -> 0x100010 (0xE92D4000: out of range)
+      0xe59f0000, // 0x10001c ldr r0, [pc, #0] -> 0x100024
+      0xe8bd8000, // 0x100020 pop {pc}
+      0x00001c0a, // 0x100024 literal
+    ];
+    words.forEach((w, i) => w32(code, i * 4, w));
+    const refs = findCodeMessageRefs(code, 0x1bdf, 0x21af);
+    expect(refs).toEqual([
+      { id: 0x1c0c, at: 0x100004 },
+      { id: 0x1c0b, at: 0x100008 },
+      { id: 0x1c0a, at: 0x10001c },
+    ]);
+    expect(groupByFunction(code, refs).map((g) => [g.fn, g.ids])).toEqual([
+      [0x100010, [0x1c0a]],
+      [0x100000, [0x1c0b, 0x1c0c]],
     ]);
   });
 });
