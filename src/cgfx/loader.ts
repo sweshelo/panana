@@ -6,7 +6,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { TilesetModels } from './tileset';
 import type { WorkerRequest } from './worker';
 
-const CACHE_VERSION = 7; // 7: skeletons, skin weights and animations
+const CACHE_VERSION = 8; // 8: drop tilesets cached without their texture bcres
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<number, { resolve: (t: unknown) => void; reject: (e: Error) => void }>();
@@ -41,15 +41,27 @@ export function loadTilesetModels(game: Game, map: MapRef): Promise<TilesetModel
     p = (async () => {
       const cached = await idbGet<TilesetModels>(key);
       if (cached && cached.models instanceof Map) return cached;
+      let textureError = '';
       const [modelArchive, textureArchive] = await Promise.all([
         game.dump.readRomfs(src.modelArchive).then((b) => b.slice()),
-        src.textureArchive !== '00000000' ? game.dump.readRomfs(src.textureArchive).then((b) => b.slice()).catch(() => null) : null,
+        src.textureArchive !== '00000000'
+          ? game.dump
+              .readRomfs(src.textureArchive)
+              .then((b) => b.slice())
+              .catch((err: Error) => {
+                textureError = `テクスチャ ${src.textureArchive}: ${err.message}`;
+                return null;
+              })
+          : null,
       ]);
       const result = await run<TilesetModels>(
         { kind: 'tileset', modelArchive, textureArchive, textureEntry: src.textureEntry },
         [modelArchive.buffer as ArrayBuffer, ...(textureArchive ? [textureArchive.buffer as ArrayBuffer] : [])],
       );
-      await idbSet(key, result);
+      if (textureError) result.errors.unshift(textureError);
+      // Without the texture bcres most tiles of indoor tilesets have no texture (drawn white): do not keep such a
+      // result, so the next load tries again.
+      if (!result.errors.length) await idbSet(key, result);
       return result;
     })();
     memory.set(key, p);
