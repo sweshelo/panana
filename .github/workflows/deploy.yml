@@ -1,0 +1,88 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: deploy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun test
+
+      # tsc --noEmit && vite build (dist/wrangler.json と .wrangler/deploy/config.json を生成)
+      - name: Build
+        run: bun run build
+
+      - name: Deploy (production)
+        if: github.event_name == 'push'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: bun
+          command: deploy
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+      # フォークからの PR にはシークレットが渡らないので、同じリポジトリの PR だけ
+      - name: Upload preview version
+        id: preview
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: bun
+          command: versions upload --preview-alias pr-${{ github.event.pull_request.number }} --message "PR #${{ github.event.pull_request.number }} (${{ github.event.pull_request.head.sha }})"
+
+      - name: Comment preview URL
+        if: steps.preview.outcome == 'success'
+        uses: actions/github-script@v7
+        env:
+          OUTPUT: ${{ steps.preview.outputs.command-output }}
+          VERSION_URL: ${{ steps.preview.outputs.deployment-url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const out = process.env.OUTPUT ?? '';
+            const alias = out.match(/Version Preview Alias URL:\s*(\S+)/)?.[1];
+            const version = out.match(/Version Preview URL:\s*(\S+)/)?.[1] || process.env.VERSION_URL;
+            const marker = '<!-- panana-preview -->';
+            const body = [
+              marker,
+              '### Cloudflare Workers preview',
+              '',
+              '| | URL |',
+              '|---|---|',
+              `| この PR (常に最新) | ${alias || '(取得できませんでした)'} |`,
+              `| このコミット (\`${process.env.HEAD_SHA.slice(0, 7)}\`) | ${version || '(取得できませんでした)'} |`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const mine = comments.find(c => c.user.type === 'Bot' && c.body.includes(marker));
+            if (mine) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
