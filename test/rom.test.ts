@@ -517,7 +517,8 @@ describe.skipIf(!hasCia)('messages', () => {
     const files = buildModFiles(game, [], [], false);
     const { Master } = await import('../src/game/master');
     const re = new Master(files.get('56562135')!);
-    expect(re.message(id)).toBe(`${before[0]}テスト です`);
+    expect(before.startsWith('Ď')).toBe(false); // the type code is skipped
+    expect(re.message(id)).toBe('テスト です');
     expect(re.message(id + 1)).toBe(game.master.message(id + 1));
   });
 });

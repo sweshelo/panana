@@ -263,3 +263,4 @@ input.edited { border-color: var(--warn); }
 .msg-slot { margin: 8px 0; }
 .msg-slot-head { font-size: 12px; color: var(--muted); }
 .book-table td.msg-cell { max-width: 28em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-preview { white-space: pre-wrap; background: var(--panel2); border-radius: 4px; padding: 4px 6px; font-size: 12px; color: var(--muted); margin-top: 2px; }

@@ -7,7 +7,7 @@ import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
 import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
-import { Gmsg, MessageStore, plainText, textToUnits, unitsToText } from '../src/game/gmsg';
+import { Gmsg, MessageStore, plainText, previewText, textToUnits, unitsToText } from '../src/game/gmsg';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
 describe('LZ10', () => {
@@ -289,7 +289,7 @@ describe('GMSG messages', () => {
     const data = makeGmsg(msgs);
     const g = new Gmsg(data);
     expect(g.roundTrips()).toBe(true);
-    expect(plainText(g.units(100)!)).toBe('Ďこんにちは 元気?');
+    expect(plainText(g.units(100)!)).toBe('こんにちは 元気?');
     const longer = Uint16Array.from([0x010e, ...u('ずっと長い文になりました'), 0]);
     const out = new Gmsg(g.build(new Map([[100, longer]])));
     expect([...out.units(100)!]).toEqual([...longer]);
@@ -315,16 +315,29 @@ describe('GMSG messages', () => {
     expect([...textToUnits(unitsToText(br))]).toEqual([...br]);
     expect(() => textToUnits({ kind: 1, text: '{zz}', tail: new Uint16Array([0]) })).toThrow();
     expect(() => textToUnits({ kind: 1, text: 'a}', tail: new Uint16Array([0]) })).toThrow();
+    // placeholders and "&" + message ID
+    const ref = Uint16Array.from([0x010e, ...u('ここ、'), 0x26, 0xb0, ...u('。'), 0x0101, ...u('の家&'), 0]);
+    const rt = unitsToText(ref);
+    expect(rt.text).toBe('ここ、{&00B0}。{0101}の家{0026}');
+    expect([...textToUnits(rt)]).toEqual([...ref]);
+    expect(() => textToUnits({ kind: 1, text: 'A&B', tail: new Uint16Array([0]) })).toThrow();
+    expect(previewText(ref, (id) => (id === 0xb0 ? 'デンパタウン' : undefined))).toBe('ここ、デンパタウン。〔0101〕の家&');
+    expect(previewText(ref, () => undefined)).toBe('ここ、〔&00B0〕。〔0101〕の家&');
+    // the type code is not part of the text
+    expect(plainText(ref)).toBe('ここ、&°。āの家&');
   });
 
   test('store: edits, revert and replacements', () => {
     const store = new MessageStore([{ name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true }]);
     store.setText(100, 'やあ');
-    expect(store.plain(100)).toBe('Ďやあ');
+    expect(store.plain(100)).toBe('やあ');
+    store.setKind(100, 0x010f);
+    expect(store.text(100)!.kind).toBe(0x010f);
+    store.setKind(100, 0x010e);
     expect(store.editedIds()).toEqual([100]);
     const rep = store.replacements();
     expect([...rep.keys()]).toEqual([3]);
-    expect(plainText(new Gmsg(rep.get(3)!).units(100)!)).toBe('Ďやあ');
+    expect(plainText(new Gmsg(rep.get(3)!).units(100)!)).toBe('やあ');
     store.setText(100, 'こんにちは\n元気?'); // back to the original text
     expect(store.changed()).toBe(false);
     store.setText(102, 'x');

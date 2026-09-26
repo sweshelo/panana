@@ -95,7 +95,7 @@ export class MessagePage {
       this.game.master.dungeonName(u.dungeon),
       ...this.mapNames(u),
       ...u.places.map((p) => p.map.name),
-      ...u.slots.flatMap((s) => [texts.plain(s.id) ?? '', hexId(s.id), String(s.id)]),
+      ...u.slots.flatMap((s) => [texts.preview(s.id, true) ?? '', hexId(s.id), String(s.id)]),
     ];
     return hay.some((t) => t.includes(q));
   }
@@ -113,7 +113,7 @@ export class MessagePage {
         h('td', { class: 'muted' }, this.game.master.dungeonName(u.dungeon) || `D${u.dungeon}`),
         h('td', { class: 'num muted' }, String(u.row)),
         h('td', { class: 'muted' }, kindName(u.kind)),
-        h('td', { class: 'msg-cell' }, edited ? h('b', { class: 'edited' }, '* ') : '', first ? texts.plain(first) ?? '' : h('span', { class: 'muted' }, '(なし)'))));
+        h('td', { class: 'msg-cell' }, edited ? h('b', { class: 'edited' }, '* ') : '', first ? texts.preview(first, true) ?? '' : h('span', { class: 'muted' }, '(なし)'))));
     }
     this.list.append(h('div', { class: 'muted small' }, `${rows.length} / ${this.users.length} 行`),
       h('table', { class: 'book-table' }, h('thead', {}, h('tr', {}, h('th', {}, 'ダンジョン'), h('th', {}, '行'), h('th', {}, '種類'), h('th', {}, 'メッセージ'))), body));

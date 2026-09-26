@@ -91,13 +91,19 @@ export function fromUnits(u: Uint16Array): Uint8Array {
   return b;
 }
 
-const isControl = (c: number): boolean => c < 0x20 || (c >= 0xe000 && c < 0xf900) || c === 0x7b || c === 0x7d;
+/** Units 0x0100-0x017F in the text are placeholders filled in at run time (names etc.), not letters. */
+export const isPlaceholder = (c: number): boolean => c >= 0x0100 && c < 0x0180;
+const isControl = (c: number): boolean => c < 0x20 || (c >= 0xe000 && c < 0xf900) || isPlaceholder(c) || c === 0x7b || c === 0x7d;
+/** "&" followed by one unit: that unit is the ID of another message, shown in its place. */
+const REF = 0x26;
+const hex4 = (c: number): string => c.toString(16).toUpperCase().padStart(4, '0');
 
 /**
  * Message units -> the text the editors show and take back:
- * - kind: the first unit (type code),
- * - text: the rest up to the trailing zeros, with 0x000A as a line break and every other control code (below
- *   0x20, private use 0xE000-0xF8FF) and the braces written as {XXXX} (hex),
+ * - kind: the first unit (type code; the game skips it when it shows the message),
+ * - text: the rest up to the trailing zeros, with 0x000A as a line break, "&" + a message ID as {&XXXX}, and every
+ *   other control code (below 0x20, private use 0xE000-0xF8FF), placeholder (0x0100-0x017F) and the braces and
+ *   a lone "&" written as {XXXX} (hex),
  * - tail: the trailing zeros (and anything after them the text cannot hold), kept as they are.
  */
 export interface MessageText {
@@ -114,7 +120,8 @@ export function unitsToText(u: Uint16Array): MessageText {
   for (let i = 1; i < end; i++) {
     const c = u[i]!;
     if (c === 0x0a) text += '\n';
-    else if (isControl(c)) text += `{${c.toString(16).toUpperCase().padStart(4, '0')}}`;
+    else if (c === REF && i + 1 < end) text += `{&${hex4(u[++i]!)}}`;
+    else if (c === REF || isControl(c)) text += `{${hex4(c)}}`;
     else text += String.fromCharCode(c);
   }
   return { kind: u[0]!, text, tail: u.slice(end) };
@@ -127,11 +134,13 @@ export function textToUnits(m: MessageText): Uint16Array {
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c === 0x7b) {
-      const e = /^\{([0-9A-Fa-f]{1,4})\}/.exec(s.slice(i));
-      if (!e) throw new Error(`「{」の後に 16 進 4 桁と「}」が要ります (${i + 1} 文字目)`);
-      out.push(parseInt(e[1]!, 16));
+      const e = /^\{(&?)([0-9A-Fa-f]{1,4})\}/.exec(s.slice(i));
+      if (!e) throw new Error(`「{」の後に 16 進 4 桁 (ほかのメッセージなら & と ID) と「}」が要ります (${i + 1} 文字目)`);
+      if (e[1]) out.push(REF);
+      out.push(parseInt(e[2]!, 16));
       i += e[0].length - 1;
     } else if (c === 0x7d) throw new Error(`対応する「{」のない「}」があります (${i + 1} 文字目)`);
+    else if (c === REF) throw new Error(`「&」は次の文字をメッセージ ID として読むので、ほかのメッセージを入れるときは {&XXXX}、記号の & は ＆ (全角) で書いてください (${i + 1} 文字目)`);
     else out.push(c);
   }
   const tail = m.tail.length ? [...m.tail] : [0];
@@ -139,12 +148,12 @@ export function textToUnits(m: MessageText): Uint16Array {
 }
 
 /**
- * Plain text for lists and previews (same as the reader in master.ts): line breaks as spaces, ruby
- * "{X}'base{X}(reading{X})" as the base, other control codes dropped, the type code dropped when it is a control code.
+ * Plain text (same as the reader in master.ts): the type code skipped as the game does, line breaks as spaces, ruby
+ * "{X}'base{X}(reading{X})" as the base, other control codes dropped; placeholders and "&" references kept.
  */
 export function plainText(u: Uint16Array): string {
   let s = '';
-  for (let i = 0; i < u.length; i++) {
+  for (let i = 1; i < u.length; i++) {
     const c = u[i]!;
     if (c === 0) {
       if (s) break;
@@ -186,6 +195,14 @@ export class MessageStore {
     return u && plainText(u);
   }
 
+  /** What the reader sees (see previewText); `oneLine` turns line breaks into spaces. */
+  preview(id: number, oneLine = false, depth = 0): string | undefined {
+    const u = this.units(id);
+    if (!u) return undefined;
+    const s = previewText(u, (ref) => this.preview(ref, true, depth + 1), depth);
+    return oneLine ? s.replace(/\n/g, ' ') : s;
+  }
+
   text(id: number): MessageText | undefined {
     const u = this.units(id);
     return u && unitsToText(u);
@@ -209,6 +226,15 @@ export class MessageStore {
     const orig = unitsToText(this.original(id)!);
     if (text.replace(/\r\n?/g, '\n') === orig.text && cur.kind === orig.kind) this.revert(id);
     else this.set(id, textToUnits({ ...cur, text }));
+  }
+
+  /** Change the type code (the first unit), keeping the text. */
+  setKind(id: number, kind: number): void {
+    const u = this.units(id);
+    if (!u?.length) throw new Error(`メッセージ ${id} がありません`);
+    const next = u.slice();
+    next[0] = kind;
+    this.set(id, next);
   }
 
   revert(id: number): void {
@@ -248,3 +274,44 @@ export class MessageStore {
     return out;
   }
 }
+
+/** Label of a placeholder in previews. */
+export const placeholderLabel = (c: number): string => `〔${hex4(c)}〕`;
+
+/**
+ * Text as a reader would see it, for previews: the type code skipped, line breaks kept, "&" references replaced
+ * by the referenced message (`lookup`), placeholders as 〔XXXX〕, ruby as the base, other control codes dropped.
+ */
+export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0): string {
+  let s = '';
+  for (let i = 1; i < u.length; i++) {
+    const c = u[i]!;
+    if (c === 0) {
+      if (s) break;
+      continue;
+    }
+    if (c === REF && i + 1 < u.length && u[i + 1]) {
+      const id = u[++i]!;
+      s += (depth < 2 ? lookup(id) : undefined) ?? `〔&${hex4(id)}〕`;
+    } else if (c === 0x0a) s += '\n';
+    else if (isPlaceholder(c)) s += placeholderLabel(c);
+    else if (c >= 0x20 && !(c >= 0xe000 && c < 0xf900)) s += String.fromCharCode(c);
+    else s += '\u0001';
+  }
+  return s.replace(/\u0001'(.*?)\u0001\((.*?)\u0001\)/g, '$1').replace(/\u0001/g, '');
+}
+
+/**
+ * Type codes (the first unit) seen in the data. The game skips it when it shows a message; what it selects for
+ * the field lines (0x010D-0x0124) is inferred from who says them.
+ */
+export const MESSAGE_KINDS: Record<number, string> = {
+  0x0001: '名前',
+  0x000c: '説明',
+  0x000d: '説明 (メニュー)',
+  0x010d: 'č: 台詞 (荒い・うめく声など、推定)',
+  0x010e: 'Ď: 台詞 (男性「オレ」、推定)',
+  0x010f: 'ď: 台詞 (女性・です調、推定)',
+  0x0123: 'ģ: 台詞 (子ども「ボク」、推定)',
+  0x0124: 'Ĥ: 台詞 (子ども「ボク」、推定)',
+};

@@ -24,7 +24,8 @@ export class GmsgFile {
     const a = u32(this.data, tbl + i * 4);
     const b = id < this.last ? u32(this.data, tbl + i * 4 + 4) : this.data.length - base;
     let s = '';
-    for (let o = base + a; o + 1 < base + b; o += 2) {
+    // the first unit is the type code (FUN_00310438 returns the position after it)
+    for (let o = base + a + 2; o + 1 < base + b; o += 2) {
       const c = u16(this.data, o);
       if (c === 0) {
         if (s) break;

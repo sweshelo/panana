@@ -1,5 +1,5 @@
 // Editor of one message (GMSG text): shared by the map inspector and the message page.
-import { textToUnits } from '../game/gmsg';
+import { MESSAGE_KINDS, textToUnits } from '../game/gmsg';
 import type { Master } from '../game/master';
 import { h } from './dom';
 
@@ -18,15 +18,14 @@ export function messageEditor(master: Master, id: number, apply: (f: () => void)
     box.append(h('div', { class: 'muted' }, id ? `${hexId(id)}: 見つからない ID` : '(なし)'));
     return box;
   }
-  const kind = t.kind >= 0x20 ? String.fromCharCode(t.kind) : '';
   box.append(h('div', { class: 'muted small' },
-    `${hexId(id)} (${id}) · ${file.name} · 種別 ${hexId(t.kind)}${kind ? ` 「${kind}」` : ''}`,
+    `${hexId(id)} (${id}) · ${file.name}`,
     texts.isEdited(id) ? h('b', { class: 'edited' }, ' · 変更あり') : ''));
   const area = h('textarea', { class: 'msg-text', rows: Math.min(8, t.text.split('\n').length + 1), value: t.text });
   const err = h('div', { class: 'error small', hidden: true });
   if (!file.editable) {
     area.readOnly = true;
-    box.append(area, h('div', { class: 'muted small' }, 'このファイルは作り直すと元と同じにならないため、書き換えられません。'));
+    box.append(area, h('div', { class: 'msg-preview' }, texts.preview(id) ?? ''), h('div', { class: 'muted small' }, 'このファイルは作り直すと元と同じにならないため、書き換えられません。'));
     return box;
   }
   area.addEventListener('change', () => {
@@ -41,9 +40,15 @@ export function messageEditor(master: Master, id: number, apply: (f: () => void)
       err.hidden = false;
     }
   });
-  box.append(area, err);
+  const kindSel = h('select', { title: '先頭の種別コード。ゲームは表示するときにこの 1 文字を読み飛ばします' });
+  for (const k of [...new Set([...Object.keys(MESSAGE_KINDS).map(Number), t.kind])].sort((a, b) => a - b))
+    kindSel.append(h('option', { value: k, selected: k === t.kind }, `${hexId(k)} ${MESSAGE_KINDS[k] ?? ''}`));
+  kindSel.addEventListener('change', () => apply(() => texts.setKind(id, Number(kindSel.value))));
+  box.append(h('label', { class: 'field' }, h('span', {}, '種別 (先頭の 1 文字、表示されない)'), kindSel), area, err,
+    h('div', { class: 'msg-preview' }, texts.preview(id) ?? ''));
   if (texts.isEdited(id)) box.append(h('button', { class: 'small', onclick: () => apply(() => texts.revert(id)) }, '元の文に戻す'));
   return box;
 }
 
-export const MESSAGE_HELP = '改行はそのまま、制御コード (色・名前の差し込み・ルビなど) は {XXXX} (16 進) で書きます。{XXXX} を消すと表示が崩れることがあります。';
+export const MESSAGE_HELP =
+  '改行はそのまま書きます。{&XXXX} はほかのメッセージ (地名・人名など) の差し込み、{0100}〜{017F} はゲーム中に決まる名前などの差し込み、それ以外の {XXXX} は制御コード (ルビなど) です。下の灰色の欄は差し込みを展開した見え方です。記号の & は全角 ＆ で書いてください。';
