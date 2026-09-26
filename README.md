@@ -121,7 +121,7 @@ MonsterParameter (185 行) を elpulse の `tools/gen_reference.py` と同じ読
 
 ### アクション
 
-マスターの actionData を一覧します (`src/game/actions.ts`、`src/pages/actions.ts`)。既定は「アイテムの効果 (種類 2)」で、「アイテムが使う」「モンスターのワザ」「すべて」に切り替えられます。
+マスターの actionData を一覧します (`src/game/actions.ts`、`src/pages/actions.tsx`)。既定は「アイテムの効果 (種類 2)」で、「アイテムが使う」「モンスターのワザ」「すべて」に切り替えられます。
 - 分かっている欄: +0x00 の w0 (bit1-2 種類、bit3-6 効果の種別、bit13-15 付与の段階、bit29-31 使える場面)、+0x04 名前のメッセージ、+0x18 / +0x1A 量 (s16)。ほかの欄は生データ (u32・s16 × 2) で出します。
 - 参照: そのアクションを使う道具 (itemData +0x24) と、ワザとして持つモンスター (MonsterParameter +0x3C)。アイテム図鑑の効果とモンスター図鑑のワザからリンクします。
 
@@ -150,13 +150,17 @@ src/
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts                                          アニメ (CANM) の読み込みと再生 (CPU スキニング)
   editor/   state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...
-  pages/    monsters.ts items.ts groups.ts actions.ts                  モンスター図鑑、アイテム図鑑、群れ、アクション
+  pages/    monsters.ts items.ts groups.ts actions.tsx                 モンスター図鑑、アイテム図鑑、群れ、アクション
+  ui/       mount.tsx useEditorState.ts                                React への移行用 (ページの差し込み、EditorState の購読)
   export/   pack.ts                                                    マップ DB → A90C8038、イベント、マスター → zip
 test/
   unit.test.ts   ROM なしで動くテスト
+  ui.test.tsx    React のページを文字列に描画して確かめるテスト (ROM なし)
   rom.test.ts    Python の参照実装との照合とラウンドトリップ (ダンプが必要)
   golden/export_golden.py
 ```
+
+UI は h() で DOM を組み立てる形から React (TSX) へ、ページ単位で移しています。移したページは `src/ui/mount.tsx` の `mountReact` で、`app.ts` が用意したページの要素に描画します。2D/3D のビューと three.js のモデル表示は今のクラスのまま残し、React からは ref で差し込む方針です。
 
 分かったこと (設計書からの補足):
 - mapResource の行 = `[0] モデルのアーカイブ, [1] テクスチャのアーカイブ (469B3DC6), [2] その中のテクスチャ (bcres), [3] 空のモデル`。
