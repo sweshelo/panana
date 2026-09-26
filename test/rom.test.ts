@@ -13,7 +13,7 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
-import { P3 } from '../src/game/sections';
+import { P3, letterIndex } from '../src/game/sections';
 import { placeStamp, duplicateRecord } from '../src/editor/place';
 import { gimmickTemplates } from '../src/game/templates';
 import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
@@ -391,8 +391,38 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(game.master.mapDataRow(m('D02B03H02'))).toBe(game.master.dungeonMapDataRow(3));
     // Maps without a key of their own keep the dungeon's row.
     for (const i of game.editableMaps())
-      if (!i.mapDataKey && !['M01OUT000', 'M04F01AAA', 'M05OUT000'].includes(i.name))
-        expect(game.master.mapDataRow(i)).toBe(game.master.dungeonMapDataRow(i.dungeon));
+      if (!i.mapDataKey && !['M01OUT000', 'M04F01AAA', 'M05OUT000'].includes(i.name)) {
+        const ref = game.mapRef(i);
+        expect(game.master.mapDataRow(ref)).toBe(game.master.dungeonMapDataRow(i.dungeon, ref.indoor));
+      }
+  });
+
+  test('indoor maps use mapGroup +0x27 and have every tile model (issue #14)', async () => {
+    const m = (name: string) => game.code.byName(name)!;
+    // 港町 (dungeon 20): the town is mapData 21 (tileset 3); its houses (indoor tiles) are mapData 65 (tileset 1).
+    expect(isIndoor(game.doc(m('M02F01INN')))).toBe(true);
+    expect(game.master.mapDataRow(game.mapRef(m('M02F01INN')))).toBe(65);
+    expect(game.master.tileset(game.mapRef(m('M02F01INN')))).toBe(1);
+    expect(game.master.mapDataRow(m('M02F01INN'))).toBe(21);
+    // Every tile of every indoor map has a model, and the model is in the map's model archive.
+    const archives = new Map<string, Set<number>>();
+    let indoor = 0;
+    for (const info of game.editableMaps()) {
+      const doc = game.doc(info);
+      if (!isIndoor(doc)) continue;
+      indoor++;
+      const src = game.tilesetSource(game.mapRef(info, doc));
+      if (!archives.has(src.modelArchive))
+        archives.set(src.modelArchive, new Set(parseArchive(await game.dump.readRomfs(src.modelArchive)).entries.map((e) => e.hash >>> 0)));
+      const have = archives.get(src.modelArchive)!;
+      const missing = [...new Set(doc.tiles.map((t) => `${t.kind}/${letterIndex(t.letter)}`))].filter((k) => {
+        const [kind, letter] = k.split('/').map(Number);
+        const h = game.master.partModel(kind!, src.tileset, letter!);
+        return !h || !have.has(h >>> 0);
+      });
+      expect({ map: info.name, missing }).toEqual({ map: info.name, missing: [] });
+    }
+    expect(indoor).toBeGreaterThan(40);
   });
 });
 

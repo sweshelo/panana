@@ -3,6 +3,7 @@ import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Stamp } from './place';
 import type { Game } from '../game/game';
+import type { MapRef } from '../game/master';
 import { cloneDoc, LETTER_DEFAULT, sectionBytes, type MapDoc, type Tile } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 
@@ -46,6 +47,8 @@ export class EditorState {
   private readonly redoStacks = new Map<number, Snapshot[]>();
   current: MapDoc | null = null;
   info: MapInfo | null = null;
+  /** mapData row source of the open map (indoor flag from its tiles when opened). */
+  ref: MapRef | null = null;
   tileset = 0;
   tool: Tool = 'select';
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
@@ -74,7 +77,8 @@ export class EditorState {
     }
     this.current = doc;
     this.info = info;
-    this.tileset = this.game.master.tileset(info);
+    this.ref = this.game.mapRef(info, doc);
+    this.tileset = this.game.master.tileset(this.ref);
     this.selection = { type: 'none' };
     this.emit('map');
   }

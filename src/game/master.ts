@@ -14,6 +14,8 @@ export interface MapRef {
   dungeon: number;
   /** mapData key of the map itself (0 = none; code.bin map row +0x10 at run time). */
   mapDataKey: number;
+  /** The map has an indoor tile (kinds 15-27, run-time flag +0xA8CD; see isIndoor). */
+  indoor?: boolean;
 }
 
 export class GmsgFile {
@@ -239,18 +241,19 @@ export class Master {
     return archive ? { archive, entry: u32(r, 4) } : null;
   }
 
-  /** mapData row of a dungeon (mapGroup +0x26). */
-  dungeonMapDataRow(dungeon: number): number {
+  /** mapData row of a dungeon (mapGroup +0x26; +0x27 for its indoor maps, e.g. the houses of a town). */
+  dungeonMapDataRow(dungeon: number, indoor = false): number {
     if (dungeon < 0 || dungeon >= this.mapGroup.rows) return 0;
-    return this.mapGroup.row(dungeon)[0x26]!;
+    return this.mapGroup.row(dungeon)[indoor ? 0x27 : 0x26]!;
   }
 
   /**
    * mapData row of a map, as FUN_001c4ec4 picks it: designedMap rows 1-5 (+0 map, +0x0C mapData row), else the
-   * dungeon's (mapGroup +0x26; +0x27 under a run-time flag, not modelled); then the map's own mapData key wins.
+   * dungeon's (mapGroup +0x26, or +0x27 when the map is indoor: FUN_0021f9f4 has set +0xA8CD just before);
+   * then the map's own mapData key wins.
    */
   mapDataRow(map: MapRef): number {
-    let row = this.designedMapData().get(map.hash) ?? this.dungeonMapDataRow(map.dungeon);
+    let row = this.designedMapData().get(map.hash) ?? this.dungeonMapDataRow(map.dungeon, map.indoor);
     if (map.mapDataKey) {
       this.mapDataIndex ??= this.mapData.hashIndex();
       row = this.mapDataIndex.get(map.mapDataKey) ?? row;
