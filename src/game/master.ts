@@ -2,7 +2,7 @@
 import { findByName, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { equalBytes, u16, u32, w16 } from '../util/bytes';
-import { Gmsg, MessageStore } from './gmsg';
+import { Gmsg, MessageStore, type MessageFile } from './gmsg';
 
 export const MASTER_ARCHIVE = '56562135';
 export const TILESETS = 12;
@@ -87,7 +87,7 @@ export class Master {
     this.treasureOriginal = tg.body.slice();
     this.treasureGroup = new GsTable(tg.body);
     this.itemData = this.table('itemData.bin');
-    const gmsgs: MessageStore['files'] = [];
+    const gmsgs: MessageFile[] = [];
     for (const e of this.archive.entries) {
       if (e.type !== 6) continue;
       const { name, body } = unpackEntry(this.archive, e);
@@ -95,14 +95,14 @@ export class Master {
         try {
           this.messages.push(new GmsgFile(body));
         } catch {
-          continue; /* other variants */
+          /* other variants */
         }
-        try {
-          const gmsg = new Gmsg(body);
-          gmsgs.push({ name, entryIndex: e.index, gmsg, editable: gmsg.roundTrips() });
-        } catch {
-          /* read-only */
-        }
+      }
+      try {
+        const gmsg = new Gmsg(body);
+        gmsgs.push({ name: name ?? `エントリ ${e.index}`, entryIndex: e.index, gmsg, editable: gmsg.roundTrips() });
+      } catch {
+        /* not a message file */
       }
     }
     this.texts = new MessageStore(gmsgs);
@@ -155,7 +155,8 @@ export class Master {
   }
 
   message(id: number): string | undefined {
-    if (this.texts.isEdited(id)) return this.texts.plain(id);
+    const t = this.texts.plain(id);
+    if (t !== undefined) return t;
     for (const m of this.messages) {
       const t = m.text(id);
       if (t !== undefined) return t;

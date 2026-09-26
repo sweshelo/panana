@@ -1,15 +1,18 @@
 // Message files (GMSG, *.gsmb; elpulse docs/analysis.md "GMSG"): lossless parsing, rebuilding with edited
 // messages, and the text form used by the editors.
 //
-// File: +0x04 file size, +0x08 / +0x0C first / last message ID (IDs are global), +0x18 offset table (u32 per
-// message, relative to +0x1C), +0x1C string base. A message runs to the next offset (the last one to the end of
-// the file); it is UTF-16LE whose first unit is a type code, and control codes may carry 0x0000 arguments, so it
-// is not NUL-terminated.
+// File: +0x04 file size, +0x08 / +0x0C first / last message ID (IDs are global), +0x10 0 = text / 1 = reading for
+// the voice (*_IN), +0x14 ID step (1), +0x18 offset table (u32 per message, relative to +0x1C), +0x1C string base.
+// A message runs to the next offset (the last one to the end of the file). Text messages are UTF-16LE (msgtext.ts);
+// readings are 1-byte strings. The game checks neither the size nor the end (FUN_001e78f0).
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
+import { plainText, previewText, textToUnits, unitsToText, type MessageText } from './msgtext';
 
 export class Gmsg {
   readonly first: number;
   readonly last: number;
+  /** +0x10: 1 = readings for the voice (*_IN). */
+  readonly reading: boolean;
   /** Bytes before the offset table (the header), with +0x04 patched on build. */
   private readonly head: Uint8Array;
   /** Bytes between the end of the offset table and the string base. */
@@ -23,6 +26,7 @@ export class Gmsg {
     if (String.fromCharCode(...data.subarray(0, 4)) !== 'GMSG') throw new Error('GMSG ではありません');
     this.first = u32(data, 8);
     this.last = u32(data, 12);
+    this.reading = u32(data, 0x10) === 1;
     const n = this.last - this.first + 1;
     const tbl = u32(data, 0x18);
     const base = u32(data, 0x1c);
@@ -35,7 +39,7 @@ export class Gmsg {
       const a = base + u32(data, tbl + i * 4);
       const b = i + 1 < n ? base + u32(data, tbl + i * 4 + 4) : data.length;
       // The rebuild writes the messages back to back in ID order, so it needs them stored that way.
-      if (a > b || b > data.length || (a - base) % 2) throw new Error('GMSG のメッセージが ID 順に並んでいません');
+      if (a > b || b > data.length) throw new Error('GMSG のメッセージが ID 順に並んでいません');
       this.raw.push(data.slice(a, b));
     }
   }
@@ -50,12 +54,9 @@ export class Gmsg {
     return toUnits(this.raw[id - this.first]!);
   }
 
-  /** The file with some messages replaced (id -> units); the other bytes are kept. */
-  build(replace: Map<number, Uint16Array> = new Map()): Uint8Array {
-    const bodies = this.raw.map((r, i) => {
-      const u = replace.get(this.first + i);
-      return u ? fromUnits(u) : r;
-    });
+  /** The file with some messages replaced (id -> bytes); the other bytes are kept. */
+  build(replace: Map<number, Uint8Array> = new Map()): Uint8Array {
+    const bodies = this.raw.map((r, i) => replace.get(this.first + i) ?? r);
     const n = bodies.length;
     const tbl = this.head.length;
     const base = tbl + n * 4 + this.gap.length;
@@ -91,93 +92,31 @@ export function fromUnits(u: Uint16Array): Uint8Array {
   return b;
 }
 
-/** Units 0x0100-0x017F in the text are placeholders filled in at run time (names etc.), not letters. */
-export const isPlaceholder = (c: number): boolean => c >= 0x0100 && c < 0x0180;
-const isControl = (c: number): boolean => c < 0x20 || (c >= 0xe000 && c < 0xf900) || isPlaceholder(c) || c === 0x7b || c === 0x7d;
-/** "&" followed by one unit: that unit is the ID of another message, shown in its place. */
-const REF = 0x26;
-const hex4 = (c: number): string => c.toString(16).toUpperCase().padStart(4, '0');
-
-/**
- * Message units -> the text the editors show and take back:
- * - kind: the first unit (type code; the game skips it when it shows the message),
- * - text: the rest up to the trailing zeros, with 0x000A as a line break, "&" + a message ID as {&XXXX}, and every
- *   other control code (below 0x20, private use 0xE000-0xF8FF), placeholder (0x0100-0x017F) and the braces and
- *   a lone "&" written as {XXXX} (hex),
- * - tail: the trailing zeros (and anything after them the text cannot hold), kept as they are.
- */
-export interface MessageText {
-  kind: number;
-  text: string;
-  tail: Uint16Array;
-}
-
-export function unitsToText(u: Uint16Array): MessageText {
-  if (!u.length) return { kind: 0, text: '', tail: new Uint16Array() };
-  let end = u.length;
-  while (end > 1 && u[end - 1] === 0) end--;
-  let text = '';
-  for (let i = 1; i < end; i++) {
-    const c = u[i]!;
-    if (c === 0x0a) text += '\n';
-    else if (c === REF && i + 1 < end) text += `{&${hex4(u[++i]!)}}`;
-    else if (c === REF || isControl(c)) text += `{${hex4(c)}}`;
-    else text += String.fromCharCode(c);
-  }
-  return { kind: u[0]!, text, tail: u.slice(end) };
-}
-
-/** Inverse of unitsToText. A message always ends with at least one 0x0000. */
-export function textToUnits(m: MessageText): Uint16Array {
-  const out: number[] = [m.kind];
-  const s = m.text.replace(/\r\n?/g, '\n');
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c === 0x7b) {
-      const e = /^\{(&?)([0-9A-Fa-f]{1,4})\}/.exec(s.slice(i));
-      if (!e) throw new Error(`「{」の後に 16 進 4 桁 (ほかのメッセージなら & と ID) と「}」が要ります (${i + 1} 文字目)`);
-      if (e[1]) out.push(REF);
-      out.push(parseInt(e[2]!, 16));
-      i += e[0].length - 1;
-    } else if (c === 0x7d) throw new Error(`対応する「{」のない「}」があります (${i + 1} 文字目)`);
-    else if (c === REF) throw new Error(`「&」は次の文字をメッセージ ID として読むので、ほかのメッセージを入れるときは {&XXXX}、記号の & は ＆ (全角) で書いてください (${i + 1} 文字目)`);
-    else out.push(c);
-  }
-  const tail = m.tail.length ? [...m.tail] : [0];
-  return Uint16Array.from([...out, ...tail]);
-}
-
-/**
- * Plain text (same as the reader in master.ts): the type code skipped as the game does, line breaks as spaces, ruby
- * "{X}'base{X}(reading{X})" as the base, other control codes dropped; placeholders and "&" references kept.
- */
-export function plainText(u: Uint16Array): string {
-  let s = '';
-  for (let i = 1; i < u.length; i++) {
-    const c = u[i]!;
-    if (c === 0) {
-      if (s) break;
-      continue;
-    }
-    if (c === 0x0a) s += ' ';
-    else if (c >= 0x20 && !(c >= 0xe000 && c < 0xf900)) s += String.fromCharCode(c);
-    else s += '\u0001';
-  }
-  return s.replace(/\u0001'(.*?)\u0001\((.*?)\u0001\)/g, '$1').replace(/\u0001/g, '');
-}
-
 export const equalUnits = (a: Uint16Array, b: Uint16Array): boolean => a.length === b.length && a.every((c, i) => c === b[i]);
 
-/** The message files of an archive and the edited messages (id -> units). */
+export interface MessageFile {
+  name: string;
+  entryIndex: number;
+  gmsg: Gmsg;
+  editable: boolean;
+}
+
+/**
+ * The message files of an archive and the edited messages (id -> units). An edited message's reading in the *_IN
+ * files is blanked (zero-filled, same length), so the voice does not read the old text.
+ */
 export class MessageStore {
   private readonly edits = new Map<number, Uint16Array>();
+  /** Text files, in archive order; the game uses the first file whose range holds an ID (FUN_00310438). */
+  readonly files: MessageFile[];
+  readonly readings: MessageFile[];
 
-  constructor(
-    /** In archive order; the game uses the first file whose range holds an ID (FUN_00310438). */
-    readonly files: { name: string; entryIndex: number; gmsg: Gmsg; editable: boolean }[],
-  ) {}
+  constructor(files: MessageFile[]) {
+    this.files = files.filter((f) => !f.gmsg.reading);
+    this.readings = files.filter((f) => f.gmsg.reading);
+  }
 
-  file(id: number): MessageStore['files'][number] | undefined {
+  file(id: number): MessageFile | undefined {
     return this.files.find((f) => f.gmsg.has(id));
   }
 
@@ -264,118 +203,17 @@ export class MessageStore {
     for (const [id, u] of saved) if (this.editable(id)) this.set(id, Uint16Array.from(u));
   }
 
-  /** Rebuilt files that hold an edit: archive entry index -> file bytes. */
+  /** Rebuilt files that hold an edit (and the readings blanked): archive entry index -> file bytes. */
   replacements(): Map<number, Uint8Array> {
     const out = new Map<number, Uint8Array>();
     for (const f of this.files) {
-      const mine = new Map([...this.edits].filter(([id]) => this.file(id) === f));
+      const mine = new Map([...this.edits].filter(([id]) => this.file(id) === f).map(([id, u]) => [id, fromUnits(u)] as const));
+      if (mine.size) out.set(f.entryIndex, f.gmsg.build(mine));
+    }
+    for (const f of this.readings) {
+      const mine = new Map([...this.edits.keys()].filter((id) => f.gmsg.has(id)).map((id) => [id, new Uint8Array(f.gmsg.raw[id - f.gmsg.first]!.length)] as const));
       if (mine.size) out.set(f.entryIndex, f.gmsg.build(mine));
     }
     return out;
   }
 }
-
-/**
- * Placeholders (0x0100-0x017F) seen in the data, with what they are filled with. Inferred from where they are
- * used (elpulse docs/analysis.md "本文に混ざる日本語でない文字").
- */
-export const PLACEHOLDERS: Record<number, string> = {
-  0x0101: '主人公・使った人の名前',
-  0x0102: '行動した者の名前',
-  0x0104: 'モンスターの名前',
-  0x0105: 'モンスターの名前',
-  0x0106: 'アイテムの名前',
-  0x0107: 'アイテムの名前',
-  0x0110: '人の名前',
-  0x0112: '色',
-};
-
-/** Label of a placeholder in previews: its meaning, or its code. */
-export const placeholderLabel = (c: number): string => PLACEHOLDERS[c] ?? `差し込み ${hex4(c)}`;
-
-/** A piece of a message as a reader sees it. */
-export type MessageToken =
-  | { t: 'text'; s: string }
-  | { t: 'br' }
-  | { t: 'ruby'; base: string; reading: string }
-  | { t: 'ph'; code: number }
-  | { t: 'ref'; id: number }
-  | { t: 'ctl'; code: number };
-
-const printable = (c: number): boolean => c >= 0x20 && !(c >= 0xe000 && c < 0xf900) && !isPlaceholder(c);
-
-/**
- * Message units -> tokens, as the game shows them: the type code skipped, text up to the first 0x0000 after
- * something was shown, ruby "{X}'base{X}(reading{X})" (X: any control code), "&" + ID references, placeholders.
- */
-export function tokenize(u: Uint16Array): MessageToken[] {
-  const out: MessageToken[] = [];
-  const text = (c: number): void => {
-    const last = out[out.length - 1];
-    if (last?.t === 'text') last.s += String.fromCharCode(c);
-    else out.push({ t: 'text', s: String.fromCharCode(c) });
-  };
-  /** Printable run from i up to a control code followed by `close`; returns [string, index of the control]. */
-  const run = (i: number, close: number): [string, number] | null => {
-    let s = '';
-    for (; i + 1 < u.length; i++) {
-      const c = u[i]!;
-      if (!printable(c)) return u[i + 1] === close ? [s, i] : null;
-      s += String.fromCharCode(c);
-    }
-    return null;
-  };
-  for (let i = 1; i < u.length; i++) {
-    const c = u[i]!;
-    if (c === 0) {
-      if (out.length) break;
-      continue;
-    }
-    if (c === REF && i + 1 < u.length && u[i + 1]) out.push({ t: 'ref', id: u[++i]! });
-    else if (c === 0x0a) out.push({ t: 'br' });
-    else if (isPlaceholder(c)) out.push({ t: 'ph', code: c });
-    else if (printable(c)) text(c);
-    else {
-      // ruby: {X}'base{X}(reading{X})
-      const base = u[i + 1] === 0x27 ? run(i + 2, 0x28) : null;
-      const reading = base ? run(base[1] + 2, 0x29) : null;
-      if (base && reading) {
-        out.push({ t: 'ruby', base: base[0], reading: reading[0] });
-        i = reading[1] + 1;
-      } else out.push({ t: 'ctl', code: c });
-    }
-  }
-  return out;
-}
-
-/**
- * Text as a reader would see it, for lists: "&" references replaced by the referenced message (`lookup`),
- * placeholders as 〈meaning〉, ruby as the base, line breaks kept, other control codes dropped.
- */
-export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0): string {
-  return tokenize(u).map((k) => {
-    switch (k.t) {
-      case 'text': return k.s;
-      case 'br': return '\n';
-      case 'ruby': return k.base;
-      case 'ph': return `〈${placeholderLabel(k.code)}〉`;
-      case 'ref': return (depth < 2 ? lookup(k.id) : undefined) ?? `〈メッセージ ${hex4(k.id)}〉`;
-      case 'ctl': return '';
-    }
-  }).join('');
-}
-
-/**
- * Type codes (the first unit) seen in the data. The game skips it when it shows a message; what it selects for
- * the field lines (0x010D-0x0124) is inferred from who says them.
- */
-export const MESSAGE_KINDS: Record<number, string> = {
-  0x0001: '名前',
-  0x000c: '説明',
-  0x000d: '説明 (メニュー)',
-  0x010d: 'č: 台詞 (荒い・うめく声など、推定)',
-  0x010e: 'Ď: 台詞 (男性「オレ」、推定)',
-  0x010f: 'ď: 台詞 (女性・です調、推定)',
-  0x0123: 'ģ: 台詞 (子ども「ボク」、推定)',
-  0x0124: 'Ĥ: 台詞 (子ども「ボク」、推定)',
-};
