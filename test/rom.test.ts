@@ -611,4 +611,20 @@ describe.skipIf(!hasCia)('messages', () => {
     expect(re.message(id)).toBe('テスト です');
     expect(re.message(id + 1)).toBe(game.master.message(id + 1));
   });
+
+  test('story conversations are found through the code', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { STORY_FILE, storyGroups } = await import('../src/game/codemessages');
+    const field = game.master.texts.files.find((f) => STORY_FILE.test(f.name))!;
+    expect([field.gmsg.first, field.gmsg.last]).toEqual([0x1bdf, 0x21af]);
+    const groups = storyGroups(game.code.code, field.gmsg.first, field.gmsg.last);
+    // "………おーい。そこのアナタですよう！" (the first meeting) is loaded by FUN_0019B564
+    const meet = groups.find((g) => g.ids.includes(0x1c0b))!;
+    expect(meet.fn).toBe(0x19b564);
+    expect(game.master.texts.plain(0x1c0b)).toContain('そこのアナタですよう');
+    const ids = new Set(groups.flatMap((g) => g.ids));
+    expect(ids.size).toBeGreaterThan(1000);
+    // the D01 conversation is named by an event row, not by the code
+    expect(ids.has(0x1c84)).toBe(false);
+  });
 });
