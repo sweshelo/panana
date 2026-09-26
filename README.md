@@ -193,7 +193,7 @@ ROM のテストは `rom` ジョブで、暗号化したダンプを非公開の
 
 準備 (一度だけ):
 1. `golden.json` を作ってから、PowerShell で暗号化したバンドルを作る: `.\scripts\pack-rom-bundle.ps1 -Elpulse ..\elpulse` (パスフレーズを聞かれる) → `rom-bundle.tar.gpg` (CIA・`golden.json`・あれば `mod/out`)。gpg (Gpg4win など) が要ります
-2. Cloudflare R2 に非公開バケット `panana-ci` を作り、`rom-bundle.tar.gpg` をアップロードする (300 MB を超えるときは `aws s3 cp` など S3 API で)
+2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードする (300 MB を超えるときは `aws s3 cp` など S3 API で)
 3. R2 の API トークンを「Object Read only・このバケットだけ」で作る
 4. リポジトリの Settings → Secrets and variables → Actions に登録: `ROM_BUNDLE_PASSPHRASE`、`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
    (バケット名・キーを変えるときは Variables の `ROM_BUNDLE_BUCKET`・`ROM_BUNDLE_KEY`)
