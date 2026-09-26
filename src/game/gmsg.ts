@@ -275,30 +275,94 @@ export class MessageStore {
   }
 }
 
-/** Label of a placeholder in previews. */
-export const placeholderLabel = (c: number): string => `〔${hex4(c)}〕`;
+/**
+ * Placeholders (0x0100-0x017F) seen in the data, with what they are filled with. Inferred from where they are
+ * used (elpulse docs/analysis.md "本文に混ざる日本語でない文字").
+ */
+export const PLACEHOLDERS: Record<number, string> = {
+  0x0101: '主人公・使った人の名前',
+  0x0102: '行動した者の名前',
+  0x0104: 'モンスターの名前',
+  0x0105: 'モンスターの名前',
+  0x0106: 'アイテムの名前',
+  0x0107: 'アイテムの名前',
+  0x0110: '人の名前',
+  0x0112: '色',
+};
+
+/** Label of a placeholder in previews: its meaning, or its code. */
+export const placeholderLabel = (c: number): string => PLACEHOLDERS[c] ?? `差し込み ${hex4(c)}`;
+
+/** A piece of a message as a reader sees it. */
+export type MessageToken =
+  | { t: 'text'; s: string }
+  | { t: 'br' }
+  | { t: 'ruby'; base: string; reading: string }
+  | { t: 'ph'; code: number }
+  | { t: 'ref'; id: number }
+  | { t: 'ctl'; code: number };
+
+const printable = (c: number): boolean => c >= 0x20 && !(c >= 0xe000 && c < 0xf900) && !isPlaceholder(c);
 
 /**
- * Text as a reader would see it, for previews: the type code skipped, line breaks kept, "&" references replaced
- * by the referenced message (`lookup`), placeholders as 〔XXXX〕, ruby as the base, other control codes dropped.
+ * Message units -> tokens, as the game shows them: the type code skipped, text up to the first 0x0000 after
+ * something was shown, ruby "{X}'base{X}(reading{X})" (X: any control code), "&" + ID references, placeholders.
  */
-export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0): string {
-  let s = '';
+export function tokenize(u: Uint16Array): MessageToken[] {
+  const out: MessageToken[] = [];
+  const text = (c: number): void => {
+    const last = out[out.length - 1];
+    if (last?.t === 'text') last.s += String.fromCharCode(c);
+    else out.push({ t: 'text', s: String.fromCharCode(c) });
+  };
+  /** Printable run from i up to a control code followed by `close`; returns [string, index of the control]. */
+  const run = (i: number, close: number): [string, number] | null => {
+    let s = '';
+    for (; i + 1 < u.length; i++) {
+      const c = u[i]!;
+      if (!printable(c)) return u[i + 1] === close ? [s, i] : null;
+      s += String.fromCharCode(c);
+    }
+    return null;
+  };
   for (let i = 1; i < u.length; i++) {
     const c = u[i]!;
     if (c === 0) {
-      if (s) break;
+      if (out.length) break;
       continue;
     }
-    if (c === REF && i + 1 < u.length && u[i + 1]) {
-      const id = u[++i]!;
-      s += (depth < 2 ? lookup(id) : undefined) ?? `〔&${hex4(id)}〕`;
-    } else if (c === 0x0a) s += '\n';
-    else if (isPlaceholder(c)) s += placeholderLabel(c);
-    else if (c >= 0x20 && !(c >= 0xe000 && c < 0xf900)) s += String.fromCharCode(c);
-    else s += '\u0001';
+    if (c === REF && i + 1 < u.length && u[i + 1]) out.push({ t: 'ref', id: u[++i]! });
+    else if (c === 0x0a) out.push({ t: 'br' });
+    else if (isPlaceholder(c)) out.push({ t: 'ph', code: c });
+    else if (printable(c)) text(c);
+    else {
+      // ruby: {X}'base{X}(reading{X})
+      const base = u[i + 1] === 0x27 ? run(i + 2, 0x28) : null;
+      const reading = base ? run(base[1] + 2, 0x29) : null;
+      if (base && reading) {
+        out.push({ t: 'ruby', base: base[0], reading: reading[0] });
+        i = reading[1] + 1;
+      } else out.push({ t: 'ctl', code: c });
+    }
   }
-  return s.replace(/\u0001'(.*?)\u0001\((.*?)\u0001\)/g, '$1').replace(/\u0001/g, '');
+  return out;
+}
+
+/**
+ * Text as a reader would see it, for lists: "&" references replaced by the referenced message (`lookup`),
+ * placeholders as 〈meaning〉, ruby as the base, line breaks kept, other control codes dropped.
+ */
+export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0): string {
+  return tokenize(u).map((k) => {
+    switch (k.t) {
+      case 'text': return k.s;
+      case 'br': return '\n';
+      case 'ruby': return k.base;
+      case 'ph': return `〈${placeholderLabel(k.code)}〉`;
+      case 'ref': return (depth < 2 ? lookup(k.id) : undefined) ?? `〈メッセージ ${hex4(k.id)}〉`;
+      case 'ctl': return '';
+    }
+  }).join('');
 }
 
 /**

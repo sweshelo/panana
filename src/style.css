@@ -263,4 +263,11 @@ input.edited { border-color: var(--warn); }
 .msg-slot { margin: 8px 0; }
 .msg-slot-head { font-size: 12px; color: var(--muted); }
 .book-table td.msg-cell { max-width: 28em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.msg-preview { white-space: pre-wrap; background: var(--panel2); border-radius: 4px; padding: 4px 6px; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.msg-preview { background: var(--panel2); border-radius: 4px; padding: 6px 8px; font-size: 14px; line-height: 2; margin-top: 2px; }
+.msg-preview rt { font-size: 9px; color: var(--muted); }
+.msg-kind { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-right: 6px; vertical-align: middle; }
+.msg-ph { color: #e0b050; border-bottom: 1px dotted currentColor; }
+.msg-ph::before { content: '〈'; } .msg-ph::after { content: '〉'; }
+.msg-ref { color: #7fb4ff; text-decoration: none; border-bottom: 1px dotted currentColor; }
+.msg-ref .msg-render { color: inherit; }
+.msg-ctl { font-size: 9px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 2px; vertical-align: middle; }

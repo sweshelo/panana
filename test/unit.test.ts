@@ -7,7 +7,7 @@ import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
 import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
-import { Gmsg, MessageStore, plainText, previewText, textToUnits, unitsToText } from '../src/game/gmsg';
+import { Gmsg, MessageStore, plainText, previewText, textToUnits, tokenize, unitsToText } from '../src/game/gmsg';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
 describe('LZ10', () => {
@@ -321,8 +321,12 @@ describe('GMSG messages', () => {
     expect(rt.text).toBe('ここ、{&00B0}。{0101}の家{0026}');
     expect([...textToUnits(rt)]).toEqual([...ref]);
     expect(() => textToUnits({ kind: 1, text: 'A&B', tail: new Uint16Array([0]) })).toThrow();
-    expect(previewText(ref, (id) => (id === 0xb0 ? 'デンパタウン' : undefined))).toBe('ここ、デンパタウン。〔0101〕の家&');
-    expect(previewText(ref, () => undefined)).toBe('ここ、〔&00B0〕。〔0101〕の家&');
+    expect(previewText(ref, (id) => (id === 0xb0 ? 'デンパタウン' : undefined))).toBe('ここ、デンパタウン。〈主人公・使った人の名前〉の家&');
+    expect(previewText(ref, () => undefined)).toBe('ここ、〈メッセージ 00B0〉。〈主人公・使った人の名前〉の家&');
+    // ruby with any control code around it
+    const ruby = Uint16Array.from([0x010e, ...u('この'), 0xe000, 0x27, ...u('祠'), 0xe000, 0x28, ...u('ほこら'), 0xe000, 0x29, ...u('へ'), 0]);
+    expect(tokenize(ruby)).toEqual([{ t: 'text', s: 'この' }, { t: 'ruby', base: '祠', reading: 'ほこら' }, { t: 'text', s: 'へ' }]);
+    expect(previewText(ruby, () => undefined)).toBe('この祠へ');
     // the type code is not part of the text
     expect(plainText(ref)).toBe('ここ、&°。āの家&');
   });
