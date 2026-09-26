@@ -352,7 +352,7 @@ export class MonsterBook {
 export interface MapEncounters {
   /** Map's group hash (header +0; 0 = none). */
   group: number;
-  /** Listed cells by group hash (0 = the map's group). */
+  /** Listed cells by group hash. 0 = no enemies there; a hash = only that group appears there (elpulse docs/encounters.md §2). */
   cells: Map<number, [number, number][]>;
 }
 
