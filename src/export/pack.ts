@@ -43,13 +43,13 @@ export const MOD_PATH = `${MOD_ROOT}/${MAPDB_ARCHIVE}`;
 
 /**
  * RomFS files of the MOD: A90C8038 when maps changed, the event archives of edited dungeons, and the
- * master archive (56562135, built on game.masterBytes) when treasure contents changed.
+ * master archive (56562135, built on game.masterBytes) when its tables or messages changed.
  */
 export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   if (docs.length) out.set(MAPDB_ARCHIVE, buildArchive(game, docs).archive);
   for (const t of events) out.set(t.archiveName, t.buildArchive());
-  if (treasure) out.set(MASTER_ARCHIVE, game.master.buildArchive());
+  if (treasure || game.master.texts.changed()) out.set(MASTER_ARCHIVE, game.master.buildArchive());
   return out;
 }
 

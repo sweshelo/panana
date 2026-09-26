@@ -497,3 +497,27 @@ describe.skipIf(!hasCia)('monster and item models', () => {
     }
   });
 });
+
+describe.skipIf(!hasCia)('messages', () => {
+  test('every message file rebuilds byte for byte, and an edit is exported', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const texts = game.master.texts;
+    expect(texts.files.length).toBeGreaterThan(0);
+    for (const f of texts.files) expect(`${f.name} ${f.editable}`).toBe(`${f.name} true`);
+    // the text form keeps every message as it is
+    const { textToUnits } = await import('../src/game/gmsg');
+    for (const f of texts.files)
+      for (let id = f.gmsg.first; id <= f.gmsg.last; id++) {
+        const orig = f.gmsg.units(id)!;
+        if (orig.length && !orig[orig.length - 1]) expect([...textToUnits(texts.text(id)!)]).toEqual([...orig]);
+      }
+    const id = 0x1c84; // D01 conversation (docs/reference/events.md)
+    const before = game.master.message(id)!;
+    texts.setText(id, 'テスト\nです');
+    const files = buildModFiles(game, [], [], false);
+    const { Master } = await import('../src/game/master');
+    const re = new Master(files.get('56562135')!);
+    expect(re.message(id)).toBe(`${before[0]}テスト です`);
+    expect(re.message(id + 1)).toBe(game.master.message(id + 1));
+  });
+});

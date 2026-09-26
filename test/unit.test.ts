@@ -6,7 +6,8 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS, recCellPos } from '../src/game/sections';
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
-import { equalBytes, w32 } from '../src/util/bytes';
+import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
+import { Gmsg, MessageStore, plainText, textToUnits, unitsToText } from '../src/game/gmsg';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 
 describe('LZ10', () => {
@@ -256,5 +257,82 @@ describe('board facing', () => {
     for (const x of [0, 1]) for (const y of [0, 1]) for (const z of [0, 1]) cube.push(x, y, z);
     expect(boardNormal(cube, null)).toBeNull();
     expect(boardNormal([0, 0, 0, 1, 1, 1], null)).toBeNull();
+  });
+});
+
+describe('GMSG messages', () => {
+  /** A GMSG with IDs 100.. holding the given messages (units). */
+  const makeGmsg = (msgs: number[][]): Uint8Array => {
+    const tbl = 0x20;
+    const base = tbl + msgs.length * 4 + 4; // 4 bytes of gap
+    const size = base + msgs.reduce((a, m) => a + m.length * 2, 0);
+    const b = new Uint8Array(size);
+    b.set([0x47, 0x4d, 0x53, 0x47]);
+    w32(b, 4, size);
+    w32(b, 8, 100);
+    w32(b, 12, 100 + msgs.length - 1);
+    w32(b, 0x18, tbl);
+    w32(b, 0x1c, base);
+    b.set([0xaa, 0xbb, 0xcc, 0xdd], base - 4);
+    let o = 0;
+    msgs.forEach((m, i) => {
+      w32(b, tbl + i * 4, o);
+      m.forEach((c, j) => w16(b, base + o + j * 2, c));
+      o += m.length * 2;
+    });
+    return b;
+  };
+  const u = (s: string): number[] => [...s].map((c) => c.charCodeAt(0));
+  const msgs = [[0x010e, ...u('こんにちは'), 0x0a, ...u('元気?'), 0], [0x0001, 0xe001, 0, 0x0003, ...u('名前'), 0, 0], [0x000c, 0, 0, 0]];
+
+  test('parse, round trip and rebuild with a longer message', () => {
+    const data = makeGmsg(msgs);
+    const g = new Gmsg(data);
+    expect(g.roundTrips()).toBe(true);
+    expect(plainText(g.units(100)!)).toBe('Ďこんにちは 元気?');
+    const longer = Uint16Array.from([0x010e, ...u('ずっと長い文になりました'), 0]);
+    const out = new Gmsg(g.build(new Map([[100, longer]])));
+    expect([...out.units(100)!]).toEqual([...longer]);
+    expect([...out.units(101)!]).toEqual(msgs[1]!);
+    expect([...out.units(102)!]).toEqual(msgs[2]!);
+    const built = g.build(new Map([[100, longer]]));
+    expect(u32(built, 4)).toBe(built.length);
+    expect([...built.subarray(u32(built, 0x1c) - 4, u32(built, 0x1c))]).toEqual([0xaa, 0xbb, 0xcc, 0xdd]);
+  });
+
+  test('text form keeps every unit', () => {
+    for (const m of msgs) {
+      const t = unitsToText(Uint16Array.from(m));
+      expect([...textToUnits(t)]).toEqual(m);
+    }
+    const t = unitsToText(Uint16Array.from(msgs[1]!));
+    expect(t.kind).toBe(1);
+    expect(t.text).toBe('{E001}{0000}{0003}名前');
+    expect(unitsToText(Uint16Array.from(msgs[0]!)).text).toBe('こんにちは\n元気?');
+    // braces are escaped, and a bad code is refused
+    const br = Uint16Array.from([1, ...u('{a}'), 0]);
+    expect(unitsToText(br).text).toBe('{007B}a{007D}');
+    expect([...textToUnits(unitsToText(br))]).toEqual([...br]);
+    expect(() => textToUnits({ kind: 1, text: '{zz}', tail: new Uint16Array([0]) })).toThrow();
+    expect(() => textToUnits({ kind: 1, text: 'a}', tail: new Uint16Array([0]) })).toThrow();
+  });
+
+  test('store: edits, revert and replacements', () => {
+    const store = new MessageStore([{ name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true }]);
+    store.setText(100, 'やあ');
+    expect(store.plain(100)).toBe('Ďやあ');
+    expect(store.editedIds()).toEqual([100]);
+    const rep = store.replacements();
+    expect([...rep.keys()]).toEqual([3]);
+    expect(plainText(new Gmsg(rep.get(3)!).units(100)!)).toBe('Ďやあ');
+    store.setText(100, 'こんにちは\n元気?'); // back to the original text
+    expect(store.changed()).toBe(false);
+    store.setText(102, 'x');
+    const saved = store.saved();
+    store.revert(102);
+    expect(store.changed()).toBe(false);
+    store.restore(saved);
+    expect(store.plain(102)).toBe('x');
+    expect(() => store.setText(99, 'x')).toThrow();
   });
 });

@@ -6,6 +6,7 @@ import { mapShortTitle } from '../game/names';
 import { u16, u32, w32 } from '../util/bytes';
 import { bytesToHex, clear, h, hexToBytes } from './dom';
 import type { EditorState } from './state';
+import { MESSAGE_HELP, messageEditor } from './message';
 
 /** EventObject row a record refers to (0 = none). */
 export function eventRowOf(section: number, rec: Rec): number {
@@ -101,8 +102,9 @@ export function eventPanel(st: EditorState, row: number): HTMLElement {
       const v = Math.trunc(Number(input.value));
       if (v >= 0) st.editTables(() => w32(ev.table.row(row), off, v));
     });
-    box.append(field(`メッセージ (+0x${off.toString(16).toUpperCase()})`, input), h('div', { class: 'msg' }, id ? game.master.message(id) ?? '(見つからない ID)' : '(なし)'));
+    box.append(field(`メッセージ (+0x${off.toString(16).toUpperCase()})`, input), messageEditor(game.master, id, (f) => st.editTables(f)));
   }
+  if (info?.messages?.length) box.append(h('div', { class: 'muted small' }, MESSAGE_HELP, ' ', h('a', { href: `#/messages/${st.current!.dungeon}.${row}` }, 'メッセージの一覧で開く')));
 
   // generic switch
   if (kind === KIND_SWITCH) {
