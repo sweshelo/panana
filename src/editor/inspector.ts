@@ -304,7 +304,7 @@ export class Inspector {
             h('td', {}, changed.includes(k) ? '変更' : ''),
           ),
         ),
-        h('tr', {}, h('td', {}, '6 敵の出現セル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
+        h('tr', {}, h('td', {}, '6 敵が出ないセル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
         h('tr', {}, h('td', {}, '7 (未対応・保持)'), h('td', {}, `${doc.raw[7]?.length ?? 0} B`), h('td', {}, '')),
       ),
       st.currentEvents

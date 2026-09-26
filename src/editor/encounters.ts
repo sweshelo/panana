@@ -55,8 +55,9 @@ export function encounterPanel(st: EditorState, book: MonsterBook | null, sounds
   if (cur) box.append(groupDetail(book, cur));
   const own = [...enc.cells].filter(([hash]) => hash);
   const plain = enc.cells.get(0)?.length ?? 0;
+  const ownCount = doc.cells6.length - plain;
   box.append(h('div', { class: 'muted small' },
-    `敵の出現セル (区画 6): ${doc.cells6.length} 個${plain ? ` (うちマップの群れ ${plain} 個)` : ''}。左の「敵の出現セル」ツールで付け外しできます。`));
+    `敵が出ないセル (区画 6): ${plain} 個${ownCount ? `、群れを指定したセル ${ownCount} 個` : ''}。マップの群れは、区画 6 にないセルにだけ出ます。左の「敵が出ないセル」ツールで付け外しできます。`));
   for (const [hash, cells] of own) {
     const g = book.group(hash);
     box.append(h('details', { class: 'enc-cells' },

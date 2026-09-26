@@ -124,7 +124,7 @@ export class MapEditor {
         ['paint', 'タイルを置く', 'B'],
         ['erase', 'タイルを消す', 'E'],
         ['rect', '範囲選択', 'M'],
-        ['room', '敵の出現セル (区画 6)', 'G'],
+        ['room', '敵が出ないセル (区画 6)', 'G'],
       ] as [Tool, string, string][]).map(([t, label, key]) =>
         h('button', { 'data-tool': t, title: `${label} (${key})`, onclick: () => st.setTool(t) }, `${label} `, h('kbd', {}, key))),
     );
@@ -135,7 +135,7 @@ export class MapEditor {
     const layers = h('div', { class: 'layers' },
       h('h3', {}, '表示'),
       layerBox('タイル', () => ctl.layers.tiles, (v) => (ctl.layers.tiles = v)),
-      layerBox('敵の出現セル (区画 6)', () => ctl.layers.room, (v) => (ctl.layers.room = v), 'rgba(80,200,255,0.6)'),
+      layerBox('敵が出ないセル (区画 6)', () => ctl.layers.room, (v) => (ctl.layers.room = v), 'rgba(80,200,255,0.6)'),
       ...POINT_SECTIONS.map((k) => layerBox(LAYOUTS[k]!.label, () => ctl.layers.sections[k]!, (v) => (ctl.layers.sections[k] = v), SECTION_COLORS[k])),
       h('h3', {}, '2D'),
       h('div', { class: 'seg' },
