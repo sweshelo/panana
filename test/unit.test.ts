@@ -10,6 +10,9 @@ import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
 import { fromUnits, Gmsg, MessageStore } from '../src/game/gmsg';
 import { parseBody, plainText, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
+import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
+import { validateWorld } from '../src/editor/validate';
+import type { Game } from '../src/game/game';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -439,5 +442,88 @@ describe('GMSG messages', () => {
     store.restore(saved);
     expect(store.text(102)!.kind).toBe(0x000c);
     expect(() => store.setText(99, 'x')).toThrow();
+  });
+});
+
+describe('world maps', () => {
+  const entrance = (id: number, dest: number, point: number, x: number, y: number): Uint8Array => {
+    const r = new Uint8Array(ENTRANCE_SIZE);
+    w32(r, 0, 75);
+    w32(r, 4, id);
+    w32(r, 8, dest);
+    w32(r, 0x0c, point);
+    w16(r, 0x1c, x);
+    w16(r, 0x1e, y);
+    r[0x20] = 0x41; // rotation 1, upper bits kept
+    r[0x23] = 0x99;
+    return r;
+  };
+
+  test('world table rows and entrance fields', () => {
+    const code = new Uint8Array(WORLD_TABLE - 0x100000 + 4 * 32);
+    for (let i = 0; i < 32; i++) w32(code, WORLD_TABLE - 0x100000 + i * 4, 0x1000 + i);
+    const ws = readWorldTable(code, 0x100000);
+    expect(ws.map((w) => w.code)).toEqual(['W01', 'W02', 'W98', 'W99']);
+    expect(ws[0]!.hash).toBe(0xa8654391);
+    expect(ws[1]!.sections[2]).toBe(0x100a);
+    expect(ws[0]!.groundFile).toBe('W01_ground.bin');
+    expect(ws[2]!.groundFile).toBeNull();
+    expect(readWorldTable(new Uint8Array(16), 0x100000)).toEqual([]);
+
+    const a = entrance(0x11, 0x98ec3fef, 0x22, 10, 299);
+    const list = parseEntrances(buildEntrances([a, entrance(0x12, 0, 0, 1, 2)]));
+    expect(list.length).toBe(2);
+    expect(equalBytes(list[0]!, a)).toBe(true);
+    expect([ENT.id(a), ENT.destMap(a), ENT.destPoint(a), ENT.x(a), ENT.y(a), ENT.rot(a)]).toEqual([0x11, 0x98ec3fef, 0x22, 10, 299, 1]);
+    const m = moveEntrance(a, 400, -3, 2);
+    expect([ENT.x(m), ENT.y(m), ENT.rot(m), m[0x20], m[0x23]]).toEqual([299, 0, 2, 0x42, 0x99]);
+    expect(ENT.x(a)).toBe(10); // copies, not in place
+    expect(ENT.destMap(setEntranceU32(a, 0x08, 0xa8654391))).toBe(0xa8654391);
+  });
+
+  test('ground.bin and section 0 terrain', () => {
+    const b = new Uint8Array(0x10 + WORLD_SIZE * WORLD_SIZE * 2 + 81 * 8);
+    w32(b, 0, 1);
+    w32(b, 4, 0x10);
+    b[0x10 + (5 * WORLD_SIZE + 7) * 2] = 12;
+    b[0x11 + (5 * WORLD_SIZE + 7) * 2] = 0x83;
+    const g = parseGround(b)!;
+    expect([g.parts[5 * WORLD_SIZE + 7], g.rots[5 * WORLD_SIZE + 7], g.parts[0]]).toEqual([12, 3, 0]);
+    expect(parseGround(b.subarray(0, 100))).toBeNull();
+    const t = buildTiles([{ kind: 9, x: 299, y: 1, rot: 2, rotHi: 0, letter: 0, pad: 0 }, { kind: 3, x: 300, y: 0, rot: 0, rotHi: 0, letter: 0, pad: 0 }]);
+    const g2 = groundFromTiles(t);
+    expect([g2.parts[WORLD_SIZE + 299], g2.rots[WORLD_SIZE + 299]]).toEqual([9, 2]);
+    expect(g2.parts.reduce((a, v) => a + v, 0)).toBe(9);
+  });
+
+  test('checks of edited entrances: missing point, lead back, duplicate IDs', () => {
+    const W = 0xa8654391;
+    const dungeon = { hash: 0x98ec3fef, name: 'D01B02001', dungeon: 1, dungeonCode: 'D01', floor: -2, mapDataKey: 0, sections: [0x98ec3fef, 1, 2, 3, 4, 5, 6, 7, 8, 9] };
+    const p3 = (id: number, dest: number, point: number): Uint8Array => {
+      const r = new Uint8Array(28);
+      w32(r, 0, id);
+      w32(r, 4, dest);
+      w32(r, 8, point);
+      return r;
+    };
+    const sec3 = new Uint8Array([...p3(0x22, W, 0x11), ...p3(0x23, W, 0x99)]);
+    const game = {
+      code: { byHash: (h: number) => (h === dungeon.hash ? dungeon : undefined), world: (h: number) => (h === W ? { hash: W, code: 'W01' } : undefined) },
+      db: { get: (h: number) => (h === 3 ? sec3 : new Uint8Array(0)) },
+    } as unknown as Game;
+    const orig = [entrance(0x11, dungeon.hash, 0x22, 1, 1), entrance(0x12, dungeon.hash, 0x22, 2, 2), entrance(0x13, dungeon.hash, 0x22, 3, 3)];
+    expect(validateWorld(game, W, orig, orig, new Map())).toEqual([]); // unedited ones are not checked
+    const edited = [
+      moveEntrance(orig[0]!, 5, 5), // still leads back
+      setEntranceU32(orig[1]!, 0x0c, 0x23), // point 0x23 leads to entrance 0x99
+      setEntranceU32(setEntranceU32(orig[2]!, 0x04 as never, 0x11), 0x0c, 0x77), // duplicate ID, missing point
+    ];
+    const issues = validateWorld(game, W, edited, orig, new Map());
+    expect(issues.map((i) => [i.index, i.level, i.key])).toEqual([
+      [0, 'error', 'wdup/00000011'],
+      [1, 'warn', 'wback/00000012'],
+      [2, 'error', 'wdup/00000011'],
+      [2, 'error', 'wpoint/00000011'],
+    ]);
   });
 });

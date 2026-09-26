@@ -1,6 +1,6 @@
 // Export: what changed, the validation of the changed maps, and the MOD as a zip or written into a folder.
 import { useState, type ReactNode } from 'react';
-import { validate, type Issue } from '../editor/validate';
+import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { buildModFiles, buildModZip, modPackage } from '../export/pack';
 import { MASTER_ARCHIVE } from '../game/master';
@@ -32,7 +32,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       for (const i of validate(game, d, game.master.tileset(game.mapRef(info, d)), st.docs, st.events.get(d.dungeon) ?? null))
         issues.push({ map: mapTitle(info, game.code.maps, game.master), issue: i });
     }
+    const worlds = session.changedWorlds();
+    for (const w of worlds)
+      for (const i of validateWorld(game, w.hash, session.entrancesOf(w), session.originalEntrances(w), st.docs)) issues.push({ map: mapLabel(game, w.hash), issue: i });
     const changes: string[] = docs.map((d) => `${mapLabel(game, d.hash)} (区画 ${st.changedSections(d).join(', ')})`);
+    for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
@@ -40,14 +44,14 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
     const texts = game.master.texts.editedIds();
     if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
-    return { docs, events, issues, changes, shops };
+    return { docs, events, issues, changes, shops, worlds: session.worldSections() };
   });
   const { issues, changes } = what;
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = (): Map<string, Uint8Array> | null => {
     try {
-      const files = buildModFiles(game, what.docs, what.events, game.master.changed());
+      const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
       const pkg = modPackage(game, files);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);

@@ -8,6 +8,7 @@ import { ItemPage } from '../pages/items';
 import { MessagePage } from '../pages/messages';
 import { MonsterPage } from '../pages/monsters';
 import { ShopPage } from '../pages/shops';
+import { WorldPage } from '../pages/world';
 import type { Session } from '../session';
 import type { PageProps } from './book';
 import { ExportDialog } from './ExportDialog';
@@ -16,6 +17,7 @@ import { useAsync } from './useAsync';
 
 const PAGES = [
   ['map', 'マップ編集'],
+  ['world', 'ワールドマップ'],
   ['monsters', 'モンスター図鑑'],
   ['items', 'アイテム図鑑'],
   ['shops', 'ショップ'],
@@ -26,7 +28,7 @@ const PAGES = [
 type Page = (typeof PAGES)[number][0];
 
 const TITLES: Record<Page, string> = {
-  map: 'マップ編集', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', messages: 'メッセージ',
+  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', messages: 'メッセージ',
 };
 
 const subscribeHash = (f: () => void): (() => void) => {
@@ -34,7 +36,7 @@ const subscribeHash = (f: () => void): (() => void) => {
   return () => window.removeEventListener('hashchange', f);
 };
 
-/** #/map[/MAPNAME], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id] or #/messages[/dungeon.row | /0xID]. */
+/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id] or #/messages[/dungeon.row | /0xID]. */
 function useRoute(): { page: Page; arg: string | undefined; hash: string } {
   const hash = useSyncExternalStore(subscribeHash, () => location.hash);
   const [p, arg] = hash.replace(/^#\/?/, '').split('/');
@@ -85,6 +87,8 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
       return <ActionPage {...props} />;
     case 'messages':
       return <MessagePage {...props} />;
+    case 'world':
+      return <WorldPage {...props} />;
   }
 }
 
@@ -118,7 +122,7 @@ export function Shell({ session, editor, onPickBaseMod, onChangeDump }: {
         ))}
         <span className="grow" />
         <span className="muted small">{game.dump.label}</span>
-        <button className="primary" title="マップ・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => setExporting(true)}>書き出し…</button>
+        <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => setExporting(true)}>書き出し…</button>
         <button className="base-btn" title="既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります" onClick={onPickBaseMod}>
           {`土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`}
         </button>

@@ -1,5 +1,6 @@
 // Tables in code.bin (v1.1.0, flat binary with base address 0x100000). docs/map.md §0-§2.
 import { cstr, s32, u32 } from '../util/bytes';
+import { readWorldTable, type WorldInfo } from './worldmap';
 
 export const BASE = 0x100000;
 export const MAP_SECTIONS = 0x4c1a74; // 205 x {map hash, section 1..9 hashes}
@@ -35,6 +36,8 @@ export interface MapInfo {
 
 export class CodeBin {
   readonly maps: MapInfo[];
+  /** World maps (their own section table; not in {@link maps}). docs/worldmap.md. */
+  readonly worlds: WorldInfo[];
   constructor(readonly code: Uint8Array) {
     const at = (addr: number): number => addr - BASE;
     if (code.length < at(MAP_TABLE) + MAP_TABLE_ROWS * 16) throw new Error('code.bin が短すぎます');
@@ -95,6 +98,12 @@ export class CodeBin {
           sections: secs,
         },
     );
+    this.worlds = readWorldTable(code, BASE);
+  }
+
+  /** World map of a map ID (A8654391 = W01 ...). */
+  world(hash: number): WorldInfo | undefined {
+    return this.worlds.find((w) => w.hash === hash);
   }
 
   byHash(hash: number): MapInfo | undefined {
