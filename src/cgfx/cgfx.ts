@@ -26,12 +26,16 @@ export interface CgfxMaterial {
   blend: boolean;
   alphaTest: boolean;
   depthWrite: boolean;
+  /** GPUREG_DEPTH_COLOR_MASK (0x107): depth test and its function (0 never … 4 less, 5 lequal … 7 gequal). */
+  depthTest: { enabled: boolean; func: number };
   /** Texture coordinator 0 transform. */
   uv: { scaleU: number; scaleV: number; rotate: number; translateU: number; translateV: number };
   /** Texture units 0..2 (coordinator i feeds unit i). */
   units: TexUnit[];
   /** Texture combiner stages 0..5 (null when the material has no fragment shader). */
   tev: TevStage[] | null;
+  /** Combiner buffer (source 0x0D): initial colour (0xFD) and the stages 0..3 that update it (0xE0). */
+  tevBuffer: { color: number[]; updateRgb: number; updateA: number };
   /** GPUREG_COLOR_OPERATION / BLEND_FUNC (0x100 / 0x101), BLEND_COLOR (0x103). */
   blendFunc: BlendFunc | null;
   /** GPUREG_FRAGOP_ALPHA_TEST (0x104). */
@@ -304,6 +308,7 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
   // Fragment shader: combiner commands (6 words each, 0x1C apart) and the alpha test.
   let tev: TevStage[] | null = null;
   let alphaFunc: CgfxMaterial['alphaFunc'] = null;
+  const tevBuffer: CgfxMaterial['tevBuffer'] = { color: [0, 0, 0, 0], updateRgb: 0, updateA: 0 };
   const fs = r.rel(o + 0x288);
   if (fs) {
     const bases = [0xc0, 0xc8, 0xd0, 0xd8, 0xf0, 0xf8];
@@ -326,14 +331,26 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
         color: [col & 255, (col >> 8) & 255, (col >> 16) & 255, col >>> 24].map((v) => v / 255),
       };
     });
-    const at = picaRegs(r.b, fs + 0x30 + 5 * 0x1c + 0x18, 2).get(0x104);
+    // Alpha test, then the combiner buffer colour and update flags.
+    const after = picaRegs(r.b, fs + 0x30 + 5 * 0x1c + 0x18, 6);
+    const at = after.get(0x104);
     if (at !== undefined) alphaFunc = { enabled: (at & 1) === 1, func: (at >> 4) & 7, ref: ((at >> 8) & 255) / 255 };
+    const bc = after.get(0xfd);
+    if (bc !== undefined) tevBuffer.color = [bc & 255, (bc >> 8) & 255, (bc >> 16) & 255, bc >>> 24].map((v) => v / 255);
+    const up = after.get(0xe0);
+    if (up !== undefined) {
+      tevBuffer.updateRgb = (up >> 8) & 15;
+      tevBuffer.updateA = (up >> 12) & 15;
+    }
   }
+  const depth = picaRegs(r.b, o + 0x11c, 2).get(0x107);
+  const depthTest = depth === undefined ? { enabled: true, func: 5 } : { enabled: (depth & 1) === 1, func: (depth >> 4) & 7 };
   const polygonOffset = r.u32(o + 0x100) & 1 ? r.f32(o + 0x108) || 1 : 0;
 
   return {
     units,
     tev,
+    tevBuffer,
     blendFunc,
     alphaFunc,
     polygonOffset,
@@ -346,6 +363,7 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
     blend: blendMode === 1 || blendMode === 2,
     alphaTest: layer === 0,
     depthWrite: (depthFlags & 2) !== 0,
+    depthTest,
     uv,
   };
 }

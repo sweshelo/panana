@@ -51,7 +51,7 @@ let chain: Promise<unknown> = Promise.resolve();
 export function modelPhoto(ref: ModelRef): Promise<string | null> {
   let p = photos.get(ref.key);
   if (!p) {
-    const idbKey = `photo/${ref.key}/v2`;
+    const idbKey = `photo/${ref.key}/v3`;
     p = (async () => {
       const cached = await idbGet<string>(idbKey).catch(() => undefined);
       if (cached !== undefined) return cached || null;
