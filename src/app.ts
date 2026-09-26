@@ -33,7 +33,7 @@ import type { MonsterBook } from './game/monsters';
 import type { SoundNames } from './game/sound';
 
 type ViewMode = '2d' | '3d' | 'split';
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ' };
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム' };
 const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 const BASEMOD_KEY = 'basemod/v1';
@@ -256,7 +256,10 @@ export class App {
         el.append(h('div', { class: 'start' }, h('p', {}, '読み込み中…')));
         const shops = await loadShops(game).catch(() => new Map<number, number[]>());
         this.itemPage = new ItemPage(game, new ItemBook(game, shops), this.book, (m) => st.docs.get(m.hash) ?? game.doc(m),
-          async (d) => st.events.get(d) ?? game.eventTable(d));
+          async (d) => st.events.get(d) ?? game.eventTable(d), () => {
+            this.scheduleSave();
+            this.actionPage = null; // the items that use each action are rebuilt on the next visit
+          });
         clear(el);
         el.append(this.itemPage.el);
       }
