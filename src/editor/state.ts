@@ -1,11 +1,12 @@
 // Editing model: one MapDoc per opened map, snapshot-based undo / redo, selection, tools.
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
+import type { Stamp } from './place';
 import type { Game } from '../game/game';
 import { cloneDoc, LETTER_DEFAULT, sectionBytes, type MapDoc, type Tile } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 
-export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room';
+export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
 
 export type Selection =
   | { type: 'none' }
@@ -49,6 +50,10 @@ export class EditorState {
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
   selection: Selection = { type: 'none' };
   clip: Clip | null = null;
+  /** What the 'place' tool adds. */
+  stamp: Stamp | null = null;
+  /** Last error of an edit (shown in the status bar). */
+  error = '';
   private listeners: Listener[] = [];
 
   constructor(readonly game: Game) {}
@@ -96,7 +101,7 @@ export class EditorState {
 
   private restore(s: Snapshot): void {
     for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
-    if (s.treasure.length === this.game.master.treasureGroup.data.length) this.game.master.treasureGroup.data.set(s.treasure);
+    this.game.master.restoreTreasure(s.treasure);
   }
 
   /** Change the shared tables (events / treasure) with an undo point on the current map. */

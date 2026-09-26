@@ -6,6 +6,7 @@ import { clear, h } from './editor/dom';
 import { Inspector } from './editor/inspector';
 import { SECTION_COLORS } from './editor/legend';
 import { Palette } from './editor/palette';
+import { AddPanel } from './editor/addpanel';
 import { EditorState, type Tool } from './editor/state';
 import { validate, type Issue } from './editor/validate';
 import { fillMapSelect, mapLabel } from './editor/labels';
@@ -33,6 +34,7 @@ export class App {
   private v2: View2D | null = null;
   private v3: View3D | null = null;
   private palette: Palette | null = null;
+  private addPanel: AddPanel | null = null;
   private inspector: Inspector | null = null;
   private factory: ModelFactory | null = null;
   private mode: ViewMode = 'split';
@@ -125,10 +127,12 @@ export class App {
     this.v3 = new View3D(st, ctl);
     this.palette = new Palette(st);
     this.inspector = new Inspector(st, ctl);
+    this.addPanel = new AddPanel(st);
 
     await this.restoreMaster();
     await this.restoreEdits();
     this.inspector.objectName = (row) => this.v3!.objectName(row);
+    this.addPanel.objectName = (row) => this.v3!.objectName(row);
     this.v3.objectContext = () => {
       const doc = st.current;
       return doc ? { master: game.master, events: st.currentEvents, indoor: isIndoor(doc) } : null;
@@ -198,9 +202,9 @@ export class App {
     );
 
     const views = h('div', { class: 'views' }, h('div', { class: 'pane pane2d' }, this.v2.canvas), h('div', { class: 'pane pane3d' }, this.v3.canvas));
-    const left = h('aside', { class: 'left' }, tools, this.palette.el, layers);
+    const left = h('aside', { class: 'left' }, tools, this.addPanel.el, this.palette.el, layers);
     const right = h('aside', { class: 'right' }, this.inspector.el, h('h3', {}, '検証'), this.issuesEl);
-    this.root.append(h('div', { class: 'app' }, header, left, views, right, this.status), this.itemList);
+    this.root.append(h('div', { class: 'app' }, header, left, views, right, this.status));
     fillMapSelect(mapSel, game, 0, false, true);
     this.updateMasterUi();
     // Event tables of every dungeon (treasure sharing, validation); small files.
@@ -273,6 +277,8 @@ export class App {
       this.scheduleValidate();
     }
     if (what === 'selection') this.v3!.syncSelection();
+    if (what === 'tool' || what === 'doc' || what === 'map') this.addPanel!.render();
+    if (what === 'map') this.addPanel!.loadTemplates();
     if (what === 'tool') {
       this.palette!.render();
       this.v3!.syncOverlayOnly();
@@ -311,6 +317,10 @@ export class App {
     if (st) parts.push(`ツール: ${st.tool}`);
     if (st?.clip) parts.push(`コピー ${st.clip.w}×${st.clip.h}`);
     if (this.statusMsg) parts.push(this.statusMsg);
+    if (st?.error) {
+      parts.push(`⚠ ${st.error}`);
+      st.error = '';
+    }
     this.status.textContent = parts.join('   ');
   }
 
@@ -359,7 +369,10 @@ export class App {
       else if (e.key === 'e') st.setTool('erase');
       else if (e.key === 'm') st.setTool('rect');
       else if (e.key === 'g') st.setTool('room');
-      else if (e.key === 'Escape') st.select({ type: 'none' });
+      else if (e.key === 'Escape') {
+        if (st.tool === 'place') st.setTool('select');
+        else st.select({ type: 'none' });
+      }
       else if (e.key.startsWith('Arrow') && (e.shiftKey || st.selection.type === 'rec')) {
         const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key] as [number, number];
         ctl.shiftSelection(d[0], d[1]);
@@ -409,28 +422,20 @@ export class App {
     }
     for (const [d, bytes] of Object.entries(edits.events)) {
       const t = await game.eventTable(Number(d));
-      if (t && t.data.length === bytes.length) {
+      if (t) {
         t.restore(bytes);
         this.st!.events.set(Number(d), t);
       }
     }
-    const tg = game.master.treasureGroup.data;
-    if (edits.treasure && edits.treasure.length === tg.length) tg.set(edits.treasure);
+    if (edits.treasure) game.master.restoreTreasure(edits.treasure);
   }
 
   // ---------------------------------------------------------------- master (56562135)
-
-  private itemList = h('datalist', { id: 'item-list' });
 
   private updateMasterUi(): void {
     const game = this.game!;
     const b = this.root.querySelector('.master-btn');
     if (b) b.textContent = `マスター: ${game.masterLabel}`;
-    clear(this.itemList);
-    for (let i = 1; i < game.master.itemData.rows; i++) {
-      const n = game.master.itemName(i);
-      if (n) this.itemList.append(h('option', { value: `${i} ${n}` }));
-    }
   }
 
   private async restoreMaster(): Promise<void> {

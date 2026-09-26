@@ -2,6 +2,7 @@
 // (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
 import { LAYOUTS, POINT_SECTIONS, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
 import { inGrid, removeTile, setTile, tileAt, type EditorState, type Selection } from './state';
+import { duplicateRecord, placeStamp, type PlaceContext } from './place';
 
 export interface Layers {
   tiles: boolean;
@@ -85,6 +86,20 @@ export class Controller {
         this.drag = { kind: 'rect', x0: x, y0: y };
         st.select({ type: 'rect', x0: x, y0: y, x1: x, y1: y });
         return;
+      case 'place': {
+        const stamp = st.stamp;
+        if (!stamp || !inGrid(x, y)) return;
+        let placed: [number, number] | null = null;
+        try {
+          st.edit((d) => (placed = placeStamp(this.placeContext(d), stamp, cx, cy)));
+        } catch (err) {
+          st.error = (err as Error).message;
+          st.emit('tool');
+          return;
+        }
+        if (placed) st.select({ type: 'rec', section: placed[0], index: placed[1] });
+        return;
+      }
       case 'room': {
         if (!inGrid(x, y)) return;
         const on = !doc.cells6.some((c) => c.x === x && c.y === y);
@@ -202,21 +217,32 @@ export class Controller {
     st.emit('selection');
   }
 
+  placeContext(doc: MapDoc): PlaceContext {
+    const st = this.st;
+    return { doc, docs: st.docs.values(), events: st.currentEvents, master: st.game.master };
+  }
+
   duplicateRec(): void {
     const st = this.st;
     const s = st.selection;
     if (s.type !== 'rec') return;
     let idx = 0;
-    st.edit((doc) => {
-      const list = doc.recs[s.section]!;
-      const r = list[s.index]!;
-      const L = LAYOUTS[s.section]!;
-      const copy = { raw: r.raw.slice(), x: r.x, y: r.y };
+    try {
+      st.edit((doc) => {
+        const list = doc.recs[s.section]!;
+        const r = list[s.index]!;
+        const L = LAYOUTS[s.section]!;
+        const copy = duplicateRecord(this.placeContext(doc), s.section, r);
       const [px, py] = recCellPos(r, L);
-      setRecCellPos(copy, L, px + (L.unit === 'cell' ? 1 : 0.4), py);
-      list.push(copy);
-      idx = list.length - 1;
-    });
+        setRecCellPos(copy, L, px + (L.unit === 'cell' ? 1 : 0.4), py);
+        list.push(copy);
+        idx = list.length - 1;
+      });
+    } catch (err) {
+      st.error = (err as Error).message;
+      st.emit('tool');
+      return;
+    }
     st.select({ type: 'rec', section: s.section, index: idx });
   }
 

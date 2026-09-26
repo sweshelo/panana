@@ -117,12 +117,32 @@ export class Master {
     w16(r, slot * 4 + 2, weight);
   }
 
+  /** Append a treasureGroup row (its hash goes to the table's index). Returns the row number. */
+  addTreasureRow(slots: { item: number; weight: number }[]): number {
+    const t = this.treasureGroup;
+    const row = new Uint8Array(t.rowSize);
+    for (let i = 0; i < 10; i++) {
+      const s = slots[i] ?? { item: 0, weight: 1 };
+      w16(row, i * 4, s.item);
+      w16(row, i * 4 + 2, s.weight);
+    }
+    const used = t.hashes();
+    let hash = (0x7e500000 + t.rows) >>> 0;
+    while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+    return t.append(row, hash);
+  }
+
+  restoreTreasure(bytes: Uint8Array): void {
+    this.treasureGroup.data = bytes.slice();
+  }
+
   treasureChanged(): boolean {
     return !equalBytes(this.treasureGroup.data, this.treasureOriginal);
   }
 
   treasureRowChanged(row: number): boolean {
     const o = this.treasureGroup.offset + row * this.treasureGroup.rowSize;
+    if (o + this.treasureGroup.rowSize > this.treasureOriginal.length || row >= u32(this.treasureOriginal, 0)) return true;
     return !equalBytes(this.treasureGroup.row(row), this.treasureOriginal.subarray(o, o + this.treasureGroup.rowSize));
   }
 

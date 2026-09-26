@@ -7,6 +7,7 @@ import { bytesToHex, clear, h, hexToBytes, parseHex } from './dom';
 import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt, type EditorState } from './state';
 import { fillMapSelect, mapLabel, pointLabel } from './labels';
+import { treasureEditor } from './treasure';
 import { mapTitle } from '../game/names';
 import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
 
@@ -191,6 +192,8 @@ export class Inspector {
         );
       if (ev && !ev.has(evRow)) this.el.append(h('div', { class: 'error' }, `イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`));
     }
+    const evRow = k === 3 ? P3.door(r.raw) : k >= 4 ? u32(r.raw, 0) : 0;
+    if (evRow || k === 4 || k === 5 || k === 8) this.eventRow(evRow);
     // raw bytes (x / y are overwritten from the fields above)
     const raw = h('textarea', { class: 'raw', rows: 3, value: bytesToHex(r.raw) });
     raw.addEventListener('change', () => {
@@ -248,60 +251,34 @@ export class Inspector {
     );
   }
 
-  /** Chest contents: EventObject +0x08 -> treasureGroup row (10 x {item, weight}; FUN_00305dc8). */
-  private treasure(evRow: number): void {
+  /** Raw bytes of an EventObject row (behaviour of gimmicks: links, messages, conditions). */
+  private eventRow(evRow: number): void {
     const st = this.st;
     const ev = st.currentEvents;
-    const master = st.game.master;
+    if (!ev || !ev.has(evRow)) return;
+    const row = ev.table.row(evRow);
+    const raw = h('textarea', { class: 'raw', rows: 6, value: bytesToHex(row) });
+    raw.addEventListener('change', () => {
+      const b = hexToBytes(raw.value);
+      if (!b || b.length !== row.length) {
+        raw.classList.add('bad');
+        return;
+      }
+      st.editTables(() => ev.table.row(evRow).set(b));
+    });
+    this.el.append(
+      this.field(`イベントの行 #${evRow} の生データ (0x50 バイト。+0x08 中身・引数、+0x44 状態の枠 = ${ev.slot(evRow)}、+0x46 モデル、+0x4D 種類 0x${ev.kind(evRow).toString(16)})`, raw),
+    );
+  }
+
+  /** Chest contents: EventObject +0x08 -> treasureGroup row (10 x {item, weight}; FUN_00305dc8). */
+  private treasure(evRow: number): void {
+    const ev = this.st.currentEvents;
     if (!ev) {
       this.el.append(h('div', { class: 'muted' }, 'イベントの表を読み込み中…'));
       return;
     }
-    if (!ev.has(evRow)) return;
-    const row = ev.treasureRow(evRow);
-    const box = h('div', { class: 'treasure' });
-    box.append(h('h3', {}, '宝箱の中身'));
-    const rowInput = this.num(
-      row,
-      (v) => {
-        if (v >= 0 && v < master.treasureGroup.rows) st.editTables(() => ev.setTreasureRow(evRow, v));
-      },
-      { min: 0, max: master.treasureGroup.rows - 1 },
-    );
-    box.append(this.field(`中身の表の行 (イベント #${evRow} +0x08、0〜${master.treasureGroup.rows - 1})`, rowInput));
-    const users: string[] = [];
-    for (const [d, t] of st.events)
-      for (let i = 0; i < t.rows; i++)
-        if (t.kind(i) === ev.kind(evRow) && t.treasureRow(i) === row && !(d === ev.dungeon && i === evRow)) users.push(`${master.dungeonName(d)} #${i}`);
-    if (users.length)
-      box.append(
-        h('div', { class: 'warn-box' }, `この行はほかの宝箱と共有しています: ${users.slice(0, 6).join('、')}${users.length > 6 ? ` ほか ${users.length - 6} 個` : ''}。中身を変えると全部変わります。`),
-      );
-    if (row < 0 || row >= master.treasureGroup.rows) return;
-    const slots = master.treasureSlots(row);
-    const total = slots.reduce((a, sl) => a + (sl.item ? sl.weight : 0), 0);
-    const table = h('table', { class: 'slots' }, h('tr', {}, h('th', {}, '#'), h('th', {}, 'アイテム'), h('th', {}, '重み'), h('th', {}, '確率')));
-    slots.forEach((sl, i) => {
-      const item = h('input', { type: 'text', class: 'item', value: sl.item ? `${sl.item} ${master.itemName(sl.item)}` : '', placeholder: '(なし)' });
-      item.setAttribute('list', 'item-list');
-      item.addEventListener('change', () => {
-        const t = item.value.trim();
-        const id = t === '' ? 0 : Number(/^\d+/.exec(t)?.[0] ?? NaN);
-        if (!Number.isInteger(id) || id < 0 || id > 0xffff) {
-          item.classList.add('bad');
-          return;
-        }
-        st.editTables(() => master.setTreasureSlot(row, i, id, id && !sl.weight ? 1 : sl.weight));
-      });
-      const weight = this.num(sl.weight, (v) => st.editTables(() => master.setTreasureSlot(row, i, sl.item, Math.max(0, Math.min(0xffff, v)))), { min: 0, max: 65535 });
-      const pct = sl.item && total ? `${((sl.weight / total) * 100).toFixed(0)}%` : '';
-      table.append(h('tr', {}, h('td', {}, String(i)), h('td', {}, item), h('td', {}, weight), h('td', { class: 'muted' }, pct)));
-    });
-    box.append(table);
-    box.append(
-      h('div', { class: 'muted small' }, `開けると、アイテムのある枠から重みに比例して 1 つ選ばれます。開けたかどうかのフラグ (+0x44) = ${ev.flag(evRow)}。${master.treasureRowChanged(row) ? ' 中身は変更済み。' : ''}`),
-    );
-    this.el.append(box);
+    if (ev.has(evRow)) this.el.append(treasureEditor(this.st, evRow));
   }
 
   private map(doc: MapDoc): void {

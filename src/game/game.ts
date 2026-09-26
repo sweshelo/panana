@@ -67,7 +67,7 @@ export class Game {
       p = a
         ? this.dump
             .readRomfs(hex8(a))
-            .then((b) => EventTable.fromArchive(dungeon, hex8(a), b))
+            .then((b) => EventTable.fromArchive(dungeon, this.master.mapGroup.row(dungeon)[0x1c]!, hex8(a), b))
             .catch(() => null)
         : Promise.resolve(null);
       this.events.set(dungeon, p);

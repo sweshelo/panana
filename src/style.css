@@ -104,7 +104,32 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .warn-box { background: #3a3220; border: 1px solid #6b5a2c; padding: 6px 8px; border-radius: 4px; margin: 6px 0; font-size: 12px; }
 .model-line { margin: 6px 0; padding: 4px 6px; background: var(--panel2); border-radius: 4px; font-size: 12px; }
 .treasure { margin-top: 8px; border-top: 1px solid var(--border); }
-table.slots { width: 100%; border-collapse: collapse; font-size: 12px; }
-table.slots td, table.slots th { padding: 2px 3px; text-align: left; }
-table.slots input.item { width: 150px; }
-table.slots input[type='number'] { width: 64px; }
+
+.add-panel select.grow { flex: 1; min-width: 0; }
+.place-hint { background: #1f3350; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 6px; font-size: 12px; margin: 4px 0; }
+
+/* chest contents */
+.badge { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 9px; background: #4a3b1c; color: #f0d890; }
+.loot { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.loot-row { display: grid; grid-template-columns: 1fr 64px 40px 28px; gap: 4px; align-items: center; }
+.loot-row input[type='number'] { width: 100%; }
+.loot-item { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loot-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.loot-add { border-style: dashed; color: var(--muted); }
+
+/* <dialog> pickers */
+dialog.picker { width: min(560px, 94vw); max-height: 84vh; padding: 0; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; }
+dialog.picker.wide { width: min(760px, 94vw); }
+dialog.picker::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog.picker > div { padding: 0 14px; }
+.picker-head { display: flex; align-items: center; justify-content: space-between; padding-top: 10px !important; }
+.picker-head h2 { font-size: 16px; margin: 4px 0; }
+.picker-search { flex: 1; min-width: 160px; }
+.picker-list { overflow: auto; max-height: 60vh; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.picker-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.picker-table th { position: sticky; top: 0; background: var(--panel2); text-align: left; padding: 4px 6px; }
+.picker-table td { padding: 3px 6px; border-top: 1px solid var(--border); }
+.picker-table td.num { text-align: right; font-variant-numeric: tabular-nums; width: 1%; white-space: nowrap; }
+.picker-table tr.pick { cursor: pointer; }
+.picker-table tr.pick:hover { background: #26324a; }
+.picker-table tr.current { background: #2d4a7a; }

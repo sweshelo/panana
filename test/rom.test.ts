@@ -13,6 +13,8 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
+import { placeStamp, duplicateRecord } from '../src/editor/place';
+import { gimmickTemplates } from '../src/game/templates';
 import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
@@ -205,5 +207,48 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(tbl.row(evRow + 1)[8]).toBe(row & 0xff);
     // restore for other tests
     game.setMaster(await game.dump.readRomfs('56562135'), 'ROM');
+  });
+  test('adding: chest / gimmick get their own event rows and treasure rows, and export them', async () => {
+    const g = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const info = g.code.byName('D01B02001')!;
+    const doc = g.doc(info);
+    const ev = (await g.eventTable(1))!;
+    const rows0 = ev.rows, tg0 = g.master.treasureGroup.rows;
+    expect(ev.capacity).toBe(56);
+    const ctx = { doc, docs: [doc], events: ev, master: g.master };
+
+    const [s4, i4] = placeStamp(ctx, { type: 'chest' }, 14.5, 12.5);
+    const chest = doc.recs[s4]![i4]!;
+    const row = chest.raw[0]!;
+    expect(row).toBe(rows0);
+    expect(ev.kind(row)).toBe(0x0c);
+    expect(ev.treasureRow(row)).toBe(tg0);
+    const slot = ev.slot(row);
+    expect(slot).toBeLessThan(56);
+    for (let i = 0; i < rows0; i++) expect(ev.slot(i)).not.toBe(slot);
+
+    const dup = duplicateRecord(ctx, 4, chest);
+    expect(dup.raw[0]).toBe(rows0 + 1);
+    expect(ev.treasureRow(rows0 + 1)).toBe(tg0 + 1);
+
+    const templates = await gimmickTemplates(g, 1);
+    expect(templates.length).toBeGreaterThan(10);
+    const t5 = templates.find((t) => t.section === 5 && t.event)!;
+    const [s5, i5] = placeStamp(ctx, { type: 'template', t: t5 }, 15.5, 12.5);
+    expect(doc.recs[s5]![i5]!.raw[0]).toBe(rows0 + 2);
+
+    const files = buildModFiles(g, [doc], [ev], true);
+    expect([...files.keys()].sort()).toEqual(['56562135', '79B881BB', 'A90C8038']);
+    const tbl = new GsTable(findByName(parseArchive(files.get('79B881BB')!), 'd01_EventObject.bin')!.body);
+    expect(tbl.rows).toBe(rows0 + 3);
+    const tgBack = new GsTable(findByName(parseArchive(files.get('56562135')!), 'treasureGroup.bin')!.body);
+    expect(tgBack.rows).toBe(tg0 + 2);
+    // index: sorted hashes, one per row, then the {0, 0} terminator
+    const idx: number[][] = [];
+    for (let o = tgBack.indexOffset; o < tgBack.data.length; o += 8) idx.push([tgBack.data[o]! | (tgBack.data[o + 1]! << 8) | (tgBack.data[o + 2]! << 16) | (tgBack.data[o + 3]! << 24) >>> 0]);
+    expect(idx.length).toBe(tg0 + 3);
+    expect(equalBytes(tgBack.row(5), game.master.treasureGroup.row(5))).toBe(true);
+    const db = new MapDb(unpackEntry(parseArchive(files.get('A90C8038')!), parseArchive(files.get('A90C8038')!).entries[g.dbEntry.index]!).body);
+    expect(loadDoc(db, info).recs[4]!.length).toBe(game.doc(info).recs[4]!.length + 1);
   });
 });
