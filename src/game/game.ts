@@ -7,7 +7,7 @@ import { idbGet, idbSet } from '../util/idb';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
-import { Master, MASTER_ARCHIVE } from './master';
+import { Master, MASTER_ARCHIVE, type MapRef } from './master';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
@@ -137,12 +137,12 @@ export class Game {
     return loadDoc(this.db, info);
   }
 
-  tilesetSource(dungeon: number): TilesetSource {
-    const resource = this.master.resourceRow(dungeon);
+  tilesetSource(map: MapRef): TilesetSource {
+    const resource = this.master.resourceRow(map);
     const a = this.master.resourceArchives(resource);
     return {
       resource,
-      tileset: this.master.tileset(dungeon),
+      tileset: this.master.tileset(map),
       modelArchive: hex8(a[0]!),
       textureArchive: hex8(a[1]!),
       textureEntry: a[2]!,
@@ -153,7 +153,7 @@ export class Game {
   neededFiles(): string[] {
     const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE, MONSTER_DESIGN_ARCHIVE, SHOP_ARCHIVE, MONSTER_MODEL_ARCHIVE, ...ITEM_MODEL_ARCHIVES]);
     for (const m of this.editableMaps()) {
-      const s = this.tilesetSource(m.dungeon);
+      const s = this.tilesetSource(m);
       if (s.modelArchive !== '00000000') out.add(s.modelArchive);
       if (s.textureArchive !== '00000000') out.add(s.textureArchive);
       const ev = this.master.eventArchive(m.dungeon);
