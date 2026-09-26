@@ -116,14 +116,6 @@ export function recordObjectRow(section: number, rec: Rec, ctx: ObjectContext): 
   }
 }
 
-/** Rotation (quarter turns) of a record's model. */
-export function recordDirection(section: number, rec: Rec): number {
-  const r = rec.raw;
-  if (section === 2 || section === 4) return r[8]! & 3;
-  if (section === 5) return r[9]! & 3;
-  return 0;
-}
-
 export const SECTION1_KIND: Record<number, string> = { 0: 'ダメージ床', 1: '凍った床' };
 export const section1Kind = (r: Uint8Array): number => r[5]!;
 
@@ -138,4 +130,82 @@ export function objectCategory(row: number): string {
   ];
   for (const [a, b, n] of ranges) if (row >= a && row <= b) return n;
   return row === OBJ_INVISIBLE ? '見えない' : 'オブジェクト';
+}
+
+// ---- placement (angle about +Y in radians, as three.js rotation.y; offset in world units)
+
+const HALF = Math.PI / 2;
+/** Angle table of section 3 (cell +0x21 = +0x15 + 1) and section 2 (+8 + 1): DAT_002f0830.. */
+const QUARTER: Record<number, number> = { 1: 0, 2: -HALF, 3: Math.PI, 4: HALF };
+
+export interface Placement {
+  angle: number;
+  ox: number;
+  oz: number;
+}
+
+/** Direction of a stair inside its tile (FUN_001cb4d4): unit x / z, from the tile's open sides. */
+function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: number): [number, number] {
+  let tile: MapDoc['tiles'][number] | undefined;
+  for (const t of doc.tiles) if (t.x === x && t.y === y) tile = t;
+  if (!tile) return [0, 0];
+  const u = tile.kind + 1;
+  const rot = tile.rot & 3;
+  if (u === 5) return ([[1, 0], [0, 1], [-1, 0], [0, -1]] as const)[rot] as [number, number];
+  if (u - 1 < 5) return [0, 0];
+  if (u >= master.mapParts.rows) return [0, 0];
+  const m = u32(master.mapParts.row(u), 0x188);
+  const b = (i: number): number => (m >> i) & 1;
+  // FUN_002eefa0: the four open-side flags rotated by the tile's rotation
+  const c = [
+    [b(0), b(1), b(2), b(3)],
+    [b(2), b(3), b(1), b(0)],
+    [b(1), b(0), b(3), b(2)],
+    [b(3), b(2), b(0), b(1)],
+  ][rot]!;
+  const ox = c[2] ? 1 : c[3] ? -1 : 0;
+  const oz = c[0] ? 1 : c[1] && stair !== 2 ? -1 : 0;
+  return [ox, oz];
+}
+
+/** How the game places the model of a record (FUN_002effa0, FUN_001c6b64, FUN_001c7614, FUN_002ef5b8). */
+export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: Master): Placement {
+  const r = rec.raw;
+  const none = { angle: 0, ox: 0, oz: 0 };
+  switch (section) {
+    case 2:
+      return { angle: QUARTER[(r[8]! & 3) + 1]!, ox: 0, oz: 0 };
+    case 5: {
+      const kind = r[8]!;
+      const d = r[9]!;
+      if (kind === 0) return { angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oz: 0 };
+      if ([2, 3, 4, 8].includes(kind)) return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oz: 0 };
+      return none;
+    }
+    case 3: {
+      const kind = r[0x14]!;
+      const g = gimmickCode(kind);
+      const stair = stairCode(kind);
+      if (kind === 8 || (g >= 0x13 && g < 0x2f)) return none; // warp holes, town buildings: fixed
+      const c = r[0x15]! + 1;
+      if (stair === 0 || g === 0 || g === 10 || g === 11) {
+        // doors / gates: angle and a 100-unit step towards the side given by +0x15
+        const step: Record<number, [number, number]> = { 1: [0, -100], 2: [100, 0], 3: [0, 100], 4: [-100, 0] };
+        const [ox, oz] = step[c] ?? [0, -100];
+        return { angle: QUARTER[c] ?? 0, ox, oz };
+      }
+      // stairs: face along the tile's open side; up stairs turn -90°, down stairs +90°
+      const turn = stair === 1 ? -HALF : HALF;
+      if (isIndoor(doc)) return { angle: (QUARTER[c] ?? 0) + turn, ox: 0, oz: 0 };
+      const [x, z] = stairOffset(doc, master, rec.x, rec.y, stair);
+      let base: number | null = null;
+      if (x < 0) base = -HALF;
+      else if (x > 0) base = HALF;
+      else if (z < 0) base = Math.PI;
+      else if (z > 0) base = 0;
+      return { angle: base === null ? 0 : base + turn, ox: 0, oz: 0 };
+    }
+    default:
+      return none; // sections 1 / 4 (chests pick a model per direction instead of rotating)
+  }
 }

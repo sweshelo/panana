@@ -75,7 +75,7 @@ export function transferables(t: TilesetModels): ArrayBuffer[] {
   };
   for (const m of t.models.values())
     for (const me of m.meshes) {
-      add(me.positions); add(me.normals); add(me.uvs); add(me.colors); add(me.indices);
+      add(me.positions); add(me.normals); add(me.uvs); add(me.uvs1); add(me.uvs2); add(me.colors); add(me.indices);
     }
   for (const x of t.textures.values()) add(x.rgba);
   return out;

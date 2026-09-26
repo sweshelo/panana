@@ -5,7 +5,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { TilesetModels } from './tileset';
 import type { WorkerRequest } from './worker';
 
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 let worker: Worker | null = null;
 let nextId = 1;
 const pending = new Map<number, { resolve: (t: unknown) => void; reject: (e: Error) => void }>();

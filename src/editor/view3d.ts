@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CELL, LAYOUTS, P3, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
 import { loadObjectModels, objKey } from '../cgfx/loader';
-import { OBJ_INVISIBLE, recordDirection, recordObjectRow, type ObjectContext } from '../game/objects';
+import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } from '../game/objects';
 import { norm, type Controller } from './controller';
 import { kindColor, SECTION_COLORS } from './legend';
 import { GRID, tileAt, type EditorState } from './state';
@@ -16,7 +16,7 @@ export class View3D {
   readonly canvas: HTMLCanvasElement;
   readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(45, 1, 10, 100000);
+  private readonly camera = new THREE.PerspectiveCamera(45, 1, 50, 100000);
   private readonly controls: OrbitControls;
   private readonly tileGroup = new THREE.Group();
   private readonly markerGroup = new THREE.Group();
@@ -306,10 +306,9 @@ export class View3D {
         // the game's model, when there is one
         const row = ctx ? recordObjectRow(k, r, ctx) : 0;
         const model = row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
-        let rotY = (-recordDirection(k, r) * Math.PI) / 2;
-        if (k === 3) rotY = pointRotation(doc, r.x, r.y, P3.kind(r.raw));
-        let ox = 0, oz = 0;
-        if (k === 3) [ox, oz] = pointOffset(doc, r.x, r.y, P3.kind(r.raw));
+        const place = recordPlacement(k, r, doc, this.st.game.master);
+        const rotY = place.angle;
+        const ox = place.ox, oz = place.oz;
         if (model) {
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = rotY;
@@ -415,27 +414,4 @@ export class View3D {
     this.syncMarkers(doc);
     this.draw();
   }
-}
-
-/**
- * Rotation of an exit's model. Doors span the passage (the game's rule is not decoded yet): if the
- * passage runs east-west the door turns 90°. Other exits follow the tile under them.
- */
-const isDoor = (kind: number): boolean => kind >= 0x0b && kind <= 0x11;
-
-function pointRotation(doc: MapDoc, x: number, y: number, kind: number): number {
-  const t = tileAt(doc, x, y);
-  if (isDoor(kind) && t?.kind !== 9) {
-    const walk = (dx: number, dy: number): boolean => doc.tiles.some((u) => u.x === x + dx && u.y === y + dy && u.kind !== 0 && u.kind !== 6);
-    return walk(1, 0) || walk(-1, 0) ? Math.PI / 2 : 0;
-  }
-  return t ? (-t.rot * Math.PI) / 2 : 0;
-}
-
-/** Doors on a room's exit tile (kind 9) stand at the open edge (approximation of FUN_001cb4d4). */
-function pointOffset(doc: MapDoc, x: number, y: number, kind: number): [number, number] {
-  const t = tileAt(doc, x, y);
-  if (!isDoor(kind) || t?.kind !== 9) return [0, 0];
-  const d = CELL * 0.4;
-  return [[0, d, 0, -d][t.rot & 3]!, [-d, 0, d, 0][t.rot & 3]!];
 }

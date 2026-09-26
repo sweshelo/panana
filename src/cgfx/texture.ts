@@ -1,5 +1,5 @@
 // PICA200 texture decoding (formats and tile order as in Ohana3DS TextureCodec). Output: RGBA8, row 0 =
-// first row of the data (the PICA stores images bottom-up, which matches GL / three.js with flipY = false).
+// first row of the data = top of the image (the models' UVs use v = 0 at the bottom; see cgfx/three.ts).
 
 export const TEX_FORMAT = [
   'RGBA8', 'RGB8', 'RGBA5551', 'RGB565', 'RGBA4', 'LA8', 'HILO8', 'L8', 'A8', 'LA4', 'L4', 'A4', 'ETC1', 'ETC1A4',

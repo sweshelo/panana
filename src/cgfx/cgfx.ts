@@ -1,6 +1,6 @@
 // CGFX (bcmdl / bcres, revision 5) reader: models (shapes, meshes, materials, skeleton) and textures.
-// Layout follows Ohana3DS-Rebirth CGFX.cs. Only what the editor needs is read; materials are simplified
-// to a diffuse texture + vertex colour (docs/map-editor-design.md §5).
+// Layout follows Ohana3DS-Rebirth CGFX.cs. Materials keep the PICA fragment pipeline settings (texture
+// combiners, blending, alpha test) so they can be reproduced in a shader (cgfx/tev.ts).
 import { ascii, cstr, f32, s32, u16, u32, u8 } from '../util/bytes';
 import { decodeTexture, textureDataSize } from './texture';
 
@@ -28,6 +28,54 @@ export interface CgfxMaterial {
   depthWrite: boolean;
   /** Texture coordinator 0 transform. */
   uv: { scaleU: number; scaleV: number; rotate: number; translateU: number; translateV: number };
+  /** Texture units 0..2 (coordinator i feeds unit i). */
+  units: TexUnit[];
+  /** Texture combiner stages 0..5 (null when the material has no fragment shader). */
+  tev: TevStage[] | null;
+  /** GPUREG_COLOR_OPERATION / BLEND_FUNC (0x100 / 0x101), BLEND_COLOR (0x103). */
+  blendFunc: BlendFunc | null;
+  /** GPUREG_FRAGOP_ALPHA_TEST (0x104). */
+  alphaFunc: { enabled: boolean; func: number; ref: number } | null;
+  /** Rasterization polygon offset (units), or 0. */
+  polygonOffset: number;
+}
+
+export interface TexUnit {
+  name: string | null;
+  wrapS: number;
+  wrapT: number;
+  /** UV set read by the coordinator (0..2). */
+  source: number;
+  scaleU: number;
+  scaleV: number;
+  rotate: number;
+  translateU: number;
+  translateV: number;
+}
+
+export interface TevStage {
+  srcRgb: number[];
+  srcA: number[];
+  opRgb: number[];
+  opA: number[];
+  combRgb: number;
+  combA: number;
+  scaleRgb: number;
+  scaleA: number;
+  /** Constant colour, RGBA 0..1. */
+  color: number[];
+}
+
+export interface BlendFunc {
+  /** false = logic op (treated as no blending). */
+  blend: boolean;
+  eqRgb: number;
+  eqA: number;
+  srcRgb: number;
+  dstRgb: number;
+  srcA: number;
+  dstA: number;
+  color: number[];
 }
 
 export interface CgfxMesh {
@@ -38,6 +86,8 @@ export interface CgfxMesh {
   positions: Float32Array; // xyz
   normals: Float32Array | null;
   uvs: Float32Array | null; // uv0
+  uvs1: Float32Array | null;
+  uvs2: Float32Array | null;
   colors: Float32Array | null; // rgba 0..1
   indices: Uint32Array;
 }
@@ -206,9 +256,87 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
       }
     }
   }
-  // Fragment operation: depth flags bit1 = depth write; blend mode 1/2 = blending.
-  // Alpha test lives in the fragment shader's command list; approximate by the translucency kind.
+  // Per-unit texture settings: coordinator i (source UV set + transform) and the mapper's wrap mode.
+  const units: TexUnit[] = [];
+  for (let i = 0; i < 3; i++) {
+    const c = coord + i * 0x58;
+    const m = r.rel(mappers + i * 4);
+    let ws = 2, wt = 2;
+    if (m) {
+      const param = picaRegs(r.b, m + 0x10, 13).get([0x83, 0x93, 0x9b][i]!);
+      if (param !== undefined) {
+        wt = (param >> 8) & 7;
+        ws = (param >> 12) & 7;
+      }
+    }
+    units.push({
+      name: textures[i] ?? null,
+      wrapS: ws,
+      wrapT: wt,
+      source: r.u32(c) & 3,
+      scaleU: r.f32(c + 0x10),
+      scaleV: r.f32(c + 0x14),
+      rotate: r.f32(c + 0x18),
+      translateU: r.f32(c + 0x1c),
+      translateV: r.f32(c + 0x20),
+    });
+  }
+
+  // Fragment operations: blend commands follow the blend mode and colour (Ohana3DS).
+  const blendRegs = picaRegs(r.b, o + 0x140, 5);
+  const op = blendRegs.get(0x100);
+  const bf = blendRegs.get(0x101);
+  const bc = blendRegs.get(0x103) ?? 0;
+  const blendFunc: BlendFunc | null =
+    op === undefined || bf === undefined
+      ? null
+      : {
+          blend: ((op >> 8) & 1) === 1,
+          eqRgb: bf & 7,
+          eqA: (bf >> 8) & 7,
+          srcRgb: (bf >> 16) & 15,
+          dstRgb: (bf >> 20) & 15,
+          srcA: (bf >> 24) & 15,
+          dstA: (bf >>> 28) & 15,
+          color: [bc & 255, (bc >> 8) & 255, (bc >> 16) & 255, bc >>> 24].map((v) => v / 255),
+        };
+
+  // Fragment shader: combiner commands (6 words each, 0x1C apart) and the alpha test.
+  let tev: TevStage[] | null = null;
+  let alphaFunc: CgfxMaterial['alphaFunc'] = null;
+  const fs = r.rel(o + 0x288);
+  if (fs) {
+    const bases = [0xc0, 0xc8, 0xd0, 0xd8, 0xf0, 0xf8];
+    tev = bases.map((base, k) => {
+      const regs = picaRegs(r.b, fs + 0x30 + k * 0x1c, 6);
+      const src = regs.get(base) ?? 0x0f0f0f0f;
+      const opr = regs.get(base + 1) ?? 0;
+      const comb = regs.get(base + 2) ?? 0;
+      const col = regs.get(base + 3) ?? 0;
+      const sc = regs.get(base + 4) ?? 0;
+      return {
+        srcRgb: [src & 15, (src >> 4) & 15, (src >> 8) & 15],
+        srcA: [(src >> 16) & 15, (src >> 20) & 15, (src >> 24) & 15],
+        opRgb: [opr & 15, (opr >> 4) & 15, (opr >> 8) & 15],
+        opA: [(opr >> 12) & 7, (opr >> 15) & 7, (opr >> 18) & 7],
+        combRgb: comb & 15,
+        combA: (comb >> 16) & 15,
+        scaleRgb: sc & 3,
+        scaleA: (sc >> 16) & 3,
+        color: [col & 255, (col >> 8) & 255, (col >> 16) & 255, col >>> 24].map((v) => v / 255),
+      };
+    });
+    const at = picaRegs(r.b, fs + 0x30 + 5 * 0x1c + 0x18, 2).get(0x104);
+    if (at !== undefined) alphaFunc = { enabled: (at & 1) === 1, func: (at >> 4) & 7, ref: ((at >> 8) & 255) / 255 };
+  }
+  const polygonOffset = r.u32(o + 0x100) & 1 ? r.f32(o + 0x108) || 1 : 0;
+
   return {
+    units,
+    tev,
+    blendFunc,
+    alphaFunc,
+    polygonOffset,
     name,
     textures,
     wrapS,
@@ -338,7 +466,7 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
     }
   }
 
-  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], col: number[] = [], idx: number[] = [];
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
   const has = (u: number): boolean => attrs.some((a) => a.usage === u);
   const tmp = [0, 0, 0, 0];
   const vmap = new Map<number, number>(); // (face group, vertex index) -> output vertex
@@ -364,7 +492,7 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
             vmap.set(vi, out);
             const base = vbuf + vi * stride;
             let p = [0, 0, 0], nn = [0, 1, 0], bone = -1;
-            let c = [1, 1, 1, 1], t = [0, 0];
+            let c = [1, 1, 1, 1], t = [0, 0], t1 = [0, 0], t2 = [0, 0];
             for (const a of attrs) {
               if (a.fixed) for (let k = 0; k < 4; k++) tmp[k] = a.fixed[k]! * a.scale;
               else {
@@ -376,6 +504,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
                 case ATTR.normal: nn = [tmp[0]!, tmp[1]!, tmp[2]!]; break;
                 case ATTR.color: c = [tmp[0]!, tmp[1]!, tmp[2]!, a.elements > 3 || a.fixed ? tmp[3]! : 1]; break;
                 case ATTR.uv0: t = [tmp[0]!, tmp[1]!]; break;
+                case ATTR.uv1: t1 = [tmp[0]!, tmp[1]!]; break;
+                case ATTR.uv2: t2 = [tmp[0]!, tmp[1]!]; break;
                 case ATTR.boneIndex: {
                   // Bone indices are raw integers (the scale applies to other attributes only).
                   const raw = a.fixed ? a.fixed[0]! : tmp[0]! / (a.scale || 1);
@@ -393,6 +523,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
             pos.push(p[0]!, p[1]!, p[2]!);
             nrm.push(nn[0]!, nn[1]!, nn[2]!);
             uv.push(t[0]!, t[1]!);
+            uv1.push(t1[0]!, t1[1]!);
+            uv2.push(t2[0]!, t2[1]!);
             col.push(c[0]!, c[1]!, c[2]!, c[3]!);
           }
           idx.push(out);
@@ -404,6 +536,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
     positions: new Float32Array(pos),
     normals: has(ATTR.normal) ? new Float32Array(nrm) : null,
     uvs: has(ATTR.uv0) ? new Float32Array(uv) : null,
+    uvs1: has(ATTR.uv1) ? new Float32Array(uv1) : null,
+    uvs2: has(ATTR.uv2) ? new Float32Array(uv2) : null,
     colors: has(ATTR.color) ? new Float32Array(col) : null,
     indices: new Uint32Array(idx),
   };

@@ -1,7 +1,9 @@
-// Parsed CGFX -> three.js objects. Materials are approximated: diffuse texture x vertex colour, no
-// lighting, translucency kinds mapped to blending (docs/map-editor-design.md §5).
+// Parsed CGFX -> three.js objects. Materials with a fragment shader use the PICA pipeline emulation
+// (cgfx/tev.ts); the rest fall back to a diffuse texture x vertex colour. No lighting: the models bake
+// their shading into the vertex colours.
 import * as THREE from 'three';
 import type { CgfxMaterial, CgfxModel, CgfxTexture } from './cgfx';
+import { tevMaterial } from './tev';
 import type { TilesetModels } from './tileset';
 
 const WRAP = [THREE.ClampToEdgeWrapping, THREE.ClampToEdgeWrapping, THREE.RepeatWrapping, THREE.MirroredRepeatWrapping];
@@ -21,7 +23,7 @@ export class ModelFactory {
     const key = `${t.name}/${m.wrapS}/${m.wrapT}/${m.uv.scaleU}/${m.uv.scaleV}/${m.uv.translateU}/${m.uv.translateV}`;
     let tex = this.textures.get(key);
     if (!tex) {
-      tex = new THREE.DataTexture(t.rgba, t.width, t.height, THREE.RGBAFormat);
+      tex = new THREE.DataTexture(flipRows(t), t.width, t.height, THREE.RGBAFormat);
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = WRAP[m.wrapS] ?? THREE.RepeatWrapping;
       tex.wrapT = WRAP[m.wrapT] ?? THREE.RepeatWrapping;
@@ -37,7 +39,31 @@ export class ModelFactory {
     return tex;
   }
 
+  private readonly rawTextures = new Map<string, THREE.DataTexture>();
+
+  /** Texture for the TEV shader: raw (no colour-space conversion), UV transform done in the shader. */
+  private rawTexture(t: CgfxTexture, wrapS: number, wrapT: number): THREE.DataTexture {
+    const key = `${t.name}/${wrapS}/${wrapT}`;
+    let tex = this.rawTextures.get(key);
+    if (!tex) {
+      tex = new THREE.DataTexture(flipRows(t), t.width, t.height, THREE.RGBAFormat);
+      tex.colorSpace = THREE.NoColorSpace;
+      tex.wrapS = WRAP[wrapS] ?? THREE.RepeatWrapping;
+      tex.wrapT = WRAP[wrapT] ?? THREE.RepeatWrapping;
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
+      tex.needsUpdate = true;
+      this.rawTextures.set(key, tex);
+    }
+    return tex;
+  }
+
   private material(m: CgfxMaterial | undefined, hasColor: boolean): THREE.Material {
+    if (m?.tev && m.units) {
+      const maps = m.units.map((u) => (u.name && this.set.textures.has(u.name) ? this.rawTexture(this.set.textures.get(u.name)!, u.wrapS, u.wrapT) : null));
+      return this.register(tevMaterial(m, { maps }, this.clipping));
+    }
     const texName = m?.textures.find((t) => t && this.set.textures.has(t));
     const tex = m && texName ? this.texture(this.set.textures.get(texName)!, m) : null;
     // Shading is baked into the vertex colours (the models carry few or no normals), so no lighting.
@@ -61,6 +87,10 @@ export class ModelFactory {
       mat.alphaTest = 0.5;
     }
     mat.name = m?.name ?? '';
+    return this.register(mat);
+  }
+
+  private register(mat: THREE.Material): THREE.Material {
     this.materials.push(mat);
     if (/ceil/i.test(mat.name)) {
       mat.visible = this.ceilingVisible;
@@ -93,6 +123,13 @@ export class ModelFactory {
           geo.setAttribute('color', new THREE.BufferAttribute(rgb, 3));
         } else geo.setAttribute('color', new THREE.BufferAttribute(me.colors, 4));
       }
+      // Attributes of the TEV shader: full RGBA vertex colour (white when absent) and UV sets 1 / 2.
+      const n = me.positions.length / 3;
+      geo.setAttribute('aColor', new THREE.BufferAttribute(me.colors ?? new Float32Array(n * 4).fill(1), 4));
+      const zeros = me.uvs ?? new Float32Array(n * 2);
+      geo.setAttribute('aUv1', new THREE.BufferAttribute(me.uvs1 ?? zeros, 2));
+      geo.setAttribute('aUv2', new THREE.BufferAttribute(me.uvs2 ?? zeros, 2));
+      if (!me.uvs) geo.setAttribute('uv', new THREE.BufferAttribute(zeros, 2));
       geo.setIndex(new THREE.BufferAttribute(me.indices, 1));
       geo.computeBoundingBox();
       geo.computeBoundingSphere();
@@ -139,5 +176,17 @@ export class ModelFactory {
       });
     for (const m of this.materials) m.dispose();
     for (const t of this.textures.values()) t.dispose();
+    for (const t of this.rawTextures.values()) t.dispose();
   }
+}
+
+/**
+ * PICA textures are stored top row first, while the UVs use the GL convention (v = 0 at the bottom), so
+ * hand the rows to GL bottom-up.
+ */
+function flipRows(t: CgfxTexture): Uint8Array {
+  const out = new Uint8Array(t.rgba.length);
+  const row = t.width * 4;
+  for (let y = 0; y < t.height; y++) out.set(t.rgba.subarray(y * row, (y + 1) * row), (t.height - 1 - y) * row);
+  return out;
 }

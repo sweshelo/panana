@@ -13,7 +13,7 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
-import { recordObjectRow, isIndoor } from '../src/game/objects';
+import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes } from '../src/util/bytes';
@@ -168,6 +168,11 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(doc.recs[4]!.every((r) => recordObjectRow(4, r, ctx) === 0x15)).toBe(true); // gimk_05_trebox_1
     const p = doc.recs[3]!.map((r) => recordObjectRow(3, r, ctx));
     expect(p).toEqual([15, 1, 16, 10, 1, 10]); // gate_07, stair_1, gate_08, gate_02, stair_1, gate_02
+    // doors: angle / 100-unit step from +0x15 (FUN_002effa0); chests are never rotated
+    const pl = doc.recs[3]!.map((r) => recordPlacement(3, r, doc, game.master));
+    const door13 = doc.recs[3]!.findIndex((r) => r.x === 13 && r.y === 10); // +0x15 = 3 -> west, +90°
+    expect(pl[door13]).toEqual({ angle: Math.PI / 2, ox: -100, oz: 0 });
+    expect(doc.recs[4]!.every((r) => recordPlacement(4, r, doc, game.master).angle === 0)).toBe(true);
   });
 
   test('treasure: chest -> EventObject +0x08 -> treasureGroup; edits export 56562135 and the event archive', async () => {
