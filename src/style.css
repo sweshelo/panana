@@ -271,3 +271,5 @@ input.edited { border-color: var(--warn); }
 .msg-ref { color: #7fb4ff; text-decoration: none; border-bottom: 1px dotted currentColor; }
 .msg-ref .msg-render { color: inherit; }
 .msg-ctl { font-size: 9px; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 0 2px; vertical-align: middle; }
+.msg-page { color: var(--muted); font-size: 11px; margin-left: 2px; }
+.msg-page-rule { border: 0; border-top: 1px dashed var(--border); margin: 4px 0; }

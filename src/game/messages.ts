@@ -1,5 +1,5 @@
-// Where messages are shown in the field: the EventObject rows whose kind takes message IDs (signs, characters,
-// doors; elpulse docs/events.md §4 / §6), with the maps that place them.
+// Where messages are shown in the field: the EventObject rows whose kind takes message IDs (signs, characters;
+// elpulse docs/events.md §4 / §6), with the maps that place them.
 import type { MapInfo } from './codebin';
 import { EVENT_KINDS } from './eventkinds';
 import type { EventTable } from './events';

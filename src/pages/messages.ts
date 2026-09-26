@@ -1,4 +1,4 @@
-// Message list: the signs, characters and doors of every dungeon with their messages (editable), the maps
+// Message list: the signs and characters of every dungeon with their messages (editable), the maps
 // that place them, and any message by ID.
 import { clear, h } from '../editor/dom';
 import { hexId, MESSAGE_HELP, messageEditor } from '../editor/message';
@@ -14,12 +14,19 @@ const KIND_FILTER: Record<string, (k: number) => boolean> = {
   all: () => true,
   talk: (k) => k >= 0x01 && k <= 0x0a,
   sign: (k) => k === 0x1f,
-  door: (k) => k === 0x14 || k === 0x15,
   other: (k) => k === 0x21,
 };
 
-/** Which of the four lines of a conversation (kinds 0x07-0x09) is said: not decoded yet. */
-const TALK_SLOTS = ['+0x08', '+0x0C', '+0x10', '+0x14'];
+/**
+ * When each of the four lines of a conversation (kinds 0x07-0x09) is said: by the story's progress only, checked
+ * from the last (FUN_002e6af4 / FUN_00216030; 0x8D[n] = FUN_0031bac4(n + 1), 0x91[n] = FUN_0031d774(n)).
+ */
+const TALK_SLOTS = [
+  '+0x08 序盤 (進行 0x8D[8] ≠ 3)',
+  '+0x0C 悪の組織を倒したあと',
+  '+0x10 進行 0x8D[9] = 2 のとき',
+  '+0x14 クリア後 (0x91[0x18] [0x19] [0x1C] [0x1D] がすべて 2)',
+];
 
 export class MessagePage {
   readonly el = h('div', { class: 'book' });
@@ -43,7 +50,6 @@ export class MessagePage {
       h('option', { value: 'all' }, 'すべて'),
       h('option', { value: 'talk' }, 'キャラクター (会話・一言)'),
       h('option', { value: 'sign' }, '看板・調べるもの'),
-      h('option', { value: 'door' }, '扉'),
       h('option', { value: 'other' }, 'ワールドマップ用'),
       h('option', { value: 'edited' }, '変更したもの'),
       h('option', { value: 'shared' }, 'ほかの行と同じメッセージを使う'),
@@ -163,11 +169,11 @@ export class MessagePage {
             ' ', h('span', { class: 'muted' }, `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`))))
         : h('div', { class: 'muted' }, 'どのマップにも置かれていません'),
       h('h3', {}, 'メッセージ'),
-      talk ? h('div', { class: 'muted small' }, '会話は 4 つのメッセージを持ちます。どれが表示されるかの条件は調査中です。') : '',
+      talk ? h('div', { class: 'muted small' }, '会話は 4 つの台詞を持ち、話しかけた回数ではなくストーリーの進行だけで 1 つを選びます (下の条件を下から順に判定)。進行に合わせて別のキャラに入れ替わるのは、+0x00 / +0x04 と +0x4B / +0x4C の出現条件によります。') : '',
     );
     const seen = new Set<number>();
     u.slots.forEach((s, i) => {
-      const label = talk ? `${TALK_SLOTS[i]} (${i + 1} つ目)` : `+0x${s.off.toString(16).toUpperCase().padStart(2, '0')}`;
+      const label = talk ? TALK_SLOTS[i]! : `+0x${s.off.toString(16).toUpperCase().padStart(2, '0')}`;
       const dup = seen.has(s.id);
       seen.add(s.id);
       this.detail.append(h('div', { class: 'msg-slot' },

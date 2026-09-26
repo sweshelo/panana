@@ -505,7 +505,7 @@ describe.skipIf(!hasCia)('messages', () => {
     expect(texts.files.length).toBeGreaterThan(0);
     for (const f of texts.files) expect(`${f.name} ${f.editable}`).toBe(`${f.name} true`);
     // the text form keeps every message as it is
-    const { textToUnits } = await import('../src/game/gmsg');
+    const { textToUnits } = await import('../src/game/msgtext');
     for (const f of texts.files)
       for (let id = f.gmsg.first; id <= f.gmsg.last; id++) {
         const orig = f.gmsg.units(id)!;
