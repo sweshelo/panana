@@ -58,15 +58,22 @@ export class EditorState {
   stamp: Stamp | null = null;
   /** Last error of an edit (shown in the status bar). */
   error = '';
+  /** Bumped on every emit (React components subscribe to it: src/ui/useEditorState.ts). */
+  revision = 0;
   private listeners: Listener[] = [];
 
   constructor(readonly game: Game) {}
 
-  on(f: Listener): void {
+  /** Returns the function that removes the listener. */
+  on(f: Listener): () => void {
     this.listeners.push(f);
+    return () => {
+      this.listeners = this.listeners.filter((g) => g !== f);
+    };
   }
   emit(what: 'doc' | 'selection' | 'tool' | 'map'): void {
-    for (const f of this.listeners) f(what);
+    this.revision++;
+    for (const f of [...this.listeners]) f(what);
   }
 
   open(info: MapInfo): void {
