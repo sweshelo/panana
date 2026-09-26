@@ -7,6 +7,14 @@ export const MASTER_ARCHIVE = '56562135';
 export const TILESETS = 12;
 export const LETTERS = 8;
 
+/** What picks a map's mapData row (MapInfo satisfies it). */
+export interface MapRef {
+  hash: number;
+  dungeon: number;
+  /** mapData key of the map itself (0 = none; code.bin map row +0x10 at run time). */
+  mapDataKey: number;
+}
+
 export class GmsgFile {
   readonly first: number;
   readonly last: number;
@@ -127,9 +135,9 @@ export class Master {
     return this.treasureChanged() || this.changedTables().length > 0;
   }
 
-  /** mapData [4] = field BGM, [5] = battle BGM, [6] = footsteps (soundData rows) of a dungeon. */
-  sounds(dungeon: number): { bgm: number; battle: number; steps: number } {
-    const r = this.mapData.row(this.mapDataRow(dungeon));
+  /** mapData [4] = field BGM, [5] = battle BGM, [6] = footsteps (soundData rows) of a map. */
+  sounds(map: MapRef): { bgm: number; battle: number; steps: number } {
+    const r = this.mapData.row(this.mapDataRow(map));
     return { bgm: r[4]!, battle: r[5]!, steps: r[6]! };
   }
 
@@ -215,20 +223,50 @@ export class Master {
     return archive ? { archive, entry: u32(r, 4) } : null;
   }
 
-  /** mapData row of a dungeon (mapGroup +0x26; FUN_001c4ec4). */
-  mapDataRow(dungeon: number): number {
+  /** mapData row of a dungeon (mapGroup +0x26). */
+  dungeonMapDataRow(dungeon: number): number {
     if (dungeon < 0 || dungeon >= this.mapGroup.rows) return 0;
     return this.mapGroup.row(dungeon)[0x26]!;
   }
 
-  /** Tileset of a dungeon = mapData[mapGroup +0x26][0]. */
-  tileset(dungeon: number): number {
-    return this.mapData.row(this.mapDataRow(dungeon))[0]!;
+  /**
+   * mapData row of a map, as FUN_001c4ec4 picks it: designedMap rows 1-5 (+0 map, +0x0C mapData row), else the
+   * dungeon's (mapGroup +0x26; +0x27 under a run-time flag, not modelled); then the map's own mapData key wins.
+   */
+  mapDataRow(map: MapRef): number {
+    let row = this.designedMapData().get(map.hash) ?? this.dungeonMapDataRow(map.dungeon);
+    if (map.mapDataKey) {
+      this.mapDataIndex ??= this.mapData.hashIndex();
+      row = this.mapDataIndex.get(map.mapDataKey) ?? row;
+    }
+    return row < this.mapData.rows ? row : 0;
+  }
+  private mapDataIndex?: Map<number, number>;
+
+  private designedMapData(): Map<number, number> {
+    if (!this.designed) {
+      this.designed = new Map();
+      const f = findByName(this.archive, 'designedMap.bin');
+      if (f) {
+        const t = new GsTable(f.body);
+        for (let i = 1; i < Math.min(t.rows, 6); i++) {
+          const r = t.row(i);
+          if (u32(r, 0)) this.designed.set(u32(r, 0), u32(r, 0x0c));
+        }
+      }
+    }
+    return this.designed;
+  }
+  private designed?: Map<number, number>;
+
+  /** Tileset of a map = mapData[mapDataRow][0]. */
+  tileset(map: MapRef): number {
+    return this.mapData.row(this.mapDataRow(map))[0]!;
   }
 
-  /** mapResource row of a dungeon = mapData[...][1]. */
-  resourceRow(dungeon: number): number {
-    return this.mapData.row(this.mapDataRow(dungeon))[1]!;
+  /** mapResource row of a map = mapData[...][1]. */
+  resourceRow(map: MapRef): number {
+    return this.mapData.row(this.mapDataRow(map))[1]!;
   }
 
   /** Model archive of a mapResource row ([0], e.g. 46910AB6). */

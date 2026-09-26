@@ -1,5 +1,6 @@
 // Loads models: memory -> IndexedDB cache -> worker conversion.
 import type { Game } from '../game/game';
+import type { MapRef } from '../game/master';
 import { hex8 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
 import type { TilesetModels } from './tileset';
@@ -32,8 +33,8 @@ function run<T>(req: Body<WorkerRequest>, transfer: ArrayBuffer[]): Promise<T> {
 
 const memory = new Map<string, Promise<TilesetModels>>();
 
-export function loadTilesetModels(game: Game, dungeon: number): Promise<TilesetModels> {
-  const src = game.tilesetSource(dungeon);
+export function loadTilesetModels(game: Game, map: MapRef): Promise<TilesetModels> {
+  const src = game.tilesetSource(map);
   const key = `tileset/${src.modelArchive}/${hex8(src.textureEntry)}/v${CACHE_VERSION}`;
   let p = memory.get(key);
   if (!p) {
