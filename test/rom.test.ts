@@ -418,7 +418,7 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
   });
 
   test('copied monster: a new row, exported with the row patch, read back', async () => {
-    const { MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
+    const { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
     const { buildPatches } = await import('../src/game/patch');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g2.monsters();
@@ -429,7 +429,14 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(n).toBe(VANILLA_MONSTER_ROWS);
     expect(book.monsters.length).toBe(185);
     const c = book.monster(n)!;
-    expect({ ...c, row: 15 }).toEqual(src);
+    expect({ ...c, row: 15, design: src.design }).toEqual(src);
+    // its own design row and name message: renaming it leaves the original alone
+    expect(c.design).not.toBe(src.design);
+    expect(book.nameId(n)).toBe(g2.master.texts.addedBase);
+    expect(book.nameSharers(n)).toEqual([]);
+    book.setName(n, 'コピーおう');
+    expect([book.monster(n)!.name, book.monster(15)!.name]).toEqual(['コピーおう', src.name]);
+    expect(book.designChanged()).toBe(true);
     expect([book.added(n), book.changed(n), book.canRemove(n), book.needsRowsPatch()]).toEqual([true, false, true, true]);
     book.set(n, 'hpMax', 1234);
     expect([book.monster(n)!.hp.max, book.monster(15)!.hp.max]).toEqual([1234, src.hp.max]);
@@ -439,11 +446,21 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(built.errors).toEqual([]);
     expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe35800b9, 0xe35100b9, 0xe35100b9, 0xe35100b9, 0xe35100b9]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()]]), ips: null,
+    });
     const b2 = await again.monsters();
-    expect([b2.monster(n)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual([src.name, 1234, false]);
+    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual(['コピーおう', src.name, 1234, false]);
+    expect(b2.monster(n)!.description).toBe(src.description);
+    const nameId = book.nameId(n);
     book.removeMonster(n);
-    expect([book.monsters.length, book.needsRowsPatch()]).toEqual([184, false]);
+    expect([book.monsters.length, book.needsRowsPatch(), book.designChanged(), g2.master.texts.isAdded(nameId), g2.master.texts.changed()]).toEqual([184, false, false, false, false]);
+    // a vanilla row sharing its name with another form gets one of its own
+    const shared = book.monsters.find((m) => book.nameSharers(m.row).length)!;
+    const other = book.nameSharers(shared.row)[0]!;
+    book.ownDesign(shared.row);
+    book.setName(shared.row, 'べつのなまえ');
+    expect([book.monster(shared.row)!.name, book.monster(other)!.name]).toEqual(['べつのなまえ', shared.name]);
   });
 
   test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {

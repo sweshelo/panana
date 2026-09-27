@@ -4,7 +4,7 @@ import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
-import { MONSTER_ROWS_PATCH } from '../game/monsters';
+import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
@@ -58,8 +58,9 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
     const shops = session.stock;
     if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
-    const texts = game.master.texts.editedIds();
+    const texts = [...game.master.texts.editedIds(), ...game.master.texts.addedIds()];
     if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
+    if (session.book?.designChanged()) changes.push(`モンスターのデザイン (${MONSTER_DESIGN_ARCHIVE} の monsterDesign.bin)`);
     return { docs, events, issues, changes, shops, worlds: session.worldSections(), extra };
   });
   const { issues, changes } = what;
@@ -69,6 +70,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
+      if (session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, what.extra);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
       return pkg;

@@ -127,7 +127,7 @@ export class EditorState {
     this.game.master.restoreTable('mapData.bin', s.mapData);
     this.game.master.restoreTable(FIX_TABLE, s.fix);
     this.game.master.restoreTable('mapChara.bin', s.chara);
-    this.game.master.texts.restore(s.messages);
+    this.game.master.texts.restore(s.messages, true);
   }
 
   /** Change the shared tables (events / treasure / messages / mapData) with an undo point on the current map. */

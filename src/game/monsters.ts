@@ -1,8 +1,8 @@
 // Monsters (MonsterParameter + MonsterDesign), encounter groups (monsterGroup) and the map's encounters
 // (section 6). Field positions: elpulse docs/battle.md §2〜§4 and docs/encounters.md.
 import { GsTable } from '../archive/gstable';
-import { findByName, parseArchive } from '../archive/gsarc';
-import { u16, u32, w16, w32 } from '../util/bytes';
+import { findByName, parseArchive, rebuildArchive, type Archive, type ArcEntry } from '../archive/gsarc';
+import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
 import { decodeFix, FIX_TABLE } from './boss';
 import type { Master } from './master';
@@ -368,6 +368,9 @@ export class MonsterBook {
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
   private readonly design: GsTable;
+  private readonly designArc: Archive;
+  private readonly designEntry: ArcEntry;
+  private readonly designOriginal: Uint8Array;
   /** directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). */
   readonly directData: GsTable | null;
   readonly battle: BattleParams;
@@ -375,10 +378,13 @@ export class MonsterBook {
   readonly conditions: string[];
 
   constructor(private readonly master: Master, designArchive: Uint8Array) {
-    const f = findByName(parseArchive(designArchive), 'monsterDesign.bin');
+    this.designArc = parseArchive(designArchive);
+    const f = findByName(this.designArc, 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
     this.design = new GsTable(f.body);
-    const dd = findByName(parseArchive(designArchive), 'directData.bin');
+    this.designEntry = f.entry;
+    this.designOriginal = f.body.slice();
+    const dd = findByName(this.designArc, 'directData.bin');
     this.directData = dd ? new GsTable(dd.body) : null;
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
@@ -533,19 +539,80 @@ export class MonsterBook {
     return this.params.rows < MONSTER_ROWS_MAX;
   }
 
-  /** Append a copy of a row as a new monster (same look, name and species). Returns the new row number. */
+  /**
+   * Append a copy of a row as a new monster (same look and species) with a MonsterDesign row and a name of its
+   * own, so renaming it leaves the original alone. Returns the new row number.
+   */
   copyMonster(row: number): number {
     const t = this.params;
     if (!this.canCopy()) throw new Error(`モンスターは行 ${MONSTER_ROWS_MAX - 1} までです`);
-    let hash = 0;
-    if (t.indexOffset) {
-      const used = t.hashes();
-      hash = (0x6d500000 + t.rows) >>> 0;
-      while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
-    }
-    const n = t.append(t.row(row).slice(), hash);
-    this.reload();
+    const n = t.append(t.row(row).slice(), freeHash(t, 0x6d500000));
+    if (this.canOwnDesign()) this.ownDesign(n);
+    else this.reload();
     return n;
+  }
+
+  /** MonsterParameter rows showing a MonsterDesign row. */
+  designUsers(design: number): number[] {
+    return this.monsters.filter((m) => m.design === design).map((m) => m.row);
+  }
+
+  /** Message ID of a monster's name (MonsterDesign +0x00), 0 = none. */
+  nameId(row: number): number {
+    const d = this.monster(row)?.design ?? this.design.rows;
+    return d < this.design.rows ? u32(this.design.row(d), 0) : 0;
+  }
+
+  /** Other MonsterParameter rows whose name changes with this row's (same design, or a design with the same name). */
+  nameSharers(row: number): number[] {
+    const id = this.nameId(row);
+    return this.monsters.filter((m) => m.row !== row && id && this.nameId(m.row) === id).map((m) => m.row);
+  }
+
+  /** Rename a monster: the text of its name message (every row showing that name changes too; see nameSharers). */
+  setName(row: number, name: string): void {
+    const id = this.nameId(row);
+    if (!id) throw new Error('このモンスターには名前のメッセージがありません');
+    this.master.texts.setText(id, name);
+    this.reload();
+  }
+
+  /** Whether another MonsterDesign row can be added (+0x4C keeps it in a byte). */
+  canOwnDesign(): boolean {
+    return this.design.rows < 0x100 && this.master.texts.editable(this.master.texts.addedBase - 1);
+  }
+
+  /**
+   * Give a row a MonsterDesign row of its own: a copy of its design with a new name message (the same text), so its
+   * name can change alone. The description stays shared.
+   */
+  ownDesign(row: number): void {
+    if (!this.canOwnDesign()) throw new Error('モンスターのデザインはこれ以上増やせません');
+    const r = this.params.row(row);
+    const src = this.design.row(r[0x4c]!).slice();
+    const texts = this.master.texts;
+    const nameUnits = texts.units(u32(src, 0));
+    if (nameUnits) w32(src, 0, texts.add(nameUnits));
+    r[0x4c] = this.design.append(src, freeHash(this.design, 0x6d440000));
+    this.reload();
+  }
+
+  /** Whether the MonsterDesign table differs from the archive (it is then exported in MONSTER_DESIGN_ARCHIVE). */
+  designChanged(): boolean {
+    return !equalBytes(this.design.data, this.designOriginal);
+  }
+
+  /** The edited monsterDesign.bin (for saving), and putting a saved one back (then reload()). */
+  designData(): Uint8Array {
+    return this.design.data;
+  }
+  restoreDesign(bytes: Uint8Array): void {
+    this.design.data = bytes.slice();
+  }
+
+  /** MONSTER_DESIGN_ARCHIVE with the edited monsterDesign.bin (every other entry copied verbatim). */
+  buildDesignArchive(): Uint8Array {
+    return rebuildArchive(this.designArc, new Map([[this.designEntry.index, this.design.data]]));
   }
 
   /** What refers to a row (groups, fixed battles and other rows' next form). */
@@ -569,8 +636,18 @@ export class MonsterBook {
   removeMonster(row: number): void {
     if (!this.canRemove(row)) throw new Error('消せるのは最後に追加したモンスターだけです');
     const t = this.params;
+    const design = t.row(row)[0x4c]!;
     t.data = t.withRows(Array.from({ length: t.rows - 1 }, (_, i) => t.row(i).slice()));
     this.reload();
+    // its own design (the last one, added by copyMonster) and name go with it
+    const d = this.design;
+    if (design === d.rows - 1 && design >= u32(this.designOriginal, 0) && !this.designUsers(design).length) {
+      const name = u32(d.row(design), 0);
+      d.data = d.withRows(Array.from({ length: d.rows - 1 }, (_, i) => d.row(i).slice()));
+      const texts = this.master.texts;
+      if (texts.isAdded(name) && !Array.from({ length: d.rows }, (_, i) => u32(d.row(i), 0)).includes(name)) texts.removeAdded(name);
+      this.reload();
+    }
   }
 
   /** Replace the skills of a row (up to 6 action rows; packed to the front). */
@@ -632,6 +709,15 @@ export class MonsterBook {
   groupMonsters(g: MonsterGroup): number[] {
     return [...new Set([...g.leads, ...g.mates].map((s) => s.monster))];
   }
+}
+
+/** A hash not in a table's index yet (0 when the table has no index). */
+function freeHash(t: GsTable, start: number): number {
+  if (!t.indexOffset) return 0;
+  const used = t.hashes();
+  let hash = (start + t.rows) >>> 0;
+  while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+  return hash;
 }
 
 /** Encounters of a map (section 6): the map's group, and cells with a group of their own. */

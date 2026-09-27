@@ -18,7 +18,7 @@ import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
 import { Radar } from '../ui/Radar';
 import { ActionBook } from '../game/actions';
-import { BossEditor, DropEditor, SkillEditor, StatEditor } from './monsteredit';
+import { BossEditor, DropEditor, NameEditor, SkillEditor, StatEditor } from './monsteredit';
 
 export interface Appearance {
   map: MapInfo;
@@ -135,6 +135,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
       </div>
       <div className="book-top">
         <div>
+          <NameEditor session={session} {...p} />
           {m.description && <p className="book-desc">{m.description}</p>}
           <StatEditor {...p} />
         </div>
@@ -165,7 +166,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
 }
 
 const COPY_INFO = [
-  'この行を写した新しいモンスターを表の最後に作ります。見た目・名前・種族 (図鑑やドロップの記録) は元と同じで、能力・ワザ・耐性などは別に変えられます。',
+  'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',
   '群れ・ボス戦の敵・次の形態で選べます。',
   'ゲームは行 185 以降を弾くので、追加した行があると書き出しに code.ips のパッチ「追加したモンスター」が入ります。行は 255 まで。',
 ].join('\n');

@@ -534,6 +534,34 @@ describe('GMSG messages', () => {
     expect(store.text(102)!.kind).toBe(0x000c);
     expect(() => store.setText(99, 'x')).toThrow();
   });
+
+  test('store: added messages go after the last file (with blank readings), save and restore', () => {
+    const reading = makeGmsg([new Uint8Array([0x41, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0])], true);
+    const store = new MessageStore([
+      { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
+      { name: 'MessageTest_IN_JP.gsmb', entryIndex: 4, gmsg: new Gmsg(reading), editable: true },
+    ]);
+    expect(store.addedBase).toBe(103);
+    const id = store.add(Uint16Array.from(msgs[2]!));
+    expect(id).toBe(103);
+    store.setText(id, 'ニセタウン');
+    expect([store.plain(id), store.plain(102), store.isAdded(id), store.changed()]).toEqual(['ニセタウン', 'デンパタウン', true, true]);
+    const rep = store.replacements();
+    const g = new Gmsg(rep.get(3)!);
+    expect([g.first, g.last, plainText(g.units(103)!), plainText(g.units(102)!)]).toEqual([100, 103, 'ニセタウン', 'デンパタウン']);
+    const r = new Gmsg(rep.get(4)!);
+    expect([r.last, [...r.raw[3]!]]).toEqual([103, [0, 0, 0, 0]]);
+    const saved = store.saved();
+    store.restore([]);
+    expect([store.changed(), store.plain(id)]).toEqual([false, undefined]);
+    store.restore(saved);
+    expect(store.plain(id)).toBe('ニセタウン');
+    store.restore([], true); // the map editor's undo keeps added messages
+    expect(store.plain(id)).toBe('ニセタウン');
+    expect(() => store.removeAdded(102)).toThrow();
+    store.removeAdded(id);
+    expect(store.changed()).toBe(false);
+  });
 });
 
 describe('world maps', () => {

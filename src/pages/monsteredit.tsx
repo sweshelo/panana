@@ -1,6 +1,6 @@
 // Editors of a MonsterParameter row in the monster book: stats, drops, skills and AI, boss forms.
 // Fields: src/game/monsters.ts PARAM (elpulse docs/battle.md §2〜§4).
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ACTION_KIND, ELEMENT, type ActionBook } from '../game/actions';
 import {
   AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
@@ -59,6 +59,50 @@ function FieldCheck({ book, m, edited, k, label }: EditProps & { k: ParamKey; la
       <input type="checkbox" checked={v === 1} onChange={(e) => { book.set(m.row, k, e.target.checked ? 1 : 0); edited(); }} />
       {label}
     </label>
+  );
+}
+
+const NAME_INFO = [
+  '名前は MonsterDesign (+0x00) のメッセージです。同じデザインの行 (ボスの別の形態など) は同じ名前になります。',
+  '「このモンスターだけの名前にする」はデザインの行と名前のメッセージを新しく足し、この行だけ名前を変えられるようにします。写して作ったモンスターは最初からそうなっています。',
+  '説明文は元のモンスターと共通のままです。',
+].join('\n');
+
+/** The monster's name (its design's name message), and giving the row a design of its own when others share it. */
+export function NameEditor({ session, book, m, edited }: EditProps & { session: Session }): ReactNode {
+  const texts = session.game.master.texts;
+  const id = book.nameId(m.row);
+  const current = id ? texts.text(id)?.text ?? '' : '';
+  const [text, setText] = useState(current);
+  const [error, setError] = useState('');
+  useEffect(() => { setText(current); setError(''); }, [current, m.row]);
+  const sharers = book.nameSharers(m.row);
+  const commit = (): void => {
+    if (text === current) return;
+    try {
+      book.setName(m.row, text);
+      setError('');
+      edited();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  if (!id) return null;
+  return (
+    <div className="stat name-edit">
+      <span className="muted with-info">名前<InfoTip text={NAME_INFO} /></span>
+      <span>
+        <input type="text" className={`${texts.isEdited(id) ? 'edited' : ''}${error ? ' bad' : ''}`} value={text} title={error || `メッセージ ${id}`}
+          onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
+        {sharers.length > 0 && (
+          <>
+            <span className="muted small">{` 同じ名前: ${sharers.map((r) => `#${r}`).join(' ')}`}</span>
+            <button className="small" disabled={!book.canOwnDesign()} title="デザインの行と名前のメッセージを足して、この行だけの名前にします"
+              onClick={() => { book.ownDesign(m.row); edited(); }}>このモンスターだけの名前にする</button>
+          </>
+        )}
+      </span>
+    </div>
   );
 }
 
