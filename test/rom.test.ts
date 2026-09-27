@@ -630,6 +630,41 @@ describe.skipIf(!hasCia)('messages', () => {
   });
 });
 
+describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
+  test('scripts: the classes of the D01 switches and the rows they complete', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    expect(entries.length).toBe(1375);
+    const d01 = (row: number) => entries.find((e) => e.dungeon === 1 && e.row === row)!;
+    // switch -> door / gate (docs/events.md §5)
+    for (const [row, vtable, target] of [[2, 0x4feca4, 10], [3, 0x4fecc4, 11], [4, 0x4fece4, 13], [9, 0x4fec84, 1]] as const) {
+      const s = d01(row).scripts;
+      expect(s.map((x) => x.cls.vtable)).toEqual([vtable]);
+      expect(s[0]!.cls.completes).toEqual([target]);
+    }
+    // "ありゃ、重さが足りないんですかねえ？" from the switch script
+    expect(d01(2).scripts[0]!.cls.messages).toContain(0x1c77);
+    const scripts = entries.filter((e) => e.kind === 0x24 && e.places.length);
+    expect(scripts.length).toBe(320);
+    expect(scripts.filter((e) => e.scripts.length).length).toBeGreaterThanOrEqual(317);
+    // appearance: D01 row 36 is gone once 0x91[4] = 2
+    expect(d01(36).conditions).toEqual([{ field: 0x4c, type: 0xb0, value: 4, text: '0x91[0x04] = 2' }]);
+  });
+
+  test('condition types are read from FUN_0030B8A4', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { readConditionTypes } = await import('../src/game/conditions');
+    const t = readConditionTypes(game.code.code);
+    expect(t.get(0x01)).toEqual({ type: 0x01, getter: 'progress', test: 'atLeast', index: 0x33 });
+    expect(t.get(0x18)).toEqual({ type: 0x18, getter: 'progress', test: 'atLeast', index: 0 });
+    expect(t.get(0x37)?.getter).toBe('rowState');
+    expect(t.get(0x3b)).toEqual({ type: 0x3b, getter: 'dungeonFlag', test: 'clear', index: 0x34 });
+    expect(t.get(0xad)).toEqual({ type: 0xad, getter: 'flag92', test: 'clear' });
+    expect(t.get(0xb0)).toEqual({ type: 0xb0, getter: 'value91', test: 'equals', eq: 2 });
+  });
+});
+
 describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
   let game: Game;
   beforeAll(async () => {

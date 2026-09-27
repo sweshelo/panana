@@ -5,6 +5,7 @@ import { buildShops, loadShopTable } from '../game/shops';
 import { ActionPage } from '../pages/actions';
 import { GroupPage } from '../pages/groups';
 import { ItemPage } from '../pages/items';
+import { EventPage } from '../pages/events';
 import { MessagePage } from '../pages/messages';
 import { MonsterPage } from '../pages/monsters';
 import { ShopPage } from '../pages/shops';
@@ -23,12 +24,13 @@ export const PAGES = [
   ['shops', 'ショップ'],
   ['groups', '群れ'],
   ['actions', 'アクション'],
+  ['events', 'イベント'],
   ['messages', 'メッセージ'],
 ] as const;
 type Page = (typeof PAGES)[number][0];
 
 const TITLES: Record<Page, string> = {
-  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', messages: 'メッセージ',
+  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ',
 };
 
 const subscribeHash = (f: () => void): (() => void) => {
@@ -36,7 +38,7 @@ const subscribeHash = (f: () => void): (() => void) => {
   return () => window.removeEventListener('hashchange', f);
 };
 
-/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id] or #/messages[/dungeon.row | /0xID]. */
+/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row] or #/messages[/dungeon.row | /0xID]. */
 function useRoute(): { page: Page; arg: string | undefined; hash: string } {
   const hash = useSyncExternalStore(subscribeHash, () => location.hash);
   const [p, arg] = hash.replace(/^#\/?/, '').split('/');
@@ -85,6 +87,8 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
       return <ShopsRoute {...props} />;
     case 'actions':
       return <ActionPage {...props} />;
+    case 'events':
+      return <EventPage {...props} />;
     case 'messages':
       return <MessagePage {...props} />;
     case 'world':

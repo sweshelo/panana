@@ -14,6 +14,7 @@ import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, coveredPar
 import { validateWorld } from '../src/editor/validate';
 import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
+import { ArmMachine } from '../src/game/arm';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -573,5 +574,36 @@ describe('messages in code.bin', () => {
       [0x100010, [0x1c0a]],
       [0x100000, [0x1c0b, 0x1c0c]],
     ]);
+  });
+});
+
+describe('ARM interpreter (game/arm.ts)', () => {
+  // A tiny code.bin at 0x100000: f(a, b) = callee(a) + b with a branch on the flags; callee(x) = x * 3 (stubbed below)
+  const words = [
+    0xe92d4010, // 100000 push {r4, lr}
+    0xe1a04001, // 100004 mov r4, r1
+    0xeb000005, // 100008 bl 0x100024
+    0xe0800004, // 10000C add r0, r0, r4
+    0xe3500010, // 100010 cmp r0, #0x10
+    0xc3a00001, // 100014 movgt r0, #1
+    0xe8bd8010, // 100018 pop {r4, pc}
+    0xe1a00000, // 10001C nop
+    0xe1a00000, // 100020 nop
+    0xe0800080, // 100024 add r0, r0, r0, lsl #1
+    0xe12fff1e, // 100028 bx lr
+  ];
+  const code = new Uint8Array(words.length * 4);
+  words.forEach((w, i) => new DataView(code.buffer).setUint32(i * 4, w, true));
+
+  test('runs calls, shifts, conditions and returns', () => {
+    const m = new ArmMachine(code);
+    expect(m.run(0x100000, [2, 3])).toBe(9); // 2 * 3 + 3
+    expect(m.run(0x100000, [5, 3])).toBe(1); // 18 > 16
+    expect(m.calls.some((c) => c.target === 0x100024)).toBe(true);
+  });
+
+  test('stubs replace calls', () => {
+    const m = new ArmMachine(code, { stubs: new Map([[0x100024, () => 7]]) });
+    expect(m.run(0x100000, [2, 3])).toBe(10);
   });
 });
