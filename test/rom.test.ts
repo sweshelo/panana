@@ -478,9 +478,10 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(skillAnims / total).toBeGreaterThan(0.5);
   });
 
-  test('action edits: a copy with its own motion (まおう\'s デスブロー as skill D), export and read back', async () => {
+  test('action edits: a copy with its own name and motion (まおう\'s デスブロー as skill D), export and read back', async () => {
     const { ActionBook, ActionEdits } = await import('../src/game/actions');
     const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
+    const { LAST_GAME_MESSAGE, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } = await import('../src/game/gmsg');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g2.monsters();
     const dd = book.directData!;
@@ -492,9 +493,18 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const n = edits.copy(509);
     expect(n).toBe(672);
     expect(edits.added(n)).toBe(true);
+    // its own name message, in a message file added to the master past the game's IDs: renaming it leaves デスブロー alone
+    const texts = g2.master.texts;
+    expect(Math.max(...[...texts.files, ...texts.readings].map((f) => f.gmsg.last))).toBeLessThanOrEqual(LAST_GAME_MESSAGE);
+    const nameId = new ActionBook(g2.master, () => '', dd).action(n)!.nameId;
+    expect([nameId, texts.file(nameId)!.name, texts.plain(nameId)]).toEqual([NEW_MESSAGE_FIRST, NEW_MESSAGE_FILE, texts.plain(before.action(509)!.nameId)]);
+    texts.setText(nameId, texts.text(nameId)!.text.replace('デスブロー', 'デスブローＺ'));
     edits.setMotion(n, 0x48);
     let acts = new ActionBook(g2.master, () => '', dd);
-    expect(acts.action(n)!.name).toBe('デスブロー');
+    expect([acts.action(n)!.name, acts.action(509)!.name]).toEqual(['デスブローＺ', 'デスブロー']);
+    // a vanilla action gets a name of its own too (the next new ID)
+    const own = edits.ownName(510);
+    expect([own, texts.plain(own)]).toEqual([NEW_MESSAGE_FIRST + 1, texts.plain(before.action(510)!.nameId)]);
     expect(acts.action(n)!.performance).toBe(1026); // a new performance row, the same but for the anim
     expect(acts.motion(n)).toBe(0x48);
     expect([...dd.row(1026)].filter((b, i) => b !== dd.row(823)[i])).toEqual([0x48]);
@@ -518,7 +528,19 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
     const b2 = await again.monsters();
     const a2 = new ActionBook(again.master, () => '', b2.directData);
-    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブロー'], [510, 'まおうけん']]);
+    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブローＺ'], [510, 'まおうけん']]);
+    expect([a2.action(509)!.name, a2.action(510)!.nameId]).toEqual(['デスブロー', own]);
+    // the new messages are a type 6 entry of their own; the game's message files are exported as they were
+    const arc = parseArchive(files.get('56562135')!);
+    const orig = g2.master.archive;
+    const added = arc.entries.find((e) => e.hash === NEW_MESSAGE_HASH)!;
+    expect([added.type, arc.entries.length]).toEqual([6, orig.entries.length + 1]);
+    console.log(`master: ${orig.entries.length} entries, in hash order: ${orig.entries.every((e, i) => !i || orig.entries[i - 1]!.hash < e.hash)}, the new one at ${arc.entries.indexOf(added)}`);
+    const again2 = again.master.texts;
+    expect(again2.files.find((f) => f.name === NEW_MESSAGE_FILE)!.gmsg.last).toBe(NEW_MESSAGE_FIRST + 1);
+    for (const f of [...texts.files, ...texts.readings]) expect(again2.files.concat(again2.readings).find((x) => x.name === f.name)!.gmsg.roundTrips()).toBe(true);
+    // with that file in the master (like a base MOD's), new messages are appended to it
+    expect(again2.addedBase).toBe(NEW_MESSAGE_FIRST + 2);
     expect([a2.motion(n), a2.motion(510), a2.motion(509), a2.action(510)!.element]).toEqual([0x48, 0x47, 0x46, 8]);
     expect(b2.directData!.rows).toBe(1028);
     edits.revert(510);

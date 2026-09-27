@@ -609,7 +609,7 @@ export class MonsterBook {
 
   /** Whether another MonsterDesign row can be added (+0x4C keeps it in a byte). */
   canOwnDesign(): boolean {
-    return this.design.rows < 0x100 && this.master.texts.editable(this.master.texts.addedBase - 1);
+    return this.design.rows < 0x100 && this.master.texts.canAdd();
   }
 
   /**

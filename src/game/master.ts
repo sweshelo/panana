@@ -231,7 +231,10 @@ export class Master {
     const repl = new Map([[this.treasureEntry.index, this.treasureGroup.data]]);
     for (const [, t] of this.extra) if (!equalBytes(t.table.data, t.original)) repl.set(t.entry.index, t.table.data);
     for (const [i, b] of this.texts.replacements()) repl.set(i, b);
-    return rebuildArchive(this.archive, repl);
+    // new messages: a message file of their own, packed like the archive's other message files
+    const add = this.texts.newFile();
+    const like = this.archive.entries[this.texts.files[0]?.entryIndex ?? -1];
+    return rebuildArchive(this.archive, repl, add && like ? [{ hash: add.hash, name: add.name, body: add.bytes, like }] : []);
   }
 
   itemName(id: number): string {

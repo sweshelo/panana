@@ -203,16 +203,41 @@ export class ActionEdits {
     if (!this.added(row)) this.row(row).set(this.master.originalRow('actionData.bin', row));
   }
 
-  /** Append a copy of a row as a new action. Returns its row number. */
+  /**
+   * Append a copy of a row as a new action. Returns its row number. It gets a name message of its own (the same
+   * text; {@link ownName}), so renaming it leaves the original alone.
+   */
   copy(row: number): number {
     const t = this.table;
     const src = t.row(row).slice();
-    return t.append(src, t.indexOffset ? newHash(t, 0x7e710000) : 0);
+    const n = t.append(src, t.indexOffset ? newHash(t, 0x7e710000) : 0);
+    if (this.canOwnName(n)) this.ownName(n);
+    return n;
   }
 
   /** +4: the name message. */
   setName(row: number, id: number): void {
     w32(this.row(row), 4, id);
+  }
+
+  /** Whether an action can get a name message of its own (it has a name, and messages can be added). */
+  canOwnName(row: number): boolean {
+    const id = u32(this.row(row), 4);
+    return !!id && !!this.master.texts.units(id) && this.master.texts.canAdd();
+  }
+
+  /**
+   * Point an action at a new message with the text of its name (gmsg.ts MessageStore.add: a message file of our
+   * own in the master), so its name can change without changing the others that show the same message.
+   * Returns the new message ID.
+   */
+  ownName(row: number): number {
+    const texts = this.master.texts;
+    const units = texts.units(u32(this.row(row), 4));
+    if (!units || !texts.canAdd()) throw new Error(`アクション #${row} の名前を新しいメッセージにできません`);
+    const id = texts.add(units);
+    this.setName(row, id);
+    return id;
   }
 
   /** w0 bit24-27: element (0 = none, 1 火 .. 8 闇). */
