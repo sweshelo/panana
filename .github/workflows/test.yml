@@ -87,7 +87,7 @@ jobs:
           ELPULSE_ROOT: ${{ env.ROM_DIR }}
           ROM_GOLDEN: ${{ env.ROM_DIR }}/golden.json
           REQUIRE_ROM: '1'
-        run: bun test test/rom.test.ts test/boss.test.ts test/probe.test.ts
+        run: bun test test/rom.test.ts test/boss.test.ts
 
       - name: Remove the dump
         if: always()

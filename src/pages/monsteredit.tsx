@@ -8,6 +8,8 @@ import {
 } from '../game/monsters';
 import type { Session } from '../session';
 import { ActionPicker } from '../ui/ActionPicker';
+import { actionEdits, ActionEditor } from '../ui/ActionEditor';
+import { Dialog } from '../ui/Dialog';
 import { Board, EmptyBoard } from '../ui/Board';
 import { NumberInput } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
@@ -181,15 +183,16 @@ function ActionBadge({ element, kind }: { element: number; kind: number }): Reac
 const SKILL_INFO = [
   '最大 6 枠。ドラッグで並べ替え、× で外します。',
   '同じワザを複数の枠に入れると、AI が「均等」のときはその数だけ出やすくなります (右の % が出やすさ)。',
-  'モーションはアクション +0x1E の演出 (directData) が決めます。',
+  '✎ でワザの名前・モーション・属性などを変えられます。ほかのモンスターも使うワザは、複製してこのモンスター専用のワザにできます。',
 ].join('\n');
 
 /**
  * The 6 skill slots (drag to reorder, × to remove, ＋ to add) with each one's share under AI mode 0, and
  * the AI fields (mode, target, actions per turn, focus).
  */
-export function SkillEditor({ actions, ...p }: EditProps & { actions: ActionBook }): ReactNode {
+export function SkillEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
+  const [editing, setEditing] = useState<number | null>(null);
   const [picking, setPicking] = useState<{ current?: number; onPick: (a: number) => void } | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<number | null>(null);
@@ -254,6 +257,7 @@ export function SkillEditor({ actions, ...p }: EditProps & { actions: ActionBook
                 onClick={() => setPicking({ current: s.action, onPick: (x) => set(skills.map((y, j) => (j === i ? x : y))) })}
               />
               <span className="num slot-share" title="AI が「均等」のときの出やすさ">{m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}</span>
+              <button className="small" title="このワザを編集 (名前・モーションなど)" onClick={() => setEditing(i)}>✎</button>
               <button className="small slot-remove" title="この枠を外す" onClick={() => set(skills.filter((_, j) => j !== i))}>×</button>
             </div>
           );
@@ -277,11 +281,50 @@ export function SkillEditor({ actions, ...p }: EditProps & { actions: ActionBook
           <tr><td className="with-info">集中攻撃<InfoTip text="状態 85。狙い方 2 のとき、HP が一番低い味方を狙います" /></td><td><FieldCheck {...p} k="focus" label="あり" /></td></tr>
         </tbody>
       </table>
+      {editing !== null && skills[editing] !== undefined && (
+        <SkillEditDialog session={session} actions={actions} m={m} action={skills[editing]!} edited={edited}
+          onCopy={(n) => set(skills.map((y, j) => (j === editing ? n : y)))} onClose={() => setEditing(null)} />
+      )}
       {picking && (
         <ActionPicker actions={actions} current={picking.current} onClose={() => setPicking(null)}
           onPick={(a) => { setPicking(null); picking.onPick(a); }} />
       )}
     </section>
+  );
+}
+
+/**
+ * Editing the action of a skill slot. When other monsters or items use it too, the edit changes them as well, so
+ * the dialog offers a copy for this monster first (the slot then holds the copy).
+ */
+function SkillEditDialog({ session, actions, m, action, edited, onCopy, onClose }: {
+  session: Session;
+  actions: ActionBook;
+  m: Monster;
+  action: number;
+  edited: () => void;
+  onCopy: (row: number) => void;
+  onClose: () => void;
+}): ReactNode {
+  const a = actions.action(action);
+  const refs = actions.refsOf(action);
+  const others = [...new Set(refs.monsters.filter((x) => x.row !== m.row).map((x) => x.name))];
+  const shared = others.length + refs.items.length;
+  const copy = (): void => {
+    const n = actionEdits(session).copy(action);
+    onCopy(n);
+  };
+  return (
+    <Dialog title={`ワザ「${a?.name || `#${action}`}」を編集`} wide={false} onClose={onClose}>
+      {shared > 0 && (
+        <div className="warn-box">
+          {`このワザは ${[...others.slice(0, 3), ...refs.items.slice(0, 2).map((i) => `アイテム ${i.name}`)].join('・')}${shared > 5 ? ' など' : ''} も使っています。ここで変えるとそちらも変わります。`}
+          <div className="row"><button className="primary" onClick={copy}>{`複製して ${m.name} 専用にする`}</button></div>
+        </div>
+      )}
+      <ActionEditor session={session} actions={actions} row={action} monsters={[m]} onChange={edited} />
+      <div className="muted small"><a href={`#/actions/${action}`}>{`アクション #${action} を開く`}</a></div>
+    </Dialog>
   );
 }
 

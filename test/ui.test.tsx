@@ -49,6 +49,11 @@ describe('action page', () => {
     expect(html).toContain('残り 2 バイト: 0 0');
     expect(html).not.toContain('たいあたり');
   });
+
+  test('the page puts the editor under the effect', () => {
+    const html = renderToString(<ActionView book={book} selected={1} editor={(a) => <div className="x-edit">{`edit ${a.row}`}</div>} />);
+    expect(html).toContain('<div class="x-edit">edit 1</div>');
+  });
 });
 
 describe('editor state', () => {
@@ -218,7 +223,7 @@ describe('monster editors', () => {
   } as never;
 
   test('skills: duplicate slots add up under AI mode 0, a form-changing skill says where it goes', () => {
-    const html = renderToString(<SkillEditor book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
+    const html = renderToString(<SkillEditor session={{} as Session} book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
     expect(html.match(/75%/g)?.length).toBe(3);
     expect(html).toContain('25%');
     expect(html).toContain('→ #3 に変身');
@@ -227,6 +232,7 @@ describe('monster editors', () => {
     expect(html.match(/class="board-id" href="#\/actions\/1"/g)?.length).toBe(3);
     expect(html).toContain('＋ ワザを追加');
     expect(html).toContain('draggable="true"');
+    expect(html.match(/このワザを編集/g)?.length).toBe(4);
   });
 
   test('boss: condition, next form marked as edited, and the forms turning into this one', () => {

@@ -98,7 +98,7 @@ export class ActionBook {
   private readonly performances: GsTable | null;
 
   /** `performances`: directData.bin (MonsterBook.directData), for the motions of the actions. */
-  constructor(master: Master, monsterName: (row: number) => string = () => '', performances: GsTable | null = null) {
+  constructor(private readonly master: Master, monsterName: (row: number) => string = () => '', performances: GsTable | null = null) {
     this.performances = performances;
     const t = master.table('actionData.bin');
     for (let i = 0; i < t.rows; i++) {
@@ -139,6 +139,14 @@ export class ActionBook {
     const p = this.actions[row]?.performance ?? 0;
     const t = this.performances;
     return p && t && p < t.rows && t.rowSize > 0x0a ? t.row(p)[0x0a]! : 0;
+  }
+
+  /** A row as in the archive (null for a row added by an edit), with its motion (rows of directData in the archive are never changed). */
+  original(row: number): (ActionFields & { motion: number }) | null {
+    if (row >= this.master.originalRows('actionData.bin')) return null;
+    const f = decodeAction(this.master.originalRow('actionData.bin', row));
+    const t = this.performances;
+    return { ...f, motion: f.performance && t && f.performance < t.rows && t.rowSize > 0x0a ? t.row(f.performance)[0x0a]! : 0 };
   }
 
   refsOf(row: number): ActionRefs {
