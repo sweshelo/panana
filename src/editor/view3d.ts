@@ -336,7 +336,7 @@ export class View3D {
         const rotY = place.angle;
         const ox = place.ox, oz = place.oz;
         if (model) {
-          model.position.set(px * CELL + ox, 0, py * CELL + oz);
+          model.position.set(px * CELL + ox, place.oy, py * CELL + oz);
           model.rotation.y = rotY;
           this.markerGroup.add(model);
           const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMat(SECTION_COLORS[k]!, selected));
