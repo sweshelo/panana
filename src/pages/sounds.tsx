@@ -5,7 +5,9 @@ import type { MapInfo } from '../game/codebin';
 import { mapShortTitle } from '../game/names';
 import { mapDataUsers, SOUND_KIND, SOUND_SLOTS, soundUses, type SoundKind, type SoundNames, type SoundUse } from '../game/sound';
 import { hex8 } from '../util/bytes';
+import type { Game } from '../game/game';
 import { Count, ListFilter, useActiveRow, useSticky, type PageProps } from '../ui/book';
+import { PlayButton } from '../ui/SoundPicker';
 
 export const soundHref = (row: number): string => `#/sounds/${row}`;
 
@@ -20,12 +22,13 @@ export function SoundPage({ session, arg, visit, sounds }: PageProps & { sounds:
   const selected = useSticky(arg ? Number(arg) : undefined, (r) => r >= 1 && r < sounds.rows, () => 1);
   return (
     <div className="book">
-      <SoundView sounds={sounds} uses={uses} users={users} selected={selected} mapTitle={(m) => mapShortTitle(m, game.code.maps)} />
+      <SoundView game={game} sounds={sounds} uses={uses} users={users} selected={selected} mapTitle={(m) => mapShortTitle(m, game.code.maps)} />
     </div>
   );
 }
 
-export function SoundView({ sounds, uses, users, selected, mapTitle }: {
+export function SoundView({ game, sounds, uses, users, selected, mapTitle }: {
+  game: Game;
   sounds: SoundNames;
   uses: Map<number, SoundUse[]>;
   users: Map<number, MapInfo[]>;
@@ -48,14 +51,15 @@ export function SoundView({ sounds, uses, users, selected, mapTitle }: {
     <>
       <div className="book-side">
         <ListFilter query={query} setQuery={setQuery} placeholder="名前 (BGM_CAVE など) か行番号で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['bgm', 'BGM'], ['se', '効果音'], ['other', 'その他'], ['used', 'マップで使う']]} />
+          options={[['all', 'すべて'], ['bgm', 'BGM'], ['me', 'ME (短い曲)'], ['se', '効果音'], ['other', 'その他'], ['used', 'マップで使う']]} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={sounds.rows - 1} />
           <table className="book-table">
-            <thead><tr><th>#</th><th>名前</th><th>種類</th><th title="この音を使う mapData の欄の数">マップ</th></tr></thead>
+            <thead><tr><th /><th>#</th><th>名前</th><th>種類</th><th title="この音を使う mapData の欄の数">マップ</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r} className={r === selected ? 'active' : ''} onClick={() => (location.hash = soundHref(r))}>
+                  <td className="play-cell"><PlayButton game={game} sounds={sounds} row={r} /></td>
                   <td className="num muted">{r}</td>
                   <td className="mono">{sounds.name(r) || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{SOUND_KIND[sounds.kind(r)]}</td>
@@ -68,10 +72,12 @@ export function SoundView({ sounds, uses, users, selected, mapTitle }: {
       </div>
       <div className="book-detail">
         <div className="book-head">
+          <PlayButton game={game} sounds={sounds} row={selected} className="large" />
           <h2 className="mono">{sounds.name(selected) || `サウンド ${selected}`}</h2>
           <span className="muted">{`#${selected}  ${SOUND_KIND[sounds.kind(selected)]}  (soundData.bin)`}</span>
         </div>
         {!sounds.named && <p className="muted">sound/sound.bcsar が読めなかったので、音の名前はわかりません。</p>}
+        <p className="muted small">▶ で試聴できます。BGM・ME は sound/stream/ の曲を、効果音は sound.bcsar の波形とシーケンスを鳴らします (効果音のシーケンスはこのエディタでの再現なので、ゲームと少し違って聞こえることがあります)。</p>
         <table className="enc-table">
           <tbody>
             <tr><td>+0x00 アイテム ID</td><td className="mono">{`0x${hex8(sounds.item(selected))}`}</td>

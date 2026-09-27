@@ -14,6 +14,8 @@ import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
 import { groundFromTiles, parseGround, type Ground, type WorldInfo } from './worldmap';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
+import { SoundArchive } from '../sound/formats';
+import { SoundRenderer } from '../sound/render';
 
 export interface TilesetSource {
   /** mapResource row. */
@@ -120,6 +122,20 @@ export class Game {
       return new SoundNames(items, names, volumes);
     })();
     return this.soundNames;
+  }
+
+  private renderer: Promise<SoundRenderer> | null = null;
+
+  /** Plays the sounds of sound/sound.bcsar (read when first needed; its streams from sound/stream/). */
+  soundRenderer(): Promise<SoundRenderer> {
+    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
+      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
+      (err: Error) => {
+        this.renderer = null;
+        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
+      },
+    );
+    return this.renderer;
   }
 
   archive(name: string): Promise<Archive> {

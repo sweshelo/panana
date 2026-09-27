@@ -46,8 +46,8 @@ export type SoundSlot = (typeof SOUND_SLOTS)[number][0];
 /** Largest soundData row a mapData byte can hold. */
 export const MAX_MAP_SOUND = 0xff;
 
-export type SoundKind = 'bgm' | 'se' | 'other';
-export const SOUND_KIND: Record<SoundKind, string> = { bgm: 'BGM', se: '効果音', other: 'その他' };
+export type SoundKind = 'bgm' | 'me' | 'se' | 'other';
+export const SOUND_KIND: Record<SoundKind, string> = { bgm: 'BGM', me: 'ME (短い曲)', se: '効果音', other: 'その他' };
 
 export class SoundNames {
   constructor(
@@ -78,10 +78,16 @@ export class SoundNames {
     return !!this.names;
   }
 
-  /** BGM_* / SE_* by name (without names: rows 1-34 are BGM, docs/encounters.md §4). */
+  /** Index of the sound in sound.bcsar, or null when the row is not a sound. */
+  index(row: number): number | null {
+    const id = this.items[row];
+    return row && id && id >>> 24 === 1 ? id & 0xffffff : null;
+  }
+
+  /** BGM_* / ME_* / SE_* by name (without names: rows 1-34 are BGM, docs/encounters.md §4). */
   kind(row: number): SoundKind {
     const n = this.name(row);
-    if (n) return n.startsWith('BGM_') ? 'bgm' : n.startsWith('SE_') ? 'se' : 'other';
+    if (n) return n.startsWith('BGM_') ? 'bgm' : n.startsWith('ME_') ? 'me' : n.startsWith('SE_') ? 'se' : 'other';
     return row >= 1 && row <= 34 ? 'bgm' : 'other';
   }
 

@@ -300,3 +300,21 @@ input.edited { border-color: var(--warn); }
 .world-scroll canvas { display: block; image-rendering: pixelated; touch-action: none; }
 .world-hover { height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .warn-mark { color: var(--warn); }
+
+/* sounds: play buttons and the sound picker */
+.play-button { width: 26px; height: 26px; padding: 0; border-radius: 50%; flex: none; font-size: 11px; line-height: 1; }
+.play-button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.play-button.failed { border-color: var(--danger); color: var(--danger); }
+.play-button.large { width: 36px; height: 36px; font-size: 14px; align-self: center; }
+.play-button.placeholder { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); border: 1px dashed var(--border); }
+.book-table td.play-cell { width: 1%; padding: 1px 4px; }
+.book-table td.play-cell .play-button { width: 22px; height: 22px; font-size: 10px; }
+.sound-button { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sound-button .map-button { flex: 1; min-width: 0; }
+.sound-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; padding: 6px; }
+.sound-cell { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; min-width: 0; }
+.sound-cell:hover, .sound-cell:focus-visible { border-color: var(--accent); outline: none; }
+.sound-cell.current { background: #2d4a7a; }
+.sound-cell.sold { opacity: 0.4; cursor: default; }
+.sound-cell-text { display: flex; flex-direction: column; min-width: 0; }
+.sound-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

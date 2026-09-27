@@ -387,6 +387,18 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(snd.name(s.steps)).toBe('SE_FLD_STEPS1');
   });
 
+  test('previews: a stream, a wave sound and a sequence render to sound', async () => {
+    const r = await game.soundRenderer();
+    for (const name of ['BGM_CAVE', 'SE_SYS_ENTER', 'SE_FLD_STEPS1']) {
+      const i = r.archive.sounds.findIndex((s) => s.name === name);
+      expect(i).toBeGreaterThanOrEqual(0);
+      const pcm = await r.render(i);
+      const peak = Math.max(...pcm.channels.map((c) => c.reduce((m, x) => Math.max(m, Math.abs(x)), 0)));
+      expect(peak).toBeGreaterThan(0.01);
+      expect(peak).toBeLessThanOrEqual(1);
+    }
+  });
+
   test('a map sound edit goes to mapData.bin (exported), and back', async () => {
     const snd = await game.sounds();
     const m = game.code.byName('D01B02001')!;

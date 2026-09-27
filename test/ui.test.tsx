@@ -202,6 +202,9 @@ describe('sounds', () => {
     expect(sounds.kind(3)).toBe('se');
     expect(sounds.label(3)).toBe('SE_FLD_STEPS1 (3)');
     expect(sounds.label(0)).toBe('なし');
+    expect(sounds.index(2)).toBe(1);
+    expect(sounds.index(0)).toBeNull();
+    expect(sounds.index(4)).toBeNull();
     // Without sound.bcsar: rows 1-34 are BGM.
     const bare = new SoundNames(items, null);
     expect(bare.kind(5)).toBe('bgm');
@@ -216,12 +219,14 @@ describe('sounds', () => {
   });
 
   test('picker: filtered by kind, the current row marked, rows past the byte greyed out', () => {
-    const bgm = renderToString(<SoundPicker sounds={sounds} current={2} kind="bgm" max={255} onPick={() => {}} onClose={() => {}} />);
+    const bgm = renderToString(<SoundPicker game={game} sounds={sounds} current={2} kind="bgm" max={255} onPick={() => {}} onClose={() => {}} />);
     expect(bgm).toContain('BGM_CAVE');
     expect(bgm).not.toContain('SE_FLD_STEPS1');
-    expect(bgm).toContain('class="pick current"');
+    expect(bgm).toContain('sound-cell current');
     expect(bgm).toContain('(なし)');
-    const se = renderToString(<SoundPicker sounds={sounds} current={3} kind="se" max={255} usage={(r) => (r === 3 ? 'マップ 2 個' : '')} onPick={() => {}} onClose={() => {}} />);
+    // Each sound has a play button (row 0 = none has not).
+    expect(bgm.match(/class="play-button"/g)?.length).toBe(2);
+    const se = renderToString(<SoundPicker game={game} sounds={sounds} current={3} kind="se" max={255} usage={(r) => (r === 3 ? 'マップ 2 個' : '')} onPick={() => {}} onClose={() => {}} />);
     expect(se).toContain('マップ 2 個');
     expect(se).toContain('マップの設定には行 255 までしか入りません');
   });
@@ -229,10 +234,11 @@ describe('sounds', () => {
   test('list page: every row, the detail with the maps that use it', () => {
     const map = { hash: 0x10, name: 'D01B01001', dungeon: 1, dungeonCode: 'D01', floor: -1, mapDataKey: 0, sections: [] } as unknown as MapInfo;
     const html = renderToString(
-      <SoundView sounds={sounds} uses={soundUses(game)} users={new Map([[0, [map]]])} selected={2} mapTitle={() => '山のどうくつ B1'} />,
+      <SoundView game={game} sounds={sounds} uses={soundUses(game)} users={new Map([[0, [map]]])} selected={2} mapTitle={() => '山のどうくつ B1'} />,
     );
     expect(html).toContain('300 / 300 件');
     expect(html).toContain('0x01000001');
+    expect(html).toContain('play-button large');
     expect(html).toContain('sound.bcsar の音 1');
     expect(html).toContain('使っているマップの設定 (2)');
     expect(html).toContain('href="#/map/D01B01001"');

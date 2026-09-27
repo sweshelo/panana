@@ -6,7 +6,6 @@ import { mapShortTitle } from '../game/names';
 import { MAX_MAP_SOUND, SOUND_SLOTS, soundUses, mapDataUsers, type SoundKind, type SoundNames } from '../game/sound';
 import type { Session } from '../session';
 import { SoundButton } from '../ui/SoundPicker';
-import { Field } from './fields';
 
 const SLOT_KIND: Record<string, SoundKind> = { bgm: 'bgm', battle: 'bgm', steps: 'se' };
 
@@ -34,12 +33,14 @@ export function MapSoundPanel({ session, sounds }: { session: Session; sounds: S
         )}
       </h3>
       {SOUND_SLOTS.map(([slot, label]) => (
-        <Field key={slot} label={label}>
+        // Not a <label>: a click on the caption would press the play button.
+        <div key={slot} className="field">
+          <span>{label}</span>
           {sounds
-            ? <SoundButton sounds={sounds} value={s[slot]} kind={SLOT_KIND[slot]} max={MAX_MAP_SOUND} usage={usage}
+            ? <SoundButton game={game} sounds={sounds} value={s[slot]} kind={SLOT_KIND[slot]} max={MAX_MAP_SOUND} usage={usage}
                 title={`${label} を選ぶ`} onChange={(v) => st.editTables(() => master.setSound(row, slot, v))} />
             : <span>{`サウンド ${s[slot]}`}</span>}
-        </Field>
+        </div>
       ))}
       <div className="muted small">
         {`mapData 行 ${row} の [4] / [5] / [6]。`}
