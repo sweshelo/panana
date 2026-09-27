@@ -334,6 +334,8 @@ export class MonsterBook {
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
   private readonly design: GsTable;
+  /** directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). */
+  readonly directData: GsTable | null;
   readonly battle: BattleParams;
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
@@ -342,6 +344,8 @@ export class MonsterBook {
     const f = findByName(parseArchive(designArchive), 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
     this.design = new GsTable(f.body);
+    const dd = findByName(parseArchive(designArchive), 'directData.bin');
+    this.directData = dd ? new GsTable(dd.body) : null;
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));

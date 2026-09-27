@@ -122,7 +122,7 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
 function MonsterDetail({ session, book, m, where, edited }: { session: Session; book: MonsterBook; m: Monster; where: Appearance[]; edited: () => void }): ReactNode {
   const { game } = session;
   // Rebuilt after each edit: the monsters using each skill change with the skill slots.
-  const actions = useMemo(() => new ActionBook(game.master, (row) => book.monster(row)?.name ?? ''), [game, book, m]);
+  const actions = useMemo(() => new ActionBook(game.master, (row) => book.monster(row)?.name ?? '', book.directData), [game, book, m]);
   const p = { book, m, edited };
   return (
     <>

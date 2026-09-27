@@ -7,7 +7,8 @@ import { s16, u16, u32 } from '../util/bytes';
 import type { Master } from './master';
 
 /**
- * Entry hash of the performance table (runtime master +0x71C, bound by FUN_0019643c). actionData +0x1E is a
+ * Entry hash of the performance table: directData.bin (1026 × 20) in 2713402F, the archive of MonsterDesign
+ * (runtime master +0x71C, bound by FUN_0019643c). actionData +0x1E is a
  * row of it; the row's +0x0A is the animation (animData row) the user plays, e.g. 0x45〜0x48 = a monster's
  * skill A〜D (FUN_002f46bc, FUN_002e7f44). FUN_001dd694 also picks MonsterDesign +0x18〜+0x24 by it.
  */
@@ -96,9 +97,9 @@ export class ActionBook {
   /** The performance table (null when the archive has no such entry). */
   private readonly performances: GsTable | null;
 
-  constructor(master: Master, monsterName: (row: number) => string = () => '') {
-    const perf = master.tableName(PERFORMANCE_TABLE);
-    this.performances = perf ? master.table(perf) : null;
+  /** `performances`: directData.bin (MonsterBook.directData), for the motions of the actions. */
+  constructor(master: Master, monsterName: (row: number) => string = () => '', performances: GsTable | null = null) {
+    this.performances = performances;
     const t = master.table('actionData.bin');
     for (let i = 0; i < t.rows; i++) {
       const raw = t.row(i);

@@ -418,26 +418,12 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
   });
 
   test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {
-    const { ActionBook, PERFORMANCE_TABLE } = await import('../src/game/actions');
+    const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();
     console.log('drop base (BattleParameter +0x10C):', book.battle.dropBase.join(' '));
-    console.log('performance table:', game.master.tableName(PERFORMANCE_TABLE));
-    {
-      const { parseArchive, findEntry, unpackEntry } = await import('../src/archive/gsarc');
-      const { GsTable } = await import('../src/archive/gstable');
-      for (const n of game.dump.names()) {
-        let arc;
-        try { arc = parseArchive(await game.dump.readRomfs(n)); } catch { continue; }
-        const e = findEntry(arc, PERFORMANCE_TABLE);
-        if (!e) continue;
-        const u = unpackEntry(arc, e);
-        const t = new GsTable(u.body);
-        console.log(`entry ${PERFORMANCE_TABLE.toString(16)} in ${n}: comp ${e.comp} type ${e.type} name ${u.name} table ${t.name} ${t.rows} x ${t.rowSize}`);
-        console.log('  +0x0A of rows 0..15:', Array.from({ length: Math.min(16, t.rows) }, (_, i) => t.row(i)[0x0a]!.toString(16)).join(' '));
-      }
-    }
     for (const m of book.monsters) for (const d of m.drops) expect(Number.isFinite(book.battle.dropOdds(d.rate))).toBe(true);
-    const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '');
+    expect(book.directData?.name).toBe('DirectData');
+    const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '', book.directData);
     const motions = new Map<number, number>();
     for (const m of book.monsters) for (const s of m.skills) { const n = actions.motion(s.action); motions.set(n, (motions.get(n) ?? 0) + 1); }
     console.log('skill motions:', [...motions].sort((a, b) => b[1] - a[1]).map(([n, c]) => `0x${n.toString(16)}×${c}`).join(' '));
