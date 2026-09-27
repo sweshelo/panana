@@ -4,6 +4,7 @@ import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { MONSTER_ROWS_PATCH } from '../game/monsters';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
@@ -41,8 +42,8 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const added = game.code.addedMaps();
     if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
-    // Panana's own patches, when their data is used (boss battles: game/boss.ts)
-    const extra = usesBoss(st.events.values()) ? [BOSS_PATCH] : [];
+    // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts)
+    const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : [])];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

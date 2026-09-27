@@ -417,6 +417,35 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.changed(1)).toBe(false);
   });
 
+  test('copied monster: a new row, exported with the row patch, read back', async () => {
+    const { MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
+    const { buildPatches } = await import('../src/game/patch');
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    expect(g2.master.table('monsterParameter.bin').rows).toBe(VANILLA_MONSTER_ROWS);
+    expect(book.needsRowsPatch()).toBe(false);
+    const src = book.monster(15)!;
+    const n = book.copyMonster(15);
+    expect(n).toBe(VANILLA_MONSTER_ROWS);
+    expect(book.monsters.length).toBe(185);
+    const c = book.monster(n)!;
+    expect({ ...c, row: 15 }).toEqual(src);
+    expect([book.added(n), book.changed(n), book.canRemove(n), book.needsRowsPatch()]).toEqual([true, false, true, true]);
+    book.set(n, 'hpMax', 1234);
+    expect([book.monster(n)!.hp.max, book.monster(15)!.hp.max]).toEqual([1234, src.hp.max]);
+    expect(book.users(n)).toEqual({ groups: [], fixes: [], forms: [] });
+    // the patch replaces the 5 checks of row < 0xB9
+    const built = buildPatches(g2.dump.code, [MONSTER_ROWS_PATCH]).get(MONSTER_ROWS_PATCH_ID)!;
+    expect(built.errors).toEqual([]);
+    expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe35800b9, 0xe35100b9, 0xe35100b9, 0xe35100b9, 0xe35100b9]);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const b2 = await again.monsters();
+    expect([b2.monster(n)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual([src.name, 1234, false]);
+    book.removeMonster(n);
+    expect([book.monsters.length, book.needsRowsPatch()]).toEqual([184, false]);
+  });
+
   test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();

@@ -4,7 +4,9 @@ import { GsTable } from '../archive/gstable';
 import { findByName, parseArchive } from '../archive/gsarc';
 import { u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
+import { decodeFix, FIX_TABLE } from './boss';
 import type { Master } from './master';
+import type { CodePatch } from './patch';
 import type { MapDoc } from './sections';
 
 /** Archive of MonsterDesign (names, descriptions). */
@@ -329,6 +331,38 @@ function clean(s: string): string {
   return s.replace(/Ē/g, '(色)');
 }
 
+/**
+ * MonsterParameter rows: FUN_00199c00 (a battle unit from a row) and four readers of the byte array at +0xA48
+ * turn away row numbers from 0xB9 on, the rows of the vanilla table (MONSTER_ROWS_PATCH lifts the check; the
+ * table's own row count is still checked right after). Rows stay under 0x100: +0x50 and those arrays hold a byte.
+ */
+export const VANILLA_MONSTER_ROWS = 0xb9;
+export const MONSTER_ROWS_MAX = 0x100;
+
+export const MONSTER_ROWS_PATCH_ID = 'monster-rows';
+export const MONSTER_ROWS_PATCH_TITLE = '追加したモンスター (行 185 以降)';
+export const MONSTER_ROWS_PATCH_SOURCE = `; 追加したモンスター: 行番号 0xB9 (185) 以上を弾く比較を 0x100 にする。
+; どれもこの後で monsterParameter の行数と比べるので、表にある行だけが通る。
+@0x199C30                    ; FUN_00199c00 (行から戦闘のユニットを作る)
+  cmp r8, #0x100
+@0x2BE3A4                    ; 以下、+0xA48 のバイトの配列から行を読むところ
+  cmp r1, #0x100
+@0x2D4474
+  cmp r1, #0x100
+@0x3FB190
+  cmp r1, #0x100
+@0x3FCA10
+  cmp r1, #0x100
+`;
+export const MONSTER_ROWS_PATCH: CodePatch = { id: MONSTER_ROWS_PATCH_ID, title: MONSTER_ROWS_PATCH_TITLE, source: MONSTER_ROWS_PATCH_SOURCE, enabled: true };
+
+/** What refers to a monster row: encounter groups, fixed battle groups (monsterFixGroup rows), next forms. */
+export interface MonsterUsers {
+  groups: number[];
+  fixes: number[];
+  forms: number[];
+}
+
 export class MonsterBook {
   monsters: Monster[] = [];
   readonly groups: MonsterGroup[] = [];
@@ -470,9 +504,73 @@ export class MonsterBook {
     this.reload();
   }
 
-  /** A field of a row as in the archive. */
+  /** A field of a row as in the archive (an added row has no original: its current value). */
   original(row: number, key: ParamKey): number {
-    return getField(this.master.originalRow('monsterParameter.bin', row), PARAM[key]);
+    return getField(this.originalRow(row), PARAM[key]);
+  }
+
+  /** A row as in the archive; an added row as it is now (so it shows no changes). */
+  private originalRow(row: number): Uint8Array {
+    return this.added(row) ? this.params.row(row) : this.master.originalRow('monsterParameter.bin', row);
+  }
+
+  private get params(): GsTable {
+    return this.master.table('monsterParameter.bin');
+  }
+
+  /** Whether a row was added by an edit (copyMonster). */
+  added(row: number): boolean {
+    return row >= this.master.originalRows('monsterParameter.bin');
+  }
+
+  /** Whether the rows past the vanilla ones are there (the export then needs MONSTER_ROWS_PATCH). */
+  needsRowsPatch(): boolean {
+    return this.params.rows > VANILLA_MONSTER_ROWS;
+  }
+
+  /** Whether another row can be added (row numbers stay under 0x100). */
+  canCopy(): boolean {
+    return this.params.rows < MONSTER_ROWS_MAX;
+  }
+
+  /** Append a copy of a row as a new monster (same look, name and species). Returns the new row number. */
+  copyMonster(row: number): number {
+    const t = this.params;
+    if (!this.canCopy()) throw new Error(`モンスターは行 ${MONSTER_ROWS_MAX - 1} までです`);
+    let hash = 0;
+    if (t.indexOffset) {
+      const used = t.hashes();
+      hash = (0x6d500000 + t.rows) >>> 0;
+      while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+    }
+    const n = t.append(t.row(row).slice(), hash);
+    this.reload();
+    return n;
+  }
+
+  /** What refers to a row (groups, fixed battles and other rows' next form). */
+  users(row: number): MonsterUsers {
+    const fix = this.master.table(FIX_TABLE);
+    const fixes: number[] = [];
+    for (let i = 0; i < fix.rows; i++) if (decodeFix(fix.row(i)).slots.some((s) => s.monster === row)) fixes.push(i);
+    return {
+      groups: this.groups.filter((g) => this.groupMonsters(g).includes(row)).map((g) => g.row),
+      fixes,
+      forms: this.monsters.filter((m) => m.nextForm === row && m.row !== row).map((m) => m.row),
+    };
+  }
+
+  /** Whether a row can be removed: the last added row. */
+  canRemove(row: number): boolean {
+    return this.added(row) && row === this.params.rows - 1;
+  }
+
+  /** Remove the last added row. */
+  removeMonster(row: number): void {
+    if (!this.canRemove(row)) throw new Error('消せるのは最後に追加したモンスターだけです');
+    const t = this.params;
+    t.data = t.withRows(Array.from({ length: t.rows - 1 }, (_, i) => t.row(i).slice()));
+    this.reload();
   }
 
   /** Replace the skills of a row (up to 6 action rows; packed to the front). */
@@ -483,7 +581,7 @@ export class MonsterBook {
 
   /** Skills of a row as in the archive. */
   originalSkills(row: number): number[] {
-    return decodeSkills(this.master.originalRow('monsterParameter.bin', row));
+    return decodeSkills(this.originalRow(row));
   }
 
   /** Set resistance k (index in Monster.resist) of a row (5-bit signed field). */
@@ -499,17 +597,18 @@ export class MonsterBook {
   /** Resistance k of a row as in the archive. */
   originalResist(row: number, k: number): number {
     const [wi, b] = RESIST_FIELDS[k]!;
-    return bits(u32(this.master.originalRow('monsterParameter.bin', row), wi * 4), b, 5, true);
+    return bits(u32(this.originalRow(row), wi * 4), b, 5, true);
   }
 
-  /** Whether a row differs from the archive, and putting it back. */
+  /** Whether a row differs from the archive, and putting it back (added rows: never). */
   changed(row: number): boolean {
-    const t = this.master.table('monsterParameter.bin');
-    const o = this.master.originalRow('monsterParameter.bin', row);
-    return t.row(row).some((v, i) => v !== o[i]);
+    if (this.added(row)) return false;
+    const o = this.originalRow(row);
+    return this.params.row(row).some((v, i) => v !== o[i]);
   }
   revert(row: number): void {
-    this.master.table('monsterParameter.bin').row(row).set(this.master.originalRow('monsterParameter.bin', row));
+    if (this.added(row)) return;
+    this.params.row(row).set(this.originalRow(row));
     this.reload();
   }
 
