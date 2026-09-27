@@ -9,6 +9,7 @@ import { EventPage } from '../pages/events';
 import { MessagePage } from '../pages/messages';
 import { MonsterPage } from '../pages/monsters';
 import { ShopPage } from '../pages/shops';
+import { SoundPage } from '../pages/sounds';
 import { WorldPage } from '../pages/world';
 import type { Session } from '../session';
 import type { PageProps } from './book';
@@ -26,11 +27,12 @@ export const PAGES = [
   ['actions', 'アクション'],
   ['events', 'イベント'],
   ['messages', 'メッセージ'],
+  ['sounds', 'BGM・効果音'],
 ] as const;
 type Page = (typeof PAGES)[number][0];
 
 const TITLES: Record<Page, string> = {
-  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ',
+  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ', sounds: 'BGM・効果音',
 };
 
 const subscribeHash = (f: () => void): (() => void) => {
@@ -38,7 +40,7 @@ const subscribeHash = (f: () => void): (() => void) => {
   return () => window.removeEventListener('hashchange', f);
 };
 
-/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row] or #/messages[/dungeon.row | /0xID]. */
+/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID] or #/sounds[/row]. */
 function useRoute(): { page: Page; arg: string | undefined; hash: string } {
   const hash = useSyncExternalStore(subscribeHash, () => location.hash);
   const [p, arg] = hash.replace(/^#\/?/, '').split('/');
@@ -93,6 +95,8 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
       return <MessagePage {...props} />;
     case 'world':
       return <WorldPage {...props} />;
+    case 'sounds':
+      return props.session.sounds ? <SoundPage {...props} sounds={props.session.sounds} /> : <Failed message="音の表 (soundData) を読めませんでした。" />;
   }
 }
 

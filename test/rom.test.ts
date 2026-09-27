@@ -452,6 +452,32 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(snd.name(s.steps)).toBe('SE_FLD_STEPS1');
   });
 
+  test('previews: a stream, a wave sound and a sequence render to sound', async () => {
+    const r = await game.soundRenderer();
+    for (const name of ['BGM_CAVE', 'SE_SYS_ENTER', 'SE_FLD_STEPS1']) {
+      const i = r.archive.sounds.findIndex((s) => s.name === name);
+      expect(i).toBeGreaterThanOrEqual(0);
+      const pcm = await r.render(i);
+      const peak = Math.max(...pcm.channels.map((c) => c.reduce((m, x) => Math.max(m, Math.abs(x)), 0)));
+      expect(peak).toBeGreaterThan(0.01);
+      expect(peak).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('a map sound edit goes to mapData.bin (exported), and back', async () => {
+    const snd = await game.sounds();
+    const m = game.code.byName('D01B02001')!;
+    const row = game.master.mapDataRow(m);
+    const before = game.master.sounds(m).bgm;
+    const home = [...Array(snd.rows).keys()].find((r) => snd.name(r) === 'BGM_HOME')!;
+    expect(home).toBeLessThanOrEqual(0xff);
+    game.master.setSound(row, 'bgm', home);
+    expect(snd.name(game.master.sounds(m).bgm)).toBe('BGM_HOME');
+    expect(game.master.changedTables()).toContain('mapData.bin');
+    game.master.setSound(row, 'bgm', before);
+    expect(game.master.changedTables()).not.toContain('mapData.bin');
+  });
+
   test('mapData per map: デンパ島のどうくつ inside 海底トンネル (issue #6)', async () => {
     const snd = await game.sounds();
     const m = (name: string) => game.code.byName(name)!;

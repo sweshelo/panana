@@ -155,7 +155,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
               <a href={`#/map/${a.map.name}`}>{mapTitle(a.map, game.code.maps, game.master)}</a>
               <span className="muted">{` 群れ #${a.group.row}${a.cells === 'map' ? '' : ` (セル ${a.cells} 個)`}${a.lead ? '' : ' 仲間としてのみ'}`}</span>
             </summary>
-            <GroupDetail book={book} group={a.group} />
+            <GroupDetail game={game} book={book} group={a.group} />
           </details>
         ))}
       </div>

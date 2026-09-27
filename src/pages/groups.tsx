@@ -1,109 +1,37 @@
 // Encounter groups (monsterGroup): every row with its candidates and the maps that use it (section 6);
 // the candidates can be edited, and a group can be copied into a new row.
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import type { MapInfo } from '../game/codebin';
-import type { Game } from '../game/game';
-import { countLabel, GROUP_SLOTS, mapEncounters, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import { useMemo, useState, type ReactNode } from 'react';
+import { countLabel, GROUP_SLOTS, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import { mapTitle } from '../game/names';
-import type { MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
 import type { Session } from '../session';
-import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
+import { NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
+import { GroupList, groupHref, groupUses, MonsterPhoto, type GroupUse } from '../ui/GroupDetail';
 import { MonsterPicker } from '../ui/MonsterPicker';
-import { Photo } from '../ui/Photo';
-import { monsterRef } from './monsters';
 
-export const groupHref = (row: number): string => `#/groups/${row}`;
-
-export interface GroupUse {
-  map: MapInfo;
-  /** 'map' = the map's group (section 6 header), else the number of cells with this group. */
-  cells: number | 'map';
-}
-
-/** Group hash -> maps that use it (current map documents, so edits show up). */
-export function groupUses(game: Game, docOf: (m: MapInfo) => MapDoc): Map<number, GroupUse[]> {
-  const out = new Map<number, GroupUse[]>();
-  const add = (hash: number, use: GroupUse): void => {
-    if (hash) out.set(hash, [...(out.get(hash) ?? []), use]);
-  };
-  for (const m of game.editableMaps()) {
-    const enc = mapEncounters(docOf(m));
-    add(enc.group, { map: m, cells: 'map' });
-    for (const [hash, cells] of enc.cells) add(hash, { map: m, cells: cells.length });
-  }
-  return out;
-}
-
-type Filter = 'all' | 'used' | 'unused' | 'changed';
+export { groupHref, groupUses, type GroupUse };
 
 export function GroupPage({ session, arg, visit, book }: PageProps & { book: MonsterBook }): ReactNode {
   const { game } = session;
   const [edits, edited] = useEdits();
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
   // Recomputed on every visit: the maps may have been edited.
   const uses = useMemo(() => groupUses(game, session.docOf), [game, session, visit, edits]);
   const selected = useSticky(arg !== undefined && arg !== '' ? Number(arg) : undefined, (r) => !!book.groups[r], () => 0);
-  const list = useRef<HTMLDivElement>(null);
-  useActiveRow(list, selected);
   const onEdit = (): void => {
     session.scheduleSave();
     edited();
   };
-
-  const matches = (g: MonsterGroup): boolean => {
-    const q = query.trim();
-    if (q && !book.groupMonsters(g).some((r) => book.monster(r)?.name.includes(q))) return false;
-    const used = (uses.get(g.hash)?.length ?? 0) > 0;
-    if (filter === 'used') return used;
-    if (filter === 'unused') return !used;
-    if (filter === 'changed') return book.groupChanged(g.row);
-    return true;
-  };
-  const rows = book.groups.filter(matches);
   const g = book.groups[selected];
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="モンスターの名前で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['used', 'マップで使う'], ['unused', 'どのマップも使わない'], ['changed', '変更した']]} />
-        <div className="book-list" ref={list}>
-          <Count shown={rows.length} total={book.groups.length} />
-          <table className="book-table">
-            <thead><tr><th>#</th><th>モンスター</th><th>マップ</th></tr></thead>
-            <tbody>
-              {rows.map((g) => {
-                const n = uses.get(g.hash)?.length ?? 0;
-                return (
-                  <tr key={g.row} className={g.row === selected ? 'active' : ''} onClick={() => (location.hash = groupHref(g.row))}>
-                    <td className="num muted">{g.row}</td>
-                    <td>
-                      <div className="group-photos">
-                        {book.groupMonsters(g).map((r, i) => <MonsterPhoto key={i} session={session} book={book} row={r} />)}
-                        {!(g.leads.length + g.mates.length) && <span className="muted">(敵なし)</span>}
-                        {book.groupChanged(g.row) && <EditedMark />}
-                      </div>
-                    </td>
-                    <td className="num muted">{n || ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <GroupList game={game} book={book} uses={uses} selected={selected} onSelect={(g) => (location.hash = groupHref(g.row))} />
       </div>
       <div className="book-detail">
         {g && <GroupDetailEditor session={session} book={book} g={g} uses={uses.get(g.hash) ?? []} onEdit={onEdit} />}
       </div>
     </div>
   );
-}
-
-/** Photo (model) of a monster, with its name as the tooltip. */
-function MonsterPhoto({ session, book, row, className }: { session: Session; book: MonsterBook; row: number; className?: string }): ReactNode {
-  const m = book.monster(row);
-  return <Photo model={m ? monsterRef(session.game, book, m) : null} className={className} title={m?.name ?? `#${row}`} />;
 }
 
 function GroupDetailEditor({ session, book, g, uses, onEdit }: { session: Session; book: MonsterBook; g: MonsterGroup; uses: GroupUse[]; onEdit: () => void }): ReactNode {
@@ -175,7 +103,7 @@ function SlotEditor({ session, book, g, side, title, onEdit }: {
               <td>
                 <div className="row">
                   <button className="monster-pick" title="モンスターを選び直す" onClick={() => setPicking({ current: s.monster, onPick: (row) => change(k, { monster: row }) })}>
-                    <MonsterPhoto session={session} book={book} row={s.monster} />
+                    <MonsterPhoto game={session.game} book={book} row={s.monster} />
                     <span>{book.monster(s.monster)?.name ?? `#${s.monster}`}</span>
                   </button>
                   <a href={`#/monsters/${s.monster}`} title="モンスター図鑑で開く">↗</a>

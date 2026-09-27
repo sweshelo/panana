@@ -228,11 +228,10 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
   };
   const mark = <K extends keyof ItemFields>(k: K, show: (v: ItemFields[K]) => string = String): { className: string; title: string } =>
     it[k] !== orig[k] ? { className: 'edited', title: `元の値 ${show(orig[k])}` } : { className: '', title: '' };
-  const number = (k: 'price' | 'sell' | 'limit', min: number, max: number): ReactNode => {
+  const number = (k: 'price' | 'sell' | 'rarity' | 'limit', min: number, max: number): ReactNode => {
     const m = mark(k);
     return <NumberInput value={it[k]} min={min} max={max} className={`num-input ${m.className}`} title={m.title} onCommit={(v) => set({ [k]: v })} />;
   };
-  const stars = (n: number): string => '★'.repeat(n) || '0';
   const stat = (label: string, input: ReactNode, suffix = ''): ReactNode => (
     <label className="stat"><span className="muted">{label}</span><span>{input}{suffix}</span></label>
   );
@@ -243,11 +242,7 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
       <div className="stats">
         {stat('買値', number('price', 0, 0xffffffff), ' G')}
         {stat('売値', number('sell', 0, 0xffffffff), ' G')}
-        {stat('☆', (
-          <select {...mark('rarity', stars)} value={it.rarity} onChange={(e) => set({ rarity: Number(e.target.value) })}>
-            {Array.from({ length: MAX_RARITY + 1 }, (_, v) => <option key={v} value={v}>{stars(v)}</option>)}
-          </select>
-        ))}
+        {stat('☆', number('rarity', 0, MAX_RARITY))}
         {stat('上限', number('limit', 1, MAX_LIMIT))}
       </div>
       {(it.categoryByte & 0xf) === 1 && (

@@ -9,6 +9,7 @@ import { mapLabel, pointLabel, worldHref } from './labels';
 import { TreasureEditor } from './treasure';
 import { EventListDialog, EventPanel } from './events';
 import { EncounterPanel } from './encounters';
+import { MapSoundPanel } from './sounds';
 import { Field, HexInput, Num, RawBytes } from './fields';
 import type { MapEditor } from './mapeditor';
 import { mapTitle } from '../game/names';
@@ -305,7 +306,8 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
       {changed.length
         ? <button className="danger" onClick={() => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash)}>このマップの変更を元に戻す</button>
         : <div className="muted">変更なし</div>}
-      <EncounterPanel st={st} book={session.book} sounds={session.sounds} />
+      <MapSoundPanel session={session} sounds={session.sounds} />
+      <EncounterPanel session={session} st={st} book={session.book} />
       {listing && st.currentEvents && (
         <EventListDialog st={st} onClose={() => setListing(false)} onPick={(m, sec, i) => {
           setListing(false);
