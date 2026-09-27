@@ -1,15 +1,13 @@
 // Encounter groups (monsterGroup): every row with its candidates and the maps that use it (section 6);
 // the candidates can be edited, and a group can be copied into a new row.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { countLabel, GROUP_SLOTS, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { hex8 } from '../util/bytes';
 import type { Session } from '../session';
 import { NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
-import { Dialog } from '../ui/Dialog';
 import { GroupList, groupHref, groupUses, MonsterPhoto, type GroupUse } from '../ui/GroupDetail';
-import { Photo } from '../ui/Photo';
-import { monsterRef } from './monsters';
+import { MonsterPicker } from '../ui/MonsterPicker';
 
 export { groupHref, groupUses, type GroupUse };
 
@@ -137,34 +135,5 @@ function SlotEditor({ session, book, g, side, title, onEdit }: {
           onPick={(row) => { setPicking(null); picking.onPick(row); }} />
       )}
     </section>
-  );
-}
-
-/** Pick a monster from the photos (names only: the level and the row are in the monster book). */
-export function MonsterPicker({ session, book, current, onPick, onClose }: {
-  session: Session; book: MonsterBook; current: number; onPick: (row: number) => void; onClose: () => void;
-}): ReactNode {
-  const [query, setQuery] = useState('');
-  const grid = useRef<HTMLDivElement>(null);
-  useEffect(() => grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }), []);
-  const q = query.trim();
-  const shown = book.monsters.filter((m) => !q || m.name.includes(q));
-  return (
-    <Dialog title="モンスターを選ぶ" onClose={onClose}>
-      <div className="row">
-        <input type="search" placeholder="名前で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-      </div>
-      <div className="picker-list">
-        <div className="monster-grid" ref={grid}>
-          {shown.map((m) => (
-            <button key={m.row} className={`monster-cell${m.row === current ? ' current' : ''}`} onClick={() => onPick(m.row)}>
-              <Photo model={monsterRef(session.game, book, m)} className="photo photo-lg" />
-              <span>{m.name}</span>
-            </button>
-          ))}
-          {!shown.length && <div className="muted">見つかりません</div>}
-        </div>
-      </div>
-    </Dialog>
   );
 }

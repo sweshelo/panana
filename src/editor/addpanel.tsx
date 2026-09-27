@@ -6,7 +6,7 @@ import { useAsync } from '../ui/useAsync';
 import { useEditorState } from '../ui/useEditorState';
 import type { MapEditor } from './mapeditor';
 import { stampLabel, type Stamp } from './place';
-import { MonsterPicker } from '../pages/groups';
+import { MonsterPicker } from '../ui/MonsterPicker';
 
 interface GroupItem {
   row: number;

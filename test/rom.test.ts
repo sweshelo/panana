@@ -392,6 +392,46 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.groupChanged(6)).toBe(false);
   });
 
+  test('monster edits: fields, drops and skills; export and read back', async () => {
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    const before = book.monster(1)!;
+    book.set(1, 'hpMax', 999);
+    book.set(1, 'drop0', 2);
+    book.set(1, 'rate0', 15);
+    book.set(1, 'nextForm', 2);
+    book.setSkills(1, [before.skills[0]!.action, 328]);
+    const m = book.monster(1)!;
+    expect([m.hp.max, m.hp.min, m.level, m.exp]).toEqual([999, before.hp.min, before.level, before.exp]);
+    expect(m.dropSlots[0]).toEqual({ item: 2, rate: 15 });
+    expect(m.resist).toEqual(before.resist);
+    expect(m.skills.map((s) => s.action)).toEqual([before.skills[0]!.action, 328]);
+    expect(book.original(1, 'hpMax')).toBe(before.hp.max);
+    expect(book.changed(1)).toBe(true);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const m2 = (await again.monsters()).monster(1)!;
+    expect([m2.hp.max, m2.nextForm, m2.dropSlots[0]!.item]).toEqual([999, 2, 2]);
+    expect(m2.skills.map((s) => s.action)).toEqual([before.skills[0]!.action, 328]);
+    book.revert(1);
+    expect(book.changed(1)).toBe(false);
+  });
+
+  test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {
+    const { ActionBook } = await import('../src/game/actions');
+    const book = await game.monsters();
+    console.log('drop base (BattleParameter +0x10C):', book.battle.dropBase.join(' '));
+    for (const m of book.monsters) for (const d of m.drops) expect(Number.isFinite(book.battle.dropOdds(d.rate))).toBe(true);
+    expect(book.directData?.name).toBe('DirectData');
+    const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '', book.directData);
+    const motions = new Map<number, number>();
+    for (const m of book.monsters) for (const s of m.skills) { const n = actions.motion(s.action); motions.set(n, (motions.get(n) ?? 0) + 1); }
+    console.log('skill motions:', [...motions].sort((a, b) => b[1] - a[1]).map(([n, c]) => `0x${n.toString(16)}×${c}`).join(' '));
+    const skillAnims = [0x45, 0x46, 0x47, 0x48].reduce((a, n) => a + (motions.get(n) ?? 0), 0);
+    const total = [...motions.values()].reduce((a, c) => a + c, 0);
+    expect(skillAnims / total).toBeGreaterThan(0.5);
+  });
+
   test('actions: item effects and references', async () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();

@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { addBossChara, addFixGroup, bossCharaRows, clearState, newBossCharaRecord, syncBossCharas, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
 import { countLabel, type MonsterBook } from '../game/monsters';
 import { MAX_MAP_SOUND } from '../game/sound';
-import { MonsterPicker } from '../pages/groups';
+import { MonsterPicker } from '../ui/MonsterPicker';
 import { monsterRef } from '../pages/monsters';
 import { LAYOUTS, recCellPos, recEventRow, setRecCellPos } from '../game/sections';
 import type { Session } from '../session';

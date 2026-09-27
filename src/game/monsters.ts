@@ -18,15 +18,28 @@ export const MONSTER_MODEL_ARCHIVE = '470D2848';
 export const MONSTER_MOTIONS: Record<string, string> = {
   '001_': '0x41 ミュージアム・戦闘の待機',
   '002_': '0x42 戦闘の待機 (+0x4A bit3 の個体)',
-  '003_': '0x43',
-  '004_': '0x44',
-  '005_': '0x45',
-  '006_': '0x46',
-  '007_': '0x47',
-  '010_': '0x48',
+  '003_': '0x43 歩く',
+  '004_': '0x44 走る',
+  '005_': '0x45 ワザ A',
+  '006_': '0x46 ワザ B',
+  '007_': '0x47 ワザ C',
+  '010_': '0x48 ワザ D',
   '008_': '0x49 攻撃を受けた',
   '009_': '0x4A 倒れた',
 };
+
+/** Motion of a skill by animation number (actionData +0x1E → performance row +0x0A); the prefix of the CANM name. */
+export const SKILL_MOTION: Record<number, [string, string]> = {
+  0x43: ['歩く', '003_'], 0x44: ['走る', '004_'], 0x45: ['ワザ A', '005_'], 0x46: ['ワザ B', '006_'], 0x47: ['ワザ C', '007_'], 0x48: ['ワザ D', '010_'],
+  0x49: ['被弾', '008_'], 0x4a: ['倒れる', '009_'],
+};
+
+/**
+ * Drop classes by the 4-bit rate value: which party bonus (conditionData 80〜82, a percentage, 100 = none)
+ * applies to it (FUN_00199c00 sorts the drops into 3 × 3 unit slots by rate; FUN_00283e68 rolls them).
+ */
+export const DROP_CLASS: [number, string, number][] = [[0, 'おたから', 80], [10, 'レア', 81], [13, '激レア', 82]];
+export const dropClass = (rate: number): [number, string, number] => [...DROP_CLASS].reverse().find(([lo]) => rate >= lo)!;
 
 const bits = (w: number, lo: number, n: number, signed = false): number => {
   const v = Math.floor(w / 2 ** lo) % 2 ** n;
@@ -58,12 +71,26 @@ export class BattleParams {
   readonly elementMul: number[];
   readonly baseRate: number[];
   readonly coef: number[];
+  /** u16 [0x10C + rate × 2]: a drop of that rate value comes 1 in this many battles (0 or 1 = always). */
+  readonly dropBase: number[];
   constructor(t: GsTable) {
     const r = t.row(0);
     const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
     this.elementMul = Array.from({ length: 19 }, (_, i) => Math.round(dv.getFloat32(8 + i * 4, true) * 1000) / 1000);
     this.baseRate = Array.from({ length: 7 }, (_, i) => r[0x60 + i]!);
     this.coef = Array.from({ length: 19 }, (_, i) => r[0x67 + i]!);
+    this.dropBase = Array.from({ length: 16 }, (_, i) => dv.getUint16(0x10c + i * 2, true));
+  }
+  /**
+   * "1 in N" of a drop with rate value `rate` when the party's bonus of its class is `bonus` % (100 = none):
+   * N = trunc(1 / (1 − (1 − 1/B)^(bonus/100))), at least 1; a negative bonus always drops. Each filled slot
+   * is rolled on its own (rand × N < 2^32, i.e. 1/N). FUN_00283e68 (after the battle).
+   */
+  dropOdds(rate: number, bonus = 100): number {
+    const b = this.dropBase[rate & 15]!;
+    if (bonus < 0 || b <= 1) return 1;
+    const p = 1 - Math.pow(1 - 1 / b, bonus * 0.01);
+    return p > 0 ? Math.max(1, Math.trunc(1 / p)) : Infinity;
   }
   private idx(v: number): number {
     return Math.max(-9, Math.min(9, v)) + 9;
@@ -85,6 +112,122 @@ export class BattleParams {
   }
 }
 export const AI_MODE = ['均等', '前の枠ほど重い', '先頭優先', '順番', '2枠ずつ順番', '5', '6', '7'];
+/** How each AI mode picks among the usable skills (FUN_00412fb8; elpulse docs/battle.md §4). */
+export const AI_MODE_NOTE = [
+  '使えるワザから均等に選ぶ。同じワザを複数の枠に入れると、その数だけ出やすくなる',
+  '前の枠ほど重い三角形の重みで選ぶ',
+  '先頭の枠を確率 20/(19+n) で優先し、外れたら残りから均等に選ぶ',
+  '枠を順番に使う',
+  '2 枠ずつの組 (1-2, 3-4, 5-6) を順番に回し、組の中は均等に選ぶ',
+  '未確認', '未確認', '未確認',
+];
+/** Target mode (w10 bit27-28). */
+export const TARGET_MODE = ['0', '1', '2 (集中攻撃のとき HP 最小を狙う)', '3'];
+
+/**
+ * Boss special numbers (w10 bit8-11): what makes the monster turn into its next form (+0x50), checked by
+ * FUN_0030fa18 after every damage calculation (elpulse docs/battle.md §3.1).
+ */
+export const BOSS_CONDITION: Record<number, string> = {
+  0: 'なし',
+  1: '倒される一撃を受けたとき (HP 最大−1 で生き残って変身)',
+  2: '火の攻撃が当たったとき (倒されない一撃)',
+  3: '氷の攻撃が当たったとき (倒されない一撃)',
+  4: '風の攻撃が当たったとき (倒されない一撃)',
+  5: '土の攻撃が当たったとき (倒されない一撃)',
+  6: '電気の攻撃が当たったとき (倒されない一撃)',
+  7: '水の攻撃が当たったとき (倒されない一撃)',
+  8: '光の攻撃が当たったとき (倒されない一撃)',
+  9: '闇の攻撃が当たったとき (倒されない一撃)',
+  10: '固定ダメージ系の攻撃が当たったとき (倒されない一撃)',
+  11: '経路 0 の結果 (BattleParameter +0x139、未確認)',
+  12: '経路 0 の結果 (BattleParameter +0x13A、未確認)',
+  13: '経路 0 の結果 (BattleParameter +0x13B、未確認)',
+};
+
+/** A bit field of a MonsterParameter row: u32 word `w` (at w × 4), bits lo .. lo + n − 1. */
+export interface ParamField {
+  w: number;
+  lo: number;
+  n: number;
+}
+
+/** Editable fields of a MonsterParameter row (elpulse docs/battle.md §2). Bytes and u16 are words' bits too. */
+export const PARAM = {
+  level: { w: 0, lo: 8, n: 7 },
+  hpMax: { w: 0, lo: 15, n: 15 },
+  hpMin: { w: 11, lo: 0, n: 15 },
+  attackMax: { w: 1, lo: 0, n: 14 },
+  attackMin: { w: 11, lo: 15, n: 14 },
+  defenseMax: { w: 1, lo: 14, n: 14 },
+  defenseMin: { w: 12, lo: 0, n: 14 },
+  speedMax: { w: 2, lo: 0, n: 14 },
+  speedMin: { w: 12, lo: 14, n: 14 },
+  evasion: { w: 13, lo: 0, n: 7 },
+  gold: { w: 2, lo: 14, n: 16 },
+  exp: { w: 3, lo: 0, n: 16 },
+  drop0: { w: 3, lo: 16, n: 10 },
+  rate0: { w: 3, lo: 26, n: 4 },
+  drop1: { w: 4, lo: 0, n: 10 },
+  rate1: { w: 4, lo: 10, n: 4 },
+  drop2: { w: 4, lo: 14, n: 10 },
+  rate2: { w: 4, lo: 24, n: 4 },
+  ghost: { w: 10, lo: 0, n: 1 },
+  regen: { w: 10, lo: 1, n: 7 },
+  boss: { w: 10, lo: 8, n: 4 },
+  startCondition: { w: 10, lo: 12, n: 5 },
+  startPower: { w: 10, lo: 17, n: 4 },
+  ai: { w: 10, lo: 24, n: 3 },
+  target: { w: 10, lo: 27, n: 2 },
+  actions: { w: 13, lo: 7, n: 3 },
+  focus: { w: 13, lo: 10, n: 1 },
+  /** +0x36 u16: effect played when the form changes. */
+  effect: { w: 13, lo: 16, n: 16 },
+  /** +0x38 u16: line (message ID) shown when this row appears. */
+  line: { w: 14, lo: 0, n: 16 },
+  /** +0x3A: turns of the start condition. */
+  startTurns: { w: 14, lo: 16, n: 16 },
+  /** +0x50 byte: next form. */
+  nextForm: { w: 20, lo: 0, n: 8 },
+} satisfies Record<string, ParamField>;
+export type ParamKey = keyof typeof PARAM;
+
+/** Largest value of a field. */
+export const fieldMax = (f: ParamField): number => 2 ** f.n - 1;
+
+/** Value of a bit field of a row. */
+export function getField(r: Uint8Array, f: ParamField): number {
+  return bits(u32(r, f.w * 4), f.lo, f.n);
+}
+
+/** Write a bit field of a row (the value is clamped to the field; other bits are kept). */
+export function setField(r: Uint8Array, f: ParamField, value: number): void {
+  const v = Math.max(0, Math.min(fieldMax(f), Math.round(value)));
+  const w = u32(r, f.w * 4);
+  w32(r, f.w * 4, (w - bits(w, f.lo, f.n) * 2 ** f.lo + v * 2 ** f.lo) >>> 0);
+}
+
+/** Skill slots (+0x3C, 6 × u16). */
+export const SKILL_SLOTS = 6;
+const SKILLS_OFFSET = 0x3c;
+
+/** Skills of a row, empty slots (0) left out. */
+export function decodeSkills(r: Uint8Array): number[] {
+  return Array.from({ length: SKILL_SLOTS }, (_, k) => u16(r, SKILLS_OFFSET + k * 2)).filter((a) => a);
+}
+
+/** Write the skills of a row packed to the front; the rest of the slots are zeroed. */
+export function encodeSkills(r: Uint8Array, skills: number[]): void {
+  if (skills.length > SKILL_SLOTS) throw new Error(`ワザは ${SKILL_SLOTS} 個までです`);
+  for (let k = 0; k < SKILL_SLOTS; k++) w16(r, SKILLS_OFFSET + k * 2, skills[k] ?? 0);
+}
+
+/** Share (0..1) of each skill slot under AI mode 0 (equal per slot, so duplicates add up). */
+export function skillShares(skills: number[]): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const a of skills) out.set(a, (out.get(a) ?? 0) + 1 / skills.length);
+  return out;
+}
 
 export interface Range {
   min: number;
@@ -109,6 +252,8 @@ export interface Monster {
   exp: number;
   gold: number;
   drops: { item: number; name: string; rate: number }[];
+  /** The 3 drop slots as they are (item 0 = empty). */
+  dropSlots: { item: number; rate: number }[];
   skills: { action: number; name: string }[];
   /** Museum number (+0x4A bit4-11). */
   museum: number;
@@ -119,7 +264,13 @@ export interface Monster {
   /** Line shown when this form appears (+0x38). */
   line: string;
   ai: string;
+  aiMode: number;
   target: number;
+  ghost: boolean;
+  /** HP regeneration (w10 bit1-7, condition 27). */
+  regen: number;
+  /** Condition at the start of the battle (w10 bit12-16, 0 = none), its strength (bit17-20) and turns (+0x3A). */
+  start: { condition: number; power: number; turns: number };
   actions: number;
   focus: boolean;
 }
@@ -183,6 +334,8 @@ export class MonsterBook {
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
   private readonly design: GsTable;
+  /** directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). */
+  readonly directData: GsTable | null;
   readonly battle: BattleParams;
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
@@ -191,6 +344,8 @@ export class MonsterBook {
     const f = findByName(parseArchive(designArchive), 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
     this.design = new GsTable(f.body);
+    const dd = findByName(parseArchive(designArchive), 'directData.bin');
+    this.directData = dd ? new GsTable(dd.body) : null;
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));
@@ -215,10 +370,10 @@ export class MonsterBook {
       const w = Array.from({ length: 21 }, (_, k) => u32(r, k * 4));
       const des = w[19]! & 0xff;
       const d = des < design.rows ? design.row(des) : null;
-      const drops = [[bits(w[3]!, 16, 10), bits(w[3]!, 26, 4)], [bits(w[4]!, 0, 10), bits(w[4]!, 10, 4)], [bits(w[4]!, 14, 10), bits(w[4]!, 24, 4)]]
-        .filter(([item]) => item)
-        .map(([item, rate]) => ({ item: item!, name: master.itemName(item!) || `#${item}`, rate: rate! }));
-      const skills = Array.from({ length: 6 }, (_, k) => u16(r, 0x3c + k * 2)).filter((a) => a).map((a) => ({ action: a, name: skillName(a) }));
+      const f = (k: ParamKey): number => getField(r, PARAM[k]);
+      const dropSlots = ([['drop0', 'rate0'], ['drop1', 'rate1'], ['drop2', 'rate2']] as const).map(([d, rt]) => ({ item: f(d), rate: f(rt) }));
+      const drops = dropSlots.filter((d) => d.item).map((d) => ({ ...d, name: master.itemName(d.item) || `#${d.item}` }));
+      const skills = decodeSkills(r).map((a) => ({ action: a, name: skillName(a) }));
       this.monsters.push({
         row: i,
         species: w[0]! & 0xff,
@@ -234,14 +389,19 @@ export class MonsterBook {
         exp: bits(w[3]!, 0, 16),
         gold: bits(w[2]!, 14, 16),
         drops,
+        dropSlots,
         skills,
         museum: bits(u16(r, 0x4a), 4, 8),
         resist: RESIST_FIELDS.map(([wi, b], k) => ({ id: RESIST_IDS[k]!, name: condShort[RESIST_IDS[k]!] ?? '?', value: bits(w[wi]!, b, 5, true) })),
         boss: bits(w[10]!, 8, 4),
         nextForm: r[0x50]!,
         line: msg(u16(r, 0x38)),
-        ai: AI_MODE[bits(w[10]!, 24, 3)]!,
-        target: bits(w[10]!, 27, 2),
+        ai: AI_MODE[f('ai')]!,
+        aiMode: f('ai'),
+        target: f('target'),
+        ghost: f('ghost') === 1,
+        regen: f('regen'),
+        start: { condition: f('startCondition'), power: f('startPower'), turns: f('startTurns') },
         actions: bits(w[13]!, 7, 3),
         focus: bits(w[13]!, 10, 1) === 1,
       });
@@ -297,6 +457,33 @@ export class MonsterBook {
     if (this.groupAdded(row)) return;
     this.master.table('monsterGroup.bin').row(row).set(this.master.originalRow('monsterGroup.bin', row));
     this.loadGroups();
+  }
+
+  /** A field of a row (as edited). */
+  get(row: number, key: ParamKey): number {
+    return getField(this.master.table('monsterParameter.bin').row(row), PARAM[key]);
+  }
+
+  /** Set a field of a row. */
+  set(row: number, key: ParamKey, value: number): void {
+    setField(this.master.table('monsterParameter.bin').row(row), PARAM[key], value);
+    this.reload();
+  }
+
+  /** A field of a row as in the archive. */
+  original(row: number, key: ParamKey): number {
+    return getField(this.master.originalRow('monsterParameter.bin', row), PARAM[key]);
+  }
+
+  /** Replace the skills of a row (up to 6 action rows; packed to the front). */
+  setSkills(row: number, skills: number[]): void {
+    encodeSkills(this.master.table('monsterParameter.bin').row(row), skills);
+    this.reload();
+  }
+
+  /** Skills of a row as in the archive. */
+  originalSkills(row: number): number[] {
+    return decodeSkills(this.master.originalRow('monsterParameter.bin', row));
   }
 
   /** Set resistance k (index in Monster.resist) of a row (5-bit signed field). */

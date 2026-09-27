@@ -15,7 +15,10 @@ import { Count, ListFilter, useActiveRow, useEdits, useSticky, type PageProps } 
 import { GroupDetail } from '../ui/GroupDetail';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
+import { InfoTip } from '../ui/InfoTip';
 import { Radar } from '../ui/Radar';
+import { ActionBook } from '../game/actions';
+import { BossEditor, DropEditor, SkillEditor, StatEditor } from './monsteredit';
 
 export interface Appearance {
   map: MapInfo;
@@ -58,7 +61,6 @@ export function monsterRef(game: Game, book: MonsterBook, m: Monster): ModelRef 
   };
 }
 
-const range = (r: { min: number; max: number }): string => (r.min === r.max || !r.min ? String(r.max) : `${r.min}〜${r.max}`);
 
 type Filter = string; // 'all' | 'seen' | 'boss' | 'd<dungeon>'
 
@@ -120,50 +122,29 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
 
 function MonsterDetail({ session, book, m, where, edited }: { session: Session; book: MonsterBook; m: Monster; where: Appearance[]; edited: () => void }): ReactNode {
   const { game } = session;
-  const link = (row: number): ReactNode => <a key={row} href={`#/monsters/${row}`}>{`${book.monster(row)?.name ?? '?'} (#${row})`}</a>;
-  const prev = book.monsters.filter((o) => o.nextForm === m.row);
-  const stat = (label: string, v: string): ReactNode => <div className="stat"><span className="muted">{label}</span><b>{v}</b></div>;
+  // Rebuilt after each edit: the monsters using each skill change with the skill slots.
+  const actions = useMemo(() => new ActionBook(game.master, (row) => book.monster(row)?.name ?? '', book.directData), [game, book, m]);
+  const p = { book, m, edited };
   return (
     <>
       <div className="book-head">
-        <h2>{m.name}</h2>
+        <h2 className="with-info">{m.name}<InfoTip text={'変更はマスター (56562135) の monsterParameter.bin として書き出されます。\n同じモンスターの別の形態 (ボスなど) は別の行です。'} /></h2>
         <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}`}</span>
+        {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
       </div>
       <div className="book-top">
         <div>
           {m.description && <p className="book-desc">{m.description}</p>}
-          <div className="stats">
-            {stat('Lv', String(m.level))}{stat('HP', range(m.hp))}{stat('こうげき', range(m.attack))}{stat('ぼうぎょ', range(m.defense))}
-            {stat('すばやさ', range(m.speed))}{stat('回避', `${m.evasion}%`)}{stat('経験値', String(m.exp))}{stat('ゴールド', String(m.gold))}
-          </div>
+          <StatEditor {...p} />
         </div>
         <ModelView model={monsterRef(game, book, m)} name={m.name} motionHints={MONSTER_MOTIONS} />
       </div>
-      <div className="book-cols">
-        <section>
-          <h3>ドロップ (率の値)</h3>
-          {m.drops.length
-            ? <ul>{m.drops.map((d, i) => <li key={i}><a href={`#/items/${d.item}`}>{d.name}</a> <span className="muted">{`(${d.rate})`}</span></li>)}</ul>
-            : <div className="muted">なし</div>}
-        </section>
-        <section>
-          <h3>ワザ</h3>
-          <ul>{m.skills.map((s, i) => <li key={i}>{`${s.name} `}<a className="muted" href={`#/actions/${s.action}`}>{`#${s.action}`}</a></li>)}</ul>
-        </section>
-        <section>
-          <h3>行動</h3>
-          <div>{`AI: ${m.ai} / 狙い ${m.target}`}</div>
-          <div>{`行動回数 ${m.actions}${m.focus ? '、集中攻撃' : ''}`}</div>
-          {!!m.boss && <div>{`ボス特殊 ${m.boss}`}</div>}
-          {!!m.nextForm && <div>次の形態: {link(m.nextForm)}</div>}
-          {prev.length > 0 && <div>前の形態: {prev.map((p) => link(p.row))}</div>}
-          {m.line && <div className="muted">{`「${m.line.replace(/[Ąą]+/g, m.name)}」`}</div>}
-        </section>
+      <div className="book-cols monster-cols">
+        <DropEditor session={session} {...p} />
+        <SkillEditor actions={actions} {...p} />
+        <BossEditor session={session} actions={actions} {...p} />
       </div>
-      <div className="row">
-        <h3>耐性</h3>
-        {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
-      </div>
+      <h3 className="with-info">耐性<InfoTip text={RESIST_INFO} /></h3>
       <ResistEditor book={book} m={m} edited={edited} />
       <h3>{`出現する場所 (${where.length})`}</h3>
       <div className="book-where">
@@ -181,6 +162,13 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
     </>
   );
 }
+
+const RESIST_INFO = [
+  '値は −9〜+10 (正ほど強い)。',
+  '属性はダメージの倍率 (BattleParameter +0x08 の表: −9 = ×4 … +9 = ×0.1)。+10 はその属性のダメージを無効にします。',
+  '状態異常・能力ダウン・突然死は付与率に掛かる係数 (BattleParameter [0x67 + 値 + 9]: −9 = 200% … +9 = 0%)。+10 は +9 と同じ (効かない)。',
+  'ワザの付与率 = 基本の率 (ワザごとに 100 / 75 / 50 / 34 / 25 / 12 / 6%) × 係数 (上限 100%)。',
+].join('\n');
 
 const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`;
 
@@ -204,12 +192,6 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
   const values = Array.from({ length: RESIST_MAX - RESIST_MIN + 1 }, (_, i) => i + RESIST_MIN);
   return (
     <div className="resists">
-      <p className="muted small">
-        値は −9〜+10 (正ほど強い)。属性はダメージの倍率 (BattleParameter +0x08 の表: −9 = ×4 … +9 = ×0.1)。
-        属性の +10 はその属性のダメージを無効にします (モンスターを作るとき、値が 9 より大きい属性に無効のフラグが立ち、倍率が 0 になる)。
-        状態異常・能力ダウン・突然死は付与率に掛かる係数 (BattleParameter [0x67 + 値 + 9]: −9 = 200% … +9 = 0%)。値は −9〜+9 に丸められるので、+10 は +9 と同じ (0%、効かない)。
-        ワザの付与率 = 基本の率 (ワザごとに 100 / 75 / 50 / 34 / 25 / 12 / 6%) × 係数 (上限 100%)。
-      </p>
       <div className="radars">
         {RESIST_GROUPS.filter(([, kind]) => kind === 'element' || kind === 'ailment').map(([label, kind, a, b]) => (
           <figure key={label} className="radar-box">
