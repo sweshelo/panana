@@ -179,8 +179,22 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     // doors: angle / 100-unit step from +0x15 (FUN_002effa0); chests are never rotated
     const pl = doc.recs[3]!.map((r) => recordPlacement(3, r, doc, game.master));
     const door13 = doc.recs[3]!.findIndex((r) => r.x === 13 && r.y === 10); // +0x15 = 3 -> west, +90°
-    expect(pl[door13]).toEqual({ angle: Math.PI / 2, ox: -100, oz: 0 });
+    expect(pl[door13]).toEqual({ angle: Math.PI / 2, ox: -100, oy: 0, oz: 0 });
+    // +0x1A = 1: the door sits on the edge of its cell (250)
+    const door19 = doc.recs[3]!.findIndex((r) => r.x === 19 && r.y === 12);
+    expect(pl[door19]).toEqual({ angle: 0, ox: 0, oy: 0, oz: -250 });
     expect(doc.recs[4]!.every((r) => recordPlacement(4, r, doc, game.master).angle === 0)).toBe(true);
+  });
+
+  test('objects: stairs and furniture of S10B01AAA (issue #29)', () => {
+    const doc = game.doc(game.code.byName('S10B01AAA')!);
+    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [Math.round((p.angle * 180) / Math.PI), Math.round(p.ox), p.oy, Math.round(p.oz)];
+    // indoor stairs: slot (+0x19 = 8 / 2) and 50 towards +0x15 = 3 (west)
+    expect(doc.recs[3]!.map((p) => r(recordPlacement(3, p, doc, game.master)))).toEqual([[0, 117, 0, 167], [0, 117, 0, -167]]);
+    // furniture: direction 2 -> 0°, 0 -> 180°; mapObject 0xBA moves (+30, -20) for direction 2
+    const pl = doc.recs[2]!.map((p) => r(recordPlacement(2, p, doc, game.master)));
+    expect(pl[1]).toEqual([0, 30, 0, -20]);
+    expect(pl[10]).toEqual([180, 0, 0, 0]);
   });
 
   test('treasure: chest -> EventObject +0x08 -> treasureGroup; edits export 56562135 and the event archive', async () => {
