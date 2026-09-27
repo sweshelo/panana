@@ -162,7 +162,9 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
               <Field label={`種類 (+8) ${r.raw[8] === 0 ? 'キャラクター (mapChara)' : [1, 2, 3, 4, 5, 6, 8].includes(r.raw[8]!) ? 'オブジェクト' : ''}`}>
                 <Num value={r.raw[8]!} min={0} max={255} onChange={setByte(8)} />
               </Field>
-              <Field label="向き (+9)"><Num value={r.raw[9]!} min={0} max={3} onChange={setByte(9)} /></Field>
+              {r.raw[8] === 0
+                ? <Field label="向き (+9)"><Num value={r.raw[9]!} min={0} max={3} onChange={setByte(9)} /></Field>
+                : <Field label="向き (+9、1〜4。0 は 3 と同じ)"><Num value={r.raw[9]!} min={0} max={4} onChange={setByte(9)} /></Field>}
             </>
           )}
           {k === 8 && <div className="muted">イベントの範囲 (モデルなし)</div>}

@@ -276,3 +276,114 @@ export function usesBoss(tables: Iterable<EventTable>): boolean {
     for (let row = 0; row < t.rows; row++) if (STAGE_KIND.some((o) => t.table.row(row)[o] === KIND_BOSS)) return true;
   return false;
 }
+
+// The boss on the map ------------------------------------------------------------------------------------------
+// The range itself has no model, so a boss is placed with a character (section 5 kind 0) that shows the monster:
+// its EventObject row (kind 0, no action) has +0x46 = a mapChara row of type 1 (monster; FUN_001c7614: +0x08 / +0x0A /
+// +0x0C = MonsterDesign row for EventObject +0x48 = 0 / 1 / 2, +0x0E / +0x10 / +0x12 = its animation, flags bit 3 =
+// shadow). The character shares the boss row's state slot (+0x44), so "disappear when this row's state >= n"
+// (condition 0x37 in +0x4C, value +0x04) hides it once the last stage is won.
+
+/** mapChara +0 bits 0-2: 1 = monster. */
+export const CHARA_MONSTER = 1;
+const CHARA_SHADOW = 8;
+/** Idle motion ("001_", the museum's). */
+export const CHARA_IDLE_ANIM = 0x41;
+/** Appearance condition "this row's state >= value" (docs/event-list.md §4). */
+export const COND_ROW_STATE = 0x37;
+
+/** MonsterDesign row of a MonsterParameter row (word 19, low byte). */
+export function monsterDesign(master: Master, monster: number): number {
+  const t = master.table('monsterParameter.bin');
+  return monster > 0 && monster < t.rows ? u32(t.row(monster), 19 * 4) & 0xff : 0;
+}
+
+/** Whether a mapChara row shows a monster, and which MonsterDesign row (for EventObject +0x48 = 0). */
+export function charaMonsterDesign(master: Master, chara: number): number | null {
+  const t = master.mapChara;
+  if (chara <= 0 || chara >= t.rows) return null;
+  const r = t.row(chara);
+  return (u32(r, 0) & 7) === CHARA_MONSTER ? u16(r, 8) : null;
+}
+
+/** Append a mapChara row showing MonsterDesign row `design` (a copy of the first vanilla monster row, if any). */
+export function addMonsterChara(master: Master, design: number): number {
+  const t = master.mapChara;
+  const rows = Array.from({ length: t.rows }, (_, i) => t.row(i).slice());
+  const vanilla = rows.find((r, i) => i > 0 && (u32(r, 0) & 7) === CHARA_MONSTER);
+  const r = vanilla ? vanilla.slice() : new Uint8Array(t.rowSize);
+  if (!vanilla) {
+    w32(r, 0, CHARA_MONSTER | CHARA_SHADOW);
+    r[0x0e] = r[0x10] = r[0x12] = CHARA_IDLE_ANIM;
+  }
+  for (const o of [0x08, 0x0a, 0x0c]) w16(r, o, design);
+  t.data = t.withRows([...rows, r]);
+  return t.rows - 1;
+}
+
+/** State after the last stage is won (the character disappears), or 0 when the last stage repeats. */
+export function clearState(stages: BossStage[]): number {
+  const last = stages[stages.length - 1];
+  return last && !last.repeat ? stages.length : 0;
+}
+
+/** EventObject row of the boss's character: no action, the boss row's slot, hidden once the boss is beaten. */
+export function newBossCharaRow(size: number, slot: number, chara: number, clear: number): Uint8Array {
+  const row = new Uint8Array(size);
+  w16(row, 0x44, slot);
+  w16(row, 0x46, chara);
+  setClear(row, clear);
+  return row;
+}
+
+function setClear(row: Uint8Array, clear: number): void {
+  row[0x4c] = clear ? COND_ROW_STATE : 0;
+  w32(row, 0x04, clear);
+}
+
+/** Section-5 record of the boss's character: {row, x, y, kind 0, direction}. */
+export function newBossCharaRecord(row: number, dir = 0): Uint8Array {
+  const raw = new Uint8Array(16);
+  w32(raw, 0, row);
+  raw[9] = dir & 3;
+  return raw;
+}
+
+/** Rows of `events` that show the boss of `bossRow`: kind 0, the same state slot, a monster mapChara row. */
+export function bossCharaRows(master: Master, events: EventTable, bossRow: number): number[] {
+  const out: number[] = [];
+  const slot = events.slot(bossRow);
+  for (let row = 0; row < events.rows; row++)
+    if (row !== bossRow && events.kind(row) === 0 && events.slot(row) === slot && charaMonsterDesign(master, events.model(row)) !== null) out.push(row);
+  return out;
+}
+
+/**
+ * After the stages of a boss row change: its characters show the first monster of stage 1 and disappear once
+ * the last stage is won. The mapChara row is changed in place when only this boss uses it, else a new one is made.
+ */
+export function syncBossCharas(master: Master, events: EventTable, bossRow: number): void {
+  const stages = readStages(events.table.row(bossRow));
+  const first = stages[0] && fixGroup(master, stages[0].fix)?.slots[0]?.monster;
+  const design = first ? monsterDesign(master, first) : 0;
+  for (const row of bossCharaRows(master, events, bossRow)) {
+    const r = events.table.row(row);
+    setClear(r, clearState(stages));
+    if (!design) continue;
+    const chara = u16(r, 0x46);
+    if (charaMonsterDesign(master, chara) === design) continue;
+    let users = 0;
+    for (let i = 0; i < events.rows; i++) if (events.model(i) === chara && events.kind(i) === 0) users++;
+    if (users === 1 && chara >= master.originalRows('mapChara.bin')) for (const o of [0x08, 0x0a, 0x0c]) w16(master.mapChara.row(chara), o, design);
+    else w16(r, 0x46, addMonsterChara(master, design));
+  }
+}
+
+/** Add the character row showing the boss of `bossRow` (sharing its state slot). Returns the new row. */
+export function addBossChara(master: Master, events: EventTable, bossRow: number, monster: number): number {
+  const stages = readStages(events.table.row(bossRow));
+  const chara = addMonsterChara(master, monsterDesign(master, monster));
+  const row = events.addRow(newBossCharaRow(events.table.rowSize, 0, chara, clearState(stages)));
+  w16(events.table.row(row), 0x44, events.slot(bossRow)); // addRow gave it a slot of its own
+  return row;
+}

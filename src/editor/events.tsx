@@ -1,6 +1,7 @@
 // Event (EventObject row) UI: kind-specific fields in the inspector, links between switches and their
 // targets, and a list of the dungeon's events.
 import { useMemo, useState, type ReactNode } from 'react';
+import { KIND_BOSS } from '../game/boss';
 import { EVENT_KINDS, KIND_SWITCH, SCRIPT_LINKS, SWITCH_PRESETS, kindName } from '../game/eventkinds';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recCellPos, recEventRow, type MapDoc, type Rec } from '../game/sections';
 import { mapShortTitle } from '../game/names';
@@ -81,6 +82,8 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
   const r = ev.table.row(row);
   const kind = ev.kind(row);
   const info = EVENT_KINDS[kind];
+  /** Message fields shown here (the boss battle has its own block with them). */
+  const msgOffs = kind === KIND_BOSS ? [] : info?.messages ?? [];
   const apply = (f: () => void): void => st.editTables(f);
   const kinds = [...new Set([...Object.keys(EVENT_KINDS).map(Number), kind])]
     .sort((a, b) => a - b)
@@ -94,7 +97,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
         </select>
       </Field>
       {info?.note && <div className="muted small">{info.note}</div>}
-      {(info?.messages ?? []).map((off) => {
+      {msgOffs.map((off) => {
         const id = u32(r, off);
         return (
           <div key={off}>
@@ -105,7 +108,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
           </div>
         );
       })}
-      {!!info?.messages?.length && (
+      {!!msgOffs.length && (
         <div className="muted small">{MESSAGE_HELP} <a href={`#/messages/${st.current!.dungeon}.${row}`}>メッセージの一覧で開く</a></div>
       )}
       {kind === KIND_SWITCH && <SwitchFields st={st} row={row} />}

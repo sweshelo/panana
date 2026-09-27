@@ -1,17 +1,19 @@
 // Inspector block of a boss battle (EventObject kind 0x31, game/boss.ts): its stages, each with the monsters
 // (a monsterFixGroup row), the battle BGM, what a win does, and the messages shown before the battle.
 import { useState, type ReactNode } from 'react';
-import { addFixGroup, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
+import { addBossChara, addFixGroup, bossCharaRows, clearState, newBossCharaRecord, syncBossCharas, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
 import { countLabel, type MonsterBook } from '../game/monsters';
 import { MAX_MAP_SOUND } from '../game/sound';
 import { MonsterPicker } from '../pages/groups';
 import { monsterRef } from '../pages/monsters';
+import { LAYOUTS, recCellPos, recEventRow, setRecCellPos } from '../game/sections';
 import type { Session } from '../session';
 import { MessageEditor } from '../ui/message';
 import { Photo } from '../ui/Photo';
 import { SoundButton } from '../ui/SoundPicker';
 import { Field, Num } from './fields';
-import { MESSAGE_HELP } from './message';
+import { hexId, MESSAGE_HELP } from './message';
+import { MessagePicker } from '../ui/MessagePicker';
 
 /** Boss rows of the loaded event tables that use a monsterFixGroup row ("dungeon.row"). */
 function fixUsers(session: Session, fix: number): string[] {
@@ -26,7 +28,24 @@ export function BossPanel({ session, row }: { session: Session; row: number }): 
   const { st, game, book } = session;
   const ev = st.currentEvents!;
   const stages = readStages(ev.table.row(row));
-  const apply = (f: () => void): void => st.editTables(f);
+  /** An edit that keeps the boss's characters (its look on the map) in step with the stages. */
+  const apply = (f: () => void): void => st.editTables(() => {
+    f();
+    syncBossCharas(game.master, ev, row);
+  });
+  const charas = bossCharaRows(game.master, ev, row);
+  /** The range record on this map, for placing the boss's character at it. */
+  const range = (st.current?.recs[8] ?? []).find((r) => recEventRow(8, r.raw) === row);
+  const addChara = (): void => {
+    if (!range || !st.current) return;
+    const first = stages[0] && fixGroup(game.master, stages[0].fix)?.slots[0]?.monster;
+    if (!first) return;
+    st.checkpoint();
+    const [cx, cy] = recCellPos(range, LAYOUTS[8]!);
+    const rec = { raw: newBossCharaRecord(addBossChara(game.master, ev, row, first)), x: 0, y: 0 };
+    setRecCellPos(rec, LAYOUTS[5]!, cx, cy);
+    st.touch((doc) => (doc.recs[5] ??= []).push(rec));
+  };
   const setStages = (next: BossStage[]): void => apply(() => writeStages(ev.table.row(row), next));
   const setStage = (n: number, s: Partial<BossStage>): void => setStages(stages.map((x, i) => (i === n ? { ...x, ...s } : x)));
   const addStage = (): void => {
@@ -55,6 +74,15 @@ export function BossPanel({ session, row }: { session: Session; row: number }): 
         段階 n は、イベントの状態が n − 1 のときの戦闘です (+0x4D / +0x4E / +0x4F の種類 0x31、引数は +0x08 / +0x1C / +0x30)。
         ストーリーの進行で出し分けるには、出現条件 (+0x4B / +0x4C) を使ってください。
       </div>
+      <h4>マップでの姿</h4>
+      {charas.length
+        ? <div className="muted small">{`段階 1 の最初の敵を、キャラ (区画 5、イベント #${charas.join(', #')}) としてマップに出します。${clearState(stages) ? '最後の段階に勝つと消えます。' : '最後の段階が「進まない」なので消えません。'} 位置は区画 5 のキャラを動かして変えられます。`}</div>
+        : (
+          <div className="row">
+            <span className="muted small">ゲームでは範囲は見えないので、敵の姿のキャラを置くと分かりやすくなります。</span>
+            <button className="small" disabled={!range || ev.roomLeft() < 1} onClick={addChara}>姿を置く</button>
+          </div>
+        )}
       {!book && <div className="error">モンスターの表を読めなかったため、敵の名前と姿を出せません。</div>}
     </div>
   );
@@ -66,13 +94,18 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
 }): ReactNode {
   const { st, game, sounds } = session;
   const master = game.master;
-  const apply = (f: () => void): void => st.editTables(f);
+  const ev = st.currentEvents!;
+  const apply = (f: () => void): void => st.editTables(() => {
+    f();
+    syncBossCharas(master, ev, row);
+  });
   const g = fixGroup(master, s.fix);
   const rows = master.table(FIX_TABLE).rows;
   const shared = fixUsers(session, s.fix).filter((u) => u !== `${st.current!.dungeon}.${row}`);
   const setGroup = (next: FixGroup): void => apply(() => setFixGroup(master, s.fix, next));
   /** The monster picker: what to do with the picked row, and the row to show as current. */
   const [picking, setPicking] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
+  const [pickingMsg, setPickingMsg] = useState<{ current: number; onPick: (id: number) => void } | null>(null);
   const setSlot = (k: number, x: Partial<FixGroup['slots'][number]>): void => setGroup({ ...g!, slots: g!.slots.map((y, i) => (i === k ? { ...y, ...x } : y)) });
   return (
     <div className="boss-stage">
@@ -133,15 +166,27 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
           <option value={1}>進まない (入るたびに戦闘)</option>
         </select>
       </Field>
-      {s.messages.map((id, i) => (
-        <div key={i}>
-          <Field label={`戦闘の前のメッセージ ${i + 1} (0 = なし)`}>
-            <Num value={id} min={0} onChange={(v) => set({ messages: s.messages.map((x, j) => (j === i ? v : x)) as BossStage['messages'] })} />
-          </Field>
-          {!!id && <MessageEditor master={master} id={id} apply={apply} />}
-        </div>
-      ))}
-      <div className="muted small">{`${MESSAGE_HELP} 新しい ID は作れないので、使っていないメッセージを書き換えて使ってください。`}</div>
+      {s.messages.map((id, i) => {
+        const setMsg = (v: number): void => set({ messages: s.messages.map((x, j) => (j === i ? v : x)) as BossStage['messages'] });
+        return (
+          <div key={i} className="boss-msg">
+            <Field label={`戦闘の前のメッセージ ${i + 1}`}>
+              <span className="row">
+                <button className="small" title="本文から選ぶ" onClick={() => setPickingMsg({ current: id, onPick: setMsg })}>
+                  {id ? (master.texts.preview(id, true)?.slice(0, 24) || hexId(id)) : 'なし (選ぶ)'}
+                </button>
+                {!!id && <button className="small" title="このメッセージを出さない" onClick={() => setMsg(0)}>×</button>}
+              </span>
+            </Field>
+            {!!id && <MessageEditor master={master} id={id} apply={apply} />}
+          </div>
+        );
+      })}
+      <div className="muted small">{`${MESSAGE_HELP} 「選ぶ」で本文から探せます。新しい ID は作れないので、使われていないメッセージを選んで書き換えてください。`}</div>
+      {pickingMsg && (
+        <MessagePicker session={session} current={pickingMsg.current} onClose={() => setPickingMsg(null)}
+          onPick={(id) => { setPickingMsg(null); pickingMsg.onPick(id); }} />
+      )}
       {picking && book && (
         <MonsterPicker session={session} book={book} current={picking.current} onClose={() => setPicking(null)}
           onPick={(r) => { setPicking(null); picking.onPick(r); }} />

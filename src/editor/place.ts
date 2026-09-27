@@ -6,7 +6,7 @@ import type { GimmickTemplate } from '../game/templates';
 import { LAYOUTS, P3, P7, recEventRow, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { u32, w16, w32 } from '../util/bytes';
 import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
-import { addFixGroup, FIX_FLAGS_BOSS, newBossRecord, newBossRow } from '../game/boss';
+import { addBossChara, addFixGroup, FIX_FLAGS_BOSS, newBossCharaRecord, newBossRecord, newBossRow } from '../game/boss';
 
 export type Stamp =
   | { type: 'chest' }
@@ -69,7 +69,7 @@ export interface PlaceContext {
 export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: number): [number, number] {
   const { doc, events, master } = ctx;
   const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || stamp.type === 'boss' || (stamp.type === 'template' && !!stamp.t.event);
-  const rows = stamp.type === 'switchgate' && stamp.gate === undefined ? 2 : 1;
+  const rows = (stamp.type === 'switchgate' && stamp.gate === undefined) || stamp.type === 'boss' ? 2 : 1;
   if (needsRow && (!events || events.roomLeft() < rows))
     throw new Error(events ? `このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)` : 'このダンジョンにはイベントの表がありません');
   const add = (section: number, raw: Uint8Array): [number, number] => {
@@ -114,10 +114,13 @@ export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: numb
       return add(3, raw);
     }
     case 'boss': {
-      // section 8 range + EventObject row of kind 0x31 (game/boss.ts) + its own monsterFixGroup row
+      // section 8 range + EventObject row of kind 0x31 (game/boss.ts) + its own monsterFixGroup row, and a character
+      // (section 5 kind 0) at the same place that shows the monster until the boss is beaten
       const ev = events!;
       const fix = addFixGroup(master, { flags: FIX_FLAGS_BOSS, slots: [{ monster: stamp.monster, count: 0 }] });
-      return add(8, newBossRecord(ev.addRow(newBossRow(ev.table.rowSize, fix))));
+      const boss = ev.addRow(newBossRow(ev.table.rowSize, fix));
+      add(5, newBossCharaRecord(addBossChara(master, ev, boss, stamp.monster)));
+      return add(8, newBossRecord(boss));
     }
     case 'switchgate': {
       const ev = events!;

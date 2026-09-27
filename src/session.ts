@@ -17,7 +17,7 @@ import { buildEntrances, parseEntrances, type WorldInfo } from './game/worldmap'
 import { equalBytes } from './util/bytes';
 import { idbGet, idbSet } from './util/idb';
 
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)' };
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)' };
 export const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 

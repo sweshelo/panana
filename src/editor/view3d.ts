@@ -6,7 +6,7 @@ import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type Ma
 import { ModelFactory } from '../cgfx/three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
 import { loadComposite, loadObjectModels, objKey } from '../cgfx/loader';
-import { fixGroup, KIND_BOSS, readStages } from '../game/boss';
+import { charaMonsterDesign } from '../game/boss';
 import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
 import type { EventTable } from '../game/events';
 import { renderObjectThumb } from './thumbs';
@@ -17,7 +17,7 @@ import { kindColor, SECTION_COLORS } from './legend';
 import { GRID, tileAt, type EditorState } from './state';
 
 const MARKER_Y = 40;
-/** Height of the monster shown in a boss range (a cell is 500). */
+/** Height of a monster shown on the map (a boss's character; a cell is 500). */
 const BOSS_HEIGHT = 420;
 
 export class View3D {
@@ -362,17 +362,19 @@ export class View3D {
     return url;
   }
 
-  /** Idle-posed monster models of boss ranges by monster row (a template to clone; null = none / loading). */
+  /** Idle-posed monster models by MonsterDesign row (a template to clone; null = none / loading). */
   private readonly bossModels = new Map<number, THREE.Object3D | null>();
   private readonly bossRequest = new Set<number>();
 
-  /** Monster fought first in a boss range (EventObject kind 0x31), or 0. */
-  private bossMonster(events: EventTable | null, section: number, raw: Uint8Array): number {
-    if (section !== 8 || !events) return 0;
+  /**
+   * MonsterDesign row shown by a section-5 character whose mapChara row is a monster (a boss placed by Panana, or
+   * the game's own), or -1. The range of a boss battle (section 8) has no model in the game, so none is shown here.
+   */
+  private charaMonster(events: EventTable | null, section: number, raw: Uint8Array): number {
+    if (section !== 5 || raw[8] !== 0 || !events) return -1;
     const row = raw[0]! | (raw[1]! << 8) | (raw[2]! << 16) | (raw[3]! << 24);
-    if (!events.has(row) || events.kind(row) !== KIND_BOSS) return 0;
-    const first = readStages(events.table.row(row))[0];
-    return (first && fixGroup(this.st.game.master, first.fix)?.slots[0]?.monster) || 0;
+    if (!events.has(row)) return -1;
+    return charaMonsterDesign(this.st.game.master, events.model(row)) ?? -1;
   }
 
   private bossModel(monster: number): THREE.Object3D | null {
@@ -394,8 +396,8 @@ export class View3D {
     for (const m of todo) this.bossModels.set(m, null);
     const game = this.st.game;
     game.monsters().then((book) =>
-      Promise.all(todo.map(async (row) => {
-        const mon = book.monster(row);
+      Promise.all(todo.map(async (design) => {
+        const mon = book.monsters.find((m) => m.design === design);
         const ref = mon ? book.modelOf(mon) : null;
         if (!ref) return;
         const set = await loadComposite(game, MONSTER_MODEL_ARCHIVE, ref.model, ref.texture);
@@ -409,7 +411,7 @@ export class View3D {
         const scale = size.y > 0 ? BOSS_HEIGHT / Math.max(size.y, size.x * 0.6, size.z * 0.6) : 1;
         m.group.scale.setScalar(scale);
         m.group.position.y = -box.min.y * scale;
-        this.bossModels.set(row, new THREE.Group().add(m.group));
+        this.bossModels.set(design, new THREE.Group().add(m.group));
       })),
     ).then(() => this.syncSelection(), (err) => console.warn('boss models', err));
   }
@@ -427,8 +429,8 @@ export class View3D {
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         // the game's model, when there is one
         const row = ctx ? recordObjectRow(k, r, ctx) : 0;
-        const boss = ctx ? this.bossMonster(events, k, r.raw) : 0;
-        const model = boss ? this.bossModel(boss) : row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
+        const boss = ctx ? this.charaMonster(events, k, r.raw) : -1;
+        const model = boss >= 0 ? this.bossModel(boss) : row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
         const place = recordPlacement(k, r, doc, this.st.game.master, events);
         const rotY = place.angle;
         const ox = place.ox, oz = place.oz;

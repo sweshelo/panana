@@ -82,7 +82,7 @@ export class Master {
     this.mapResource = table('mapResource.bin');
     this.mapParts = table('mapParts.bin');
     this.mapObject = table('mapObject.bin');
-    this.mapChara = table('mapChara.bin');
+    this.mapChara = this.table('mapChara.bin');
     const tg = findByName(this.archive, 'treasureGroup.bin');
     if (!tg) throw new Error('マスター (56562135) に treasureGroup.bin がありません');
     this.treasureEntry = tg.entry;

@@ -2,7 +2,7 @@
 // the ROM's code.bin with the executor (game/arm.ts).
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { ArmMachine } from '../src/game/arm';
-import { BOSS_PATCH, BOSS_PATCH_ID, KIND_BOSS, decodeFix, encodeFix, newBossRecord, newBossRow, readStages, usesBoss, writeStages, type BossStage } from '../src/game/boss';
+import { addBossChara, bossCharaRows, charaMonsterDesign, clearState, COND_ROW_STATE, fixGroup, monsterDesign, setFixGroup, syncBossCharas, BOSS_PATCH, BOSS_PATCH_ID, KIND_BOSS, decodeFix, encodeFix, newBossRecord, newBossRow, readStages, usesBoss, writeStages, type BossStage } from '../src/game/boss';
 import { codeIps } from '../src/export/pack';
 import { applyIps } from '../src/rom/ips';
 import { Game } from '../src/game/game';
@@ -145,5 +145,56 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
     };
     expect(win(0x8000 | (3 << 13) | 70)).toEqual([[5, 70, 3]]);
     expect(win(0x10)).toEqual([]);
+  });
+});
+
+describe.skipIf(!hasCia)('the boss on the map (a monster character)', () => {
+  let game: Game;
+  beforeAll(async () => {
+    game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+  });
+
+  test('vanilla mapChara has monster rows (type 1) with a MonsterDesign row', () => {
+    const m = game.master;
+    const rows: number[] = [];
+    for (let i = 1; i < m.mapChara.rows; i++) if (charaMonsterDesign(m, i) !== null) rows.push(i);
+    // shown in the CI log: the rows Panana copies the flags / animation from
+    console.log('monster mapChara rows', rows.map((i) => `${i}: ${[...m.mapChara.row(i)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`));
+    for (const i of rows) expect(charaMonsterDesign(m, i)!).toBeLessThan(0x100);
+  });
+
+  test('the character shares the boss row\'s state, disappears after the last win and follows stage 1', async () => {
+    const m = game.master;
+    const ev = (await game.eventTable(5))!;
+    const saved = ev.data.slice(), chara = m.mapChara.data.slice(), fix = m.table('monsterFixGroup.bin').data.slice();
+    try {
+      const boss = ev.addRow(newBossRow(ev.table.rowSize, 9));
+      const monster = fixGroup(m, 9)!.slots[0]!.monster;
+      const row = addBossChara(m, ev, boss, monster);
+      expect(ev.slot(row)).toBe(ev.slot(boss));
+      expect(ev.kind(row)).toBe(0);
+      expect(bossCharaRows(m, ev, boss)).toEqual([row]);
+      expect(charaMonsterDesign(m, ev.model(row))).toBe(monsterDesign(m, monster));
+      const r = ev.table.row(row);
+      expect([r[0x4c], r[0x04]]).toEqual([COND_ROW_STATE, 1]);
+      expect(ev.model(row)).toBe(m.originalRows('mapChara.bin'));
+      expect(m.changedTables()).toContain('mapChara.bin');
+
+      // two stages, the last repeating: never disappears; stage 1 fights another monster: the look follows
+      const stages = readStages(ev.table.row(boss));
+      writeStages(ev.table.row(boss), [stages[0]!, { ...stages[0]!, repeat: true }]);
+      expect(clearState(readStages(ev.table.row(boss)))).toBe(0);
+      let other = 1;
+      while (monsterDesign(m, other) === monsterDesign(m, monster)) other++;
+      setFixGroup(m, 9, { flags: 0x341, slots: [{ monster: other, count: 0 }] });
+      syncBossCharas(m, ev, boss);
+      expect(r[0x4c]).toBe(0);
+      expect(charaMonsterDesign(m, ev.model(row))).toBe(monsterDesign(m, other));
+      expect(m.mapChara.rows).toBe(m.originalRows('mapChara.bin') + 1); // its own row, changed in place
+    } finally {
+      ev.restore(saved);
+      m.restoreTable('mapChara.bin', chara);
+      m.restoreTable('monsterFixGroup.bin', fix);
+    }
   });
 });

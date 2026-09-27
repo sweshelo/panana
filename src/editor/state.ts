@@ -40,6 +40,8 @@ interface Snapshot {
   mapData: Uint8Array;
   /** monsterFixGroup (boss battles). */
   fix: Uint8Array;
+  /** mapChara (the monsters shown for boss battles). */
+  chara: Uint8Array;
   messages: [number, Uint16Array][];
 }
 
@@ -114,6 +116,7 @@ export class EditorState {
       treasure: this.game.master.treasureGroup.data.slice(),
       mapData: this.game.master.mapData.data.slice(),
       fix: this.game.master.table(FIX_TABLE).data.slice(),
+      chara: this.game.master.mapChara.data.slice(),
       messages: this.game.master.texts.saved(),
     };
   }
@@ -123,6 +126,7 @@ export class EditorState {
     this.game.master.restoreTreasure(s.treasure);
     this.game.master.restoreTable('mapData.bin', s.mapData);
     this.game.master.restoreTable(FIX_TABLE, s.fix);
+    this.game.master.restoreTable('mapChara.bin', s.chara);
     this.game.master.texts.restore(s.messages);
   }
 
