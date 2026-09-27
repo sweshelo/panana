@@ -1,5 +1,6 @@
 // Tests that need no ROM data.
 import { describe, expect, test } from 'bun:test';
+import { decodeDsp } from '../src/sound/formats';
 import { lz10Compress, lz10Decompress } from '../src/archive/lz10';
 import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
@@ -768,5 +769,19 @@ describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
   test('section 3: doors step 100, or 250 with +0x1A', () => {
     expect(round(recordPlacement(3, rec3(11, 1, 4), doc(), master))).toEqual({ angle: -90, ox: 100, oy: 0, oz: 0 });
     expect(round(recordPlacement(3, rec3(11, 1, 4, 1), doc(), master))).toEqual({ angle: -90, ox: 250, oy: 0, oz: 0 });
+  });
+});
+
+describe('sound decoding', () => {
+  test('DSP-ADPCM: header byte picks scale and coefficients, nibbles are signed', () => {
+    const coefs = new Int16Array(16);
+    coefs[2] = 2048; // pair 1: previous sample x 1
+    const frames = new Uint8Array([0x00, 0x12, 0xf0, 0, 0, 0, 0, 0, 0x11, 0x10, 0, 0, 0, 0, 0, 0]);
+    const out = new Float32Array(16);
+    decodeDsp(frames, 0, 16, { coefs, h1: 0, h2: 0 }, out, 0);
+    // Frame 1: scale 1, no prediction: 1, 2, -1, 0 ...
+    expect(Array.from(out.subarray(0, 4), (x) => Math.round(x * 32768))).toEqual([1, 2, -1, 0]);
+    // Frame 2: scale 2, predicted from the previous sample (0): 2, 2 + 0 = 2
+    expect(Array.from(out.subarray(14, 16), (x) => Math.round(x * 32768))).toEqual([2, 2]);
   });
 });
