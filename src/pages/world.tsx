@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode
 import { mapLabel, pointLabel, worldHref, worldLabel } from '../editor/labels';
 import { validateWorld, type WorldIssue } from '../editor/validate';
 import type { Game } from '../game/game';
-import { mapShortTitle } from '../game/names';
 import { P3 } from '../game/sections';
 import { ENT, WORLD_SIZE, coveredParts, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
 import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
+import { MapButton } from '../ui/MapPicker';
 import { equalBytes, hex8, w32 } from '../util/bytes';
 
 const ROT_LABEL = ['↑ 0', '→ 1', '↓ 2', '← 3'];
@@ -178,7 +178,7 @@ function EntranceEditor({ session, world, r, original, points, issues, update, e
         </label>
         <label className="field">
           <span>行き先のマップ (+0x08)</span>
-          <MapSelect game={game} value={dest} className={cls(0x08)} onChange={set(0x08)} />
+          <MapButton game={game} value={dest} worlds className={cls(0x08)} title="行き先のマップを選ぶ" onChange={set(0x08)} />
         </label>
         <label className="field">
           <span>行き先の地点 (+0x0C)</span>
@@ -220,34 +220,6 @@ function EntranceEditor({ session, world, r, original, points, issues, update, e
       </div>
       <div className="muted small mono">{`36 バイト: ${Array.from(r, (b) => b.toString(16).padStart(2, '0')).join(' ')}`}</div>
     </div>
-  );
-}
-
-/** Maps grouped by dungeon, then the world maps. */
-function MapSelect({ game, value, className, onChange }: { game: Game; value: number; className?: string; onChange: (v: number) => void }): ReactNode {
-  const groups = useMemo(() => {
-    const g = new Map<number, { label: string; maps: { hash: number; label: string }[] }>();
-    for (const m of game.editableMaps()) {
-      let e = g.get(m.dungeon);
-      if (!e) g.set(m.dungeon, (e = { label: `${game.master.dungeonName(m.dungeon) || m.dungeonCode}  (${m.dungeonCode})`, maps: [] }));
-      e.maps.push({ hash: m.hash, label: `${mapShortTitle(m, game.code.maps)}  ${m.name}` });
-    }
-    return [...g.values()];
-  }, [game]);
-  const worlds = game.worldMaps();
-  const known = groups.some((g) => g.maps.some((m) => m.hash === value)) || worlds.some((w) => w.hash === value);
-  return (
-    <select value={value} className={className} onChange={(e) => onChange(Number(e.target.value))}>
-      {!known && <option value={value}>{`${hex8(value)} (表にないマップ)`}</option>}
-      {groups.map((g) => (
-        <optgroup key={g.label} label={g.label}>
-          {g.maps.map((m) => <option key={m.hash} value={m.hash}>{m.label}</option>)}
-        </optgroup>
-      ))}
-      <optgroup label="ワールドマップ">
-        {worlds.map((w) => <option key={w.hash} value={w.hash}>{worldLabel(w.code)}</option>)}
-      </optgroup>
-    </select>
   );
 }
 

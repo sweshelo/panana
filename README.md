@@ -137,7 +137,7 @@ itemData の名前・説明・分類 (+0x2C)・☆・買値 / 売値・上限・
 宝箱 (区画 4) を選ぶと、右ペインに中身 (アイテム・重み・確率) を一覧で出します。区画 4 の +0 = ダンジョンの EventObject の行、その +0x08 = 中身の表 (treasureGroup) の行、その行に最大 10 個のアイテム {アイテム, 重み}。
 開けると、並んだアイテムから重みに比例して 1 つ選ばれます。
 - 「変更…」: 中身の表の全行を中身つきで一覧するダイアログで、別の行を選ぶか、今の中身を写した新しい行を作ります。行を共有している宝箱の数も出ます。
-- アイテムはクリックで差し替え、「＋ 追加」で一覧表 (名前・分類で絞り込み) から選んで足し、「×」で外します。
+- アイテムはクリックで差し替え、「＋ 追加」で足し、「×」で外します。アイテムはショップの「＋ 追加」と同じ、写真つきの一覧 (名前・ID・分類で絞り込み) から選びます。
 - 中身はマスター (`56562135`) にあります。アイテム MOD (`elpulse/mod`) も `56562135` を置き換えるので、両方使うときは「土台の MOD」で `mod/out` を読み込んでください。
 
 ## 構成
@@ -151,12 +151,14 @@ src/
             monsters.ts sound.ts items.ts actions.ts                   モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店、アクション
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts                                          アニメ (CANM) の読み込みと再生 (CPU スキニング)
-  editor/   mapeditor.ts state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...  マップ編集 (h())
+  editor/   mapeditor.tsx state.ts controller.ts view2d.ts view3d.ts validate.ts ...  マップ編集: 状態・操作・2D / 3D ビュー (canvas)
+            panes.tsx inspector.tsx addpanel.tsx palette.tsx treasure.tsx ...  マップ編集のヘッダーと左右のペイン (React)
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
   ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
             book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx  ページの共通部品
-            mount.tsx useEditorState.ts                                React と h() の橋渡し、EditorState の購読
+            MapPicker.tsx ItemPicker.tsx                               マップ・アイテムを選ぶダイアログ (ページとマップ編集で共通)
+            mount.tsx useEditorState.ts                                React の外の要素の差し込み、EditorState の購読
   session.ts                                                           開いたダンプ: 編集の状態・図鑑・編集の保存と復元
   export/   pack.ts                                                    マップ DB → A90C8038、イベント、マスター → zip
 test/
@@ -166,7 +168,7 @@ test/
   golden/export_golden.py
 ```
 
-UI は React (TSX) です。マップ編集だけは h() で DOM を組み立てるクラス (`src/editor/mapeditor.ts`) のままで、外枠 (`src/ui/Shell.tsx`) がその要素をマップのページに置きます。three.js のモデルビューアも同じくクラスのまま React から差し込みます。マップ編集と共有する部品 (メッセージの編集欄、群れの表) は React で書き、マップ編集には `src/ui/mount.tsx` の `reactElement` で要素として渡します。
+UI は React (TSX) です。マップ編集は、2D / 3D ビュー (canvas) と操作を持つクラス (`src/editor/mapeditor.tsx`) が、ヘッダーと左右のペイン (`src/editor/panes.tsx` 以下、React) を自分の要素に描き、外枠 (`src/ui/Shell.tsx`) がその要素をマップのページに置きます。ペインは `useEditorState` で編集の状態を、`Signal` で表示の設定 (ビュー、モデル、検証の結果) を購読して描き直します。three.js のモデルビューアも同じくクラスのまま `src/ui/mount.tsx` の `Dom` で差し込みます。マップ・アイテムの選択は、ページでもマップ編集でも同じダイアログ (`MapPicker` / `ItemPicker`) を使います。
 
 分かったこと (設計書からの補足):
 - mapResource の行 = `[0] モデルのアーカイブ, [1] テクスチャのアーカイブ (469B3DC6), [2] その中のテクスチャ (bcres), [3] 空のモデル`。
