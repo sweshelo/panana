@@ -2,7 +2,11 @@
 // (items' use effect, monsters' skills).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ACTION_KIND, ActionBook, itemEffect, type Action } from '../game/actions';
-import { useSticky, type PageProps } from '../ui/book';
+import type { Monster } from '../game/monsters';
+import type { Session } from '../session';
+import { actionEdits, ActionEditor } from '../ui/ActionEditor';
+import { useEdits, useSticky, type PageProps } from '../ui/book';
+import { InfoTip } from '../ui/InfoTip';
 import { hex8, s16, u32 } from '../util/bytes';
 
 export const actionHref = (row: number): string => `#/actions/${row}`;
@@ -15,22 +19,61 @@ type Book = Pick<ActionBook, 'actions' | 'action' | 'refsOf'>;
 
 export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
   const { game, book: monsters } = session;
-  // Rebuilt on every visit: the items that use each action may have been edited in the item book.
-  const book = useMemo((): Book | string => {
+  const [edits, edited] = useEdits();
+  // Rebuilt on every visit and edit: the items and monsters that use each action may have been edited elsewhere.
+  const book = useMemo((): ActionBook | string => {
     try {
-      return new ActionBook(game.master, (row) => monsters?.monster(row)?.name ?? '');
+      return new ActionBook(game.master, (row) => monsters?.monster(row)?.name ?? '', monsters?.directData ?? null);
     } catch (err) {
       return `アクションの表を読めませんでした: ${(err as Error).message}`;
     }
-  }, [game, monsters, visit]);
+  }, [game, monsters, visit, edits]);
   const row = arg ? Number(arg) : undefined;
   const selected = useSticky(row, (r) => typeof book !== 'string' && !!book.action(r),
     () => (typeof book === 'string' ? 0 : book.actions.find((a) => a.kind === 2)?.row ?? 0));
   if (typeof book === 'string') return <div className="start"><div className="error">{book}</div></div>;
-  return <div className="book"><ActionView book={book} selected={selected} /></div>;
+  const changed = (): void => {
+    session.scheduleSave();
+    edited();
+  };
+  return (
+    <div className="book">
+      <ActionView book={book} selected={selected}
+        editor={(a) => <ActionEdit session={session} book={book} row={a.row} onChange={changed} />} />
+    </div>
+  );
 }
 
-export function ActionView({ book, selected }: { book: Book; selected: number }): ReactNode {
+const EDIT_INFO = [
+  '「複製」で、この行を写した新しいアクションを表の最後に足します。モンスターのワザの枠で選べます。',
+  'モーションを変えたアクションは、演出の表 (2713402F の directData.bin) も書き出します。',
+].join('\n');
+
+/** The editable fields of the action, copying it, and putting it back. */
+function ActionEdit({ session, book, row, onChange }: { session: Session; book: ActionBook; row: number; onChange: () => void }): ReactNode {
+  const edits = actionEdits(session);
+  const users = book.refsOf(row).monsters.map((m) => session.book?.monster(m.row)).filter((m): m is Monster => !!m);
+  const added = edits.added(row);
+  return (
+    <section>
+      <h3 className="with-info">
+        {'編集'}<InfoTip text={EDIT_INFO} />
+        {added && <span className="muted small">{' (追加したアクション)'}</span>}
+      </h3>
+      <ActionEditor session={session} actions={book} row={row} monsters={users} onChange={onChange} />
+      <div className="row">
+        <button onClick={() => {
+          const n = edits.copy(row);
+          onChange();
+          location.hash = actionHref(n);
+        }}>複製して新しいワザにする</button>
+        {!added && <button disabled={!edits.changed(row)} onClick={() => { edits.revert(row); session.book?.reload(); onChange(); }}>元に戻す</button>}
+      </div>
+    </section>
+  );
+}
+
+export function ActionView({ book, selected, editor }: { book: Book; selected: number; editor?: (a: Action) => ReactNode }): ReactNode {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('item');
   const a = book.action(selected);
@@ -48,7 +91,7 @@ export function ActionView({ book, selected }: { book: Book; selected: number })
         </div>
         <ActionList book={book} rows={book.actions.filter((x) => matches(book, x, query.trim(), filter))} selected={selected} />
       </div>
-      <div className="book-detail">{a && <ActionDetail action={a} book={book} />}</div>
+      <div className="book-detail">{a && <ActionDetail action={a} book={book} editor={editor} />}</div>
     </>
   );
 }
@@ -91,7 +134,7 @@ function ActionList({ book, rows, selected }: { book: Book; rows: Action[]; sele
   );
 }
 
-function ActionDetail({ action: a, book }: { action: Action; book: Book }): ReactNode {
+function ActionDetail({ action: a, book, editor }: { action: Action; book: Book; editor?: (a: Action) => ReactNode }): ReactNode {
   const refs = book.refsOf(a.row);
   const [lo, hi] = a.amount;
   const field = (label: string, v: string, note = ''): ReactNode => (
@@ -104,6 +147,7 @@ function ActionDetail({ action: a, book }: { action: Action; book: Book }): Reac
         <span className="muted">{`#${a.row}  ${kindLabel(a.kind)}  (actionData.bin、${a.raw.length} バイト)`}</span>
       </div>
       {itemEffect(a) && <div className="model-line">{`効果: ${itemEffect(a)}`}</div>}
+      {editor?.(a)}
       <h3>内容</h3>
       <table className="enc-table action-fields">
         <tbody>

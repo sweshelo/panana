@@ -342,7 +342,9 @@ input.edited { border-color: var(--warn); }
 .slot-row { display: grid; align-items: center; gap: 6px; }
 .slot-row > .board { min-width: 0; }
 .drop-slots .slot-row { grid-template-columns: minmax(0, 1fr) auto auto; }
-.skill-slots .slot-row { grid-template-columns: 14px minmax(0, 1fr) 36px auto; }
+.skill-slots .slot-row { grid-template-columns: 14px minmax(0, 1fr) 36px auto auto; }
+.action-edit .name-input { width: 100%; }
+.action-edit td:first-child { white-space: nowrap; width: 7em; }
 .ai-fields .slot-row { grid-template-columns: minmax(0, 1fr) auto; }
 .slot-share { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
 .slot-remove { padding: 0 6px; }

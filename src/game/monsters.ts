@@ -1,8 +1,8 @@
 // Monsters (MonsterParameter + MonsterDesign), encounter groups (monsterGroup) and the map's encounters
 // (section 6). Field positions: elpulse docs/battle.md §2〜§4 and docs/encounters.md.
 import { GsTable } from '../archive/gstable';
-import { findByName, parseArchive } from '../archive/gsarc';
-import { u16, u32, w16, w32 } from '../util/bytes';
+import { findByName, parseArchive, rebuildArchive, type Archive, type ArcEntry } from '../archive/gsarc';
+import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
 import type { Master } from './master';
 import type { MapDoc } from './sections';
@@ -334,22 +334,53 @@ export class MonsterBook {
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
   private readonly design: GsTable;
-  /** directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). */
+  /**
+   * directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). Edits to it
+   * (new rows for a changed motion) are exported with this archive ({@link buildDesignArchive}).
+   */
   readonly directData: GsTable | null;
+  private readonly designArchive: Archive;
+  private readonly directEntry: ArcEntry | null;
+  private readonly directOriginal: Uint8Array | null;
   readonly battle: BattleParams;
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
 
   constructor(private readonly master: Master, designArchive: Uint8Array) {
-    const f = findByName(parseArchive(designArchive), 'monsterDesign.bin');
+    this.designArchive = parseArchive(designArchive);
+    const f = findByName(this.designArchive, 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
     this.design = new GsTable(f.body);
-    const dd = findByName(parseArchive(designArchive), 'directData.bin');
+    const dd = findByName(this.designArchive, 'directData.bin');
     this.directData = dd ? new GsTable(dd.body) : null;
+    this.directEntry = dd?.entry ?? null;
+    this.directOriginal = dd ? dd.body.slice() : null;
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));
     this.reload();
+  }
+
+  /** Rows of directData in the archive (rows past it were added by an edit). */
+  get directOriginalRows(): number {
+    return this.directOriginal ? u32(this.directOriginal, 0) : 0;
+  }
+
+  /** Whether directData differs from the archive. */
+  directChanged(): boolean {
+    return !!this.directData && !equalBytes(this.directData.data, this.directOriginal!);
+  }
+
+  /** Put saved directData bytes back (restoring the edits of an earlier visit). */
+  restoreDirect(bytes: Uint8Array): void {
+    if (this.directData) this.directData.data = bytes.slice();
+  }
+
+  /** 2713402F with the edited directData (every other entry copied verbatim). */
+  buildDesignArchive(): Uint8Array {
+    const repl = new Map<number, Uint8Array>();
+    if (this.directEntry && this.directChanged()) repl.set(this.directEntry.index, this.directData!.data);
+    return rebuildArchive(this.designArchive, repl);
   }
 
   /** Decode every MonsterParameter and monsterGroup row again (after edits or restoring saved edits). */
