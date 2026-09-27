@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { buildModFiles, buildModZip, modPackage } from '../export/pack';
+import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
@@ -39,6 +40,15 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const added = game.code.addedMaps();
     if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
+    const patches = game.codePatches.filter((p) => p.enabled);
+    if (patches.length) {
+      const built = buildPatches(game.dump.code, patches);
+      changes.push(`コードのパッチ ${patches.map((p) => p.title).join('・')} (exefs/code.ips)`);
+      for (const p of patches) {
+        const err = built.get(p.id)?.errors[0];
+        if (err) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `「${p.title}」の ${err.line} 行目: ${err.message} (このパッチは書き出しません)`, key: `patch:${p.id}` } });
+      }
+    }
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);

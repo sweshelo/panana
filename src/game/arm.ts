@@ -8,7 +8,8 @@
 // calls to addresses outside .text return 0 at once. BLX #imm (into the Thumb helpers near 0x33BBF8) keeps r0.
 import { BASE } from './codeconst';
 
-export const TEXT_END = BASE + 0x3bf01c;
+/** End of the executable mapping: .text (to 0x4BF01C) and the code cave after it. */
+export const TEXT_END = 0x4c0000;
 /** Return address of the outermost call: reaching it ends the run. */
 const RET = 0xdead0000;
 

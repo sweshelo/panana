@@ -671,6 +671,36 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
     expect(text).toContain('ありゃ、重さが足りないんですかねえ');
   });
 
+  test('a code patch: the D01 row 2 switch also opens row 11, checked and exported in code.ips', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { buildPatches, patchRecords, applyRecords } = await import('../src/game/patch');
+    const { checkPatch } = await import('../src/game/patchcheck');
+    const { codeIps } = await import('../src/export/pack');
+    const { applyIps } = await import('../src/rom/ips');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const vtables = entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable));
+    const source = '@0x2587A4\n  bl both\n@0x2587AC\n  nop\n@cave both\n  push {r4, lr}\n  mov r0, #10\n  bl FUN_0031AA2C\n  mov r0, #11\n  bl FUN_0031AA2C\n  pop {r4, pc}\n';
+    const patch = { id: 'p', title: 'both', source, enabled: true };
+    const built = buildPatches(game.dump.code, [patch]);
+    const b = built.get('p')!;
+    expect(b.errors).toEqual([]);
+    const patched = applyRecords(game.dump.code, patchRecords(built.values()));
+    const check = checkPatch(patched, b, e, e.raw, vtables);
+    expect(check.runs.map((r) => r.result)).toEqual(['returned', 'returned']);
+    expect(check.classes![0]!.completes).toEqual([10, 11]);
+    // unbalanced stack is caught
+    const broken = buildPatches(game.dump.code, [{ ...patch, source: '@cave x\n  push {r4, lr}\n  bx lr\n' }]).get('p')!;
+    const run = checkPatch(applyRecords(game.dump.code, patchRecords([broken])), broken).runs[0]!;
+    expect(run.result).toBe('stack');
+    // export: code.ips holds the patch
+    game.codePatches = [patch];
+    const ips = codeIps(game)!;
+    expect(equalBytes(applyIps(game.dump.code, ips).subarray(0x1587a4, 0x1587b0), patched.subarray(0x1587a4, 0x1587b0))).toBe(true);
+    game.codePatches = [];
+  });
+
   test('condition types are read from FUN_0030B8A4', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { readConditionTypes } = await import('../src/game/conditions');

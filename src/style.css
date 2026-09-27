@@ -309,3 +309,7 @@ input.edited { border-color: var(--warn); }
 .ai-question { width: 100%; box-sizing: border-box; margin: 4px 0; }
 .ai-answer { white-space: pre-wrap; background: var(--panel2); border-radius: 4px; padding: 10px 12px; line-height: 1.7; margin-top: 6px; }
 .ai-settings { border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin: 6px 0; }
+.asm-edit { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.patch-editor { border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin: 8px 0; }
+.patch-help { white-space: pre-wrap; }
+.error-text { color: #ff8a8a; }
