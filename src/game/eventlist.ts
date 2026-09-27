@@ -42,6 +42,8 @@ export interface EventEntry {
   /** State slot (+0x44; the row number when 0xFFFF). */
   slot: number;
   model: number;
+  /** The EventObject row (0x50 bytes, a copy). */
+  raw: Uint8Array;
   conditions: EventCondition[];
   /** Messages named by the row's fields: offset -> ID. */
   messages: { off: number; id: number }[];
@@ -102,6 +104,7 @@ export async function eventEntries(game: Game, docOf: (m: MapInfo) => MapDoc, ev
         kind,
         slot: ev.slot(row),
         model: ev.model(row),
+        raw: r.slice(),
         conditions,
         messages: (EVENT_KINDS[kind]?.messages ?? []).map((off) => ({ off, id: u32(r, off) })).filter((m) => m.id),
         places: places.get(row) ?? [],

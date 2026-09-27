@@ -6,7 +6,9 @@ import { completedBy, eventEntries, type EventEntry } from '../game/eventlist';
 import { EVENT_KINDS, kindName } from '../game/eventkinds';
 import { mapShortTitle } from '../game/names';
 import { fnName } from '../game/codemessages';
-import { aiBundle } from '../game/aiprompt';
+import { aiBundle, eventText, GAME_CONTEXT, type EventDescription } from '../game/aiprompt';
+import { AskAi } from '../ui/AskAi';
+import { PatchPanel } from '../ui/PatchPanel';
 import { CodeIndex } from '../game/scripts';
 import { scriptListing, type AsmFunction } from '../game/scriptasm';
 import type { Session } from '../session';
@@ -48,7 +50,8 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
   const byKey = useMemo(() => new Map((entries ?? []).map((e) => [key(e), e])), [entries]);
   const completers = useMemo(() => completedBy(entries ?? []), [entries]);
   /** Function bounds of code.bin with every script class's vtable entries (for the listings). */
-  const index = useMemo(() => (entries ? new CodeIndex(game.code.code, new Set(entries.flatMap((e) => e.scripts.map((s) => s.cls.vtable)))) : null), [game, entries]);
+  const vtables = useMemo(() => [...new Set((entries ?? []).flatMap((e) => e.scripts.map((s) => s.cls.vtable)))], [entries]);
+  const index = useMemo(() => (entries ? new CodeIndex(game.code.code, vtables) : null), [game, entries, vtables]);
   const selected = useSticky(arg, (k) => !entries || byKey.has(k), () => (entries?.[0] ? key(entries[0]) : ''));
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${entries?.length}`);
@@ -98,14 +101,14 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
         </div>
       </div>
       <div className="book-detail">
-        {entries && index && <EventDetail key={selected} session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} index={index} />}
+        {entries && index && <EventDetail key={selected} session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} index={index} vtables={vtables} />}
       </div>
     </div>
   );
 }
 
-function EventDetail({ session, entry: e, byKey, completers, index }: {
-  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>; index: CodeIndex;
+function EventDetail({ session, entry: e, byKey, completers, index, vtables }: {
+  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>; index: CodeIndex; vtables: number[];
 }): ReactNode {
   const { game } = session;
   const master = game.master;
@@ -119,10 +122,14 @@ function EventDetail({ session, entry: e, byKey, completers, index }: {
     [e, showCode, index, game],
   );
   if (!e) return null;
-  const bundle = (): string => {
-    const fns = e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls));
-    return aiBundle({ dungeonName: master.dungeonName(e.dungeon) || `D${e.dungeon}`, entry: e, places: e.places.map((p) => `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`), listing: fns, message });
-  };
+  const describe = (): EventDescription => ({
+    dungeonName: master.dungeonName(e.dungeon) || `D${e.dungeon}`,
+    entry: e,
+    places: e.places.map((p) => `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`),
+    listing: e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls)),
+    message,
+  });
+  const bundle = (): string => aiBundle(describe());
   const copy = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(bundle());
@@ -216,6 +223,10 @@ function EventDetail({ session, entry: e, byKey, completers, index }: {
                 {copied && <span className="muted small">{copied}</span>}
               </div>
               {showCode && listing.map((f) => <AsmView key={f.addr} fn={f} />)}
+              <h3>AI に聞く</h3>
+              <AskAi system={GAME_CONTEXT} context={() => eventText(describe())} />
+              <h3>パッチ</h3>
+              <PatchPanel session={session} entry={e} eventRow={e.raw} allVtables={vtables} eventText={() => eventText(describe())} />
             </>
           )}
         </>

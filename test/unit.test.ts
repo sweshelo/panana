@@ -16,6 +16,10 @@ import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
 import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
+import { askClaude, setApiKey } from '../src/ai/claude';
+import { assembleLine } from '../src/game/asm';
+import { buildPatches } from '../src/game/patch';
+import { extractPatch } from '../src/ui/PatchPanel';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -630,5 +634,78 @@ describe('ARM disassembler (game/disasm.ts)', () => {
     expect(d(0xed9f8a9d)).toBe('vldr s16, [pc, #0x274]');
     expect(d(0xeef1fa10)).toBe('vmrs apsr_nzcv, fpscr');
     expect(d(0xeeb70a00)).toBe('vmov.f32 s0, #1');
+  });
+});
+
+describe('asking Claude (ai/claude.ts)', () => {
+  test('streams the answer and sends the context as a cached system prompt', async () => {
+    let sent: { url: string; headers: Headers; body: any } | null = null;
+    const events = [
+      { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 5 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'スイッチを' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '押すと扉が開く' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 7 } },
+      { type: 'message_stop' },
+    ];
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      sent = { url: String(url), headers: new Headers(init.headers), body: JSON.parse(String(init.body)) };
+      const sse = events.map((e) => `event: ${e.type}
+data: ${JSON.stringify(e)}
+
+`).join('');
+      return new Response(sse, { headers: { 'content-type': 'text/event-stream' } });
+    }) as unknown as typeof fetch;
+    setApiKey('sk-ant-test', false);
+    let streamed = '';
+    const r = await askClaude({ system: 'ゲームの説明', prompt: 'イベント', onText: (d) => (streamed += d), fetch: fakeFetch });
+    setApiKey('', false);
+    expect(streamed).toBe('スイッチを押すと扉が開く');
+    expect(r.text).toBe(streamed);
+    expect(r.outputTokens).toBe(7);
+    expect(sent!.url).toContain('/v1/messages');
+    expect(sent!.headers.get('anthropic-beta')).toContain('server-side-fallback-2026-07-01');
+    expect(sent!.body.model).toBe('claude-opus-5');
+    expect(sent!.body.fallbacks).toBe('default');
+    expect(sent!.body.thinking).toEqual({ type: 'adaptive' });
+    expect(sent!.body.system[1]).toEqual({ type: 'text', text: 'ゲームの説明', cache_control: { type: 'ephemeral' } });
+    expect(sent!.body.messages).toEqual([{ role: 'user', content: 'イベント' }]);
+  });
+});
+
+describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
+  const a = (t: string, addr = 0x100000) => assembleLine(t, addr).words[0]!;
+  test('the inverse of the disassembler', () => {
+    const lines: [string, number, number?][] = [
+      ['push {r4, lr}', 0xe92d4010], ['pop {r4, pc}', 0xe8bd8010], ['push {lr}', 0xe52de004], ['cmp r0, #0x10', 0xe3500010],
+      ['movgt r0, #1', 0xc3a00001], ['add r0, r0, r0, lsl #1', 0xe0800080], ['lsl r0, r1, #0x10', 0xe1a00801],
+      ['ldr r0, [pc, #0x24]', 0xe59f0024], ['strb r0, [r6, #0x80]', 0xe5c60080], ['ldrh r3, [r4, #2]', 0xe1d430b2],
+      ['bl #0x31aa2c', 0xeb03089e, 0x2587ac], ['beq #0x1d19dc', 0x0a000014, 0x1d1984], ['bx lr', 0xe12fff1e], ['uxth r2, r1', 0xe6ff2071],
+      ['vpush {d8}', 0xed2d8b02], ['vldr s16, [pc, #0x274]', 0xed9f8a9d], ['vmrs apsr_nzcv, fpscr', 0xeef1fa10], ['vmov.f32 s1, s17', 0xeef00a68],
+      ['mov r0, #-1', 0xe3e00000], ['nop', 0xe320f000], ['vcvt.f32.s32 s0, s0', 0xeeb80ac0], ['mul r0, r1, r2', 0xe0000291],
+    ];
+    for (const [t, w, at] of lines) expect([t, a(t, at).toString(16)]).toEqual([t, w.toString(16)]);
+    expect(() => a('movw r0, #1')).toThrow();
+    expect(() => a('mov r0, #0x12345')).toThrow();
+  });
+
+  test('blocks, the cave, literal pools and errors', () => {
+    const code = new Uint8Array(0x3c0000); // zero .text: the whole cave is free
+    const src = `@0x2587A4\n  bl two ; call the cave\n@cave two\n  push {r4, lr}\n  ldr r0, =0x1C77\n  vldr s0, =1.0\n  pop {r4, pc}\n`;
+    const b = buildPatches(code, [{ id: 'a', title: 'a', source: src, enabled: true }]).get('a')!;
+    expect(b.errors).toEqual([]);
+    const cave = b.blocks[1]!;
+    expect(cave.addr).toBe(0x4bff80 - 24);
+    expect(b.labels.get('two')).toBe(cave.addr);
+    expect(cave.lines.map((l) => l.word.toString(16))).toEqual(['e92d4010', 'e59f0004', 'ed9f0a01', 'e8bd8010', '1c77', '3f800000']);
+    expect(b.blocks[0]!.lines[0]!.word).toBe(assembleLine('bl two', 0x2587a4, () => cave.addr).words[0]!);
+    const bad = buildPatches(code, [{ id: 'b', title: 'b', source: '@0x2587A4\n  ldr r0, =1\n@0x4BF100\n  nop\n  foo r0\n', enabled: true }]).get('b')!;
+    expect(bad.errors.map((e) => e.line)).toEqual([2, 3, 5]);
+  });
+
+  test('the patch block of an AI answer', () => {
+    expect(extractPatch('方針\n```patch\n@0x100\n  nop\n```\nおわり')).toBe('@0x100\n  nop\n');
+    expect(extractPatch('なし')).toBeNull();
   });
 });
