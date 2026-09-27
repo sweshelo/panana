@@ -1,0 +1,145 @@
+// Inspector block of a boss battle (EventObject kind 0x31, game/boss.ts): its stages, each with the monsters
+// (a monsterFixGroup row), the battle BGM, what a win does, and the messages shown before the battle.
+import type { ReactNode } from 'react';
+import { addFixGroup, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
+import { countLabel, type MonsterBook } from '../game/monsters';
+import { MAX_MAP_SOUND } from '../game/sound';
+import { monsterRef } from '../pages/monsters';
+import type { Session } from '../session';
+import { MessageEditor } from '../ui/message';
+import { Photo } from '../ui/Photo';
+import { SoundButton } from '../ui/SoundPicker';
+import { Field, Num } from './fields';
+import { MESSAGE_HELP } from './message';
+
+/** Boss rows of the loaded event tables that use a monsterFixGroup row ("dungeon.row"). */
+function fixUsers(session: Session, fix: number): string[] {
+  const out: string[] = [];
+  for (const [d, ev] of session.st.events)
+    for (let row = 0; row < ev.rows; row++)
+      if (ev.kind(row) === KIND_BOSS && readStages(ev.table.row(row)).some((s) => s.fix === fix)) out.push(`${d}.${row}`);
+  return out;
+}
+
+export function BossPanel({ session, row }: { session: Session; row: number }): ReactNode {
+  const { st, game, book } = session;
+  const ev = st.currentEvents!;
+  const stages = readStages(ev.table.row(row));
+  const apply = (f: () => void): void => st.editTables(f);
+  const setStages = (next: BossStage[]): void => apply(() => writeStages(ev.table.row(row), next));
+  const setStage = (n: number, s: Partial<BossStage>): void => setStages(stages.map((x, i) => (i === n ? { ...x, ...s } : x)));
+  const addStage = (): void => {
+    const last = stages[stages.length - 1]!;
+    apply(() => {
+      const g = fixGroup(game.master, last.fix) ?? { flags: FIX_FLAGS_BOSS, slots: [] };
+      const fix = addFixGroup(game.master, g);
+      writeStages(ev.table.row(row), [...stages, { ...last, fix, messages: [0, 0, 0] }]);
+    });
+  };
+  return (
+    <div className="event-box boss-box">
+      <h3>ボス戦</h3>
+      <div className="muted small">
+        範囲に入ると、メッセージのあとに決まった敵との戦闘になります。勝つとイベントの状態が進み、次に入ったときは次の段階の戦闘 (なければ何も起きない) になります。
+        負けたとき・逃げたときは進みません。「何度でも」の段階は勝っても進まず、入るたびに戦闘になります。
+      </div>
+      {stages.map((s, n) => (
+        <StageFields key={n} session={session} book={book} row={row} n={n} s={s} last={n === stages.length - 1}
+          set={(x) => setStage(n, x)} remove={n > 0 && n === stages.length - 1 ? () => setStages(stages.slice(0, -1)) : null} />
+      ))}
+      {stages.length < MAX_STAGES && (
+        <button onClick={addStage} title="勝つたびに強くなる戦い (ポーンのような) を作ります">{`段階を足す (${stages.length} / ${MAX_STAGES})`}</button>
+      )}
+      <div className="muted small">
+        段階 n は、イベントの状態が n − 1 のときの戦闘です (+0x4D / +0x4E / +0x4F の種類 0x31、引数は +0x08 / +0x1C / +0x30)。
+        ストーリーの進行で出し分けるには、出現条件 (+0x4B / +0x4C) を使ってください。
+      </div>
+      {!book && <div className="error">モンスターの表を読めなかったため、敵の名前と姿を出せません。</div>}
+    </div>
+  );
+}
+
+function StageFields({ session, book, row, n, s, last, set, remove }: {
+  session: Session; book: MonsterBook | null; row: number; n: number; s: BossStage; last: boolean;
+  set: (s: Partial<BossStage>) => void; remove: (() => void) | null;
+}): ReactNode {
+  const { st, game, sounds } = session;
+  const master = game.master;
+  const apply = (f: () => void): void => st.editTables(f);
+  const g = fixGroup(master, s.fix);
+  const rows = master.table(FIX_TABLE).rows;
+  const shared = fixUsers(session, s.fix).filter((u) => u !== `${st.current!.dungeon}.${row}`);
+  const setGroup = (next: FixGroup): void => apply(() => setFixGroup(master, s.fix, next));
+  const monsters = book?.monsters ?? [];
+  return (
+    <div className="boss-stage">
+      <h4>
+        {`段階 ${n + 1}`}
+        <span className="muted small">{` (状態 ${n})`}</span>
+        {remove && <button className="small danger" onClick={remove}>この段階を消す</button>}
+      </h4>
+      <Field label={`敵 (monsterFixGroup の行、1〜${rows - 1})`}>
+        <span className="row">
+          <Num value={s.fix} min={1} max={Math.min(255, rows - 1)} onChange={(v) => set({ fix: v })} />
+          <button className="small" title="今の敵を写した新しい行にします (ほかと共有しない)"
+            onClick={() => apply(() => set({ fix: addFixGroup(master, g ?? { flags: FIX_FLAGS_BOSS, slots: [] }) }))}>新しい行にする</button>
+        </span>
+      </Field>
+      {shared.length > 0 && <div className="muted small">{`この行はほかのボス戦 (${shared.join('、')}) も使っています。敵を変えると両方が変わります。`}</div>}
+      {g ? (
+        <table className="boss-fix">
+          <tbody>
+            {g.slots.map((slot, k) => {
+              const m = book?.monster(slot.monster);
+              return (
+                <tr key={k}>
+                  <td className="photo-cell">{m && book && <Photo model={monsterRef(game, book, m)} title={m.name} />}</td>
+                  <td>
+                    <select value={slot.monster} onChange={(e) => setGroup({ ...g, slots: g.slots.map((x, i) => (i === k ? { ...x, monster: Number(e.target.value) } : x)) })}>
+                      {!m && <option value={slot.monster}>{`#${slot.monster}`}</option>}
+                      {monsters.map((x) => <option key={x.row} value={x.row}>{`${x.name} Lv${x.level} (#${x.row})`}</option>)}
+                    </select>
+                    {m && <a href={`#/monsters/${m.row}`} title="モンスター図鑑で開く"> ↗</a>}
+                  </td>
+                  <td>
+                    <select value={slot.count} title="数" onChange={(e) => setGroup({ ...g, slots: g.slots.map((x, i) => (i === k ? { ...x, count: Number(e.target.value) } : x)) })}>
+                      {[0, 1, 2, 3, 4, 5, 6, 7].map((c) => <option key={c} value={c}>{`${countLabel(c)} 体`}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    {g.slots.length > 1 && <button className="small" title="外す" onClick={() => setGroup({ ...g, slots: g.slots.filter((_, i) => i !== k) })}>×</button>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : <div className="error">{`monsterFixGroup の行 ${s.fix} がありません`}</div>}
+      {g && g.slots.length < FIX_SLOTS && (
+        <button className="small" onClick={() => setGroup({ ...g, slots: [...g.slots, { monster: g.slots[0]?.monster || monsters[0]?.row || 1, count: 0 }] })}>敵を足す</button>
+      )}
+      {g && !g.slots.length && <div className="error">敵がいません (戦闘になりません)</div>}
+      <div className="field">
+        <span>戦闘の BGM</span>
+        {sounds
+          ? <SoundButton game={game} sounds={sounds} value={s.bgm || BOSS_BGM_DEFAULT} kind="bgm" max={MAX_MAP_SOUND} title="戦闘の BGM を選ぶ" onChange={(v) => set({ bgm: v })} />
+          : <Num value={s.bgm || BOSS_BGM_DEFAULT} min={1} max={255} onChange={(v) => set({ bgm: v })} />}
+      </div>
+      <Field label="勝ったら">
+        <select value={s.repeat ? 1 : 0} onChange={(e) => set({ repeat: e.target.value === '1' })}>
+          <option value={0}>{last ? 'おしまい (二度と起きない)' : `段階 ${n + 2} へ進む`}</option>
+          <option value={1}>進まない (入るたびに戦闘)</option>
+        </select>
+      </Field>
+      {s.messages.map((id, i) => (
+        <div key={i}>
+          <Field label={`戦闘の前のメッセージ ${i + 1} (0 = なし)`}>
+            <Num value={id} min={0} onChange={(v) => set({ messages: s.messages.map((x, j) => (j === i ? v : x)) as BossStage['messages'] })} />
+          </Field>
+          {!!id && <MessageEditor master={master} id={id} apply={apply} />}
+        </div>
+      ))}
+      <div className="muted small">{`${MESSAGE_HELP} 新しい ID は作れないので、使っていないメッセージを書き換えて使ってください。`}</div>
+    </div>
+  );
+}

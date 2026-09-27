@@ -8,6 +8,8 @@ import { tileAt } from './state';
 import { mapLabel, pointLabel, worldHref } from './labels';
 import { TreasureEditor } from './treasure';
 import { EventListDialog, EventPanel } from './events';
+import { BossPanel } from './boss';
+import { KIND_BOSS } from '../game/boss';
 import { EncounterPanel } from './encounters';
 import { MapSoundPanel } from './sounds';
 import { Field, HexInput, Num, RawBytes } from './fields';
@@ -172,6 +174,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
           {ev && !ev.has(evRow) && <div className="error">{`イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`}</div>}
         </>
       )}
+      {k === 8 && ev?.has(evRow) && ev.kind(evRow) === KIND_BOSS && <BossPanel session={editor.session} row={evRow} />}
       {(evRow || k === 4 || k === 5 || k === 8) && ev?.has(evRow) ? <EventPanel st={st} row={evRow} /> : null}
       {/* raw bytes (x / y are overwritten from the fields above) */}
       <Field label={`生データ (${L.size} バイト)`}>

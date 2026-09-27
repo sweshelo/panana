@@ -1,6 +1,7 @@
 // Checks before export (docs/map-editor-design.md §7 "検証ルール").
 import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
+import { fixGroup, KIND_BOSS, readStages } from '../game/boss';
 import type { Game } from '../game/game';
 import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
@@ -97,6 +98,25 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
           else if (!recs.some((x) => x.section === 3 && GATE_KINDS.has(x.raw[0x14]!)))
             out.push({ level: 'warn', msg: `汎用スイッチ (イベント #${row}) の対象 #${t} が扉・門 (区画 3 の種類 11 / 16 / 17) ではありません`, target, key: `swkind/${row}/${t}` });
         }
+      });
+    }
+    // boss battles (game/boss.ts)
+    for (const k of EVENT_SECTIONS) {
+      (doc.recs[k] ?? []).forEach((r, i) => {
+        const row = recEventRow(k, r.raw);
+        if (!events.has(row) || events.kind(row) !== KIND_BOSS) return;
+        const target: Selection = { type: 'rec', section: k, index: i };
+        const name = `ボス戦 (イベント #${row})`;
+        if (k !== 8) out.push({ level: 'error', msg: `${name} は区画 8 (イベントの範囲) に置いてください`, target, key: `bosssec/${row}` });
+        if (row >= 0x2000) out.push({ level: 'error', msg: `${name}: 行番号は 0x2000 未満にしてください`, target, key: `bossrow/${row}` });
+        readStages(events.table.row(row)).forEach((s, n) => {
+          const g = fixGroup(game.master, s.fix);
+          if (!g) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: monsterFixGroup の行 ${s.fix} がありません`, target, key: `bossfix/${row}/${n}` });
+          else if (!g.slots.length) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: 敵がいません`, target, key: `bossnone/${row}/${n}` });
+          for (const id of s.messages)
+            if (id && game.master.message(id) === undefined)
+              out.push({ level: 'warn', msg: `${name} の段階 ${n + 1}: メッセージ ${hex8(id)} が見つかりません`, target, key: `bossmsg/${row}/${n}/${id}` });
+        });
       });
     }
     for (const [slot, rows] of slots) {

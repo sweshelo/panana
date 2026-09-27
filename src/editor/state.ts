@@ -4,6 +4,7 @@ import type { EventTable } from '../game/events';
 import type { Stamp } from './place';
 import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
+import { FIX_TABLE } from '../game/boss';
 import { cloneDoc, LETTER_DEFAULT, sectionBytes, type MapDoc, type Tile } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 
@@ -37,6 +38,8 @@ interface Snapshot {
   events: [number, Uint8Array][];
   treasure: Uint8Array;
   mapData: Uint8Array;
+  /** monsterFixGroup (boss battles). */
+  fix: Uint8Array;
   messages: [number, Uint16Array][];
 }
 
@@ -110,6 +113,7 @@ export class EditorState {
       events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
       treasure: this.game.master.treasureGroup.data.slice(),
       mapData: this.game.master.mapData.data.slice(),
+      fix: this.game.master.table(FIX_TABLE).data.slice(),
       messages: this.game.master.texts.saved(),
     };
   }
@@ -118,6 +122,7 @@ export class EditorState {
     for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
     this.game.master.restoreTreasure(s.treasure);
     this.game.master.restoreTable('mapData.bin', s.mapData);
+    this.game.master.restoreTable(FIX_TABLE, s.fix);
     this.game.master.texts.restore(s.messages);
   }
 

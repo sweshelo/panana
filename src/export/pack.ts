@@ -7,7 +7,7 @@ import type { MapInfo } from '../game/codebin';
 import { MapDb, MAPDB_ARCHIVE } from '../game/mapdb';
 import { buildMapPatch, readExtension, type AddedMap } from '../game/mappatch';
 import { appendIps } from '../rom/ips';
-import { buildPatches, patchRecords } from '../game/patch';
+import { buildPatches, patchRecords, type CodePatch } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
@@ -80,28 +80,32 @@ export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], 
  * Everything to install: the base MOD's RomFS files (unless rebuilt here) + the rebuilt ones, and its
  * code.ips. Keys are paths below the title folder ("romfs/A90C8038", "exefs/code.ips").
  */
-export function modPackage(game: Game, files: Map<string, Uint8Array>): Map<string, Uint8Array> {
+export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: CodePatch[] = []): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   for (const [name, data] of game.baseMod?.romfs ?? []) out.set(`romfs/${name}`, data);
   for (const [name, data] of files) out.set(`romfs/${name}`, data);
-  const ips = codeIps(game);
+  const ips = codeIps(game, extra);
   if (ips) out.set('exefs/code.ips', ips);
   return out;
 }
 
 /**
  * code.ips of the MOD: the base MOD's, plus the tables of the new maps when there are any (or when the base has
- * an older extension, which is rebuilt). docs/new-map.md §2.
+ * an older extension, which is rebuilt; docs/new-map.md §2), the enabled code patches and `extra` (Panana's own
+ * patches, e.g. game/boss.ts BOSS_PATCH).
  */
-export function codeIps(game: Game): Uint8Array | null {
+export function codeIps(game: Game, extra: CodePatch[] = []): Uint8Array | null {
   let ips = game.baseMod?.ips ?? null;
   const added = game.code.addedMaps();
   if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap)).records, game.dump.code);
   // code patches (the event page); ones with errors are left out
-  const records = patchRecords(buildPatches(game.dump.code, game.codePatches.filter((p) => p.enabled)).values());
+  const records = patchRecords(buildPatches(game.dump.code, exportedPatches(game, extra)).values());
   if (records.length) ips = appendIps(ips, records, game.dump.code);
   return ips;
 }
+
+/** The code patches written to code.ips: the enabled ones of the patch list, then `extra`. */
+export const exportedPatches = (game: Game, extra: CodePatch[] = []): CodePatch[] => [...game.codePatches.filter((p) => p.enabled), ...extra];
 
 const addedMap = (m: MapInfo): AddedMap => ({
   hash: m.hash,
