@@ -7,8 +7,10 @@ import type { Master } from './master';
 
 /** Item effect by actionData type (kind 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD. */
 export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
-/** Kind of an action (w0 bit1-2). */
-export const ACTION_KIND: Record<number, string> = { 2: 'アイテム' };
+/** Kind (category) of an action (w0 bit1-2; elpulse docs/battle.md §8). */
+export const ACTION_KIND: Record<number, string> = { 0: '状態', 1: '攻撃・とくぎ', 2: 'アイテム', 3: '特殊' };
+/** Element of an action (w0 bit24-27). */
+export const ELEMENT = ['', '火', '氷', '風', '土', '電気', '水', '光', '闇'];
 /** Scenes where an item action can be used: w0 bit -> label. */
 const SCENES: [number, string][] = [[31, 'フィールド'], [30, 'ハウス'], [29, '戦闘']];
 
@@ -26,6 +28,13 @@ export interface ActionFields {
   nameId: number;
   /** +0x18 / +0x1A (s16). */
   amount: [number, number];
+  /** w0 bit24-27 (1 火 .. 8 闇, 0 = none). */
+  element: number;
+  /**
+   * Row of MonsterParameter the user turns into (kind 3, type 5: +0x16), or 0. +0x16 = 1 is a line with no
+   * change of form (elpulse docs/battle.md §7).
+   */
+  formChange: number;
 }
 
 export function decodeAction(r: Uint8Array): ActionFields {
@@ -38,6 +47,8 @@ export function decodeAction(r: Uint8Array): ActionFields {
     scenes: SCENES.filter(([b]) => (w0 >>> b) & 1).map(([, n]) => n),
     nameId: r.length >= 8 ? u32(r, 4) : 0,
     amount: r.length >= 0x1c ? [s16(r, 0x18), s16(r, 0x1a)] : [0, 0],
+    element: (w0 >>> 24) & 15,
+    formChange: ((w0 >>> 1) & 3) === 3 && ((w0 >>> 3) & 15) === 5 && r.length >= 0x18 && s16(r, 0x16) > 1 ? s16(r, 0x16) : 0,
   };
 }
 

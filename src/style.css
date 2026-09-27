@@ -316,3 +316,17 @@ input.edited { border-color: var(--warn); }
 .patch-editor { border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin: 8px 0; }
 .patch-help { white-space: pre-wrap; }
 .error-text { color: #ff8a8a; }
+/* monster editor (src/pages/monsteredit.tsx) */
+.stat-edit .num-input { width: 64px; }
+.stat-edit .stat-range .num-input { width: 56px; }
+.stat-edit .stat > span:last-child { display: flex; align-items: center; gap: 2px; }
+.stat-edit { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.skill-slots .drag-handle { color: var(--muted); cursor: grab; user-select: none; width: 1em; }
+.skill-slots tr.dragging { opacity: 0.4; }
+.skill-slots tr.drop-before td { box-shadow: inset 0 2px var(--accent); }
+.skill-slots tr.drop-after td { box-shadow: inset 0 -2px var(--accent); }
+.skill-slots tr.edited-row td:nth-child(3) { box-shadow: inset 2px 0 var(--warn); }
+.ai-fields td:first-child { color: var(--muted); white-space: nowrap; padding-right: 8px; }
+button.edited, label.edited-label { border-color: var(--warn); color: var(--warn); }
+p .warn { color: var(--warn); }
+.action-pick { font-size: 12px; }

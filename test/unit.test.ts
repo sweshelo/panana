@@ -191,6 +191,46 @@ describe('monster groups', () => {
   });
 });
 
+describe('monster parameters', () => {
+  test('bit fields: read and write one field without touching the others', async () => {
+    const { PARAM, getField, setField } = await import('../src/game/monsters');
+    const row = new Uint8Array(0x54).fill(0xff);
+    // w0: species 0x12, Lv 5, HP max 300 (bit15-29), bits 30-31 set
+    new DataView(row.buffer).setUint32(0, (0x12 | (5 << 8) | (300 << 15) | (3 << 30)) >>> 0, true);
+    expect(getField(row, PARAM.level)).toBe(5);
+    expect(getField(row, PARAM.hpMax)).toBe(300);
+    setField(row, PARAM.hpMax, 32767);
+    setField(row, PARAM.level, 200); // clamped to 7 bits
+    const w0 = new DataView(row.buffer).getUint32(0, true);
+    expect(w0 & 0xff).toBe(0x12);
+    expect(w0 >>> 30).toBe(3);
+    expect(getField(row, PARAM.hpMax)).toBe(32767);
+    expect(getField(row, PARAM.level)).toBe(127);
+    // byte / u16 fields
+    setField(row, PARAM.nextForm, 46);
+    expect(row[0x50]).toBe(46);
+    expect(row[0x51]).toBe(0xff);
+    setField(row, PARAM.line, 0x1b4f);
+    expect([row[0x38], row[0x39], row[0x3a]]).toEqual([0x4f, 0x1b, 0xff]);
+    setField(row, PARAM.rate2, 9);
+    expect(getField(row, PARAM.rate2)).toBe(9);
+    expect(getField(row, PARAM.drop2)).toBe(1023);
+  });
+
+  test('skills: empty slots are skipped, writes pack to the front; shares under AI mode 0', async () => {
+    const { decodeSkills, encodeSkills, skillShares } = await import('../src/game/monsters');
+    const row = new Uint8Array(0x54);
+    row.set([0x40, 0x01, 0, 0, 0x48, 0x01], 0x3c); // 320, empty, 328
+    row[0x48] = 0xaa;
+    expect(decodeSkills(row)).toEqual([320, 328]);
+    encodeSkills(row, [328, 328, 328, 330]);
+    expect(decodeSkills(row)).toEqual([328, 328, 328, 330]);
+    expect(row[0x48]).toBe(0xaa);
+    expect(skillShares([328, 328, 328, 330])).toEqual(new Map([[328, 0.75], [330, 0.25]]));
+    expect(() => encodeSkills(row, new Array(7).fill(1))).toThrow();
+  });
+});
+
 describe('actions', () => {
   test('item action fields and effect text', async () => {
     const { decodeAction, itemEffect, cleanActionName } = await import('../src/game/actions');
@@ -209,6 +249,20 @@ describe('actions', () => {
     w32(r, 0, 1 << 1);
     expect(itemEffect(decodeAction(r))).toBe('');
     expect(cleanActionName('Ąは　ぶつかってきた！')).toBe('ぶつかってきた');
+  });
+
+  test('form change of a special action (kind 3, type 5, +0x16)', async () => {
+    const { decodeAction } = await import('../src/game/actions');
+    const r = new Uint8Array(0x3c);
+    w32(r, 0, ((3 << 1) | (5 << 3) | (7 << 24)) >>> 0);
+    r.set([168, 0], 0x16);
+    expect(decodeAction(r).formChange).toBe(168);
+    expect(decodeAction(r).element).toBe(7);
+    r.set([1, 0], 0x16); // a line with no change of form
+    expect(decodeAction(r).formChange).toBe(0);
+    w32(r, 0, ((1 << 1) | (5 << 3)) >>> 0);
+    r.set([168, 0], 0x16); // turns of a condition in other kinds
+    expect(decodeAction(r).formChange).toBe(0);
   });
 });
 

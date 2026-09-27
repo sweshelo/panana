@@ -184,3 +184,51 @@ describe('map editor pickers', () => {
     expect(html).toContain('＋ 追加');
   });
 });
+
+describe('monster editors', () => {
+  const { SkillEditor, BossEditor } = require('../src/pages/monsteredit') as typeof import('../src/pages/monsteredit');
+  const { ActionPicker } = require('../src/ui/ActionPicker') as typeof import('../src/ui/ActionPicker');
+  // 1 = attack, 2 = a line turning the user into row 3
+  const actions = [action(0, 0, ''), action(1, 1 << 1, 'かみつき'), action(2, ((3 << 1) | (5 << 3)) >>> 0, 'ビームモード')];
+  actions[2]!.formChange = 3;
+  const monster = (row: number, name: string, skills: number[], extra: object = {}) =>
+    ({ row, name, skills: skills.map((a) => ({ action: a, name: actions[a]!.name })), aiMode: 0, boss: 0, nextForm: 0, line: '', ...extra }) as never;
+  const ms = [monster(1, 'ポーン', [1, 1, 1, 2], { boss: 7, nextForm: 2 }), monster(2, 'ポーン', [1]), monster(3, 'ポーン', [])];
+  const fields: Record<string, number> = { boss: 7, nextForm: 2 };
+  const book = {
+    monsters: ms,
+    monster: (r: number) => ms[r - 1],
+    conditions: ['', 'どく'],
+    get: (_r: number, k: string) => fields[k] ?? 0,
+    original: (_r: number, k: string) => (k === 'nextForm' ? 0 : fields[k] ?? 0),
+    originalSkills: () => [1, 1, 1, 2],
+  } as never;
+  const actionBook = {
+    actions,
+    action: (r: number) => actions[r],
+    refsOf: (r: number) => ({ items: [], monsters: r === 1 ? [{ row: 1, name: 'ポーン' }] : [] }),
+  } as never;
+
+  test('skills: duplicate slots add up under AI mode 0, a form-changing skill says where it goes', () => {
+    const html = renderToString(<SkillEditor book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
+    expect(html.match(/75%/g)?.length).toBe(3);
+    expect(html).toContain('25%');
+    expect(html).toContain('→ #3 に変身');
+    expect(html).toContain('draggable="true"');
+  });
+
+  test('boss: condition, next form marked as edited, and the forms turning into this one', () => {
+    const html = renderToString(<BossEditor session={{} as Session} book={book} m={ms[1]!} edited={() => {}} actions={actionBook} />);
+    expect(html).toContain('ポーン (#1)');
+    expect(html).toContain('水の攻撃が当たったとき');
+    const first = renderToString(<BossEditor session={{} as Session} book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
+    expect(first).toContain('class="edited"');
+    expect(first).toContain('ワザ「ビームモード」で ');
+  });
+
+  test('action picker: monster skills by default', () => {
+    const html = renderToString(<ActionPicker actions={actionBook} current={1} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('かみつき');
+    expect(html).not.toContain('ビームモード');
+  });
+});
