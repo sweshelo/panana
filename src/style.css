@@ -55,6 +55,8 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .topnav .tab { color: var(--muted); text-decoration: none; padding: 5px 12px; border-radius: 4px; }
 .topnav .tab:hover { color: var(--text); background: var(--panel2); }
 .topnav .tab.active { color: var(--text); background: var(--panel2); box-shadow: inset 0 -2px 0 var(--accent); }
+.topnav .nav-items { display: contents; }
+.topnav .nav-toggle, .topnav .nav-title, .nav-backdrop, .back-bar { display: none; }
 .page { flex: 1; min-height: 0; display: none; }
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
@@ -407,3 +409,36 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .sound-cell.sold { opacity: 0.4; cursor: default; }
 .sound-cell-text { display: flex; flex-direction: column; min-width: 0; }
 .sound-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* narrow screens (phones): the top bar's pages and buttons go into a drawer; a book page shows its list or the entry */
+@media (max-width: 760px) {
+  :root { font-size: 14px; }
+  .topnav { position: relative; z-index: 20; gap: 6px; padding: 4px 8px; }
+  .topnav .nav-toggle { display: block; font-size: 18px; line-height: 1; padding: 4px 10px; }
+  .topnav .brand { margin-right: 0; }
+  .topnav .brand-sub { display: none; }
+  .topnav .nav-title { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  .topnav .nav-items {
+    display: none; position: absolute; top: 100%; left: 0; width: min(300px, 86vw); max-height: calc(100vh - 48px); overflow: auto;
+    flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; background: #14161c; border: 1px solid var(--border); border-top: 0;
+    border-radius: 0 0 8px 0; box-shadow: 4px 8px 24px rgba(0, 0, 0, 0.5);
+  }
+  .topnav.open .nav-items { display: flex; }
+  .topnav .nav-items .tab { padding: 10px 12px; }
+  .topnav .nav-items .tab.active { box-shadow: inset 3px 0 0 var(--accent); }
+  .topnav .nav-items .grow { display: none; }
+  .topnav .nav-items .dump-label { padding: 8px 4px 2px; border-top: 1px solid var(--border); margin-top: 4px; overflow-wrap: anywhere; }
+  .topnav .nav-items button { padding: 8px 10px; text-align: left; }
+  .nav-backdrop { display: block; position: fixed; inset: 0; z-index: 10; background: rgba(0, 0, 0, 0.4); }
+  .shell[data-detail] .back-bar { display: block; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); text-decoration: none; }
+
+  .page > .book { grid-template-columns: minmax(0, 1fr); }
+  .shell:not([data-detail]) .page > .book > .book-detail, .shell[data-detail] .page > .book > .book-side { display: none; }
+  .book-side { border-right: 0; }
+  .book-side input[type='search'] { font-size: 16px; }
+  .book-table td { padding: 7px 4px; }
+  .book-table td.msg-cell { max-width: 60vw; }
+  .book-detail { padding: 12px 12px 40px; }
+  .book-head h2 { font-size: 19px; }
+  .book-cols, .monster-cols, .group-cols, .world-fields { grid-template-columns: minmax(0, 1fr); }
+}
