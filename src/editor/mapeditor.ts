@@ -32,6 +32,9 @@ export class MapEditor {
   private readonly addPanel: AddPanel;
   private readonly inspector: Inspector;
   private factory: ModelFactory | null = null;
+  /** Map hash + model source the factory was built for (to reload when the tileset changes). */
+  private factoryKey = '';
+  private factoryLoad: Promise<void> = Promise.resolve();
   private mode: ViewMode = 'split';
   private clipHeight = 400;
   private readonly mapSel = h('select', { class: 'map-select', onchange: (e: Event) => this.openMap(Number((e.target as HTMLSelectElement).value)) });
@@ -218,17 +221,39 @@ export class MapEditor {
     this.v2!.fit();
     const title = this.el.querySelector('.map-title');
     if (title) title.textContent = '';
-    this.setStatus(`${info.name} のモデルを読み込み中…`);
+    await this.loadModels();
+    this.v3!.fit();
+  }
+
+  /** Tile models of the open map's current tileset (reloaded when the tileset is switched in the inspector). */
+  private loadModels(): Promise<void> {
+    const { game, st } = this;
+    const doc = st.current;
+    if (!doc || !st.ref) return Promise.resolve();
+    const src = game.tilesetSource(st.ref, st.tileset);
+    const key = `${doc.hash}/${src.modelArchive}/${src.textureEntry}`;
+    if (key !== this.factoryKey) {
+      this.factoryKey = key;
+      this.factoryLoad = this.buildFactory(key);
+    }
+    return this.factoryLoad;
+  }
+
+  private async buildFactory(key: string): Promise<void> {
+    const { game, st } = this;
+    const stale = () => this.factoryKey !== key;
+    this.setStatus(`${st.info?.name ?? st.current!.name} のモデルを読み込み中…`);
     try {
-      const set = await loadTilesetModels(game, st.ref!);
-      if (st.current?.hash !== hash) return;
+      const set = await loadTilesetModels(game, st.ref!, st.tileset);
+      if (stale()) return;
       this.factory?.dispose();
       this.factory = new ModelFactory(set);
       this.v3!.setFactory(this.factory);
       this.palette!.setFactory(this.factory);
-      this.v3!.fit();
       this.setStatus(set.errors.length ? `モデルの一部を読めませんでした: ${set.errors.slice(0, 3).join(' / ')}` : '');
     } catch (err) {
+      if (stale()) return;
+      this.factoryKey = ''; // try again on the next open or tileset change
       console.error(err);
       this.v3!.setFactory(null);
       this.setStatus(`モデルを読み込めませんでした (記号で表示します): ${(err as Error).message}`);
@@ -240,6 +265,7 @@ export class MapEditor {
     if (what === 'map') {
       this.palette!.render();
       this.v3!.setFactory(this.factory);
+      void this.loadModels();
     }
     if (what === 'doc' || what === 'map') {
       this.v3!.sync();

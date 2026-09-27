@@ -288,6 +288,19 @@ export class Master {
     return this.mapData.row(this.mapDataRow(map))[1]!;
   }
 
+  /**
+   * mapResource row that holds the models of a tileset: the map's own when its tileset matches, else the first
+   * mapData row with that tileset (and a model archive) gives it. The editor shows another tileset this way.
+   */
+  tilesetResource(tileset: number, map: MapRef): number {
+    if (tileset === this.tileset(map)) return this.resourceRow(map);
+    for (let i = 1; i < this.mapData.rows; i++) {
+      const r = this.mapData.row(i);
+      if (r[0] === tileset && r[1]! < this.mapResource.rows && this.modelArchive(r[1]!)) return r[1]!;
+    }
+    return this.resourceRow(map);
+  }
+
   /** Model archive of a mapResource row ([0], e.g. 46910AB6). */
   modelArchive(resourceRow: number): number {
     return u32(this.mapResource.row(resourceRow), 0);
