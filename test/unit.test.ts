@@ -88,6 +88,12 @@ describe('sections', () => {
     setRecCellPos(r, LAYOUTS[4]!, 100, -3);
     expect([r.x, r.y]).toEqual([299, 0]);
   });
+  test('world coordinates (section 7) snap to 50', () => {
+    const r = { raw: new Uint8Array(24), x: 0, y: 0 };
+    setRecCellPos(r, LAYOUTS[7]!, 5.83, 6.49);
+    expect([r.x, r.y]).toEqual([2900, 3250]);
+    expect(recCellPos(r, LAYOUTS[7]!)).toEqual([5.8, 6.5]);
+  });
 });
 
 describe('textures', () => {

@@ -3,7 +3,7 @@ import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
 import type { Game } from '../game/game';
 import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
-import { LAYOUTS, P3, loadDoc, type MapDoc } from '../game/sections';
+import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
 import { GRID, tileAt, type Selection } from './state';
@@ -50,14 +50,14 @@ export function validate(game: Game, doc: MapDoc, tileset: number, docs: Map<num
 export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<number, MapDoc>, events: EventTable | null): Issue[] {
   const out: Issue[] = [];
 
-  // Event rows (sections 4 / 5 / 8 at +0, section 3 at +0x0C) must exist in the dungeon's EventObject table.
+  // Event rows (sections 4 / 5 / 8 at +0, section 3 at +0x0C, section 7 at +4) must exist in the dungeon's EventObject table.
   if (events) {
     const chests = new Map<number, number>();
     const slots = new Map<number, number[]>();
-    for (const k of [3, 4, 5, 8]) {
+    for (const k of EVENT_SECTIONS) {
       (doc.recs[k] ?? []).forEach((r, i) => {
-        const row = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
-        if (k === 3 && !row) return;
+        const row = recEventRow(k, r.raw);
+        if ((k === 3 || k === 7) && !row) return;
         if (!events.has(row))
           out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} がありません (表は ${events.rows} 行)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
         if (k === 4) chests.set(row, (chests.get(row) ?? 0) + 1);
@@ -72,16 +72,16 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
     // generic switches (elpulse docs/events.md §7)
     const inMap = (row: number): { section: number; raw: Uint8Array }[] => {
       const out: { section: number; raw: Uint8Array }[] = [];
-      for (const k of [3, 4, 5, 8])
+      for (const k of EVENT_SECTIONS)
         for (const r of doc.recs[k] ?? []) {
-          const x = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
+          const x = recEventRow(k, r.raw);
           if (x === row) out.push({ section: k, raw: r.raw });
         }
       return out;
     };
-    for (const k of [3, 4, 5, 8]) {
+    for (const k of EVENT_SECTIONS) {
       (doc.recs[k] ?? []).forEach((r, i) => {
-        const row = k === 3 ? P3.door(r.raw) : r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24);
+        const row = recEventRow(k, r.raw);
         if (!events.has(row) || events.kind(row) !== KIND_SWITCH) return;
         const target: Selection = { type: 'rec', section: k, index: i };
         if (!game.switchVersion)

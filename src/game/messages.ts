@@ -4,14 +4,12 @@ import type { MapInfo } from './codebin';
 import { EVENT_KINDS } from './eventkinds';
 import type { EventTable } from './events';
 import type { Game } from './game';
-import { LAYOUTS, P3, recCellPos, type MapDoc, type Rec } from './sections';
+import { EVENT_SECTIONS, LAYOUTS, recCellPos, recEventRow, type MapDoc, type Rec } from './sections';
 import { u32 } from '../util/bytes';
 
 /** EventObject row a record refers to (0 = none); same as the editor's eventRowOf. */
 function eventRow(section: number, rec: Rec): number {
-  if (section === 3) return P3.door(rec.raw);
-  if (section === 4 || section === 5 || section === 8) return u32(rec.raw, 0);
-  return 0;
+  return recEventRow(section, rec.raw);
 }
 
 export interface MessagePlace {
@@ -44,7 +42,7 @@ export async function messageUsers(game: Game, docOf: (m: MapInfo) => MapDoc, ev
     const places = new Map<number, MessagePlace[]>();
     for (const m of ms) {
       const doc = docOf(m);
-      for (const section of [3, 4, 5, 8])
+      for (const section of EVENT_SECTIONS)
         for (const rec of doc.recs[section] ?? []) {
           const row = eventRow(section, rec);
           if (!row) continue;

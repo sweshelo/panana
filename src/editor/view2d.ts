@@ -1,11 +1,14 @@
 // Top-down 2D view on a canvas: tiles, section 6 cells, points; pan (right / middle drag), zoom (wheel).
-import { LAYOUTS, P3, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
+import { LAYOUTS, P3, P7, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import { norm, type Controller } from './controller';
 import { eventLinks } from './events';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from './legend';
 import { GRID, tileAt, type EditorState } from './state';
 
 export type Style2D = 'symbols' | 'minimap';
+
+/** Angle (three.js rotation.y) of a section 7 door by +0x16, as recordPlacement (section 3's table). */
+const QUARTER_2D: Record<number, number> = { 0: 0, 1: -Math.PI / 2, 2: Math.PI, 3: Math.PI / 2 };
 
 export class View2D {
   readonly canvas: HTMLCanvasElement;
@@ -267,6 +270,17 @@ export class View2D {
             g.lineTo(x - rad, y);
             g.closePath();
           }
+        } else if (k === 7) {
+          // doors on walls: a bar along the wall, turned by +0x16; invisible exits: a small dot
+          const a = -(QUARTER_2D[P7.dir(r.raw)] ?? 0);
+          const w = s * 0.2, d = s * 0.06;
+          if (P7.visible(r.raw)) {
+            const c = Math.cos(a), sn = Math.sin(a);
+            const pts = [[-w, -d], [w, -d], [w, d], [-w, d]].map(([u, v]) => [x + u! * c - v! * sn, y + u! * sn + v! * c] as const);
+            g.moveTo(pts[0]![0], pts[0]![1]);
+            for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
+            g.closePath();
+          } else g.arc(x, y, Math.max(3, s * 0.12), 0, Math.PI * 2);
         } else if (k === 4) g.rect(x - rad, y - rad, rad * 2, rad * 2);
         else g.arc(x, y, rad, 0, Math.PI * 2);
         g.fill();

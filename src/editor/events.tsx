@@ -2,7 +2,7 @@
 // targets, and a list of the dungeon's events.
 import { useMemo, useState, type ReactNode } from 'react';
 import { EVENT_KINDS, KIND_SWITCH, SCRIPT_LINKS, SWITCH_PRESETS, kindName } from '../game/eventkinds';
-import { LAYOUTS, P3, loadDoc, recCellPos, type MapDoc, type Rec } from '../game/sections';
+import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recCellPos, recEventRow, type MapDoc, type Rec } from '../game/sections';
 import { mapShortTitle } from '../game/names';
 import { Dialog } from '../ui/Dialog';
 import { MessageEditor } from '../ui/message';
@@ -13,16 +13,14 @@ import { MESSAGE_HELP } from './message';
 
 /** EventObject row a record refers to (0 = none). */
 export function eventRowOf(section: number, rec: Rec): number {
-  if (section === 3) return P3.door(rec.raw);
-  if (section === 4 || section === 5 || section === 8) return u32(rec.raw, 0);
-  return 0;
+  return recEventRow(section, rec.raw);
 }
 
 /** Records of a map that use an event row. */
 export function recordsOfRow(doc: MapDoc, row: number): { section: number; index: number; rec: Rec }[] {
   const out: { section: number; index: number; rec: Rec }[] = [];
   if (!row) return out;
-  for (const section of [3, 4, 5, 8])
+  for (const section of EVENT_SECTIONS)
     (doc.recs[section] ?? []).forEach((rec, index) => {
       if (eventRowOf(section, rec) === row) out.push({ section, index, rec });
     });
@@ -185,10 +183,10 @@ export function EventListDialog({ st, onPick, onClose }: {
     const out = new Map<number, { map: number; section: number; index: number; label: string }[]>();
     for (const m of game.editableMaps().filter((m) => m.dungeon === doc.dungeon)) {
       const d = st.docs.get(m.hash) ?? loadDoc(game.db, m);
-      for (const section of [3, 4, 5, 8])
+      for (const section of EVENT_SECTIONS)
         (d.recs[section] ?? []).forEach((rec, index) => {
           const row = eventRowOf(section, rec);
-          if (!row && section === 3) return;
+          if (!row && (section === 3 || section === 7)) return;
           const [x, y] = recCellPos(rec, LAYOUTS[section]!);
           out.set(row, [...(out.get(row) ?? []), { map: m.hash, section, index, label: `${mapShortTitle(m, game.code.maps)} 区画${section} (${x.toFixed(1)}, ${y.toFixed(1)})` }]);
         });
