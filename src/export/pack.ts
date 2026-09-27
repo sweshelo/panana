@@ -3,7 +3,10 @@ import { zipSync } from 'fflate';
 import { rebuildArchive } from '../archive/gsarc';
 import type { Game } from '../game/game';
 import type { EventTable } from '../game/events';
+import type { MapInfo } from '../game/codebin';
 import { MapDb, MAPDB_ARCHIVE } from '../game/mapdb';
+import { buildMapPatch, readExtension, type AddedMap } from '../game/mappatch';
+import { appendIps } from '../rom/ips';
 import { MASTER_ARCHIVE } from '../game/master';
 import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
@@ -15,6 +18,10 @@ export type DbEntries = [number, Uint8Array][];
 /** Rebuild the map database with the sections of the given documents (and the given entries). */
 export function buildMapDb(game: Game, docs: Iterable<MapDoc>, entries: DbEntries = []): { db: Uint8Array; changed: number } {
   const db = new MapDb(game.dbBytes);
+  const all = [...docs];
+  // New maps that were never opened are written empty (sections with their initial content).
+  for (const m of game.code.addedMaps()) if (!game.db.has(m.hash) && !all.some((d) => d.hash === m.hash)) all.push(game.doc(m));
+  docs = all;
   let changed = 0;
   for (const [h, bytes] of entries) {
     if (equalBytes(bytes, game.db.get(h))) continue;
@@ -27,6 +34,12 @@ export function buildMapDb(game: Game, docs: Iterable<MapDoc>, entries: DbEntrie
     for (let k = 0; k < 10; k++) {
       const h = info.sections[k]!;
       const bytes = sectionBytes(doc, k);
+      if (info.added && !db.has(h)) {
+        // A new map: every section needs an entry (the game's search does not check the hash; docs/new-map.md §5).
+        db.add(h, bytes);
+        changed++;
+        continue;
+      }
       if (equalBytes(bytes, game.db.get(h))) continue;
       if (!db.has(h)) {
         if (!bytes.length) continue;
@@ -55,7 +68,8 @@ export const MOD_PATH = `${MOD_ROOT}/${MAPDB_ARCHIVE}`;
  */
 export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean, entries: DbEntries = []): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
-  if (docs.length || entries.length) out.set(MAPDB_ARCHIVE, buildArchive(game, docs, entries).archive);
+  if (docs.length || entries.length || game.code.addedMaps().some((m) => !game.db.has(m.hash)))
+    out.set(MAPDB_ARCHIVE, buildArchive(game, docs, entries).archive);
   for (const t of events) out.set(t.archiveName, t.buildArchive());
   if (treasure || game.master.texts.changed()) out.set(MASTER_ARCHIVE, game.master.buildArchive());
   return out;
@@ -69,9 +83,32 @@ export function modPackage(game: Game, files: Map<string, Uint8Array>): Map<stri
   const out = new Map<string, Uint8Array>();
   for (const [name, data] of game.baseMod?.romfs ?? []) out.set(`romfs/${name}`, data);
   for (const [name, data] of files) out.set(`romfs/${name}`, data);
-  if (game.baseMod?.ips) out.set('exefs/code.ips', game.baseMod.ips);
+  const ips = codeIps(game);
+  if (ips) out.set('exefs/code.ips', ips);
   return out;
 }
+
+/**
+ * code.ips of the MOD: the base MOD's, plus the tables of the new maps when there are any (or when the base has
+ * an older extension, which is rebuilt). docs/new-map.md §2.
+ */
+export function codeIps(game: Game): Uint8Array | null {
+  const base = game.baseMod?.ips ?? null;
+  const added = game.code.addedMaps();
+  if (!added.length && !readExtension(game.dump.code)) return base;
+  const patch = buildMapPatch(game.dump.code, added.map(addedMap));
+  return appendIps(base, patch.records, game.dump.code);
+}
+
+const addedMap = (m: MapInfo): AddedMap => ({
+  hash: m.hash,
+  sections: m.sections,
+  name: m.name,
+  dungeon: m.dungeon,
+  floor: m.floor,
+  mapDataKey: m.mapDataKey,
+  extra: m.extra,
+});
 
 export function buildModZip(pkg: Map<string, Uint8Array>): Uint8Array {
   const entries: Record<string, [Uint8Array, { level: 0; mtime: Date }]> = {};

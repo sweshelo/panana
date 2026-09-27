@@ -130,9 +130,10 @@ export class Game {
     return a;
   }
 
-  /** Dungeon maps (D, K, S... that have tiles), grouped for the map list. */
+  /** Dungeon maps (D, K, S... that have tiles, and the added ones), grouped for the map list. */
   editableMaps(): MapInfo[] {
-    return this.code.maps.filter((m) => m.dungeon >= 0 && this.db.get(m.sections[0]!).length > 0);
+    // The list groups the maps by dungeon, so the added ones (at the end of code.maps) show up in their dungeon.
+    return this.code.maps.filter((m) => m.dungeon >= 0 && (m.added || this.db.get(m.sections[0]!).length > 0));
   }
 
   /** World maps with entrances (section 2) in the map DB. */
@@ -215,3 +216,4 @@ export class Game {
     return [...out].filter((n) => have.has(n));
   }
 }
+
