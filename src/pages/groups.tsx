@@ -141,7 +141,7 @@ function SlotEditor({ session, book, g, side, title, onEdit }: {
 }
 
 /** Pick a monster from the photos (names only: the level and the row are in the monster book). */
-function MonsterPicker({ session, book, current, onPick, onClose }: {
+export function MonsterPicker({ session, book, current, onPick, onClose }: {
   session: Session; book: MonsterBook; current: number; onPick: (row: number) => void; onClose: () => void;
 }): ReactNode {
   const [query, setQuery] = useState('');

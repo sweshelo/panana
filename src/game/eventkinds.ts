@@ -1,5 +1,7 @@
 // EventObject kinds (+0x4D) and what their fields mean (elpulse docs/events.md §4).
 
+import { KIND_BOSS } from './boss';
+
 export const KIND_SWITCH = 0x30; // generic switch (elpulse mod/build_code.py)
 
 export interface KindInfo {
@@ -46,6 +48,7 @@ export const EVENT_KINDS: Record<number, KindInfo> = {
   0x21: { name: 'ワールドマップ用', messages: [0x08] },
   0x24: { name: 'スクリプト', note: 'ダンジョンと行番号ごとにコードに書かれた動作 (データでは変えられない)' },
   [KIND_SWITCH]: { name: '汎用スイッチ (MOD)', note: '踏むと対象の行 (同じマップの扉・門) を開ける。土台の MOD に汎用スイッチの code.ips が要る' },
+  [KIND_BOSS]: { name: 'ボス戦 (MOD)', messages: [0x0c, 0x10, 0x14, 0x20, 0x24, 0x28, 0x34, 0x38, 0x3c], note: '区画 8 の範囲に入ると、メッセージのあと決まった敵と戦う。Panana が code.ips にパッチ「ボス戦」を入れる' },
 };
 
 export const kindName = (k: number): string => EVENT_KINDS[k]?.name ?? `種類 0x${k.toString(16).toUpperCase()}`;

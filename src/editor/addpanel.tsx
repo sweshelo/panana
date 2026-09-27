@@ -6,6 +6,7 @@ import { useAsync } from '../ui/useAsync';
 import { useEditorState } from '../ui/useEditorState';
 import type { MapEditor } from './mapeditor';
 import { stampLabel, type Stamp } from './place';
+import { MonsterPicker } from '../pages/groups';
 
 interface GroupItem {
   row: number;
@@ -93,11 +94,42 @@ export function AddPanel({ editor }: { editor: MapEditor }): ReactNode {
           </div>
         )
         : <div className="muted small">スイッチと柵: ヘッダーの「土台の MOD」で汎用スイッチ入りの MOD (elpulse の mod/out) を読み込むと使えます。</div>}
+      <h4>ボス戦</h4>
+      <BossStamp editor={editor} active={active?.type === 'boss'} disabled={room < 1} use={use} />
       {active && <div className="place-hint">{`置くもの: ${stampLabel(active)}。マップをクリックして置く (Esc で終わる)`}</div>}
       <p className="muted small">
         宝箱とギミックには新しいイベントの行 (状態を保存する枠つき) を作ります。宝箱の中身は新しい行 (最初は同じダンジョンの宝箱の中身の写し) で、右ペインで編集できます。ギミックはゲーム中の同じ種類のものを写すので、動き (つながる扉・行き先など) は写し元の設定のままです。
       </p>
     </div>
+  );
+}
+
+/** The boss battle stamp: the monster to fight (it can be changed and more added in the inspector). */
+function BossStamp({ editor, active, disabled, use }: { editor: MapEditor; active: boolean; disabled: boolean; use: (s: Stamp) => void }): ReactNode {
+  const book = editor.session.book;
+  const [monster, setMonster] = useState(() => book?.monsters.find((m) => m.boss)?.row ?? book?.monsters[0]?.row ?? 1);
+  const [picking, setPicking] = useState(false);
+  const current = book?.monster(monster);
+  return (
+    <>
+      <div className="row">
+        <button disabled={!book} title="戦う敵を選ぶ" onClick={() => setPicking(true)}>
+          {current ? `${current.name} Lv${current.level}` : `#${monster}`}
+        </button>
+        <button className={active ? 'active' : ''} disabled={disabled} onClick={() => use({ type: 'boss', monster })}>ボス戦を置く</button>
+      </div>
+      <div className="muted small">
+        イベントの範囲 (区画 8) に入ると、メッセージのあと決まった敵と戦います。一度きり・何度でも・勝つたびに強くなる (段階) を右ペインで選べます。
+        書き出すと、そのためのコードのパッチ「ボス戦」も code.ips に入ります。
+      </div>
+      {picking && book && (
+        <MonsterPicker session={editor.session} book={book} current={monster} onClose={() => setPicking(false)} onPick={(m) => {
+          setPicking(false);
+          setMonster(m);
+          if (active) use({ type: 'boss', monster: m });
+        }} />
+      )}
+    </>
   );
 }
 

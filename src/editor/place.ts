@@ -6,6 +6,7 @@ import type { GimmickTemplate } from '../game/templates';
 import { LAYOUTS, P3, P7, recEventRow, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { u32, w16, w32 } from '../util/bytes';
 import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
+import { addBossChara, addFixGroup, FIX_FLAGS_BOSS, newBossCharaRecord, newBossRecord, newBossRow } from '../game/boss';
 
 export type Stamp =
   | { type: 'chest' }
@@ -13,7 +14,9 @@ export type Stamp =
   | { type: 'floor'; kind: number }
   | { type: 'template'; t: GimmickTemplate }
   /** Generic switch + gate: first click places the gate, the second the switch that opens it. */
-  | { type: 'switchgate'; gate?: number };
+  | { type: 'switchgate'; gate?: number }
+  /** Boss battle (event range of kind 0x31) against `monster` (a new monsterFixGroup row). */
+  | { type: 'boss'; monster: number };
 
 export function stampLabel(s: Stamp): string {
   switch (s.type) {
@@ -21,6 +24,7 @@ export function stampLabel(s: Stamp): string {
     case 'prop': return `置物 (mapObject #${s.row})`;
     case 'floor': return s.kind === 1 ? '凍った床' : 'ダメージ床';
     case 'template': return `${s.t.label} (${s.t.source} から)`;
+    case 'boss': return 'ボス戦 (範囲に入ると戦闘)';
     case 'switchgate': return s.gate === undefined ? 'スイッチと柵: まず柵を置く場所 (タイル) をクリック' : `スイッチと柵: 次に柵 (イベント #${s.gate}) を開けるスイッチを置く場所をクリック`;
   }
 }
@@ -64,8 +68,8 @@ export interface PlaceContext {
 /** Add a record for `stamp` at cell coordinates (cx, cy). Returns [section, index]. */
 export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: number): [number, number] {
   const { doc, events, master } = ctx;
-  const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || (stamp.type === 'template' && !!stamp.t.event);
-  const rows = stamp.type === 'switchgate' && stamp.gate === undefined ? 2 : 1;
+  const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || stamp.type === 'boss' || (stamp.type === 'template' && !!stamp.t.event);
+  const rows = (stamp.type === 'switchgate' && stamp.gate === undefined) || stamp.type === 'boss' ? 2 : 1;
   if (needsRow && (!events || events.roomLeft() < rows))
     throw new Error(events ? `このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)` : 'このダンジョンにはイベントの表がありません');
   const add = (section: number, raw: Uint8Array): [number, number] => {
@@ -108,6 +112,15 @@ export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: numb
         w32(raw, 0x0c, events.addRow(t.event));
       }
       return add(3, raw);
+    }
+    case 'boss': {
+      // section 8 range + EventObject row of kind 0x31 (game/boss.ts) + its own monsterFixGroup row, and a character
+      // (section 5 kind 0) at the same place that shows the monster until the boss is beaten
+      const ev = events!;
+      const fix = addFixGroup(master, { flags: FIX_FLAGS_BOSS, slots: [{ monster: stamp.monster, count: 0 }] });
+      const boss = ev.addRow(newBossRow(ev.table.rowSize, fix));
+      add(5, newBossCharaRecord(addBossChara(master, ev, boss, stamp.monster)));
+      return add(8, newBossRecord(boss));
     }
     case 'switchgate': {
       const ev = events!;
