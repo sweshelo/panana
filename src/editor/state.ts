@@ -36,6 +36,7 @@ interface Snapshot {
   doc: MapDoc;
   events: [number, Uint8Array][];
   treasure: Uint8Array;
+  mapData: Uint8Array;
   messages: [number, Uint16Array][];
 }
 
@@ -108,6 +109,7 @@ export class EditorState {
       doc: cloneDoc(doc),
       events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
       treasure: this.game.master.treasureGroup.data.slice(),
+      mapData: this.game.master.mapData.data.slice(),
       messages: this.game.master.texts.saved(),
     };
   }
@@ -115,10 +117,11 @@ export class EditorState {
   private restore(s: Snapshot): void {
     for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
     this.game.master.restoreTreasure(s.treasure);
+    this.game.master.restoreTable('mapData.bin', s.mapData);
     this.game.master.texts.restore(s.messages);
   }
 
-  /** Change the shared tables (events / treasure / messages) with an undo point on the current map. */
+  /** Change the shared tables (events / treasure / messages / mapData) with an undo point on the current map. */
   editTables(f: () => void): void {
     this.checkpoint();
     f();

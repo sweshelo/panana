@@ -19,7 +19,11 @@ import { MapPicker } from '../src/ui/MapPicker';
 import { ItemPicker } from '../src/ui/ItemPicker';
 import type { ItemBook, Item } from '../src/game/items';
 import { TreasureEditor } from '../src/editor/treasure';
+import type { MapInfo } from '../src/game/codebin';
 import type { EventTable } from '../src/game/events';
+import { SoundNames, soundUses } from '../src/game/sound';
+import { SoundPicker } from '../src/ui/SoundPicker';
+import { SoundView } from '../src/pages/sounds';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x22);
@@ -182,5 +186,56 @@ describe('map editor pickers', () => {
     expect(html).toContain('75%');
     expect(html).toContain('25%');
     expect(html).toContain('＋ 追加');
+  });
+});
+
+describe('sounds', () => {
+  // soundData rows 0-3 and 300 (past what a mapData byte holds); sound indices 0 BGM_TITLE, 1 BGM_CAVE, 2 SE_FLD_STEPS1.
+  const items = Array.from({ length: 301 }, (_, i) => (i === 1 ? 0x01000000 : i === 2 ? 0x01000001 : i === 3 || i === 300 ? 0x01000002 : 0));
+  const sounds = new SoundNames(items, ['BGM_TITLE', 'BGM_CAVE', 'SE_FLD_STEPS1'], items.map(() => 100));
+  const mapData = [new Uint8Array([0, 0, 0, 0, 2, 1, 3]), new Uint8Array([1, 0, 0, 0, 2, 0, 3])];
+  const game = { master: { mapData: { rows: mapData.length, row: (r: number) => mapData[r] } } } as unknown as Game;
+
+  test('names, kinds and labels of soundData rows', () => {
+    expect(sounds.name(2)).toBe('BGM_CAVE');
+    expect(sounds.kind(2)).toBe('bgm');
+    expect(sounds.kind(3)).toBe('se');
+    expect(sounds.label(3)).toBe('SE_FLD_STEPS1 (3)');
+    expect(sounds.label(0)).toBe('なし');
+    // Without sound.bcsar: rows 1-34 are BGM.
+    const bare = new SoundNames(items, null);
+    expect(bare.kind(5)).toBe('bgm');
+    expect(bare.kind(40)).toBe('other');
+  });
+
+  test('uses: the mapData rows and slots that pick each sound', () => {
+    const uses = soundUses(game);
+    expect(uses.get(2)).toEqual([{ mapDataRow: 0, slot: 'bgm' }, { mapDataRow: 1, slot: 'bgm' }]);
+    expect(uses.get(1)).toEqual([{ mapDataRow: 0, slot: 'battle' }]);
+    expect(uses.get(3)?.map((u) => u.slot)).toEqual(['steps', 'steps']);
+  });
+
+  test('picker: filtered by kind, the current row marked, rows past the byte greyed out', () => {
+    const bgm = renderToString(<SoundPicker sounds={sounds} current={2} kind="bgm" max={255} onPick={() => {}} onClose={() => {}} />);
+    expect(bgm).toContain('BGM_CAVE');
+    expect(bgm).not.toContain('SE_FLD_STEPS1');
+    expect(bgm).toContain('class="pick current"');
+    expect(bgm).toContain('(なし)');
+    const se = renderToString(<SoundPicker sounds={sounds} current={3} kind="se" max={255} usage={(r) => (r === 3 ? 'マップ 2 個' : '')} onPick={() => {}} onClose={() => {}} />);
+    expect(se).toContain('マップ 2 個');
+    expect(se).toContain('マップの設定には行 255 までしか入りません');
+  });
+
+  test('list page: every row, the detail with the maps that use it', () => {
+    const map = { hash: 0x10, name: 'D01B01001', dungeon: 1, dungeonCode: 'D01', floor: -1, mapDataKey: 0, sections: [] } as unknown as MapInfo;
+    const html = renderToString(
+      <SoundView sounds={sounds} uses={soundUses(game)} users={new Map([[0, [map]]])} selected={2} mapTitle={() => '山のどうくつ B1'} />,
+    );
+    expect(html).toContain('300 / 300 件');
+    expect(html).toContain('0x01000001');
+    expect(html).toContain('sound.bcsar の音 1');
+    expect(html).toContain('使っているマップの設定 (2)');
+    expect(html).toContain('href="#/map/D01B01001"');
+    expect(html).toContain('(読めるマップにはなし)');
   });
 });

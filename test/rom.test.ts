@@ -387,6 +387,20 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(snd.name(s.steps)).toBe('SE_FLD_STEPS1');
   });
 
+  test('a map sound edit goes to mapData.bin (exported), and back', async () => {
+    const snd = await game.sounds();
+    const m = game.code.byName('D01B02001')!;
+    const row = game.master.mapDataRow(m);
+    const before = game.master.sounds(m).bgm;
+    const home = [...Array(snd.rows).keys()].find((r) => snd.name(r) === 'BGM_HOME')!;
+    expect(home).toBeLessThanOrEqual(0xff);
+    game.master.setSound(row, 'bgm', home);
+    expect(snd.name(game.master.sounds(m).bgm)).toBe('BGM_HOME');
+    expect(game.master.changedTables()).toContain('mapData.bin');
+    game.master.setSound(row, 'bgm', before);
+    expect(game.master.changedTables()).not.toContain('mapData.bin');
+  });
+
   test('mapData per map: デンパ島のどうくつ inside 海底トンネル (issue #6)', async () => {
     const snd = await game.sounds();
     const m = (name: string) => game.code.byName(name)!;

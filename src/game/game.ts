@@ -107,6 +107,7 @@ export class Game {
     this.soundNames ??= (async () => {
       const t = this.master.table('soundData.bin');
       const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
+      const volumes = Array.from({ length: t.rows }, (_, i) => (t.rowSize >= 0xc ? u32(t.row(i), 8) : 0));
       const key = 'sound/names/v1';
       let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
       if (!names)
@@ -116,7 +117,7 @@ export class Game {
         } catch {
           names = null;
         }
-      return new SoundNames(items, names);
+      return new SoundNames(items, names, volumes);
     })();
     return this.soundNames;
   }

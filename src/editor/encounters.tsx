@@ -1,7 +1,6 @@
-// Inspector block of a map: BGM (mapData of the dungeon) and the enemies (section 6 monster groups).
+// Inspector block of a map: the enemies (section 6 monster groups). Its sounds are in sounds.tsx.
 import type { ReactNode } from 'react';
 import { mapEncounters, type MonsterBook, type MonsterGroup } from '../game/monsters';
-import type { SoundNames } from '../game/sound';
 import { hex8, w32 } from '../util/bytes';
 import { GroupDetail } from '../ui/GroupDetail';
 import { Field } from './fields';
@@ -12,25 +11,9 @@ function groupSummary(book: MonsterBook, g: MonsterGroup): string {
   return `群れ #${g.row}${names.length ? `: ${names.join('・')}` : ' (敵なし)'}`;
 }
 
-export function EncounterPanel({ st, book, sounds }: { st: EditorState; book: MonsterBook | null; sounds: SoundNames | null }): ReactNode {
+export function EncounterPanel({ st, book }: { st: EditorState; book: MonsterBook | null }): ReactNode {
   const doc = st.current!;
-  const master = st.game.master;
-  const s = master.sounds(st.ref!);
-  const label = (row: number): string => sounds?.label(row) ?? `サウンド ${row}`;
-  const head = (
-    <>
-      <h3>BGM・効果音</h3>
-      <table className="enc-table">
-        <tbody>
-          <tr><td>フィールド</td><td>{label(s.bgm)}</td></tr>
-          <tr><td>戦闘</td><td>{label(s.battle)}</td></tr>
-          <tr><td>足音</td><td>{label(s.steps)}</td></tr>
-        </tbody>
-      </table>
-      <div className="muted small">{`マップごと (mapData 行 ${master.mapDataRow(st.ref!)} の [4] / [5] / [6])`}</div>
-      <h3>出現する敵</h3>
-    </>
-  );
+  const head = <h3>出現する敵</h3>;
   if (!book) return <div className="enc-box">{head}<div className="muted">モンスターのデータを読めませんでした</div></div>;
   const enc = mapEncounters(doc);
   const cur = book.group(enc.group);
