@@ -307,7 +307,7 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
         ? <button className="danger" onClick={() => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash)}>このマップの変更を元に戻す</button>
         : <div className="muted">変更なし</div>}
       <MapSoundPanel session={session} sounds={session.sounds} />
-      <EncounterPanel st={st} book={session.book} />
+      <EncounterPanel session={session} st={st} book={session.book} />
       {listing && st.currentEvents && (
         <EventListDialog st={st} onClose={() => setListing(false)} onPick={(m, sec, i) => {
           setListing(false);

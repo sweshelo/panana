@@ -21,6 +21,8 @@ import type { ItemBook, Item } from '../src/game/items';
 import { TreasureEditor } from '../src/editor/treasure';
 import type { MapInfo } from '../src/game/codebin';
 import type { EventTable } from '../src/game/events';
+import type { MonsterBook, MonsterGroup } from '../src/game/monsters';
+import { GroupDetail, GroupList, GroupPicker } from '../src/ui/GroupDetail';
 import { SoundNames, soundUses } from '../src/game/sound';
 import { SoundPicker } from '../src/ui/SoundPicker';
 import { SoundView } from '../src/pages/sounds';
@@ -186,6 +188,45 @@ describe('map editor pickers', () => {
     expect(html).toContain('75%');
     expect(html).toContain('25%');
     expect(html).toContain('＋ 追加');
+  });
+});
+
+describe('encounter groups', () => {
+  const monsters = [{ row: 0, name: 'スライム', level: 1 }, { row: 1, name: 'ドラキー', level: 3 }];
+  const g = (row: number, hash: number, leads: number[], mates: number[]): MonsterGroup =>
+    ({ row, hash, leads: leads.map((m) => ({ monster: m, weight: 1, count: 0 })), mates: mates.map((m) => ({ monster: m, weight: 1, count: 1 })), extra: [] }) as unknown as MonsterGroup;
+  const groups = [g(0, 0, [0], []), g(1, 0x11, [0, 1], [1]), g(2, 0x22, [], [])];
+  const book = {
+    groups,
+    group: (h: number) => groups.find((x) => x.hash === h),
+    groupMonsters: (x: MonsterGroup) => [...new Set([...x.leads, ...x.mates].map((s) => s.monster))],
+    groupChanged: (r: number) => r === 2,
+    monster: (r: number) => monsters[r],
+    modelOf: () => null,
+  } as unknown as MonsterBook;
+  const game = { editableMaps: () => [] } as unknown as Game;
+
+  test('detail: a tile per candidate with its photo, share and count', () => {
+    const html = renderToString(<GroupDetail game={game} book={book} group={groups[1]!} />);
+    expect(html.match(/class="group-tile"/g)?.length).toBe(3);
+    expect(html.match(/class="photo"/g)?.length).toBe(3);
+    expect(html).toContain('href="#/monsters/1"');
+    expect(html).toContain('50% ×');
+    expect(html).toContain('群れ #1 を開く');
+  });
+
+  test('picker: the group list with photos, only groups with a hash, and none', () => {
+    const session = { game, docOf: () => null } as unknown as Session;
+    const html = renderToString(<GroupPicker session={session} book={book} current={0x11} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('群れを選ぶ');
+    expect(html).toContain('(なし: 敵が出ない)');
+    expect(html).toContain('2 / 2 件');
+    expect(html).toContain('<tr class="active"><td class="num muted">1</td>');
+    expect(html).toContain('(敵なし)');
+    expect(html.match(/edited-mark/g)?.length).toBe(1);
+    const list = renderToString(<GroupList game={game} book={book} uses={new Map()} selected={0} onSelect={() => {}} />);
+    expect(list).toContain('3 / 3 件');
+    expect(list).not.toContain('(なし: 敵が出ない)');
   });
 });
 
