@@ -16,6 +16,9 @@ import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
 import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
+import { recordPlacement, section2Offset, slotOffset } from '../src/game/objects';
+import type { MapDoc, Rec } from '../src/game/sections';
+import type { Master } from '../src/game/master';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -630,5 +633,57 @@ describe('ARM disassembler (game/disasm.ts)', () => {
     expect(d(0xed9f8a9d)).toBe('vldr s16, [pc, #0x274]');
     expect(d(0xeef1fa10)).toBe('vmrs apsr_nzcv, fpscr');
     expect(d(0xeeb70a00)).toBe('vmov.f32 s0, #1');
+  });
+});
+
+describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
+  const doc = (tiles: MapDoc['tiles'] = []): MapDoc => ({ hash: 0, name: '', dungeon: 0, floor: 0, tiles, recs: {}, sec6Header: new Uint8Array(0), cells6: [], raw: {} });
+  const master = { mapParts: { rows: 0 } } as unknown as Master;
+  const rec2 = (id: number, dir: number): Rec => {
+    const raw = new Uint8Array(12);
+    w32(raw, 0, id);
+    raw[8] = dir;
+    return { raw, x: 0, y: 0 };
+  };
+  const rec3 = (kind: number, aux: number, slot: number, step = 0): Rec => {
+    const raw = new Uint8Array(28);
+    raw[0x14] = kind;
+    raw[0x15] = aux;
+    raw[0x19] = slot;
+    raw[0x1a] = step;
+    return { raw, x: 0, y: 0 };
+  };
+  const round = (p: { angle: number; ox: number; oy: number; oz: number }) => ({ angle: Math.round((p.angle * 180) / Math.PI), ox: Math.round(p.ox * 10) / 10, oy: p.oy, oz: Math.round(p.oz * 10) / 10 });
+
+  test('section 2: angle table is the section 3 one turned by 180°', () => {
+    expect([0, 1, 2, 3, 7].map((d) => round(recordPlacement(2, rec2(0xc1, d), doc(), master)).angle)).toEqual([180, 90, 0, -90, 180]);
+  });
+
+  test('section 2: offsets by mapObject row', () => {
+    // jump table of FUN_001c6b64: odd rows 0x9F..0xAD are pushed to the wall, even rows 0x9E..0xAC only sink
+    expect([0, 1, 2, 3].map((d) => section2Offset(0x9f, d))).toEqual([[0, -5, 50], [50, -5, 0], [0, -5, -50], [-50, -5, 0]]);
+    expect(section2Offset(0xad, 1)).toEqual([50, -5, 0]);
+    expect(section2Offset(0x9e, 1)).toEqual([0, -5, 0]);
+    expect(section2Offset(0xaa, 2)).toEqual([0, -5, 0]);
+    expect([0, 1, 2, 3].map((d) => section2Offset(0xba, d))).toEqual([[-20, 0, -20], [30, 0, -130], [30, 0, -20], [-20, 0, 30]]);
+    expect(section2Offset(0xda, 1)).toEqual([0, 0, 250]);
+    expect(section2Offset(0xc1, 0)).toEqual([0, 0, 0]);
+  });
+
+  test('section 3: slot inside the cell', () => {
+    expect(slotOffset(4)).toEqual([0, 0]);
+    expect(slotOffset(0).map(Math.round)).toEqual([-167, -167]);
+    expect(slotOffset(8).map(Math.round)).toEqual([167, 167]);
+  });
+
+  test('section 3: indoor stairs move to their slot and 50 towards +0x15 (S10B01AAA)', () => {
+    const indoor = doc([{ kind: 15, x: 0, y: 0, rot: 0, rotHi: 0, letter: 0x7a, pad: 0 }]);
+    expect(round(recordPlacement(3, rec3(4, 3, 8), indoor, master))).toEqual({ angle: 0, ox: 116.7, oy: 0, oz: 166.7 });
+    expect(round(recordPlacement(3, rec3(4, 3, 2), indoor, master))).toEqual({ angle: 0, ox: 116.7, oy: 0, oz: -166.7 });
+  });
+
+  test('section 3: doors step 100, or 250 with +0x1A', () => {
+    expect(round(recordPlacement(3, rec3(11, 1, 4), doc(), master))).toEqual({ angle: -90, ox: 100, oy: 0, oz: 0 });
+    expect(round(recordPlacement(3, rec3(11, 1, 4, 1), doc(), master))).toEqual({ angle: -90, ox: 250, oy: 0, oz: 0 });
   });
 });

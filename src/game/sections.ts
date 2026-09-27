@@ -85,7 +85,10 @@ export const P3 = {
   door: (r: Uint8Array) => u32(r, 0x0c),
   kind: (r: Uint8Array) => u8(r, 0x14),
   aux: (r: Uint8Array) => u8(r, 0x15),
-  flags: (r: Uint8Array) => u32(r, 0x18),
+  /** Slot of the model inside the cell: 3x3, 0 = north-west, 4 = centre, 8 = south-east (FUN_002f1844). */
+  slot: (r: Uint8Array) => u8(r, 0x19),
+  /** Doors: non-zero = step 250 instead of 100 from the cell centre (FUN_002effa0). */
+  doorStep: (r: Uint8Array) => u8(r, 0x1a),
 };
 
 export const P3_KIND: Record<number, string> = {

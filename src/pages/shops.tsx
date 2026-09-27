@@ -3,13 +3,11 @@
 // <dialog> with their models.
 import { useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { hexId } from '../editor/message';
-import { itemRef } from './items';
 import type { ItemData, Session } from '../session';
 import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
-import { Dialog } from '../ui/Dialog';
+import { ItemPicker } from '../ui/ItemPicker';
 import { MessagePreview } from '../ui/message';
-import { Photo } from '../ui/Photo';
-import { ITEM_CATEGORY, type ItemBook } from '../game/items';
+import type { ItemBook } from '../game/items';
 import { DESCRIPTION_VARIANT, dropInto, shopLabel, type Shop, type ShopDrag, type ShopStock } from '../game/shops';
 import { hex8, u32 } from '../util/bytes';
 
@@ -217,52 +215,9 @@ function StockEditor({ session, items, stock, shop, list, edit }: {
       <div className="muted small">{`変更は ShopItem として ${stock.archiveNames().join(' と ')} に書き出されます。`}</div>
       {warnings.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
       {picking && (
-        <ItemPicker session={session} items={items} list={list} onClose={() => setPicking(false)}
-          onPick={(id) => { setPicking(false); edit([...list, id]); }} />
+        <ItemPicker game={session.game} items={items} title="追加するアイテムを選ぶ" unavailable={(it) => (list.includes(it.id) ? 'この店で売っています' : null)}
+          onClose={() => setPicking(false)} onPick={(id) => { setPicking(false); edit([...list, id]); }} />
       )}
     </div>
-  );
-}
-
-/** Pick an item to add, from the photos (like the monster picker); items the shop sells are marked. */
-function ItemPicker({ session, items, list, onPick, onClose }: {
-  session: Session; items: ItemBook; list: number[]; onPick: (id: number) => void; onClose: () => void;
-}): ReactNode {
-  const [query, setQuery] = useState('');
-  const [cat, setCat] = useState('');
-  const q = query.trim();
-  const c = cat ? Number(cat) : 0;
-  const shown = items.items.filter((it) => (!c || (it.categoryByte & 0xf) === c) && (!q || it.name.includes(q) || String(it.id) === q));
-  return (
-    <Dialog title="追加するアイテムを選ぶ" onClose={onClose}>
-      <div className="row">
-        <input type="search" placeholder="名前か ID で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select value={cat} onChange={(e) => setCat(e.target.value)}>
-          <option value="">すべての分類</option>
-          {Object.entries(ITEM_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-      </div>
-      <div className="picker-list">
-        <div className="monster-grid">
-          {shown.map((it) => {
-            const sold = list.includes(it.id);
-            return (
-              <button
-                key={it.id}
-                className={`monster-cell${sold ? ' sold' : ''}`}
-                disabled={sold}
-                title={sold ? 'この店で売っています' : `${it.category}${it.price ? `・${it.price} G` : '・買値 0'}`}
-                onClick={() => onPick(it.id)}
-              >
-                <Photo model={itemRef(session.game, it)} className="photo photo-lg" />
-                <span>{it.name}</span>
-                <span className="muted small">{it.price ? `${it.price} G` : '0 G'}</span>
-              </button>
-            );
-          })}
-          {!shown.length && <div className="muted">見つかりません</div>}
-        </div>
-      </div>
-    </Dialog>
   );
 }

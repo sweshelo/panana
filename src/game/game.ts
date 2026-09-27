@@ -7,7 +7,7 @@ import { idbGet, idbSet } from '../util/idb';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
-import { Master, MASTER_ARCHIVE, type MapRef } from './master';
+import { Master, MASTER_ARCHIVE, TILESETS, type MapRef } from './master';
 import { isIndoor } from './objects';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
@@ -186,12 +186,13 @@ export class Game {
     return { hash: info.hash, dungeon: info.dungeon, mapDataKey: info.mapDataKey, indoor: isIndoor(doc) };
   }
 
-  tilesetSource(map: MapRef): TilesetSource {
-    const resource = this.master.resourceRow(map);
+  /** Where the tile models of a map come from; `tileset` shows the map with another tileset (default: its own). */
+  tilesetSource(map: MapRef, tileset = this.master.tileset(map)): TilesetSource {
+    const resource = this.master.tilesetResource(tileset, map);
     const a = this.master.resourceArchives(resource);
     return {
       resource,
-      tileset: this.master.tileset(map),
+      tileset,
       modelArchive: hex8(a[0]!),
       textureArchive: hex8(a[1]!),
       textureEntry: a[2]!,
@@ -202,9 +203,13 @@ export class Game {
   neededFiles(): string[] {
     const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE, MONSTER_DESIGN_ARCHIVE, SHOP_ARCHIVE, MONSTER_MODEL_ARCHIVE, ...ITEM_MODEL_ARCHIVES]);
     for (const m of this.editableMaps()) {
-      const s = this.tilesetSource(this.mapRef(m));
-      if (s.modelArchive !== '00000000') out.add(s.modelArchive);
-      if (s.textureArchive !== '00000000') out.add(s.textureArchive);
+      const ref = this.mapRef(m);
+      // Every tileset (the editor can show a map with another one).
+      for (let t = 0; t < TILESETS; t++) {
+        const s = this.tilesetSource(ref, t);
+        if (s.modelArchive !== '00000000') out.add(s.modelArchive);
+        if (s.textureArchive !== '00000000') out.add(s.textureArchive);
+      }
       const ev = this.master.eventArchive(m.dungeon);
       if (ev) out.add(hex8(ev));
     }

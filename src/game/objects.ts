@@ -135,14 +135,60 @@ export function objectCategory(row: number): string {
 // ---- placement (angle about +Y in radians, as three.js rotation.y; offset in world units)
 
 const HALF = Math.PI / 2;
-/** Angle table of section 3 (cell +0x21 = +0x15 + 1) and section 2 (+8 + 1): DAT_002f0830.. */
+/** Angle table of section 3 (cell +0x21 = +0x15 + 1): DAT_002f0830.. */
 const QUARTER: Record<number, number> = { 1: 0, 2: -HALF, 3: Math.PI, 4: HALF };
+/**
+ * Angle table of section 2 (+8 + 1) and section 5 kinds 2/3/4/8 (FUN_001c6f54, FUN_002ef5b8). Not the one of
+ * section 3: every direction is turned by 180°.
+ */
+const QUARTER2: Record<number, number> = { 1: Math.PI, 2: HALF, 3: 0, 4: -HALF };
+/** Unit step towards the side c (1 north, 2 east, 3 south, 4 west) as [x, z]. */
+const SIDE: Record<number, [number, number]> = { 1: [0, -1], 2: [1, 0], 3: [0, 1], 4: [-1, 0] };
 
 export interface Placement {
   angle: number;
   ox: number;
+  /** Height (the game lowers some wall objects by 5). */
+  oy: number;
   oz: number;
 }
+
+/** Section 2 objects the game moves off their point, by mapObject row (FUN_001c6b64). */
+const WALL_SNAP = new Set([0x9f, 0xa1, 0xa3, 0xa5, 0xa7, 0xa9, 0xab, 0xad]);
+const SUNK = new Set([0x9e, 0xa0, 0xa2, 0xa4, 0xa6, 0xa8, 0xaa, 0xac]);
+const CORNER = new Set([0xba, 0xcf]); // FUN_0044e024
+const LONG = new Set([0xbb, 0xbc, 0xd0, 0xd1, 0xda]); // FUN_0044e100 with a length of 5 fine units
+
+/** Offset of a section 2 object from its point (world 50 + v * 100) for its direction +8 (FUN_001c6b64). */
+export function section2Offset(id: number, dir: number): [number, number, number] {
+  if (WALL_SNAP.has(id)) {
+    // pushed half a fine unit towards the wall of the direction and 5 down
+    const s = ([[0, 50], [50, 0], [0, -50], [-50, 0]] as const)[dir];
+    return s ? [s[0], -5, s[1]] : [0, 0, 0];
+  }
+  if (SUNK.has(id)) return [0, -5, 0];
+  if (CORNER.has(id)) {
+    // x / z = v * 100 + (30 | 80 | -80) instead of + 50
+    const s = ([[-20, -20], [30, -130], [30, -20], [-20, 30]] as const)[dir];
+    return s ? [s[0], 0, s[1]] : [0, 0, 0];
+  }
+  if (LONG.has(id)) {
+    // (length - 1) * 50 = 200 along the direction (+ another 100 for direction 1)
+    const s = ([[150, 0], [0, 250], [-250, 0], [0, -250]] as const)[dir];
+    return s ? [s[0], 0, s[1]] : [0, 0, 0];
+  }
+  return [0, 0, 0];
+}
+
+/** Offset of a section 3 point inside its cell: +0x19 = 3x3 slot (4 = centre), 166.67 apart (FUN_002f1844). */
+export function slotOffset(slot: number): [number, number] {
+  if (slot === 4) return [0, 0];
+  const step = 500 / 3;
+  return [((slot % 3) - 1) * step, (Math.floor(slot / 3) - 1) * step];
+}
+
+/** Maps where doors keep the 100 step even with +0x1A set (FUN_002effa0): D04F03001, D05F01002. */
+const DOOR_STEP_100 = new Set([0xc9762f91, 0x0bb9ff51]);
 
 /** Direction of a stair inside its tile (FUN_001cb4d4): unit x / z, from the tile's open sides. */
 function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: number): [number, number] {
@@ -168,18 +214,21 @@ function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: n
   return [ox, oz];
 }
 
-/** How the game places the model of a record (FUN_002effa0, FUN_001c6b64, FUN_001c7614, FUN_002ef5b8). */
+/** How the game places the model of a record (FUN_001c6b64, FUN_002effa0, FUN_001c7614, FUN_002ef5b8). */
 export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: Master): Placement {
   const r = rec.raw;
-  const none = { angle: 0, ox: 0, oz: 0 };
+  const none = { angle: 0, ox: 0, oy: 0, oz: 0 };
   switch (section) {
-    case 2:
-      return { angle: QUARTER[(r[8]! & 3) + 1]!, ox: 0, oz: 0 };
+    case 2: {
+      const dir = r[8]!;
+      const [ox, oy, oz] = section2Offset(u32(r, 0), dir);
+      return { angle: QUARTER2[dir <= 3 ? dir + 1 : 1]!, ox, oy, oz };
+    }
     case 5: {
       const kind = r[8]!;
       const d = r[9]!;
-      if (kind === 0) return { angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oz: 0 };
-      if ([2, 3, 4, 8].includes(kind)) return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oz: 0 };
+      if (kind === 0) return { angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
+      if ([2, 3, 4, 8].includes(kind)) return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
       return none;
     }
     case 3: {
@@ -188,22 +237,32 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       const stair = stairCode(kind);
       if (kind === 8 || (g >= 0x13 && g < 0x2f)) return none; // warp holes, town buildings: fixed
       const c = r[0x15]! + 1;
+      const [sx, sz] = slotOffset(r[0x19]!);
+      const side = SIDE[c] ?? SIDE[1]!;
+      // warp patterns / holes / invisible points: at their slot of the cell
+      if (g === 3 || g === 4 || g === 5) return { angle: g === 5 ? 0 : QUARTER[c] ?? 0, ox: sx, oy: 0, oz: sz };
+      if (g === 0x0c) return { angle: QUARTER[c] ?? 0, ox: side[0] * 250, oy: 0, oz: side[1] * 250 };
       if (stair === 0 || g === 0 || g === 10 || g === 11) {
-        // doors / gates: angle and a 100-unit step towards the side given by +0x15
-        const step: Record<number, [number, number]> = { 1: [0, -100], 2: [100, 0], 3: [0, 100], 4: [-100, 0] };
-        const [ox, oz] = step[c] ?? [0, -100];
-        return { angle: QUARTER[c] ?? 0, ox, oz };
+        // doors / gates: a step towards the side given by +0x15 (250 with +0x1A set, except on two maps)
+        const step = r[0x1a] && !DOOR_STEP_100.has(doc.hash) ? 250 : 100;
+        return { angle: QUARTER[c] ?? 0, ox: side[0] * step, oy: 0, oz: side[1] * step };
       }
       // stairs: face along the tile's open side; up stairs turn -90°, down stairs +90°
       const turn = stair === 1 ? -HALF : HALF;
-      if (isIndoor(doc)) return { angle: (QUARTER[c] ?? 0) + turn, ox: 0, oz: 0 };
+      if (isIndoor(doc)) return { angle: (QUARTER[c] ?? 0) + turn, ox: sx + side[0] * 50, oy: 0, oz: sz + side[1] * 50 };
       const [x, z] = stairOffset(doc, master, rec.x, rec.y, stair);
       let base: number | null = null;
       if (x < 0) base = -HALF;
       else if (x > 0) base = HALF;
       else if (z < 0) base = Math.PI;
       else if (z > 0) base = 0;
-      return { angle: base === null ? 0 : base + turn, ox: 0, oz: 0 };
+      // down stairs move 100 along the open side; up stairs only in z, and only when both are set
+      let ox = sx, oz = sz;
+      if (stair === 2) {
+        ox += x * 100;
+        oz += z * 100;
+      } else if (x && z) oz += z * 100;
+      return { angle: base === null ? 0 : base + turn, ox, oy: 0, oz };
     }
     default:
       return none; // sections 1 / 4 (chests pick a model per direction instead of rotating)

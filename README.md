@@ -138,7 +138,7 @@ itemData の名前・説明・分類 (+0x2C)・☆・買値 / 売値・上限・
 宝箱 (区画 4) を選ぶと、右ペインに中身 (アイテム・重み・確率) を一覧で出します。区画 4 の +0 = ダンジョンの EventObject の行、その +0x08 = 中身の表 (treasureGroup) の行、その行に最大 10 個のアイテム {アイテム, 重み}。
 開けると、並んだアイテムから重みに比例して 1 つ選ばれます。
 - 「変更…」: 中身の表の全行を中身つきで一覧するダイアログで、別の行を選ぶか、今の中身を写した新しい行を作ります。行を共有している宝箱の数も出ます。
-- アイテムはクリックで差し替え、「＋ 追加」で一覧表 (名前・分類で絞り込み) から選んで足し、「×」で外します。
+- アイテムはクリックで差し替え、「＋ 追加」で足し、「×」で外します。アイテムはショップの「＋ 追加」と同じ、写真つきの一覧 (名前・ID・分類で絞り込み) から選びます。
 - 中身はマスター (`56562135`) にあります。アイテム MOD (`elpulse/mod`) も `56562135` を置き換えるので、両方使うときは「土台の MOD」で `mod/out` を読み込んでください。
 
 ## 構成
@@ -152,12 +152,14 @@ src/
             monsters.ts sound.ts items.ts actions.ts                   モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店、アクション
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts                                          アニメ (CANM) の読み込みと再生 (CPU スキニング)
-  editor/   mapeditor.ts state.ts controller.ts view2d.ts view3d.ts palette.ts inspector.ts validate.ts ...  マップ編集 (h())
+  editor/   mapeditor.tsx state.ts controller.ts view2d.ts view3d.ts validate.ts ...  マップ編集: 状態・操作・2D / 3D ビュー (canvas)
+            panes.tsx inspector.tsx addpanel.tsx palette.tsx treasure.tsx ...  マップ編集のヘッダーと左右のペイン (React)
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
   ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
             book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx  ページの共通部品
-            mount.tsx useEditorState.ts                                React と h() の橋渡し、EditorState の購読
+            MapPicker.tsx ItemPicker.tsx                               マップ・アイテムを選ぶダイアログ (ページとマップ編集で共通)
+            mount.tsx useEditorState.ts                                React の外の要素の差し込み、EditorState の購読
   session.ts                                                           開いたダンプ: 編集の状態・図鑑・編集の保存と復元
   export/   pack.ts                                                    マップ DB → A90C8038、イベント、マスター → zip
 test/
@@ -167,7 +169,7 @@ test/
   golden/export_golden.py
 ```
 
-UI は React (TSX) です。マップ編集だけは h() で DOM を組み立てるクラス (`src/editor/mapeditor.ts`) のままで、外枠 (`src/ui/Shell.tsx`) がその要素をマップのページに置きます。three.js のモデルビューアも同じくクラスのまま React から差し込みます。マップ編集と共有する部品 (メッセージの編集欄、群れの表) は React で書き、マップ編集には `src/ui/mount.tsx` の `reactElement` で要素として渡します。
+UI は React (TSX) です。マップ編集は、2D / 3D ビュー (canvas) と操作を持つクラス (`src/editor/mapeditor.tsx`) が、ヘッダーと左右のペイン (`src/editor/panes.tsx` 以下、React) を自分の要素に描き、外枠 (`src/ui/Shell.tsx`) がその要素をマップのページに置きます。ペインは `useEditorState` で編集の状態を、`Signal` で表示の設定 (ビュー、モデル、検証の結果) を購読して描き直します。three.js のモデルビューアも同じくクラスのまま `src/ui/mount.tsx` の `Dom` で差し込みます。マップ・アイテムの選択は、ページでもマップ編集でも同じダイアログ (`MapPicker` / `ItemPicker`) を使います。
 
 分かったこと (設計書からの補足):
 - mapResource の行 = `[0] モデルのアーカイブ, [1] テクスチャのアーカイブ (469B3DC6), [2] その中のテクスチャ (bcres), [3] 空のモデル`。
@@ -179,6 +181,7 @@ UI は React (TSX) です。マップ編集だけは h() で DOM を組み立て
 - マップ DB のサイズ 0 のエントリは、次のブロックと同じオフセットを持つ。再構築では (オフセット, サイズ) の順に並べると元とバイト一致する。
 - ダンジョン名は mapGroup +0x14 の u16 (u32 で読むと K / M / S 系が引けない)。
 - オブジェクトのモデルは mapObject (マスター) の行。区画ごとの決め方、宝箱・EventObject・mapChara は `../elpulse/docs/map.md` §6・§8〜§10、実装は `src/game/objects.ts`。
+- 置き方 (`recordPlacement`): 置物 (区画 2) の向きの表は区画 3 のものと 180° 違い (向き 0 = 180°、1 = 90°、2 = 0°、3 = −90°)、一部の行 (0x9F〜0xAD の奇数、0xBA、0xBB など) は向きで壁際に寄せる (0x9E〜0xAC の偶数は高さ −5 だけ)。区画 3 の +0x19 はセルの中の 3×3 の位置 (4 = 中央) で、屋内の階段はそこから +0x15 の向きに 50、扉は 100 (+0x1A があれば 250) ずらす。
 - CGFX のボーンの world 行列は空のことが多いので、拡大・回転・移動を親から合成する (門の枠や宝箱のふたの位置)。
 - マテリアルは PICA のテクスチャ合成 (TEV 6 段)・アルファテスト・ブレンドをシェーダーで再現する (`src/cgfx/tev.ts`)。例: ひび割れの貼り付けは乗算 (白 = 変化なし)、M_pack は 2 枚目のテクスチャの赤をアルファにしてアルファテストで抜く。フラグメントライティングは未対応 (白として扱う)。
 - テクスチャのデータは上の行から並ぶが UV は v = 0 が下なので、上下を反転して渡す。
@@ -213,7 +216,7 @@ ROM のテストは `rom` ジョブで、暗号化したダンプを非公開の
 
 ## 未対応・今後
 
-- 扉・門の位置と向きは近似 (部屋の出入口のタイルでは開口側の辺に寄せる)。静止姿勢で床下にあるモデル (一部の門) は持ち上げて表示。
+- マップのフラグ +0xA8CE が立つときの位置の変換 (`FUN_002f1784`) と、屋外の階段のセル +0x24 の bit0 は未対応。静止姿勢で床下にあるモデル (一部の門) は持ち上げて表示。
 - 区画 5 のモンスター (mapChara の種類がモンスター)、区画 8 (イベントの範囲) は記号で表示。区画 6 / 7 / 9 の意味は未確定 (7 は保持のみ)。
 - 新しい宝箱 (EventObject の行) の追加はなし。宝箱を複製すると同じ行 (中身とフラグ) を共有する (警告を出す)。
 - マテリアルのフラグメントライティングは未対応。アニメはビューアのモーション (骨格、テクスチャ座標の移動・拡大) だけで、色のアニメ (`*.cmcla`) と表示のアニメは未対応。

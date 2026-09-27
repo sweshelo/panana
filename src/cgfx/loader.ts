@@ -33,8 +33,9 @@ function run<T>(req: Body<WorkerRequest>, transfer: ArrayBuffer[]): Promise<T> {
 
 const memory = new Map<string, Promise<TilesetModels>>();
 
-export function loadTilesetModels(game: Game, map: MapRef): Promise<TilesetModels> {
-  const src = game.tilesetSource(map);
+/** Tile models of a map, for its own tileset or `tileset`. */
+export function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Promise<TilesetModels> {
+  const src = game.tilesetSource(map, tileset);
   const key = `tileset/${src.modelArchive}/${hex8(src.textureEntry)}/v${CACHE_VERSION}`;
   let p = memory.get(key);
   if (!p) {
