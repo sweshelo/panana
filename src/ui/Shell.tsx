@@ -16,6 +16,7 @@ import type { PageProps } from './book';
 import { ExportDialog } from './ExportDialog';
 import { Dom } from './mount';
 import { useAsync } from './useAsync';
+import { InfoTooltip } from './InfoTip';
 
 export const PAGES = [
   ['map', 'マップ編集'],
@@ -137,6 +138,7 @@ export function Shell({ session, editor, onPickBaseMod, onChangeDump }: {
         <button onClick={onChangeDump}>ダンプを変える</button>
       </nav>
       <Dom node={editor.el} className="page page-map" />
+      <InfoTooltip />
       {PAGES.map(([id]) => {
         const v = visits.current.get(id);
         if (id === 'map' || !v) return null;

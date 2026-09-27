@@ -208,6 +208,7 @@ describe('monster editors', () => {
     get: (_r: number, k: string) => fields[k] ?? 0,
     original: (_r: number, k: string) => (k === 'nextForm' ? 0 : fields[k] ?? 0),
     originalSkills: () => [1, 1, 1, 2],
+    modelOf: () => null,
   } as never;
   const actionBook = {
     actions,
@@ -222,15 +223,19 @@ describe('monster editors', () => {
     expect(html).toContain('25%');
     expect(html).toContain('→ #3 に変身');
     expect(html).toContain('ワザ A (005_)');
+    // every skill is a name board with its "#ID" link, and the add button is a board in the same column
+    expect(html.match(/class="board-id" href="#\/actions\/1"/g)?.length).toBe(3);
+    expect(html).toContain('＋ ワザを追加');
     expect(html).toContain('draggable="true"');
   });
 
   test('boss: condition, next form marked as edited, and the forms turning into this one', () => {
     const html = renderToString(<BossEditor session={{} as Session} book={book} m={ms[1]!} edited={() => {}} actions={actionBook} />);
-    expect(html).toContain('ポーン (#1)');
+    expect(html).toContain('ポーン #1');
     expect(html).toContain('水の攻撃が当たったとき');
     const first = renderToString(<BossEditor session={{} as Session} book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
-    expect(first).toContain('class="edited"');
+    expect(first).toContain('class="board edited"');
+    expect(first).toContain('href="#/monsters/2"');
     expect(first).toContain('ワザ「ビームモード」で ');
   });
 
