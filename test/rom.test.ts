@@ -682,6 +682,90 @@ describe.skipIf(!hasCia)('messages', () => {
   });
 });
 
+describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
+  test('scripts: the classes of the D01 switches and the rows they complete', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    expect(entries.length).toBe(1375);
+    const d01 = (row: number) => entries.find((e) => e.dungeon === 1 && e.row === row)!;
+    // switch -> door / gate (docs/events.md §5)
+    for (const [row, vtable, target] of [[2, 0x4feca4, 10], [3, 0x4fecc4, 11], [4, 0x4fece4, 13], [9, 0x4fec84, 1]] as const) {
+      const s = d01(row).scripts;
+      expect(s.map((x) => x.cls.vtable)).toEqual([vtable]);
+      expect(s[0]!.cls.completes).toEqual([target]);
+    }
+    // "ありゃ、重さが足りないんですかねえ？" from the switch script
+    expect(d01(2).scripts[0]!.cls.messages).toContain(0x1c77);
+    const scripts = entries.filter((e) => e.kind === 0x24 && e.places.length);
+    expect(scripts.length).toBe(320);
+    expect(scripts.filter((e) => e.scripts.length).length).toBeGreaterThanOrEqual(317);
+    // appearance: D01 row 36 is gone once 0x91[4] = 2
+    expect(d01(36).conditions).toEqual([{ field: 0x4c, type: 0xb0, value: 4, text: '0x91[0x04] = 2' }]);
+  });
+
+  test('annotated assembly of a script (D01 row 2: the switch that opens row 10)', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { CodeIndex } = await import('../src/game/scripts');
+    const { scriptListing, listingText } = await import('../src/game/scriptasm');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const index = new CodeIndex(game.code.code, new Set(entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable))));
+    const fns = scriptListing({ code: game.code.code, message: (id) => game.master.texts.plain(id) }, index, e.scripts[0]!.cls);
+    expect(fns[0]!.addr).toBe(0x258904); // vtable[1]
+    expect(fns[0]!.lines.length).toBe(8); // not cut at the push
+    const text = listingText(fns);
+    expect(text).toContain('bl #0x31aa2c'); // docs/events.md §5: open row 10 with animation 0x53 and sound 0x5C
+    expect(text).toContain('行を完了する (行=10)');
+    expect(text).toContain('アニメを再生する (s0 = 速さ, s1 = 開始位置) (アニメ=0x53)');
+    expect(text).toContain('効果音を鳴らす (番号=0x5C)');
+    expect(text).toContain('ありゃ、重さが足りないんですかねえ');
+  });
+
+  test('a code patch: the D01 row 2 switch also opens row 11, checked and exported in code.ips', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { buildPatches, patchRecords, applyRecords } = await import('../src/game/patch');
+    const { checkPatch } = await import('../src/game/patchcheck');
+    const { codeIps } = await import('../src/export/pack');
+    const { applyIps } = await import('../src/rom/ips');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const vtables = entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable));
+    const source = '@0x2587A4\n  bl both\n@0x2587AC\n  nop\n@cave both\n  push {r4, lr}\n  mov r0, #10\n  bl FUN_0031AA2C\n  mov r0, #11\n  bl FUN_0031AA2C\n  pop {r4, pc}\n';
+    const patch = { id: 'p', title: 'both', source, enabled: true };
+    const built = buildPatches(game.dump.code, [patch]);
+    const b = built.get('p')!;
+    expect(b.errors).toEqual([]);
+    const patched = applyRecords(game.dump.code, patchRecords(built.values()));
+    const check = checkPatch(patched, b, e, e.raw, vtables);
+    expect(check.runs.map((r) => r.result)).toEqual(['returned', 'returned']);
+    expect(check.classes![0]!.completes).toEqual([10, 11]);
+    // unbalanced stack is caught
+    const broken = buildPatches(game.dump.code, [{ ...patch, source: '@cave x\n  push {r4, lr}\n  bx lr\n' }]).get('p')!;
+    const run = checkPatch(applyRecords(game.dump.code, patchRecords([broken])), broken).runs[0]!;
+    expect(run.result).toBe('stack');
+    // export: code.ips holds the patch
+    game.codePatches = [patch];
+    const ips = codeIps(game)!;
+    expect(equalBytes(applyIps(game.dump.code, ips).subarray(0x1587a4, 0x1587b0), patched.subarray(0x1587a4, 0x1587b0))).toBe(true);
+    game.codePatches = [];
+  });
+
+  test('condition types are read from FUN_0030B8A4', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { readConditionTypes } = await import('../src/game/conditions');
+    const t = readConditionTypes(game.code.code);
+    expect(t.get(0x01)).toEqual({ type: 0x01, getter: 'progress', test: 'atLeast', index: 0x33 });
+    expect(t.get(0x18)).toEqual({ type: 0x18, getter: 'progress', test: 'atLeast', index: 0 });
+    expect(t.get(0x37)?.getter).toBe('rowState');
+    expect(t.get(0x3b)).toEqual({ type: 0x3b, getter: 'dungeonFlag', test: 'clear', index: 0x34 });
+    expect(t.get(0xad)).toEqual({ type: 0xad, getter: 'flag92', test: 'clear' });
+    expect(t.get(0xb0)).toEqual({ type: 0xb0, getter: 'value91', test: 'equals', eq: 2 });
+  });
+});
+
 describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
   let game: Game;
   beforeAll(async () => {
