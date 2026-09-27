@@ -70,6 +70,17 @@ export function pointObjectRow(r: Uint8Array, events: EventTable | null): number
   return lock ? 4 : 9;
 }
 
+/**
+ * Model of a section 7 record (FUN_001c6280 -> FUN_002effa0 with cell gimmick 9 or 7): the EventObject +0x46,
+ * else a door (gimk_02_door_02) when +0x17 is set and nothing (an exit) otherwise.
+ */
+export function wallDoorObjectRow(r: Uint8Array, events: EventTable | null): number {
+  const evRow = u32(r, 4);
+  const m = evRow && events ? events.model(evRow) : 0;
+  if (m) return m;
+  return r[0x17] ? 5 : OBJ_INVISIBLE;
+}
+
 /** Indoor maps (tile kinds 15..27) use other chest models (FUN_001c8034, runtime +0xA8CD). */
 export function isIndoor(doc: MapDoc): boolean {
   return doc.tiles.some((t) => t.kind + 1 >= 0x10 && t.kind + 1 <= 0x1c);
@@ -93,6 +104,8 @@ export function recordObjectRow(section: number, rec: Rec, ctx: ObjectContext): 
     }
     case 3:
       return pointObjectRow(r, ctx.events);
+    case 7:
+      return wallDoorObjectRow(r, ctx.events);
     case 4: {
       const m = ctx.events?.model(u32(r, 0)) ?? 0;
       if (m) return m;
@@ -215,7 +228,7 @@ function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: n
 }
 
 /** How the game places the model of a record (FUN_001c6b64, FUN_002effa0, FUN_001c7614, FUN_002ef5b8). */
-export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: Master): Placement {
+export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: Master, events: EventTable | null = null): Placement {
   const r = rec.raw;
   const none = { angle: 0, ox: 0, oy: 0, oz: 0 };
   switch (section) {
@@ -230,6 +243,19 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       if (kind === 0) return { angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
       if ([2, 3, 4, 8].includes(kind)) return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
       return none;
+    }
+    case 7: {
+      // FUN_001c6280: at the record's own world position (y -5), turned like section 3 with c = +0x16 + 1.
+      // Doors (+0x17 set) are pushed 50 along the wall; +0x15 picks the way (DAT_001c65dc / DAT_001c6604).
+      // EventObject +0x48 set: turned another 180° (the door opens to the other side).
+      const dir = r[0x16]!;
+      const evRow = u32(r, 4);
+      const flip = evRow && events?.has(evRow) ? u16(events.table.row(evRow), 0x48) !== 0 : false;
+      const angle = (QUARTER[dir + 1] ?? 0) + (flip ? Math.PI : 0);
+      if (!r[0x17]) return { angle, ox: 0, oy: -5, oz: 0 };
+      const s = r[0x15] ? -1 : 1;
+      const [ox, oz] = ([[-50 * s, 0], [0, 50 * s], [50 * s, 0], [0, -50 * s]] as const)[dir] ?? [-50 * s, 0];
+      return { angle, ox, oy: -5, oz };
     }
     case 3: {
       const kind = r[0x14]!;

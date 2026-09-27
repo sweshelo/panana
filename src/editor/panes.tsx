@@ -42,6 +42,11 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
       <div className="seg">
         {MODES.map(([m, label]) => <button key={m} className={editor.mode === m ? 'active' : ''} onClick={() => editor.setMode(m)}>{label}</button>)}
       </div>
+      <div className="seg" title="3D の扉・門を閉じた姿 / 開いた姿で表示する (見た目だけ。データは変えない)">
+        {([false, true] as const).map((open) => (
+          <button key={String(open)} className={editor.v3.doorsOpen === open ? 'active' : ''} onClick={() => editor.setDoorsOpen(open)}>{open ? '扉: 開' : '扉: 閉'}</button>
+        ))}
+      </div>
       <div className="seg">
         <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>↶ 戻す</button>
         <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>↷ やり直し</button>

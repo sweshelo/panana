@@ -7,6 +7,7 @@ import type { MapInfo } from '../game/codebin';
 import { MapDb, MAPDB_ARCHIVE } from '../game/mapdb';
 import { buildMapPatch, readExtension, type AddedMap } from '../game/mappatch';
 import { appendIps } from '../rom/ips';
+import { buildPatches, patchRecords } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
@@ -93,11 +94,13 @@ export function modPackage(game: Game, files: Map<string, Uint8Array>): Map<stri
  * an older extension, which is rebuilt). docs/new-map.md §2.
  */
 export function codeIps(game: Game): Uint8Array | null {
-  const base = game.baseMod?.ips ?? null;
+  let ips = game.baseMod?.ips ?? null;
   const added = game.code.addedMaps();
-  if (!added.length && !readExtension(game.dump.code)) return base;
-  const patch = buildMapPatch(game.dump.code, added.map(addedMap));
-  return appendIps(base, patch.records, game.dump.code);
+  if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap)).records, game.dump.code);
+  // code patches (the event page); ones with errors are left out
+  const records = patchRecords(buildPatches(game.dump.code, game.codePatches.filter((p) => p.enabled)).values());
+  if (records.length) ips = appendIps(ips, records, game.dump.code);
+  return ips;
 }
 
 const addedMap = (m: MapInfo): AddedMap => ({

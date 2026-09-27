@@ -126,6 +126,12 @@ export class MapEditor {
     });
   }
 
+  /** Doors and gates of the 3D view in their open or closed pose (a view setting, the data is unchanged). */
+  setDoorsOpen(open: boolean): void {
+    this.v3.setDoorsOpen(open);
+    this.ui.emit();
+  }
+
   setClipHeight(v: number): void {
     this.clipHeight = v;
     this.v3.setClip(v >= 400 ? null : v);

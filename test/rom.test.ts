@@ -13,10 +13,10 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
-import { P3, letterIndex } from '../src/game/sections';
+import { P3, P7, letterIndex, recEventRow } from '../src/game/sections';
 import { placeStamp, duplicateRecord } from '../src/editor/place';
 import { gimmickTemplates } from '../src/game/templates';
-import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
+import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes } from '../src/util/bytes';
@@ -184,6 +184,31 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const door19 = doc.recs[3]!.findIndex((r) => r.x === 19 && r.y === 12);
     expect(pl[door19]).toEqual({ angle: 0, ox: 0, oy: 0, oz: -250 });
     expect(doc.recs[4]!.every((r) => recordPlacement(4, r, doc, game.master).angle === 0)).toBe(true);
+  });
+
+  test('objects: doors on walls (section 7) of M02F01INN', async () => {
+    const info = game.code.byName('M02F01INN')!;
+    const doc = game.doc(info);
+    const events = await game.eventTable(info.dungeon);
+    const ctx = { master: game.master, events, indoor: isIndoor(doc) };
+    const s7 = doc.recs[7]!;
+    expect(s7.map((r) => [r.x, r.y])).toEqual([[3250, 3100], [3750, 3100], [2900, 3750], [3250, 3600], [3750, 3600], [4100, 3750], [3500, 4250]]);
+    // the inn's doors (EventObject 0x14, model +0x46 = gimk_02_door_01 / _03); the last record is an exit
+    expect(s7.map((r) => recordObjectRow(7, r, ctx))).toEqual([4, 4, 6, 4, 4, 6, OBJ_INVISIBLE]);
+    expect(s7.slice(0, 6).every((r) => events!.kind(recEventRow(7, r.raw)) === 0x14)).toBe(true);
+    // FUN_001c6280: y -5, angle from +0x16 (+180° when EventObject +0x48 is set: the rooms on the left mirror
+    // the ones on the right), 50 along the wall (+0x15 flips the way)
+    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [Math.round((p.angle * 180) / Math.PI), p.ox, p.oy, p.oz];
+    expect(s7.map((p) => r(recordPlacement(7, p, doc, game.master, events)))).toEqual([
+      [90, 0, -5, -50], [-90, 0, -5, -50], [180, 50, -5, 0], [90, 0, -5, -50], [-90, 0, -5, -50], [180, -50, -5, 0], [180, 0, -5, 0],
+    ]);
+  });
+
+  test('objects: doors on walls lead to points of other maps (section 3 and 7 IDs)', () => {
+    const docs = game.code.maps.map((m) => game.doc(m));
+    const wallIds = new Set(docs.flatMap((d) => (d.recs[7] ?? []).map((r) => P7.id(r.raw))));
+    // the exits of the houses' rooms come back to the doors of the town
+    expect(docs.flatMap((d) => d.recs[3] ?? []).filter((r) => wallIds.has(P3.destPoint(r.raw))).length).toBe(31);
   });
 
   test('objects: stairs and furniture of S10B01AAA (issue #29)', () => {
@@ -680,6 +705,90 @@ describe.skipIf(!hasCia)('messages', () => {
     expect(ids.size).toBeGreaterThan(1000);
     // the D01 conversation is named by an event row, not by the code
     expect(ids.has(0x1c84)).toBe(false);
+  });
+});
+
+describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
+  test('scripts: the classes of the D01 switches and the rows they complete', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    expect(entries.length).toBe(1375);
+    const d01 = (row: number) => entries.find((e) => e.dungeon === 1 && e.row === row)!;
+    // switch -> door / gate (docs/events.md §5)
+    for (const [row, vtable, target] of [[2, 0x4feca4, 10], [3, 0x4fecc4, 11], [4, 0x4fece4, 13], [9, 0x4fec84, 1]] as const) {
+      const s = d01(row).scripts;
+      expect(s.map((x) => x.cls.vtable)).toEqual([vtable]);
+      expect(s[0]!.cls.completes).toEqual([target]);
+    }
+    // "ありゃ、重さが足りないんですかねえ？" from the switch script
+    expect(d01(2).scripts[0]!.cls.messages).toContain(0x1c77);
+    const scripts = entries.filter((e) => e.kind === 0x24 && e.places.length);
+    expect(scripts.length).toBe(320);
+    expect(scripts.filter((e) => e.scripts.length).length).toBeGreaterThanOrEqual(317);
+    // appearance: D01 row 36 is gone once 0x91[4] = 2
+    expect(d01(36).conditions).toEqual([{ field: 0x4c, type: 0xb0, value: 4, text: '0x91[0x04] = 2' }]);
+  });
+
+  test('annotated assembly of a script (D01 row 2: the switch that opens row 10)', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { CodeIndex } = await import('../src/game/scripts');
+    const { scriptListing, listingText } = await import('../src/game/scriptasm');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const index = new CodeIndex(game.code.code, new Set(entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable))));
+    const fns = scriptListing({ code: game.code.code, message: (id) => game.master.texts.plain(id) }, index, e.scripts[0]!.cls);
+    expect(fns[0]!.addr).toBe(0x258904); // vtable[1]
+    expect(fns[0]!.lines.length).toBe(8); // not cut at the push
+    const text = listingText(fns);
+    expect(text).toContain('bl #0x31aa2c'); // docs/events.md §5: open row 10 with animation 0x53 and sound 0x5C
+    expect(text).toContain('行を完了する (行=10)');
+    expect(text).toContain('アニメを再生する (s0 = 速さ, s1 = 開始位置) (アニメ=0x53)');
+    expect(text).toContain('効果音を鳴らす (番号=0x5C)');
+    expect(text).toContain('ありゃ、重さが足りないんですかねえ');
+  });
+
+  test('a code patch: the D01 row 2 switch also opens row 11, checked and exported in code.ips', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { buildPatches, patchRecords, applyRecords } = await import('../src/game/patch');
+    const { checkPatch } = await import('../src/game/patchcheck');
+    const { codeIps } = await import('../src/export/pack');
+    const { applyIps } = await import('../src/rom/ips');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const vtables = entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable));
+    const source = '@0x2587A4\n  bl both\n@0x2587AC\n  nop\n@cave both\n  push {r4, lr}\n  mov r0, #10\n  bl FUN_0031AA2C\n  mov r0, #11\n  bl FUN_0031AA2C\n  pop {r4, pc}\n';
+    const patch = { id: 'p', title: 'both', source, enabled: true };
+    const built = buildPatches(game.dump.code, [patch]);
+    const b = built.get('p')!;
+    expect(b.errors).toEqual([]);
+    const patched = applyRecords(game.dump.code, patchRecords(built.values()));
+    const check = checkPatch(patched, b, e, e.raw, vtables);
+    expect(check.runs.map((r) => r.result)).toEqual(['returned', 'returned']);
+    expect(check.classes![0]!.completes).toEqual([10, 11]);
+    // unbalanced stack is caught
+    const broken = buildPatches(game.dump.code, [{ ...patch, source: '@cave x\n  push {r4, lr}\n  bx lr\n' }]).get('p')!;
+    const run = checkPatch(applyRecords(game.dump.code, patchRecords([broken])), broken).runs[0]!;
+    expect(run.result).toBe('stack');
+    // export: code.ips holds the patch
+    game.codePatches = [patch];
+    const ips = codeIps(game)!;
+    expect(equalBytes(applyIps(game.dump.code, ips).subarray(0x1587a4, 0x1587b0), patched.subarray(0x1587a4, 0x1587b0))).toBe(true);
+    game.codePatches = [];
+  });
+
+  test('condition types are read from FUN_0030B8A4', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { readConditionTypes } = await import('../src/game/conditions');
+    const t = readConditionTypes(game.code.code);
+    expect(t.get(0x01)).toEqual({ type: 0x01, getter: 'progress', test: 'atLeast', index: 0x33 });
+    expect(t.get(0x18)).toEqual({ type: 0x18, getter: 'progress', test: 'atLeast', index: 0 });
+    expect(t.get(0x37)?.getter).toBe('rowState');
+    expect(t.get(0x3b)).toEqual({ type: 0x3b, getter: 'dungeonFlag', test: 'clear', index: 0x34 });
+    expect(t.get(0xad)).toEqual({ type: 0xad, getter: 'flag92', test: 'clear' });
+    expect(t.get(0xb0)).toEqual({ type: 0xb0, getter: 'value91', test: 'equals', eq: 2 });
   });
 });
 

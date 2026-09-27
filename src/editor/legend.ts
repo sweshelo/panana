@@ -34,6 +34,7 @@ export const SECTION_COLORS: Record<number, string> = {
   3: '#2f7bff', // exits / doors / warp holes
   4: '#ffd400', // treasure
   5: '#26c26b', // characters / objects
+  7: '#00c8d7', // doors / exits on walls
   8: '#c04dff', // event areas
   9: '#9aa0a6',
 };

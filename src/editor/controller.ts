@@ -1,6 +1,6 @@
 // Pointer / keyboard logic shared by the 2D and 3D views. Views convert the pointer to cell coordinates
 // (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
-import { LAYOUTS, POINT_SECTIONS, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
+import { LAYOUTS, POINT_SECTIONS, WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
 import { inGrid, removeTile, setTile, tileAt, type EditorState, type Selection } from './state';
 import { duplicateRecord, placeStamp, type PlaceContext } from './place';
 
@@ -20,7 +20,7 @@ export class Controller {
     | { kind: 'rect'; x0: number; y0: number }
     | { kind: 'room'; on: boolean; last: string } = null;
 
-  layers: Layers = { tiles: true, sections: { 1: true, 2: true, 3: true, 4: true, 5: true, 8: true, 9: false }, room: true };
+  layers: Layers = { tiles: true, sections: { 1: true, 2: true, 3: true, 4: true, 5: true, 7: true, 8: true, 9: false }, room: true };
   onHover: () => void = () => {};
 
   constructor(readonly st: EditorState) {}
@@ -166,6 +166,14 @@ export class Controller {
   rotate(dir: 1 | -1): void {
     const st = this.st;
     const s = st.selection;
+    if (s.type === 'rec' && s.section === 7) {
+      // doors on walls: facing +0x16 (0..3)
+      st.edit((doc) => {
+        const r = doc.recs[7]![s.index]!;
+        r.raw[0x16] = (r.raw[0x16]! + dir + 4) & 3;
+      });
+      return;
+    }
     if (s.type === 'tiles' && st.tool === 'select') {
       st.edit((doc) => {
         for (const [x, y] of s.cells) {
@@ -293,11 +301,12 @@ export class Controller {
     const st = this.st;
     const s = st.selection;
     if (s.type === 'rec') {
-      // one unit of the record (a cell, or 1/5 cell for fine coordinates)
+      // one unit of the record (a cell, or 1/5 cell for fine coordinates; 50 for world coordinates)
+      const step = LAYOUTS[s.section]?.unit === 'world' ? WORLD_SNAP : 1;
       st.edit((doc) => {
         const r = doc.recs[s.section]![s.index]!;
-        r.x += dx;
-        r.y += dy;
+        r.x += dx * step;
+        r.y += dy * step;
       });
       return;
     }

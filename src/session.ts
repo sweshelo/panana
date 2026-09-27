@@ -4,6 +4,7 @@ import { EditorState } from './editor/state';
 import { mapLabel } from './editor/labels';
 import type { MapInfo } from './game/codebin';
 import type { EventTable } from './game/events';
+import type { CodePatch } from './game/patch';
 import type { Game } from './game/game';
 import { ItemBook } from './game/items';
 import { MapDb } from './game/mapdb';
@@ -129,7 +130,8 @@ export class Session {
     const added = this.game.code
       .addedMaps()
       .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
-    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops });
+    const patches = this.game.codePatches;
+    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -142,6 +144,7 @@ export class Session {
       shops?: [number, number[]][];
       worlds?: Record<number, Uint8Array>;
       added?: MapInfo[];
+      patches?: CodePatch[];
     };
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
@@ -155,8 +158,9 @@ export class Session {
     const nMessages = edits.messages?.length ?? 0;
     const nShops = edits.shops?.length ?? 0;
     const worlds = Object.keys(edits.worlds ?? {}).map((h) => mapLabel(game, Number(h)));
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length) return;
-    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : ''].filter(Boolean).join(' / ');
+    const nPatches = edits.patches?.length ?? 0;
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !nPatches) return;
+    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       game.code.removeMaps(added.map((m) => m.hash));
       await idbSet(EDITS_KEY, null);
@@ -183,6 +187,7 @@ export class Session {
         this.st.events.set(Number(d), t);
       }
     }
+    if (edits.patches) game.codePatches = edits.patches;
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
     if (edits.messages) game.master.texts.restore(edits.messages);
