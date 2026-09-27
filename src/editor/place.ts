@@ -3,7 +3,7 @@
 import type { EventTable } from '../game/events';
 import type { Master } from '../game/master';
 import type { GimmickTemplate } from '../game/templates';
-import { LAYOUTS, P3, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
+import { LAYOUTS, P3, P7, recEventRow, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { u32, w16, w32 } from '../util/bytes';
 import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
 
@@ -47,7 +47,7 @@ function newChestRow(events: EventTable, master: Master, contentsFrom: number | 
 
 function newPointId(docs: Iterable<MapDoc>): number {
   const used = new Set<number>();
-  for (const d of docs) for (const r of d.recs[3] ?? []) used.add(P3.id(r.raw));
+  for (const d of docs) for (const k of [3, 7]) for (const r of d.recs[k] ?? []) used.add(u32(r.raw, 0));
   let id: number;
   do id = (Math.random() * 0xffffffff) >>> 0;
   while (!id || used.has(id));
@@ -149,7 +149,7 @@ export const SWITCH_MODEL = 29;
  */
 export function duplicateRecord(ctx: PlaceContext, section: number, rec: Rec): Rec {
   const { events, master } = ctx;
-  const ev0 = section === 3 ? P3.door(rec.raw) : section >= 4 ? u32(rec.raw, 0) : 0;
+  const ev0 = recEventRow(section, rec.raw);
   if (ev0 && events?.has(ev0) && events.roomLeft() < 1) throw new Error(`このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)`);
   const copy: Rec = { raw: rec.raw.slice(), x: rec.x, y: rec.y };
   const r = copy.raw;
@@ -157,6 +157,10 @@ export function duplicateRecord(ctx: PlaceContext, section: number, rec: Rec): R
     w32(r, 0x00, newPointId(ctx.docs));
     const ev = P3.door(r);
     if (ev && events?.has(ev)) w32(r, 0x0c, events.addRow(events.table.row(ev)));
+  } else if (section === 7) {
+    w32(r, 0x00, newPointId(ctx.docs));
+    const ev = P7.door(r);
+    if (ev && events?.has(ev)) w32(r, 0x04, events.addRow(events.table.row(ev)));
   } else if ((section === 4 || section === 5 || section === 8) && events) {
     const ev = u32(r, 0);
     if (events.has(ev)) {

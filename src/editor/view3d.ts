@@ -2,8 +2,9 @@
 // -rot * 90° about Y; docs/map-editor-design.md §6), markers for points, editing on the ground plane.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CELL, LAYOUTS, P3, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
+import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
+import { AnimatedModel, animationKey } from '../cgfx/player';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { renderObjectThumb } from './thumbs';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } from '../game/objects';
@@ -238,6 +239,8 @@ export class View3D {
   private objectRequest = new Set<number>();
   objectContext: (() => ObjectContext | null) | null = null;
   showObjects = true;
+  /** Show doors and gates in their open pose (their "002_" animation) instead of closed ("001_"). */
+  doorsOpen = false;
 
   /** Model name of a mapObject row ('' until loaded). */
   objectName(row: number): string {
@@ -254,7 +257,10 @@ export class View3D {
     }
     if (!f) return null;
     const ref = this.st.game.master.objectModel(row);
-    const m = ref ? f.instance(ref.entry) : null;
+    if (!ref) return null;
+    const posed = this.doorModel(row, f, ref.entry);
+    if (posed) return posed;
+    const m = f.instance(ref.entry);
     if (!m) return null;
     // Some models rest below the floor in their bind pose (e.g. gates that rise when closed); lift them
     // so they can be seen.
@@ -270,6 +276,38 @@ export class View3D {
     return g;
   }
   private readonly objectLift = new Map<number, number>();
+
+  /** Posed doors / gates by "row/open" (a template to clone; null = the model has no open / closed poses). */
+  private readonly doorPoses = new Map<string, THREE.Object3D | null>();
+
+  /**
+   * A door or gate (mapObject rows 4..19) in its closed ("001_close", "001_closed") or open ("002_open",
+   * "002_opend") pose. Gates whose rest pose is under the floor (gimk_03_gate_08) stand up when closed.
+   */
+  private doorModel(row: number, f: ModelFactory, entry: number): THREE.Object3D | null {
+    if (row < 4 || row > 19) return null;
+    const key = `${row}/${this.doorsOpen ? 1 : 0}`;
+    let tmpl = this.doorPoses.get(key);
+    if (tmpl === undefined) {
+      tmpl = null;
+      const motions = f.set.models.get(entry)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
+      const pose = motions.find((a) => animationKey(a.name) === (this.doorsOpen ? '002_' : '001_'));
+      if (pose) {
+        const m = new AnimatedModel(f, entry);
+        m.select(pose.name);
+        m.update(pose.frames);
+        tmpl = new THREE.Group().add(m.group);
+      }
+      this.doorPoses.set(key, tmpl);
+    }
+    return tmpl ? tmpl.clone() : null;
+  }
+
+  setDoorsOpen(open: boolean): void {
+    if (this.doorsOpen === open) return;
+    this.doorsOpen = open;
+    this.sync();
+  }
 
   /** Load the object models requested by the last sync, then sync again. */
   private loadRequestedObjects(): void {
@@ -323,6 +361,7 @@ export class View3D {
     this.markerGroup.clear();
     const sel = this.st.selection;
     const ctx = this.showObjects ? this.objectContext?.() ?? null : null;
+    const events = this.objectContext?.()?.events ?? null;
     for (const k of POINT_SECTIONS) {
       if (!this.ctl.layers.sections[k]) continue;
       const L = LAYOUTS[k]!;
@@ -332,7 +371,7 @@ export class View3D {
         // the game's model, when there is one
         const row = ctx ? recordObjectRow(k, r, ctx) : 0;
         const model = row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
-        const place = recordPlacement(k, r, doc, this.st.game.master);
+        const place = recordPlacement(k, r, doc, this.st.game.master, events);
         const rotY = place.angle;
         const ox = place.ox, oz = place.oz;
         if (model) {
@@ -348,7 +387,10 @@ export class View3D {
         }
         let geo: THREE.BufferGeometry = this.markerGeo.sphere;
         let y = MARKER_Y + 60;
-        if (k === 3) {
+        if (k === 7) {
+          geo = P7.visible(r.raw) ? this.markerGeo.door : this.markerGeo.sphere;
+          y = P7.visible(r.raw) ? 90 : MARKER_Y + 60;
+        } else if (k === 3) {
           if ([11, 16, 17].includes(P3.kind(r.raw))) {
             geo = this.markerGeo.door;
             y = 90;

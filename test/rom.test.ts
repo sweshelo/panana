@@ -13,10 +13,10 @@ import { buildArchive, buildMapDb, buildModFiles } from '../src/export/pack';
 import { GsTable } from '../src/archive/gstable';
 import { findByName } from '../src/archive/gsarc';
 import { mapTitle } from '../src/game/names';
-import { P3, letterIndex } from '../src/game/sections';
+import { P3, P7, letterIndex, recEventRow } from '../src/game/sections';
 import { placeStamp, duplicateRecord } from '../src/editor/place';
 import { gimmickTemplates } from '../src/game/templates';
-import { recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
+import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes } from '../src/util/bytes';
@@ -184,6 +184,31 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const door19 = doc.recs[3]!.findIndex((r) => r.x === 19 && r.y === 12);
     expect(pl[door19]).toEqual({ angle: 0, ox: 0, oy: 0, oz: -250 });
     expect(doc.recs[4]!.every((r) => recordPlacement(4, r, doc, game.master).angle === 0)).toBe(true);
+  });
+
+  test('objects: doors on walls (section 7) of M02F01INN', async () => {
+    const info = game.code.byName('M02F01INN')!;
+    const doc = game.doc(info);
+    const events = await game.eventTable(info.dungeon);
+    const ctx = { master: game.master, events, indoor: isIndoor(doc) };
+    const s7 = doc.recs[7]!;
+    expect(s7.map((r) => [r.x, r.y])).toEqual([[3250, 3100], [3750, 3100], [2900, 3750], [3250, 3600], [3750, 3600], [4100, 3750], [3500, 4250]]);
+    // the inn's doors (EventObject 0x14, model +0x46 = gimk_02_door_01 / _03); the last record is an exit
+    expect(s7.map((r) => recordObjectRow(7, r, ctx))).toEqual([4, 4, 6, 4, 4, 6, OBJ_INVISIBLE]);
+    expect(s7.slice(0, 6).every((r) => events!.kind(recEventRow(7, r.raw)) === 0x14)).toBe(true);
+    // FUN_001c6280: y -5, angle from +0x16 (+180° when EventObject +0x48 is set: the rooms on the left mirror
+    // the ones on the right), 50 along the wall (+0x15 flips the way)
+    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [Math.round((p.angle * 180) / Math.PI), p.ox, p.oy, p.oz];
+    expect(s7.map((p) => r(recordPlacement(7, p, doc, game.master, events)))).toEqual([
+      [90, 0, -5, -50], [-90, 0, -5, -50], [180, 50, -5, 0], [90, 0, -5, -50], [-90, 0, -5, -50], [180, -50, -5, 0], [180, 0, -5, 0],
+    ]);
+  });
+
+  test('objects: doors on walls lead to points of other maps (section 3 and 7 IDs)', () => {
+    const docs = game.code.maps.map((m) => game.doc(m));
+    const wallIds = new Set(docs.flatMap((d) => (d.recs[7] ?? []).map((r) => P7.id(r.raw))));
+    // the exits of the houses' rooms come back to the doors of the town
+    expect(docs.flatMap((d) => d.recs[3] ?? []).filter((r) => wallIds.has(P3.destPoint(r.raw))).length).toBe(31);
   });
 
   test('objects: stairs and furniture of S10B01AAA (issue #29)', () => {

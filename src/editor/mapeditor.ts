@@ -112,6 +112,9 @@ export class MapEditor {
       h('button', { title: '既存のダンジョンに新しいマップ (階) を足す', onclick: () => this.addMap() }, '＋ マップを追加'),
       h('div', { class: 'seg' }, ...(['2d', '3d', 'split'] as ViewMode[]).map((m) =>
         h('button', { 'data-mode': m, onclick: () => this.setMode(m) }, m === '2d' ? '2D' : m === '3d' ? '3D' : '分割'))),
+      h('div', { class: 'seg', title: '3D の扉・門を閉じた姿 / 開いた姿で表示する (見た目だけ。データは変えない)' },
+        ...([false, true] as const).map((open) =>
+          h('button', { 'data-doors': open ? 'open' : 'closed', class: open ? '' : 'active', onclick: () => this.setDoorsOpen(open) }, open ? '扉: 開' : '扉: 閉'))),
       h('div', { class: 'seg' },
         h('button', { title: '元に戻す (Ctrl+Z)', onclick: () => st.undo(), 'data-act': 'undo' }, '↶ 戻す'),
         h('button', { title: 'やり直す (Ctrl+Y)', onclick: () => st.redo(), 'data-act': 'redo' }, '↷ やり直し'),
@@ -206,6 +209,12 @@ export class MapEditor {
       this.v2?.draw();
       this.v3?.sync();
     });
+  }
+
+  /** Doors and gates of the 3D view in their open or closed pose (a view setting, the data is unchanged). */
+  private setDoorsOpen(open: boolean): void {
+    this.v3!.setDoorsOpen(open);
+    this.el.querySelectorAll<HTMLButtonElement>('[data-doors]').forEach((b) => b.classList.toggle('active', (b.dataset.doors === 'open') === open));
   }
 
   private async openMap(hash: number): Promise<void> {

@@ -1,5 +1,5 @@
 // Inspector: properties of the selection (tile / point record / rectangle) or of the map.
-import { LAYOUTS, LETTER_DEFAULT, P3, POINT_SECTIONS, letterByte, letterIndex, loadDoc, pointKindLabel, recCellPos, type MapDoc, type Rec } from '../game/sections';
+import { CELL, LAYOUTS, LETTER_DEFAULT, P3, P7, POINT_SECTIONS, recEventRow, letterByte, letterIndex, loadDoc, pointKindLabel, recCellPos, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
 import type { Controller } from './controller';
 import { norm } from './controller';
@@ -15,6 +15,8 @@ import type { SoundNames } from '../game/sound';
 import { mapTitle } from '../game/names';
 import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE } from '../game/objects';
 import { ENT, parseEntrances } from '../game/worldmap';
+
+const UNIT_LABEL = { cell: 'セル', fine: '細かい単位', world: 'ワールド' } as const;
 
 export class Inspector {
   readonly el = h('div', { class: 'inspector' });
@@ -162,14 +164,15 @@ export class Inspector {
     const setU32 = (off: number) => (v: number) => upd((rec) => w32(rec.raw, off, v));
     this.el.append(
       h('h3', {}, h('span', { class: 'dot', style: `background:${SECTION_COLORS[k]}` }), ` ${L.label} #${i}`),
-      this.field(L.unit === 'cell' ? 'x (セル)' : 'x (細かい単位)', this.num(r.x, (v) => upd((rec) => (rec.x = v)))),
-      this.field(L.unit === 'cell' ? 'y (セル)' : 'y (細かい単位)', this.num(r.y, (v) => upd((rec) => (rec.y = v)))),
-      h('div', { class: 'muted' }, `セル (${cx.toFixed(1)}, ${cy.toFixed(1)})` + (L.unit === 'fine' ? '  ワールド = 50 + 値 × 100 (0〜299)' : '')),
+      this.field(`x (${UNIT_LABEL[L.unit]})`, this.num(r.x, (v) => upd((rec) => (rec.x = v)))),
+      this.field(`y (${UNIT_LABEL[L.unit]})`, this.num(r.y, (v) => upd((rec) => (rec.y = v)))),
+      h('div', { class: 'muted' }, `セル (${cx.toFixed(1)}, ${cy.toFixed(1)})` + (L.unit === 'fine' ? '  ワールド = 50 + 値 × 100 (0〜299)' : L.unit === 'world' ? '  1 セル = 500' : '')),
     );
     const ctx = { master: st.game.master, events: st.currentEvents, indoor: isIndoor(doc) };
     const row = recordObjectRow(k, r, ctx);
     if (row) this.el.append(h('div', { class: 'model-line' }, `モデル: ${objectCategory(row)} ${row === OBJ_INVISIBLE ? '' : this.objectName(row)} (mapObject #${row})`));
     if (k === 3) this.point(r, setU32, upd);
+    else if (k === 7) this.wallDoor(r, setU32, upd);
     else if (k === 1) {
       const sel = h('select', { onchange: (e: Event) => upd((rec) => (rec.raw[5] = Number((e.target as HTMLSelectElement).value))) });
       for (const [v, label] of Object.entries(SECTION1_KIND)) sel.append(h('option', { value: v, selected: Number(v) === r.raw[5] }, label));
@@ -202,7 +205,7 @@ export class Inspector {
         );
       if (ev && !ev.has(evRow)) this.el.append(h('div', { class: 'error' }, `イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`));
     }
-    const evRow = k === 3 ? P3.door(r.raw) : k >= 4 ? u32(r.raw, 0) : 0;
+    const evRow = recEventRow(k, r.raw);
     if (evRow || k === 4 || k === 5 || k === 8) this.eventRow(evRow);
     // raw bytes (x / y are overwritten from the fields above)
     const raw = h('textarea', { class: 'raw', rows: 3, value: bytesToHex(r.raw) });
@@ -227,43 +230,67 @@ export class Inspector {
     );
   }
 
-  private point(r: Rec, setU32: (off: number) => (v: number) => void, upd: (f: (rec: Rec) => void) => void): void {
+  /** Section 7: a door (or an exit) on a wall. */
+  private wallDoor(r: Rec, setU32: (off: number) => (v: number) => void, upd: (f: (rec: Rec) => void) => void): void {
+    const byte = (off: number, max: number) => this.num(r.raw[off]!, (v) => upd((rec) => (rec.raw[off] = v & 0xff)), { min: 0, max });
+    this.el.append(
+      this.field('地点 ID (+0x00)', this.hexInput(P7.id(r.raw), setU32(0))),
+      this.field('イベントの行 (+0x04、扉。0 = なし)', this.num(P7.door(r.raw), (v) => setU32(4)(v >>> 0))),
+      ...this.destFields(r, setU32, 8, 0x0c),
+      this.field('種類 (+0x14、0 = 扉、それ以外 = 出口)', byte(0x14, 255)),
+      this.field('向き (+0x16、0〜3。R で回す)', byte(0x16, 3)),
+      this.field('壁に沿ったずらし (+0x15、0 / 1 で 50 ずらす向きが逆)', byte(0x15, 1)),
+      this.field('扉を表示 (+0x17、1 = 扉、0 = 見えない出口)', byte(0x17, 1)),
+    );
+  }
+
+  /** Destination map and point of an exit (the map's u32 at `offMap`, the point ID at `offPoint`). */
+  private destFields(r: Rec, setU32: (off: number) => (v: number) => void, offMap: number, offPoint: number): (HTMLElement | string)[] {
     const st = this.st;
     const game = st.game;
-    const destMap = P3.destMap(r.raw);
+    const destMap = u32(r.raw, offMap);
     const mapSel = h('select', {
-      onchange: (e: Event) => setU32(4)(Number((e.target as HTMLSelectElement).value) >>> 0),
+      onchange: (e: Event) => setU32(offMap)(Number((e.target as HTMLSelectElement).value) >>> 0),
     });
     fillMapSelect(mapSel, game, destMap, true);
 
-    const destPoint = P3.destPoint(r.raw);
+    const destPoint = u32(r.raw, offPoint);
     let pointSel: HTMLElement;
     const destInfo = destMap ? game.code.byHash(destMap) : undefined;
     if (destInfo) {
       const dd = st.docs.get(destMap) ?? loadDoc(game.db, destInfo);
-      const sel = h('select', { onchange: (e: Event) => setU32(8)(Number((e.target as HTMLSelectElement).value) >>> 0) });
-      const ids = (dd.recs[3] ?? []).map((p) => ({ id: P3.id(p.raw), label: pointLabel(p.raw, p.x, p.y) }));
+      const sel = h('select', { onchange: (e: Event) => setU32(offPoint)(Number((e.target as HTMLSelectElement).value) >>> 0) });
+      // exits lead to section 3 points or to the doors on walls (section 7) of the other map
+      const ids = [
+        ...(dd.recs[3] ?? []).map((p) => ({ id: P3.id(p.raw), label: pointLabel(p.raw, p.x, p.y) })),
+        ...(dd.recs[7] ?? []).map((p) => ({ id: P7.id(p.raw), label: `${P7.visible(p.raw) ? '壁の扉' : '壁の出口'} (${(p.x / CELL).toFixed(1)}, ${(p.y / CELL).toFixed(1)})` })),
+      ];
       if (!ids.some((p) => p.id === destPoint)) sel.append(h('option', { value: destPoint, selected: true }, `${hex8(destPoint)} (行き先にない)`));
       for (const p of ids) sel.append(h('option', { value: p.id, selected: p.id === destPoint }, p.label));
       pointSel = sel;
     } else if (destMap && game.code.world(destMap)) {
       // Leaving to the world map: the point is the ID of one of its entrances (docs/worldmap.md §6).
       const w = game.code.world(destMap)!;
-      const sel = h('select', { onchange: (e: Event) => setU32(8)(Number((e.target as HTMLSelectElement).value) >>> 0) });
+      const sel = h('select', { onchange: (e: Event) => setU32(offPoint)(Number((e.target as HTMLSelectElement).value) >>> 0) });
       const ents = parseEntrances(game.db.get(w.sections[2]!));
       if (!ents.some((r) => ENT.id(r) === destPoint)) sel.append(h('option', { value: destPoint, selected: true }, `${hex8(destPoint)} (ワールドマップにない)`));
       for (const r of ents)
         sel.append(h('option', { value: ENT.id(r), selected: ENT.id(r) === destPoint }, `入口 ${hex8(ENT.id(r))} (${ENT.x(r)}, ${ENT.y(r)}) → ${mapLabel(game, ENT.destMap(r))}`));
       pointSel = sel;
-    } else pointSel = this.hexInput(destPoint, setU32(8));
+    } else pointSel = this.hexInput(destPoint, setU32(offPoint));
+    return [
+      this.field(`行き先マップ (+0x${offMap.toString(16).padStart(2, '0').toUpperCase()})`, mapSel),
+      destMap ? h('div', { class: 'muted small' }, `${mapLabel(game, destMap)}  ${game.code.byHash(destMap)?.name ?? ''}`) : '',
+      destMap && game.code.world(destMap) ? h('a', { class: 'small', href: worldHref(game.code.world(destMap)!.code, destPoint) }, 'ワールドマップでこの入口を開く') : '',
+      this.field(`行き先の地点 (+0x${offPoint.toString(16).padStart(2, '0').toUpperCase()})`, pointSel),
+    ];
+  }
 
+  private point(r: Rec, setU32: (off: number) => (v: number) => void, upd: (f: (rec: Rec) => void) => void): void {
     const kindInput = this.num(P3.kind(r.raw), (v) => upd((rec) => (rec.raw[0x14] = v & 0xff)), { min: 0, max: 255 });
     this.el.append(
       this.field('地点 ID (+0x00)', this.hexInput(P3.id(r.raw), setU32(0))),
-      this.field('行き先マップ (+0x04)', mapSel),
-      destMap ? h('div', { class: 'muted small' }, `${mapLabel(game, destMap)}  ${game.code.byHash(destMap)?.name ?? ''}`) : '',
-      destMap && game.code.world(destMap) ? h('a', { class: 'small', href: worldHref(game.code.world(destMap)!.code, destPoint) }, 'ワールドマップでこの入口を開く') : '',
-      this.field('行き先の地点 (+0x08)', pointSel),
+      ...this.destFields(r, setU32, 4, 8),
       this.field('イベントの行 (+0x0C、扉・ワープなど。0 = なし)', this.num(P3.door(r.raw), (v) => setU32(0x0c)(v >>> 0))),
       this.field(`種類 (+0x14) ${pointKindLabel(P3.kind(r.raw))}`, kindInput),
       this.field('補助 (+0x15)', this.num(P3.aux(r.raw), (v) => upd((rec) => (rec.raw[0x15] = v & 0xff)), { min: 0, max: 255 })),
@@ -317,7 +344,6 @@ export class Inspector {
           ),
         ),
         h('tr', {}, h('td', {}, '6 敵が出ないセル'), h('td', {}, String(doc.cells6.length)), h('td', {}, changed.includes(6) ? '変更' : '')),
-        h('tr', {}, h('td', {}, '7 (未対応・保持)'), h('td', {}, `${doc.raw[7]?.length ?? 0} B`), h('td', {}, '')),
       ),
       st.currentEvents
         ? h('button', { onclick: () => openEventList(st, (m, sec, i) => this.gotoRecord(m, sec, i)) }, `イベントの一覧… (${st.currentEvents.rows} 行)`)
