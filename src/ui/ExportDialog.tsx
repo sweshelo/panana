@@ -56,6 +56,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
     if (game.master.treasureChanged()) changes.push(`宝箱の中身 (${MASTER_ARCHIVE})`);
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
+    if (session.book?.directChanged()) changes.push(`ワザの演出 (${MONSTER_DESIGN_ARCHIVE} の directData.bin)`);
     const shops = session.stock;
     if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
     const texts = [...game.master.texts.editedIds(), ...game.master.texts.addedIds()];
@@ -70,7 +71,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
-      if (session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
+      if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, what.extra);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
       return pkg;

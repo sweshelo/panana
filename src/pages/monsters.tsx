@@ -143,7 +143,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
       </div>
       <div className="book-cols monster-cols">
         <DropEditor session={session} {...p} />
-        <SkillEditor actions={actions} {...p} />
+        <SkillEditor session={session} actions={actions} {...p} />
         <BossEditor session={session} actions={actions} {...p} />
       </div>
       <h3 className="with-info">耐性<InfoTip text={RESIST_INFO} /></h3>

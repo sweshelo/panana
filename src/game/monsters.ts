@@ -368,28 +368,58 @@ export class MonsterBook {
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
   private readonly design: GsTable;
-  private readonly designArc: Archive;
   private readonly designEntry: ArcEntry;
   private readonly designOriginal: Uint8Array;
-  /** directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). */
+  /**
+   * directData.bin of the same archive: the performance of each action (actionData +0x1E; actions.ts). Edits to it
+   * (new rows for a changed motion) are exported with this archive ({@link buildDesignArchive}).
+   */
   readonly directData: GsTable | null;
+  private readonly designArchive: Archive;
+  private readonly directEntry: ArcEntry | null;
+  private readonly directOriginal: Uint8Array | null;
   readonly battle: BattleParams;
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
 
   constructor(private readonly master: Master, designArchive: Uint8Array) {
-    this.designArc = parseArchive(designArchive);
-    const f = findByName(this.designArc, 'monsterDesign.bin');
+    this.designArchive = parseArchive(designArchive);
+    const f = findByName(this.designArchive, 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
     this.design = new GsTable(f.body);
     this.designEntry = f.entry;
     this.designOriginal = f.body.slice();
-    const dd = findByName(this.designArc, 'directData.bin');
+    const dd = findByName(this.designArchive, 'directData.bin');
     this.directData = dd ? new GsTable(dd.body) : null;
+    this.directEntry = dd?.entry ?? null;
+    this.directOriginal = dd ? dd.body.slice() : null;
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));
     this.reload();
+  }
+
+  /** Rows of directData in the archive (rows past it were added by an edit). */
+  get directOriginalRows(): number {
+    return this.directOriginal ? u32(this.directOriginal, 0) : 0;
+  }
+
+  /** Whether directData differs from the archive. */
+  directChanged(): boolean {
+    return !!this.directData && !equalBytes(this.directData.data, this.directOriginal!);
+  }
+
+  /** Put saved directData bytes back (restoring the edits of an earlier visit). */
+  restoreDirect(bytes: Uint8Array): void {
+    if (this.directData) this.directData.data = bytes.slice();
+  }
+
+  /** 2713402F with the edited directData and monsterDesign (every other entry copied verbatim). */
+  buildDesignArchive(): Uint8Array {
+    const repl = new Map<number, Uint8Array>();
+    if (this.directEntry && this.directChanged()) repl.set(this.directEntry.index, this.directData!.data);
+    if (this.designChanged()) repl.set(this.designEntry.index, this.design.data);
+    return rebuildArchive(this.designArchive, repl);
   }
 
   /** Decode every MonsterParameter and monsterGroup row again (after edits or restoring saved edits). */
@@ -610,10 +640,7 @@ export class MonsterBook {
     this.design.data = bytes.slice();
   }
 
-  /** MONSTER_DESIGN_ARCHIVE with the edited monsterDesign.bin (every other entry copied verbatim). */
-  buildDesignArchive(): Uint8Array {
-    return rebuildArchive(this.designArc, new Map([[this.designEntry.index, this.design.data]]));
-  }
+
 
   /** What refers to a row (groups, fixed battles and other rows' next form). */
   users(row: number): MonsterUsers {

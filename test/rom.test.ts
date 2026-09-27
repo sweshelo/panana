@@ -478,6 +478,56 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(skillAnims / total).toBeGreaterThan(0.5);
   });
 
+  test('action edits: a copy with its own motion (まおう\'s デスブロー as skill D), export and read back', async () => {
+    const { ActionBook, ActionEdits } = await import('../src/game/actions');
+    const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    const dd = book.directData!;
+    expect([dd.rows, dd.rowSize, book.directOriginalRows]).toEqual([1026, 20, 1026]);
+    const edits = new ActionEdits(g2.master, dd, book.directOriginalRows);
+    const before = new ActionBook(g2.master, () => '', dd);
+    // 509 デスブロー and 510 まおうけん share performance row 823 (skill B)
+    expect([before.action(509)!.performance, before.action(510)!.performance, before.motion(509)]).toEqual([823, 823, 0x46]);
+    const n = edits.copy(509);
+    expect(n).toBe(672);
+    expect(edits.added(n)).toBe(true);
+    edits.setMotion(n, 0x48);
+    let acts = new ActionBook(g2.master, () => '', dd);
+    expect(acts.action(n)!.name).toBe('デスブロー');
+    expect(acts.action(n)!.performance).toBe(1026); // a new performance row, the same but for the anim
+    expect(acts.motion(n)).toBe(0x48);
+    expect([...dd.row(1026)].filter((b, i) => b !== dd.row(823)[i])).toEqual([0x48]);
+    expect([acts.motion(509), acts.motion(510), acts.action(509)!.performance]).toEqual([0x46, 0x46, 823]);
+    // back to skill B: the archive's row again; skill D again: the row added before
+    edits.setMotion(n, 0x46);
+    expect(new ActionBook(g2.master, () => '', dd).action(n)!.performance).toBe(823);
+    edits.setMotion(n, 0x48);
+    acts = new ActionBook(g2.master, () => '', dd);
+    expect([acts.action(n)!.performance, dd.rows]).toEqual([1026, 1027]);
+    // an original row changes through a new performance row too
+    edits.setElement(510, 8);
+    edits.setMotion(510, 0x47);
+    acts = new ActionBook(g2.master, () => '', dd);
+    expect([acts.action(510)!.element, acts.motion(510), acts.motion(509), dd.rows]).toEqual([8, 0x47, 0x46, 1028]);
+    expect(edits.changed(510)).toBe(true);
+    book.setSkills(46, [n, 510]);
+    expect(book.directChanged()).toBe(true);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    files.set(MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
+    const b2 = await again.monsters();
+    const a2 = new ActionBook(again.master, () => '', b2.directData);
+    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブロー'], [510, 'まおうけん']]);
+    expect([a2.motion(n), a2.motion(510), a2.motion(509), a2.action(510)!.element]).toEqual([0x48, 0x47, 0x46, 8]);
+    expect(b2.directData!.rows).toBe(1028);
+    edits.revert(510);
+    expect(edits.changed(510)).toBe(false);
+    // an unedited design archive has nothing to export
+    const fresh = await (await Game.load(await openImage(Bun.file(CIA), 'cia'))).monsters();
+    expect(fresh.directChanged()).toBe(false);
+  });
+
   test('actions: item effects and references', async () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();
