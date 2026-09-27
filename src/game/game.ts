@@ -6,6 +6,7 @@ import { hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
+import type { CodePatch } from './patch';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
 import { Master, MASTER_ARCHIVE, type MapRef } from './master';
 import { isIndoor } from './objects';
@@ -34,6 +35,8 @@ export class Game {
   baseMod: BaseMod | null = null;
   /** Version of the generic switch patch in code.bin (0 = none; docs/events.md §7). */
   switchVersion = 0;
+  /** Code patches (game/patch.ts), exported in code.ips when enabled. */
+  codePatches: CodePatch[] = [];
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;

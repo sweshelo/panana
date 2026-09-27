@@ -223,11 +223,13 @@ export interface ScriptClass {
  * Describe the classes: roots = vtable entries unique among `built` plus the callbacks the builds registered;
  * then the messages / completed rows reachable from them.
  */
-export function describeClasses(code: Uint8Array, built: BuiltAction[]): Map<number, ScriptClass> {
+export function describeClasses(code: Uint8Array, built: BuiltAction[], others: Iterable<number> = []): Map<number, ScriptClass> {
   const vtables = new Set(built.map((b) => b.vtable));
-  const index = new CodeIndex(code, vtables);
+  // entries shared with any script class (`others`: the classes of the other rows) are not the class's own
+  const all = new Set([...vtables, ...others]);
+  const index = new CodeIndex(code, all);
   const shared = new Map<number, number>();
-  for (const vt of vtables) for (const e of vtableEntries(code, vt)) shared.set(e, (shared.get(e) ?? 0) + 1);
+  for (const vt of all) for (const e of vtableEntries(code, vt)) shared.set(e, (shared.get(e) ?? 0) + 1);
   const pointers = new Map<number, Set<number>>();
   for (const b of built) {
     let s = pointers.get(b.vtable);

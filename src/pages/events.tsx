@@ -8,6 +8,7 @@ import { mapShortTitle } from '../game/names';
 import { fnName } from '../game/codemessages';
 import { aiBundle, eventText, GAME_CONTEXT, type EventDescription } from '../game/aiprompt';
 import { AskAi } from '../ui/AskAi';
+import { PatchPanel } from '../ui/PatchPanel';
 import { CodeIndex } from '../game/scripts';
 import { scriptListing, type AsmFunction } from '../game/scriptasm';
 import type { Session } from '../session';
@@ -49,7 +50,8 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
   const byKey = useMemo(() => new Map((entries ?? []).map((e) => [key(e), e])), [entries]);
   const completers = useMemo(() => completedBy(entries ?? []), [entries]);
   /** Function bounds of code.bin with every script class's vtable entries (for the listings). */
-  const index = useMemo(() => (entries ? new CodeIndex(game.code.code, new Set(entries.flatMap((e) => e.scripts.map((s) => s.cls.vtable)))) : null), [game, entries]);
+  const vtables = useMemo(() => [...new Set((entries ?? []).flatMap((e) => e.scripts.map((s) => s.cls.vtable)))], [entries]);
+  const index = useMemo(() => (entries ? new CodeIndex(game.code.code, vtables) : null), [game, entries, vtables]);
   const selected = useSticky(arg, (k) => !entries || byKey.has(k), () => (entries?.[0] ? key(entries[0]) : ''));
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${entries?.length}`);
@@ -99,14 +101,14 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
         </div>
       </div>
       <div className="book-detail">
-        {entries && index && <EventDetail key={selected} session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} index={index} />}
+        {entries && index && <EventDetail key={selected} session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} index={index} vtables={vtables} />}
       </div>
     </div>
   );
 }
 
-function EventDetail({ session, entry: e, byKey, completers, index }: {
-  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>; index: CodeIndex;
+function EventDetail({ session, entry: e, byKey, completers, index, vtables }: {
+  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>; index: CodeIndex; vtables: number[];
 }): ReactNode {
   const { game } = session;
   const master = game.master;
@@ -223,6 +225,8 @@ function EventDetail({ session, entry: e, byKey, completers, index }: {
               {showCode && listing.map((f) => <AsmView key={f.addr} fn={f} />)}
               <h3>AI に聞く</h3>
               <AskAi system={GAME_CONTEXT} context={() => eventText(describe())} />
+              <h3>パッチ</h3>
+              <PatchPanel session={session} entry={e} eventRow={e.raw} allVtables={vtables} eventText={() => eventText(describe())} />
             </>
           )}
         </>
