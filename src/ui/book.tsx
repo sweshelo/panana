@@ -65,12 +65,18 @@ export const EditedMark = ({ title = '変更した', text = '●' }: { title?: s
 );
 
 /**
- * A number box that applies its value when it is left or Enter is pressed (like the DOM's change event);
- * a value outside min..max goes back to the current one.
+ * A number box that applies a typed value when it is left or Enter is pressed (like the DOM's change event), and a
+ * step of its spinner / arrow keys at once; a value outside min..max goes back to the current one.
  */
 export function NumberInput({ value, min, max, className = 'num-input', title, onCommit }: {
   value: number; min: number; max: number; className?: string; title?: string; onCommit: (v: number) => void;
 }): ReactNode {
+  const ref = useRef<HTMLInputElement>(null);
+  // follow the value from outside (undo, another pane) unless the box is being typed in
+  useEffect(() => {
+    const el = ref.current;
+    if (el && document.activeElement !== el) el.value = String(value);
+  }, [value]);
   const commit = (el: HTMLInputElement): void => {
     const v = Math.round(Number(el.value));
     if (el.value !== '' && Number.isFinite(v) && v >= min && v <= max) {
@@ -79,7 +85,7 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
   };
   return (
     <input
-      key={value}
+      ref={ref}
       type="number"
       min={min}
       max={max}
@@ -88,6 +94,9 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
       title={title}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => e.key === 'Enter' && commit(e.currentTarget)}
+      // the spinner buttons and the arrow keys step the value without typing: apply it at once (typing waits for
+      // Enter / leaving the box, so a half-typed number is not applied)
+      onInput={(e) => !(e.nativeEvent as InputEvent).inputType && commit(e.currentTarget)}
     />
   );
 }
