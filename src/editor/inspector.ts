@@ -267,7 +267,8 @@ export class Inspector {
       this.field('イベントの行 (+0x0C、扉・ワープなど。0 = なし)', this.num(P3.door(r.raw), (v) => setU32(0x0c)(v >>> 0))),
       this.field(`種類 (+0x14) ${pointKindLabel(P3.kind(r.raw))}`, kindInput),
       this.field('補助 (+0x15)', this.num(P3.aux(r.raw), (v) => upd((rec) => (rec.raw[0x15] = v & 0xff)), { min: 0, max: 255 })),
-      this.field('フラグ (+0x18)', this.hexInput(P3.flags(r.raw), setU32(0x18))),
+      this.field('セル内の位置 (+0x19、3×3: 0 = 左上、4 = 中央、8 = 右下)', this.num(P3.slot(r.raw), (v) => upd((rec) => (rec.raw[0x19] = v & 0xff)), { min: 0, max: 8 })),
+      this.field('扉のずらし (+0x1A、0 = 100、それ以外 = 250)', this.num(P3.doorStep(r.raw), (v) => upd((rec) => (rec.raw[0x1a] = v & 0xff)), { min: 0, max: 255 })),
     );
   }
 
