@@ -118,7 +118,7 @@ export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: numb
         w32(raw, 0x00, newPointId(ctx.docs));
         w32(raw, 0x0c, evRow);
         raw[0x14] = 17;
-        w32(raw, 0x18, 0x400);
+        raw[0x19] = 4; // slot: centre of the cell
         stamp.gate = evRow;
         return add(3, raw);
       }

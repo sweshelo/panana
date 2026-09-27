@@ -71,6 +71,8 @@ a { color: #8fb6ff; }
 header { grid-area: head; display: flex; gap: 8px; align-items: center; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--border); }
 header .title { margin-right: 6px; }
 .map-select { min-width: 220px; }
+.map-button { text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-table tr.group th { top: 0; color: var(--muted); font-weight: normal; }
 .seg { display: inline-flex; gap: 2px; }
 aside { overflow: auto; padding: 8px 10px; background: var(--panel); }
 aside.left { grid-area: left; border-right: 1px solid var(--border); }
@@ -130,7 +132,8 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .loot { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .loot-row { display: grid; grid-template-columns: 1fr 64px 40px 28px; gap: 4px; align-items: center; }
 .loot-row input[type='number'] { width: 100%; }
-.loot-item { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loot-item { display: flex; align-items: center; gap: 4px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loot-item .photo, .loot-item .photo img { width: 24px; height: 24px; flex: none; }
 .loot-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
 .loot-add { border-style: dashed; color: var(--muted); }
 
