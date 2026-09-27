@@ -1,5 +1,5 @@
 // A message (GMSG text) as a reader sees it, and its editor: shared by the message page, the shop page and
-// the map inspector (through src/editor/message.ts).
+// the map inspector.
 import { useState, type ReactNode } from 'react';
 import { hexId } from '../editor/message';
 import type { MessageStore } from '../game/gmsg';
