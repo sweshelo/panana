@@ -239,7 +239,17 @@ select.edited { border-color: var(--warn); }
 
 /* Encounter groups */
 .group-slots select { max-width: 120px; }
-.group-photos { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.group-photos { display: inline-flex; vertical-align: middle; flex-wrap: wrap; gap: 3px; align-items: center; }
+.group-pick { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 8px 2px 4px; text-align: left; width: 100%; }
+.group-side { margin: 4px 0; }
+.group-side-title { color: var(--muted); font-size: 11px; margin-bottom: 2px; }
+.group-tiles { display: flex; flex-wrap: wrap; gap: 4px; }
+.group-tile { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 64px; padding: 3px 2px; border-radius: 4px; background: var(--panel); color: var(--text); text-decoration: none; font-size: 11px; }
+.group-tile:hover { background: #26324a; }
+.group-tile-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-tile-meta { color: var(--muted); font-variant-numeric: tabular-nums; }
+.group-picker { display: flex; flex-direction: column; height: 64vh; padding-bottom: 12px; }
+.group-picker input[type='search'] { flex: 1; min-width: 0; padding: 4px 6px; }
 .monster-pick { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; text-align: left; }
 .monster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 6px; }
 .monster-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; font-size: 12px; }
@@ -269,7 +279,8 @@ select.edited { border-color: var(--warn); }
 .desc-table { max-width: 720px; font-size: 13px; }
 .desc-table th { width: 7em; vertical-align: top; padding: 4px 8px 4px 0; white-space: nowrap; }
 .desc-table td { padding: 4px 0; border-bottom: 1px solid var(--border); }
-.item-fields .stat .num-input { width: 90px; }
+.item-fields .stat > span:last-child { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.item-fields .stat .num-input { flex: 1; width: 0; min-width: 0; }
 input.edited { border-color: var(--warn); }
 
 /* messages */
