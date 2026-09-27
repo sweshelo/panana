@@ -15,6 +15,7 @@ import { validateWorld } from '../src/editor/validate';
 import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
 import { ArmMachine } from '../src/game/arm';
+import { disassemble } from '../src/game/disasm';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -605,5 +606,29 @@ describe('ARM interpreter (game/arm.ts)', () => {
   test('stubs replace calls', () => {
     const m = new ArmMachine(code, { stubs: new Map([[0x100024, () => 7]]) });
     expect(m.run(0x100000, [2, 3])).toBe(10);
+  });
+});
+
+describe('ARM disassembler (game/disasm.ts)', () => {
+  const d = (w: number, a = 0x100000) => disassemble(w, a).text;
+  test('capstone-style text', () => {
+    expect(d(0xe92d4010)).toBe('push {r4, lr}');
+    expect(d(0xe8bd8010)).toBe('pop {r4, pc}');
+    expect(d(0xe3500010)).toBe('cmp r0, #0x10');
+    expect(d(0xc3a00001)).toBe('movgt r0, #1');
+    expect(d(0xe0800080)).toBe('add r0, r0, r0, lsl #1');
+    expect(d(0xe1a00801)).toBe('lsl r0, r1, #0x10');
+    expect(d(0xe59f0024, 0x31bae0)).toBe('ldr r0, [pc, #0x24]');
+    expect(disassemble(0xe59f0024, 0x31bae0).literal).toBe(0x31bb0c);
+    expect(d(0xe5c60080)).toBe('strb r0, [r6, #0x80]');
+    expect(d(0xe1d430b2)).toBe('ldrh r3, [r4, #2]');
+    expect(d(0xeb03089e, 0x2587ac)).toBe('bl #0x31aa2c');
+    expect(d(0x0a000014, 0x1d1984)).toBe('beq #0x1d19dc');
+    expect(d(0xe12fff1e)).toBe('bx lr');
+    expect(d(0xe6ff2071)).toBe('uxth r2, r1');
+    expect(d(0xed2d8b02)).toBe('vpush {d8}');
+    expect(d(0xed9f8a9d)).toBe('vldr s16, [pc, #0x274]');
+    expect(d(0xeef1fa10)).toBe('vmrs apsr_nzcv, fpscr');
+    expect(d(0xeeb70a00)).toBe('vmov.f32 s0, #1');
   });
 });

@@ -297,3 +297,11 @@ input.edited { border-color: var(--warn); }
 .world-scroll canvas { display: block; image-rendering: pixelated; touch-action: none; }
 .world-hover { height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .warn-mark { color: var(--warn); }
+
+/* Event page: annotated assembly */
+.asm-fn { margin: 6px 0; }
+.asm-fn summary { cursor: pointer; }
+.asm { background: var(--panel2); border-radius: 4px; padding: 8px 10px; font-size: 12px; line-height: 1.5; overflow-x: auto; margin: 4px 0 8px; }
+.asm-addr { color: var(--muted); }
+.asm-label { color: #e0b060; }
+.asm-note { color: #7fc79a; }

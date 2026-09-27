@@ -433,7 +433,7 @@ export class ArmMachine {
       }
       return null;
     }
-    if ((w & 0x0fff0fff) === 0x0ef1fa10 || (w & 0x0ff00fff) === 0x0ef10a10) {
+    if ((w & 0x0fff0fff) === 0x0ef10a10) {
       // VMRS APSR_nzcv, fpscr: say "greater"
       if (((w >>> 12) & 15) === 15) {
         this.n = false;

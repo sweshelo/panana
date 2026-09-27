@@ -652,6 +652,25 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
     expect(d01(36).conditions).toEqual([{ field: 0x4c, type: 0xb0, value: 4, text: '0x91[0x04] = 2' }]);
   });
 
+  test('annotated assembly of a script (D01 row 2: the switch that opens row 10)', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const { eventEntries } = await import('../src/game/eventlist');
+    const { CodeIndex } = await import('../src/game/scripts');
+    const { scriptListing, listingText } = await import('../src/game/scriptasm');
+    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
+    const index = new CodeIndex(game.code.code, new Set(entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable))));
+    const fns = scriptListing({ code: game.code.code, message: (id) => game.master.texts.plain(id) }, index, e.scripts[0]!.cls);
+    expect(fns[0]!.addr).toBe(0x258904); // vtable[1]
+    expect(fns[0]!.lines.length).toBe(8); // not cut at the push
+    const text = listingText(fns);
+    expect(text).toContain('bl #0x31aa2c'); // docs/events.md §5: open row 10 with animation 0x53 and sound 0x5C
+    expect(text).toContain('行を完了する (行=10)');
+    expect(text).toContain('アニメを再生する (s0 = 速さ, s1 = 開始位置) (アニメ=0x53)');
+    expect(text).toContain('効果音を鳴らす (番号=0x5C)');
+    expect(text).toContain('ありゃ、重さが足りないんですかねえ');
+  });
+
   test('condition types are read from FUN_0030B8A4', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { readConditionTypes } = await import('../src/game/conditions');

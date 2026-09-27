@@ -122,6 +122,7 @@ export class CodeIndex {
   ) {
     const end = Math.min(TEXT_END, BASE + code.length);
     const starts = new Set<number>();
+    const pushes: number[] = [];
     for (let a = BASE; a < end; a += 4) {
       const w = u32(code, a - BASE);
       const t = blTarget(w, a);
@@ -129,9 +130,11 @@ export class CodeIndex {
         this.fanin.set(t, (this.fanin.get(t) ?? 0) + 1);
         starts.add(t);
       }
-      if ((w & 0xffff4000) >>> 0 === 0xe92d4000) starts.add(a); // push {..., lr}
+      if ((w & 0xffff4000) >>> 0 === 0xe92d4000) pushes.push(a); // push {..., lr}
     }
     for (const vt of vtables) for (const e of vtableEntries(code, vt)) if (e >= BASE && e < end) starts.add(e);
+    // a push starts a function, unless a known start is just before it (a few instructions before the push)
+    for (const a of pushes) if (!starts.has(a - 4) && !starts.has(a - 8)) starts.add(a);
     this.startSet = starts;
     this.starts = [...starts].sort((a, b) => a - b);
   }

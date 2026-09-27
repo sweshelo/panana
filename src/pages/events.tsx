@@ -6,6 +6,9 @@ import { completedBy, eventEntries, type EventEntry } from '../game/eventlist';
 import { EVENT_KINDS, kindName } from '../game/eventkinds';
 import { mapShortTitle } from '../game/names';
 import { fnName } from '../game/codemessages';
+import { aiBundle } from '../game/aiprompt';
+import { CodeIndex } from '../game/scripts';
+import { scriptListing, type AsmFunction } from '../game/scriptasm';
 import type { Session } from '../session';
 import { Count, ListFilter, useActiveRow, useSticky, type PageProps } from '../ui/book';
 
@@ -44,6 +47,8 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
   }, [game, session, visit]);
   const byKey = useMemo(() => new Map((entries ?? []).map((e) => [key(e), e])), [entries]);
   const completers = useMemo(() => completedBy(entries ?? []), [entries]);
+  /** Function bounds of code.bin with every script class's vtable entries (for the listings). */
+  const index = useMemo(() => (entries ? new CodeIndex(game.code.code, new Set(entries.flatMap((e) => e.scripts.map((s) => s.cls.vtable)))) : null), [game, entries]);
   const selected = useSticky(arg, (k) => !entries || byKey.has(k), () => (entries?.[0] ? key(entries[0]) : ''));
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${entries?.length}`);
@@ -93,19 +98,46 @@ export function EventPage({ session, arg, visit }: PageProps): ReactNode {
         </div>
       </div>
       <div className="book-detail">
-        {entries && <EventDetail session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} />}
+        {entries && index && <EventDetail key={selected} session={session} entry={byKey.get(selected)} byKey={byKey} completers={completers} index={index} />}
       </div>
     </div>
   );
 }
 
-function EventDetail({ session, entry: e, byKey, completers }: {
-  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>;
+function EventDetail({ session, entry: e, byKey, completers, index }: {
+  session: Session; entry: EventEntry | undefined; byKey: Map<string, EventEntry>; completers: Map<string, EventEntry[]>; index: CodeIndex;
 }): ReactNode {
   const { game } = session;
   const master = game.master;
   const texts = master.texts;
+  const [showCode, setShowCode] = useState(false);
+  const [copied, setCopied] = useState('');
+  const message = (id: number): string | undefined => texts.plain(id)?.replace(/\s+/g, ' ');
+  const listing = useMemo(
+    (): AsmFunction[] => (e && showCode ? e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls)) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [e, showCode, index, game],
+  );
   if (!e) return null;
+  const bundle = (): string => {
+    const fns = e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls));
+    return aiBundle({ dungeonName: master.dungeonName(e.dungeon) || `D${e.dungeon}`, entry: e, places: e.places.map((p) => `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`), listing: fns, message });
+  };
+  const copy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(bundle());
+      setCopied('コピーしました');
+    } catch {
+      setCopied('コピーできませんでした (「テキストで保存」を使ってください)');
+    }
+  };
+  const save = (): void => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bundle()], { type: 'text/plain' }));
+    a.download = `event-${e.dungeon}-${e.row}.txt`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
   const dungeonName = (d: number): string => master.dungeonName(d) || `ダンジョン ${d}`;
   const rowLink = (row: number): ReactNode => {
     const t = byKey.get(`${e.dungeon}.${row}`);
@@ -174,6 +206,18 @@ function EventDetail({ session, entry: e, byKey, completers }: {
             </Fragment>
           ))}
           <div className="muted small">クラスは、ゲームの「動作の生成」関数をこの行で実際に動かして求めています。メッセージは、そのクラスだけが持つ関数から呼ばれる関数が読み込む ID で、進行や選択肢で出し分けるものをすべて含みます。</div>
+          {e.scripts.length > 0 && (
+            <>
+              <h3>コード</h3>
+              <div className="row">
+                <button onClick={() => setShowCode(!showCode)}>{showCode ? 'アセンブラを閉じる' : 'アセンブラを見る'}</button>
+                <button title="ゲームの説明・この行の情報・注釈つきのアセンブラをまとめてコピーします。AI のチャットに貼って意味を聞けます" onClick={copy}>AI 用にコピー</button>
+                <button onClick={save}>テキストで保存</button>
+                {copied && <span className="muted small">{copied}</span>}
+              </div>
+              {showCode && listing.map((f) => <AsmView key={f.addr} fn={f} />)}
+            </>
+          )}
         </>
       )}
       {by.length > 0 && (
@@ -183,5 +227,28 @@ function EventDetail({ session, entry: e, byKey, completers }: {
         </>
       )}
     </>
+  );
+}
+
+/** One function of a listing: address, instruction and note per line. */
+function AsmView({ fn }: { fn: AsmFunction }): ReactNode {
+  return (
+    <details className="asm-fn" open={fn.role.startsWith('vtable') || fn.role === 'コールバック'}>
+      <summary>
+        <b>{fnName(fn.addr)}</b> <span className="muted small">{`${fn.role}、${fn.lines.length} 命令、呼び出し元 ${fn.callers} か所`}</span>
+      </summary>
+      <pre className="asm">
+        {fn.lines.map((l) => (
+          <Fragment key={l.insn.addr}>
+            {l.label && <span className="asm-label">{`${l.label}:\n`}</span>}
+            <span className="asm-addr">{l.insn.addr.toString(16).toUpperCase().padStart(8, '0')}</span>
+            {'  '}
+            {l.insn.text.padEnd(36)}
+            {l.note && <span className="asm-note">{` ; ${l.note}`}</span>}
+            {'\n'}
+          </Fragment>
+        ))}
+      </pre>
+    </details>
   );
 }
