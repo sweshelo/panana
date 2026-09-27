@@ -3,7 +3,7 @@
 // base infliction level of a skill; bit29-31 = usable in battle / house / field), +4 u32 name message,
 // +0x18 / +0x1A s16 amount (min / max). The other bytes are not analysed and are shown as they are.
 import type { GsTable } from '../archive/gstable';
-import { s16, u16, u32 } from '../util/bytes';
+import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
 import type { Master } from './master';
 
 /**
@@ -143,5 +143,125 @@ export class ActionBook {
 
   refsOf(row: number): ActionRefs {
     return this.refs.get(row) ?? { items: [], monsters: [] };
+  }
+}
+
+/** Offset of the anim number in a performance row (the animData row the user plays). */
+export const PERFORMANCE_ANIM = 0x0a;
+
+/** A hash for a new row of a table with a hash index, not used by any other row. */
+function newHash(t: GsTable, base: number): number {
+  const used = t.hashes();
+  let hash = (base + t.rows) >>> 0;
+  while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+  return hash;
+}
+
+/**
+ * Edits of actionData rows: copying a row as a new action, its name, element, infliction level, amount, and its
+ * motion. The motion lives in the performance row (directData), which several actions may share, so a changed
+ * motion goes to a performance row with the same bytes and the new anim: an existing one when there is such a row,
+ * else a copy appended to directData. Rows of the archive are never changed in place (code.bin may name some).
+ */
+export class ActionEdits {
+  constructor(
+    private readonly master: Master,
+    /** directData (MonsterBook.directData), or null when it could not be read. */
+    private readonly performances: GsTable | null,
+    /** Rows of directData in the archive (MonsterBook.directOriginalRows). */
+    private readonly performanceRows: number,
+  ) {}
+
+  private get table(): GsTable {
+    return this.master.table('actionData.bin');
+  }
+
+  private row(row: number): Uint8Array {
+    return this.table.row(row);
+  }
+
+  /** Whether a row was added by {@link copy}. */
+  added(row: number): boolean {
+    return row >= this.master.originalRows('actionData.bin');
+  }
+
+  /** Whether a row differs from the archive (added rows always do). */
+  changed(row: number): boolean {
+    return this.added(row) || !equalBytes(this.row(row), this.master.originalRow('actionData.bin', row));
+  }
+
+  /** Put a row of the archive back as it was (added rows are kept). */
+  revert(row: number): void {
+    if (!this.added(row)) this.row(row).set(this.master.originalRow('actionData.bin', row));
+  }
+
+  /** Append a copy of a row as a new action. Returns its row number. */
+  copy(row: number): number {
+    const t = this.table;
+    const src = t.row(row).slice();
+    return t.append(src, t.indexOffset ? newHash(t, 0x7e710000) : 0);
+  }
+
+  /** +4: the name message. */
+  setName(row: number, id: number): void {
+    w32(this.row(row), 4, id);
+  }
+
+  /** w0 bit24-27: element (0 = none, 1 火 .. 8 闇). */
+  setElement(row: number, element: number): void {
+    this.setBits(row, 24, 4, element);
+  }
+
+  /** w0 bit13-15: base infliction level. */
+  setLevel(row: number, level: number): void {
+    this.setBits(row, 13, 3, level);
+  }
+
+  /** +0x18 / +0x1A: amount (min / max, s16). */
+  setAmount(row: number, min: number, max: number): void {
+    const r = this.row(row);
+    if (r.length < 0x1c) return;
+    w16(r, 0x18, min & 0xffff);
+    w16(r, 0x1a, max & 0xffff);
+  }
+
+  private setBits(row: number, lo: number, n: number, v: number): void {
+    const r = this.row(row);
+    const mask = ((2 ** n - 1) * 2 ** lo) >>> 0;
+    w32(r, 0, ((u32(r, 0) & ~mask) | ((v * 2 ** lo) & mask)) >>> 0);
+  }
+
+  /** Whether the motion of a row can be changed (it has a performance row). */
+  canSetMotion(row: number): boolean {
+    const p = decodeAction(this.row(row)).performance;
+    return !!this.performances && p > 0 && p < this.performances.rows && this.performances.rowSize > PERFORMANCE_ANIM;
+  }
+
+  /** Make an action play another anim (0x45〜0x48 = the user's skill A〜D; SKILL_MOTION). */
+  setMotion(row: number, anim: number): void {
+    const t = this.performances;
+    if (!t || !this.canSetMotion(row)) throw new Error(`アクション #${row} には演出の行がありません`);
+    const r = this.row(row);
+    const p = u16(r, 0x1e);
+    const want = t.row(p).slice();
+    want[PERFORMANCE_ANIM] = anim;
+    if (equalBytes(want, t.row(p))) return;
+    for (let i = 1; i < t.rows; i++) {
+      if (equalBytes(t.row(i), want)) {
+        w16(r, 0x1e, i);
+        return;
+      }
+    }
+    // A row this editor added and only this action uses: change it in place.
+    const acts = this.table;
+    let shared = false;
+    for (let a = 0; a < acts.rows && !shared; a++) if (a !== row && acts.rowSize >= 0x20 && u16(acts.row(a), 0x1e) === p) shared = true;
+    if (p >= this.performanceRows && !shared) {
+      t.row(p).set(want);
+      return;
+    }
+    const n = t.append(want, t.indexOffset ? newHash(t, 0x7e720000) : 0);
+    if (n > 0xffff) throw new Error('演出の表がいっぱいです');
+    w16(this.row(row), 0x1e, n);
   }
 }
