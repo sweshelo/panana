@@ -1,9 +1,10 @@
 // Inspector block of a boss battle (EventObject kind 0x31, game/boss.ts): its stages, each with the monsters
 // (a monsterFixGroup row), the battle BGM, what a win does, and the messages shown before the battle.
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { addFixGroup, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
 import { countLabel, type MonsterBook } from '../game/monsters';
 import { MAX_MAP_SOUND } from '../game/sound';
+import { MonsterPicker } from '../pages/groups';
 import { monsterRef } from '../pages/monsters';
 import type { Session } from '../session';
 import { MessageEditor } from '../ui/message';
@@ -70,7 +71,9 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
   const rows = master.table(FIX_TABLE).rows;
   const shared = fixUsers(session, s.fix).filter((u) => u !== `${st.current!.dungeon}.${row}`);
   const setGroup = (next: FixGroup): void => apply(() => setFixGroup(master, s.fix, next));
-  const monsters = book?.monsters ?? [];
+  /** The monster picker: what to do with the picked row, and the row to show as current. */
+  const [picking, setPicking] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
+  const setSlot = (k: number, x: Partial<FixGroup['slots'][number]>): void => setGroup({ ...g!, slots: g!.slots.map((y, i) => (i === k ? { ...y, ...x } : y)) });
   return (
     <div className="boss-stage">
       <h4>
@@ -95,14 +98,13 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
                 <tr key={k}>
                   <td className="photo-cell">{m && book && <Photo model={monsterRef(game, book, m)} title={m.name} />}</td>
                   <td>
-                    <select value={slot.monster} onChange={(e) => setGroup({ ...g, slots: g.slots.map((x, i) => (i === k ? { ...x, monster: Number(e.target.value) } : x)) })}>
-                      {!m && <option value={slot.monster}>{`#${slot.monster}`}</option>}
-                      {monsters.map((x) => <option key={x.row} value={x.row}>{`${x.name} Lv${x.level} (#${x.row})`}</option>)}
-                    </select>
+                    <button className="small" disabled={!book} title="敵を選ぶ" onClick={() => setPicking({ current: slot.monster, onPick: (r) => setSlot(k, { monster: r }) })}>
+                      {m ? `${m.name} Lv${m.level}` : `#${slot.monster}`}
+                    </button>
                     {m && <a href={`#/monsters/${m.row}`} title="モンスター図鑑で開く"> ↗</a>}
                   </td>
                   <td>
-                    <select value={slot.count} title="数" onChange={(e) => setGroup({ ...g, slots: g.slots.map((x, i) => (i === k ? { ...x, count: Number(e.target.value) } : x)) })}>
+                    <select value={slot.count} title="数" onChange={(e) => setSlot(k, { count: Number(e.target.value) })}>
                       {[0, 1, 2, 3, 4, 5, 6, 7].map((c) => <option key={c} value={c}>{`${countLabel(c)} 体`}</option>)}
                     </select>
                   </td>
@@ -116,7 +118,7 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
         </table>
       ) : <div className="error">{`monsterFixGroup の行 ${s.fix} がありません`}</div>}
       {g && g.slots.length < FIX_SLOTS && (
-        <button className="small" onClick={() => setGroup({ ...g, slots: [...g.slots, { monster: g.slots[0]?.monster || monsters[0]?.row || 1, count: 0 }] })}>敵を足す</button>
+        <button className="small" disabled={!book} onClick={() => setPicking({ current: g.slots[0]?.monster ?? 0, onPick: (r) => setGroup({ ...g, slots: [...g.slots, { monster: r, count: 0 }] }) })}>敵を足す</button>
       )}
       {g && !g.slots.length && <div className="error">敵がいません (戦闘になりません)</div>}
       <div className="field">
@@ -140,6 +142,10 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
         </div>
       ))}
       <div className="muted small">{`${MESSAGE_HELP} 新しい ID は作れないので、使っていないメッセージを書き換えて使ってください。`}</div>
+      {picking && book && (
+        <MonsterPicker session={session} book={book} current={picking.current} onClose={() => setPicking(null)}
+          onPick={(r) => { setPicking(null); picking.onPick(r); }} />
+      )}
     </div>
   );
 }

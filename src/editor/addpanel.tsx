@@ -6,6 +6,7 @@ import { useAsync } from '../ui/useAsync';
 import { useEditorState } from '../ui/useEditorState';
 import type { MapEditor } from './mapeditor';
 import { stampLabel, type Stamp } from './place';
+import { MonsterPicker } from '../pages/groups';
 
 interface GroupItem {
   row: number;
@@ -107,23 +108,27 @@ export function AddPanel({ editor }: { editor: MapEditor }): ReactNode {
 function BossStamp({ editor, active, disabled, use }: { editor: MapEditor; active: boolean; disabled: boolean; use: (s: Stamp) => void }): ReactNode {
   const book = editor.session.book;
   const [monster, setMonster] = useState(() => book?.monsters.find((m) => m.boss)?.row ?? book?.monsters[0]?.row ?? 1);
+  const [picking, setPicking] = useState(false);
+  const current = book?.monster(monster);
   return (
     <>
       <div className="row">
-        <select value={monster} title="戦う敵" onChange={(e) => {
-          const m = Number(e.target.value);
-          setMonster(m);
-          if (active) use({ type: 'boss', monster: m });
-        }}>
-          {(book?.monsters ?? []).map((m) => <option key={m.row} value={m.row}>{`${m.name} Lv${m.level} (#${m.row})`}</option>)}
-          {!book && <option value={monster}>{`#${monster}`}</option>}
-        </select>
+        <button disabled={!book} title="戦う敵を選ぶ" onClick={() => setPicking(true)}>
+          {current ? `${current.name} Lv${current.level}` : `#${monster}`}
+        </button>
         <button className={active ? 'active' : ''} disabled={disabled} onClick={() => use({ type: 'boss', monster })}>ボス戦を置く</button>
       </div>
       <div className="muted small">
         イベントの範囲 (区画 8) に入ると、メッセージのあと決まった敵と戦います。一度きり・何度でも・勝つたびに強くなる (段階) を右ペインで選べます。
         書き出すと、そのためのコードのパッチ「ボス戦」も code.ips に入ります。
       </div>
+      {picking && book && (
+        <MonsterPicker session={editor.session} book={book} current={monster} onClose={() => setPicking(false)} onPick={(m) => {
+          setPicking(false);
+          setMonster(m);
+          if (active) use({ type: 'boss', monster: m });
+        }} />
+      )}
     </>
   );
 }
