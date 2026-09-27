@@ -417,6 +417,21 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.changed(1)).toBe(false);
   });
 
+  test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {
+    const { ActionBook, PERFORMANCE_TABLE } = await import('../src/game/actions');
+    const book = await game.monsters();
+    console.log('drop base (BattleParameter +0x10C):', book.battle.dropBase.join(' '));
+    console.log('performance table:', game.master.tableName(PERFORMANCE_TABLE));
+    for (const m of book.monsters) for (const d of m.drops) expect(Number.isFinite(book.battle.dropOdds(d.rate))).toBe(true);
+    const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '');
+    const motions = new Map<number, number>();
+    for (const m of book.monsters) for (const s of m.skills) { const n = actions.motion(s.action); motions.set(n, (motions.get(n) ?? 0) + 1); }
+    console.log('skill motions:', [...motions].sort((a, b) => b[1] - a[1]).map(([n, c]) => `0x${n.toString(16)}×${c}`).join(' '));
+    const skillAnims = [0x45, 0x46, 0x47, 0x48].reduce((a, n) => a + (motions.get(n) ?? 0), 0);
+    const total = [...motions.values()].reduce((a, c) => a + c, 0);
+    expect(skillAnims / total).toBeGreaterThan(0.5);
+  });
+
   test('actions: item effects and references', async () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();

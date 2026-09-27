@@ -206,6 +206,7 @@ describe('monster editors', () => {
   const actionBook = {
     actions,
     action: (r: number) => actions[r],
+    motion: (r: number) => (r === 1 ? 0x45 : 0),
     refsOf: (r: number) => ({ items: [], monsters: r === 1 ? [{ row: 1, name: 'ポーン' }] : [] }),
   } as never;
 
@@ -214,6 +215,7 @@ describe('monster editors', () => {
     expect(html.match(/75%/g)?.length).toBe(3);
     expect(html).toContain('25%');
     expect(html).toContain('→ #3 に変身');
+    expect(html).toContain('ワザ A (005_)');
     expect(html).toContain('draggable="true"');
   });
 

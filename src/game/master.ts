@@ -1,5 +1,5 @@
 // Master data archive 56562135: map tables (docs/map.md §4) and message files.
-import { findByName, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
+import { findByName, findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { equalBytes, u16, u32, w16 } from '../util/bytes';
 import { Gmsg, MessageStore, type MessageFile } from './gmsg';
@@ -133,6 +133,12 @@ export class Master {
     const t = this.table(name);
     const o = t.offset + row * t.rowSize;
     return this.extra.get(name)!.original.subarray(o, o + t.rowSize);
+  }
+
+  /** File name of the table in the archive entry with this hash (the runtime binds tables by entry hash). */
+  tableName(hash: number): string | null {
+    const e = findEntry(this.archive, hash);
+    return e ? unpackEntry(this.archive, e).name : null;
   }
 
   /** Rows of a table in the archive (rows past it were appended by an edit). */

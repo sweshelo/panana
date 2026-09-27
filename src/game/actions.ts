@@ -2,8 +2,16 @@
 // docs/battle.md §8, FUN_002f41ac): +0 w0 (bit1-2 = kind, 2 = item; bit3-6 = item effect type; bit13-15 =
 // base infliction level of a skill; bit29-31 = usable in battle / house / field), +4 u32 name message,
 // +0x18 / +0x1A s16 amount (min / max). The other bytes are not analysed and are shown as they are.
+import type { GsTable } from '../archive/gstable';
 import { s16, u16, u32 } from '../util/bytes';
 import type { Master } from './master';
+
+/**
+ * Entry hash of the performance table (runtime master +0x71C, bound by FUN_0019643c). actionData +0x1E is a
+ * row of it; the row's +0x0A is the animation (animData row) the user plays, e.g. 0x45〜0x48 = a monster's
+ * skill A〜D (FUN_002f46bc, FUN_002e7f44). FUN_001dd694 also picks MonsterDesign +0x18〜+0x24 by it.
+ */
+export const PERFORMANCE_TABLE = 0x92124c00;
 
 /** Item effect by actionData type (kind 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD. */
 export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
@@ -35,6 +43,8 @@ export interface ActionFields {
    * change of form (elpulse docs/battle.md §7).
    */
   formChange: number;
+  /** +0x1E u16: row of the performance table (PERFORMANCE_TABLE; 0 = none). */
+  performance: number;
 }
 
 export function decodeAction(r: Uint8Array): ActionFields {
@@ -48,6 +58,7 @@ export function decodeAction(r: Uint8Array): ActionFields {
     nameId: r.length >= 8 ? u32(r, 4) : 0,
     amount: r.length >= 0x1c ? [s16(r, 0x18), s16(r, 0x1a)] : [0, 0],
     element: (w0 >>> 24) & 15,
+    performance: r.length >= 0x20 ? u16(r, 0x1e) : 0,
     formChange: ((w0 >>> 1) & 3) === 3 && ((w0 >>> 3) & 15) === 5 && r.length >= 0x18 && s16(r, 0x16) > 1 ? s16(r, 0x16) : 0,
   };
 }
@@ -82,8 +93,12 @@ export interface ActionRefs {
 export class ActionBook {
   readonly actions: Action[] = [];
   private readonly refs = new Map<number, ActionRefs>();
+  /** The performance table (null when the archive has no such entry). */
+  private readonly performances: GsTable | null;
 
   constructor(master: Master, monsterName: (row: number) => string = () => '') {
+    const perf = master.tableName(PERFORMANCE_TABLE);
+    this.performances = perf ? master.table(perf) : null;
     const t = master.table('actionData.bin');
     for (let i = 0; i < t.rows; i++) {
       const raw = t.row(i);
@@ -116,6 +131,13 @@ export class ActionBook {
 
   action(row: number): Action | undefined {
     return this.actions[row];
+  }
+
+  /** Animation number (animData row) an action plays, from its performance row +0x0A; 0 = none or unknown. */
+  motion(row: number): number {
+    const p = this.actions[row]?.performance ?? 0;
+    const t = this.performances;
+    return p && t && p < t.rows && t.rowSize > 0x0a ? t.row(p)[0x0a]! : 0;
   }
 
   refsOf(row: number): ActionRefs {

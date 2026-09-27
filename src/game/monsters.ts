@@ -18,15 +18,28 @@ export const MONSTER_MODEL_ARCHIVE = '470D2848';
 export const MONSTER_MOTIONS: Record<string, string> = {
   '001_': '0x41 ミュージアム・戦闘の待機',
   '002_': '0x42 戦闘の待機 (+0x4A bit3 の個体)',
-  '003_': '0x43',
-  '004_': '0x44',
-  '005_': '0x45',
-  '006_': '0x46',
-  '007_': '0x47',
-  '010_': '0x48',
+  '003_': '0x43 歩く',
+  '004_': '0x44 走る',
+  '005_': '0x45 ワザ A',
+  '006_': '0x46 ワザ B',
+  '007_': '0x47 ワザ C',
+  '010_': '0x48 ワザ D',
   '008_': '0x49 攻撃を受けた',
   '009_': '0x4A 倒れた',
 };
+
+/** Motion of a skill by animation number (actionData +0x1E → performance row +0x0A); the prefix of the CANM name. */
+export const SKILL_MOTION: Record<number, [string, string]> = {
+  0x43: ['歩く', '003_'], 0x44: ['走る', '004_'], 0x45: ['ワザ A', '005_'], 0x46: ['ワザ B', '006_'], 0x47: ['ワザ C', '007_'], 0x48: ['ワザ D', '010_'],
+  0x49: ['被弾', '008_'], 0x4a: ['倒れる', '009_'],
+};
+
+/**
+ * Drop classes by the 4-bit rate value: which party bonus (conditionData 80〜82, a percentage, 100 = none)
+ * applies to it (FUN_00199c00 sorts the drops into 3 × 3 unit slots by rate; FUN_00283e68 rolls them).
+ */
+export const DROP_CLASS: [number, string, number][] = [[0, 'おたから', 80], [10, 'レア', 81], [13, '激レア', 82]];
+export const dropClass = (rate: number): [number, string, number] => [...DROP_CLASS].reverse().find(([lo]) => rate >= lo)!;
 
 const bits = (w: number, lo: number, n: number, signed = false): number => {
   const v = Math.floor(w / 2 ** lo) % 2 ** n;
@@ -58,12 +71,26 @@ export class BattleParams {
   readonly elementMul: number[];
   readonly baseRate: number[];
   readonly coef: number[];
+  /** u16 [0x10C + rate × 2]: a drop of that rate value comes 1 in this many battles (0 or 1 = always). */
+  readonly dropBase: number[];
   constructor(t: GsTable) {
     const r = t.row(0);
     const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
     this.elementMul = Array.from({ length: 19 }, (_, i) => Math.round(dv.getFloat32(8 + i * 4, true) * 1000) / 1000);
     this.baseRate = Array.from({ length: 7 }, (_, i) => r[0x60 + i]!);
     this.coef = Array.from({ length: 19 }, (_, i) => r[0x67 + i]!);
+    this.dropBase = Array.from({ length: 16 }, (_, i) => dv.getUint16(0x10c + i * 2, true));
+  }
+  /**
+   * "1 in N" of a drop with rate value `rate` when the party's bonus of its class is `bonus` % (100 = none):
+   * N = trunc(1 / (1 − (1 − 1/B)^(bonus/100))), at least 1; a negative bonus always drops. Each filled slot
+   * is rolled on its own (rand × N < 2^32, i.e. 1/N). FUN_00283e68 (after the battle).
+   */
+  dropOdds(rate: number, bonus = 100): number {
+    const b = this.dropBase[rate & 15]!;
+    if (bonus < 0 || b <= 1) return 1;
+    const p = 1 - Math.pow(1 - 1 / b, bonus * 0.01);
+    return p > 0 ? Math.max(1, Math.trunc(1 / p)) : Infinity;
   }
   private idx(v: number): number {
     return Math.max(-9, Math.min(9, v)) + 9;

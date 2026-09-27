@@ -231,6 +231,24 @@ describe('monster parameters', () => {
   });
 });
 
+describe('drop odds', () => {
+  test('BattleParameter +0x10C: 1 in B, party bonus as a power, always for 0/1 and negative bonus', async () => {
+    const { BattleParams } = await import('../src/game/monsters');
+    const row = new Uint8Array(0x154);
+    const dv = new DataView(row.buffer);
+    [1, 0, 8, 100].forEach((b, i) => dv.setUint16(0x10c + i * 2, b, true));
+    const bp = new BattleParams({ row: () => row } as never);
+    expect(bp.dropBase.slice(0, 4)).toEqual([1, 0, 8, 100]);
+    // 1/(1 − 0.99) = 99.9999… in doubles, truncated like the game's vcvt: 1 in 99
+    expect([bp.dropOdds(0), bp.dropOdds(1), bp.dropOdds(2), bp.dropOdds(3)]).toEqual([1, 1, 8, 99]);
+    // 200 %: 1 − (7/8)^2 = 15/64 → 1 in 4 (trunc 4.27)
+    expect(bp.dropOdds(2, 200)).toBe(4);
+    expect(bp.dropOdds(3, -1)).toBe(1);
+    const { dropClass } = await import('../src/game/monsters');
+    expect([0, 9, 10, 12, 13, 15].map((r) => dropClass(r)[1])).toEqual(['おたから', 'おたから', 'レア', 'レア', '激レア', '激レア']);
+  });
+});
+
 describe('actions', () => {
   test('item action fields and effect text', async () => {
     const { decodeAction, itemEffect, cleanActionName } = await import('../src/game/actions');
@@ -256,7 +274,9 @@ describe('actions', () => {
     const r = new Uint8Array(0x3c);
     w32(r, 0, ((3 << 1) | (5 << 3) | (7 << 24)) >>> 0);
     r.set([168, 0], 0x16);
+    r.set([0x34, 0x12], 0x1e);
     expect(decodeAction(r).formChange).toBe(168);
+    expect(decodeAction(r).performance).toBe(0x1234);
     expect(decodeAction(r).element).toBe(7);
     r.set([1, 0], 0x16); // a line with no change of form
     expect(decodeAction(r).formChange).toBe(0);

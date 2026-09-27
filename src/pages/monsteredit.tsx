@@ -3,7 +3,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { ActionBook } from '../game/actions';
 import {
-  AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, fieldMax, PARAM, SKILL_SLOTS, skillShares, TARGET_MODE,
+  AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
   type Monster, type MonsterBook, type ParamKey,
 } from '../game/monsters';
 import type { Session } from '../session';
@@ -91,12 +91,16 @@ export function StatEditor(p: EditProps): ReactNode {
   );
 }
 
+/** "1/8 (12.5%)"; "必ず" for 1 in 1. */
+const odds = (n: number): string => (n === 1 ? '必ず' : Number.isFinite(n) ? `1/${n} (${Math.round(1000 / n) / 10}%)` : '出ない');
+
 const DROPS: [ParamKey, ParamKey][] = [['drop0', 'rate0'], ['drop1', 'rate1'], ['drop2', 'rate2']];
 
 /** The 3 drop slots: item (picked from the photos) and the 4-bit rate value. */
 export function DropEditor({ session, ...p }: EditProps & { session: Session }): ReactNode {
   const { book, m, edited } = p;
   const [picking, setPicking] = useState<number | null>(null);
+  const rateLabel = (v: number): string => `${v} ${dropClass(v)[1]} ${odds(book.battle.dropOdds(v))}`;
   const data = useAsync(() => (picking === null ? Promise.resolve(null) : session.items()), [session, picking !== null]);
   const setItem = (k: number, id: number): void => {
     book.set(m.row, DROPS[k]![0], id);
@@ -107,7 +111,7 @@ export function DropEditor({ session, ...p }: EditProps & { session: Session }):
       <h3>ドロップ</h3>
       <table className="enc-table">
         <tbody>
-          <tr><th>枠</th><th>アイテム</th><th title="4 ビットの値 (0〜15)。意味は調査中">率の値</th><th></th></tr>
+          <tr><th>枠</th><th>アイテム</th><th title="4 ビットの値 (0〜15)">率</th><th></th></tr>
           {m.dropSlots.map((d, k) => {
             const [ik, rk] = DROPS[k]!;
             const changed = d.item !== book.original(m.row, ik);
@@ -119,13 +123,18 @@ export function DropEditor({ session, ...p }: EditProps & { session: Session }):
                     onClick={() => setPicking(k)}>{d.item ? session.game.master.itemName(d.item) || `#${d.item}` : '(なし)'}</button>
                   {!!d.item && <a href={`#/items/${d.item}`} title="アイテム図鑑で開く"> ↗</a>}
                 </td>
-                <td><FieldSelect {...p} k={rk} labels={String} /></td>
+                <td><FieldSelect {...p} k={rk} labels={rateLabel} /></td>
                 <td>{!!d.item && <button className="small" title="この枠を空にする" onClick={() => setItem(k, 0)}>×</button>}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <p className="muted small">
+        率の値ごとに、BattleParameter の表 (+0x10C) で「何回に 1 回落とすか」が決まり、3 枠それぞれ別に抽選されます。
+        値 0〜9 はおたから、10〜12 はレア、13〜15 は激レアで、パーティーの「ドロップ率アップ」(状態 80〜82、%) がそれぞれに効きます
+        (確率 = 1 − (1 − 1/表の値)^(% / 100))。表示は補正なしのときです。
+      </p>
       {picking !== null && data && !(data instanceof Error) && (
         <ItemPicker game={session.game} items={data.items} title={`ドロップ ${picking + 1} のアイテムを選ぶ`} current={m.dropSlots[picking]?.item}
           unavailable={(it) => (it.id > fieldMax(PARAM.drop0) ? 'ドロップの欄 (10 ビット) に入らない番号です' : null)}
@@ -134,6 +143,13 @@ export function DropEditor({ session, ...p }: EditProps & { session: Session }):
       {data instanceof Error && <div className="error">{data.message}</div>}
     </section>
   );
+}
+
+/** "ワザ A (005_)" for an animation number; the number in hex for the others. */
+function motionLabel(n: number): string {
+  if (!n) return '';
+  const m = SKILL_MOTION[n];
+  return m ? `${m[0]} (${m[1]})` : `0x${n.toString(16).toUpperCase()}`;
 }
 
 /**
@@ -169,7 +185,7 @@ export function SkillEditor({ actions, ...p }: EditProps & { actions: ActionBook
       <h3>ワザと行動</h3>
       <table className="enc-table skill-slots editable">
         <tbody>
-          <tr><th></th><th>枠</th><th>ワザ</th><th title="AI が「均等」のときの出やすさ">均等での割合</th><th></th></tr>
+          <tr><th></th><th>枠</th><th>ワザ</th><th title="アクション +0x1E の演出の行 +0x0A (アニメ番号)">モーション</th><th title="AI が「均等」のときの出やすさ">均等での割合</th><th></th></tr>
           {m.skills.map((s, i) => {
             const a = actions.action(s.action);
             const cls = [orig[i] !== s.action ? 'edited-row' : '', i === dragging ? 'dragging' : '', i === dropAt ? 'drop-before' : '',
@@ -202,12 +218,13 @@ export function SkillEditor({ actions, ...p }: EditProps & { actions: ActionBook
                   {' '}<a className="muted" href={`#/actions/${s.action}`} draggable={false}>{`#${s.action}`}</a>
                   {!!a?.formChange && <span className="muted small">{` → #${a.formChange} に変身`}</span>}
                 </td>
+                <td className="muted">{motionLabel(actions.motion(s.action))}</td>
                 <td className="num">{m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}</td>
                 <td><button className="small" title="この枠を外す" onClick={() => set(skills.filter((_, j) => j !== i))}>×</button></td>
               </tr>
             );
           })}
-          {!m.skills.length && <tr><td colSpan={5} className="muted">なし (既定の行動だけになります)</td></tr>}
+          {!m.skills.length && <tr><td colSpan={6} className="muted">なし (既定の行動だけになります)</td></tr>}
         </tbody>
       </table>
       <div className="row">
