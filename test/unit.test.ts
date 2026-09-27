@@ -603,7 +603,10 @@ describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
   });
 
   test('section 2: offsets by mapObject row', () => {
-    expect([0, 1, 2, 3].map((d) => section2Offset(0x9e, d))).toEqual([[0, -5, 50], [50, -5, 0], [0, -5, -50], [-50, -5, 0]]);
+    // jump table of FUN_001c6b64: odd rows 0x9F..0xAD are pushed to the wall, even rows 0x9E..0xAC only sink
+    expect([0, 1, 2, 3].map((d) => section2Offset(0x9f, d))).toEqual([[0, -5, 50], [50, -5, 0], [0, -5, -50], [-50, -5, 0]]);
+    expect(section2Offset(0xad, 1)).toEqual([50, -5, 0]);
+    expect(section2Offset(0x9e, 1)).toEqual([0, -5, 0]);
     expect(section2Offset(0xaa, 2)).toEqual([0, -5, 0]);
     expect([0, 1, 2, 3].map((d) => section2Offset(0xba, d))).toEqual([[-20, 0, -20], [30, 0, -130], [30, 0, -20], [-20, 0, 30]]);
     expect(section2Offset(0xda, 1)).toEqual([0, 0, 250]);
