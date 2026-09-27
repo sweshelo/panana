@@ -305,3 +305,7 @@ input.edited { border-color: var(--warn); }
 .asm-addr { color: var(--muted); }
 .asm-label { color: #e0b060; }
 .asm-note { color: #7fc79a; }
+.ai-box { margin: 6px 0 12px; }
+.ai-question { width: 100%; box-sizing: border-box; margin: 4px 0; }
+.ai-answer { white-space: pre-wrap; background: var(--panel2); border-radius: 4px; padding: 10px 12px; line-height: 1.7; margin-top: 6px; }
+.ai-settings { border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin: 6px 0; }

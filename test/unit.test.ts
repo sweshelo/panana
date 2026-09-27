@@ -16,6 +16,7 @@ import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
 import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
+import { askClaude, setApiKey } from '../src/ai/claude';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
@@ -630,5 +631,42 @@ describe('ARM disassembler (game/disasm.ts)', () => {
     expect(d(0xed9f8a9d)).toBe('vldr s16, [pc, #0x274]');
     expect(d(0xeef1fa10)).toBe('vmrs apsr_nzcv, fpscr');
     expect(d(0xeeb70a00)).toBe('vmov.f32 s0, #1');
+  });
+});
+
+describe('asking Claude (ai/claude.ts)', () => {
+  test('streams the answer and sends the context as a cached system prompt', async () => {
+    let sent: { url: string; headers: Headers; body: any } | null = null;
+    const events = [
+      { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 5 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'スイッチを' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '押すと扉が開く' } },
+      { type: 'content_block_stop', index: 0 },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 7 } },
+      { type: 'message_stop' },
+    ];
+    const fakeFetch = (async (url: string, init: RequestInit) => {
+      sent = { url: String(url), headers: new Headers(init.headers), body: JSON.parse(String(init.body)) };
+      const sse = events.map((e) => `event: ${e.type}
+data: ${JSON.stringify(e)}
+
+`).join('');
+      return new Response(sse, { headers: { 'content-type': 'text/event-stream' } });
+    }) as unknown as typeof fetch;
+    setApiKey('sk-ant-test', false);
+    let streamed = '';
+    const r = await askClaude({ system: 'ゲームの説明', prompt: 'イベント', onText: (d) => (streamed += d), fetch: fakeFetch });
+    setApiKey('', false);
+    expect(streamed).toBe('スイッチを押すと扉が開く');
+    expect(r.text).toBe(streamed);
+    expect(r.outputTokens).toBe(7);
+    expect(sent!.url).toContain('/v1/messages');
+    expect(sent!.headers.get('anthropic-beta')).toContain('server-side-fallback-2026-07-01');
+    expect(sent!.body.model).toBe('claude-opus-5');
+    expect(sent!.body.fallbacks).toBe('default');
+    expect(sent!.body.thinking).toEqual({ type: 'adaptive' });
+    expect(sent!.body.system[1]).toEqual({ type: 'text', text: 'ゲームの説明', cache_control: { type: 'ephemeral' } });
+    expect(sent!.body.messages).toEqual([{ role: 'user', content: 'イベント' }]);
   });
 });

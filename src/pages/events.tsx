@@ -6,7 +6,8 @@ import { completedBy, eventEntries, type EventEntry } from '../game/eventlist';
 import { EVENT_KINDS, kindName } from '../game/eventkinds';
 import { mapShortTitle } from '../game/names';
 import { fnName } from '../game/codemessages';
-import { aiBundle } from '../game/aiprompt';
+import { aiBundle, eventText, GAME_CONTEXT, type EventDescription } from '../game/aiprompt';
+import { AskAi } from '../ui/AskAi';
 import { CodeIndex } from '../game/scripts';
 import { scriptListing, type AsmFunction } from '../game/scriptasm';
 import type { Session } from '../session';
@@ -119,10 +120,14 @@ function EventDetail({ session, entry: e, byKey, completers, index }: {
     [e, showCode, index, game],
   );
   if (!e) return null;
-  const bundle = (): string => {
-    const fns = e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls));
-    return aiBundle({ dungeonName: master.dungeonName(e.dungeon) || `D${e.dungeon}`, entry: e, places: e.places.map((p) => `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`), listing: fns, message });
-  };
+  const describe = (): EventDescription => ({
+    dungeonName: master.dungeonName(e.dungeon) || `D${e.dungeon}`,
+    entry: e,
+    places: e.places.map((p) => `${p.map.name} 区画 ${p.section} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`),
+    listing: e.scripts.flatMap((s) => scriptListing({ code: game.code.code, message }, index, s.cls)),
+    message,
+  });
+  const bundle = (): string => aiBundle(describe());
   const copy = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(bundle());
@@ -216,6 +221,8 @@ function EventDetail({ session, entry: e, byKey, completers, index }: {
                 {copied && <span className="muted small">{copied}</span>}
               </div>
               {showCode && listing.map((f) => <AsmView key={f.addr} fn={f} />)}
+              <h3>AI に聞く</h3>
+              <AskAi system={GAME_CONTEXT} context={() => eventText(describe())} />
             </>
           )}
         </>
