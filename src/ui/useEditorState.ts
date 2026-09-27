@@ -1,4 +1,4 @@
-// React side of EditorState: re-render a component whenever the state emits.
+// React side of EditorState (and of the map editor's own signals): re-render a component whenever they emit.
 import { useSyncExternalStore } from 'react';
 import type { EditorState } from '../editor/state';
 
@@ -8,4 +8,23 @@ export function useEditorState(st: EditorState): number {
     (notify) => st.on(notify),
     () => st.revision,
   );
+}
+
+/** Something outside React that components re-render on (the map editor's view settings, the hovered cell). */
+export class Signal {
+  revision = 0;
+  private listeners = new Set<() => void>();
+  readonly subscribe = (f: () => void): (() => void) => {
+    this.listeners.add(f);
+    return () => this.listeners.delete(f);
+  };
+  readonly get = (): number => this.revision;
+  emit(): void {
+    this.revision++;
+    for (const f of [...this.listeners]) f();
+  }
+}
+
+export function useSignal(s: Signal): number {
+  return useSyncExternalStore(s.subscribe, s.get);
 }

@@ -15,6 +15,11 @@ import { PAGES } from '../src/ui/Shell';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Session } from '../src/session';
+import { MapPicker } from '../src/ui/MapPicker';
+import { ItemPicker } from '../src/ui/ItemPicker';
+import type { ItemBook, Item } from '../src/game/items';
+import { TreasureEditor } from '../src/editor/treasure';
+import type { EventTable } from '../src/game/events';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x22);
@@ -123,5 +128,59 @@ describe('shell', () => {
   test('every page has a CSS rule that shows it', () => {
     const css = readFileSync(join(import.meta.dir, '..', 'src', 'style.css'), 'utf8');
     for (const [id] of PAGES) expect(css).toContain(`.shell[data-page='${id}'] .page-${id}`);
+  });
+});
+
+describe('map editor pickers', () => {
+  const D1 = { hash: 0x10, name: 'D01B01001', dungeon: 1, dungeonCode: 'D01', floor: -1, mapDataKey: 0, sections: [] };
+  const D2 = { hash: 0x20, name: 'D01B02001', dungeon: 1, dungeonCode: 'D01', floor: -2, mapDataKey: 0, sections: [] };
+  const world = { index: 0, hash: 0xa8654391, code: 'W01', dungeon: 0x34, sections: [], groundFile: '', groundEntry: 0 };
+  const game = {
+    editableMaps: () => [D1, D2],
+    worldMaps: () => [world],
+    code: { maps: [D1, D2], byHash: (h: number) => [D1, D2].find((m) => m.hash === h), world: (h: number) => (h === world.hash ? world : undefined) },
+    master: { dungeonName: () => '山のどうくつ', itemName: (id: number) => ['', 'やくそう', 'ポーション'][id] ?? '' },
+  } as unknown as Game;
+
+  test('map picker: maps grouped by dungeon, the current one and edited ones marked, none and world maps on request', () => {
+    const html = renderToString(<MapPicker game={game} current={0x20} withNone worlds modified={new Set([0x10])} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('山のどうくつ  (D01)');
+    expect(html).toContain('D01B01001');
+    expect(html).toContain('class="pick current"');
+    expect(html.match(/edited-mark/g)?.length).toBe(1);
+    expect(html).toContain('(なし)');
+    expect(html).toContain('ワールドマップ W01');
+    const plain = renderToString(<MapPicker game={game} current={0x10} onPick={() => {}} onClose={() => {}} />);
+    expect(plain).not.toContain('(なし)');
+    expect(plain).not.toContain('ワールドマップ');
+  });
+
+  const item = (id: number, name: string, price: number): Item => ({ id, name, price, categoryByte: 1, category: '道具', model: 0 }) as unknown as Item;
+  const items = { items: [item(1, 'やくそう', 8), item(2, 'ポーション', 20)], item: (id: number) => [item(1, 'やくそう', 8), item(2, 'ポーション', 20)][id - 1] } as unknown as ItemBook;
+
+  test('item picker: photos of every item, unavailable ones disabled with the reason', () => {
+    const html = renderToString(<ItemPicker game={game} items={items} current={2} unavailable={(it) => (it.id === 1 ? 'この店で売っています' : null)} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('やくそう');
+    expect(html).toContain('title="この店で売っています"');
+    expect(html).toContain('monster-cell current');
+    expect(html.match(/disabled=""/g)?.length).toBe(1);
+  });
+
+  test('chest contents: filled slots with their share, the row and how many chests share it', () => {
+    const slots = [{ item: 1, weight: 3 }, { item: 2, weight: 1 }, ...Array.from({ length: 8 }, () => ({ item: 0, weight: 1 }))];
+    const master = { ...(game.master as object), treasureGroup: { rows: 5 }, treasureSlots: () => slots, treasureRowChanged: () => false };
+    const ev = { rows: 3, kind: (i: number) => (i < 2 ? 0x0c : 0), treasureRow: () => 4 } as unknown as EventTable;
+    const session = {
+      game: { ...game, master },
+      st: { game: { master }, events: new Map([[1, ev]]) },
+      items: () => new Promise(() => {}),
+    } as unknown as Session;
+    const html = renderToString(<TreasureEditor session={session} ev={ev} evRow={0} apply={(f) => f()} />);
+    expect(html).toContain('中身の表 #4');
+    expect(html).toContain('2 個の宝箱で共有');
+    expect(html).toContain('やくそう');
+    expect(html).toContain('75%');
+    expect(html).toContain('25%');
+    expect(html).toContain('＋ 追加');
   });
 });

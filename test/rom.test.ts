@@ -437,6 +437,19 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
       }
   });
 
+  test('another tileset loads that tileset\'s models (tileset switch in the inspector)', () => {
+    const m = (name: string) => game.code.byName(name)!;
+    const cave = m('D01B02001');
+    const tunnel = m('D02B02001');
+    // Default = the map's own source.
+    expect(game.tilesetSource(cave)).toEqual(game.tilesetSource(cave, game.master.tileset(cave)));
+    // The cave (tileset 0) shown with the tunnel's tileset 1 uses the tunnel's model archive.
+    const other = game.tilesetSource(cave, game.master.tileset(tunnel));
+    expect(other.tileset).toBe(game.master.tileset(tunnel));
+    expect(other.modelArchive).toBe(game.tilesetSource(tunnel).modelArchive);
+    expect(other.modelArchive).not.toBe(game.tilesetSource(cave).modelArchive);
+  });
+
   test('indoor maps use mapGroup +0x27 and have every tile model (issue #14)', async () => {
     const m = (name: string) => game.code.byName(name)!;
     // 港町 (dungeon 20): the town is mapData 21 (tileset 3); its houses (indoor tiles) are mapData 65 (tileset 1).
