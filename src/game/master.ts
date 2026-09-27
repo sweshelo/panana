@@ -53,6 +53,7 @@ export class GmsgFile {
 export class Master {
   readonly archive: Archive;
   readonly mapGroup: GsTable;
+  /** mapData.bin (edits to it are exported, like the tables of {@link table}). */
   readonly mapData: GsTable;
   readonly mapResource: GsTable;
   readonly mapParts: GsTable;
@@ -78,7 +79,6 @@ export class Master {
       return new GsTable(f.body);
     };
     this.mapGroup = table('mapGroup.bin');
-    this.mapData = table('mapData.bin');
     this.mapResource = table('mapResource.bin');
     this.mapParts = table('mapParts.bin');
     this.mapObject = table('mapObject.bin');
@@ -89,6 +89,7 @@ export class Master {
     this.treasureOriginal = tg.body.slice();
     this.treasureGroup = new GsTable(tg.body);
     this.itemData = this.table('itemData.bin');
+    this.mapData = this.table('mapData.bin');
     const gmsgs: MessageFile[] = [];
     for (const e of this.archive.entries) {
       if (e.type !== 6) continue;
@@ -154,6 +155,11 @@ export class Master {
   sounds(map: MapRef): { bgm: number; battle: number; steps: number } {
     const r = this.mapData.row(this.mapDataRow(map));
     return { bgm: r[4]!, battle: r[5]!, steps: r[6]! };
+  }
+
+  /** Set a sound of a mapData row ([4] field BGM, [5] battle BGM, [6] footsteps; a soundData row). */
+  setSound(mapDataRow: number, slot: 'bgm' | 'battle' | 'steps', soundRow: number): void {
+    this.mapData.row(mapDataRow)[{ bgm: 4, battle: 5, steps: 6 }[slot]] = soundRow;
   }
 
   message(id: number): string | undefined {

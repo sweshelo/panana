@@ -15,6 +15,8 @@ import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
 import { groundFromTiles, parseGround, type Ground, type WorldInfo } from './worldmap';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
+import { SoundArchive } from '../sound/formats';
+import { SoundRenderer } from '../sound/render';
 
 export interface TilesetSource {
   /** mapResource row. */
@@ -110,6 +112,7 @@ export class Game {
     this.soundNames ??= (async () => {
       const t = this.master.table('soundData.bin');
       const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
+      const volumes = Array.from({ length: t.rows }, (_, i) => (t.rowSize >= 0xc ? u32(t.row(i), 8) : 0));
       const key = 'sound/names/v1';
       let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
       if (!names)
@@ -119,9 +122,23 @@ export class Game {
         } catch {
           names = null;
         }
-      return new SoundNames(items, names);
+      return new SoundNames(items, names, volumes);
     })();
     return this.soundNames;
+  }
+
+  private renderer: Promise<SoundRenderer> | null = null;
+
+  /** Plays the sounds of sound/sound.bcsar (read when first needed; its streams from sound/stream/). */
+  soundRenderer(): Promise<SoundRenderer> {
+    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
+      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
+      (err: Error) => {
+        this.renderer = null;
+        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
+      },
+    );
+    return this.renderer;
   }
 
   archive(name: string): Promise<Archive> {
