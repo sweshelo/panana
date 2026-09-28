@@ -26,6 +26,7 @@ import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
 import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
+import { ELEMENT_AILMENTS, PLAIN_AILMENTS } from '../src/game/monsters';
 
 const sha1 = (b: Uint8Array): string => createHash('sha1').update(b).digest('hex');
 
@@ -688,6 +689,8 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     book.revert(3);
     const m = book.monster(1)!;
     expect(m.resist[0]!.name).toBe('火');
+    expect(ELEMENT_AILMENTS.map((k) => m.resist[k]!.name)).toEqual(['やけど', '氷結', 'かぜっぴき', 'どろだらけ', 'かんでん', '水びたし', 'ブラインド', '呪い']);
+    expect(PLAIN_AILMENTS.map((k) => m.resist[k]!.name)).toEqual(['毒', 'マヒ', 'ねむり', '誘惑']);
     expect(m.resist[0]!.value).toBe(-6);
     const before = m.resist.map((r) => r.value);
     book.setResist(1, 0, 7);

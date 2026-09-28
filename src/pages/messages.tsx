@@ -85,7 +85,17 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
     (k) => k.startsWith('id:') || !users || (k.startsWith('fn:') ? storyRows.some((r) => r.key === k) : users.some((u) => userKey(u) === k)),
     () => (users?.[0] ? userKey(users[0]) : ''),
   );
-  const storyMode = selected.startsWith('fn:');
+  // Which list is shown: switching it selects nothing (the entry stays open until one of the new list is chosen);
+  // opening an entry by the route shows its list.
+  const [storyMode, setStoryMode] = useState(selected.startsWith('fn:'));
+  const [routed, setRouted] = useState(wanted);
+  if (routed !== wanted) {
+    setRouted(wanted);
+    if (wanted) setStoryMode(wanted.startsWith('fn:'));
+  }
+  /** Whether the selected entry belongs to the list shown (the detail is empty otherwise). */
+  const shown = storyMode === selected.startsWith('fn:');
+  const none = <div className="muted">一覧から選んでください</div>;
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${users?.length}`);
   /** Wraps an edit: an undo point in the map editor (its inspector shows the same messages) and saving. */
@@ -130,8 +140,8 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
   };
   const modes = (
     <div className="row msg-modes">
-      <button className={storyMode ? '' : 'active'} onClick={() => storyMode && go(users?.[0] && userKey(users[0]))}>マップのキャラ・看板</button>
-      <button className={storyMode ? 'active' : ''} onClick={() => !storyMode && go(storyRows[0]?.key)}>イベント・ストーリー</button>
+      <button className={storyMode ? '' : 'active'} onClick={() => setStoryMode(false)}>マップのキャラ・看板</button>
+      <button className={storyMode ? 'active' : ''} onClick={() => setStoryMode(true)}>イベント・ストーリー</button>
     </div>
   );
   if (storyMode) {
@@ -159,7 +169,7 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
           </div>
         </div>
         <div className="book-detail">
-          <StoryDetail key={edits} session={session} row={storyRows.find((r) => r.key === selected)} byId={byId} apply={apply} />
+          {shown ? <StoryDetail key={edits} session={session} row={storyRows.find((r) => r.key === selected)} byId={byId} apply={apply} /> : none}
         </div>
       </div>
     );
@@ -197,7 +207,7 @@ export function MessagePage({ session, arg, visit }: PageProps): ReactNode {
         </div>
       </div>
       <div className="book-detail">
-        {users && <MessageDetail key={edits} session={session} selected={selected} users={users} byId={byId} apply={apply} />}
+        {!shown ? none : users && <MessageDetail key={edits} session={session} selected={selected} users={users} byId={byId} apply={apply} />}
       </div>
     </div>
   );
