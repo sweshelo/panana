@@ -234,7 +234,7 @@ select.edited { border-color: var(--warn); }
 .photo-cell { width: 40px; padding: 1px 2px !important; }
 .photo { display: block; width: 36px; height: 36px; border-radius: 4px; background: #0d0f13; }
 .photo img { width: 36px; height: 36px; display: block; }
-@media (max-width: 1100px) { .book-top { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .book-top { grid-template-columns: minmax(0, 1fr); } }
 .viewer-picture { display: none; width: 100%; height: 300px; object-fit: contain; image-rendering: pixelated; }
 .viewer.picture canvas { display: none; }
 .viewer.picture .viewer-picture { display: block; }
@@ -441,4 +441,8 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
   .book-detail { padding: 12px 12px 40px; }
   .book-head h2 { font-size: 19px; }
   .book-cols, .monster-cols, .group-cols, .world-fields { grid-template-columns: minmax(0, 1fr); }
+  .book-detail select { max-width: 100%; }
+  .viewer canvas, .viewer-picture { height: 260px; }
+  .viewer-anim { left: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .viewer-anim select { flex: 1; min-width: 0; }
 }
