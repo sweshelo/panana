@@ -620,6 +620,7 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     book.revert(3);
     const m = book.monster(1)!;
     expect(m.resist[0]!.name).toBe('火');
+    console.log('resistances:', m.resist.map((r, k) => `${k}:${r.id}:${r.name}`).join(' '));
     expect(m.resist[0]!.value).toBe(-6);
     const before = m.resist.map((r) => r.value);
     book.setResist(1, 0, 7);
