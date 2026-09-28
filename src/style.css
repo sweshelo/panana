@@ -442,6 +442,9 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
   .book-head h2 { font-size: 19px; }
   .book-cols, .monster-cols, .group-cols, .world-fields { grid-template-columns: minmax(0, 1fr); }
   .book-detail select { max-width: 100%; }
+  .res-table { min-width: 0; }
+  .radar-box { max-width: 100%; }
+  .radar { max-width: 100%; height: auto; }
   .viewer canvas, .viewer-picture { height: 260px; }
   .viewer-anim { left: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .viewer-anim select { flex: 1; min-width: 0; }

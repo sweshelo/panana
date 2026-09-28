@@ -212,7 +212,7 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
           <tbody>
             <tr>
               <th>{label}</th><th>値</th>
-              {kind === 'element' ? <th>ダメージ</th> : <><th>係数</th><th>100% のワザ</th><th>50%</th><th>25%</th></>}
+              {kind === 'element' ? <th>ダメージ</th> : <th>係数</th>}
             </tr>
             {m.resist.slice(a, b).map((r, j) => {
               const k = a + j;
@@ -233,10 +233,7 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
                   </td>
                   {kind === 'element'
                     ? <td className={`num ${cls}`}>{effect(kind, r.value)}</td>
-                    : <>
-                        <td className={`num ${cls}`}>{`${bp.coefficient(r.value)}%`}</td>
-                        {[0, 2, 4].map((lv) => <td key={lv} className="num muted">{`${bp.chance(lv, r.value)}%`}</td>)}
-                      </>}
+                    : <td className={`num ${cls}`}>{`${bp.coefficient(r.value)}%`}</td>}
                 </tr>
               );
             })}
