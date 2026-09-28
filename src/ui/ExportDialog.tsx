@@ -4,9 +4,9 @@ import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
-import { MONSTER_DESIGN_ARCHIVE } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
 import { tableLabel, type Session } from '../session';
@@ -42,8 +42,8 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const added = game.code.addedMaps();
     if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
-    // Panana's own patches, when their data is used (boss battles: game/boss.ts)
-    const extra = usesBoss(st.events.values()) ? [BOSS_PATCH] : [];
+    // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts)
+    const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : [])];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);
@@ -59,8 +59,9 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     if (session.book?.directChanged()) changes.push(`ワザの演出 (${MONSTER_DESIGN_ARCHIVE} の directData.bin)`);
     const shops = session.stock;
     if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
-    const texts = game.master.texts.editedIds();
+    const texts = [...game.master.texts.editedIds(), ...game.master.texts.addedIds()];
     if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
+    if (session.book?.designChanged()) changes.push(`モンスターのデザイン (${MONSTER_DESIGN_ARCHIVE} の monsterDesign.bin)`);
     return { docs, events, issues, changes, shops, worlds: session.worldSections(), extra };
   });
   const { issues, changes } = what;
@@ -70,7 +71,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
-      if (session.book?.directChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
+      if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, what.extra);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
       return pkg;

@@ -8,7 +8,7 @@ import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
 import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
-import { fromUnits, Gmsg, MessageStore } from '../src/game/gmsg';
+import { fromUnits, Gmsg, MessageStore, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } from '../src/game/gmsg';
 import { parseBody, plainText, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
 import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, coveredParts, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
@@ -51,6 +51,12 @@ describe('archive', () => {
     const re = parseArchive(rebuildArchive(arc, new Map([[0, new Uint8Array([9, 9, 9])]])));
     expect(Array.from(unpackEntry(re, re.entries[0]!).body)).toEqual([9, 9, 9]);
     expect(Array.from(unpackEntry(re, re.entries[1]!).body)).toEqual([1, 2, 3, 4]);
+    // an added entry goes where its hash sorts (the entries are in hash order), packed like `like`
+    const added = parseArchive(rebuildArchive(arc, new Map(), [{ hash: 0x18, name: 'x.bin', body: new Uint8Array([7, 7]), like: arc.entries[1]! }]));
+    expect(added.entries.map((e) => e.hash)).toEqual([0x11, 0x18, 0x22]);
+    expect(Array.from(unpackEntry(added, added.entries[1]!).body)).toEqual([7, 7]);
+    expect(Array.from(unpackEntry(added, added.entries[2]!).body)).toEqual([1, 2, 3, 4]);
+    expect(() => rebuildArchive(arc, new Map(), [{ hash: 0x22, name: 'x.bin', body: new Uint8Array(1), like: arc.entries[1]! }])).toThrow();
   });
 });
 
@@ -533,6 +539,51 @@ describe('GMSG messages', () => {
     store.restore(saved);
     expect(store.text(102)!.kind).toBe(0x000c);
     expect(() => store.setText(99, 'x')).toThrow();
+  });
+
+  test('store: added messages go to a message file of their own past the game\'s IDs, save and restore', () => {
+    const reading = makeGmsg([new Uint8Array([0x41, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0])], true);
+    const store = new MessageStore([
+      { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
+      { name: 'MessageTest_IN_JP.gsmb', entryIndex: 4, gmsg: new Gmsg(reading), editable: true },
+    ]);
+    expect([store.addedBase, store.canAdd(), store.newFile()]).toEqual([NEW_MESSAGE_FIRST, true, null]);
+    const id = store.add(Uint16Array.from(msgs[2]!));
+    expect(id).toBe(NEW_MESSAGE_FIRST);
+    store.setText(id, 'ニセタウン');
+    expect([store.plain(id), store.plain(102), store.isAdded(id), store.changed(), store.file(id)!.name]).toEqual(['ニセタウン', 'デンパタウン', true, true, NEW_MESSAGE_FILE]);
+    // the game's files are left alone (no readings for the new ones); the new file holds them
+    expect(store.replacements().size).toBe(0);
+    const nf = store.newFile()!;
+    expect([nf.name, nf.hash]).toEqual([NEW_MESSAGE_FILE, NEW_MESSAGE_HASH]);
+    const g = new Gmsg(nf.bytes);
+    expect([g.first, g.last, g.reading, plainText(g.units(id)!), g.roundTrips()]).toEqual([NEW_MESSAGE_FIRST, NEW_MESSAGE_FIRST, false, 'ニセタウン', true]);
+    expect(u32(nf.bytes, 4)).toBe(nf.bytes.length);
+    const saved = store.saved();
+    store.restore([]);
+    expect([store.changed(), store.plain(id), store.newFile()]).toEqual([false, undefined, null]);
+    store.restore(saved);
+    expect(store.plain(id)).toBe('ニセタウン');
+    store.restore([], true); // the map editor's undo keeps added messages
+    expect(store.plain(id)).toBe('ニセタウン');
+    expect(() => store.removeAdded(102)).toThrow();
+    store.removeAdded(id);
+    expect(store.changed()).toBe(false);
+  });
+
+  test('store: with a MOD\'s message file past the game\'s IDs, new messages are appended to it', () => {
+    const mod = makeGmsg(msgs);
+    w32(mod, 8, NEW_MESSAGE_FIRST);
+    w32(mod, 12, NEW_MESSAGE_FIRST + msgs.length - 1);
+    const store = new MessageStore([
+      { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
+      { name: NEW_MESSAGE_FILE, entryIndex: 7, gmsg: new Gmsg(mod), editable: true },
+    ]);
+    const id = store.add(Uint16Array.from(msgs[2]!));
+    expect(id).toBe(NEW_MESSAGE_FIRST + msgs.length);
+    expect(store.newFile()).toBeNull();
+    const g = new Gmsg(store.replacements().get(7)!);
+    expect([g.first, g.last, plainText(g.units(id)!), plainText(g.units(NEW_MESSAGE_FIRST + 2)!)]).toEqual([NEW_MESSAGE_FIRST, id, 'デンパタウン', 'デンパタウン']);
   });
 });
 

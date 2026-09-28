@@ -418,6 +418,52 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.changed(1)).toBe(false);
   });
 
+  test('copied monster: a new row, exported with the row patch, read back', async () => {
+    const { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
+    const { buildPatches } = await import('../src/game/patch');
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    expect(g2.master.table('monsterParameter.bin').rows).toBe(VANILLA_MONSTER_ROWS);
+    expect(book.needsRowsPatch()).toBe(false);
+    const src = book.monster(15)!;
+    const n = book.copyMonster(15);
+    expect(n).toBe(VANILLA_MONSTER_ROWS);
+    expect(book.monsters.length).toBe(185);
+    const c = book.monster(n)!;
+    expect({ ...c, row: 15, design: src.design }).toEqual(src);
+    // its own design row and name message: renaming it leaves the original alone
+    expect(c.design).not.toBe(src.design);
+    expect(book.nameId(n)).toBe(g2.master.texts.addedBase);
+    expect(book.nameSharers(n)).toEqual([]);
+    book.setName(n, 'コピーおう');
+    expect([book.monster(n)!.name, book.monster(15)!.name]).toEqual(['コピーおう', src.name]);
+    expect(book.designChanged()).toBe(true);
+    expect([book.added(n), book.changed(n), book.canRemove(n), book.needsRowsPatch()]).toEqual([true, false, true, true]);
+    book.set(n, 'hpMax', 1234);
+    expect([book.monster(n)!.hp.max, book.monster(15)!.hp.max]).toEqual([1234, src.hp.max]);
+    expect(book.users(n)).toEqual({ groups: [], fixes: [], forms: [] });
+    // the patch replaces the 5 checks of row < 0xB9
+    const built = buildPatches(g2.dump.code, [MONSTER_ROWS_PATCH]).get(MONSTER_ROWS_PATCH_ID)!;
+    expect(built.errors).toEqual([]);
+    expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe35800b9, 0xe35100b9, 0xe35100b9, 0xe35100b9, 0xe35100b9]);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()]]), ips: null,
+    });
+    const b2 = await again.monsters();
+    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual(['コピーおう', src.name, 1234, false]);
+    expect(b2.monster(n)!.description).toBe(src.description);
+    const nameId = book.nameId(n);
+    book.removeMonster(n);
+    expect([book.monsters.length, book.needsRowsPatch(), book.designChanged(), g2.master.texts.isAdded(nameId), g2.master.texts.changed()]).toEqual([184, false, false, false, false]);
+    // a vanilla row sharing its name with another form gets one of its own
+    const shared = book.monsters.find((m) => book.nameSharers(m.row).length)!;
+    const other = book.nameSharers(shared.row)[0]!;
+    book.ownDesign(shared.row);
+    book.setName(shared.row, 'べつのなまえ');
+    expect([book.monster(shared.row)!.name, book.monster(other)!.name]).toEqual(['べつのなまえ', shared.name]);
+  });
+
   test('drop odds and skill motions (performance table, code.bin FUN_00283e68 / FUN_002f46bc)', async () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();
@@ -433,9 +479,10 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(skillAnims / total).toBeGreaterThan(0.5);
   });
 
-  test('action edits: a copy with its own motion (まおう\'s デスブロー as skill D), export and read back', async () => {
+  test('action edits: a copy with its own name and motion (まおう\'s デスブロー as skill D), export and read back', async () => {
     const { ActionBook, ActionEdits } = await import('../src/game/actions');
     const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
+    const { LAST_GAME_MESSAGE, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } = await import('../src/game/gmsg');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g2.monsters();
     const dd = book.directData!;
@@ -447,9 +494,18 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const n = edits.copy(509);
     expect(n).toBe(672);
     expect(edits.added(n)).toBe(true);
+    // its own name message, in a message file added to the master past the game's IDs: renaming it leaves デスブロー alone
+    const texts = g2.master.texts;
+    expect(Math.max(...[...texts.files, ...texts.readings].map((f) => f.gmsg.last))).toBeLessThanOrEqual(LAST_GAME_MESSAGE);
+    const nameId = new ActionBook(g2.master, () => '', dd).action(n)!.nameId;
+    expect([nameId, texts.file(nameId)!.name, texts.plain(nameId)]).toEqual([NEW_MESSAGE_FIRST, NEW_MESSAGE_FILE, texts.plain(before.action(509)!.nameId)]);
+    texts.setText(nameId, texts.text(nameId)!.text.replace('デスブロー', 'デスブローＺ'));
     edits.setMotion(n, 0x48);
     let acts = new ActionBook(g2.master, () => '', dd);
-    expect(acts.action(n)!.name).toBe('デスブロー');
+    expect([acts.action(n)!.name, acts.action(509)!.name]).toEqual(['デスブローＺ', 'デスブロー']);
+    // a vanilla action gets a name of its own too (the next new ID)
+    const own = edits.ownName(510);
+    expect([own, texts.plain(own)]).toEqual([NEW_MESSAGE_FIRST + 1, texts.plain(before.action(510)!.nameId)]);
     expect(acts.action(n)!.performance).toBe(1026); // a new performance row, the same but for the anim
     expect(acts.motion(n)).toBe(0x48);
     expect([...dd.row(1026)].filter((b, i) => b !== dd.row(823)[i])).toEqual([0x48]);
@@ -473,7 +529,19 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
     const b2 = await again.monsters();
     const a2 = new ActionBook(again.master, () => '', b2.directData);
-    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブロー'], [510, 'まおうけん']]);
+    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブローＺ'], [510, 'まおうけん']]);
+    expect([a2.action(509)!.name, a2.action(510)!.nameId]).toEqual(['デスブロー', own]);
+    // the new messages are a type 6 entry of their own; the game's message files are exported as they were
+    const arc = parseArchive(files.get('56562135')!);
+    const orig = g2.master.archive;
+    const added = arc.entries.find((e) => e.hash === NEW_MESSAGE_HASH)!;
+    expect([added.type, arc.entries.length]).toEqual([6, orig.entries.length + 1]);
+    console.log(`master: ${orig.entries.length} entries, in hash order: ${orig.entries.every((e, i) => !i || orig.entries[i - 1]!.hash < e.hash)}, the new one at ${arc.entries.indexOf(added)}`);
+    const again2 = again.master.texts;
+    expect(again2.files.find((f) => f.name === NEW_MESSAGE_FILE)!.gmsg.last).toBe(NEW_MESSAGE_FIRST + 1);
+    for (const f of [...texts.files, ...texts.readings]) expect(again2.files.concat(again2.readings).find((x) => x.name === f.name)!.gmsg.roundTrips()).toBe(true);
+    // with that file in the master (like a base MOD's), new messages are appended to it
+    expect(again2.addedBase).toBe(NEW_MESSAGE_FIRST + 2);
     expect([a2.motion(n), a2.motion(510), a2.motion(509), a2.action(510)!.element]).toEqual([0x48, 0x47, 0x46, 8]);
     expect(b2.directData!.rows).toBe(1028);
     edits.revert(510);

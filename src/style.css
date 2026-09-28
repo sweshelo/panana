@@ -419,6 +419,9 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .sound-cell.sold { opacity: 0.4; cursor: default; }
 .sound-cell-text { display: flex; flex-direction: column; min-width: 0; }
 .sound-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name-edit { margin-bottom: 8px; }
+.name-edit > span:last-child { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.name-edit input[type='text'] { min-width: 12em; }
 
 /* narrow screens (phones): the top bar's pages and buttons go into a drawer; a book page shows its list or the entry */
 @media (max-width: 760px) {

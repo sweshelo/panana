@@ -29,8 +29,8 @@ const MOTION_INFO = [
 
 const NAME_INFO = [
   '戦闘で「〈モンスター〉の　〇〇！」と出る名前のメッセージです。',
-  'ほかのアクションと同じメッセージを使っているときは、書き換えると両方の名前が変わります。',
-  '新しいメッセージ番号は作れないので、複製したワザに別の名前を付けるときは「別のメッセージにする」で、どのアクションも使っていないメッセージを選んでから書き換えてください。',
+  'ほかのアクションと同じメッセージを使っているときは、書き換えると両方の名前が変わります。「このワザだけの名前にする」で、同じ本文の新しいメッセージを作ってこのワザだけに付けられます。',
+  '新しいメッセージは、マスター (56562135) に足すメッセージのファイル (MessageMod_JP.gsmb、ID 0x2C00〜) に入ります。複製したワザには最初から自分の名前のメッセージが付きます。',
 ].join('\n');
 
 /** Keys ("005_") of the motions a monster's model has; null while loading or when it has no model. */
@@ -111,6 +111,9 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
             {a.nameId > 0 && (
               <div className="small">
                 {sharedName.length > 0 && <span className="muted">{`同じ名前: ${sharedName.slice(0, 4).map((x) => `#${x.row}`).join('、')}${sharedName.length > 4 ? ` ほか ${sharedName.length - 4}` : ''} `}</span>}
+                {sharedName.length > 0 && edits.canOwnName(row) && (
+                  <button className="small" title="同じ本文の新しいメッセージを作り、このワザの名前にします" onClick={() => apply(() => edits.ownName(row))}>このワザだけの名前にする</button>
+                )}
                 <button className="small" title="名前に使うメッセージを選び直します" onClick={() => setPickName(true)}>別のメッセージにする</button>
               </div>
             )}
@@ -176,8 +179,8 @@ function NameInput({ value, edited, onCommit }: { value: string; edited: boolean
 }
 
 /**
- * Picking the name message of an action among the messages of the same file (MessageBattle for the skills). New IDs
- * can't be made (the next file's range follows right after), so the list starts with the ones no action uses.
+ * Picking the name message of an action among the messages of the same file (MessageBattle for the skills) and the
+ * added ones; the list starts with the ones no action uses.
  */
 function NamePicker({ session, actions, current, onPick, onClose }: {
   session: Session;
@@ -189,12 +192,13 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
   const texts = session.game.master.texts;
   const [query, setQuery] = useState('');
   const [free, setFree] = useState(true);
-  const file = texts.file(current);
+  const file = texts.isAdded(current) ? undefined : texts.file(current);
   const users = new Map<number, number[]>();
   for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), x.row]);
   const q = query.trim();
   const ids: number[] = [];
-  if (file) for (let id = file.gmsg.first; id <= file.gmsg.last; id++) {
+  const range = [...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []), ...texts.addedIds()];
+  for (const id of range) {
     if (free && users.has(id) && id !== current) continue;
     const t = texts.preview(id, true) ?? '';
     if (q && !t.includes(q) && String(id) !== q) continue;
@@ -205,7 +209,7 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
       <div className="row">
         <input type="search" className="picker-search" placeholder="本文・番号で絞り込み" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
         <label><input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />アクションが使っていないものだけ</label>
-        <InfoTip text={`${file?.name ?? ''} のメッセージです。アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。`} />
+        <InfoTip text={`${file?.name ?? ''} と追加したメッセージです。アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。`} />
       </div>
       <div className="picker-list">
         <table className="book-table">

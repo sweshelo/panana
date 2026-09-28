@@ -18,7 +18,7 @@ import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
 import { Radar } from '../ui/Radar';
 import { ActionBook } from '../game/actions';
-import { BossEditor, DropEditor, SkillEditor, StatEditor } from './monsteredit';
+import { BossEditor, DropEditor, NameEditor, SkillEditor, StatEditor } from './monsteredit';
 
 export interface Appearance {
   map: MapInfo;
@@ -129,11 +129,13 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
     <>
       <div className="book-head">
         <h2 className="with-info">{m.name}<InfoTip text={'変更はマスター (56562135) の monsterParameter.bin として書き出されます。\n同じモンスターの別の形態 (ボスなど) は別の行です。'} /></h2>
-        <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}`}</span>
+        <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}${book.added(m.row) ? '  (追加した行)' : ''}`}</span>
+        <CopyButtons book={book} m={m} edited={edited} />
         {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
       </div>
       <div className="book-top">
         <div>
+          <NameEditor session={session} {...p} />
           {m.description && <p className="book-desc">{m.description}</p>}
           <StatEditor {...p} />
         </div>
@@ -159,6 +161,39 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
           </details>
         ))}
       </div>
+    </>
+  );
+}
+
+const COPY_INFO = [
+  'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',
+  '群れ・ボス戦の敵・次の形態で選べます。',
+  'ゲームは行 185 以降を弾くので、追加した行があると書き出しに code.ips のパッチ「追加したモンスター」が入ります。行は 255 まで。',
+].join('\n');
+
+/** Copy this row as a new monster; remove the last added one when nothing refers to it. */
+function CopyButtons({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
+  const users = book.canRemove(m.row) ? book.users(m.row) : null;
+  const used = users ? [
+    ...users.groups.map((r) => `群れ #${r}`), ...users.fixes.map((r) => `ボス戦の敵 #${r}`), ...users.forms.map((r) => `#${r} の次の形態`),
+  ] : [];
+  return (
+    <>
+      <span className="with-info">
+        <button disabled={!book.canCopy()} title={book.canCopy() ? '' : 'モンスターは行 255 までです'} onClick={() => {
+          const n = book.copyMonster(m.row);
+          edited();
+          location.hash = `#/monsters/${n}`;
+        }}>写して新しいモンスターを作る</button>
+        <InfoTip text={COPY_INFO} />
+      </span>
+      {users && (
+        <button disabled={used.length > 0} title={used.length ? `使われています: ${used.join('・')}` : '最後に追加したモンスターを消します'} onClick={() => {
+          book.removeMonster(m.row);
+          edited();
+          location.hash = `#/monsters/${m.row - 1}`;
+        }}>このモンスターを消す</button>
+      )}
     </>
   );
 }

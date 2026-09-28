@@ -77,28 +77,48 @@ function packEntry(e: ArcEntry, name: string | null, body: Uint8Array): Uint8Arr
   return body;
 }
 
-/** Same as gsarc.rebuild: replaced entries are re-packed, others are copied verbatim. */
-export function rebuildArchive(arc: Archive, replacements: Map<number, Uint8Array>): Uint8Array {
-  const n = arc.entries.length;
+/** A file to add to an archive: packed like `like` (an entry of the archive: type, compression, unk). */
+export interface NewEntry {
+  hash: number;
+  name: string;
+  body: Uint8Array;
+  like: ArcEntry;
+}
+
+/**
+ * Same as gsarc.rebuild: replaced entries are re-packed, others are copied verbatim. `added` entries go where their
+ * hash sorts when the archive's entries are in hash order (so a lookup that bisects still finds them), else last.
+ */
+export function rebuildArchive(arc: Archive, replacements: Map<number, Uint8Array>, added: NewEntry[] = []): Uint8Array {
+  const sorted = arc.entries.every((e, i) => i === 0 || arc.entries[i - 1]!.hash < e.hash);
+  const list: { e: ArcEntry; add?: NewEntry }[] = arc.entries.map((e) => ({ e }));
+  for (const a of added) {
+    if (arc.entries.some((e) => e.hash === a.hash)) throw new Error(`アーカイブにはハッシュ ${a.hash.toString(16)} のエントリがすでにあります`);
+    const at = sorted ? list.findIndex((x) => x.e.hash > a.hash) : -1;
+    const item = { e: { ...a.like, hash: a.hash }, add: a };
+    if (at < 0) list.push(item);
+    else list.splice(at, 0, item);
+  }
+  const n = list.length;
   const blobs: Uint8Array[] = [];
   const hdr = new Uint8Array(12 + 28 * n);
   w32(hdr, 0, arc.version);
   w32(hdr, 4, arc.hash);
   w32(hdr, 8, n);
   let pos = hdr.length;
-  for (const e of arc.entries) {
+  for (const [i, { e, add }] of list.entries()) {
     let blob: Uint8Array;
     let raw: number;
-    const rep = replacements.get(e.index);
+    const rep = add?.body ?? replacements.get(e.index);
     if (rep) {
-      const name = e.comp === 1 ? unpackEntry(arc, e).name : null;
+      const name = add ? add.name : e.comp === 1 ? unpackEntry(arc, e).name : null;
       blob = packEntry(e, name, rep);
       raw = rep.length;
     } else {
       blob = entryBlob(arc, e);
       raw = e.raw;
     }
-    const o = 12 + e.index * 28;
+    const o = 12 + i * 28;
     w32(hdr, o, e.hash);
     w32(hdr, o + 4, e.type);
     w32(hdr, o + 8, blob.length);
