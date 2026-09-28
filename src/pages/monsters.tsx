@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Game } from '../game/game';
 import type { MapInfo } from '../game/codebin';
-import { mapEncounters, RESIST_GROUPS, RESIST_MAX, RESIST_MIN, type Monster, type MonsterBook, type MonsterGroup, type ResistKind } from '../game/monsters';
+import { ELEMENT_AILMENTS, mapEncounters, PLAIN_AILMENTS, RESIST_ELEMENTS as ELEMENTS, RESIST_MAX, RESIST_MIN, type Monster, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import type { ModelRef } from './modelview';
 import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, MONSTER_MOTIONS } from '../game/monsters';
@@ -170,11 +170,21 @@ const RESIST_INFO = [
   'ワザの付与率 = 基本の率 (ワザごとに 100 / 75 / 50 / 34 / 25 / 12 / 6%) × 係数 (上限 100%)。',
 ].join('\n');
 
+/** The resistance charts: a label and the indices in Monster.resist of its axes. */
+function resistCharts(n: number): [string, number[]][] {
+  const range = (a: number, b: number): number[] => Array.from({ length: b - a }, (_, i) => a + i);
+  return [
+    ['属性', range(0, ELEMENTS)],
+    ['属性の状態異常', ELEMENT_AILMENTS],
+    ['状態異常・能力ダウン・突然死', [...PLAIN_AILMENTS, ...range(20, n)]],
+  ];
+}
+
 const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`;
 
 /**
- * Resistances by group, each with its effect. Elements and ailments are radar charts whose handles can
- * be dragged; every value can also be picked in the tables (-9..+10).
+ * Resistances by chart, each with its effect: elements, the ailments of the elements, and the other ailments with the
+ * stat downs and instant death. The handles of the charts can be dragged; the tables (folded) pick any value (-9..+10).
  */
 function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
   const bp = book.battle;
@@ -182,64 +192,63 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
     book.setResist(m.row, k, v);
     edited();
   };
-  const effect = (kind: ResistKind, v: number): string => {
-    if (kind === 'element') {
+  const effect = (k: number, v: number): string => {
+    if (k < ELEMENTS) {
       const mul = bp.multiplier(v);
       return mul === 0 ? '無効 (×0)' : `×${mul}${mul > 1 ? ' (弱点)' : mul < 1 ? ' (効きにくい)' : ''}`;
     }
     return `係数 ${bp.coefficient(v)}%`;
   };
   const values = Array.from({ length: RESIST_MAX - RESIST_MIN + 1 }, (_, i) => i + RESIST_MIN);
+  const charts = resistCharts(m.resist.length);
   return (
     <div className="resists">
       <div className="radars">
-        {RESIST_GROUPS.filter(([, kind]) => kind === 'element' || kind === 'ailment').map(([label, kind, a, b]) => (
+        {charts.map(([label, ks]) => (
           <figure key={label} className="radar-box">
             <Radar
-              axes={m.resist.slice(a, b).map((r, j) => ({ label: r.name, value: r.value, original: book.originalResist(m.row, a + j) }))}
+              axes={ks.map((k) => ({ label: m.resist[k]!.name, value: m.resist[k]!.value, original: book.originalResist(m.row, k) }))}
               min={RESIST_MIN}
               max={RESIST_MAX}
               rings={[-9, -5, 0, 5, 10]}
-              format={(v) => `${fmt(v)} ${effect(kind, v)}`}
-              onChange={(j, v) => set(a + j, v)}
+              format={(v, j) => `${fmt(v)} ${effect(ks[j]!, v)}`}
+              onChange={(j, v) => set(ks[j]!, v)}
             />
             <figcaption>{`${label} (ドラッグで変更。点線 = 元の値)`}</figcaption>
           </figure>
         ))}
       </div>
-      {RESIST_GROUPS.map(([label, kind, a, b]) => (
-        <table key={label} className="res-table">
-          <tbody>
-            <tr>
-              <th>{label}</th><th>値</th>
-              {kind === 'element' ? <th>ダメージ</th> : <th>係数</th>}
-            </tr>
-            {m.resist.slice(a, b).map((r, j) => {
-              const k = a + j;
-              const orig = book.originalResist(m.row, k);
-              const cls = r.value > 0 ? 'plus' : r.value < 0 ? 'minus' : '';
-              return (
-                <tr key={k}>
-                  <td>{r.name}</td>
-                  <td>
-                    <select
-                      className={r.value !== orig ? 'edited' : ''}
-                      title={r.value !== orig ? `元の値 ${fmt(orig)}` : `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})`}
-                      value={r.value}
-                      onChange={(e) => set(k, Number(e.target.value))}
-                    >
-                      {[...new Set([...values, r.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
-                    </select>
-                  </td>
-                  {kind === 'element'
-                    ? <td className={`num ${cls}`}>{effect(kind, r.value)}</td>
-                    : <td className={`num ${cls}`}>{`${bp.coefficient(r.value)}%`}</td>}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      ))}
+      <details className="fold">
+        <summary>数値で編集</summary>
+        {charts.map(([label, ks]) => (
+          <table key={label} className="res-table">
+            <tbody>
+              <tr><th>{label}</th><th>値</th><th>{ks[0]! < ELEMENTS ? 'ダメージ' : '係数'}</th></tr>
+              {ks.map((k) => {
+                const r = m.resist[k]!;
+                const orig = book.originalResist(m.row, k);
+                const cls = r.value > 0 ? 'plus' : r.value < 0 ? 'minus' : '';
+                return (
+                  <tr key={k}>
+                    <td>{r.name}</td>
+                    <td>
+                      <select
+                        className={r.value !== orig ? 'edited' : ''}
+                        title={r.value !== orig ? `元の値 ${fmt(orig)}` : `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})`}
+                        value={r.value}
+                        onChange={(e) => set(k, Number(e.target.value))}
+                      >
+                        {[...new Set([...values, r.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
+                      </select>
+                    </td>
+                    <td className={`num ${cls}`}>{k < ELEMENTS ? effect(k, r.value) : `${bp.coefficient(r.value)}%`}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ))}
+      </details>
     </div>
   );
 }

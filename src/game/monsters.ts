@@ -58,9 +58,12 @@ export const RESIST_MIN = -9;
 export const RESIST_MAX = 10;
 export const RESIST_IMMUNE = 10;
 
-export type ResistKind = 'element' | 'ailment' | 'down' | 'death';
-/** Groups of the resistance list (for the UI): elements, ailments, stat downs, instant death. */
-export const RESIST_GROUPS: [string, ResistKind, number, number][] = [['属性', 'element', 0, 8], ['状態異常', 'ailment', 8, 20], ['能力ダウン', 'down', 20, 24], ['突然死', 'death', 24, 25]];
+/** Monster.resist: the elements first (0..7), then the ailments (8..19), the stat downs (20..23) and instant death (24). */
+export const RESIST_ELEMENTS = 8;
+/** The ailment of each element (火 やけど, 氷 氷結, 風 かぜっぴき, 土 どろだらけ, 電気 かんでん, 水 水びたし, 光 ブラインド, 闇 呪い). */
+export const ELEMENT_AILMENTS = [9, 15, 11, 12, 14, 10, 18, 13];
+/** The ailments of no element: 毒, マヒ, ねむり, 誘惑. */
+export const PLAIN_AILMENTS = [8, 16, 17, 19];
 
 /**
  * BattleParameter (1 row x 0x154): +0x08 f32 x 19 = element damage multiplier by resistance -9..+9
