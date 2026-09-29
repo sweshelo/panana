@@ -47,6 +47,12 @@ export interface ActionFields {
   formChange: number;
   /** +0x1E u16: row of the performance table (PERFORMANCE_TABLE; 0 = none). */
   performance: number;
+  /** +0x32: the state it inflicts (conditionData ID; 0 = none). An attack's extra effect (elpulse docs/battle.md §6.5). */
+  state: number;
+  /** w0 bit16-19 / bit20-23: strength of the state (min / max; a random value between them). */
+  strength: [number, number];
+  /** +0x16 (s16): turns of the state (kind 3 type 5 uses it for the form change instead). */
+  turns: number;
 }
 
 export function decodeAction(r: Uint8Array): ActionFields {
@@ -61,6 +67,9 @@ export function decodeAction(r: Uint8Array): ActionFields {
     amount: r.length >= 0x1c ? [s16(r, 0x18), s16(r, 0x1a)] : [0, 0],
     element: (w0 >>> 24) & 15,
     performance: r.length >= 0x20 ? u16(r, 0x1e) : 0,
+    state: r.length > 0x32 ? r[0x32]! : 0,
+    strength: [(w0 >>> 16) & 15, (w0 >>> 20) & 15],
+    turns: r.length >= 0x18 ? s16(r, 0x16) : 0,
     formChange: ((w0 >>> 1) & 3) === 3 && ((w0 >>> 3) & 15) === 5 && r.length >= 0x18 && s16(r, 0x16) > 1 ? s16(r, 0x16) : 0,
   };
 }
@@ -255,6 +264,24 @@ export class ActionEdits {
   /** w0 bit13-15: base infliction level. */
   setLevel(row: number, level: number): void {
     this.setBits(row, 13, 3, level);
+  }
+
+  /** +0x32: the state it inflicts (0 = none). */
+  setState(row: number, state: number): void {
+    const r = this.row(row);
+    if (r.length > 0x32) r[0x32] = state & 0xff;
+  }
+
+  /** w0 bit16-19 / bit20-23: strength of the state (min / max, 0〜15). */
+  setStrength(row: number, min: number, max: number): void {
+    this.setBits(row, 16, 4, min);
+    this.setBits(row, 20, 4, max);
+  }
+
+  /** +0x16 (s16): turns of the state. */
+  setTurns(row: number, turns: number): void {
+    const r = this.row(row);
+    if (r.length >= 0x18) w16(r, 0x16, turns & 0xffff);
   }
 
   /** +0x18 / +0x1A: amount (min / max, s16). */

@@ -1037,6 +1037,7 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
 
     // 必滅邪眼: まおう's transformation, スベテノオワリ on the target, the effect of デスブロー
     const edits = new ActionEdits(g.master, dd, book.directOriginalRows);
+    const decodeAction509 = new ActionBook(g.master, () => '', dd).action(509)!;
     const n = edits.copy(660);
     edits.copyAbility(n, 509);
     edits.setSlot(n, 0x1e, 839);
@@ -1058,6 +1059,14 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     expect(edits.setSlotField(n, 0x20, 'se', d1007.se)).toBe(1027);
     a = new ActionBook(g.master, () => '', dd);
     expect([a.slot(660, 0x20), a.slot(n, 0x20)]).toEqual([1009, 1027]);
+    // the state it inflicts: パラライズ-like extra effect on the copy only
+    edits.setState(n, 10);
+    edits.setStrength(n, 1, 4);
+    edits.setTurns(n, 3);
+    edits.setLevel(n, 7);
+    a = new ActionBook(g.master, () => '', dd);
+    expect([a.action(n)!.state, a.action(n)!.strength, a.action(n)!.turns, a.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
+    expect([a.action(509)!.state, a.action(509)!.strength]).toEqual([decodeAction509.state, decodeAction509.strength]);
     // export and read back
     book.setSkills(44, [n]);
     const files = buildModFiles(g, [], [], g.master.changed());
@@ -1067,6 +1076,7 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     const a2 = new ActionBook(again.master, () => '', b2.directData);
     expect([a2.slot(n, 0x1e), a2.slot(n, 0x20), a2.slot(n, 0x22), b2.directData!.rows]).toEqual([1026, 1027, 1008, 1028]);
     expect(b2.monster(44)!.skills.map((s) => s.action)).toEqual([n]);
+    expect([a2.action(n)!.state, a2.action(n)!.strength, a2.action(n)!.turns, a2.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
     expect(b2.effects.effects.length).toBe(738);
   });
 });
