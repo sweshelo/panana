@@ -47,6 +47,32 @@ function levelNote(book: MonsterBook | null, a: { kind: number; raw: Uint8Array 
   return '';
 }
 
+const STATE_INFO = [
+  '+0x32。このアクションが付ける状態 (conditionData の ID) です。',
+  '攻撃 (物理・固定の威力) では、ダメージのあとに追加効果として付けます (率は「付与の段階」)。倒したときは付きません。',
+  '状態のアクション (種類 0) では、これを付けるのがアクションの効果そのものです。',
+].join('\n');
+
+const STRENGTH_INFO = [
+  'w0 bit16-19 / bit20-23 (0〜15)。付ける状態の強さで、最小〜最大の間の乱数になります (FUN_0030b2a8 に渡す値)。',
+  '何に効くかは状態ごとに違います (たとえば能力の上げ下げの段階)。元のワザの値を目安にしてください。',
+].join('\n');
+
+/** Name of a state (conditionData +0x14), or its ID. */
+function stateName(book: MonsterBook | null, id: number): string {
+  return id ? book?.conditions[id] || `状態 ${id}` : 'なし';
+}
+
+/** States to pick: the named ones (and the current value). */
+function stateOptions(book: MonsterBook | null, current: number): [number, string][] {
+  const names = book?.conditions ?? [];
+  const out: [number, string][] = [];
+  for (let id = 1; id < Math.max(names.length, current + 1) && id < 256; id++) {
+    if (names[id] || id === current) out.push([id, stateName(book, id)]);
+  }
+  return out;
+}
+
 const NAME_INFO = [
   '戦闘で「〈モンスター〉の　〇〇！」と出る名前のメッセージです。',
   'ほかのアクションと同じメッセージを使っているときは、書き換えると両方の名前が変わります。「このワザだけの名前にする」で、同じ本文の新しいメッセージを作ってこのワザだけに付けられます。',
@@ -161,6 +187,35 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
             <span className="muted small">{` ${levelNote(book, a)}`}</span>
           </td>
         </tr>
+        {a.raw.length > 0x32 && (
+          <tr>
+            <td className="with-info">付ける状態<InfoTip text={STATE_INFO} /></td>
+            <td>
+              <select value={a.state} className={mark(!!orig && a.state !== orig.state)} title={orig && a.state !== orig.state ? `元は ${stateName(book, orig.state)}` : ''}
+                onChange={(e) => apply(() => edits.setState(row, Number(e.target.value)))}>
+                <option value={0}>なし</option>
+                {stateOptions(book, a.state).map(([id, name]) => <option key={id} value={id}>{`${name} (${id})`}</option>)}
+              </select>
+            </td>
+          </tr>
+        )}
+        <tr>
+          <td className="with-info">状態の強さ<InfoTip text={STRENGTH_INFO} /></td>
+          <td className="inline-fields">
+            <NumberInput value={a.strength[0]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[0] !== orig.strength[0])}`} onCommit={(v) => apply(() => edits.setStrength(row, v, a.strength[1]))} />
+            〜
+            <NumberInput value={a.strength[1]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[1] !== orig.strength[1])}`} onCommit={(v) => apply(() => edits.setStrength(row, a.strength[0], v))} />
+            {a.strength[0] > a.strength[1] && <span className="issue warn">最小が最大より大きい</span>}
+          </td>
+        </tr>
+        {a.raw.length >= 0x18 && !(a.kind === 3 && a.type === 5) && (
+          <tr>
+            <td className="with-info">状態のターン<InfoTip text="+0x16 (s16)。付けた状態が続くターン数です。" /></td>
+            <td>
+              <NumberInput value={a.turns} min={-32768} max={32767} className={`num-input ${mark(!!orig && a.turns !== orig.turns)}`} onCommit={(v) => apply(() => edits.setTurns(row, v))} />
+            </td>
+          </tr>
+        )}
         {a.raw.length >= 0x1c && (
           <tr>
             <td className="with-info">量<InfoTip text="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです" /></td>

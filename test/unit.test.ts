@@ -291,6 +291,17 @@ describe('actions', () => {
     r.set([168, 0], 0x16); // turns of a condition in other kinds
     expect(decodeAction(r).formChange).toBe(0);
   });
+
+  test('the state an attack inflicts: +0x32, strength (w0 bit16-23), turns (+0x16)', async () => {
+    const { decodeAction } = await import('../src/game/actions');
+    const r = new Uint8Array(0x3c);
+    // kind 1 (attack), level 1, strength 2〜3, element 5: マヒ (10) for 2 turns, like くちばしでつついてきた
+    w32(r, 0, ((1 << 1) | (1 << 13) | (2 << 16) | (3 << 20) | (5 << 24)) >>> 0);
+    r.set([2, 0], 0x16);
+    r[0x32] = 10;
+    const f = decodeAction(r);
+    expect([f.level, f.state, f.strength, f.turns, f.element]).toEqual([1, 10, [2, 3], 2, 5]);
+  });
 });
 
 describe('shops', () => {
