@@ -678,6 +678,7 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     // +10: an element is void, an ailment is clamped to +9 (0%)
     expect(book.battle.multiplier(10)).toBe(0);
     expect(book.battle.coefficient(10)).toBe(0);
+    expect(book.battle.rangePower).toEqual([100, 100, 100, 80, 70, 60, 60]);
     expect(book.battle.coefficient(-12)).toBe(200);
     const ham = book.monster(22)!;
     expect(ham.name).toBe('ゴールデンハム');
@@ -1064,7 +1065,12 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     edits.setStrength(n, 1, 4);
     edits.setTurns(n, 3);
     edits.setLevel(n, 7);
+    // a physical attack turned into a fixed-power one (like the spells), the other w0 fields kept
+    const w0 = new ActionBook(g.master, () => '', dd).action(n)!.w0;
+    edits.setKind(n, 1, 2);
+    edits.setTarget(n, 1, 6);
     a = new ActionBook(g.master, () => '', dd);
+    expect([a.action(n)!.kind, a.action(n)!.type, a.action(n)!.side, a.action(n)!.range, (a.action(n)!.w0 & ~0x1ffe) >>> 0]).toEqual([1, 2, 1, 6, (w0 & ~0x1ffe) >>> 0]);
     expect([a.action(n)!.state, a.action(n)!.strength, a.action(n)!.turns, a.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
     expect([a.action(509)!.state, a.action(509)!.strength]).toEqual([decodeAction509.state, decodeAction509.strength]);
     // export and read back
@@ -1077,6 +1083,7 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     expect([a2.slot(n, 0x1e), a2.slot(n, 0x20), a2.slot(n, 0x22), b2.directData!.rows]).toEqual([1026, 1027, 1008, 1028]);
     expect(b2.monster(44)!.skills.map((s) => s.action)).toEqual([n]);
     expect([a2.action(n)!.state, a2.action(n)!.strength, a2.action(n)!.turns, a2.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
+    expect([a2.action(n)!.kind, a2.action(n)!.type, a2.action(n)!.side, a2.action(n)!.range]).toEqual([1, 2, 1, 6]);
     expect(b2.effects.effects.length).toBe(738);
   });
 });

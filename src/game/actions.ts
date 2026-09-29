@@ -19,6 +19,48 @@ export const PERFORMANCE_TABLE = 0x92124c00;
 export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
 /** Kind (category) of an action (w0 bit1-2; elpulse docs/battle.md §8). */
 export const ACTION_KIND: Record<number, string> = { 0: '状態', 1: '攻撃・とくぎ', 2: 'アイテム', 3: '特殊' };
+/**
+ * Type (w0 bit3-6) by kind: how the battle computes it (elpulse docs/battle.md §6.1, §7). Kind 1 has no flag of its
+ * own for 攻撃 / とくぎ: types 0 / 1 are physical (こうげき vs ぼうぎょ, ×+0x33; 1 can be critical), 2 / 3 a fixed range
+ * (+0x18〜+0x1A). Type 3 of kinds 0 / 1 is a breath: ブレス封じ (state 0x5A) blocks it (FUN_00416a78).
+ */
+export const ACTION_TYPE: Record<number, Record<number, string>> = {
+  0: { 3: 'ブレス' },
+  1: { 0: '物理', 1: '物理・会心あり', 2: '固定の威力', 3: 'ブレス (固定の威力)' },
+  2: ITEM_EFFECT,
+  3: { 0: '効果なし (メッセージだけ)', 1: '能力の増減', 2: '場から消す (にげる)', 4: 'なかまをよぶ', 5: '変身・セリフ', 6: 'ゴールドをぬすむ', 7: '状態 (+0x32)', 8: '時間で変わる', 9: '時間で変わる' },
+};
+
+/**
+ * Side (w0 bit7-8) the action hits: absolute, not relative to the user (FUN_002876f8 reads it as the side of the units;
+ * users 0xFFF0〜0xFFF7 turn it over). A monster's attack on the party is 1, its own buffs 0; the party's spells 0.
+ */
+export const ACTION_SIDE: Record<number, string> = { 0: 'モンスターの側', 1: '電波人間の側' };
+/**
+ * Range (w0 bit9-12): which units of the side are hit (FUN_003188e0). 3〜5 hit the target and the units around it
+ * in the formation (FUN_002842e4 with the distance 1〜3). The power of a physical attack with +0x33 = 10 is scaled by
+ * BattleParameter [0x58 + range] (100 / 100 / 100 / 80 / 70 / 60 / 60 %).
+ */
+export const ACTION_RANGE: Record<number, string> = {
+  0: '自分', 1: '自分', 2: '単体', 3: '目標と周り (距離 1)', 4: '目標と周り (距離 2)', 5: '目標と周り (距離 3)', 6: '全体', 7: 'なし (だれにも当たらない)', 8: '陣営全体 (場の効果)',
+};
+
+/** "2: 単体". */
+export function actionRangeLabel(range: number): string {
+  return `${range}: ${ACTION_RANGE[range] ?? '(表の外。だれにも当たらない)'}`;
+}
+
+/** "1: 物理・会心あり" (the number alone when the type means nothing special for the kind). */
+export function actionTypeLabel(kind: number, type: number): string {
+  const name = ACTION_TYPE[kind]?.[type];
+  return name ? `${type}: ${name}` : String(type);
+}
+
+/** "攻撃・とくぎ (物理)": the kind of an action and, when it means something, its type. */
+export function actionKindLabel(kind: number, type: number): string {
+  const name = ACTION_TYPE[kind]?.[type];
+  return `${ACTION_KIND[kind] ?? `種類 ${kind}`}${name && kind !== 3 ? ` (${name})` : ''}`;
+}
 /** Element of an action (w0 bit24-27). */
 export const ELEMENT = ['', '火', '氷', '風', '土', '電気', '水', '光', '闇'];
 /** Scenes where an item action can be used: w0 bit -> label. */
@@ -30,6 +72,10 @@ export interface ActionFields {
   kind: number;
   /** w0 bit3-6: item effect type (kind 2). */
   type: number;
+  /** w0 bit7-8: side it hits (0 monsters, 1 the party; ACTION_SIDE). */
+  side: number;
+  /** w0 bit9-12: range (ACTION_RANGE). */
+  range: number;
   /** w0 bit13-15: base infliction level of a skill (BattleParameter [0x60 + level]). */
   level: number;
   /** Where it can be used (w0 bit29-31). */
@@ -61,6 +107,8 @@ export function decodeAction(r: Uint8Array): ActionFields {
     w0,
     kind: (w0 >>> 1) & 3,
     type: (w0 >>> 3) & 15,
+    side: (w0 >>> 7) & 3,
+    range: (w0 >>> 9) & 15,
     level: (w0 >>> 13) & 7,
     scenes: SCENES.filter(([b]) => (w0 >>> b) & 1).map(([, n]) => n),
     nameId: r.length >= 8 ? u32(r, 4) : 0,
@@ -259,6 +307,18 @@ export class ActionEdits {
   /** w0 bit24-27: element (0 = none, 1 火 .. 8 闇). */
   setElement(row: number, element: number): void {
     this.setBits(row, 24, 4, element);
+  }
+
+  /** w0 bit1-2 / bit3-6: kind and type (how the battle computes the action). */
+  setKind(row: number, kind: number, type: number): void {
+    this.setBits(row, 1, 2, kind);
+    this.setBits(row, 3, 4, type);
+  }
+
+  /** w0 bit7-8 / bit9-12: the side and the range it hits. */
+  setTarget(row: number, side: number, range: number): void {
+    this.setBits(row, 7, 2, side);
+    this.setBits(row, 9, 4, range);
   }
 
   /** w0 bit13-15: base infliction level. */

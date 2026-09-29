@@ -302,6 +302,26 @@ describe('actions', () => {
     const f = decodeAction(r);
     expect([f.level, f.state, f.strength, f.turns, f.element]).toEqual([1, 10, [2, 3], 2, 5]);
   });
+
+  test('kind and type (w0 bit1-2 / bit3-6) name how the battle computes an action', async () => {
+    const { actionKindLabel, actionTypeLabel } = await import('../src/game/actions');
+    expect([actionKindLabel(1, 0), actionKindLabel(1, 1), actionKindLabel(1, 2), actionKindLabel(1, 3)])
+      .toEqual(['攻撃・とくぎ (物理)', '攻撃・とくぎ (物理・会心あり)', '攻撃・とくぎ (固定の威力)', '攻撃・とくぎ (ブレス (固定の威力))']);
+    expect([actionKindLabel(0, 2), actionKindLabel(0, 3), actionKindLabel(2, 0), actionKindLabel(3, 4)]).toEqual(['状態', '状態 (ブレス)', 'アイテム (HP 回復)', '特殊']);
+    expect([actionTypeLabel(3, 5), actionTypeLabel(1, 9)]).toEqual(['5: 変身・セリフ', '9']);
+  });
+
+  test('side and range (w0 bit7-8 / bit9-12)', async () => {
+    const { decodeAction, actionRangeLabel } = await import('../src/game/actions');
+    const r = new Uint8Array(0x3c);
+    // たいあたり: an attack of a monster on one of the party
+    w32(r, 0, ((1 << 1) | (1 << 7) | (2 << 9)) >>> 0);
+    expect([decodeAction(r).side, decodeAction(r).range]).toEqual([1, 2]);
+    // みんなもうどく: all the monsters
+    w32(r, 0, (6 << 9) >>> 0);
+    expect([decodeAction(r).side, decodeAction(r).range]).toEqual([0, 6]);
+    expect([actionRangeLabel(3), actionRangeLabel(12)]).toEqual(['3: 目標と周り (距離 1)', '12: (表の外。だれにも当たらない)']);
+  });
 });
 
 describe('performance timeline (docs/action-performance.md §3.1)', () => {

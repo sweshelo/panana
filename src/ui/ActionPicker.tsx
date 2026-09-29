@@ -1,6 +1,6 @@
 // Picking an action (a monster's skill) from a searchable table; actions have no model to show.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ELEMENT, type ActionBook } from '../game/actions';
+import { actionKindLabel, ELEMENT, type ActionBook } from '../game/actions';
 import { Dialog } from './Dialog';
 
 type Filter = 'skill' | 'monster' | 'all';
@@ -48,7 +48,7 @@ export function ActionPicker({ actions, title = 'ワザを選ぶ', current, onPi
                 <tr key={a.row} className={a.row === current ? 'active current' : ''} onClick={() => onPick(a.row)}>
                   <td className="num muted">{a.row}</td>
                   <td>{a.name || <span className="muted">(名前なし)</span>}{a.formChange ? <span className="muted small">{` → 変身 #${a.formChange}`}</span> : null}</td>
-                  <td className="muted">{ACTION_KIND[a.kind] ?? a.kind}</td>
+                  <td className="muted">{actionKindLabel(a.kind, a.type)}</td>
                   <td>{ELEMENT[a.element] ?? a.element}</td>
                   <td className="muted small">{users.slice(0, 3).map((m) => m.name).join('、')}{users.length > 3 ? ` ほか ${users.length - 3}` : ''}</td>
                 </tr>
