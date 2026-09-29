@@ -71,7 +71,7 @@ function ActionEdit({ session, book, row, onChange }: { session: Session; book: 
         }}>複製して新しいワザにする</button>
         {!added && <button disabled={!edits.changed(row)} onClick={() => { edits.revert(row); session.book?.reload(); onChange(); }}>元に戻す</button>}
       </div>
-      {session.book?.directData && <ActionPreview session={session} actions={book} row={row} users={users} />}
+      {session.book?.directData && <ActionPreview session={session} actions={book} edits={edits} row={row} users={users} onChange={onChange} />}
     </section>
   );
 }

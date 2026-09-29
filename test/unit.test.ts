@@ -293,6 +293,49 @@ describe('actions', () => {
   });
 });
 
+describe('performance timeline (docs/action-performance.md §3.1)', () => {
+  test('the frames of a slot like FUN_002f46bc', async () => {
+    const { EffectTable, decodePerformance, slotTimeline } = await import('../src/game/performance');
+    const fx = new EffectTable(null, null);
+    const effect = (row: number, delay: number, extra: { afterMotion?: boolean; late?: boolean } = {}): void => {
+      fx.effects[row] = { row, archive: 0, model: 0, texture: 0, bone: '', scale: 1, rotation: [0, 0, 0], delay, offset: [0, 0, 0], length: 0, afterMotion: false, late: false, ...extra };
+    };
+    effect(1, 20);
+    effect(2, -30);
+    effect(3, 0);
+    effect(4, 10, { late: true });
+    effect(5, 0, { afterMotion: true });
+    const perf = (f: { effect: number; se?: number; anim?: number; length?: number; add?: boolean; d12?: number; d13?: number; shake?: number }) => {
+      const r = new Uint8Array(20);
+      r.set([f.length ?? 0, 0], 2);
+      r.set([f.effect, 0, f.se ?? 7, 0], 4);
+      r[9] = 0xa0 | (f.add ? 1 : 0);
+      r[0x0a] = f.anim ?? 0x46;
+      r[0x0f] = f.shake ?? 0;
+      r[0x12] = (f.d12 ?? 0) & 0xff;
+      r[0x13] = (f.d13 ?? 0) & 0xff;
+      return decodePerformance(r, 1);
+    };
+    // #288's user: the effect and the sound effect at 20, the motion at 0
+    let t = slotTimeline(perf({ effect: 1 }), fx, 40);
+    expect([t.effect, t.se, t.motion, t.length, t.exact]).toEqual([20, 20, 0, 40, true]);
+    // a negative start: the effect first, the motion that much later; the sound effect from the effect
+    t = slotTimeline(perf({ effect: 2, d13: 5 }), fx, 40);
+    expect([t.effect, t.se, t.motion, t.length]).toEqual([0, 5, 30, 70]);
+    // a sound effect before the effect pushes the rest back
+    t = slotTimeline(perf({ effect: 3, d13: -5, d12: 8, shake: 3 }), fx, null);
+    expect([t.effect, t.se, t.motion, t.shake, t.length, t.exact]).toEqual([5, 0, 5, 13, 60, false]);
+    // +3 for effects with some flags; after the motion; the length added to the motion's
+    t = slotTimeline(perf({ effect: 4 }), fx, 40);
+    expect([t.effect, t.se, t.motion]).toEqual([13, 13, 3]);
+    t = slotTimeline(perf({ effect: 5, length: 10, add: true }), fx, 40);
+    expect([t.effect, t.length]).toEqual([40, 50]);
+    // a length of its own; the hit mark of skill B with MonsterDesign +0x6B
+    t = slotTimeline(perf({ effect: 3, length: 100 }), fx, null, [5, 7, 9, 11]);
+    expect([t.length, t.exact, t.hit, t.shake]).toEqual([100, true, 7, null]);
+  });
+});
+
 describe('shops', () => {
   test('decode Shop rows and merge them with ShopItem', async () => {
     const { buildShops, decodeShopRow, shopLabel } = await import('../src/game/shops');

@@ -1028,6 +1028,12 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     expect(uses.get(839)).toContainEqual({ kind: 'action', action: 525, slot: 0x1e });
     expect(uses.get(839)).toContainEqual({ kind: 'transform', monster: 44 });
     expect(fx.addEffects(8).length).toBe(1);
+    // #288's two sound effects: the user's at frame 20 (effectData 175 +0x20), the target's at 3 of its slot
+    // (effectData 176 has +0x28, so its slot is 3 frames late)
+    const { slotTimeline } = await import('../src/game/performance');
+    const tl = (p: number) => slotTimeline(decodePerformance(dd.row(p), p), fx, 60);
+    expect([tl(523).effect, tl(523).se, sounds.name(decodePerformance(dd.row(523), 523).se)]).toEqual([20, 20, 'SE_BTL_SPORE_PAL_S']);
+    expect([tl(524).se, sounds.name(decodePerformance(dd.row(524), 524).se)]).toEqual([3, 'SE_BTL_SPORE_PAL_S_G']);
 
     // 必滅邪眼: まおう's transformation, スベテノオワリ on the target, the effect of デスブロー
     const edits = new ActionEdits(g.master, dd, book.directOriginalRows);

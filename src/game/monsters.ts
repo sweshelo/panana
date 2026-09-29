@@ -724,6 +724,13 @@ export class MonsterBook {
   }
 
   /** Model of a monster: MonsterDesign +0x10 = bcres with the model and its animations, +0x14 = textures. */
+  /** MonsterDesign +0x6A〜+0x6D: frames added to the hit mark of the skill motions A〜D (docs/action-performance.md §3.1). */
+  skillLead(m: Monster): number[] {
+    if (m.design >= this.design.rows || this.design.rowSize < 0x6e) return [];
+    const r = this.design.row(m.design);
+    return [r[0x6a]!, r[0x6b]!, r[0x6c]!, r[0x6d]!];
+  }
+
   modelOf(m: Monster): { model: number; texture: number } | null {
     if (m.design >= this.design.rows) return null;
     const r = this.design.row(m.design);

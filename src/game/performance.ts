@@ -117,16 +117,26 @@ export interface Performance {
   face: number;
   /** +0x0E: directDataAddEffect row (0 = none). */
   addEffect: number;
-  /** +0x12 / +0x13: timing (frames, s8). */
+  /** +0x12 / +0x13: timing (frames, s8): the shake / the sound effect, from the start of the effect. */
   timing: [number, number];
+  /** +0x0D: start of the motion (frames). */
+  motionStart: number;
+  /** +0x09 bit0: +0x02 is added to the length found from the motion (else +0x02 is the length when not 0). */
+  addLength: boolean;
+  /** +0x0F: the shake (0 = none; FUN_0020a0ec, assumed). */
+  shake: number;
   raw: Uint8Array;
 }
 
 /** Offsets of the fields of a performance that the editor changes. */
-export const PERF = { length: 0x02, effect: 0x04, se: 0x06, anim: 0x0a, addEffect: 0x0e } as const;
+export const PERF = { length: 0x02, effect: 0x04, se: 0x06, anim: 0x0a, motionStart: 0x0d, addEffect: 0x0e, shakeDelay: 0x12, seDelay: 0x13 } as const;
 export type PerfField = keyof typeof PERF;
-/** Fields held in one byte (the others are u16). */
-const PERF_BYTE: Record<PerfField, boolean> = { length: false, effect: false, se: false, anim: true, addEffect: true };
+/** Fields held in one byte (the others are u16); s8 ones are written as their low byte. */
+const PERF_BYTE: Record<PerfField, boolean> = { length: false, effect: false, se: false, anim: true, motionStart: true, addEffect: true, shakeDelay: true, seDelay: true };
+/** Range of each field. */
+export const PERF_RANGE: Record<PerfField, [number, number]> = {
+  length: [-32768, 32767], effect: [0, 0xffff], se: [0, 0xffff], anim: [0, 255], motionStart: [0, 255], addEffect: [0, 255], shakeDelay: [-128, 127], seDelay: [-128, 127],
+};
 
 export function decodePerformance(r: Uint8Array, row: number): Performance {
   const s8 = (o: number): number => (r[o]! << 24) >> 24;
@@ -140,6 +150,9 @@ export function decodePerformance(r: Uint8Array, row: number): Performance {
     face: r[0x0b]!,
     addEffect: r[0x0e]!,
     timing: [s8(0x12), s8(0x13)],
+    motionStart: r[0x0d]!,
+    addLength: !!(r[0x09]! & 1),
+    shake: r[0x0f]!,
     raw: r,
   };
 }
@@ -175,6 +188,10 @@ export interface Effect {
   offset: [number, number, number];
   /** +0x28: length (frames, assumed). */
   length: number;
+  /** +0x2A bit0: the start is put after the motion (the motion's length is added). */
+  afterMotion: boolean;
+  /** Every frame of the slot is put 3 later (+0x2A bit4, +0x28, +0x2B bit4 / bit0-2 or +0x2C; @0x2F48A4). */
+  late: boolean;
 }
 
 /** effectData and directDataAddEffect of 2713402F (read only: the editor picks existing effects). */
@@ -200,6 +217,8 @@ export class EffectTable {
           delay: s16(r, 0x20),
           offset: [s16(r, 0x22), s16(r, 0x24), s16(r, 0x26)],
           length: u16(r, 0x28),
+          afterMotion: !!(r[0x2a]! & 1),
+          late: !!(r[0x2a]! & 0x10) || !!u16(r, 0x28) || !!(r[0x2b]! & 0x17) || !!r[0x2c],
         });
       }
     }
@@ -225,6 +244,77 @@ export class EffectTable {
   addEffects(row: number): number[] {
     return row > 0 ? this.adds[row] ?? [] : [];
   }
+}
+
+/**
+ * When things happen in a performance slot, in frames since it started (FUN_002f46bc sets them up, FUN_0025af90 runs
+ * them once each; naauao docs/action-performance.md §3.1).
+ */
+export interface SlotTimeline {
+  /** The effects (the main one and the added ones, all at once). */
+  effect: number;
+  /** The sound effect (null: none). */
+  se: number | null;
+  /** The motion starts (and the face changes). */
+  motion: number;
+  /** The hit mark (no action of its own; the progression may wait for it). */
+  hit: number;
+  /** The shake (null: none). */
+  shake: number | null;
+  /** Length of the slot. */
+  length: number;
+  /** false: the motion's length was not known, so `length` may be short. */
+  exact: boolean;
+}
+
+/**
+ * The timeline of a performance row. `motionFrames`: length of the motion on the user's model (null = not known);
+ * `skillLead`: MonsterDesign +0x6A〜+0x6D of the user (added to the hit of the skill motions 0x45〜0x48).
+ */
+export function slotTimeline(p: Performance, effects: EffectTable, motionFrames: number | null, skillLead: number[] = []): SlotTimeline {
+  const main = effects.effect(p.effect);
+  const mf = p.anim ? motionFrames ?? 0 : 0;
+  let e = main?.delay ?? 0;
+  if (main?.afterMotion) e += mf;
+  let m = p.motionStart;
+  // A negative start puts the effect at 0 and the motion that much later (the motion start is replaced).
+  if (e < 0) {
+    m = -e;
+    e = 0;
+  }
+  let se = p.timing[1] + e;
+  if (se < 0) {
+    m -= se;
+    e -= se;
+    se = 0;
+  }
+  let shake = p.timing[0] + e;
+  if (shake < 0) {
+    m -= shake;
+    e -= shake;
+    se -= shake;
+    shake = 0;
+  }
+  if (main?.late) {
+    m += 3;
+    e += 3;
+    se += 3;
+    shake += 3;
+  }
+  const skill = p.anim >= 0x45 && p.anim <= 0x48 ? skillLead[p.anim - 0x45] ?? 0 : 0;
+  // Length (@0x2F4B7C): +0x02 when not 0 (unless it is added), else the motion's end (or 60), plus +0x02 when added.
+  // (the game reads 0 for a motion it cannot find; while the motion's length is not known, 60 stands for it)
+  const found = p.anim && motionFrames === null ? Math.max(60, m) : mf + m || 60;
+  const length = p.addLength ? found + p.length : p.length || found;
+  return {
+    effect: e,
+    se: p.se ? se : null,
+    motion: m,
+    hit: m + skill,
+    shake: p.shake ? shake : null,
+    length: Math.max(length, 1),
+    exact: !p.anim || motionFrames !== null || (!p.addLength && p.length > 0),
+  };
 }
 
 /** Reads effectData and directDataAddEffect from 2713402F. */
