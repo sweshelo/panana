@@ -7,7 +7,7 @@ import type { ActionBook, ActionEdits } from '../game/actions';
 import type { Game } from '../game/game';
 import { SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
 import {
-  ACTION_DIRECTION, ACTION_SLOTS, animKeys, decodePerformance, effectLabel, loadEffectModels, performanceUses,
+  ACTION_DIRECTION, ACTION_SLOTS, ALLY_DIRECTIONS, animKeys, directionLabel, MONSTER_DIRECTIONS, decodePerformance, effectLabel, loadEffectModels, performanceUses,
   type EffectModel, type EffectTable, type Performance, type PerformanceUse,
 } from '../game/performance';
 import type { SoundNames } from '../game/sound';
@@ -16,7 +16,6 @@ import { PerformanceViewer, type PreviewEffect, type PreviewPhase } from '../pag
 import type { Session } from '../session';
 import { soundPlayer } from '../sound/player';
 import { ActionPicker } from './ActionPicker';
-import { NumberInput } from './book';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
 import { Dom } from './mount';
@@ -75,6 +74,13 @@ function perfEffects(c: Ctx, p: Performance): string {
   return list.length ? list.map((e) => effectLabel(c.effects.effect(e), c.models)).join(' + ') : 'なし';
 }
 
+const DIRECTION_INFO = [
+  'actionData +0x1C: 演出の進行 (カメラの動き、前に出るかなど、行動の段取り) の番号です (naauao docs/action-performance.md §2.2)。',
+  'ゲームは使う側がモンスターなら 15 個、電波人間なら 28 個の別々の表から処理を引きます。同じ番号でも意味が違うので、電波人間のワザの値をモンスターのワザに写すと別の段取りになります。表の外の値は 0 として扱われます。',
+  'モンスターの主な値: 4 = 近接・単体 (走って前に出て戻る)、5 = 近接・全体、8 = 遠隔・単体 (カメラが使う側 → 対象)、9 = 遠隔・全体 (使う側 → 対象の陣営全体)。',
+  '段取りは演出の枠の使い方も決めるので、演出を借りる元のワザと同じ値にしておくのが安全です。',
+].join('\n');
+
 const SLOT_INFO = [
   'アクションの演出は、演出の表 (2713402F の directData) の行を枠ごとに指します。1 行 = モーション + エフェクト + SE (+ 追加のエフェクト・タイミング)。',
   '「演出を選ぶ」で、ほかのモンスターのワザや変身の演出をそのまま使えます。戦闘の前に、ワザが指す演出のエフェクトが読み込まれるので、どのモンスターのものでも出せます。',
@@ -96,6 +102,8 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
   const [all, setAll] = useState(false);
   const [picking, setPicking] = useState<number | null>(null);
   const [copying, setCopying] = useState<'ability' | 'performance' | null>(null);
+  const [side, setSide] = useState<'monster' | 'ally' | null>(null);
+  useEffect(() => setSide(null), [row]);
   const a = actions.action(row);
   if (!book?.directData || !a) return <div className="muted">演出の表 (2713402F) を読めませんでした。</div>;
   const c: Ctx = { session, book, actions, edits, effects: book.effects, models, sounds, keys, uses: performanceUses(game.master) };
@@ -113,6 +121,10 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
   const slots = ACTION_SLOTS.filter((s) => a.raw.length >= s.offset + 2 && (all || s.main || actions.slot(row, s.offset)));
   const hidden = ACTION_SLOTS.filter((s) => !s.main && a.raw.length >= s.offset + 2 && !actions.slot(row, s.offset)).length;
   const direction = a.raw.length >= ACTION_DIRECTION + 2 ? u16(a.raw, ACTION_DIRECTION) : 0;
+  const refs = actions.refsOf(row);
+  // Whose table +0x1C is read from: the monsters' unless items use the action (a copied skill has no users yet).
+  const monsterSide = side ? side === 'monster' : refs.monsters.length > 0 || (!refs.items.length && a.kind !== 2);
+  const mixed = refs.monsters.length > 0 && refs.items.length > 0;
   return (
     <div className="perf-slots">
       <table className="enc-table perf-table">
@@ -164,13 +176,22 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
       <div className="row small">
         {hidden > 0 && <label><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />{`空の枠も出す (${hidden})`}</label>}
         <span className="with-info">
-          {'演出の番号 (+0x1C)'}
-          <InfoTip text="actionData +0x1C (0〜26)。カメラの動きや演出の種類と推定 (未確認)。組み替えるときは、演出を借りる元のワザと同じにしておくのが安全です。" />
+          {'演出の進行 (+0x1C)'}
+          <InfoTip text={DIRECTION_INFO} />
         </span>
-        <NumberInput value={direction} min={0} max={0xffff} onCommit={(v) => apply(() => edits.setDirection(row, v))} />
+        <select value={monsterSide ? 'm' : 'a'} title="+0x1C の意味は、使う側がモンスターか電波人間かで変わります" onChange={(e) => setSide(e.target.value === 'm' ? 'monster' : 'ally')}>
+          <option value="m">モンスターが使う</option>
+          <option value="a">電波人間が使う</option>
+        </select>
+        <select value={direction} className={direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length ? 'invalid' : ''}
+          onChange={(e) => apply(() => edits.setDirection(row, Number(e.target.value)))}>
+          {(monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).map((label, i) => <option key={i} value={i}>{label}</option>)}
+          {direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length && <option value={direction}>{directionLabel(direction, monsterSide)}</option>}
+        </select>
         <button title="ほかのアクションの効果 (種類・範囲・属性・量・状態・威力・結果のメッセージ) をこのアクションに写します。名前と演出はそのままです" onClick={() => setCopying('ability')}>効果を写す…</button>
         <button title="ほかのアクションの演出 (すべての枠と +0x1C) をこのアクションに写します" onClick={() => setCopying('performance')}>演出を写す…</button>
       </div>
+      {mixed && <div className="issue warn">⚠ モンスターとアイテムの両方が使うアクションです。+0x1C は使う側ごとに別の意味で読まれます。</div>}
       {picking !== null && (
         <PerformancePicker c={c} current={actions.slot(row, picking)} title={`${ACTION_SLOTS.find((s) => s.offset === picking)?.label ?? ''}の演出を選ぶ`}
           onClose={() => setPicking(null)} onPick={(p) => { const o = picking; setPicking(null); apply(() => edits.setSlot(row, o, p)); }} />

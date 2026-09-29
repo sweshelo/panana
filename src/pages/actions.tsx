@@ -13,7 +13,7 @@ import { hex8, s16, u32 } from '../util/bytes';
 export const actionHref = (row: number): string => `#/actions/${row}`;
 
 /** Offsets of the fields that are decoded (the raw table marks them). */
-const KNOWN: Record<number, string> = { 0x00: 'w0 (種類・効果・付与・使える場面)', 0x04: '名前 (メッセージ)', 0x18: '量 (s16 最小 / 最大)', 0x1c: '演出の番号 / 使用者の演出 (directData)', 0x20: '対象 / 追加の演出 (directData)', 0x24: 'その他の演出 (directData)', 0x28: 'その他の演出 (directData)', 0x2c: '別の組の演出 (directData)' };
+const KNOWN: Record<number, string> = { 0x00: 'w0 (種類・効果・付与・使える場面)', 0x04: '名前 (メッセージ)', 0x18: '量 (s16 最小 / 最大)', 0x1c: '演出の進行 / 使用者の演出 (directData)', 0x20: '対象 / 追加の演出 (directData)', 0x24: 'その他の演出 (directData)', 0x28: 'その他の演出 (directData)', 0x2c: '別の組の演出 (directData)' };
 
 type Filter = 'item' | 'used-item' | 'skill' | 'all';
 type Book = Pick<ActionBook, 'actions' | 'action' | 'refsOf'>;
@@ -158,7 +158,7 @@ function ActionDetail({ action: a, book, editor }: { action: Action; book: Book;
           {field('+0x00 w0', `0x${hex8(a.w0)}`)}
           {field('  bit1-2 種類', String(a.kind), kindLabel(a.kind))}
           {field('  bit3-6 効果の種別', String(a.type), a.kind === 2 ? '' : 'アイテム以外での意味は未解析')}
-          {field('  bit13-15 付与の段階', String(a.level), 'ワザの状態異常の基本の率 (BattleParameter [0x60 + 段階])')}
+          {field('  bit13-15 付与の段階', String(a.level), '状態異常を付ける基本の率 (BattleParameter [0x60 + 段階])。攻撃では +0x32 の追加効果の率')}
           {field('  bit29-31 使える場面', a.scenes.join('・') || 'なし', 'アイテム')}
           {field('+0x04 名前', a.nameId ? `${a.nameId} (0x${a.nameId.toString(16).toUpperCase()})` : '0', a.name)}
           {field('+0x18 / +0x1A 量', `${lo} / ${hi}`, a.kind === 2 && a.type <= 1 ? '回復量 (最小〜最大)' : '')}

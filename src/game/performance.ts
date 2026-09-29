@@ -39,8 +39,46 @@ export function actionSlots(r: Uint8Array): Map<number, number> {
   return new Map(ACTION_SLOTS.filter((s) => r.length >= s.offset + 2).map((s) => [s.offset, u16(r, s.offset)]));
 }
 
-/** actionData +0x1C: a small number (0〜26), camera work or the kind of the performance (not confirmed). */
+/**
+ * actionData +0x1C: the progression of the performance (camera work, stepping forward …; docs/action-performance.md
+ * §2.2). The battle picks the function by it from one table for monsters (FUN_0022e480, 15) and another for 電波人間
+ * (FUN_0024db24, 28): the same number means different things on each side.
+ */
 export const ACTION_DIRECTION = 0x1c;
+
+/** +0x1C when the user is a monster (values past the table become 0). */
+export const MONSTER_DIRECTIONS: string[] = [
+  '0: (モンスターのワザでは未使用)',
+  '1: 自分への行動 (ためる・モード切り替え・セリフ)',
+  '2: 防御・動けない',
+  '3: にげる',
+  '4: 近接・単体 (走って前に出て戻る)',
+  '5: 近接・全体 (前に出てなぎはらう)',
+  '6: 回復・補助 (カメラ: 自分 → 対象)',
+  '7: 味方全体の強化',
+  '8: 遠隔・単体 (カメラ: 使う側 → 対象)',
+  '9: 遠隔・全体 (カメラ: 使う側 → 対象の陣営全体)',
+  '10: シールド',
+  '11: なかまをよぶ',
+  '12: 補助 (まじない・ダンス)',
+  '13: ぬすむ (走って前に出る)',
+  '14: 段取りなし',
+];
+
+/** +0x1C when the user is a 電波人間 (values past the table become 0). */
+export const ALLY_DIRECTIONS: string[] = [
+  '0: 段取りなし', '1: 総攻撃 (みんなで前に出る)', '2: 防御・動けない', '3: アイテム・単体の回復', '4: アイテム・全体の回復',
+  '5: 単体の補助', '6: 全体の補助', '7: 段取りなし', '8: 段取りなし', '9: 単体の状態異常', '10: 全体の状態異常',
+  '11: 単体の攻撃', '12: 全体の攻撃', '13: ふっかつ', '14: みんなふっかつ', '15: おたからチャンス', '16: ゴールドチャンス',
+  '17: アイテムを使った 1', '18: アイテムを使った 2', '19: アイテムを使った 3', '20: アイテムを使った 4', '21: アイテムを使った 5',
+  '22: アイテムを使った 6', '23: アイテムを使った 7', '24: 段取りなし', '25: にげる', '26: 段取りなし', '27: (未使用)',
+];
+
+/** "4: 近接・単体 …" for a side; a value past the table is read as 0 by the game. */
+export function directionLabel(v: number, monster: boolean): string {
+  const t = monster ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS;
+  return t[v] ?? `${v}: (表の外。0 として扱われる)`;
+}
 
 /** Byte ranges of an actionData row that are its effect ("アビリティ"), i.e. everything but the name and the performance. */
 export const ABILITY_RANGES: [number, number][] = [[0x00, 0x04], [0x08, 0x1c], [0x30, 0x3c]];
