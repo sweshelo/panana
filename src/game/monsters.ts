@@ -76,6 +76,8 @@ export const PLAIN_AILMENTS = [8, 16, 17, 19];
 export class BattleParams {
   readonly elementMul: number[];
   readonly baseRate: number[];
+  /** byte [0x58 + range]: power % of a physical attack with +0x33 = 10 by its range (actionData w0 bit9-12, 0〜6). */
+  readonly rangePower: number[];
   readonly coef: number[];
   /** u16 [0x10C + rate × 2]: a drop of that rate value comes 1 in this many battles (0 or 1 = always). */
   readonly dropBase: number[];
@@ -84,6 +86,7 @@ export class BattleParams {
     const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
     this.elementMul = Array.from({ length: 19 }, (_, i) => Math.round(dv.getFloat32(8 + i * 4, true) * 1000) / 1000);
     this.baseRate = Array.from({ length: 7 }, (_, i) => r[0x60 + i]!);
+    this.rangePower = Array.from({ length: 7 }, (_, i) => r[0x58 + i]!);
     this.coef = Array.from({ length: 19 }, (_, i) => r[0x67 + i]!);
     this.dropBase = Array.from({ length: 16 }, (_, i) => dv.getUint16(0x10c + i * 2, true));
   }

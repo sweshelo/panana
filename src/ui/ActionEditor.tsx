@@ -1,7 +1,9 @@
 // Editing an action (actionData row): its name, element, infliction level, amount and motion, copying it as a new
 // action, and putting it back. Used by the action page and, in a dialog, by the skill slots of the monster editor.
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ActionEdits, actionTypeLabel, ELEMENT, type ActionBook } from '../game/actions';
+import { ACTION_KIND, ACTION_SIDE, ActionEdits, actionRangeLabel, actionTypeLabel, ELEMENT, type ActionBook } from '../game/actions';
+import { ACTION_DIRECTION } from '../game/performance';
+import { u16 } from '../util/bytes';
 import { animationKey } from '../cgfx/player';
 import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
@@ -57,6 +59,33 @@ const KIND_INFO = [
   '  3 ブレス: 2 と同じで、ブレス封じ (状態 0x5A) のあいだ使えない。カテゴリ 0 の種別 3 (ポイズンブレスなど) も同じ。',
   '演出は変わりません。見た目と合うように演出も選び直してください。',
 ].join('\n');
+
+const TARGET_INFO = [
+  'w0 bit7-8 (陣営) と bit9-12 (範囲)。アクションが当たるユニットを決めます (FUN_003188e0)。',
+  '陣営は使う側から見た敵・味方ではなく、決まった側です: 0 = モンスターの側、1 = 電波人間の側。モンスターが電波人間を攻撃するワザは 1、モンスターが自分や仲間にかけるワザは 0 です。',
+  '範囲: 0 / 1 = 自分、2 = 単体、3〜5 = 目標と、並びでその周り (距離 1〜3) のユニット、6 = 全体、7 = なし、8 = 陣営全体 (おたからチャンスなど場にかかる効果)。',
+  '物理の攻撃で威力 (+0x33) が 10 のときは、範囲で威力が変わります (BattleParameter [0x58 + 範囲] = 100 / 100 / 100 / 80 / 70 / 60 / 60 %)。',
+  'どれを狙うか (単体の目標) は、モンスターの AI (狙い方) が決めます。',
+  '演出の進行 (+0x1C) の単体・全体は別の欄です。範囲を変えたら、演出の進行も合わせてください (モンスターなら単体 4 / 8、全体 5 / 9)。',
+].join('\n');
+
+/** Why the side and range may not work as they are, or ''. */
+function targetWarning(actions: ActionBook, a: { row: number; side: number; range: number; raw: Uint8Array }): string {
+  if (a.side > 1) return `陣営 ${a.side} は元のデータにありません`;
+  if (a.range === 7 || a.range > 8) return 'この範囲ではだれにも当たりません';
+  if (!actions.refsOf(a.row).monsters.length || a.raw.length < ACTION_DIRECTION + 2) return '';
+  const d = u16(a.raw, ACTION_DIRECTION);
+  if ((d === 4 || d === 8) && a.range === 6) return '全体の範囲ですが、演出の進行は単体 (4 / 8) のままです (カメラと動きは単体向け)';
+  if ((d === 5 || d === 9) && a.range >= 2 && a.range <= 5) return '単体の範囲ですが、演出の進行は全体 (5 / 9) です';
+  return '';
+}
+
+/** "80%": the power scale of a physical attack by its range (only when +0x33 = 10), or ''. */
+function rangePower(book: MonsterBook | null, a: { kind: number; type: number; range: number; raw: Uint8Array }): string {
+  if (a.kind !== 1 || a.type > 1 || a.raw.length <= 0x33 || a.raw[0x33] !== 10) return '';
+  const v = book?.battle.rangePower[a.range];
+  return v === undefined ? '' : `威力 ${v}% (範囲の補正)`;
+}
 
 /** Why the kind and type may not work as they are, or ''. */
 function kindWarning(actions: ActionBook, a: { row: number; kind: number; type: number; amount: [number, number] }): string {
@@ -203,6 +232,24 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
             </select>
           </div>
             {kindWarning(actions, a) && <div className="issue warn">{`⚠ ${kindWarning(actions, a)}`}</div>}
+          </td>
+        </tr>
+        <tr>
+          <td className="with-info">対象<InfoTip text={TARGET_INFO} /></td>
+          <td>
+            <div className="inline-fields">
+              <select value={a.side} className={mark(!!orig && a.side !== orig.side)} title={orig && a.side !== orig.side ? `元は ${ACTION_SIDE[orig.side] ?? orig.side}` : ''}
+                onChange={(e) => apply(() => edits.setTarget(row, Number(e.target.value), a.range))}>
+                {[0, 1, 2, 3].filter((v) => v <= 1 || v === a.side).map((v) => <option key={v} value={v}>{`${v}: ${ACTION_SIDE[v] ?? '?'}`}</option>)}
+              </select>
+              の
+              <select value={a.range} className={mark(!!orig && a.range !== orig.range)} title={orig && a.range !== orig.range ? `元は ${actionRangeLabel(orig.range)}` : ''}
+                onChange={(e) => apply(() => edits.setTarget(row, a.side, Number(e.target.value)))}>
+                {Array.from({ length: 16 }, (_, v) => v).filter((v) => v <= 8 || v === a.range).map((v) => <option key={v} value={v}>{actionRangeLabel(v)}</option>)}
+              </select>
+              {rangePower(book, a) && <span className="muted small">{rangePower(book, a)}</span>}
+            </div>
+            {targetWarning(actions, a) && <div className="issue warn">{`⚠ ${targetWarning(actions, a)}`}</div>}
           </td>
         </tr>
         <tr>

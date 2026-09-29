@@ -1,7 +1,7 @@
 // Action list: every actionData row with the fields known so far, its raw words, and what refers to it
 // (items' use effect, monsters' skills).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ActionBook, actionKindLabel, actionTypeLabel, itemEffect, type Action } from '../game/actions';
+import { ACTION_KIND, ActionBook, ACTION_SIDE, actionKindLabel, actionRangeLabel, actionTypeLabel, itemEffect, type Action } from '../game/actions';
 import type { Monster } from '../game/monsters';
 import type { Session } from '../session';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
@@ -158,6 +158,8 @@ function ActionDetail({ action: a, book, editor }: { action: Action; book: Book;
           {field('+0x00 w0', `0x${hex8(a.w0)}`)}
           {field('  bit1-2 種類', String(a.kind), kindLabel(a.kind))}
           {field('  bit3-6 種別', String(a.type), actionTypeLabel(a.kind, a.type))}
+          {field('  bit7-8 陣営', String(a.side), ACTION_SIDE[a.side] ?? '')}
+          {field('  bit9-12 範囲', String(a.range), actionRangeLabel(a.range).replace(/^\d+: /, ''))}
           {field('  bit13-15 付与の段階', String(a.level), '状態異常を付ける基本の率 (BattleParameter [0x60 + 段階])。攻撃では +0x32 の追加効果の率')}
           {field('  bit29-31 使える場面', a.scenes.join('・') || 'なし', 'アイテム')}
           {field('+0x04 名前', a.nameId ? `${a.nameId} (0x${a.nameId.toString(16).toUpperCase()})` : '0', a.name)}
