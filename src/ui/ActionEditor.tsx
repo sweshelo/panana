@@ -28,25 +28,15 @@ const MOTION_INFO = [
 ].join('\n');
 
 const LEVEL_INFO = [
-  'w0 bit13-15。状態異常を付ける率の段階です: 率 = BattleParameter [0x60 + 段階] × 耐性の係数 / 32 (段階 0〜6 = 100 / 75 / 50 / 34 / 25 / 12 / 6 %)。',
-  '攻撃 (物理・固定の威力) では、ダメージのあとに +0x32 の状態を追加効果として付ける率になります。+0x32 が 0 なら使われません。ダメージで倒したときも付きません。',
-  '段階 7 は表の外 (BattleParameter +0x67 = 200) を読むので 625%: 耐性で効かないとき以外は必ず付きます (元のデータにはありません)。',
-  '詳しくは naauao の docs/battle.md §6.5。',
+  'w0 bit13-15。「付ける状態」を付ける率の段階です。実際の率は、さらに対象の耐性で変わります。',
+  '攻撃では、ダメージのあとの追加効果の率になります (倒したときは付きません)。付ける状態がなしのときは使われません。',
+  '段階 7 は表の外を読むので、耐性で効かないとき以外は必ず付きます。',
 ].join('\n');
 
 /** "2 (50%)": the base rate of an infliction level (BattleParameter [0x60 + level] / 32). */
 function levelLabel(book: MonsterBook | null, level: number): string {
   const v = level < 7 ? book?.battle.baseRate[level] ?? 0 : 200;
   return `${level} (${Math.round((v * 100) / 32)}%${level === 7 ? '、表の外' : ''})`;
-}
-
-/** What the level applies to: the state of +0x32 (an attack's extra effect), or nothing. */
-function levelNote(book: MonsterBook | null, a: { kind: number; raw: Uint8Array }): string {
-  const state = a.raw.length > 0x32 ? a.raw[0x32]! : 0;
-  const name = state ? book?.conditions[state] || `状態 ${state}` : '';
-  if (a.kind === 1) return state ? `追加効果: ${name}` : '(+0x32 の状態がないので使われない)';
-  if (a.kind === 0) return state ? `付ける状態: ${name}` : '';
-  return '';
 }
 
 const KIND_INFO = [
@@ -263,10 +253,10 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         <tr>
           <td className="with-info">付与の段階<InfoTip text={LEVEL_INFO} /></td>
           <td>
-            <select value={a.level} className={mark(!!orig && a.level !== orig.level)} onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
+            <select value={a.level} className={mark(!!orig && a.level !== orig.level)} disabled={!a.state} title={a.state ? '' : '付ける状態がないので使われません'}
+              onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
               {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{levelLabel(book, i)}</option>)}
             </select>
-            <span className="muted small">{` ${levelNote(book, a)}`}</span>
           </td>
         </tr>
         {a.raw.length > 0x32 && (

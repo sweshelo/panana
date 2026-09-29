@@ -13,6 +13,7 @@ import { Dialog } from '../ui/Dialog';
 import { Board, EmptyBoard } from '../ui/Board';
 import { NumberInput } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { performancePhase, TransformPreview } from '../ui/PerformanceEditor';
 import { ItemPicker } from '../ui/ItemPicker';
 import { MonsterPicker } from '../ui/MonsterPicker';
 import { Photo } from '../ui/Photo';
@@ -382,6 +383,9 @@ const BOSS_INFO = [
 export function BossEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
   const [picking, setPicking] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const effect = book.get(m.row, 'effect');
+  const transformPhase = effect ? performancePhase(session, effect, m, '変身', null) : null;
   const link = (row: number): ReactNode => <a href={`#/monsters/${row}`}>{`${book.monster(row)?.name ?? '?'} #${row}`}</a>;
   const skillForms = m.skills.map((s) => ({ s, to: actions.action(s.action)?.formChange ?? 0 })).filter((x) => x.to);
   // Rows turning into this one: by a condition (+0x50) or by a skill (kind 3 type 5).
@@ -424,7 +428,17 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
               </div>
             </td>
           </tr>
-          <tr><td className="with-info">変身のエフェクト<InfoTip text="+0x36。変身の条件を満たしたときに再生します。例: まおう 840 = ふこうのオーラ" /></td><td><Field {...p} k="effect" /></td></tr>
+          <tr>
+            <td className="with-info">変身のエフェクト<InfoTip text="+0x36。変身の条件を満たしたときに再生する演出 (2713402F の directData の行)。0 = なし" /></td>
+            <td>
+              <div className="inline-fields">
+                <Field {...p} k="effect" />
+                <button className="small" disabled={!transformPhase} title="変身の演出をこのモンスターで再生します" onClick={() => setPreview(!preview)}>{preview ? '閉じる' : '▶ プレビュー'}</button>
+              </div>
+              {effect > 0 && <div className="muted small">{transformPhase ? transformPhase.title.replace(/^変身: [^—]*— /, '') : '(演出の表の外)'}</div>}
+            </td>
+          </tr>
+          {preview && transformPhase && <tr><td colSpan={2}><TransformPreview session={session} monster={m} row={effect} /></td></tr>}
           <tr>
             <td className="with-info">開始時の状態<InfoTip text="戦闘の開始時にかかっている状態 (w10 bit12-16)、その強さ (bit17-20) とターン数 (+0x3A)" /></td>
             <td><FieldSelect {...p} k="startCondition" labels={cond} /></td>

@@ -19,7 +19,7 @@ import { gimmickTemplates } from '../src/game/templates';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
-import { equalBytes, u32 } from '../src/util/bytes';
+import { equalBytes, u16, u32 } from '../src/util/bytes';
 import { CIA, ELPULSE, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
@@ -665,6 +665,40 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
 });
 
 describe.skipIf(!hasCia)('resistance edits and the item book', () => {
+  test('copied item: an empty row, its own messages and action, the action patch, read back', async () => {
+    const { ItemBook, ITEM_ACTION_PATCH, ITEM_ACTION_PATCH_ID, needsItemActionPatch } = await import('../src/game/items');
+    const { buildPatches } = await import('../src/game/patch');
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const items = new ItemBook(g2, new Map());
+    // vanilla: every tool uses itself up
+    expect(items.items.filter((it) => !['self', 'no action'].includes(String(items.usesUp(it.id, false))))).toEqual([]);
+    expect(needsItemActionPatch(g2.master)).toBe(false);
+    const src = items.item(1)!;
+    const n = items.copyItem(1);
+    expect(n).toBe(34); // the reserved rows after the tools
+    const c = items.item(n)!;
+    expect([c.name, c.price, c.category, items.added(n), items.changed(n)]).toEqual([src.name, src.price, src.category, true, true]);
+    expect(u16(g2.master.itemData.row(n), 0x28)).toBe(569); // an order number of its own (FUN_001cd548)
+    // a copy of キズぐすり's action (#179) using up the new item
+    expect(c.action).toBe(672);
+    expect(u16(g2.master.table('actionData.bin').row(672), 0x14)).toBe(n);
+    expect([items.usesUp(n), items.usesUp(1), needsItemActionPatch(g2.master)]).toEqual(['self', 'self', true]);
+    items.setText(n, 0x0c, 'コピーぐすり');
+    expect([items.item(n)!.name, items.item(1)!.name]).toEqual(['コピーぐすり', src.name]);
+    // the patch reads +0x14 from row 0xB2 on
+    const built = buildPatches(g2.dump.code, [ITEM_ACTION_PATCH]).get(ITEM_ACTION_PATCH_ID)!;
+    expect(built.errors).toEqual([]);
+    expect(built.blocks[0]!.lines.map((l) => l.before)).toEqual([0xe3500035, 0x23a00000, 0xe92d4010, 0x2a00000d]);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const i2 = new ItemBook(again, new Map());
+    // (read as the base archive, the row is no longer an added one)
+    expect([i2.item(n)!.name, i2.item(n)!.action, i2.added(n), i2.usesUp(n)]).toEqual(['コピーぐすり', 672, false, 'self']);
+    // removed: the row, its messages and its action go back
+    items.removeItem(n);
+    expect([items.item(n), g2.master.texts.addedIds(), g2.master.table('actionData.bin').rows, g2.master.itemData.row(n)]).toEqual([undefined, [], 672, g2.master.originalRow('itemData.bin', n)]);
+  });
+
   test('resistance: effect tables, edit, export and read back', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await game.monsters();
