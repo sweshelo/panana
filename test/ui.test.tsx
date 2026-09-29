@@ -214,7 +214,9 @@ describe('monster editors', () => {
     original: (_r: number, k: string) => (k === 'nextForm' ? 0 : fields[k] ?? 0),
     originalSkills: () => [1, 1, 1, 2],
     modelOf: () => null,
+    lineSharers: () => [],
   } as never;
+  const lineSession = { game: { master: { texts: { text: () => undefined, canAdd: () => true } } } } as unknown as Session;
   const actionBook = {
     actions,
     action: (r: number) => actions[r],
@@ -236,10 +238,12 @@ describe('monster editors', () => {
   });
 
   test('boss: condition, next form marked as edited, and the forms turning into this one', () => {
-    const html = renderToString(<BossEditor session={{} as Session} book={book} m={ms[1]!} edited={() => {}} actions={actionBook} />);
+    const html = renderToString(<BossEditor session={lineSession} book={book} m={ms[1]!} edited={() => {}} actions={actionBook} />);
     expect(html).toContain('ポーン #1');
     expect(html).toContain('水の攻撃が当たったとき');
-    const first = renderToString(<BossEditor session={{} as Session} book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
+    const first = renderToString(<BossEditor session={lineSession} book={book} m={ms[0]!} edited={() => {}} actions={actionBook} />);
+    // no line (+0x38): a button makes one
+    expect(first).toContain('セリフを作る');
     expect(first).toContain('class="board edited"');
     expect(first).toContain('href="#/monsters/2"');
     expect(first).toContain('ワザ「ビームモード」で ');

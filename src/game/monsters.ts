@@ -192,7 +192,10 @@ export const PARAM = {
   focus: { w: 13, lo: 10, n: 1 },
   /** +0x36 u16: effect played when the form changes. */
   effect: { w: 13, lo: 16, n: 16 },
-  /** +0x38 u16: line (message ID) shown when this row appears. */
+  /**
+   * +0x38 u16: line (MessageBattle ID) shown when a unit turns into this row: the performance handlers read the new
+   * row's +0x38 after the hit and show it when not 0 (FUN_0022f430 @0x22FDE8 → FUN_002dade8). Not an action.
+   */
   line: { w: 14, lo: 0, n: 16 },
   /** +0x3A: turns of the start condition. */
   startTurns: { w: 14, lo: 16, n: 16 },
@@ -344,6 +347,8 @@ function clean(s: string): string {
  * table's own row count is still checked right after). Rows stay under 0x100: +0x50 and those arrays hold a byte.
  */
 export const VANILLA_MONSTER_ROWS = 0xb9;
+/** A vanilla line (+0x38) whose type code a new line takes: 0x1B4F「くくく、ここからが本番だ！」. */
+const LINE_TEMPLATE = 0x1b4f;
 export const MONSTER_ROWS_MAX = 0x100;
 
 export const MONSTER_ROWS_PATCH_ID = 'monster-rows';
@@ -548,6 +553,28 @@ export class MonsterBook {
   set(row: number, key: ParamKey, value: number): void {
     setField(this.master.table('monsterParameter.bin').row(row), PARAM[key], value);
     this.reload();
+  }
+
+  /**
+   * Give a row a line (+0x38, the MessageBattle message shown when a unit turns into this form) of its own: a new
+   * message with the text of its line, or `text` when it has none. Returns the message ID.
+   */
+  ownLine(row: number, text = '……'): number {
+    const texts = this.master.texts;
+    const cur = this.get(row, 'line');
+    // a new line takes the type code of a vanilla line (0x1B4F, まおう's)
+    const units = texts.units(cur || LINE_TEMPLATE);
+    if (!units || !texts.canAdd()) throw new Error('セリフのメッセージを追加できません');
+    const id = texts.add(units);
+    if (!cur) texts.setText(id, text);
+    this.set(row, 'line', id);
+    return id;
+  }
+
+  /** Other rows with the same line (+0x38). */
+  lineSharers(row: number): number[] {
+    const id = this.get(row, 'line');
+    return id ? this.monsters.filter((m) => m.row !== row && this.get(m.row, 'line') === id).map((m) => m.row) : [];
   }
 
   /** A field of a row as in the archive (an added row has no original: its current value). */

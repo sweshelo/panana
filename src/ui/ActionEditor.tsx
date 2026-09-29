@@ -10,6 +10,7 @@ import { MONSTER_MODEL_ARCHIVE, SKILL_MOTION, type Monster, type MonsterBook } f
 import type { Game } from '../game/game';
 import type { Session } from '../session';
 import { NumberInput } from './book';
+import { BattleMessagePicker } from './BattleMessagePicker';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
 import { PerformanceSlots } from './PerformanceEditor';
@@ -329,43 +330,11 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
-  const texts = session.game.master.texts;
-  const [query, setQuery] = useState('');
-  const [free, setFree] = useState(true);
-  const file = texts.isAdded(current) ? undefined : texts.file(current);
-  const users = new Map<number, number[]>();
-  for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), x.row]);
-  const q = query.trim();
-  const ids: number[] = [];
-  const range = [...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []), ...texts.addedIds()];
-  for (const id of range) {
-    if (free && users.has(id) && id !== current) continue;
-    const t = texts.preview(id, true) ?? '';
-    if (q && !t.includes(q) && String(id) !== q) continue;
-    ids.push(id);
-  }
+  const users = new Map<number, string[]>();
+  for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), `#${x.row}`]);
   return (
-    <Dialog title="名前のメッセージを選ぶ" onClose={onClose}>
-      <div className="row">
-        <input type="search" className="picker-search" placeholder="本文・番号で絞り込み" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label><input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />アクションが使っていないものだけ</label>
-        <InfoTip text={`${file?.name ?? ''} と追加したメッセージです。アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。`} />
-      </div>
-      <div className="picker-list">
-        <table className="book-table">
-          <thead><tr><th>#</th><th>本文</th><th>使うアクション</th></tr></thead>
-          <tbody>
-            {ids.slice(0, 500).map((id) => (
-              <tr key={id} className={id === current ? 'active current' : ''} onClick={() => onPick(id)}>
-                <td className="num muted">{id}</td>
-                <td>{texts.preview(id, true) || <span className="muted">(空)</span>}</td>
-                <td className="muted small">{(users.get(id) ?? []).map((r) => `#${r}`).join('、')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {ids.length > 500 && <div className="muted small">{`ほか ${ids.length - 500} 件 (絞り込んでください)`}</div>}
-      </div>
-    </Dialog>
+    <BattleMessagePicker session={session} title="名前のメッセージを選ぶ" current={current} users={users} freeLabel="アクションが使っていないものだけ"
+      info="アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
+      onPick={onPick} onClose={onClose} />
   );
 }

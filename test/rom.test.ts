@@ -418,6 +418,27 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.changed(1)).toBe(false);
   });
 
+  test('the line of a form (+0x38): shared, own, new, exported', async () => {
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    const texts = g2.master.texts;
+    // たからばこぞう, トレジャーメイジ and おばけざいほう share 「箱からとびだした！」
+    expect([book.get(84, 'line'), book.lineSharers(84)]).toEqual([0x1b8f, [20, 180]]);
+    const own = book.ownLine(84);
+    expect([own, book.get(84, 'line'), book.get(20, 'line'), book.lineSharers(84)]).toEqual([texts.addedBase, own, 0x1b8f, []]);
+    expect(texts.text(own)!.text).toBe(texts.text(0x1b8f)!.text);
+    texts.setText(own, 'メイジは　箱をやぶった！');
+    // まおう's first form has none: a new one
+    expect(book.get(44, 'line')).toBe(0);
+    const made = book.ownLine(44, 'まだまだ！');
+    expect([made, texts.text(made)!.text, texts.text(made)!.kind]).toEqual([own + 1, 'まだまだ！', texts.text(0x1b4f)!.kind]);
+    const files = buildModFiles(g2, [], [], g2.master.changed());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const b2 = await again.monsters();
+    expect([again.master.message(b2.get(84, 'line')), again.master.message(b2.get(20, 'line')), again.master.message(b2.get(44, 'line'))])
+      .toEqual(['メイジは　箱をやぶった！', g2.master.message(0x1b8f), 'まだまだ！']);
+  });
+
   test('copied monster: a new row, exported with the row patch, read back', async () => {
     const { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
     const { buildPatches } = await import('../src/game/patch');
