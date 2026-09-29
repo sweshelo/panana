@@ -49,6 +49,12 @@ class SoundPlayer {
     if (this.state.key) this.set({ key: null, loading: false });
   }
 
+  /** Play `key` from the start (whatever is playing stops). */
+  play(key: string, render: () => Promise<Pcm>, cacheable = true): Promise<void> {
+    if (this.state.key === key) this.stop();
+    return this.toggle(key, render, cacheable);
+  }
+
   /** Play `key` (stop it if it is playing). `cacheable`: the rendering is the same every time (not a sequence). */
   async toggle(key: string, render: () => Promise<Pcm>, cacheable = true): Promise<void> {
     if (this.state.key === key) {

@@ -5,6 +5,7 @@
 import type { GsTable } from '../archive/gstable';
 import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
 import type { Master } from './master';
+import { ABILITY_RANGES, ACTION_DIRECTION, ACTION_SLOTS, PERF, performanceUses, writePerfField, type PerfField } from './performance';
 
 /**
  * Entry hash of the performance table: directData.bin (1026 × 20) in 2713402F, the archive of MonsterDesign
@@ -141,6 +142,12 @@ export class ActionBook {
     return p && t && p < t.rows && t.rowSize > 0x0a ? t.row(p)[0x0a]! : 0;
   }
 
+  /** The directData row of a performance slot of an action (ACTION_SLOTS; 0 = none). */
+  slot(row: number, offset: number): number {
+    const r = this.actions[row]?.raw;
+    return r && r.length >= offset + 2 ? u16(r, offset) : 0;
+  }
+
   /** A row as in the archive (null for a row added by an edit), with its motion (rows of directData in the archive are never changed). */
   original(row: number): (ActionFields & { motion: number }) | null {
     if (row >= this.master.originalRows('actionData.bin')) return null;
@@ -266,35 +273,100 @@ export class ActionEdits {
 
   /** Whether the motion of a row can be changed (it has a performance row). */
   canSetMotion(row: number): boolean {
-    const p = decodeAction(this.row(row)).performance;
-    return !!this.performances && p > 0 && p < this.performances.rows && this.performances.rowSize > PERFORMANCE_ANIM;
+    return this.canEditSlot(row, 0x1e);
   }
 
   /** Make an action play another anim (0x45〜0x48 = the user's skill A〜D; SKILL_MOTION). */
   setMotion(row: number, anim: number): void {
-    const t = this.performances;
-    if (!t || !this.canSetMotion(row)) throw new Error(`アクション #${row} には演出の行がありません`);
+    this.setSlotField(row, 0x1e, 'anim', anim);
+  }
+
+  /** Point a performance slot of an action at a directData row (0 = none). */
+  setSlot(row: number, offset: number, perf: number): void {
     const r = this.row(row);
-    const p = u16(r, 0x1e);
+    if (r.length < offset + 2) return;
+    if (perf && (!this.performances || perf >= this.performances.rows)) throw new Error(`演出の行 ${perf} はありません`);
+    w16(r, offset, perf);
+  }
+
+  /** actionData +0x1C (camera work or the kind of the performance; not confirmed). */
+  setDirection(row: number, v: number): void {
+    const r = this.row(row);
+    if (r.length >= ACTION_DIRECTION + 2) w16(r, ACTION_DIRECTION, v);
+  }
+
+  /**
+   * Copy the effect of another action ("アビリティ": kind, target, element, amounts, state, power, result messages;
+   * ABILITY_RANGES). The name and the performance stay.
+   */
+  copyAbility(row: number, from: number): void {
+    const src = this.row(from).slice(), dst = this.row(row);
+    for (const [lo, hi] of ABILITY_RANGES) dst.set(src.subarray(lo, Math.min(hi, dst.length)), lo);
+  }
+
+  /** Copy the performance of another action: every slot and +0x1C. */
+  copyPerformance(row: number, from: number): void {
+    const src = this.row(from).slice(), dst = this.row(row);
+    for (const o of [ACTION_DIRECTION, ...ACTION_SLOTS.map((s) => s.offset)]) if (dst.length >= o + 2) dst.set(src.subarray(o, o + 2), o);
+  }
+
+  /** Whether a slot of an action has a performance row whose fields can be changed. */
+  canEditSlot(row: number, offset: number): boolean {
+    const r = this.row(row);
+    const p = r.length >= offset + 2 ? u16(r, offset) : 0;
+    return !!this.performances && p > 0 && p < this.performances.rows && this.performances.rowSize > PERF.addEffect;
+  }
+
+  /**
+   * Change a field of the performance of a slot (the motion, the effect, the sound effect …). The row may be shared by
+   * other actions and monsters, so the slot is pointed at a row with the same bytes and the new field: an existing
+   * one when there is such a row; the row itself when this editor added it and nothing else uses it; else a copy
+   * appended to directData. Returns the row the slot uses.
+   */
+  setSlotField(row: number, offset: number, field: PerfField, v: number): number {
+    const t = this.performances;
+    if (!t || !this.canEditSlot(row, offset)) throw new Error(`アクション #${row} のこの枠には演出の行がありません`);
+    const r = this.row(row);
+    const p = u16(r, offset);
     const want = t.row(p).slice();
-    want[PERFORMANCE_ANIM] = anim;
-    if (equalBytes(want, t.row(p))) return;
+    writePerfField(want, field, v);
+    return this.pointAt(row, offset, p, want);
+  }
+
+  /**
+   * A new performance row for a slot: a copy of `base` with some fields replaced (the motion of one monster with the
+   * effect of another …). An identical row is reused. Returns the row the slot uses.
+   */
+  composeSlot(row: number, offset: number, base: number, fields: Partial<Record<PerfField, number>>): number {
+    const t = this.performances;
+    if (!t || base <= 0 || base >= t.rows) throw new Error(`演出の行 ${base} はありません`);
+    const want = t.row(base).slice();
+    for (const [f, v] of Object.entries(fields) as [PerfField, number][]) writePerfField(want, f, v);
+    const r = this.row(row);
+    return this.pointAt(row, offset, u16(r, offset), want);
+  }
+
+  private pointAt(row: number, offset: number, p: number, want: Uint8Array): number {
+    const t = this.performances!;
+    const r = this.row(row);
+    if (p > 0 && p < t.rows && equalBytes(want, t.row(p))) return p;
     for (let i = 1; i < t.rows; i++) {
       if (equalBytes(t.row(i), want)) {
-        w16(r, 0x1e, i);
-        return;
+        w16(r, offset, i);
+        return i;
       }
     }
-    // A row this editor added and only this action uses: change it in place.
-    const acts = this.table;
-    let shared = false;
-    for (let a = 0; a < acts.rows && !shared; a++) if (a !== row && acts.rowSize >= 0x20 && u16(acts.row(a), 0x1e) === p) shared = true;
-    if (p >= this.performanceRows && !shared) {
-      t.row(p).set(want);
-      return;
+    // A row this editor added and only this slot uses: change it in place.
+    if (p >= this.performanceRows && p < t.rows) {
+      const uses = performanceUses(this.master).get(p) ?? [];
+      if (uses.every((u) => u.kind === 'action' && u.action === row && u.slot === offset)) {
+        t.row(p).set(want);
+        return p;
+      }
     }
     const n = t.append(want, t.indexOffset ? newHash(t, 0x7e720000) : 0);
     if (n > 0xffff) throw new Error('演出の表がいっぱいです');
-    w16(this.row(row), 0x1e, n);
+    w16(r, offset, n);
+    return n;
   }
 }

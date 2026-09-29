@@ -610,6 +610,17 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
   };
 }
 
+/**
+ * Names in one DATA dictionary of a CGFX file (0 = models, 1 = textures, 9 = skeletal animations, 15 = particle
+ * emitters …), without reading the objects.
+ */
+export function cgfxDictNames(b: Uint8Array, dict: number): string[] {
+  if (ascii(b, 0, 4) !== 'CGFX') throw new Error('CGFX ではありません');
+  const data = u16(b, 6);
+  if (ascii(b, data, 4) !== 'DATA') throw new Error('CGFX: DATA がありません');
+  return new Reader(b).dict(data + 8 + dict * 8).map((e) => e.name);
+}
+
 /** Parse a CGFX file (bytes must start at the 'CGFX' magic). */
 export function parseCgfx(b: Uint8Array): CgfxFile {
   if (ascii(b, 0, 4) !== 'CGFX') throw new Error('CGFX ではありません');

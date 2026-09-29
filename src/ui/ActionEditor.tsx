@@ -10,6 +10,7 @@ import type { Session } from '../session';
 import { NumberInput } from './book';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
+import { PerformanceSlots } from './PerformanceEditor';
 
 /** The editor of the actions: actionData and, for the motions, directData of the monster book. */
 export function actionEdits(session: Session): ActionEdits {
@@ -17,15 +18,34 @@ export function actionEdits(session: Session): ActionEdits {
   return new ActionEdits(session.game.master, book?.directData ?? null, book?.directOriginalRows ?? 0);
 }
 
-/** Motions the edit offers: the skill motions A〜D first, then the others the game uses for actions. */
-const MOTION_ORDER = [0x45, 0x46, 0x47, 0x48, 0x43, 0x44, 0x49, 0x4a];
-
 const MOTION_INFO = [
-  'ワザを使うモンスターが取るモーションです (演出の表 directData の +0x0A)。',
-  'たとえば「ワザ D」にすると、まおうが変身のときに取るモーション (010_) で攻撃します。',
+  'ワザの演出 (モーション・エフェクト・SE) は、演出の表 (2713402F の directData) の行で、枠 (使用者・対象・追加 …) ごとに指します。',
+  'たとえば使用者のモーションを「ワザ D」にすると、まおうが変身のときに取るモーション (010_) で攻撃します。',
   'モーションはモンスターごとのモデルにあるものを使います。モデルにないモーションを選ぶと、ゲームでは動かないおそれがあります。',
-  '同じ演出を使うほかのアクションは変わりません (演出の行を複製して書き換えます)。',
+  '同じ演出を使うほかのアクションは変わりません (演出の行を複製して書き換えます)。演出を変えたアクションは、2713402F の directData.bin も書き出します。',
 ].join('\n');
+
+const LEVEL_INFO = [
+  'w0 bit13-15。状態異常を付ける率の段階です: 率 = BattleParameter [0x60 + 段階] × 耐性の係数 / 32 (段階 0〜6 = 100 / 75 / 50 / 34 / 25 / 12 / 6 %)。',
+  '攻撃 (物理・固定の威力) では、ダメージのあとに +0x32 の状態を追加効果として付ける率になります。+0x32 が 0 なら使われません。ダメージで倒したときも付きません。',
+  '段階 7 は表の外 (BattleParameter +0x67 = 200) を読むので 625%: 耐性で効かないとき以外は必ず付きます (元のデータにはありません)。',
+  '詳しくは naauao の docs/battle.md §6.5。',
+].join('\n');
+
+/** "2 (50%)": the base rate of an infliction level (BattleParameter [0x60 + level] / 32). */
+function levelLabel(book: MonsterBook | null, level: number): string {
+  const v = level < 7 ? book?.battle.baseRate[level] ?? 0 : 200;
+  return `${level} (${Math.round((v * 100) / 32)}%${level === 7 ? '、表の外' : ''})`;
+}
+
+/** What the level applies to: the state of +0x32 (an attack's extra effect), or nothing. */
+function levelNote(book: MonsterBook | null, a: { kind: number; raw: Uint8Array }): string {
+  const state = a.raw.length > 0x32 ? a.raw[0x32]! : 0;
+  const name = state ? book?.conditions[state] || `状態 ${state}` : '';
+  if (a.kind === 1) return state ? `追加効果: ${name}` : '(+0x32 の状態がないので使われない)';
+  if (a.kind === 0) return state ? `付ける状態: ${name}` : '';
+  return '';
+}
 
 const NAME_INFO = [
   '戦闘で「〈モンスター〉の　〇〇！」と出る名前のメッセージです。',
@@ -100,6 +120,7 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
   const mark = (changed: boolean): string => (changed ? 'edited' : '');
   const [lo, hi] = a.amount;
   return (
+    <>
     <table className="enc-table ai-fields action-edit">
       <tbody>
         <tr>
@@ -124,20 +145,6 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
           </td>
         </tr>
         <tr>
-          <td className="with-info">モーション<InfoTip text={MOTION_INFO} /></td>
-          <td>
-            {canMotion
-              ? (
-                  <select value={anim} className={mark(!!orig && anim !== orig.motion)} title={orig && anim !== orig.motion ? `元は ${motionLabel(orig.motion)}` : ''}
-                    onChange={(e) => apply(() => edits.setMotion(row, Number(e.target.value)))}>
-                    {[...new Set([...MOTION_ORDER, anim])].map((n) => <option key={n} value={n}>{motionLabel(n)}</option>)}
-                  </select>
-                )
-              : <span className="muted">{`${motionLabel(anim)} (演出の行がないので変えられません)`}</span>}
-            {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルにはこのモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
-          </td>
-        </tr>
-        <tr>
           <td>属性</td>
           <td>
             <select value={a.element} className={mark(!!orig && a.element !== orig.element)} onChange={(e) => apply(() => edits.setElement(row, Number(e.target.value)))}>
@@ -146,11 +153,12 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
           </td>
         </tr>
         <tr>
-          <td className="with-info">付与の段階<InfoTip text="ワザが状態異常をかける基本の率の段階 (w0 bit13-15、BattleParameter [0x60 + 段階])" /></td>
+          <td className="with-info">付与の段階<InfoTip text={LEVEL_INFO} /></td>
           <td>
             <select value={a.level} className={mark(!!orig && a.level !== orig.level)} onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
-              {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{i}</option>)}
+              {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{levelLabel(book, i)}</option>)}
             </select>
+            <span className="muted small">{` ${levelNote(book, a)}`}</span>
           </td>
         </tr>
         {a.raw.length >= 0x1c && (
@@ -165,6 +173,11 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         )}
       </tbody>
     </table>
+    <h4 className="with-info">{'演出'}<InfoTip text={MOTION_INFO} /></h4>
+    <PerformanceSlots session={session} actions={actions} edits={edits} row={row} onChange={onChange} />
+    {!canMotion && actions.slot(row, 0x1e) === 0 && <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>}
+    {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
+    </>
   );
 }
 

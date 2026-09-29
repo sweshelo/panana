@@ -6,6 +6,7 @@ import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
 import { decodeFix, FIX_TABLE } from './boss';
 import type { Master } from './master';
+import { effectTable, type EffectTable } from './performance';
 import type { CodePatch } from './patch';
 import type { MapDoc } from './sections';
 
@@ -381,6 +382,8 @@ export class MonsterBook {
   private readonly designArchive: Archive;
   private readonly directEntry: ArcEntry | null;
   private readonly directOriginal: Uint8Array | null;
+  /** effectData and directDataAddEffect of the same archive (the effects of the performances; read only). */
+  readonly effects: EffectTable;
   readonly battle: BattleParams;
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
@@ -396,6 +399,7 @@ export class MonsterBook {
     this.directData = dd ? new GsTable(dd.body) : null;
     this.directEntry = dd?.entry ?? null;
     this.directOriginal = dd ? dd.body.slice() : null;
+    this.effects = effectTable(this.designArchive);
     this.battle = new BattleParams(master.table('battleParameter.bin'));
     const cond = master.table('conditionData.bin');
     this.conditions = Array.from({ length: cond.rows }, (_, i) => clean(master.message(u16(cond.row(i), 0x14)) ?? ''));

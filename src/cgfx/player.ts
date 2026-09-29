@@ -104,6 +104,12 @@ export class AnimatedModel {
     this.update(0);
   }
 
+  /** World matrix of a bone at the last update (null when the model has no such bone). */
+  boneMatrix(name: string): THREE.Matrix4 | null {
+    const i = this.model.bones.findIndex((b) => b.name === name);
+    return i >= 0 ? this.world[i]! : null;
+  }
+
   /** Put the model at a time (frames since the motion started). */
   update(time: number): void {
     if (this.model.bones.length) {

@@ -19,7 +19,7 @@ import { gimmickTemplates } from '../src/game/templates';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
-import { equalBytes } from '../src/util/bytes';
+import { equalBytes, u32 } from '../src/util/bytes';
 import { CIA, ELPULSE, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
@@ -998,5 +998,69 @@ describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
     for (const m of game.code.maps) expect(equalBytes(back.get(m.sections[0]!), game.db.get(m.sections[0]!))).toBe(true);
     const files = buildModFiles(game, [], [], false, [[w01.sections[2]!, buildEntrances(moved)]]);
     expect([...files.keys()]).toEqual(['A90C8038']);
+  });
+});
+
+describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
+  test('directData / effectData / soundData of the actions, and a skill put together from other monsters\' performances', async () => {
+    const { ActionBook, ActionEdits } = await import('../src/game/actions');
+    const { EFFECT_ARCHIVE, decodePerformance, effectLabel, effectModelNames, performanceUses } = await import('../src/game/performance');
+    const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
+    const g = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g.monsters();
+    const sounds = await g.sounds();
+    const dd = book.directData!;
+    const fx = book.effects;
+    expect([fx.effects.length, fx.addRows]).toEqual([738, 14]);
+    const models = effectModelNames(await g.dump.readRomfs(EFFECT_ARCHIVE));
+    expect(models.size).toBeGreaterThan(400);
+    const label = (p: number): string => {
+      const d = decodePerformance(dd.row(p), p);
+      return `0x${d.anim.toString(16)} ${effectLabel(fx.effect(d.effect), models)} ${sounds.name(d.se)}`;
+    };
+    // #299 泥をかけてきた: the user's and the target's performances
+    const acts = new ActionBook(g.master, () => '', dd);
+    expect([acts.slot(299, 0x1e), acts.slot(299, 0x20)]).toEqual([541, 542]);
+    expect(label(541)).toBe('0x46 fx_e06_e08_dirt_s @mouth SE_BTL_E08_DIRT_S');
+    expect(label(542)).toBe('0xc fx_e06_e08_dirt_hit_s @head SE_BTL_E08_DIRT_HIT_S');
+    // まおう's transformation (MonsterParameter +0x36) is the performance of #525 too
+    const uses = performanceUses(g.master);
+    expect(uses.get(839)).toContainEqual({ kind: 'action', action: 525, slot: 0x1e });
+    expect(uses.get(839)).toContainEqual({ kind: 'transform', monster: 44 });
+    expect(fx.addEffects(8).length).toBe(1);
+
+    // 必滅邪眼: まおう's transformation, スベテノオワリ on the target, the effect of デスブロー
+    const edits = new ActionEdits(g.master, dd, book.directOriginalRows);
+    const n = edits.copy(660);
+    edits.copyAbility(n, 509);
+    edits.setSlot(n, 0x1e, 839);
+    let a = new ActionBook(g.master, () => '', dd);
+    const src = g.master.table('actionData.bin');
+    for (const o of [0, 8, 0x0c, 0x10, 0x14, 0x18, 0x30, 0x34, 0x38]) expect(u32(a.action(n)!.raw, o)).toBe(u32(src.row(509), o));
+    expect(a.action(n)!.nameId).not.toBe(a.action(509)!.nameId);
+    expect([a.slot(n, 0x1e), a.slot(n, 0x20), a.slot(n, 0x22)]).toEqual([839, 1009, 1008]);
+    expect(dd.rows).toBe(1026);
+    // the motion of まおう with the user's effect of スベテノオワリ: one new row, reused when composed again
+    const d1007 = decodePerformance(dd.row(1007), 1007);
+    const p = edits.composeSlot(n, 0x1e, 839, { effect: d1007.effect, addEffect: d1007.addEffect, se: d1007.se });
+    expect([p, dd.rows]).toEqual([1026, 1027]);
+    expect(label(1026)).toBe(`0x48 ${effectLabel(fx.effect(d1007.effect), models)} ${sounds.name(d1007.se)}`);
+    expect(edits.composeSlot(n, 0x1e, 839, { effect: d1007.effect, addEffect: d1007.addEffect, se: d1007.se })).toBe(1026);
+    // a field of a row only this slot uses changes in place; of a shared row, through a copy
+    expect(edits.setSlotField(n, 0x1e, 'anim', 0x47)).toBe(1026);
+    expect(dd.rows).toBe(1027);
+    expect(edits.setSlotField(n, 0x20, 'se', d1007.se)).toBe(1027);
+    a = new ActionBook(g.master, () => '', dd);
+    expect([a.slot(660, 0x20), a.slot(n, 0x20)]).toEqual([1009, 1027]);
+    // export and read back
+    book.setSkills(44, [n]);
+    const files = buildModFiles(g, [], [], g.master.changed());
+    files.set(MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive());
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
+    const b2 = await again.monsters();
+    const a2 = new ActionBook(again.master, () => '', b2.directData);
+    expect([a2.slot(n, 0x1e), a2.slot(n, 0x20), a2.slot(n, 0x22), b2.directData!.rows]).toEqual([1026, 1027, 1008, 1028]);
+    expect(b2.monster(44)!.skills.map((s) => s.action)).toEqual([n]);
+    expect(b2.effects.effects.length).toBe(738);
   });
 });
