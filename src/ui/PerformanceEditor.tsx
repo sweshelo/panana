@@ -7,15 +7,16 @@ import type { ActionBook, ActionEdits } from '../game/actions';
 import type { Game } from '../game/game';
 import { SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
 import {
-  ACTION_DIRECTION, ACTION_SLOTS, ALLY_DIRECTIONS, animKeys, directionLabel, MONSTER_DIRECTIONS, decodePerformance, effectLabel, loadEffectModels, performanceUses,
-  type EffectModel, type EffectTable, type Performance, type PerformanceUse,
+  ACTION_DIRECTION, ACTION_SLOTS, ALLY_DIRECTIONS, animKeys, directionLabel, MONSTER_DIRECTIONS, PERF_RANGE, slotTimeline, decodePerformance, effectLabel, loadEffectModels, performanceUses,
+  type EffectModel, type EffectTable, type PerfField, type Performance, type PerformanceUse, type SlotTimeline,
 } from '../game/performance';
 import type { SoundNames } from '../game/sound';
 import { monsterRef } from '../pages/monsters';
-import { PerformanceViewer, type PreviewEffect, type PreviewPhase } from '../pages/perfview';
+import { PerformanceViewer, type PhaseTiming, type PreviewEffect, type PreviewPhase } from '../pages/perfview';
 import type { Session } from '../session';
 import { soundPlayer } from '../sound/player';
 import { ActionPicker } from './ActionPicker';
+import { NumberInput } from './book';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
 import { Dom } from './mount';
@@ -343,16 +344,16 @@ export function previewPhases(session: Session, actions: ActionBook, row: number
     if (!p || p >= dd.rows) return;
     const d = decodePerformance(dd.row(p), p);
     const effects: PreviewEffect[] = [d.effect, ...book.effects.addEffects(d.addEffect)].map((e) => book.effects.effect(e)).filter((e) => !!e).map((e) => ({
-      label: effectLabel(e, models), bone: e.bone, offset: e.offset, start: Math.max(0, e.delay), length: e.length || 60,
+      label: effectLabel(e, models), bone: e.bone, offset: e.offset, length: e.length || 60,
     }));
+    const lead = who ? book.skillLead(who) : [];
     const index = sounds?.index(d.se) ?? null;
     const slot = ACTION_SLOTS.find((s) => s.offset === offset)!.label;
     out.push({
       title: `${slot}: ${whoName} — D${p} ${animLabel(d.anim, keys)}${sounds && d.se ? ` ${sounds.name(d.se)}` : ''}`,
       model: who ? monsterRef(game, book, who) : null,
       anim: keys[d.anim] ?? '',
-      length: d.length,
-      addLength: !!(d.raw[9]! & 1),
+      timeline: (mf) => slotTimeline(d, book.effects, mf, lead),
       effects,
       sound: index === null ? null : () => void soundPlayer.play(`perf-se:${index}`, async () => (await game.soundRenderer()).render(index)),
     });
@@ -363,31 +364,52 @@ export function previewPhases(session: Session, actions: ActionBook, row: number
   return out;
 }
 
+/** The slots the preview plays, in order (those with a performance row). */
+export function previewSlots(actions: ActionBook, row: number, rows: number): number[] {
+  return [0x1e, 0x20, 0x22].filter((o) => { const p = actions.slot(row, o); return p > 0 && p < rows; });
+}
+
 const PREVIEW_INFO = [
   '使用者 → 対象 → 追加 の順に、各枠の演出を再生します (ゲームでも、使う側の演出のあとにカメラが対象へ移ります)。',
   'モーションと SE は実際のデータで再生します。エフェクトはパーティクルの形式が未解析なので、出る位置 (ボーン) と時間を印で示します。',
   '電波人間のモデルは読めていないので、仮の姿 (枠線) で示します。',
 ].join('\n');
 
-/** Preview of an action's performance on the chosen monsters. */
-export function ActionPreview({ session, actions, row, users }: { session: Session; actions: ActionBook; row: number; users: Monster[] }): ReactNode {
+/** Preview of an action's performance on the chosen monsters, with the timeline of its slots (editable). */
+export function ActionPreview({ session, actions, edits, row, users, onChange }: {
+  session: Session;
+  actions: ActionBook;
+  edits: ActionEdits;
+  row: number;
+  users: Monster[];
+  onChange: () => void;
+}): ReactNode {
   const book = session.book;
   const models = useEffectModels(session.game);
   const viewer = useMemo(() => new PerformanceViewer(), []);
   const monsters = book?.monsters ?? [];
   const [userRow, setUserRow] = useState<number>(users[0]?.row ?? 0);
   const [targetRow, setTargetRow] = useState(0);
+  const [timings, setTimings] = useState<PhaseTiming[]>([]);
+  const [at, setAt] = useState<[number, number]>([0, 0]);
   useEffect(() => setUserRow(users[0]?.row ?? 0), [row]); // eslint-disable-line react-hooks/exhaustive-deps -- a new action starts with its first user
+  useEffect(() => {
+    viewer.onTimelines = setTimings;
+    viewer.onFrame = (p, f) => setAt([p, f]);
+  }, [viewer]);
   const user = book?.monster(userRow) ?? null;
   const target = targetRow ? book?.monster(targetRow) ?? null : null;
   const dd = book?.directData;
   // Reload when the action's slots or their rows change.
   const sig = [row, userRow, targetRow, !!models, ...ACTION_SLOTS.map((s) => actions.slot(row, s.offset)),
     ...[0x1e, 0x20, 0x22].map((o) => { const p = actions.slot(row, o); return dd && p && p < dd.rows ? [...dd.row(p)].join('.') : ''; })].join(',');
+  const phases = useMemo(() => previewPhases(session, actions, row, user, target, models), [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phases depend on
   useEffect(() => {
-    void viewer.show(previewPhases(session, actions, row, user, target, models));
-  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phases depend on
+    setTimings([]);
+    void viewer.show(phases);
+  }, [phases, viewer]);
   const option = (m: Monster): ReactNode => <option key={m.row} value={m.row}>{`${m.name} #${m.row}`}</option>;
+  const slots = dd ? previewSlots(actions, row, dd.rows) : [];
   return (
     <div className="perf-preview">
       <div className="row small">
@@ -407,6 +429,143 @@ export function ActionPreview({ session, actions, row, users }: { session: Sessi
         </label>
       </div>
       <Dom node={viewer.el} />
+      {dd && (
+        <PerformanceTimeline session={session} actions={actions} edits={edits} row={row} slots={slots} phases={phases}
+          timings={timings} at={at} onSeek={(p, f) => viewer.showAt(p, f)} onChange={onChange} />
+      )}
+    </div>
+  );
+}
+
+const TIMELINE_INFO = [
+  '各枠 (1 行 = 演出の表 directData の 1 行) の中で、何がいつ起きるかをゲームと同じ計算で示します (naauao docs/action-performance.md §3.1)。行ごとに、その枠が始まってからのフレームです。',
+  '✦ エフェクト (本体と追加のエフェクトが同時に出る。effectData +0x20)、♪ SE (エフェクト + directData +0x13)、▶ モーションの開始 (+0x0D)、◆ 命中の印、〰 揺れ (エフェクト + +0x12)。',
+  '♪・〰・▶ はドラッグで動かせます。数値の欄でも変えられます。ほかのアクションと共有している演出の行は、複製してから書き換えます。',
+  'トラックをクリックすると、その時点をプレビューに映します。',
+].join('\n');
+
+/** Where the markers of a slot can be dragged: the field and how a frame maps to its value. */
+const DRAG: Partial<Record<'se' | 'shake' | 'motion', PerfField>> = { se: 'seDelay', shake: 'shakeDelay', motion: 'motionStart' };
+
+/** The timeline of the slots the preview plays: markers per event, a playhead, dragging and number fields to edit. */
+function PerformanceTimeline({ session, actions, edits, row, slots, phases, timings, at, onSeek, onChange }: {
+  session: Session;
+  actions: ActionBook;
+  edits: ActionEdits;
+  row: number;
+  slots: number[];
+  phases: PreviewPhase[];
+  timings: PhaseTiming[];
+  at: [number, number];
+  onSeek: (phase: number, frame: number) => void;
+  onChange: () => void;
+}): ReactNode {
+  const book = session.book!;
+  const dd = book.directData!;
+  const [drag, setDrag] = useState<{ phase: number; kind: 'se' | 'shake' | 'motion'; frame: number } | null>(null);
+  // Before the models are read, the timelines without the motions' lengths.
+  const tls: SlotTimeline[] = phases.map((p, i) => timings[i]?.timeline ?? p.timeline(null));
+  const scale = Math.max(60, ...tls.map((t, i) => Math.max(t.length, t.effect, t.se ?? 0, t.shake ?? 0, t.hit, t.motion + (timings[i]?.motionFrames ?? 0)) + 5));
+  const pct = (f: number): string => `${(Math.max(0, f) / scale) * 100}%`;
+  const apply = (offset: number, field: PerfField, v: number): void => {
+    const [lo, hi] = PERF_RANGE[field];
+    try {
+      edits.setSlotField(row, offset, field, Math.max(lo, Math.min(hi, Math.round(v))));
+    } catch (err) {
+      alert((err as Error).message);
+      return;
+    }
+    book.reload();
+    onChange();
+  };
+  const frameAt = (e: { clientX: number }, track: HTMLElement): number => {
+    const r = track.getBoundingClientRect();
+    return Math.round(((e.clientX - r.left) / Math.max(r.width, 1)) * scale);
+  };
+  const ticks = Array.from({ length: Math.floor(scale / 30) + 1 }, (_, i) => i * 30);
+  return (
+    <div className="perf-timeline">
+      <div className="perf-tl-head small">
+        <span className="with-info">{'タイムライン'}<InfoTip text={TIMELINE_INFO} /></span>
+        <span className="muted">✦ エフェクト　♪ SE　▶ モーション　◆ 命中　〰 揺れ</span>
+      </div>
+      {slots.map((offset, i) => {
+        const p = actions.slot(row, offset);
+        const perf = decodePerformance(dd.row(p), p);
+        const tl = tls[i]!;
+        const main = book.effects.effect(perf.effect);
+        const mf = timings[i]?.motionFrames ?? null;
+        const slot = ACTION_SLOTS.find((s) => s.offset === offset)!;
+        const editable = edits.canEditSlot(row, offset);
+        // The motion start is replaced when the effect starts before 0 (it is not editable then).
+        const motionFixed = (main?.delay ?? 0) < 0;
+        const pos = (kind: 'se' | 'shake' | 'motion', f: number): number => (drag && drag.phase === i && drag.kind === kind ? drag.frame : f);
+        const value = (kind: 'se' | 'shake' | 'motion', f: number): number => {
+          const late = main?.late ? 3 : 0;
+          return kind === 'motion' ? f - late : f - tl.effect;
+        };
+        const marker = (kind: 'effect' | 'se' | 'motion' | 'hit' | 'shake', f: number, glyph: string, title: string): ReactNode => {
+          const draggable = editable && (kind === 'se' || kind === 'shake' || (kind === 'motion' && !motionFixed));
+          const k = kind as 'se' | 'shake' | 'motion';
+          const shown = draggable ? pos(k, f) : f;
+          return (
+            <span key={kind} className={`perf-mark mark-${kind}${draggable ? ' draggable' : ''}`} style={{ left: pct(shown) }}
+              title={`${title} (フレーム ${shown})${draggable ? '\nドラッグで動かせます' : ''}`}
+              onPointerDown={draggable ? (e) => {
+                e.stopPropagation();
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                setDrag({ phase: i, kind: k, frame: f });
+              } : undefined}
+              onPointerMove={draggable ? (e) => {
+                if (!drag || drag.phase !== i || drag.kind !== k) return;
+                setDrag({ ...drag, frame: Math.max(0, frameAt(e, e.currentTarget.parentElement as HTMLElement)) });
+              } : undefined}
+              onClick={draggable ? (e) => e.stopPropagation() : undefined}
+              onPointerUp={draggable ? () => {
+                if (!drag || drag.phase !== i || drag.kind !== k) return;
+                const d = drag;
+                setDrag(null);
+                if (d.frame !== f) apply(offset, DRAG[k]!, value(k, d.frame));
+              } : undefined}>
+              {glyph}
+            </span>
+          );
+        };
+        const fx = [perf.effect, ...book.effects.addEffects(perf.addEffect)].filter(Boolean).map((e) => effectLabel(book.effects.effect(e), null)).join(' + ');
+        return (
+          <div key={offset} className="perf-tl-row">
+            <div className="perf-tl-label small">
+              <b>{slot.label}</b>{` D${p}`}
+              {!tl.exact && <span className="muted" title="モデルのモーションの長さがまだ分からないので、長さは仮です">{' (仮)'}</span>}
+            </div>
+            <div className={`perf-tl-track${at[0] === i ? ' current' : ''}`} onClick={(e) => onSeek(i, frameAt(e, e.currentTarget))}>
+              <span className="perf-tl-slot" style={{ width: pct(tl.length) }} title={`枠の長さ ${tl.length} フレーム`} />
+              {mf !== null && perf.anim > 0 && <span className="perf-tl-motion" style={{ left: pct(tl.motion), width: pct(mf) }} title={`モーション ${mf} フレーム`} />}
+              {ticks.map((t) => <span key={t} className="perf-tl-tick" style={{ left: pct(t) }}>{t}</span>)}
+              {perf.effect > 0 && marker('effect', tl.effect, '✦', `エフェクト: ${fx}`)}
+              {perf.anim > 0 && marker('motion', tl.motion, '▶', motionFixed ? 'モーションの開始 (エフェクトの開始が負なので、その分だけ遅れる)' : 'モーションの開始 (+0x0D)')}
+              {perf.anim >= 0x45 && perf.anim <= 0x48 && tl.hit !== tl.motion && marker('hit', tl.hit, '◆', '命中の印 (MonsterDesign +0x6A〜)')}
+              {tl.se !== null && marker('se', tl.se, '♪', `SE: ${session.sounds?.name(perf.se) || perf.se}`)}
+              {tl.shake !== null && marker('shake', tl.shake, '〰', '揺れ')}
+              {at[0] === i && <span className="perf-tl-head-line" style={{ left: pct(at[1]) }} />}
+            </div>
+            <div className="perf-tl-fields small">
+              <label title="SE を鳴らすフレーム: エフェクトの開始からのずれ (directData +0x13)">{'♪ '}
+                <NumberInput value={perf.timing[1]} min={-128} max={127} onCommit={(v) => apply(offset, 'seDelay', v)} />
+              </label>
+              <label title="揺れのフレーム: エフェクトの開始からのずれ (directData +0x12)">{'〰 '}
+                <NumberInput value={perf.timing[0]} min={-128} max={127} onCommit={(v) => apply(offset, 'shakeDelay', v)} />
+              </label>
+              <label title="モーションの開始 (directData +0x0D)">{'▶ '}
+                <NumberInput value={perf.motionStart} min={0} max={255} onCommit={(v) => apply(offset, 'motionStart', v)} />
+              </label>
+              <label title={`枠の長さ (directData +0x02)。${perf.addLength ? 'モーションの長さに足す' : '0 ならモーションの長さ'}`}>{'長さ '}
+                <NumberInput value={perf.length} min={-32768} max={32767} onCommit={(v) => apply(offset, 'length', v)} />
+              </label>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -476,3 +476,29 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .perf-viewer canvas { height: 280px; cursor: default; }
 .perf-effects { position: absolute; right: 8px; top: 6px; pointer-events: none; color: #ffb347; text-align: right; }
 .perf-viewer .viewer-anim { top: auto; bottom: 6px; left: 6px; right: auto; }
+
+/* Timeline of the performance slots (under the preview) */
+.perf-timeline { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.perf-tl-head { display: flex; gap: 12px; align-items: center; margin-bottom: 4px; }
+.perf-tl-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 2px 8px; align-items: center; margin: 4px 0; }
+.perf-tl-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-tl-track { position: relative; height: 44px; background: #151820; border-radius: 4px; cursor: pointer; }
+.perf-tl-track.current { outline: 1px solid #3c4a66; }
+.perf-tl-slot { position: absolute; left: 0; top: 0; bottom: 0; background: #232a38; border-radius: 4px; pointer-events: none; }
+.perf-tl-motion { position: absolute; top: 33px; height: 6px; background: #3f6fb5; border-radius: 3px; opacity: 0.8; pointer-events: none; }
+.perf-tl-tick { position: absolute; bottom: -1px; font-size: 9px; color: var(--muted); transform: translateX(-50%); pointer-events: none; }
+.perf-tl-tick:first-of-type { transform: none; }
+.perf-mark { position: absolute; top: 1px; transform: translateX(-50%); font-size: 14px; line-height: 18px; user-select: none; touch-action: none; }
+.perf-mark.draggable { cursor: ew-resize; }
+.perf-mark.draggable:hover { filter: brightness(1.4); }
+.mark-effect { color: #ffb347; }
+.mark-se, .mark-hit { top: 11px; }
+.mark-shake { top: 20px; }
+.mark-se { color: #7fd1ff; }
+.mark-motion { color: #8fb3ff; }
+.mark-hit { color: #ff7a7a; }
+.mark-shake { color: #c9a0ff; }
+.perf-tl-head-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; opacity: 0.8; transform: translateX(-1px); pointer-events: none; }
+.perf-tl-fields { grid-column: 2; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.perf-tl-fields .num-input { width: 56px; }
+@media (max-width: 720px) { .perf-tl-row { grid-template-columns: minmax(0, 1fr); } .perf-tl-fields { grid-column: 1; } }

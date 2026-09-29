@@ -1,21 +1,22 @@
 // Preview of the performance of an action: its phases (the user's performance, then the target's …) one after the
-// other, each on its own model with the camera on it, like the battle. A phase plays the motion (the animation whose
-// name starts with the animData key), the sound effect at its start, and marks where the effects come out (the
-// particles themselves are not drawn: their format is not analysed yet).
+// other, each on its own model with the camera on it, like the battle. A phase follows the timeline of its slot
+// (performance.ts slotTimeline, as the game's FUN_0025af90): the effects come out, the sound effect plays and the motion
+// (the animation whose name starts with the animData key) starts at their frames. Where the effects come out is marked
+// (the particles themselves are not drawn: their format is not analysed yet).
 import * as THREE from 'three';
 import { AnimatedModel, ANIMATION_FPS, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import { clear, h } from '../editor/dom';
+import type { SlotTimeline } from '../game/performance';
 import type { ModelRef } from './modelview';
 
-/** An effect of a phase: where and when it comes out. */
+/** An effect of a phase: where it comes out (all of a slot's effects start at its timeline's `effect`). */
 export interface PreviewEffect {
   label: string;
   /** Bone name ('' = the unit's position). */
   bone: string;
   offset: [number, number, number];
-  /** Frames since the phase started. */
-  start: number;
+  /** How long it is marked (frames). */
   length: number;
 }
 
@@ -26,12 +27,10 @@ export interface PreviewPhase {
   model: ModelRef | null;
   /** Animation key ("010_"), '' = none. */
   anim: string;
-  /** Length in frames (0 = the motion's length, or 60). */
-  length: number;
-  /** Add the motion's length to `length` (directData +0x09 bit0). */
-  addLength: boolean;
+  /** The slot's timeline for the length of the motion on the model (null = not known). */
+  timeline: (motionFrames: number | null) => SlotTimeline;
   effects: PreviewEffect[];
-  /** Plays the sound effect (called at the start of the phase). */
+  /** Plays the sound effect (at the timeline's `se`). */
   sound: (() => void) | null;
 }
 
@@ -40,9 +39,16 @@ interface Loaded {
   animated: AnimatedModel | null;
   center: THREE.Vector3;
   radius: number;
-  /** Length of the phase in frames. */
-  frames: number;
+  timeline: SlotTimeline;
+  /** Length of the motion on the model (null: none or not known). */
+  motionFrames: number | null;
   note: string;
+}
+
+/** What the viewer found for a phase once its model is read. */
+export interface PhaseTiming {
+  timeline: SlotTimeline;
+  motionFrames: number | null;
 }
 
 const models = new Map<string, Promise<{ factory: ModelFactory; hash: number } | null>>();
@@ -79,6 +85,10 @@ export class PerformanceViewer {
   private shown: THREE.Object3D | null = null;
   private playing = false;
   private token = 0;
+  /** Called with the timelines once the models are read (the lengths depend on the motions). */
+  onTimelines: (t: PhaseTiming[]) => void = () => {};
+  /** Called whenever the shown phase or frame changes. */
+  onFrame: (phase: number, frame: number) => void = () => {};
 
   constructor() {
     this.el.append(this.canvas, this.note, this.effectsLabel,
@@ -102,6 +112,15 @@ export class PerformanceViewer {
     this.note.textContent = '';
     if (phases.length) this.setPhase(0);
     this.seek(0);
+    this.onTimelines(loaded.map((l) => ({ timeline: l.timeline, motionFrames: l.motionFrames })));
+  }
+
+  /** Show a phase at a frame (still). */
+  showAt(phase: number, frame: number): void {
+    if (!this.loaded[phase]) return;
+    this.stop();
+    if (phase !== this.current) this.setPhase(phase);
+    this.seek(Math.max(0, Math.min(frame, this.loaded[phase]!.timeline.length)));
   }
 
   private async load(p: PreviewPhase): Promise<Loaded> {
@@ -114,13 +133,13 @@ export class PerformanceViewer {
       animated = hasMotions ? new AnimatedModel(f.factory, f.hash) : null;
       object = animated?.group ?? f.factory.instance(f.hash);
     }
-    let motionFrames = 0;
+    let motionFrames: number | null = null;
     if (animated && p.anim) {
       const a = animated.motions.find((m) => animationKey(m.name) === p.anim);
       animated.select(a?.name ?? null);
       if (a) motionFrames = animated.frames;
       else note = `モデルにモーション ${p.anim} がありません`;
-    }
+    } else if (animated) animated.select(null);
     if (!object) {
       // A stand-in: a capsule as tall as a person.
       const g = new THREE.Group();
@@ -134,10 +153,7 @@ export class PerformanceViewer {
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 30);
-    const base = p.length > 0 && !p.addLength ? p.length : motionFrames + (p.addLength ? p.length : 0);
-    const effectsEnd = Math.max(0, ...p.effects.map((e) => e.start + e.length));
-    const frames = Math.max(base || 60, p.length > 0 ? 0 : Math.min(effectsEnd, 240));
-    return { object, animated, center, radius, frames, note };
+    return { object, animated, center, radius, timeline: p.timeline(motionFrames), motionFrames, note };
   }
 
   private setPhase(i: number): void {
@@ -164,11 +180,12 @@ export class PerformanceViewer {
       this.render();
       return;
     }
-    l.animated?.update(frame);
-    const out = p.effects.filter((e) => frame >= e.start && frame < e.start + Math.max(e.length, 1));
+    const tl = l.timeline;
+    l.animated?.update(Math.max(0, frame - tl.motion));
+    const out = p.effects.filter((e) => frame >= tl.effect && frame < tl.effect + Math.max(e.length, 1));
     for (const e of out) {
       const pos = this.effectPosition(l, e);
-      const t = (frame - e.start) / Math.max(e.length, 1);
+      const t = (frame - tl.effect) / Math.max(e.length, 1);
       const m = new THREE.Mesh(new THREE.SphereGeometry(l.radius * 0.08 * (1 + 0.5 * Math.sin(t * Math.PI)), 16, 12),
         new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.75, depthTest: false }));
       m.position.copy(pos);
@@ -177,8 +194,9 @@ export class PerformanceViewer {
     }
     clear(this.effectsLabel);
     for (const e of out) this.effectsLabel.append(h('div', {}, `✦ ${e.label}`));
-    this.frameLabel.textContent = `${Math.floor(frame)} / ${Math.floor(l.frames)}`;
+    this.frameLabel.textContent = `${Math.floor(frame)} / ${Math.floor(tl.length)}`;
     this.render();
+    this.onFrame(this.current, frame);
   }
 
   private effectPosition(l: Loaded, e: PreviewEffect): THREE.Vector3 {
@@ -197,21 +215,27 @@ export class PerformanceViewer {
     this.playButton.textContent = '■';
     let phase = 0;
     let start = performance.now();
+    let sounded = false;
     this.setPhase(0);
-    this.phases[0]?.sound?.();
     const tick = (now: number): void => {
       if (!this.playing || token !== this.token) return;
       let f = ((now - start) / 1000) * ANIMATION_FPS;
-      if (f >= this.loaded[phase]!.frames) {
+      if (f >= this.loaded[phase]!.timeline.length) {
         phase++;
         if (phase >= this.loaded.length) {
-          this.seek(this.loaded[phase - 1]!.frames);
+          this.seek(this.loaded[phase - 1]!.timeline.length);
           this.stop();
           return;
         }
         start = now;
         f = 0;
+        sounded = false;
         this.setPhase(phase);
+      }
+      // The sound effect once, when its frame is reached (FUN_0025af90).
+      const se = this.loaded[phase]!.timeline.se;
+      if (!sounded && se !== null && f >= se) {
+        sounded = true;
         this.phases[phase]?.sound?.();
       }
       if (this.el.isConnected) this.seek(f);
