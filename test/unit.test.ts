@@ -302,6 +302,14 @@ describe('actions', () => {
     const f = decodeAction(r);
     expect([f.level, f.state, f.strength, f.turns, f.element]).toEqual([1, 10, [2, 3], 2, 5]);
   });
+
+  test('kind and type (w0 bit1-2 / bit3-6) name how the battle computes an action', async () => {
+    const { actionKindLabel, actionTypeLabel } = await import('../src/game/actions');
+    expect([actionKindLabel(1, 0), actionKindLabel(1, 1), actionKindLabel(1, 2), actionKindLabel(1, 3)])
+      .toEqual(['攻撃・とくぎ (物理)', '攻撃・とくぎ (物理・会心あり)', '攻撃・とくぎ (固定の威力)', '攻撃・とくぎ (ブレス (固定の威力))']);
+    expect([actionKindLabel(0, 2), actionKindLabel(0, 3), actionKindLabel(2, 0), actionKindLabel(3, 4)]).toEqual(['状態', '状態 (ブレス)', 'アイテム (HP 回復)', '特殊']);
+    expect([actionTypeLabel(3, 5), actionTypeLabel(1, 9)]).toEqual(['5: 変身・セリフ', '9']);
+  });
 });
 
 describe('performance timeline (docs/action-performance.md §3.1)', () => {

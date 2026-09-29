@@ -1,7 +1,7 @@
 // Action list: every actionData row with the fields known so far, its raw words, and what refers to it
 // (items' use effect, monsters' skills).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ActionBook, itemEffect, type Action } from '../game/actions';
+import { ACTION_KIND, ActionBook, actionKindLabel, actionTypeLabel, itemEffect, type Action } from '../game/actions';
 import type { Monster } from '../game/monsters';
 import type { Session } from '../session';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
@@ -126,7 +126,7 @@ function ActionList({ book, rows, selected }: { book: Book; rows: Action[]; sele
               <tr key={a.row} className={a.row === selected ? 'active' : ''} onClick={() => (location.hash = actionHref(a.row))}>
                 <td className="num muted">{a.row}</td>
                 <td>{a.name || <span className="muted">(名前なし)</span>}</td>
-                <td className="muted">{itemEffect(a) || kindLabel(a.kind)}</td>
+                <td className="muted">{itemEffect(a) || actionKindLabel(a.kind, a.type)}</td>
                 <td className="num muted">{n ? n : ''}</td>
               </tr>
             );
@@ -147,7 +147,7 @@ function ActionDetail({ action: a, book, editor }: { action: Action; book: Book;
     <>
       <div className="book-head">
         <h2>{a.name || `アクション #${a.row}`}</h2>
-        <span className="muted">{`#${a.row}  ${kindLabel(a.kind)}  (actionData.bin、${a.raw.length} バイト)`}</span>
+        <span className="muted">{`#${a.row}  ${actionKindLabel(a.kind, a.type)}  (actionData.bin、${a.raw.length} バイト)`}</span>
       </div>
       {itemEffect(a) && <div className="model-line">{`効果: ${itemEffect(a)}`}</div>}
       {editor?.(a)}
@@ -157,7 +157,7 @@ function ActionDetail({ action: a, book, editor }: { action: Action; book: Book;
           <tr><th>欄</th><th>値</th><th></th></tr>
           {field('+0x00 w0', `0x${hex8(a.w0)}`)}
           {field('  bit1-2 種類', String(a.kind), kindLabel(a.kind))}
-          {field('  bit3-6 効果の種別', String(a.type), a.kind === 2 ? '' : 'アイテム以外での意味は未解析')}
+          {field('  bit3-6 種別', String(a.type), actionTypeLabel(a.kind, a.type))}
           {field('  bit13-15 付与の段階', String(a.level), '状態異常を付ける基本の率 (BattleParameter [0x60 + 段階])。攻撃では +0x32 の追加効果の率')}
           {field('  bit29-31 使える場面', a.scenes.join('・') || 'なし', 'アイテム')}
           {field('+0x04 名前', a.nameId ? `${a.nameId} (0x${a.nameId.toString(16).toUpperCase()})` : '0', a.name)}

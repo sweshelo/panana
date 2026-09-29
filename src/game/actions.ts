@@ -19,6 +19,29 @@ export const PERFORMANCE_TABLE = 0x92124c00;
 export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
 /** Kind (category) of an action (w0 bit1-2; elpulse docs/battle.md §8). */
 export const ACTION_KIND: Record<number, string> = { 0: '状態', 1: '攻撃・とくぎ', 2: 'アイテム', 3: '特殊' };
+/**
+ * Type (w0 bit3-6) by kind: how the battle computes it (elpulse docs/battle.md §6.1, §7). Kind 1 has no flag of its
+ * own for 攻撃 / とくぎ: types 0 / 1 are physical (こうげき vs ぼうぎょ, ×+0x33; 1 can be critical), 2 / 3 a fixed range
+ * (+0x18〜+0x1A). Type 3 of kinds 0 / 1 is a breath: ブレス封じ (state 0x5A) blocks it (FUN_00416a78).
+ */
+export const ACTION_TYPE: Record<number, Record<number, string>> = {
+  0: { 3: 'ブレス' },
+  1: { 0: '物理', 1: '物理・会心あり', 2: '固定の威力', 3: 'ブレス (固定の威力)' },
+  2: ITEM_EFFECT,
+  3: { 0: '効果なし (メッセージだけ)', 1: '能力の増減', 2: '場から消す (にげる)', 4: 'なかまをよぶ', 5: '変身・セリフ', 6: 'ゴールドをぬすむ', 7: '状態 (+0x32)', 8: '時間で変わる', 9: '時間で変わる' },
+};
+
+/** "1: 物理・会心あり" (the number alone when the type means nothing special for the kind). */
+export function actionTypeLabel(kind: number, type: number): string {
+  const name = ACTION_TYPE[kind]?.[type];
+  return name ? `${type}: ${name}` : String(type);
+}
+
+/** "攻撃・とくぎ (物理)": the kind of an action and, when it means something, its type. */
+export function actionKindLabel(kind: number, type: number): string {
+  const name = ACTION_TYPE[kind]?.[type];
+  return `${ACTION_KIND[kind] ?? `種類 ${kind}`}${name && kind !== 3 ? ` (${name})` : ''}`;
+}
 /** Element of an action (w0 bit24-27). */
 export const ELEMENT = ['', '火', '氷', '風', '土', '電気', '水', '光', '闇'];
 /** Scenes where an item action can be used: w0 bit -> label. */
@@ -259,6 +282,12 @@ export class ActionEdits {
   /** w0 bit24-27: element (0 = none, 1 火 .. 8 闇). */
   setElement(row: number, element: number): void {
     this.setBits(row, 24, 4, element);
+  }
+
+  /** w0 bit1-2 / bit3-6: kind and type (how the battle computes the action). */
+  setKind(row: number, kind: number, type: number): void {
+    this.setBits(row, 1, 2, kind);
+    this.setBits(row, 3, 4, type);
   }
 
   /** w0 bit13-15: base infliction level. */

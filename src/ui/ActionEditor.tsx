@@ -1,7 +1,7 @@
 // Editing an action (actionData row): its name, element, infliction level, amount and motion, copying it as a new
 // action, and putting it back. Used by the action page and, in a dialog, by the skill slots of the monster editor.
 import { useEffect, useState, type ReactNode } from 'react';
-import { ActionEdits, ELEMENT, type ActionBook } from '../game/actions';
+import { ACTION_KIND, ActionEdits, actionTypeLabel, ELEMENT, type ActionBook } from '../game/actions';
 import { animationKey } from '../cgfx/player';
 import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
@@ -44,6 +44,25 @@ function levelNote(book: MonsterBook | null, a: { kind: number; raw: Uint8Array 
   const name = state ? book?.conditions[state] || `状態 ${state}` : '';
   if (a.kind === 1) return state ? `追加効果: ${name}` : '(+0x32 の状態がないので使われない)';
   if (a.kind === 0) return state ? `付ける状態: ${name}` : '';
+  return '';
+}
+
+const KIND_INFO = [
+  'w0 bit1-2 (カテゴリ) と bit3-6 (種別)。戦闘ではこの 2 つで計算を呼び分けます (naauao の docs/battle.md §6.1, §7)。',
+  '0 状態: +0x32 の状態を付けるだけ。1 攻撃・とくぎ: ダメージ。2 アイテム: 回復など (種別が効果)。3 特殊: 種別ごとの処理 (なかまをよぶ・変身・ぬすむ …)。',
+  '「攻撃」と「とくぎ」を分けるフラグはありません。カテゴリ 1 の中で種別が計算を決めます:',
+  '  0 物理: こうげき・ぼうぎょで計算し、威力 (+0x33) を掛ける。モンスターのふつうの攻撃。',
+  '  1 物理・会心あり: 0 と同じで、会心の一撃が出る (電波人間のこうげき・つらぬきなど)。',
+  '  2 固定の威力: 量 (+0x18〜+0x1A) の乱数。こうげき・ぼうぎょは関係しない (ひのたまなどの呪文)。',
+  '  3 ブレス: 2 と同じで、ブレス封じ (状態 0x5A) のあいだ使えない。カテゴリ 0 の種別 3 (ポイズンブレスなど) も同じ。',
+  '演出は変わりません。見た目と合うように演出も選び直してください。',
+].join('\n');
+
+/** Why the kind and type may not work as they are, or ''. */
+function kindWarning(actions: ActionBook, a: { row: number; kind: number; type: number; amount: [number, number] }): string {
+  if (a.kind !== 2 && actions.refsOf(a.row).items.length) return 'このアクションを使うアイテムがあります。アイテムの効果はカテゴリ 2 のときだけです';
+  if (a.kind === 1 && a.type >= 4) return 'カテゴリ 1 の種別 4 以上は元のデータにありません (計算が呼ばれないおそれがあります)';
+  if (a.kind === 1 && a.type >= 2 && !a.amount[0] && !a.amount[1]) return '固定の威力で量が 0 なので、ダメージは 0 (ミス) になります';
   return '';
 }
 
@@ -171,6 +190,22 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
           </td>
         </tr>
         <tr>
+          <td className="with-info">カテゴリ<InfoTip text={KIND_INFO} /></td>
+          <td><div className="inline-fields">
+            <select value={a.kind} className={mark(!!orig && a.kind !== orig.kind)} title={orig && a.kind !== orig.kind ? `元は ${ACTION_KIND[orig.kind]}` : ''}
+              onChange={(e) => apply(() => edits.setKind(row, Number(e.target.value), a.type))}>
+              {[0, 1, 2, 3].map((k) => <option key={k} value={k}>{`${k}: ${ACTION_KIND[k]}`}</option>)}
+            </select>
+            種別
+            <select value={a.type} className={mark(!!orig && a.type !== orig.type)} title={orig && a.type !== orig.type ? `元は ${actionTypeLabel(orig.kind, orig.type)}` : ''}
+              onChange={(e) => apply(() => edits.setKind(row, a.kind, Number(e.target.value)))}>
+              {Array.from({ length: 16 }, (_, t) => <option key={t} value={t}>{actionTypeLabel(a.kind, t)}</option>)}
+            </select>
+          </div>
+            {kindWarning(actions, a) && <div className="issue warn">{`⚠ ${kindWarning(actions, a)}`}</div>}
+          </td>
+        </tr>
+        <tr>
           <td>属性</td>
           <td>
             <select value={a.element} className={mark(!!orig && a.element !== orig.element)} onChange={(e) => apply(() => edits.setElement(row, Number(e.target.value)))}>
@@ -201,12 +236,12 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         )}
         <tr>
           <td className="with-info">状態の強さ<InfoTip text={STRENGTH_INFO} /></td>
-          <td className="inline-fields">
+          <td><div className="inline-fields">
             <NumberInput value={a.strength[0]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[0] !== orig.strength[0])}`} onCommit={(v) => apply(() => edits.setStrength(row, v, a.strength[1]))} />
             〜
             <NumberInput value={a.strength[1]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[1] !== orig.strength[1])}`} onCommit={(v) => apply(() => edits.setStrength(row, a.strength[0], v))} />
             {a.strength[0] > a.strength[1] && <span className="issue warn">最小が最大より大きい</span>}
-          </td>
+          </div></td>
         </tr>
         {a.raw.length >= 0x18 && !(a.kind === 3 && a.type === 5) && (
           <tr>
@@ -219,11 +254,11 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         {a.raw.length >= 0x1c && (
           <tr>
             <td className="with-info">量<InfoTip text="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです" /></td>
-            <td className="inline-fields">
+            <td><div className="inline-fields">
               <NumberInput value={lo} min={-32768} max={32767} className={`num-input ${mark(!!orig && lo !== orig.amount[0])}`} onCommit={(v) => apply(() => edits.setAmount(row, v, hi))} />
               〜
               <NumberInput value={hi} min={-32768} max={32767} className={`num-input ${mark(!!orig && hi !== orig.amount[1])}`} onCommit={(v) => apply(() => edits.setAmount(row, lo, v))} />
-            </td>
+            </div></td>
           </tr>
         )}
       </tbody>
