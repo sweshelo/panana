@@ -462,3 +462,17 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
   .viewer-anim { left: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .viewer-anim select { flex: 1; min-width: 0; }
 }
+
+/* Performance of an action (演出の枠 and its preview) */
+.perf-slots { margin: 4px 0 8px; overflow-x: auto; }
+.perf-table td { vertical-align: middle; }
+.perf-table td:nth-child(-n+2) { white-space: nowrap; }
+.perf-table select { max-width: 170px; }
+.perf-table .sound-button .map-button { max-width: 190px; }
+.perf-table .map-button { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perf-table td.nowrap, .perf-pick td { white-space: nowrap; }
+.perf-pick td.small { white-space: normal; }
+.perf-preview { margin-top: 8px; }
+.perf-viewer canvas { height: 280px; cursor: default; }
+.perf-effects { position: absolute; right: 8px; top: 6px; pointer-events: none; color: #ffb347; text-align: right; }
+.perf-viewer .viewer-anim { top: auto; bottom: 6px; left: 6px; right: auto; }

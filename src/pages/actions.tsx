@@ -7,12 +7,13 @@ import type { Session } from '../session';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
 import { useEdits, useSticky, type PageProps } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { ActionPreview } from '../ui/PerformanceEditor';
 import { hex8, s16, u32 } from '../util/bytes';
 
 export const actionHref = (row: number): string => `#/actions/${row}`;
 
 /** Offsets of the fields that are decoded (the raw table marks them). */
-const KNOWN: Record<number, string> = { 0x00: 'w0 (種類・効果・付与・使える場面)', 0x04: '名前 (メッセージ)', 0x18: '量 (s16 最小 / 最大)' };
+const KNOWN: Record<number, string> = { 0x00: 'w0 (種類・効果・付与・使える場面)', 0x04: '名前 (メッセージ)', 0x18: '量 (s16 最小 / 最大)', 0x1c: '演出の番号 / 使用者の演出 (directData)', 0x20: '対象 / 追加の演出 (directData)', 0x24: 'その他の演出 (directData)', 0x28: 'その他の演出 (directData)', 0x2c: '別の組の演出 (directData)' };
 
 type Filter = 'item' | 'used-item' | 'skill' | 'all';
 type Book = Pick<ActionBook, 'actions' | 'action' | 'refsOf'>;
@@ -46,7 +47,8 @@ export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
 
 const EDIT_INFO = [
   '「複製」で、この行を写した新しいアクションを表の最後に足します。モンスターのワザの枠で選べます。',
-  'モーションを変えたアクションは、演出の表 (2713402F の directData.bin) も書き出します。',
+  '新しいワザは、既存のワザの組み替えで作れます: 演出の枠 (使用者・対象・追加) にほかのモンスターのワザや変身の演出を入れ、「効果を写す」でほかのワザの効果を写します。',
+  '演出を変えたアクションは、演出の表 (2713402F の directData.bin) も書き出します。',
 ].join('\n');
 
 /** The editable fields of the action, copying it, and putting it back. */
@@ -69,6 +71,7 @@ function ActionEdit({ session, book, row, onChange }: { session: Session; book: 
         }}>複製して新しいワザにする</button>
         {!added && <button disabled={!edits.changed(row)} onClick={() => { edits.revert(row); session.book?.reload(); onChange(); }}>元に戻す</button>}
       </div>
+      {session.book?.directData && <ActionPreview session={session} actions={book} row={row} users={users} />}
     </section>
   );
 }

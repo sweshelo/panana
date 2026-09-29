@@ -10,6 +10,7 @@ import type { Session } from '../session';
 import { NumberInput } from './book';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
+import { PerformanceSlots } from './PerformanceEditor';
 
 /** The editor of the actions: actionData and, for the motions, directData of the monster book. */
 export function actionEdits(session: Session): ActionEdits {
@@ -17,14 +18,11 @@ export function actionEdits(session: Session): ActionEdits {
   return new ActionEdits(session.game.master, book?.directData ?? null, book?.directOriginalRows ?? 0);
 }
 
-/** Motions the edit offers: the skill motions A〜D first, then the others the game uses for actions. */
-const MOTION_ORDER = [0x45, 0x46, 0x47, 0x48, 0x43, 0x44, 0x49, 0x4a];
-
 const MOTION_INFO = [
-  'ワザを使うモンスターが取るモーションです (演出の表 directData の +0x0A)。',
-  'たとえば「ワザ D」にすると、まおうが変身のときに取るモーション (010_) で攻撃します。',
+  'ワザの演出 (モーション・エフェクト・SE) は、演出の表 (2713402F の directData) の行で、枠 (使用者・対象・追加 …) ごとに指します。',
+  'たとえば使用者のモーションを「ワザ D」にすると、まおうが変身のときに取るモーション (010_) で攻撃します。',
   'モーションはモンスターごとのモデルにあるものを使います。モデルにないモーションを選ぶと、ゲームでは動かないおそれがあります。',
-  '同じ演出を使うほかのアクションは変わりません (演出の行を複製して書き換えます)。',
+  '同じ演出を使うほかのアクションは変わりません (演出の行を複製して書き換えます)。演出を変えたアクションは、2713402F の directData.bin も書き出します。',
 ].join('\n');
 
 const NAME_INFO = [
@@ -100,6 +98,7 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
   const mark = (changed: boolean): string => (changed ? 'edited' : '');
   const [lo, hi] = a.amount;
   return (
+    <>
     <table className="enc-table ai-fields action-edit">
       <tbody>
         <tr>
@@ -121,20 +120,6 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
               <NamePicker session={session} actions={actions} current={a.nameId} onClose={() => setPickName(false)}
                 onPick={(id) => { setPickName(false); apply(() => edits.setName(row, id)); }} />
             )}
-          </td>
-        </tr>
-        <tr>
-          <td className="with-info">モーション<InfoTip text={MOTION_INFO} /></td>
-          <td>
-            {canMotion
-              ? (
-                  <select value={anim} className={mark(!!orig && anim !== orig.motion)} title={orig && anim !== orig.motion ? `元は ${motionLabel(orig.motion)}` : ''}
-                    onChange={(e) => apply(() => edits.setMotion(row, Number(e.target.value)))}>
-                    {[...new Set([...MOTION_ORDER, anim])].map((n) => <option key={n} value={n}>{motionLabel(n)}</option>)}
-                  </select>
-                )
-              : <span className="muted">{`${motionLabel(anim)} (演出の行がないので変えられません)`}</span>}
-            {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルにはこのモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
           </td>
         </tr>
         <tr>
@@ -165,6 +150,11 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         )}
       </tbody>
     </table>
+    <h4 className="with-info">{'演出'}<InfoTip text={MOTION_INFO} /></h4>
+    <PerformanceSlots session={session} actions={actions} edits={edits} row={row} onChange={onChange} />
+    {!canMotion && actions.slot(row, 0x1e) === 0 && <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>}
+    {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
+    </>
   );
 }
 
