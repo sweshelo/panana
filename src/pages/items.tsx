@@ -5,7 +5,6 @@ import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
 import { COMBINE, ITEM_CATEGORY, STATE_ACTION, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
-import { InfoTip } from '../ui/InfoTip';
 import { dropClass, type MonsterBook } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { oneIn, pct } from './monsteredit';
@@ -13,6 +12,7 @@ import { LAYOUTS, recCellPos, type MapDoc } from '../game/sections';
 import { hex8, u32 } from '../util/bytes';
 import type { ModelRef } from './modelview';
 import type { ItemData, Session } from '../session';
+import { InfoTip } from '../ui/InfoTip';
 import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
@@ -159,14 +159,15 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
       </div>
       <div className="book-top">
         <div>
-          <DescriptionTable it={it} />
+          <TextEditor session={session} items={items} it={it} onEdit={onEdit} />
           <FieldEditor items={items} it={it} onEdit={onEdit} />
         </div>
         <ModelView model={itemRef(game, it)} name={it.name} />
       </div>
       <div className="row">
         <span className="muted small">変更はマスター (56562135) の itemData.bin として書き出されます。</span>
-        {changed && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
+        {changed && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
+        <CopyButtons items={items} it={it} used={[...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)]} onEdit={onEdit} />
       </div>
       <div className="book-cols">
         <section>
@@ -211,22 +212,84 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
   );
 }
 
-/** The message fields (+0x10..+0x1C), one row each; empty fields are left out. */
-function DescriptionTable({ it }: { it: Item }): ReactNode {
-  const rows = it.descriptions.filter((d) => d.text);
-  if (!rows.length) return <p className="muted">説明はありません</p>;
+const COPY_INFO = [
+  'このアイテムを itemData の空きの行 (分類ごとの予約の行) に写して、新しいアイテムを作ります。名前と説明は同じ本文の新しいメッセージになり、元と別に書き換えられます。',
+  '道具は、使うと減るアイテムがアクションの +0x14 で決まります。写した道具にはアクションの写しが付き、+0x14 が新しいアイテムになります。',
+  'そのアクションは表の後ろに足すので、書き出しに code.ips のパッチ「追加したアイテムのアクション」が入ります (元のゲームは +0x14 を行 178〜230 でしか読みません)。',
+  'お店・宝箱・モンスターのドロップに入れると、ゲームで手に入ります。',
+].join('\n');
+
+/** Copy this item into an empty row; remove an added one when nothing gives it. */
+function CopyButtons({ items, it, used, onEdit }: { items: ItemBook; it: Item; used: string[]; onEdit: () => void }): ReactNode {
+  return (
+    <>
+      <span className="with-info">
+        <button disabled={!items.canCopy(it.id)} title={items.canCopy(it.id) ? '' : '空きの行がありません'} onClick={() => {
+          const n = items.copyItem(it.id);
+          onEdit();
+          location.hash = `#/items/${n}`;
+        }}>写して新しいアイテムを作る</button>
+        <InfoTip text={COPY_INFO} />
+      </span>
+      {items.added(it.id) && (
+        <button disabled={used.length > 0} title={used.length ? `手に入る場所があります: ${used.slice(0, 5).join('・')}` : '追加したアイテムを消して、空きの行に戻します'} onClick={() => {
+          items.removeItem(it.id);
+          onEdit();
+          location.hash = '#/items';
+        }}>このアイテムを消す</button>
+      )}
+    </>
+  );
+}
+
+/** The name and the message fields (+0x10..+0x1C): editable text boxes; empty fields are left out. */
+function TextEditor({ session, items, it, onEdit }: { session: Session; items: ItemBook; it: Item; onEdit: () => void }): ReactNode {
+  const texts = session.game.master.texts;
+  const nameId = u32(session.game.master.itemData.row(it.id), 0x0c);
+  const rows = it.descriptions.filter((d) => d.id && texts.text(d.id));
+  const box = (id: number, offset: number, label: string, multi: boolean): ReactNode => {
+    const t = texts.text(id);
+    return (
+      <tr key={offset}>
+        <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
+        <td className="book-desc">
+          {texts.editable(id)
+            ? <TextBox key={`${it.id}:${id}`} value={t?.text ?? ''} multi={multi} edited={texts.isEdited(id)} onCommit={(v) => { items.setText(it.id, offset, v); onEdit(); }} />
+            : <span>{offset === 0x0c ? it.name : it.descriptions.find((d) => d.offset === offset)?.text}</span>}
+        </td>
+      </tr>
+    );
+  };
   return (
     <table className="enc-table desc-table">
       <tbody>
-        {rows.map((d) => (
-          <tr key={d.offset}>
-            <th title={`itemData +0x${d.offset.toString(16).toUpperCase()}、メッセージ ${d.id}`}>{d.label}</th>
-            <td className="book-desc">{d.text}</td>
-          </tr>
-        ))}
+        {nameId > 0 && box(nameId, 0x0c, '名前', false)}
+        {rows.map((d) => box(d.id, d.offset, d.label, true))}
       </tbody>
     </table>
   );
+}
+
+/** A text box applied when left (or on Enter for one line). */
+function TextBox({ value, multi, edited, onCommit }: { value: string; multi: boolean; edited: boolean; onCommit: (v: string) => void }): ReactNode {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = (): void => {
+    if (text !== value) onCommit(text);
+  };
+  const cls = `name-input${edited ? ' edited' : ''}`;
+  return multi
+    ? <textarea className={cls} rows={2} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
+    : <input type="text" className={cls} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
+}
+
+/** What goes wrong with what the item uses up (the action's +0x14), or ''. */
+function usesUpWarning(items: ItemBook, it: Item): string {
+  if (!it.action) return '';
+  const u = items.usesUp(it.id);
+  if (u === 'self' || u === 'no action') return '';
+  if (u === 'none') return '使っても減りません (アクションの +0x14 がこのアイテムではない、またはゲームが読まない行)';
+  return `使うと ${items.item(u)?.name ?? `#${u}`} が減ります (アクションの +0x14)。このアイテム用のアクションが必要です`;
 }
 
 /** Prices, stars, stack limit, use effect (tools) and the item that replaces it at the limit. */
@@ -266,6 +329,7 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
           {' '}
           {!!it.action && <a href={`#/actions/${it.action}`} title="アクションで開く">↗</a>}
           {it.effect && <span className="muted">{` ${it.effect}`}</span>}
+          {usesUpWarning(items, it) && <div className="issue warn">{`⚠ ${usesUpWarning(items, it)}`}</div>}
         </div>
       )}
       {(it.categoryByte & 0xf) === 3 && <EquipEffects items={items} it={it} set={set} mark={mark} />}

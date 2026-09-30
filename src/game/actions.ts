@@ -279,6 +279,17 @@ export class ActionEdits {
     return n;
   }
 
+  /**
+   * Append a copy of an item's action for another item: +0x14 (the item it uses up, FUN_002f4c54) becomes that item.
+   * The messages stay shared ("āはĆを使った" names the item from +0x14). Returns the new row.
+   */
+  copyForItem(row: number, item: number): number {
+    const t = this.table;
+    const src = t.row(row).slice();
+    w16(src, 0x14, item);
+    return t.append(src, t.indexOffset ? newHash(t, 0x7e710000) : 0);
+  }
+
   /** +4: the name message. */
   setName(row: number, id: number): void {
     w32(this.row(row), 4, id);

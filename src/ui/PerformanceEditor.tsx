@@ -16,6 +16,8 @@ import { PerformanceViewer, type PhaseTiming, type PreviewEffect, type PreviewPh
 import type { Session } from '../session';
 import { soundPlayer } from '../sound/player';
 import { ActionPicker } from './ActionPicker';
+import { MonsterPicker } from './MonsterPicker';
+import { Photo } from './Photo';
 import { NumberInput } from './book';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
@@ -332,36 +334,32 @@ function EffectPicker({ c, current, onPick, onClose }: { c: Ctx; current: number
 }
 
 /** The phases of an action's performance: the user's slot on the user, then the target's and the extra on the target. */
+/** A phase of the preview: directData row `p` played on `who` (null = the stand-in for 電波人間), or null. */
+export function performancePhase(session: Session, p: number, who: Monster | null, place: string, models: Map<number, EffectModel> | null): PreviewPhase | null {
+  const { game, book, sounds } = session;
+  if (!book?.directData || !p || p >= book.directData.rows) return null;
+  const keys = animKeys(game.master);
+  const d = decodePerformance(book.directData.row(p), p);
+  const effects: PreviewEffect[] = [d.effect, ...book.effects.addEffects(d.addEffect)].map((e) => book.effects.effect(e)).filter((e) => !!e).map((e) => ({
+    label: effectLabel(e, models), bone: e.bone, offset: e.offset, length: e.length || 60,
+  }));
+  const lead = who ? book.skillLead(who) : [];
+  const index = sounds?.index(d.se) ?? null;
+  return {
+    title: `${place}: ${who?.name ?? '電波人間'} — D${p} ${animLabel(d.anim, keys)}${sounds && d.se ? ` ${sounds.name(d.se)}` : ''}`,
+    model: who ? monsterRef(game, book, who) : null,
+    anim: keys[d.anim] ?? '',
+    timeline: (mf) => slotTimeline(d, book.effects, mf, lead),
+    effects,
+    sound: index === null ? null : () => void soundPlayer.play(`perf-se:${index}`, async () => (await game.soundRenderer()).render(index)),
+  };
+}
+
 export function previewPhases(session: Session, actions: ActionBook, row: number, user: Monster | null, target: Monster | null,
   models: Map<number, EffectModel> | null): PreviewPhase[] {
-  const { game, book, sounds } = session;
-  if (!book?.directData) return [];
-  const dd = book.directData;
-  const keys = animKeys(game.master);
-  const out: PreviewPhase[] = [];
-  const phase = (offset: number, who: Monster | null, whoName: string): void => {
-    const p = actions.slot(row, offset);
-    if (!p || p >= dd.rows) return;
-    const d = decodePerformance(dd.row(p), p);
-    const effects: PreviewEffect[] = [d.effect, ...book.effects.addEffects(d.addEffect)].map((e) => book.effects.effect(e)).filter((e) => !!e).map((e) => ({
-      label: effectLabel(e, models), bone: e.bone, offset: e.offset, length: e.length || 60,
-    }));
-    const lead = who ? book.skillLead(who) : [];
-    const index = sounds?.index(d.se) ?? null;
-    const slot = ACTION_SLOTS.find((s) => s.offset === offset)!.label;
-    out.push({
-      title: `${slot}: ${whoName} — D${p} ${animLabel(d.anim, keys)}${sounds && d.se ? ` ${sounds.name(d.se)}` : ''}`,
-      model: who ? monsterRef(game, book, who) : null,
-      anim: keys[d.anim] ?? '',
-      timeline: (mf) => slotTimeline(d, book.effects, mf, lead),
-      effects,
-      sound: index === null ? null : () => void soundPlayer.play(`perf-se:${index}`, async () => (await game.soundRenderer()).render(index)),
-    });
-  };
-  phase(0x1e, user, user?.name ?? '電波人間');
-  phase(0x20, target, target?.name ?? '電波人間');
-  phase(0x22, target, target?.name ?? '電波人間');
-  return out;
+  const phase = (offset: number, who: Monster | null): PreviewPhase | null =>
+    performancePhase(session, actions.slot(row, offset), who, ACTION_SLOTS.find((s) => s.offset === offset)!.label, models);
+  return [phase(0x1e, user), phase(0x20, target), phase(0x22, target)].filter((p): p is PreviewPhase => !!p);
 }
 
 /** The slots the preview plays, in order (those with a performance row). */
@@ -387,9 +385,9 @@ export function ActionPreview({ session, actions, edits, row, users, onChange }:
   const book = session.book;
   const models = useEffectModels(session.game);
   const viewer = useMemo(() => new PerformanceViewer(), []);
-  const monsters = book?.monsters ?? [];
   const [userRow, setUserRow] = useState<number>(users[0]?.row ?? 0);
   const [targetRow, setTargetRow] = useState(0);
+  const [picking, setPicking] = useState<'user' | 'target' | null>(null);
   const [timings, setTimings] = useState<PhaseTiming[]>([]);
   const [at, setAt] = useState<[number, number]>([0, 0]);
   useEffect(() => setUserRow(users[0]?.row ?? 0), [row]); // eslint-disable-line react-hooks/exhaustive-deps -- a new action starts with its first user
@@ -408,26 +406,26 @@ export function ActionPreview({ session, actions, edits, row, users, onChange }:
     setTimings([]);
     void viewer.show(phases);
   }, [phases, viewer]);
-  const option = (m: Monster): ReactNode => <option key={m.row} value={m.row}>{`${m.name} #${m.row}`}</option>;
   const slots = dd ? previewSlots(actions, row, dd.rows) : [];
+  const ally = [{ value: 0, label: '電波人間', sub: '仮の姿' }];
+  const who = (m: Monster | null, onClick: () => void, label: string): ReactNode => (
+    <button className="small perf-who" title={`${label}を選ぶ`} onClick={onClick}>
+      {m && book ? <Photo model={monsterRef(session.game, book, m)} /> : <span className="photo picker-none" />}
+      <span>{m ? `${m.name} #${m.row}` : '電波人間 (仮の姿)'}</span>
+    </button>
+  );
   return (
     <div className="perf-preview">
       <div className="row small">
         <span className="with-info">{'プレビュー'}<InfoTip text={PREVIEW_INFO} /></span>
-        <label>{'使う側 '}
-          <select value={userRow} onChange={(e) => setUserRow(Number(e.target.value))}>
-            <option value={0}>電波人間 (仮の姿)</option>
-            {users.length > 0 && <optgroup label="このワザを持つモンスター">{users.map(option)}</optgroup>}
-            <optgroup label="すべて">{monsters.map(option)}</optgroup>
-          </select>
-        </label>
-        <label>{'対象 '}
-          <select value={targetRow} onChange={(e) => setTargetRow(Number(e.target.value))}>
-            <option value={0}>電波人間 (仮の姿)</option>
-            <optgroup label="モンスター">{monsters.map(option)}</optgroup>
-          </select>
-        </label>
+        <label>{'使う側 '}{who(user, () => setPicking('user'), '使う側')}</label>
+        <label>{'対象 '}{who(target, () => setPicking('target'), '対象')}</label>
       </div>
+      {picking && book && (
+        <MonsterPicker session={session} book={book} current={picking === 'user' ? userRow : targetRow} title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
+          choices={ally} groups={picking === 'user' && users.length ? [{ label: 'このワザを持つモンスター', rows: users.map((m) => m.row) }] : []}
+          onClose={() => setPicking(null)} onPick={(r) => { if (picking === 'user') setUserRow(r); else setTargetRow(r); setPicking(null); }} />
+      )}
       <Dom node={viewer.el} />
       {dd && (
         <PerformanceTimeline session={session} actions={actions} edits={edits} row={row} slots={slots} phases={phases}
@@ -568,4 +566,18 @@ function PerformanceTimeline({ session, actions, edits, row, slots, phases, timi
       })}
     </div>
   );
+}
+
+/** Preview of the performance a monster plays when its form changes (MonsterParameter +0x36, a directData row). */
+export function TransformPreview({ session, monster, row }: { session: Session; monster: Monster; row: number }): ReactNode {
+  const models = useEffectModels(session.game);
+  const viewer = useMemo(() => new PerformanceViewer(), []);
+  const dd = session.book?.directData;
+  const sig = [monster.row, row, !!models, dd && row > 0 && row < dd.rows ? [...dd.row(row)].join('.') : ''].join(',');
+  const phases = useMemo(() => {
+    const p = performancePhase(session, row, monster, '変身', models);
+    return p ? [p] : [];
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phase depends on
+  useEffect(() => void viewer.show(phases), [phases, viewer]);
+  return <div className="perf-preview"><Dom node={viewer.el} /></div>;
 }

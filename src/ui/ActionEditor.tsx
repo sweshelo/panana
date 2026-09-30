@@ -10,6 +10,7 @@ import { MONSTER_MODEL_ARCHIVE, SKILL_MOTION, type Monster, type MonsterBook } f
 import type { Game } from '../game/game';
 import type { Session } from '../session';
 import { NumberInput } from './book';
+import { BattleMessagePicker } from './BattleMessagePicker';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
 import { PerformanceSlots } from './PerformanceEditor';
@@ -28,25 +29,15 @@ const MOTION_INFO = [
 ].join('\n');
 
 const LEVEL_INFO = [
-  'w0 bit13-15。状態異常を付ける率の段階です: 率 = BattleParameter [0x60 + 段階] × 耐性の係数 / 32 (段階 0〜6 = 100 / 75 / 50 / 34 / 25 / 12 / 6 %)。',
-  '攻撃 (物理・固定の威力) では、ダメージのあとに +0x32 の状態を追加効果として付ける率になります。+0x32 が 0 なら使われません。ダメージで倒したときも付きません。',
-  '段階 7 は表の外 (BattleParameter +0x67 = 200) を読むので 625%: 耐性で効かないとき以外は必ず付きます (元のデータにはありません)。',
-  '詳しくは naauao の docs/battle.md §6.5。',
+  'w0 bit13-15。「付ける状態」を付ける率の段階です。実際の率は、さらに対象の耐性で変わります。',
+  '攻撃では、ダメージのあとの追加効果の率になります (倒したときは付きません)。付ける状態がなしのときは使われません。',
+  '段階 7 は表の外を読むので、耐性で効かないとき以外は必ず付きます。',
 ].join('\n');
 
 /** "2 (50%)": the base rate of an infliction level (BattleParameter [0x60 + level] / 32). */
 function levelLabel(book: MonsterBook | null, level: number): string {
   const v = level < 7 ? book?.battle.baseRate[level] ?? 0 : 200;
   return `${level} (${Math.round((v * 100) / 32)}%${level === 7 ? '、表の外' : ''})`;
-}
-
-/** What the level applies to: the state of +0x32 (an attack's extra effect), or nothing. */
-function levelNote(book: MonsterBook | null, a: { kind: number; raw: Uint8Array }): string {
-  const state = a.raw.length > 0x32 ? a.raw[0x32]! : 0;
-  const name = state ? book?.conditions[state] || `状態 ${state}` : '';
-  if (a.kind === 1) return state ? `追加効果: ${name}` : '(+0x32 の状態がないので使われない)';
-  if (a.kind === 0) return state ? `付ける状態: ${name}` : '';
-  return '';
 }
 
 const KIND_INFO = [
@@ -263,10 +254,10 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         <tr>
           <td className="with-info">付与の段階<InfoTip text={LEVEL_INFO} /></td>
           <td>
-            <select value={a.level} className={mark(!!orig && a.level !== orig.level)} onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
+            <select value={a.level} className={mark(!!orig && a.level !== orig.level)} disabled={!a.state} title={a.state ? '' : '付ける状態がないので使われません'}
+              onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
               {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{levelLabel(book, i)}</option>)}
             </select>
-            <span className="muted small">{` ${levelNote(book, a)}`}</span>
           </td>
         </tr>
         {a.raw.length > 0x32 && (
@@ -339,43 +330,11 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
-  const texts = session.game.master.texts;
-  const [query, setQuery] = useState('');
-  const [free, setFree] = useState(true);
-  const file = texts.isAdded(current) ? undefined : texts.file(current);
-  const users = new Map<number, number[]>();
-  for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), x.row]);
-  const q = query.trim();
-  const ids: number[] = [];
-  const range = [...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []), ...texts.addedIds()];
-  for (const id of range) {
-    if (free && users.has(id) && id !== current) continue;
-    const t = texts.preview(id, true) ?? '';
-    if (q && !t.includes(q) && String(id) !== q) continue;
-    ids.push(id);
-  }
+  const users = new Map<number, string[]>();
+  for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), `#${x.row}`]);
   return (
-    <Dialog title="名前のメッセージを選ぶ" onClose={onClose}>
-      <div className="row">
-        <input type="search" className="picker-search" placeholder="本文・番号で絞り込み" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label><input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />アクションが使っていないものだけ</label>
-        <InfoTip text={`${file?.name ?? ''} と追加したメッセージです。アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。`} />
-      </div>
-      <div className="picker-list">
-        <table className="book-table">
-          <thead><tr><th>#</th><th>本文</th><th>使うアクション</th></tr></thead>
-          <tbody>
-            {ids.slice(0, 500).map((id) => (
-              <tr key={id} className={id === current ? 'active current' : ''} onClick={() => onPick(id)}>
-                <td className="num muted">{id}</td>
-                <td>{texts.preview(id, true) || <span className="muted">(空)</span>}</td>
-                <td className="muted small">{(users.get(id) ?? []).map((r) => `#${r}`).join('、')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {ids.length > 500 && <div className="muted small">{`ほか ${ids.length - 500} 件 (絞り込んでください)`}</div>}
-      </div>
-    </Dialog>
+    <BattleMessagePicker session={session} title="名前のメッセージを選ぶ" current={current} users={users} freeLabel="アクションが使っていないものだけ"
+      info="アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
+      onPick={onPick} onClose={onClose} />
   );
 }

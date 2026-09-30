@@ -9,10 +9,12 @@ import {
 import type { Session } from '../session';
 import { ActionPicker } from '../ui/ActionPicker';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
+import { BattleMessagePicker } from '../ui/BattleMessagePicker';
 import { Dialog } from '../ui/Dialog';
 import { Board, EmptyBoard } from '../ui/Board';
 import { NumberInput } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { performancePhase, TransformPreview } from '../ui/PerformanceEditor';
 import { ItemPicker } from '../ui/ItemPicker';
 import { MonsterPicker } from '../ui/MonsterPicker';
 import { Photo } from '../ui/Photo';
@@ -374,14 +376,81 @@ function SkillEditDialog({ session, actions, m, action, edited, onCopy, onClose 
 
 const BOSS_INFO = [
   '変身の条件は code.bin に固定で書かれた 13 通り (FUN_0030fa18) から選びます。',
-  '条件を満たすと「次の形態」の行で作り直し、変身のエフェクトと、その行の登場時のセリフ (+0x38) を出します。',
+  '条件を満たすと「次の形態」の行で作り直し、変身のエフェクトと、次の形態の行のセリフ (+0x38) を出します。',
   'ワザでの変身は、カテゴリ 3・種別 5 のアクションの +0x16 の行になります。',
 ].join('\n');
+
+const LINE_INFO = [
+  '+0x38。ユニットがこの行の形態に変わったとき (変身の条件・変身のワザ) に出す戦闘のメッセージ (MessageBattle) です。0 = なし。',
+  'アクションではありません。攻撃が当たって変身したあと、演出の進行が新しい行の +0x38 を読んで表示します (FUN_0022f430 など)。',
+  'ほかの形態と同じメッセージのときは、書き換えると両方変わります。「この形態だけのセリフにする」で、同じ本文の新しいメッセージに分けられます。',
+].join('\n');
+
+/** The line of a form (+0x38): its text, sharing, picking another message, a new one, none. */
+function LineEditor({ session, actions, book, m, edited }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
+  const [picking, setPicking] = useState(false);
+  const texts = session.game.master.texts;
+  const line = book.get(m.row, 'line');
+  const orig = book.original(m.row, 'line');
+  const sharers = book.lineSharers(m.row);
+  const apply = (f: () => void): void => {
+    try {
+      f();
+    } catch (err) {
+      alert((err as Error).message);
+      return;
+    }
+    edited();
+  };
+  const users = (): Map<number, string[]> => {
+    const out = new Map<number, string[]>();
+    const add = (id: number, who: string): void => void out.set(id, [...(out.get(id) ?? []), who]);
+    for (const o of book.monsters) { const l = book.get(o.row, 'line'); if (l) add(l, `${o.name} #${o.row}`); }
+    for (const a of actions.actions) if (a.nameId) add(a.nameId, `アクション #${a.row}`);
+    return out;
+  };
+  return (
+    <div>
+      {line > 0 && texts.text(line) ? (
+        texts.editable(line)
+          ? <LineInput key={`${m.row}:${line}`} value={texts.text(line)!.text} edited={texts.isEdited(line) || line !== orig}
+              onCommit={(t) => apply(() => { texts.setText(line, t); book.reload(); })} />
+          : <span>{texts.preview(line, true)}</span>
+      ) : <span className="muted">{line ? `メッセージ ${line} (見つかりません)` : 'なし'}</span>}
+      <div className="small">
+        {line > 0 && <span className="muted">{`${line} `}</span>}
+        {sharers.length > 0 && <span className="muted">{`同じセリフ: ${sharers.slice(0, 3).map((r) => `${book.monster(r)?.name ?? '?'} #${r}`).join('、')}${sharers.length > 3 ? ` ほか ${sharers.length - 3}` : ''} `}</span>}
+        {line > 0 && sharers.length > 0 && <button className="small" disabled={!texts.canAdd()} onClick={() => apply(() => book.ownLine(m.row))}>この形態だけのセリフにする</button>}
+        {!line && <button className="small" disabled={!texts.canAdd()} title="新しいメッセージを作ってこの形態のセリフにします" onClick={() => apply(() => book.ownLine(m.row))}>セリフを作る</button>}
+        <button className="small" onClick={() => setPicking(true)}>別のメッセージにする</button>
+        {line > 0 && <button className="small" title="セリフを出さないようにします (+0x38 = 0)" onClick={() => apply(() => book.set(m.row, 'line', 0))}>なしにする</button>}
+      </div>
+      {picking && (
+        <BattleMessagePicker session={session} title="セリフのメッセージを選ぶ" current={line} users={users()} freeLabel="使われていないものだけ"
+          info="戦闘の文章などコードが直接使うものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
+          onClose={() => setPicking(false)} onPick={(id) => { setPicking(false); apply(() => book.set(m.row, 'line', id)); }} />
+      )}
+    </div>
+  );
+}
+
+/** A one-line text box applied on Enter or when left. */
+function LineInput({ value, edited, onCommit }: { value: string; edited: boolean; onCommit: (t: string) => void }): ReactNode {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = (): void => {
+    if (text !== value) onCommit(text);
+  };
+  return <input type="text" className={`name-input${edited ? ' edited' : ''}`} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
+}
 
 /** The forms of a boss: what the others turn into, and this row's condition, next form, effect and start condition. */
 export function BossEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
   const [picking, setPicking] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const effect = book.get(m.row, 'effect');
+  const transformPhase = effect ? performancePhase(session, effect, m, '変身', null) : null;
   const link = (row: number): ReactNode => <a href={`#/monsters/${row}`}>{`${book.monster(row)?.name ?? '?'} #${row}`}</a>;
   const skillForms = m.skills.map((s) => ({ s, to: actions.action(s.action)?.formChange ?? 0 })).filter((x) => x.to);
   // Rows turning into this one: by a condition (+0x50) or by a skill (kind 3 type 5).
@@ -424,7 +493,21 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
               </div>
             </td>
           </tr>
-          <tr><td className="with-info">変身のエフェクト<InfoTip text="+0x36。変身の条件を満たしたときに再生します。例: まおう 840 = ふこうのオーラ" /></td><td><Field {...p} k="effect" /></td></tr>
+          <tr>
+            <td className="with-info">変身のエフェクト<InfoTip text="+0x36。変身の条件を満たしたときに再生する演出 (2713402F の directData の行)。0 = なし" /></td>
+            <td>
+              <div className="inline-fields">
+                <Field {...p} k="effect" />
+                <button className="small" disabled={!transformPhase} title="変身の演出をこのモンスターで再生します" onClick={() => setPreview(!preview)}>{preview ? '閉じる' : '▶ プレビュー'}</button>
+              </div>
+              {effect > 0 && <div className="muted small">{transformPhase ? transformPhase.title.replace(/^変身: [^—]*— /, '') : '(演出の表の外)'}</div>}
+            </td>
+          </tr>
+          {preview && transformPhase && <tr><td colSpan={2}><TransformPreview session={session} monster={m} row={effect} /></td></tr>}
+          <tr>
+            <td className="with-info">変身時のセリフ<InfoTip text={LINE_INFO} /></td>
+            <td><LineEditor session={session} actions={actions} {...p} /></td>
+          </tr>
           <tr>
             <td className="with-info">開始時の状態<InfoTip text="戦闘の開始時にかかっている状態 (w10 bit12-16)、その強さ (bit17-20) とターン数 (+0x3A)" /></td>
             <td><FieldSelect {...p} k="startCondition" labels={cond} /></td>

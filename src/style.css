@@ -266,6 +266,8 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 .monster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 6px; }
 .monster-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; font-size: 12px; }
 .monster-cell.current { background: #2d4a7a; }
+.picker-heading { margin: 8px 8px 0; font-size: 12px; color: var(--muted); font-weight: normal; }
+.picker-none { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: 4px; }
 .photo.photo-lg, .photo.photo-lg img { width: 64px; height: 64px; }
 .group-slots .num-input { width: 56px; }
 .group-cols { max-width: 1100px; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
@@ -475,6 +477,8 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .perf-table td.nowrap, .perf-pick td { white-space: nowrap; }
 .perf-pick td.small { white-space: normal; }
 .perf-preview { margin-top: 8px; }
+.perf-who { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 2px; }
+.perf-who .photo, .perf-who .photo img { width: 24px; height: 24px; }
 .perf-viewer canvas { height: 280px; cursor: default; }
 .perf-effects { position: absolute; right: 8px; top: 6px; pointer-events: none; color: #ffb347; text-align: right; }
 .perf-viewer .viewer-anim { top: auto; bottom: 6px; left: 6px; right: auto; }
