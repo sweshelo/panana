@@ -461,9 +461,9 @@ describe('item fields', () => {
     w32(r, 8, 0x12345601 | (1 << 5)); // other flag bits must survive a rarity change
     w32(r, 0x24, 7);
     r[0x2a] = 3;
-    expect(readItemFields(r)).toEqual({ price: 80, sell: 8, rarity: 1, limit: 99, action: 7, chain: 3 });
+    expect(readItemFields(r)).toEqual({ price: 80, sell: 8, rarity: 1, limit: 99, action: 7, chain: 3, state1: 0, amount1: 7, state2: 0, amount2: 0 });
     writeItemFields(r, { price: 120, rarity: 5, action: 9, chain: 0x1234 });
-    expect(readItemFields(r)).toEqual({ price: 120, sell: 8, rarity: 5, limit: 99, action: 9, chain: 0x1234 });
+    expect(readItemFields(r)).toEqual({ price: 120, sell: 8, rarity: 5, limit: 99, action: 9, chain: 0x1234, state1: 0, amount1: 9, state2: 0, amount2: 0 });
     expect((new DataView(r.buffer).getUint32(8, true) & ~0xe0) >>> 0).toBe((0x12345601 & ~0xe0) >>> 0);
     // 99 keeps a byte of 0 (it already means 99); other limits are written as they are
     writeItemFields(r, { limit: 99 });
@@ -472,6 +472,25 @@ describe('item fields', () => {
     expect([r[0x2f], readItemFields(r).limit]).toEqual([10, 10]);
     writeItemFields(r, { limit: 99 });
     expect(r[0x2f]).toBe(99);
+  });
+
+  test('equipment effects: +0x2D / +0x2E states with s16 values at +0x24 / +0x26', async () => {
+    const { readItemFields, writeItemFields, equipEffectText } = await import('../src/game/items');
+    const r = new Uint8Array(0x30);
+    w32(r, 0x24, 0x00020001); // よくみえのスカーフ: ブラインドたいせい +1, かいひりつ +2
+    r[0x2d] = 70;
+    r[0x2e] = 45;
+    expect(readItemFields(r)).toMatchObject({ state1: 70, amount1: 1, state2: 45, amount2: 2 });
+    writeItemFields(r, { amount2: -3, state1: 60 });
+    expect([r[0x2d], r[0x26], r[0x27], readItemFields(r).amount2, readItemFields(r).amount1]).toEqual([60, 0xfd, 0xff, -3, 1]);
+    const st = (combine: number) => ({ id: 1, name: 'X', combine, min: 0, max: 0 });
+    expect(equipEffectText(st(5), 1, 1)).toBe('X +1');
+    expect(equipEffectText(st(1), 1, -2)).toBe('X -2');
+    expect(equipEffectText(st(4), 1, 120)).toBe('X 120%');
+    expect(equipEffectText(st(6), 1, 1)).toBe('X');
+    expect(equipEffectText(undefined, 99, 3)).toBe('状態 99 +3');
+    expect(equipEffectText(st(6), 47, 6)).toBe('X: 水');
+    expect(equipEffectText(st(6), 48, 247, (row) => `#${row} Y`)).toBe('X: #247 Y');
   });
 });
 

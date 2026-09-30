@@ -2,8 +2,8 @@
 // (ShopItem, see shops.ts). Fields: elpulse docs/analysis.md "itemData.bin".
 import { GsTable } from '../archive/gstable';
 import { findEntry, unpackEntry } from '../archive/gsarc';
-import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
-import { cleanActionName, decodeAction, itemEffect } from './actions';
+import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
+import { cleanActionName, decodeAction, ELEMENT, itemEffect } from './actions';
 import type { Game } from './game';
 import type { Master } from './master';
 
@@ -38,6 +38,11 @@ export interface ItemFields {
   action: number;
   /** +0x2A: item that replaces it at the limit (0 = none). */
   chain: number;
+  /** Equipment: +0x2D / +0x2E = the states (conditionData ID, 0 = none) it gives, +0x24 / +0x26 (s16) = their values. */
+  state1: number;
+  amount1: number;
+  state2: number;
+  amount2: number;
 }
 
 export const MAX_RARITY = 7;
@@ -51,6 +56,10 @@ export function readItemFields(r: Uint8Array): ItemFields {
     limit: r[0x2f] || 99,
     action: u32(r, 0x24),
     chain: u16(r, 0x2a),
+    state1: r[0x2d]!,
+    amount1: s16(r, 0x24),
+    state2: r[0x2e]!,
+    amount2: s16(r, 0x26),
   };
 }
 
@@ -65,6 +74,68 @@ export function writeItemFields(r: Uint8Array, f: Partial<ItemFields>): void {
   if (f.limit !== undefined && !(f.limit === 99 && (r[0x2f] === 0 || r[0x2f] === 99))) r[0x2f] = f.limit & 0xff;
   if (f.action !== undefined) w32(r, 0x24, f.action);
   if (f.chain !== undefined) w16(r, 0x2a, f.chain);
+  if (f.state1 !== undefined) r[0x2d] = f.state1 & 0xff;
+  if (f.amount1 !== undefined) w16(r, 0x24, f.amount1 & 0xffff);
+  if (f.state2 !== undefined) r[0x2e] = f.state2 & 0xff;
+  if (f.amount2 !== undefined) w16(r, 0x26, f.amount2 & 0xffff);
+}
+
+/**
+ * How a state adds up the values from its sources (conditionData +0x32 low 4 bits, unit state +0x13).
+ * FUN_0030aff4: the base value (+0x00) and six sources (+0x06..+0x10: the equipment slots 0..4 and one more),
+ * then clamped to the range (conditionData +0x04 / +0x06). Sources start at 0 (1 for 3, 100 for 4).
+ */
+export const COMBINE: Record<number, string> = {
+  0: '元の値のまま (装備では変わらない)',
+  1: '足し算',
+  2: '足し算',
+  3: '掛け算',
+  4: '% の掛け算 (100 = そのまま)',
+  5: '足し算 (元の値が上限ならそのまま)',
+  6: '付くかどうか (0 でない値で上書き)',
+  7: 'いちばん大きい値',
+};
+
+/** A row of conditionData as the item effects use it. */
+export interface StateInfo {
+  id: number;
+  /** +0x14 (message). */
+  name: string;
+  /** +0x32 low 4 bits: see {@link COMBINE}. */
+  combine: number;
+  /** +0x04 / +0x06 (s16). */
+  min: number;
+  max: number;
+}
+
+export function readStates(master: Master): StateInfo[] {
+  const t = master.table('conditionData.bin');
+  return Array.from({ length: t.rows }, (_, id) => {
+    const r = t.row(id);
+    return { id, name: (master.message(u16(r, 0x14)) ?? '').replace(/Ē/g, '(色)'), combine: r[0x32]! & 0xf, min: s16(r, 4), max: s16(r, 6) };
+  });
+}
+
+/** States whose value names something: the element of plain attacks, the action they add to plain attacks. */
+export const STATE_ELEMENT = 47;
+export const STATE_ACTION = 48;
+
+/**
+ * "毒たいせい +1", "経験値増加 120%", "必中": a state an equipment gives and its value, as the game adds it up.
+ * `actionName` names the action of {@link STATE_ACTION}.
+ */
+export function equipEffectText(state: StateInfo | undefined, id: number, amount: number, actionName?: (row: number) => string): string {
+  const name = state?.name || `状態 ${id}`;
+  if (id === STATE_ELEMENT) return `${name}: ${ELEMENT[amount] || `属性 ${amount}`}`;
+  if (id === STATE_ACTION) return `${name}: ${actionName?.(amount) || `#${amount}`}`;
+  switch (state?.combine) {
+    case 3: return `${name} ×${amount}`;
+    case 4: return `${name} ${amount}%`;
+    case 6: return amount === 1 ? name : `${name} (${amount})`;
+    case 7: return `${name} ${amount}`;
+    case 0: return `${name} (${amount}、効かない)`;
+    default: return `${name} ${amount < 0 ? '' : '+'}${amount}`;
+  }
 }
 
 export interface Item extends ItemFields {
@@ -80,8 +151,6 @@ export interface Item extends ItemFields {
   effect: string;
   /** +0x20: model bcres (in 1D37838B, 302996EB or 56562135). */
   model: number;
-  /** +0x2D, +0x2E (equipment parameters, not analysed). */
-  extra: [number, number];
   shops: number[];
 }
 
@@ -98,9 +167,12 @@ export class ItemBook {
   private readonly byId = new Map<number, Item>();
   private readonly master: Master;
   private readonly soldAt = new Map<number, number[]>();
+  /** conditionData rows (the states equipment gives). */
+  readonly states: StateInfo[];
 
   constructor(game: Game, shops: Map<number, number[]>) {
     this.master = game.master;
+    this.states = readStates(this.master);
     this.indexShops(shops);
     const t = this.master.itemData;
     for (let id = 1; id < t.rows; id++) {
@@ -132,11 +204,23 @@ export class ItemBook {
       categoryByte: cat,
       category: categoryLabel(cat),
       flags: u32(r, 8),
-      effect: (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows ? itemEffect(decodeAction(actions.row(fields.action))) : '',
+      effect: (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows ? itemEffect(decodeAction(actions.row(fields.action)))
+        : (cat & 0xf) === 3 ? this.equipEffects(fields).join('、') : '',
       model: u32(r, 0x20),
-      extra: [r[0x2d]!, r[0x2e]!],
       shops: this.soldAt.get(id) ?? [],
     };
+  }
+
+  /** The states an equipment gives, as text (FUN_0030a3d0 reads them; FUN_0030a420 adds them to the unit). */
+  equipEffects(f: ItemFields): string[] {
+    return ([[f.state1, f.amount1], [f.state2, f.amount2]] as const).filter(([id]) => id).map(([id, v]) => equipEffectText(this.states[id], id, v, (row) => this.actionName(row)));
+  }
+
+  private actionName(row: number): string {
+    const t = this.master.table('actionData.bin');
+    if (row <= 0 || row >= t.rows) return '';
+    const f = decodeAction(t.row(row));
+    return `#${row} ${f.nameId ? cleanActionName(this.master.message(f.nameId) ?? '') : ''}`.trim();
   }
 
   private indexShops(shops: Map<number, number[]>): void {

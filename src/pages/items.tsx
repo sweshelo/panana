@@ -4,7 +4,8 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
-import { ITEM_CATEGORY, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
+import { COMBINE, ITEM_CATEGORY, STATE_ACTION, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
+import { InfoTip } from '../ui/InfoTip';
 import { dropClass, type MonsterBook } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { oneIn, pct } from './monsteredit';
@@ -104,7 +105,7 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
 
   const matches = (it: Item): boolean => {
     const q = query.trim();
-    if (q && !it.name.includes(q) && !it.description.includes(q)) return false;
+    if (q && !it.name.includes(q) && !it.description.includes(q) && !it.effect.includes(q)) return false;
     if (filter.startsWith('c')) return (it.categoryByte & 0xf) === Number(filter.slice(1));
     if (filter === 'shop') return it.shops.length > 0;
     if (filter === 'chest') return chests.has(it.id);
@@ -117,7 +118,7 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・説明で検索" filter={filter} setFilter={setFilter}
+        <ListFilter query={query} setQuery={setQuery} placeholder="名前・説明・効果で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ...Object.entries(ITEM_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, v]),
             ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更した']]} />
         <div className="book-list" ref={list}>
@@ -167,7 +168,6 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
         <span className="muted small">変更はマスター (56562135) の itemData.bin として書き出されます。</span>
         {changed && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
       </div>
-      {(it.categoryByte & 0xf) === 3 && <div className="muted small">{`装備の値 +0x2D = ${it.extra[0]}、+0x2E = ${it.extra[1]} (未解析)`}</div>}
       <div className="book-cols">
         <section>
           <h3>{`お店 (${it.shops.length})`}</h3>
@@ -268,6 +268,7 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
           {it.effect && <span className="muted">{` ${it.effect}`}</span>}
         </div>
       )}
+      {(it.categoryByte & 0xf) === 3 && <EquipEffects items={items} it={it} set={set} mark={mark} />}
       <div className="model-line">
         {'上限に達すると: '}
         <select {...mark('chain', chainName)} value={it.chain} onChange={(e) => set({ chain: Number(e.target.value) })}>
@@ -278,6 +279,46 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
         {' '}
         {!!it.chain && items.item(it.chain) && <a href={`#/items/${it.chain}`} title="このアイテムを開く">↗</a>}
       </div>
+    </div>
+  );
+}
+
+const EQUIP_INFO = [
+  '装備している間、電波人間に付く状態 (conditionData) とその値です。1 つの装備に 2 つまで。',
+  '効果 1 = +0x2D の状態と +0x24 (s16) の値、効果 2 = +0x2E の状態と +0x26 (s16) の値 (FUN_0030a3d0)。',
+  '装備の欄 (首・腕・足・背中・服) ごとに状態の枠があり、ほかの装備や元の値との合わせ方は状態ごとに決まっています (conditionData +0x32 の下位 4 ビット、FUN_0030aff4)。たいせいや能力は足し算、経験値・ゴールド・ドロップ率は % の掛け算 (100 = そのまま)、必中などは付くかどうかです。',
+  'たいせいは + で強くなります (モンスターの耐性と同じ向き。+9 で効かない)。合わせた値は状態の範囲 (最小〜最大) に収まります。',
+  '装備の分類 (首・腕 …) と違う欄の状態には入りません (+0x2C の上位 4 ビットが欄の番号)。',
+].join('\n');
+
+type Mark = <K extends keyof ItemFields>(k: K, show?: (v: ItemFields[K]) => string) => { className: string; title: string };
+
+/** The two states an equipment gives while it is worn, and their values. */
+function EquipEffects({ items, it, set, mark }: { items: ItemBook; it: Item; set: (patch: Partial<ItemFields>) => void; mark: Mark }): ReactNode {
+  const stateName = (id: number): string => (id ? items.states[id]?.name || `状態 ${id}` : 'なし');
+  const slots = [['state1', 'amount1'], ['state2', 'amount2']] as const;
+  return (
+    <div className="model-line equip-effects">
+      <div className="with-info">{'装備の効果'}<InfoTip text={EQUIP_INFO} /></div>
+      {slots.map(([sk, ak], i) => {
+        const id = it[sk];
+        const st = items.states[id];
+        const m = mark(ak);
+        return (
+          <div key={sk} className="equip-effect">
+            <span className="muted">{`${i + 1}: `}</span>
+            <select {...mark(sk, stateName)} value={id} onChange={(e) => set({ [sk]: Number(e.target.value) })}>
+              <option value={0}>なし</option>
+              {items.states.map((s) => s.id && (s.name || s.id === id) ? <option key={s.id} value={s.id}>{`${s.id} ${s.name || '(名前なし)'}`}</option> : null)}
+              {id >= items.states.length && <option value={id}>{`状態 ${id}`}</option>}
+            </select>
+            <NumberInput value={it[ak]} min={-32768} max={32767} className={`num-input ${m.className}`} title={m.title} onCommit={(v) => set({ [ak]: v })} />
+            {!!id && <span className="muted">{items.equipEffects({ ...it, state1: id, amount1: it[ak], state2: 0 })[0]}</span>}
+            {id === STATE_ACTION && <a href={`#/actions/${it[ak]}`} title="アクションで開く">↗</a>}
+            {!!id && st && <span className="muted small">{`(${COMBINE[st.combine] ?? `方式 ${st.combine}`}、範囲 ${st.min}〜${st.max})`}</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }
