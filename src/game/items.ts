@@ -3,7 +3,8 @@
 import { GsTable } from '../archive/gstable';
 import { findEntry, unpackEntry } from '../archive/gsarc';
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
-import { cleanActionName, decodeAction, itemEffect } from './actions';
+import { ActionEdits, cleanActionName, decodeAction, itemEffect } from './actions';
+import type { CodePatch } from './patch';
 import type { Game } from './game';
 import type { Master } from './master';
 
@@ -93,6 +94,39 @@ export function categoryLabel(b: number): string {
 
 const ITEM_TABLE = 'itemData.bin';
 
+/** Rows of actionData whose +0x14 the game reads as the item used up (FUN_002f4c54: 0xB2〜0xE6, the "〇〇を使った" rows). */
+export const ITEM_ACTION_FIRST = 0xb2;
+export const ITEM_ACTION_END = 0xe7;
+
+export const ITEM_ACTION_PATCH_ID = 'item-actions';
+export const ITEM_ACTION_PATCH_TITLE = '追加したアイテムのアクション';
+/**
+ * FUN_002f4c54 (the item an item action uses up = its +0x14) answers 0 outside the rows 0xB2〜0xE6, so a copy of an
+ * item's action (appended past the vanilla rows) would use up nothing. This reads +0x14 of every row from 0xB2 on:
+ * the vanilla rows past 0xE6 all have 0 there, so they still answer 0.
+ */
+export const ITEM_ACTION_PATCH_SOURCE = `; 追加したアイテムのアクション: 使ったアイテムを減らすのに読む +0x14 を、行 0xB2 以降のすべてで読む。
+; 元は 0xB2〜0xE6 だけ (それ以外は 0)。元のデータの 0xE7 以降の行は +0x14 が 0 なので、結果は変わらない。
+@0x2F4C58                    ; FUN_002f4c54
+  cmp r1, #0xb2              ; cmp r0, #0x35 (r0 = 行 - 0xB2)
+  movlo r0, #0
+  push {r4, lr}
+  blo 0x2F4CA0
+`;
+/** Whether a tool has an action past the rows the game reads +0x14 of, naming an item there (see ITEM_ACTION_PATCH). */
+export function needsItemActionPatch(master: Master): boolean {
+  const items = master.itemData;
+  const actions = master.table('actionData.bin');
+  for (let id = 1; id < items.rows; id++) {
+    const r = items.row(id);
+    const a = u32(r, 0x24);
+    if (u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && a >= ITEM_ACTION_END && a < actions.rows && u16(actions.row(a), 0x14)) return true;
+  }
+  return false;
+}
+
+export const ITEM_ACTION_PATCH: CodePatch = { id: ITEM_ACTION_PATCH_ID, title: ITEM_ACTION_PATCH_TITLE, source: ITEM_ACTION_PATCH_SOURCE, enabled: true };
+
 export class ItemBook {
   readonly items: Item[] = [];
   private readonly byId = new Map<number, Item>();
@@ -170,17 +204,144 @@ export class ItemBook {
 
   /** Fields of an item as they are in the archive. */
   original(id: number): ItemFields {
+    if (this.added(id)) return readItemFields(this.master.itemData.row(id));
     return readItemFields(this.master.originalRow(ITEM_TABLE, id));
   }
 
   changed(id: number): boolean {
+    if (this.added(id)) return true;
     return this.byId.has(id) && !equalBytes(this.master.itemData.row(id), this.master.originalRow(ITEM_TABLE, id));
   }
 
   revert(id: number): void {
-    if (!this.byId.has(id)) return;
+    if (!this.byId.has(id) || this.added(id)) return;
     this.master.itemData.row(id).set(this.master.originalRow(ITEM_TABLE, id));
     this.refresh(id);
+  }
+
+  /** Whether an item fills a row that is empty in the archive (added by copyItem). */
+  added(id: number): boolean {
+    return id > 0 && id < this.master.itemData.rows && !u32(this.master.originalRow(ITEM_TABLE, id), 0x0c) && !!u32(this.master.itemData.row(id), 0x0c);
+  }
+
+  /**
+   * The row a copy of an item goes to: the first empty row (no name) after it (the reserved rows follow each block
+   * of a category, docs/analysis.md "itemData.bin"), else the first empty row. -1 = none. Row 0 is never used.
+   */
+  freeRow(id: number): number {
+    const t = this.master.itemData;
+    const empty = (i: number): boolean => i > 0 && !u32(t.row(i), 0x0c);
+    for (let i = id + 1; i < t.rows; i++) if (empty(i)) return i;
+    for (let i = 1; i < id; i++) if (empty(i)) return i;
+    return -1;
+  }
+
+  /** Whether an item can be copied (an empty row, a free order number and room for its messages). */
+  canCopy(id: number): boolean {
+    return this.freeRow(id) > 0 && this.nextOrder() < this.master.itemData.rows && this.master.texts.canAdd();
+  }
+
+  /**
+   * +0x28 for a new item: past the largest in use. The game builds order → item ID from it (FUN_001cd548, a table
+   * of one u16 per row, the lower ID wins), so an item sharing another's number drops out of that table.
+   */
+  private nextOrder(): number {
+    const t = this.master.itemData;
+    let max = 0;
+    for (let i = 1; i < t.rows; i++) max = Math.max(max, u16(t.row(i), 0x28));
+    return max + 1;
+  }
+
+  /**
+   * Copy an item into an empty row as a new item: same prices, effect, model and category, with name and description
+   * messages of its own (the same texts), so they can change alone. Returns the new ID.
+   */
+  copyItem(id: number): number {
+    const t = this.master.itemData;
+    const n = this.freeRow(id);
+    if (!this.byId.has(id) || n < 0 || !this.canCopy(id)) throw new Error('アイテムを追加できる空きの行がありません');
+    const texts = this.master.texts;
+    const r = t.row(id).slice();
+    for (const o of [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)]) {
+      const units = u32(r, o) ? texts.units(u32(r, o)) : undefined;
+      if (units) w32(r, o, texts.add(units));
+    }
+    w16(r, 0x28, this.nextOrder());
+    // a tool uses up the item of its action's +0x14: the copy gets an action of its own naming it
+    const act = u32(r, 0x24);
+    const actions = this.master.table('actionData.bin');
+    if ((r[0x2c]! & 0xf) === 1 && act > 0 && act < actions.rows && u16(actions.row(act), 0x14) === id) {
+      w32(r, 0x24, new ActionEdits(this.master, null, 0).copyForItem(act, n));
+    }
+    t.row(n).set(r);
+    this.insert(n);
+    return n;
+  }
+
+  /** Put an added item's row back to the empty row of the archive, dropping its own messages when they are the last added. */
+  removeItem(id: number): void {
+    if (!this.added(id)) throw new Error('消せるのは追加したアイテムだけです');
+    const t = this.master.itemData;
+    const texts = this.master.texts;
+    const ids = [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)].map((o) => u32(t.row(id), o)).filter((m) => m && texts.isAdded(m));
+    const act = (t.row(id)[0x2c]! & 0xf) === 1 ? u32(t.row(id), 0x24) : 0;
+    t.row(id).set(this.master.originalRow(ITEM_TABLE, id));
+    // the action copied for it (copyItem) goes too, when it is the last added row and no other item uses it
+    const actions = this.master.table('actionData.bin');
+    const usedAct = Array.from({ length: t.rows }, (_, i) => t.row(i)).some((r) => u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && u32(r, 0x24) === act);
+    if (act && act === actions.rows - 1 && act >= this.master.originalRows('actionData.bin') && !usedAct && u16(actions.row(act), 0x14) === id) {
+      actions.data = actions.withRows(Array.from({ length: actions.rows - 1 }, (_, i) => actions.row(i).slice()));
+    }
+    const used = new Set<number>();
+    for (let i = 1; i < t.rows; i++) for (const o of [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)]) used.add(u32(t.row(i), o));
+    for (const m of [...new Set(ids)].sort((a, b) => b - a)) {
+      const last = texts.addedIds().at(-1);
+      if (m === last && !used.has(m)) texts.removeAdded(m);
+    }
+    const i = this.items.findIndex((x) => x.id === id);
+    if (i >= 0) this.items.splice(i, 1);
+    this.byId.delete(id);
+  }
+
+  /**
+   * Whether the export needs ITEM_ACTION_PATCH: a tool whose action is past the rows the game reads +0x14 of, and names
+   * an item there (without the patch using it up nothing).
+   */
+  needsActionPatch(): boolean {
+    return needsItemActionPatch(this.master);
+  }
+
+  /**
+   * What the game uses up when the item is used (the action's +0x14, FUN_002f4c54), for a tool with an action:
+   * 'self', 'no action' (not a tool with an action), 'none' (nothing: an action out of the rows the game reads, or +0x14 = 0), or the ID of another item.
+   * `patched` = with ITEM_ACTION_PATCH.
+   */
+  usesUp(id: number, patched = this.needsActionPatch()): 'self' | 'none' | 'no action' | number {
+    const it = this.byId.get(id);
+    const actions = this.master.table('actionData.bin');
+    // seeds and others keep another value at +0x24
+    if (!it || (it.categoryByte & 0xf) !== 1 || it.action <= 0 || it.action >= actions.rows) return 'no action';
+    if (it.action < ITEM_ACTION_FIRST || (it.action >= ITEM_ACTION_END && !patched)) return 'none';
+    const v = u16(actions.row(it.action), 0x14);
+    return v === id ? 'self' : v ? v : 'none';
+  }
+
+  /** Set the text of an item's name or description message (+0x0C, +0x10 .. +0x1C). */
+  setText(id: number, offset: number, text: string): void {
+    const m = u32(this.master.itemData.row(id), offset);
+    if (!m) return;
+    this.master.texts.setText(m, text);
+    this.refresh(id);
+  }
+
+  /** Add a row to the list (kept in ID order). */
+  private insert(id: number): void {
+    const it = this.build(id);
+    if (!it) return;
+    this.byId.set(id, it);
+    const i = this.items.findIndex((x) => x.id > id);
+    if (i < 0) this.items.push(it);
+    else this.items.splice(i, 0, it);
   }
 
   /** Item actions (kind 2) for the effect picker: row, name and effect. */
