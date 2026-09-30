@@ -149,10 +149,10 @@ export function StatEditor(p: EditProps): ReactNode {
 }
 
 /** "1/8" for 1 in 8; "必ず" for 1 in 1. */
-const oneIn = (n: number): string => (n === 1 ? '必ず' : Number.isFinite(n) ? `1/${n}` : '出ない');
+export const oneIn = (n: number): string => (n === 1 ? '必ず' : Number.isFinite(n) ? `1/${n}` : '出ない');
 
 /** "16.7%" of "1 in n". */
-const pct = (n: number): string => (Number.isFinite(n) ? `${Math.round(1000 / n) / 10}%` : '0%');
+export const pct = (n: number): string => (Number.isFinite(n) ? `${Math.round(1000 / n) / 10}%` : '0%');
 
 const DROPS: [ParamKey, ParamKey][] = [['drop0', 'rate0'], ['drop1', 'rate1'], ['drop2', 'rate2']];
 

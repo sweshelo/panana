@@ -5,8 +5,9 @@ import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
 import { ITEM_CATEGORY, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
-import type { MonsterBook } from '../game/monsters';
+import { dropClass, type MonsterBook } from '../game/monsters';
 import { mapTitle } from '../game/names';
+import { oneIn, pct } from './monsteredit';
 import { LAYOUTS, recCellPos, type MapDoc } from '../game/sections';
 import { hex8, u32 } from '../util/bytes';
 import type { ModelRef } from './modelview';
@@ -177,7 +178,16 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
         <section>
           <h3>{`落とすモンスター (${drops.length})`}</h3>
           {drops.length
-            ? <ul>{drops.map((d, i) => <li key={i}><a href={`#/monsters/${d.row}`}>{d.name}</a> <span className="muted">{`(率の値 ${d.rate})`}</span></li>)}</ul>
+            ? <ul>{drops.map((d, i) => {
+                const label = dropClass(d.rate)[1];
+                const odds = session.book?.battle.dropOdds(d.rate);
+                return (
+                  <li key={i}>
+                    <a href={`#/monsters/${d.row}`}>{d.name}</a>{' '}
+                    <span className="muted" title={`率の値 ${d.rate}`}>{odds === undefined ? `(${label})` : `(${label}・${pct(odds)} = ${oneIn(odds)})`}</span>
+                  </li>
+                );
+              })}</ul>
             : <div className="muted">なし</div>}
         </section>
       </div>
