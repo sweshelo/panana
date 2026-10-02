@@ -11,6 +11,7 @@ import type { OahuSession } from '../oahu/session';
 import { openUpdate } from '../rom/dump';
 import { oahuRomfsProfile } from '../romfs/oahu';
 import { RomfsPage } from '../romfs/RomfsPage';
+import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
 
 export const OAHU_PAGES = [['messages', 'メッセージ'], ['items', 'アイテム'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['romfs', 'RomFS']] as const;
@@ -77,6 +78,7 @@ export function OahuShell({ session, onSession, onChangeDump }: {
       </nav>
       {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
       {detail && <a className="back-bar" href={`#/${page}`}>{`← ${TITLES[page]}の一覧`}</a>}
+      <InfoTooltip />
       {OAHU_PAGES.map(([id]) => {
         if (!visits.current.has(id)) return null;
         const a = visits.current.get(id);
