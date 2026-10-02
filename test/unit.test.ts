@@ -19,6 +19,8 @@ import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
 import { askClaude, setApiKey } from '../src/ai/claude';
 import { assembleLine } from '../src/game/asm';
+import * as THREE from 'three';
+import { uvMatrix } from '../src/cgfx/tev';
 import { buildPatches } from '../src/game/patch';
 import { extractPatch } from '../src/ui/PatchPanel';
 import { recordPlacement, section2Offset, slotOffset } from '../src/game/objects';
@@ -137,6 +139,24 @@ describe('IPS', () => {
     expect(Array.from(out.subarray(0, 14))).toEqual([0, 0, 9, 8, 0, 0, 0, 0, 0, 0, 7, 7, 7, 0]);
     expect(switchPatchVersion(out)).toBe(1);
     expect(switchPatchVersion(base)).toBe(0);
+  });
+});
+
+describe('texture coordinator matrix (SPICA TextureTransform)', () => {
+  const apply = (type: number, s: [number, number], r: number, t: [number, number], uv: [number, number]): number[] => {
+    const e = uvMatrix(new THREE.Matrix3(), type, s[0], s[1], r, t[0], t[1]).elements; // column-major
+    return [e[0]! * uv[0] + e[3]! * uv[1] + e[6]!, e[1]! * uv[0] + e[4]! * uv[1] + e[7]!].map((x) => Math.round(x * 1e4) / 1e4);
+  };
+
+  test('Maya and Softimage subtract the translation (a blink 0 → ⅓ → ⅔ goes down the rows), 3ds Max only on U', () => {
+    expect(apply(0, [1, 1], 0, [0, 1 / 3], [0.2, 0.9])).toEqual([0.2, 0.5667]);
+    expect(apply(1, [1, 1], 0, [0.25, 0.5], [0.5, 0.5])).toEqual([0.25, 0]);
+    expect(apply(2, [1, 1], 0, [0.25, 0.5], [0.5, 0.5])).toEqual([0.25, 1]);
+  });
+
+  test('Maya turns about the centre and scales from the origin', () => {
+    expect(apply(0, [2, 2], 0, [0, 0], [0.5, 0.5])).toEqual([1, 1]);
+    expect(apply(0, [1, 1], Math.PI / 2, [0, 0], [0.5, 0.5])).toEqual([0.5, 0.5]);
   });
 });
 

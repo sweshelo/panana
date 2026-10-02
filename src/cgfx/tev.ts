@@ -94,6 +94,28 @@ const DEPTH_FUNC: THREE.DepthModes[] = [
 
 const ALPHA_TEST = ['false', 'true', '==', '!=', '<', '<=', '>', '>='];
 
+/**
+ * Texture coordinator matrix (uv' = M * (u, v, 1)) as the 3DS libraries build it from scale, rotation and translation
+ * (SPICA TextureTransform): Maya (0) and Softimage (1) subtract the translation, 3ds Max (2) subtracts it on U only, and
+ * Maya and 3ds Max turn about the texture's centre. The eyes' frames are picked by translating, so the sign matters
+ * (a blink of 0 → ⅓ → ⅔ steps through the rows in order only with −T).
+ */
+export function uvMatrix(out: THREE.Matrix3, type: number, su: number, sv: number, r: number, tu: number, tv: number): THREE.Matrix3 {
+  const ca = Math.cos(r), sa = Math.sin(r);
+  let x: number, y: number;
+  if (type === 1) {
+    x = su * (-ca * tu - sa * tv);
+    y = sv * (sa * tu - ca * tv);
+  } else if (type === 2) {
+    x = su * ca * (-tu - 0.5) - su * sa * (tv - 0.5) + 0.5;
+    y = sv * sa * (-tu - 0.5) + sv * ca * (tv - 0.5) + 0.5;
+  } else {
+    x = su * (0.5 * sa - 0.5 * ca + 0.5 - tu);
+    y = sv * (-0.5 * sa - 0.5 * ca + 0.5 - tv);
+  }
+  return out.set(su * ca, -su * sa, x, sv * sa, sv * ca, y, 0, 0, 1);
+}
+
 export interface TevTextures {
   /** Texture of unit 0..2 (null = unused). */
   maps: (THREE.Texture | null)[];
@@ -116,11 +138,8 @@ export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Pla
       continue;
     }
     const u = units[i]!;
-    const cos = Math.cos(u.rotate), sin = Math.sin(u.rotate);
-    const su = u.scaleU || 1, sv = u.scaleV || 1;
-    // uv' = R * S * uv + T (column-major mat3)
     uniforms[`map${i}`] = { value: map };
-    uniforms[`uvm${i}`] = { value: new THREE.Matrix3().set(cos * su, -sin * sv, u.translateU, sin * su, cos * sv, u.translateV, 0, 0, 1) };
+    uniforms[`uvm${i}`] = { value: uvMatrix(new THREE.Matrix3(), u.transform, u.scaleU || 1, u.scaleV || 1, u.rotate, u.translateU, u.translateV) };
     sampling += `  vec4 t${i} = texture2D(map${i}, (uvm${i} * vec3(vUv${u.source}, 1.0)).xy);\n`;
   }
   const bf = m.blendFunc;

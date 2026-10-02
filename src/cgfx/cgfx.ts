@@ -51,6 +51,8 @@ export interface TexUnit {
   wrapT: number;
   /** UV set read by the coordinator (0..2). */
   source: number;
+  /** How scale / rotation / translation make the matrix: 0 Maya, 1 Softimage, 2 3ds Max (cgfx/tev.ts uvMatrix). */
+  transform: number;
   scaleU: number;
   scaleV: number;
   rotate: number;
@@ -299,6 +301,7 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
       wrapS: ws,
       wrapT: wt,
       source: r.u32(c) & 3,
+      transform: r.u32(c + 0x0c),
       scaleU: r.f32(c + 0x10),
       scaleV: r.f32(c + 0x14),
       rotate: r.f32(c + 0x18),
