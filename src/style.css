@@ -63,7 +63,10 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
 .shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
-.shell[data-page='romfs'] .page-romfs { display: block; }
+.shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code { display: block; }
+.page-code { overflow: auto; }
+.code-page { max-width: 960px; }
+.code-page h3 { margin: 18px 0 6px; }
 a { color: #8fb6ff; }
 
 /* editor layout */
