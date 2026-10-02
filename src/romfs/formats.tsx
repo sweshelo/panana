@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { GsTable } from '../archive/gstable';
 import { Gmsg, toUnits } from '../game/gmsg';
+import { defFor, fieldPlace, fieldText, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { hex4, unitsToText } from '../game/msgtext';
 import { ascii, hex8, u16, u32 } from '../util/bytes';
 import type { RomfsProfile } from './profile';
@@ -13,6 +14,8 @@ export interface FormatViewProps {
   /** File name (the ZIP's for an archive entry), or null. */
   name: string | null;
   profile: RomfsProfile;
+  /** Names the values of the table fields (messages, rows of other tables), when the page knows them. */
+  context?: FieldContext;
 }
 
 export interface FormatView {
@@ -34,7 +37,7 @@ function usePaged(total: number, reset: unknown): [number, ReactNode] {
   return [Math.min(n, total), more];
 }
 
-type Cell = 'x32' | 'd32' | 'x16' | 'x8';
+type Cell = 'fields' | 'x32' | 'd32' | 'x16' | 'x8';
 const CELLS: [Cell, string, number][] = [['x32', 'u32 (16 進)', 4], ['d32', 'u32 (10 進)', 4], ['x16', 'u16 (16 進)', 2], ['x8', 'u8 (16 進)', 1]];
 
 function cellText(row: Uint8Array, o: number, cell: Cell): string {
@@ -43,14 +46,49 @@ function cellText(row: Uint8Array, o: number, cell: Cell): string {
     case 'd32': return String(u32(row, o) | 0);
     case 'x16': return hex4(u16(row, o));
     case 'x8': return row[o]!.toString(16).toUpperCase().padStart(2, '0');
+    case 'fields': return '';
   }
 }
 
+/** The rows by the fields of the game's definition: a column per field, the values as text. */
+function FieldRows({ t, def, shown, context }: { t: GsTable; def: TableDef; shown: number; context?: FieldContext }): ReactNode {
+  const cols = def.fields.filter((f) => !f.alias);
+  return (
+    <table className="book-table romfs-fields">
+      <thead>
+        <tr>
+          <th>行</th>
+          {cols.map((f) => (
+            <th key={f.key} className={f.unsure ? 'muted' : ''} title={[fieldPlace(f), f.note].filter(Boolean).join('\n')}>{f.label}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: shown }, (_, r) => {
+          const row = t.row(r);
+          return (
+            <tr key={r}>
+              <td className="num muted">{r}</td>
+              {cols.map((f) => {
+                const v = readField(row, f);
+                const text = fieldText(f, v, context);
+                return <td key={f.key} className={`${f.ref?.kind === 'message' ? 'romfs-msg' : 'num'}${v ? '' : ' muted'}`} title={f.ref ? String(v) : undefined}>{text}</td>;
+              })}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 /** GS table: the header and the rows as columns of the chosen width. */
-export function GsTableView({ body }: FormatViewProps): ReactNode {
+export function GsTableView({ body, name, profile, context }: FormatViewProps): ReactNode {
   const t = useMemo(() => new GsTable(body), [body]);
-  const [cell, setCell] = useState<Cell>('x32');
-  const width = CELLS.find((c) => c[0] === cell)![2];
+  const def = defFor(profile.tables, name, t.rowSize);
+  const [pick, setCell] = useState<Cell>('fields');
+  const cell: Cell = pick === 'fields' && !def ? 'x32' : pick;
+  const width = CELLS.find((c) => c[0] === cell)?.[2] ?? 4;
   const [shown, more] = usePaged(t.rows, body);
   const cols = Array.from({ length: Math.floor(t.rowSize / width) }, (_, i) => i * width);
   const rest = t.rowSize % width;
@@ -63,11 +101,12 @@ export function GsTableView({ body }: FormatViewProps): ReactNode {
         {extra ? <span className="muted">{`行の後ろの領域 +0x${extra.toString(16).toUpperCase()}`}</span> : null}
         <span className="grow" />
         <select value={cell} onChange={(e) => setCell(e.target.value as Cell)}>
+          {def && <option value="fields">欄ごと</option>}
           {CELLS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
       </div>
       <div className="romfs-grid">
-        <table className="book-table mono">
+        {cell === 'fields' && def ? <FieldRows t={t} def={def} shown={shown} context={context} /> : <table className="book-table mono">
           <thead><tr><th>行</th>{cols.map((o) => <th key={o}>{`+${o.toString(16).toUpperCase()}`}</th>)}{rest ? <th>…</th> : null}</tr></thead>
           <tbody>
             {Array.from({ length: shown }, (_, r) => {
@@ -81,7 +120,7 @@ export function GsTableView({ body }: FormatViewProps): ReactNode {
               );
             })}
           </tbody>
-        </table>
+        </table>}
       </div>
       {more}
     </div>

@@ -9,6 +9,12 @@ import type { Dump } from '../rom/dump';
 /** Root archives with GMSG entries (the master first: the game registers it at boot). */
 export const OAHU_MESSAGE_ARCHIVES = ['21350000', 'A9DF0000', '6E380000', '00910000', '3B630000', '58190000', '619D0000', '838B0000', 'D94C0000', '91470000'];
 
+/**
+ * New messages (copied items) go past the last ID of MessageSystemCommon_JP (0–8657; the next file starts at 30000).
+ * The game looks an ID up by the ranges of the files' headers (RPG2's FUN_00310438; same engine, not checked in RPG3).
+ */
+export const OAHU_NEW_MESSAGE_FILE = 'MessageSystemCommon_JP.gsmb';
+
 export class OahuMessages {
   private constructor(
     readonly texts: MessageStore,
@@ -35,7 +41,7 @@ export class OahuMessages {
         }
       }
     }
-    return new OahuMessages(new MessageStore(files, OAHU_SYNTAX, false), archives);
+    return new OahuMessages(new MessageStore(files, OAHU_SYNTAX, OAHU_NEW_MESSAGE_FILE), archives);
   }
 
   /** The text files, one per name and range (the copies of MessageCommand_JP left out). */
@@ -49,14 +55,24 @@ export class OahuMessages {
     });
   }
 
-  /** The archives that hold an edited message, rebuilt (name -> bytes); every other entry is copied as it is. */
-  changedArchives(): Map<string, Uint8Array> {
-    const byArchive = new Map<string, Map<number, Uint8Array>>();
+  /** The entries that hold an edited message, rebuilt: archive name -> entry index -> bytes. */
+  changedEntries(): Map<string, Map<number, Uint8Array>> {
+    const out = new Map<string, Map<number, Uint8Array>>();
     for (const [f, bytes] of this.texts.rebuilt()) {
       const name = f.archive!;
-      if (!byArchive.has(name)) byArchive.set(name, new Map());
-      byArchive.get(name)!.set(f.entryIndex, bytes);
+      if (!out.has(name)) out.set(name, new Map());
+      out.get(name)!.set(f.entryIndex, bytes);
     }
-    return new Map([...byArchive].map(([name, repl]) => [name, rebuildArchive(this.archives.get(name)!, repl)]));
+    return out;
+  }
+
+  /**
+   * The archives that hold an edited message, rebuilt (name -> bytes); every other entry is copied as it is. `more`
+   * adds entries changed by others (the master's tables), by archive name.
+   */
+  changedArchives(more: Map<string, Map<number, Uint8Array>> = new Map()): Map<string, Uint8Array> {
+    const all = this.changedEntries();
+    for (const [name, repl] of more) if (repl.size) all.set(name, new Map([...(all.get(name) ?? []), ...repl]));
+    return new Map([...all].map(([name, repl]) => [name, rebuildArchive(this.archives.get(name)!, repl)]));
   }
 }

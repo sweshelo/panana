@@ -13,7 +13,7 @@ import { hex8, u32 } from '../util/bytes';
 import type { ModelRef } from './modelview';
 import type { ItemData, Session } from '../session';
 import { InfoTip } from '../ui/InfoTip';
-import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
+import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
 import { loadObjectModels, objKey } from '../cgfx/loader';
@@ -268,19 +268,6 @@ function TextEditor({ session, items, it, onEdit }: { session: Session; items: I
       </tbody>
     </table>
   );
-}
-
-/** A text box applied when left (or on Enter for one line). */
-function TextBox({ value, multi, edited, onCommit }: { value: string; multi: boolean; edited: boolean; onCommit: (v: string) => void }): ReactNode {
-  const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
-  const commit = (): void => {
-    if (text !== value) onCommit(text);
-  };
-  const cls = `name-input${edited ? ' edited' : ''}`;
-  return multi
-    ? <textarea className={cls} rows={2} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
-    : <input type="text" className={cls} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
 }
 
 /** What goes wrong with what the item uses up (the action's +0x14), or ''. */
