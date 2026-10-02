@@ -199,14 +199,19 @@ export type ShopDrag = { kind: 'row'; index: number } | { kind: 'item'; id: numb
  * when the shop already sells it.
  */
 export function dropInto(list: number[], drag: ShopDrag, at: number): number[] {
-  const from = drag.kind === 'row' ? drag.index : list.indexOf(drag.id);
-  const id = drag.kind === 'row' ? list[drag.index]! : drag.id;
+  return dropRows(list, drag, at, (id) => id, (id) => id);
+}
+
+/** {@link dropInto} for rows that carry more than the item ID (RPG3's ShopItem): `item` reads a row's item, `make` builds the row of a new item. */
+export function dropRows<T>(list: T[], drag: ShopDrag, at: number, item: (row: T) => number, make: (id: number) => T): T[] {
+  const from = drag.kind === 'row' ? drag.index : list.findIndex((r) => item(r) === drag.id);
+  const row = drag.kind === 'row' ? list[drag.index]! : from >= 0 ? list[from]! : make(drag.id);
   const next = [...list];
   let to = Math.max(0, Math.min(at, list.length));
   if (from >= 0) {
     next.splice(from, 1);
     if (to > from) to--;
   }
-  next.splice(to, 0, id);
+  next.splice(to, 0, row);
   return next;
 }
