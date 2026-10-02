@@ -564,3 +564,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .photo-lg.item-badge { font-size: 28px; }
 .skill-slots .slot-row:has(.slot-cond) { grid-template-columns: 14px minmax(0, 1fr) auto auto; }
 .slot-cond { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.msg-preview-closed { cursor: pointer; border: 1px solid transparent; }
+.msg-preview-closed:hover, .msg-preview-closed:focus-visible { border-color: var(--accent); outline: none; }
+.msg-preview-closed.edited { border-left: 3px solid var(--warn); }
+.msg-edit-open .row { margin-top: 4px; }

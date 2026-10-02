@@ -3,8 +3,9 @@
 // The photo and the 3D view are the item's BCH model (itemModels.ts); a badge of the category when it has none.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fieldRange, field, type FieldContext } from '../game/tabledef';
-import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { MessageEditor } from '../ui/message';
 import { ModelView } from '../ui/ModelView';
 import { useAsync } from '../ui/useAsync';
 import { RowFields } from '../ui/RowFields';
@@ -192,10 +193,10 @@ function CopyButtons({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
   );
 }
 
-/** The name and the description messages: text boxes in the editors' text form ({ruby:…} and tags). */
+/** The name and the description messages: their previews, edited in the editors' text form ({ruby:…} and tags) on a click. */
 function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onEdit: () => void }): ReactNode {
   const texts = items.texts;
-  const box = (key: string, label: string, offset: number, multi: boolean): ReactNode => {
+  const box = (key: string, label: string, offset: number): ReactNode => {
     const id = items.messageId(it.id, key);
     if (!id || !texts.units(id)) return null;
     return (
@@ -203,7 +204,7 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
         <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
         <td className="book-desc">
           {texts.editable(id) || texts.isAdded(id)
-            ? <TextBox value={texts.text(id)?.text ?? ''} multi={multi} edited={texts.isEdited(id)} onCommit={(v) => { items.setText(it.id, key, v); onEdit(); }} />
+            ? <MessageEditor texts={texts} id={id} compact apply={(f) => { f(); items.messageChanged(id); onEdit(); }} />
             : <span>{items.message(id)}</span>}
         </td>
       </tr>
@@ -212,8 +213,8 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
   return (
     <table className="enc-table desc-table">
       <tbody>
-        {box('name', '名前', 0x14, false)}
-        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset, true))}
+        {box('name', '名前', 0x14)}
+        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset))}
       </tbody>
     </table>
   );

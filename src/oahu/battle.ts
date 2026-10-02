@@ -57,7 +57,7 @@ export interface OahuAction {
 /** Message fields of a monster row. */
 export const OAHU_MONSTER_TEXTS: [string, string][] = [['name', '名前'], ['desc', '説明']];
 /** Message fields of an action row. */
-export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['help', '説明'], ['result1', '結果 1'], ['result2', '結果 2']];
+export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['result1', '結果'], ['result2', '結果 (複数・別)']];
 /** Fields of a monster row that name an action. */
 export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'auto', 'body', 'body2', 'act2B', 'act2C'];
 

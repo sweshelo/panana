@@ -6,7 +6,7 @@ import { EditorState } from '../src/editor/state';
 import type { Game } from '../src/game/game';
 import { ActionView } from '../src/pages/actions';
 import { Radar } from '../src/ui/Radar';
-import { MessagePreview } from '../src/ui/message';
+import { MessageEditor, MessagePreview } from '../src/ui/message';
 import type { MessageStore } from '../src/game/gmsg';
 import { KAHARA_SYNTAX, textToUnits } from '../src/game/msgtext';
 import { w32 } from '../src/util/bytes';
@@ -79,6 +79,19 @@ describe('shared pieces', () => {
     expect(html).toContain('デンパタウン');
     expect(html).toContain('▼');
     expect(html).not.toContain('<br/>');
+  });
+
+  test('message editor: the preview until clicked, no text box (#48)', () => {
+    const units = textToUnits({ kind: 1, text: '{ruby:祠|ほこら}へ', tail: new Uint16Array([0]) });
+    const texts = {
+      syntax: KAHARA_SYNTAX, units: () => units, file: () => ({ name: 'MessageField_JP.gsmb', editable: true }),
+      text: () => ({ kind: 1, text: '{ruby:祠|ほこら}へ', tail: new Uint16Array([0]) }), isEdited: () => false,
+    } as unknown as MessageStore;
+    const html = renderToString(<MessageEditor texts={texts} id={0x40} apply={() => {}} />);
+    expect(html).toContain('msg-preview-closed');
+    expect(html).toContain('<rt>ほこら</rt>');
+    expect(html).not.toContain('<textarea');
+    expect(html).not.toContain('{ruby:');
   });
 
   test('radar: one handle per axis, edited ones marked, original outline only when changed', () => {

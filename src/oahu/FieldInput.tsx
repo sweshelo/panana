@@ -3,9 +3,9 @@
 import type { ReactNode } from 'react';
 import type { MessageStore } from '../game/gmsg';
 import { fieldRange } from '../game/tabledef';
-import { TextBox } from '../ui/book';
 import { FieldChoice, FieldNumber as SharedNumber, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
+import { MessageEditor } from '../ui/message';
 import type { OahuRows } from './rows';
 
 export interface FieldProps {
@@ -67,7 +67,7 @@ export function MessageFields({ rows, row, fields, texts, message, onEdit }: {
               <th title={`${rows.def.file} +0x${f.offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
               <td className="book-desc">
                 {texts.editable(id) || texts.isAdded(id)
-                  ? <TextBox value={texts.text(id)?.text ?? ''} multi={key !== 'name'} edited={texts.isEdited(id)} onCommit={(v) => { texts.setText(id, v); onEdit(); }} />
+                  ? <MessageEditor texts={texts} id={id} compact apply={(f) => { f(); onEdit(); }} />
                   : <span>{message(id)}</span>}
               </td>
             </tr>

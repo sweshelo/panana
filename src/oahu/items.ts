@@ -181,6 +181,11 @@ export class OahuItems {
     const m = this.messageId(id, key);
     if (!m) return;
     this.texts.setText(m, text);
+    this.messageChanged(m);
+  }
+
+  /** Rebuild the items showing message `m` (after its text changed). */
+  messageChanged(m: number): void {
     for (const it of this.items) if (OAHU_ITEM_MESSAGE_KEYS.some((k) => this.get(it.id, k) === m)) this.refresh(it.id);
   }
 
