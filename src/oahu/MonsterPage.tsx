@@ -18,7 +18,7 @@ import {
   oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
 } from './pickers';
 import type { OahuSession } from './session';
-import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS } from './tables';
+import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILL_CONDITION, OAHU_SKILL_CONDITION_NOTE, OAHU_SKILLS } from './tables';
 
 export { oahuActionHref, oahuGroupHref, oahuMonsterHref } from './pickers';
 
@@ -194,9 +194,12 @@ function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
   );
 }
 
+const CONDITION_OPTIONS = Object.entries(OAHU_SKILL_CONDITION).map(([k, n]): [number, string] => [Number(k), `${k} ${n}`]);
+
 const SKILL_INFO = [
   '最大 6 枠。ドラッグで並べ替え、× で外します。',
-  '枠ごとの「条件」は、そのワザを使える条件の表 (マスター +0x818) の行です (下位 4 ビット)。中身はまだ分かりません。',
+  '枠ごとの「条件」は、402F0000 の monsterBrain.bin の行です (下位 4 ビット)。そのワザを使えるかどうか (AP・自分の HP・1 回だけ) と、どの相手を狙うかを決めます (FUN_0018F13C)。名前は開発用のモンスター「知能：…」から。',
+  ...Object.entries(OAHU_SKILL_CONDITION).map(([k, n]) => `${k} ${n}: ${OAHU_SKILL_CONDITION_NOTE[Number(k)]}`),
   '選び方 (+0x38 bit12-14) は、使えるワザからどう選ぶか。使えるワザがないときは「使えないとき」の枠のワザを使います (FUN_001BE560)。',
 ].join('\n');
 
@@ -216,7 +219,7 @@ function SkillEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
           action: s.action,
           entry: oahuActionEntry(battle, s.action),
           edited: f.original(`skill${s.slot}`) !== s.action,
-          extra: <span className="slot-cond" title="使える条件の表 (マスター +0x818) の行">条件 <FieldChoice f={f} k={`cond${s.slot}`} edited={onEdit} /></span>,
+          extra: <span className="slot-cond" title={OAHU_SKILL_CONDITION_NOTE[s.condition]}>条件 <FieldChoice f={f} k={`cond${s.slot}`} edited={onEdit} options={CONDITION_OPTIONS} /></span>,
         }))}
         max={OAHU_SKILLS}
         move={(from, to) => set(moveTo(now, from, to))}
