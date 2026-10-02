@@ -9,6 +9,11 @@ import { equalUnits, Gmsg, toUnits } from '../src/game/gmsg';
 import { OAHU_SYNTAX, textToUnits, unitsToText } from '../src/game/msgtext';
 import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
+import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
+import { OahuCodePage } from '../src/oahu/CodePage';
+import { OAHU_EQUIP_EFFECTS } from '../src/oahu/tables';
+import { applyIps } from '../src/rom/ips';
+import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuSession } from '../src/oahu/session';
@@ -261,5 +266,61 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
     expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
+  let base: OahuSession;
+  let s: OahuSession;
+  beforeAll(async () => {
+    base = await OahuSession.open(await openImage(Bun.file(OAHU_BASE), 'base'));
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('without the Update there is no code.bin; the code page asks for the Update', () => {
+    expect(base.code).toBeNull();
+    expect(base.codeError).toBe('');
+    expect(() => base.buildPatches()).toThrow('Update');
+    const html = renderToString(<OahuCodePage session={base} onAddUpdate={() => {}} />);
+    expect(html).toContain('Update の CIA も選んでください');
+    expect(html).not.toContain('逆アセンブル');
+    // the Base's code.bin has other addresses
+    expect(() => OahuCode.check(base.dump.code)).toThrow('v4096');
+  });
+
+  test('the Update\'s code.bin: the probes, the cave is zero, the effect table matches the item effects', () => {
+    const code = s.code!;
+    expect(code).not.toBeNull();
+    expect(code.caveSize).toBe(0x740);
+    for (let a = OAHU_LAYOUT.caveStart; a < OAHU_LAYOUT.caveEnd; a += 4) expect(code.word(a)).toBe(0);
+    const rows = code.effectConditions();
+    expect(rows.length).toBe(OAHU_CODE.effectKinds);
+    expect(rows[0]).toBe(0);
+    for (let k = 1; k < rows.length; k++) expect(rows[k]).toBe(OAHU_EQUIP_EFFECTS[k]!.condition);
+    expect(renderToString(<OahuCodePage session={s} onAddUpdate={() => {}} />)).toContain('mov r1, r0');
+  });
+
+  test('a patch is assembled on the Update\'s addresses and exported as exefs/code.ips', () => {
+    s.codePatches = [{
+      id: 'p',
+      title: 'kind 0x30 -> row 0x4C',
+      source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n',
+      enabled: true,
+    }];
+    const built = s.buildPatches().get('p')!;
+    expect(built.errors).toEqual([]);
+    expect(built.cave![1]).toBe(OAHU_LAYOUT.caveEnd);
+    const zip = unzipSync(s.modZip());
+    const ips = zip['00040000000EF000/exefs/code.ips']!;
+    expect(ips).toBeDefined();
+    const patched = OahuCode.check(applyIps(s.code!.code, ips));
+    expect(() => patched.effectConditions()).toThrow("0x30");
+    const cave = built.cave![0];
+    expect(u32(patched.code, cave - 0x100000)).toBe(0xe59f0000); // ldr r0, [pc, #0]
+    expect(u32(patched.code, cave + 8 - 0x100000)).toBe(0x4c);
+    // a broken patch is left out of code.ips
+    s.codePatches = [{ id: 'q', title: 'bad', source: '@0x1A658C\n  foo r0\n', enabled: true }];
+    expect(s.codeIps()).toBeNull();
+    s.codePatches = [];
   });
 });

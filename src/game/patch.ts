@@ -17,10 +17,24 @@ import { disassemble } from './disasm';
 import { HOOK_ADDR } from './mappatch';
 import { u32 } from '../util/bytes';
 
-/** The code cave: zero padding at the end of .text (elpulse mod/build_code.py), up to the new-map hook. */
+/**
+ * Where a game's code.bin takes patches: the code cave (zero padding at the end of .text, filled from the top down)
+ * and the end of what an @0x… block may overwrite (.text and .rodata).
+ */
+export interface CodeLayout {
+  caveStart: number;
+  caveEnd: number;
+  /** End of the area only @cave may write ([caveStart, reservedEnd)); RPG2's new-map hook sits above the cave. */
+  reservedEnd: number;
+  writableEnd: number;
+}
+
+/** The code cave of RPG2 (elpulse mod/build_code.py), up to the new-map hook. */
 export const CAVE_START = 0x4bf020;
 export const CAVE_END = HOOK_ADDR;
-const WRITABLE_END = 0x511000; // .text and .rodata
+
+/** RPG2 (v1.1.0). */
+export const KAHARA_LAYOUT: CodeLayout = { caveStart: CAVE_START, caveEnd: CAVE_END, reservedEnd: 0x4c0000, writableEnd: 0x511000 };
 
 export interface CodePatch {
   id: string;
@@ -107,20 +121,21 @@ function parse(source: string, errors: PatchError[]): RawBlock[] {
 const isLiteral = (t: string): boolean => /,\s*=/.test(t) && /^v?ldr/i.test(t);
 
 /** The top of the cave that is still free in `code` (the base MOD fills it from the bottom). */
-export function caveFreeStart(code: Uint8Array): number {
-  let last = CAVE_START;
-  for (let a = CAVE_START; a < CAVE_END && a - BASE + 4 <= code.length; a += 4) if (u32(code, a - BASE)) last = a + 4;
-  return Math.min(CAVE_END, (last + 0x1f) & ~0xf);
+export function caveFreeStart(code: Uint8Array, layout: CodeLayout = KAHARA_LAYOUT): number {
+  const { caveStart, caveEnd } = layout;
+  let last = caveStart;
+  for (let a = caveStart; a < caveEnd && a - BASE + 4 <= code.length; a += 4) if (u32(code, a - BASE)) last = a + 4;
+  return Math.min(caveEnd, (last + 0x1f) & ~0xf);
 }
 
 /**
  * Assemble patches in order against `code` (with the base MOD applied). Cave blocks are placed from the top of the
  * cave down, so they stay clear of the base MOD's routines.
  */
-export function buildPatches(code: Uint8Array, patches: CodePatch[]): Map<string, BuiltPatch> {
+export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: CodeLayout = KAHARA_LAYOUT): Map<string, BuiltPatch> {
   const out = new Map<string, BuiltPatch>();
-  let top = CAVE_END;
-  const floor = caveFreeStart(code);
+  let top = layout.caveEnd;
+  const floor = caveFreeStart(code, layout);
   const written = new Map<number, string>(); // address -> patch id
   for (const p of patches) {
     const errors: PatchError[] = [];
@@ -164,8 +179,8 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[]): Map<string
       const block: PatchBlock = { kind: b.kind, addr: b.addr, label: b.label, lines: [] };
       if (b.kind === 'at') {
         if (b.addr & 3) errors.push({ line: b.line, message: 'アドレスは 4 の倍数にしてください' });
-        if (b.addr < BASE || b.addr >= WRITABLE_END) errors.push({ line: b.line, message: '.text / .rodata の外です' });
-        if (b.addr >= CAVE_START && b.addr < 0x4c0000) errors.push({ line: b.line, message: 'code cave には @cave で書いてください' });
+        if (b.addr < BASE || b.addr >= layout.writableEnd) errors.push({ line: b.line, message: '.text / .rodata の外です' });
+        if (b.addr >= layout.caveStart && b.addr < layout.reservedEnd) errors.push({ line: b.line, message: 'code cave には @cave で書いてください' });
       }
       const pool: { value: string; float: boolean; fix: PatchLine[] }[] = [];
       let a = b.addr;
