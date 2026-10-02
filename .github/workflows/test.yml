@@ -48,6 +48,9 @@ jobs:
       AWS_DEFAULT_REGION: auto
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       ROM_BUNDLE: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.ROM_BUNDLE_KEY || 'rom-bundle.tar.gpg' }}
+      # 電波人間のRPG3 の復号済み CIA (Base / Update)。束とは別に、同じバケットにそのまま置いてある
+      OAHU_BASE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.OAHU_BASE_KEY || 'oahu-base.cia' }}
+      OAHU_UPDATE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.OAHU_UPDATE_KEY || 'oahu-update.cia' }}
       ROM_DIR: ${{ github.workspace }}/../rom
     steps:
       - name: Check secrets
@@ -79,6 +82,9 @@ jobs:
           gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 --decrypt "$RUNNER_TEMP/rom.gpg" 3<<<"$ROM_BUNDLE_PASSPHRASE" \
             | tar -x -C "$ROM_DIR"
           rm -f "$RUNNER_TEMP/rom.gpg"
+          endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          aws s3 cp "$OAHU_BASE_OBJECT" "$ROM_DIR/oahu-base.cia" --endpoint-url "$endpoint" --no-progress
+          aws s3 cp "$OAHU_UPDATE_OBJECT" "$ROM_DIR/oahu-update.cia" --endpoint-url "$endpoint" --no-progress
           ls -l "$ROM_DIR"
 
       - name: Test (ROM)
@@ -86,8 +92,10 @@ jobs:
         env:
           ELPULSE_ROOT: ${{ env.ROM_DIR }}
           ROM_GOLDEN: ${{ env.ROM_DIR }}/golden.json
+          ROM_OAHU_BASE: ${{ env.ROM_DIR }}/oahu-base.cia
+          ROM_OAHU_UPDATE: ${{ env.ROM_DIR }}/oahu-update.cia
           REQUIRE_ROM: '1'
-        run: bun test test/rom.test.ts test/boss.test.ts
+        run: bun test test/rom.test.ts test/boss.test.ts test/oahu.test.tsx
 
       - name: Remove the dump
         if: always()

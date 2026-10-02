@@ -9,16 +9,28 @@ import { readExefsFile } from './exefs';
 import { isCodeCompressed, parseNcch } from './ncch';
 import { parseRomfs } from './romfs';
 import { BlobSource, type ByteSource } from './source';
+import { identifyTitle, KAHARA, titleByRootFiles, type TitleDef } from './titles';
 
-export const TITLE_ID = '00040000000A7900';
+/** RPG2's title ID (the editor and the export are RPG2's for now). */
+export const TITLE_ID = KAHARA.titleId;
+
+/** A file of the RomFS: path without the leading slash ("A90C8038", "sound/sound.bcsar"). */
+export interface RomfsListing {
+  path: string;
+  size: number;
+}
 
 export interface Dump {
   /** Where the data came from (for the UI). */
   label: string;
+  /** The game of the dump. */
+  title: TitleDef;
   titleVersion?: number;
   code: Uint8Array;
   /** Root RomFS file names (e.g. "A90C8038"). */
   names(): string[];
+  /** Every file of the RomFS, folders included (when the source knows them; the RomFS viewer). */
+  files?(): RomfsListing[];
   readRomfs(name: string): Promise<Uint8Array>;
 }
 
@@ -27,23 +39,27 @@ export async function openImage(file: Blob, label: string): Promise<Dump> {
   const head = await src.read(0, Math.min(0x200, src.size));
   let ncchSrc: ByteSource = src;
   let titleVersion: number | undefined;
+  let title: TitleDef | undefined;
   if (ascii(head, 0x100, 4) !== 'NCCH') {
     const cia = await parseCia(src);
-    if (cia.titleId !== TITLE_ID) throw new Error(`タイトル ID が違います (${cia.titleId})。電波人間のRPG2 (${TITLE_ID}) のダンプを使ってください。`);
+    title = identifyTitle(cia.titleId);
     ncchSrc = cia.content0;
     titleVersion = cia.titleVersion;
   }
   const ncch = await parseNcch(ncchSrc);
-  if (ncch.programId !== TITLE_ID) throw new Error(`プログラム ID が違います (${ncch.programId})`);
+  if (title && ncch.programId !== title.titleId) throw new Error(`プログラム ID が違います (${ncch.programId})`);
+  title ??= identifyTitle(ncch.programId);
   let code = await readExefsFile(ncch.exefs, '.code');
   if (isCodeCompressed(ncch.exheader)) code = blzDecompress(code);
   const files = await parseRomfs(ncch.romfs);
   const romfs = ncch.romfs;
   return {
     label,
+    title,
     titleVersion,
     code,
     names: () => [...files.keys()].filter((p) => p.lastIndexOf('/') === 0).map((p) => p.slice(1)),
+    files: () => [...files.values()].map((f) => ({ path: f.path.slice(1), size: f.size })),
     readRomfs: async (name) => {
       const f = files.get('/' + name);
       if (!f) throw new Error(`RomFS に ${name} がありません`);
@@ -63,8 +79,10 @@ export async function openFolder(files: File[], label: string): Promise<Dump> {
   if (!map.size) throw new Error('フォルダに RomFS のファイル (A90C8038 など) がありません');
   return {
     label,
+    title: titleByRootFiles(map.keys()) ?? KAHARA,
     code: codeBytes,
     names: () => [...map.keys()],
+    files: () => [...map].map(([path, f]) => ({ path, size: f.size })),
     readRomfs: async (name) => {
       const f = map.get(name.toUpperCase());
       if (!f) throw new Error(`RomFS に ${name} がありません`);
@@ -94,11 +112,18 @@ export function baseModFromFiles(label: string, files: { name: string; bytes: Ui
 
 /** The dump with a base MOD on top: its RomFS files win, its code.ips is applied to code.bin. */
 export function overlayDump(dump: Dump, mod: BaseMod): Dump {
+  const files = dump.files?.bind(dump);
   return {
     label: `${dump.label} + ${mod.label}`,
+    title: dump.title,
     titleVersion: dump.titleVersion,
     code: mod.ips ? applyIps(dump.code, mod.ips) : dump.code,
     names: () => [...new Set([...dump.names(), ...mod.romfs.keys()])],
+    files: files && (() => {
+      const out = new Map(files().map((f) => [f.path, f]));
+      for (const [path, b] of mod.romfs) out.set(path, { path, size: b.length });
+      return [...out.values()];
+    }),
     readRomfs: async (name) => mod.romfs.get(name.toUpperCase())?.slice() ?? dump.readRomfs(name),
   };
 }

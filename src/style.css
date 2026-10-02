@@ -60,7 +60,8 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .page { flex: 1; min-height: 0; display: none; }
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
-.shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds { display: block; }
+.shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
+.shell[data-page='romfs'] .page-romfs { display: block; }
 a { color: #8fb6ff; }
 
 /* editor layout */
@@ -508,3 +509,16 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .perf-tl-fields { grid-column: 2; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .perf-tl-fields .num-input { width: 56px; }
 @media (max-width: 720px) { .perf-tl-row { grid-template-columns: minmax(0, 1fr); } .perf-tl-fields { grid-column: 1; } }
+
+/* RomFS viewer (src/romfs/) */
+.romfs-file { max-width: 0; width: 100%; }
+.romfs-file > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.romfs-entries { max-height: 40vh; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+.romfs-entry { margin-top: 16px; }
+.romfs-entry .book-head h3 { margin: 0; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--text); }
+.romfs-body { margin-top: 8px; }
+.romfs-grid { overflow-x: auto; }
+.romfs-grid td { white-space: nowrap; }
+.romfs-msg { white-space: pre-wrap; }
+.hexdump { font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.45; margin: 0 0 8px; overflow-x: auto; }
+.page-romfs td.num, .page-romfs td.mono { white-space: nowrap; }

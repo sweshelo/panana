@@ -11,17 +11,8 @@ import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
 import { tableLabel, type Session } from '../session';
+import { download } from './download';
 
-function download(data: Uint8Array, name: string): void {
-  const url = URL.createObjectURL(new Blob([data as BlobPart]));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
 
 export function ExportDialog({ session, onClose }: { session: Session; onClose: () => void }): ReactNode {
   const { game, st } = session;

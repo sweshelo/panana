@@ -6,6 +6,7 @@ import { saveDumpCache } from '../rom/cache';
 import { baseModFromFiles, type BaseMod, type Dump } from '../rom/dump';
 import { Session } from '../session';
 import { idbGet, idbSet } from '../util/idb';
+import { OahuShell } from './OahuShell';
 import { Shell } from './Shell';
 import { StartScreen } from './StartScreen';
 
@@ -20,7 +21,9 @@ async function savedBaseMod(): Promise<BaseMod | null> {
 type State =
   | { kind: 'start'; error?: string }
   | { kind: 'loading' }
-  | { kind: 'ready'; session: Session; editor: MapEditor; id: number };
+  | { kind: 'ready'; session: Session; editor: MapEditor; id: number }
+  /** A 電波人間のRPG3 dump: viewed, not edited yet (#59). */
+  | { kind: 'oahu'; dump: Dump };
 
 /** The session and the map editor of a game (the edits saved last time are restored). */
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
@@ -42,6 +45,10 @@ export function Root(): ReactNode {
     setState({ kind: 'loading' });
     try {
       const dump = await open();
+      if (dump.title.key === 'oahu') {
+        setState({ kind: 'oahu', dump });
+        return;
+      }
       if (dump.titleVersion !== undefined && dump.titleVersion !== 1040)
         throw new Error(`TitleVersion が ${dump.titleVersion} です。このエディタは v1.1.0 (1040) 専用です。`);
       rawDump.current = dump;
@@ -88,6 +95,7 @@ export function Root(): ReactNode {
 
   if (state.kind === 'loading') return <div className="start"><p>読み込み中…</p></div>;
   if (state.kind === 'start') return <StartScreen error={state.error} onOpen={load} />;
+  if (state.kind === 'oahu') return <OahuShell dump={state.dump} onChangeDump={() => setState({ kind: 'start' })} />;
   const { session } = state;
   return (
     <Shell
