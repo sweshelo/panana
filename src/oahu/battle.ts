@@ -47,6 +47,10 @@ export interface OahuGroup {
 export interface OahuAction {
   row: number;
   name: string;
+  /** w0 bit0-2 (OAHU_ACTION_KIND): 2 = a monster's row, followed by its skills. */
+  kind: number;
+  /** w0 bit3-13: the monster row of a kind-2 row. */
+  subject: number;
   category: number;
   element: number;
   range: number;
@@ -189,7 +193,7 @@ export class OahuBattle {
     for (let row = 1; row < this.actions.rows; row++) {
       const g = (k: string): number => this.actions.get(row, k);
       if (!g('name') && !g('bits')) continue;
-      out.push({ row, name: this.actionName(row) || `#${row}`, category: g('category'), element: g('element'), range: g('range'), power: [g('min'), g('max')], state: g('state') });
+      out.push({ row, name: this.actionName(row) || `#${row}`, kind: g('kind'), subject: g('subject'), category: g('category'), element: g('element'), range: g('range'), power: [g('min'), g('max')], state: g('state') });
     }
     return out;
   }

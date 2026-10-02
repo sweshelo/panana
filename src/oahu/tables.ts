@@ -81,8 +81,25 @@ export const OAHU_ITEM_DATA: TableDef = {
   ],
 };
 
-/** Element numbers (actionData w0 bit27-30, effect subs). */
-export const OAHU_ELEMENT_NAMES: Record<number, string> = Object.fromEntries(ELEMENT.map((e, i): [number, string] => [i, e || 'なし']));
+/**
+ * The two elements of each multi-element number (10〜25) of an action. FUN_001B82B0 halves the damage and puts each
+ * half through one element's resistance (FUN_001B8148); the pairs are its jump tables (also FUN_001BF3FC).
+ */
+export const OAHU_ELEMENT_PAIRS: Record<number, [number, number]> = {
+  10: [1, 2], 11: [1, 3], 12: [1, 4], 13: [1, 5], 14: [1, 6], 15: [2, 3], 16: [2, 4], 17: [2, 5], 18: [2, 6],
+  19: [3, 4], 20: [3, 5], 21: [3, 6], 22: [4, 5], 23: [4, 6], 24: [6, 5], 25: [7, 8],
+};
+
+/** Element numbers of an action (actionData w0 bit27-31): 1〜8 one element, 10〜25 two (OAHU_ELEMENT_PAIRS). */
+export const OAHU_ELEMENT_NAMES: Record<number, string> = {
+  ...Object.fromEntries(ELEMENT.map((e, i): [number, string] => [i, e || 'なし'])),
+  ...Object.fromEntries(Object.entries(OAHU_ELEMENT_PAIRS).map(([k, [a, b]]): [number, string] => [Number(k), `${ELEMENT[a]}・${ELEMENT[b]}`])),
+};
+
+/** Kind of an action row (actionData w0 bit0-2), from the rows that have it and the code that tests it. */
+export const OAHU_ACTION_KIND: Record<number, string> = {
+  0: 'ワザ', 1: 'アンテナ', 2: 'モンスター', 3: '自動・特殊', 4: '道具', 5: '状態で動けない', 6: '種類 6',
+};
 
 /**
  * Numbers of the states as the actions (+0x2E) and the effect 0x14 (its sub) name them, from the actions that have
@@ -109,10 +126,11 @@ export const OAHU_ACTION_DATA: TableDef = {
   rowSize: 0x30,
   fields: [
     f('bits', 0x00, 'u32', 'ビット', { unsure: true, hex: true }),
-    f('kind', 0x00, 'u32', '種類', { bits: [1, 2], alias: true, ref: { kind: 'enum', values: { 2: 'アイテム' } }, unsure: true, note: 'RPG2 と同じ bit1-2 と推定。道具のアクションは 2。ワザは 0' }),
+    f('kind', 0x00, 'u32', '種類', { bits: [0, 3], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_KIND }, note: 'コードは w0 & 7 で比べる (3 = 自動 @0x1C04BC、4 = 道具 @0x1BB5E8)。2 はモンスターの行で、名前がモンスターの名前、すぐあとにそのモンスターのワザが並ぶ' }),
+    f('subject', 0x00, 'u32', '番号', { bits: [3, 11], alias: true, note: '種類 2 (モンスター) ではモンスターの行 (同じモンスターの 2 つ目の行は 1 つ目の番号)。種類 4 (道具) ではアイテムの番号に近い値で、@0x1BA50C が 333・334 と比べる' }),
     f('side', 0x00, 'u32', '狙う側', { bits: [19, 2], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_SIDE }, note: '1 = 自分の側 (FUN_0018F13C)' }),
     f('range', 0x00, 'u32', '範囲', { bits: [21, 4], alias: true, ref: { kind: 'enum', values: ACTION_RANGE }, note: '8 と比べられる (FUN_0018F13C)。番号の意味は RPG2 の w0 bit9-12 と同じと推定 (2 単体・6 全体・1 自分)' }),
-    f('element', 0x00, 'u32', '属性', { bits: [27, 4], alias: true, ref: { kind: 'enum', values: OAHU_ELEMENT_NAMES }, note: '火斬ぎり 1、氷の双爪 2、なぎはらい 4、バブルブレス 6 から' }),
+    f('element', 0x00, 'u32', '属性', { bits: [27, 5], alias: true, ref: { kind: 'enum', values: OAHU_ELEMENT_NAMES }, note: 'w0 >> 27 (@0x1BD028)。1〜8 は 1 つの属性、10〜25 は 2 つの属性 (フレイムアイス 10 = 火・氷 など)。2 つのときはダメージを半分ずつそれぞれの属性のたいせいで計算して足す (FUN_001B82B0)' }),
     f('w1', 0x04, 'u32', '+0x04', { unsure: true, hex: true }),
     f('name', 0x08, 'u32', '名前', { ref: msg, note: '戦闘で出る名前。道具のアクションは「使った」のメッセージ' }),
     f('u0C', 0x0c, 'u32', '+0x0C', { unsure: true, note: 'メッセージの番号に見えるが、打撃 243 行が同じ 60202 (なごみの会話) で、行と関係のないなごみの会話や、どのファイルにもない 160872 なども入る。説明ではない' }),
@@ -248,7 +266,7 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     f('ai', 0x38, 'u32', 'ワザの選び方', { bits: [12, 3], ref: { kind: 'enum', values: OAHU_AI_MODE }, note: 'FUN_001BE560 の 5 通り。RPG2 の AI の型と同じと推定' }),
     f('fallback', 0x38, 'u32', '使えるワザがないとき', { bits: [15, 3], note: 'ワザの枠の番号 (0〜5)' }),
     f('u38b18', 0x38, 'u32', '+0x38 bit18-21', { bits: [18, 4], unsure: true, note: '戦闘のユニットどうしで比べる値 (@0x1C0170)。15 は特別' }),
-    f('own', 0x3c, 'u32', 'モンスターのアクション', { bits: [0, 12], ref: actionRef, unsure: true, note: '名前がモンスターの名前の行' }),
+    f('own', 0x3c, 'u32', 'モンスターのアクション', { bits: [0, 11], ref: actionRef, note: 'actionData の種類 2 (モンスター) の行。名前はモンスターの名前で、すぐあとにワザが並ぶ。電波人間の +0x6A にモンスターが入っているとき、その電波人間のふつうのこうげきがこの行になる (FUN_004CB7C0)' }),
     f('name', 0x40, 'u32', '名前', { ref: msg }),
     f('desc', 0x44, 'u32', '説明', { ref: msg }),
     f('design', 0x48, 'u16', 'デザイン', { bits: [0, 8], alias: true, note: '402F0000 の monsterDesign.bin の行 (モデル +0x0C・色のテクスチャ +0x10・ワザのモーション +0x14)' }),

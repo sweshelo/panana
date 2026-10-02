@@ -286,11 +286,11 @@ export class OahuItems {
     return name && !name.includes('使') ? `#${row} ${name}` : `#${row}`;
   }
 
-  /** Rows of actionData that are item actions (kind 2), for the effect picker. */
+  /** Rows of actionData that are item actions (kind 4), for the effect picker. */
   itemActions(): { row: number; label: string }[] {
     const kind = field(OAHU_ACTION_DATA, 'kind');
     const out: { row: number; label: string }[] = [];
-    for (let row = 1; row < this.actions.rows; row++) if (readField(this.actions.row(row), kind) === 2) out.push({ row, label: this.actionName(row) });
+    for (let row = 1; row < this.actions.rows; row++) if (readField(this.actions.row(row), kind) === 4) out.push({ row, label: this.actionName(row) });
     return out;
   }
 

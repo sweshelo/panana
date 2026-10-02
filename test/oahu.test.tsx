@@ -13,6 +13,7 @@ import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
+import { OAHU_ELEMENT_NAMES } from '../src/oahu/tables';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
 import { GmsgView, GsTableView, viewsFor } from '../src/romfs/formats';
@@ -245,6 +246,15 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(battle.conditionName(64)).toBe('毒たいせい');
     expect(battle.actions.get(969, 'element')).toBe(2);
     expect(battle.actions.get(984, 'range')).toBe(3);
+    // Two elements: 10〜25 need the 5th bit (アイスメテオ 16 = 氷・土, ダークシャイニング 25 = 光・闇).
+    expect([190, 202, 220].map((r) => OAHU_ELEMENT_NAMES[battle.actions.get(r, 'element')])).toEqual(['火・氷', '氷・土', '光・闇']);
+    // A monster's row (kind 2) names the monster, points back at it, and its skills follow it.
+    expect(battle.actions.get(566, 'kind')).toBe(2);
+    expect(battle.actions.get(566, 'subject')).toBe(79);
+    expect(battle.monsters.get(79, 'own')).toBe(566);
+    expect(battle.usedSkills(79).map((x) => x.action)).toEqual([567, 568]);
+    expect(battle.actions.get(267, 'kind')).toBe(4);
+    expect(battle.items.itemActions().every((a) => battle.actions.get(a.row, 'kind') === 4)).toBe(true);
     expect(battle.conditions.get(36, 'combine')).toBe(4);
     expect(battle.actionUsers(995).monsters).toContain(1);
     expect(battle.group(1).fixed.map((r) => battle.monsterName(r))).toEqual(['たからばこぞう']);

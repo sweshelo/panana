@@ -407,6 +407,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .badge-icon.elem-6 { background: #1d3f63; color: #8fc4ff; }
 .badge-icon.elem-7 { background: #5f5a3c; color: #fffbe0; }
 .badge-icon.elem-8 { background: #3b2556; color: #d7b8ff; }
+.book-table td.action-monster { font-weight: bold; }
 
 /* info icon + tooltip (src/ui/InfoTip.tsx) */
 .with-info { display: inline-flex; align-items: center; gap: 6px; }

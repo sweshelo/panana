@@ -9,7 +9,7 @@ import { Photo } from '../ui/Photo';
 import { ItemPhoto } from './ItemPage';
 import type { OahuBattle } from './battle';
 import type { OahuItem } from './items';
-import { OAHU_ACTION_CATEGORY, OAHU_ELEMENT_NAMES, OAHU_ITEM_KIND } from './tables';
+import { OAHU_ACTION_CATEGORY, OAHU_ACTION_KIND, OAHU_ELEMENT_NAMES, OAHU_ELEMENT_PAIRS, OAHU_ITEM_KIND } from './tables';
 
 export const oahuMonsterHref = (row: number): string => `#/monsters/${row}`;
 export const oahuGroupHref = (row: number): string => `#/groups/${row}`;
@@ -28,11 +28,13 @@ export function oahuItemIcon(battle: OahuBattle, item: OahuItem | undefined, lar
   return <span className={`${className} item-badge item-kind-${item?.kind ?? 0}`} title={item?.category}>{label[0]}</span>;
 }
 
-/** An action's badge: the first letter of its element, or of its category. */
+/** An action's badge: the first letter of its element (of both for two elements, colored by the first), or of its category. */
 export function oahuActionIcon(battle: OahuBattle, row: number): ReactNode {
   const element = row > 0 && row < battle.actions.rows ? battle.actions.get(row, 'element') : 0;
   const category = row > 0 && row < battle.actions.rows ? battle.actions.get(row, 'category') : 0;
-  const label = element ? OAHU_ELEMENT_NAMES[element] ?? '?' : (OAHU_ACTION_CATEGORY[category] ?? '?').slice(0, 1);
+  const pair = OAHU_ELEMENT_PAIRS[element];
+  if (pair) return <ActionBadge element={pair[0]} label={pair.map((e) => (OAHU_ELEMENT_NAMES[e] ?? '?').slice(0, 1)).join('')} />;
+  const label = element ? (OAHU_ELEMENT_NAMES[element] ?? '?').slice(0, 1) : (OAHU_ACTION_CATEGORY[category] ?? '?').slice(0, 1);
   return <ActionBadge element={element} label={label} />;
 }
 
@@ -79,7 +81,7 @@ export function OahuActionPicker({ battle, current, title = 'ワザを選ぶ', o
       return {
         row: a.row,
         name: a.name,
-        kind: OAHU_ACTION_CATEGORY[a.category] ?? `系統 ${a.category}`,
+        kind: a.kind === 2 ? OAHU_ACTION_KIND[2]! : OAHU_ACTION_CATEGORY[a.category] ?? `系統 ${a.category}`,
         element: a.element ? OAHU_ELEMENT_NAMES[a.element] ?? String(a.element) : '',
         users: names,
         tags: names.length ? ['skill'] : [],
