@@ -305,8 +305,27 @@ export class OahuBattle {
   /** The monster row an action changes its user into (category 21 / 22, +0x1A), else 0. */
   formTarget(action: number): number {
     if (action <= 0 || action >= this.actions.rows || !OAHU_FORM_CATEGORIES.includes(this.actions.get(action, 'category'))) return 0;
-    const to = this.actions.get(action, 'max');
+    const to = this.actions.get(action, 'max') & 0xff; // only the low byte is read (@0x1B45AC)
     return to > 0 && to < this.monsters.rows ? to : 0;
+  }
+
+  /** Who a category 19 action calls: the monster row of +0x1A (low byte), else the group row of +0x18. */
+  summonTarget(action: number): { monster: number } | { group: number } | null {
+    if (action <= 0 || action >= this.actions.rows || this.actions.get(action, 'category') !== 19) return null;
+    const monster = this.actions.get(action, 'max') & 0xff;
+    if (monster) return { monster };
+    const group = this.actions.get(action, 'min');
+    return group ? { group } : null;
+  }
+
+  /** Monsters having the action in a slot only a kind-3 action fires from (ボディ・自動 …), with the slot. */
+  stateSlotUsers(action: number): { monster: number; via: string }[] {
+    const out: { monster: number; via: string }[] = [];
+    for (let m = 1; m < this.monsters.rows; m++) {
+      if (!this.monsters.get(m, 'name')) continue;
+      for (const k of OAHU_STATE_FIELDS) if (this.monsters.get(m, k) === action) out.push({ monster: m, via: k });
+    }
+    return out;
   }
 
   /** The form changes of a monster row: its skills and the actions of its states that change the form. */

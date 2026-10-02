@@ -11,7 +11,7 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
 import { OahuCodePage } from '../src/oahu/CodePage';
-import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
+import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, oahuCategoryValues, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
 import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
@@ -309,6 +309,36 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const html = renderToString(<OahuMonsterPage session={s} arg="148" />);
     for (const t of ['変身', '倒される一撃を受けたとき', '#149']) expect(html).toContain(t);
     expect(renderToString(<OahuActionPage session={s} arg="530" />)).toContain('形態を変える');
+  });
+
+  test('action categories: +0x18 / +0x1A by category, the fields of states and hits (docs/oahu/actions.md)', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    // ジャシン's #870: category 21, +0x1A = the new form (row 147), fired from ボディ by a fatal blow.
+    expect([870, 966].map((r) => [a.get(r, 'category'), a.get(r, 'min'), a.get(r, 'max'), a.get(r, 'trigger')])).toEqual([[21, 1, 147, 101], [22, 1, 161, 101]]);
+    expect(oahuCategoryValues(21).kind).toBe('monster');
+    const jashin = renderToString(<OahuActionPage session={s} arg="870" />);
+    for (const t of ['新しい形態', 'ジャシン', '倒される一撃を受けたとき']) expect(jashin).toContain(t);
+    // なかまをよんだ: a monster row in +0x1A, or (#579) a group row in +0x18.
+    expect(battle.summonTarget(485)).toEqual({ monster: 40 });
+    expect(battle.summonTarget(579)).toEqual({ group: 152 });
+    expect(renderToString(<OahuActionPage session={s} arg="579" />)).toContain('群れ #152');
+    // Category 35 picks one of the action rows +0x18〜+0x1A when an item is used.
+    expect([a.get(326, 'min'), a.get(326, 'max')]).toEqual([327, 329]);
+    // States: どく 1 / もうどく 2 (+0x1C), the rate and turns of w1; hits: +0x2D in tenths.
+    expect([79, 81].map((r) => a.get(r, 'strength'))).toEqual([1, 2]);
+    expect([a.get(91, 'strength'), a.get(4, 'strength')]).toEqual([-1, 500]);
+    expect([a.get(79, 'rate'), a.get(79, 'turnsMin'), a.get(79, 'turnsMax')]).toEqual([1, 2, 4]);
+    expect([a.get(335, 'multiplier'), a.get(609, 'multiplier'), a.get(243, 'multiplier')]).toEqual([10, 30, 2]);
+    expect(a.get(142, 'noFloat')).toBe(1);
+    // A category that does not read +0x18 / +0x1A says so; changing the category changes the fields shown.
+    a.set(335, 'max', 5);
+    expect(renderToString(<OahuActionPage session={s} arg="335" />)).toContain('では使われません');
+    a.set(335, 'category', 19);
+    expect(battle.summonTarget(335)).toEqual({ monster: 5 });
+    expect(renderToString(<OahuActionPage session={s} arg="335" />)).toContain('呼ぶモンスター');
+    battle.revertAction(335);
+    expect(battle.actionChanged(335)).toBe(false);
   });
 
   test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {

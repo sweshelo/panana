@@ -6,10 +6,17 @@ import { ACTION_RANGE } from '../game/actions';
 import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_ACTION_TEXTS, type OahuBattle } from './battle';
-import { enumOptions, FieldNumber, FieldSelect, MessageFields, Stat } from './FieldInput';
+import { InfoTip } from '../ui/InfoTip';
+import { Board, EmptyBoard } from '../ui/Board';
+import { FieldCheck } from '../ui/FieldEdit';
+import { enumOptions, FieldNumber, FieldSelect, MessageFields, rowAccess, Stat } from './FieldInput';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
+import { oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuMonsterIcon, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
-import { OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_ELEMENT_NAMES, OAHU_SKILL_CONDITION, OAHU_STATE_CODE, oahuTriggerLabel } from './tables';
+import {
+  OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_BODY_COLOR_RESET, OAHU_ELEMENT_NAMES, OAHU_MULTIPLIER_CATEGORIES,
+  OAHU_RATE_CATEGORIES, OAHU_SKILL_CONDITION, OAHU_STATE_CATEGORIES, OAHU_STATE_CODE, oahuCategoryValues, oahuTriggerLabel,
+} from './tables';
 
 const PAGE = 300;
 
@@ -52,7 +59,7 @@ export function OahuActionPage({ session, arg }: { session: OahuSession; arg: st
                 <tr key={a.row} className={a.row === selected ? 'active' : ''} onClick={() => (location.hash = oahuActionHref(a.row))}>
                   <td className="num muted">{a.row}</td>
                   <td className={a.kind === 2 ? 'action-monster' : ''}>{a.name}{battle.actionChanged(a.row) && <EditedMark text=" ●" />}</td>
-                  <td className="muted nowrap">{a.kind === 2 ? OAHU_ACTION_KIND[2] : OAHU_ACTION_CATEGORY[a.category] ?? a.category}</td>
+                  <td className="muted nowrap">{a.kind === 2 ? OAHU_ACTION_KIND[2] : shortCategory(a.category)}</td>
                   <td className="nowrap">{a.element ? OAHU_ELEMENT_NAMES[a.element] ?? a.element : ''}</td>
                   <td className="num nowrap">{a.power[0] || a.power[1] ? `${a.power[0]}〜${a.power[1]}` : ''}</td>
                 </tr>
@@ -73,7 +80,13 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
   const rows = battle.actions;
   const p = { rows, row, onEdit };
   const users = useMemo(() => battle.actionUsers(row), [battle, row]);
-  const formTarget = battle.formTarget(row);
+  const category = rows.get(row, 'category');
+  const values = oahuCategoryValues(category);
+  const access = rowAccess(rows, row);
+  const multiplier = OAHU_MULTIPLIER_CATEGORIES.includes(category) || rows.get(row, 'multiplier') !== 10;
+  const stateFields = OAHU_STATE_CATEGORIES.includes(category) || category === 2 || rows.get(row, 'state') !== 0;
+  const rateFields = OAHU_RATE_CATEGORIES.includes(category);
+  const trigger = triggerField(rows.get(row, 'kind'), category, rows.get(row, 'trigger'));
   const shared = useMemo(() => OAHU_ACTION_TEXTS.filter(([k]) => battle.actionsSharing(row, k) > 1).map(([, label]) => label), [battle, row]);
   return (
     <>
@@ -85,21 +98,29 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
       <MessageFields rows={rows} row={row} fields={OAHU_ACTION_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
       {shared.length > 0 && <div className="muted small">{`${shared.join('・')}のメッセージはほかのアクションと共通です。書き換えると、同じメッセージを使うすべてのアクションで変わります。`}</div>}
       <div className="stats stat-edit oahu-stats">
-        <Stat label="威力・量" info="+0x18 と +0x1A。攻撃の威力、回復の量など。"><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>
+        <Stat label="系統" info={CATEGORY_INFO}><FieldSelect {...p} k="category" options={CATEGORY_OPTIONS} /></Stat>
         <Stat label="消費 AP" info="+0x2B。呪文・アンテナ・つかまえたモンスターのアクションにあります。モンスターのワザでは、条件 (monsterBrain.bin) が AP を見るときに、今の AP より多ければ使いません (FUN_0018F13C)。"><FieldNumber {...p} k="ap" /></Stat>
         <Stat label="属性" info={ELEMENT_INFO}><FieldSelect {...p} k="element" options={enumOptions(OAHU_ELEMENT_NAMES)} /></Stat>
         <Stat label="範囲" info="w0 bit21-24。番号の意味は RPG2 と同じと推定しています。"><FieldSelect {...p} k="range" options={enumOptions(ACTION_RANGE, true)} /></Stat>
         <Stat label="狙う側" info="w0 bit19-20。1 なら自分の側 (回復・能力アップ)。"><FieldSelect {...p} k="side" options={enumOptions(OAHU_ACTION_SIDE)} /></Stat>
-        <Stat label="状態" info="+0x2E。付ける (治す) 状態の番号で、装備の効果 0x14 の対象と同じ並び。"><FieldSelect {...p} k="state" options={[[0, 'なし'], ...enumOptions(OAHU_STATE_CODE, true)]} /></Stat>
-        <Stat label="発動の条件" info={TRIGGER_INFO}><FieldSelect {...p} k="trigger" options={TRIGGER_OPTIONS} /></Stat>
+        {values.kind === 'range' || values.kind === 'percent'
+          ? <>
+            <Stat label={values.labels![0]} info={values.info}><FieldNumber {...p} k="min" /></Stat>
+            <Stat label={values.labels![1]} info={values.info}><FieldNumber {...p} k="max" /></Stat>
+          </>
+          : values.kind === 'monster' && <Stat label="+0x18" info={values.info}><FieldNumber {...p} k="min" /></Stat>}
+        {multiplier && <Stat label={category === 4 ? '返す割合' : '打撃の倍率'} info={MULTIPLIER_INFO}><FieldNumber {...p} k="multiplier" /><span className="muted small">{`×${(rows.get(row, 'multiplier') / 10).toFixed(1)}`}</span></Stat>}
+        {stateFields && <Stat label="状態" info="+0x2E。付ける (治す) 状態の番号で、装備の効果 0x14 の対象と同じ並び。"><FieldSelect {...p} k="state" options={[[0, 'なし'], ...enumOptions(OAHU_STATE_CODE, true)]} /></Stat>}
+        {stateFields && <Stat label="状態の強さ" info={STRENGTH_INFO}><FieldNumber {...p} k="strength" /></Stat>}
+        {rateFields && <Stat label="成功率の段階" info={RATE_INFO}><FieldNumber {...p} k="rate" /></Stat>}
+        {rateFields && category !== 23 && <Stat label="持続ターン" info={TURNS_INFO}><FieldNumber {...p} k="turnsMin" />〜<FieldNumber {...p} k="turnsMax" /></Stat>}
+        {trigger && <Stat label={trigger.label} info={trigger.info}>{trigger.select ? <FieldSelect {...p} k="trigger" options={TRIGGER_OPTIONS} /> : <FieldNumber {...p} k="trigger" />}</Stat>}
       </div>
-      {formTarget > 0 && (
-        <div className="row">
-          {'形態を変える: 使ったモンスターを '}
-          <a href={oahuMonsterHref(formTarget)}>{`${battle.monsterName(formTarget)} (#${formTarget})`}</a>
-          {' の形態に作り直します (+0x1A の行)。'}
-        </div>
-      )}
+      <div className="row">
+        <FieldCheck f={access} k="breath" edited={onEdit} label="ブレス (ブレス封じで使えない)" />
+        <FieldCheck f={access} k="noFloat" edited={onEdit} label="浮遊の相手に当たらない" />
+      </div>
+      <ActionValues battle={battle} row={row} onEdit={onEdit} />
       {(users.monsters.length > 0 || users.items.length > 0) && (
         <div className="row">
           {'使うもの: '}
@@ -121,6 +142,126 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
     </>
   );
 }
+
+const SLOT_LABEL: Record<string, string> = { auto: '自動', body: 'ボディ', body2: 'ボディ 2' };
+
+/**
+ * +0x18 / +0x1A when the category makes them rows (OAHU_CATEGORY_VALUES): the new form or the called monster picked
+ * from the monsters, the group of a call, the range of actions of category 35; values a category does not read are
+ * pointed out.
+ */
+function ActionValues({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const [picking, setPicking] = useState<'monster' | 'min' | 'max' | null>(null);
+  const rows = battle.actions;
+  const category = rows.get(row, 'category');
+  const values = oahuCategoryValues(category);
+  const set = (k: string, v: number): void => {
+    rows.set(row, k, v);
+    onEdit();
+  };
+  const min = rows.get(row, 'min');
+  const max = rows.get(row, 'max');
+  const kind = rows.get(row, 'kind');
+  if (values.kind === 'none') {
+    if (!min && !max) return null;
+    return <div className="row muted small">{`+0x18 (${min})・+0x1A (${max}) は、この系統 (${OAHU_ACTION_CATEGORY[category] ?? category}) では使われません。`}</div>;
+  }
+  if (values.kind === 'range' || values.kind === 'percent') return null;
+  const monster = max & 0xff;
+  const monsterBoard = (label: string, info: string, clearable: boolean): ReactNode => {
+    const e = monster > 0 && monster < battle.monsters.rows ? { name: battle.monsterName(monster) || `#${monster}`, href: oahuMonsterHref(monster) } : null;
+    return (
+      <tr>
+        <td className="with-info">{label}<InfoTip text={info} /></td>
+        <td>
+          <div className="slot-row">
+            {e
+              ? <Board icon={oahuMonsterIcon(battle, monster)} name={e.name} id={monster} href={e.href} edited={max !== rows.original(row, 'max')} title="モンスターを選び直す" onClick={() => setPicking('monster')} />
+              : <EmptyBoard label="＋ モンスター" onClick={() => setPicking('monster')} />}
+            {clearable && <button className="small slot-remove" title="なしにする" disabled={!max} onClick={() => set('max', 0)}>×</button>}
+          </div>
+        </td>
+      </tr>
+    );
+  };
+  const actionBoard = (k: 'min' | 'max', label: string): ReactNode => {
+    const v = rows.get(row, k);
+    const e = v > 0 && v < rows.rows ? oahuActionEntry(battle, v) : null;
+    return (
+      <tr key={k}>
+        <td>{label}</td>
+        <td>
+          {e
+            ? <Board icon={e.icon} name={e.name} id={v} href={e.href} edited={v !== rows.original(row, k)} title="アクションを選び直す" onClick={() => setPicking(k)} />
+            : <EmptyBoard label="＋ アクション" onClick={() => setPicking(k)} />}
+        </td>
+      </tr>
+    );
+  };
+  const bodyUsers = values.kind === 'monster' && kind !== 3 ? battle.stateSlotUsers(row).filter((u) => SLOT_LABEL[u.via]) : [];
+  return (
+    <section>
+      <table className="enc-table ai-fields">
+        <tbody>
+          {values.kind === 'monster' && monsterBoard(values.labels![1], values.info!, false)}
+          {values.kind === 'summon' && monsterBoard('呼ぶモンスター', values.info!, true)}
+          {values.kind === 'summon' && (
+            <tr>
+              <td className="with-info">群れ<InfoTip text="+0x18。呼ぶモンスター (+0x1A) が 0 のとき、この monsterGroup の行から選びます。" /></td>
+              <td>
+                <FieldNumber rows={rows} row={row} k="min" onEdit={onEdit} min={0} max={battle.groups.rows - 1} />
+                {min > 0 && min < battle.groups.rows && <a className="small" href={oahuGroupHref(min)}>{` 群れ #${min} を開く`}</a>}
+                {monster > 0 && min > 0 && <span className="muted small"> (モンスターがあるので使われません)</span>}
+              </td>
+            </tr>
+          )}
+          {values.kind === 'actions' && [actionBoard('min', values.labels![0]), actionBoard('max', values.labels![1])]}
+        </tbody>
+      </table>
+      {values.kind === 'actions' && min > max && <div className="muted small">最初の行が最後の行より後ろにあります。</div>}
+      {bodyUsers.length > 0 && (
+        <div className="muted small">
+          {`${bodyUsers.map((u) => `${battle.monsterName(u.monster)} (${SLOT_LABEL[u.via]})`).join('・')} の枠に入っていますが、種類が 3 (自動・特殊) ではないので、この枠からは出ません。`}
+        </div>
+      )}
+      {picking === 'monster' && (
+        <OahuMonsterPicker battle={battle} current={monster} title={values.kind === 'summon' ? '呼ぶモンスターを選ぶ' : '新しい形態を選ぶ'} onClose={() => setPicking(null)}
+          onPick={(m) => { setPicking(null); set('max', m); }} />
+      )}
+      {(picking === 'min' || picking === 'max') && (
+        <OahuActionPicker battle={battle} title="アクションを選ぶ" current={rows.get(row, picking)} onClose={() => setPicking(null)}
+          onPick={(a) => { setPicking(null); set(picking, a); }} />
+      )}
+    </section>
+  );
+}
+
+/** The category in the list, without the part in brackets. */
+function shortCategory(category: number): string {
+  return OAHU_ACTION_CATEGORY[category]?.replace(/ \(.+\)$/, '') ?? String(category);
+}
+
+/**
+ * What +0x2A is for the kind and the category: the trigger of kind 3, else a number with its meaning (the stage of
+ * the antennas and spells); left out when nothing reads it.
+ */
+function triggerField(kind: number, category: number, value: number): { label: string; info: string; select: boolean } | null {
+  if (kind === 3) return { label: '発動の条件', info: TRIGGER_INFO, select: true };
+  if (category === 15) return { label: 'つかまえる倍率', info: '+0x2A。つかまえる率に掛ける倍率です (@0x1B73FC)。つかまえる 1・2ばい 2・3ばい 3。', select: false };
+  if (category === 31) return { label: '体の色', info: `+0x2A。変える色の番号です。${OAHU_BODY_COLOR_RESET} で元の色に戻します (@0x1B6268)。`, select: false };
+  if (kind !== 1 && !value) return null;
+  return { label: '段階 (+0x2A)', info: '+0x2A。アンテナ・呪文では 1〜3 の段階で、演出の行を選ぶのに使います (@0x219958)。種類 3 のときは「発動の条件」になります。', select: false };
+}
+
+const CATEGORY_INFO = [
+  '+0x2C。戦闘の結果の種類になり、FUN_001B5A80 (結果を作る) と FUN_001B51E8 (当てる) が系統で分岐します。39 以上は何もしません。',
+  '系統を変えると +0x18・+0x1A の意味が変わります (変身ではモンスターの行、仲間を呼ぶでは呼ぶモンスター、など)。',
+].join('\n');
+const CATEGORY_OPTIONS = enumOptions(OAHU_ACTION_CATEGORY, true);
+const MULTIPLIER_INFO = '+0x2D。1/10 単位で、10 ならそのまま。打撃のダメージに掛けます (@0x1B6930)。系統 4 (反撃) では受けたダメージを返す割合です (@0x1B770C)。';
+const STRENGTH_INFO = '+0x1C。どく 1 / もうどく 2、能力の増減は ±1〜3、おたから・ゴールドは倍率 % (200 など)、ステルスは段階。相手の今の強さ以下なら効きません (FUN_001B786C)。';
+const RATE_INFO = 'w1 bit9-11 (0〜7)。状態を付けるとき・にげるときの成功率の段階で、戦闘の設定の表から率を引き、たいせいの補正を掛けます (FUN_001B786C)。';
+const TURNS_INFO = 'w1 bit12-15 / bit16-19 (0〜15)。最小〜最大の乱数で続きます。両方 0 ならずっと続きます。突然死 (状態 22) で最大が 0 なら即死です。';
 
 const TRIGGER_INFO = [
   '+0x2A。種類 3 (自動・特殊) のアクションを、モンスターのボディ (効果 0x2F) や自動 (効果 0x2D) の枠からいつ出すか (FUN_001B7D18)。',
