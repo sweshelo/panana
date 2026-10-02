@@ -875,6 +875,8 @@ describe.skipIf(!hasCia)('monster and item models', () => {
     const seen = new Set<number>();
     const ignored = new Map<string, number>();
     const animated = new Map<string, number>();
+    const transforms = new Map<number, number>();
+    const values = new Set<number>();
     let models = 0, tracks = 0;
     for (const m of book.monsters) {
       const x = book.modelOf(m);
@@ -891,16 +893,21 @@ describe.skipIf(!hasCia)('monster and item models', () => {
         for (const t of a.material) {
           tracks++;
           names.add(t.material);
+          for (const c of t.channels)
+            if (typeof c === 'number') values.add(Math.round(c * 1000) / 1000);
+            else if (c) for (let i = 1; i < c.keys.length; i += 4) values.add(Math.round(c.keys[i]! * 1000) / 1000);
         }
       }
       for (const mat of model.materials) {
         if (!names.has(mat.name)) continue;
+        for (const u of mat.units) if (u.name) transforms.set(u.transform, (transforms.get(u.transform) ?? 0) + 1);
         const bf = mat.blendFunc;
         const k = `units ${mat.units.filter((u) => u.name).length} layer ${mat.layer} blend ${bf ? `${+bf.blend} ${bf.srcRgb}/${bf.dstRgb} ${bf.srcA}/${bf.dstA}` : '-'} test ${mat.alphaFunc?.enabled ? mat.alphaFunc.func : '-'}`;
         animated.set(k, (animated.get(k) ?? 0) + 1);
       }
     }
     console.log(`material animations: ${models} models, ${tracks} tracks; animated materials:`, [...animated].sort((a, b) => b[1] - a[1]));
+    console.log('texture transform types (0 Maya, 1 Softimage, 2 3ds Max):', Object.fromEntries(transforms), 'animated values:', [...values].sort((a, b) => a - b).join(' '));
     console.log('material animation elements not played:', [...ignored].sort((a, b) => b[1] - a[1]));
     expect(tracks).toBeGreaterThan(0);
   });
