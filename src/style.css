@@ -295,6 +295,8 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 .desc-table td { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .item-fields .stat > span:last-child { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .item-fields .stat .num-input { flex: 1; width: 0; min-width: 0; }
+.equip-effect { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 4px; }
+.equip-effect .num-input { width: 70px; }
 input.edited { border-color: var(--warn); }
 
 /* messages */
