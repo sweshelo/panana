@@ -37,6 +37,8 @@ export interface CgfxAnimation {
   frames: number;
   skeletal: SkeletalTrack[];
   material: MaterialTrack[];
+  /** Elements that are read but not played ("path (type)"), to see what a game animates beyond the above. */
+  ignored?: string[];
 }
 
 const rel = (b: Uint8Array, o: number): number => {
@@ -164,10 +166,13 @@ function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material'):
       });
     } else if (kind === 'material' && type === 3) {
       const m = MATERIAL_PATH.exec(name);
-      if (!m) continue;
+      if (!m) {
+        (anim.ignored ??= []).push(`${name} (${type})`);
+        continue;
+      }
       const [u, v] = readSlots(b, e, 2, 0, 2);
       anim.material.push({ material: m[1]!, coordinator: Number(m[2]), target: m[3] === 'Scale' ? 'scale' : 'translate', channels: [u ?? null, v ?? null] });
-    }
+    } else if (kind === 'material') (anim.ignored ??= []).push(`${name} (${type})`);
   }
   return anim;
 }

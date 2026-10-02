@@ -4,6 +4,9 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { bchOffset, bchSummary, parseBch } from '../src/bch/bch';
 import { bchModelSet } from '../src/bch/models';
+import * as THREE from 'three';
+import { tevMaterial } from '../src/cgfx/tev';
+import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
 import { openImage, type Dump } from '../src/rom/dump';
 import { viewsFor } from '../src/romfs/formats';
@@ -64,6 +67,24 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
     expect(motions.map((a) => [a.name, a.frames, a.loop])).toEqual([['001_E03_wait', 120, true], ['003_E03_walk', 60, true], ['004_E03_run', 44, true]]);
     expect(motions[0]!.skeletal.every((t) => m.bones.some((b) => b.name === t.bone))).toBe(true);
     expect(bchModelSet(body).models.get(0)?.name).toBe('enemy_03_01');
+  });
+
+  test("eyes with an alpha mask (enemy_04_01): the mask's alpha blends over the body without clearing the canvas alpha", async () => {
+    const { set, hash } = (await new OahuMonsterModels(dump).ref(3).load())!;
+    const m = set.models.get(hash)!;
+    const eye = m.materials.find((x) => x.name === 'M_enemy_04_01_eye')!;
+    // t0 = the eye (scrolled by 001_E04_eyes), t1 = the mask; the game blends src alpha / one minus src alpha and
+    // writes the alpha with one / zero.
+    expect(eye.units.map((u) => u.name)).toEqual(['enemy_04_eye', 'enemy_04_eye_alpha', null]);
+    expect(m.animations.find((a) => a.name === '001_E04_eyes')!.material.map((t) => [t.material, t.coordinator, t.target])).toEqual([['M_enemy_04_01_eye', 0, 'translate']]);
+    expect([eye.blendFunc!.srcA, eye.blendFunc!.dstA]).toEqual([1, 0]);
+    const mat = tevMaterial(eye, { maps: [null, null, null] }, []);
+    expect([mat.blendSrc, mat.blendDst]).toEqual([THREE.SrcAlphaFactor, THREE.OneMinusSrcAlphaFactor]);
+    expect([mat.blendSrcAlpha, mat.blendDstAlpha]).toEqual([THREE.OneFactor, THREE.OneMinusSrcAlphaFactor]);
+    // An opaque material covers the canvas whatever alpha its combiners leave.
+    const body = m.materials.find((x) => x.name === 'M_enemy_04_01_body')!;
+    const opaque = tevMaterial({ ...body, blendFunc: null }, { maps: [null, null, null] }, []);
+    expect(opaque.fragmentShader).toContain('gl_FragColor = vec4(prev.rgb, 1.0);');
   });
 
   test('type 8 (map parts): the BCH after the 0x180-byte header, with its textures', async () => {

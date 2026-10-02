@@ -181,6 +181,7 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
       name: textures[i] ?? null,
       ...mapper(i),
       source: src >= 0 && src <= 2 ? src : i,
+      transform: p ? u8(r.b, c + 1) : 0,
       scaleU: p ? r.f32(c + 4) : 1,
       scaleV: p ? r.f32(c + 8) : 1,
       rotate: p ? r.f32(c + 0x0c) : 0,
