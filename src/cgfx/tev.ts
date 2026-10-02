@@ -123,6 +123,8 @@ export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Pla
     uniforms[`uvm${i}`] = { value: new THREE.Matrix3().set(cos * su, -sin * sv, u.translateU, sin * su, cos * sv, u.translateV, 0, 0, 1) };
     sampling += `  vec4 t${i} = texture2D(map${i}, (uvm${i} * vec3(vUv${u.source}, 1.0)).xy);\n`;
   }
+  const bf = m.blendFunc;
+  const opaque = !bf || !bf.blend || (bf.srcRgb === 1 && bf.dstRgb === 0 && bf.eqRgb === 0);
   const at = m.alphaFunc;
   let alphaTest = '';
   if (at?.enabled) {
@@ -167,22 +169,23 @@ ${sampling}
   vec4 nextBuf = bufColor;
 ${tev.map((st, k) => stageCode(st, k, m)).join('\n')}
 ${alphaTest}
-  gl_FragColor = prev;
+  gl_FragColor = ${opaque ? 'vec4(prev.rgb, 1.0)' : 'prev'};
 }`;
 
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, clipping: true, side: THREE.DoubleSide });
   mat.clippingPlanes = clipping;
-  const bf = m.blendFunc;
-  const opaque = !bf || !bf.blend || (bf.srcRgb === 1 && bf.dstRgb === 0 && bf.eqRgb === 0);
+  // The 3DS screen has no alpha, but the canvas has (photos and viewers are transparent around the model): its
+  // alpha keeps the coverage, so an opaque material covers fully and a blended one adds its alpha over what is
+  // there. The material's own alpha factors (e.g. src one, dst zero) would punch holes where a mask is 0.
   if (opaque) mat.blending = THREE.NoBlending;
   else {
     mat.blending = THREE.CustomBlending;
     mat.blendEquation = BLEND_EQ[bf.eqRgb] ?? THREE.AddEquation;
-    mat.blendEquationAlpha = BLEND_EQ[bf.eqA] ?? THREE.AddEquation;
+    mat.blendEquationAlpha = THREE.AddEquation;
     mat.blendSrc = (BLEND_FACTOR[bf.srcRgb] ?? THREE.OneFactor) as THREE.BlendingSrcFactor;
     mat.blendDst = BLEND_FACTOR[bf.dstRgb] ?? THREE.ZeroFactor;
-    mat.blendSrcAlpha = (BLEND_FACTOR[bf.srcA] ?? THREE.OneFactor) as THREE.BlendingSrcFactor;
-    mat.blendDstAlpha = BLEND_FACTOR[bf.dstA] ?? THREE.ZeroFactor;
+    mat.blendSrcAlpha = THREE.OneFactor;
+    mat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
     mat.blendColor = new THREE.Color(bf.color[0]!, bf.color[1]!, bf.color[2]!);
     mat.blendAlpha = bf.color[3]!;
     mat.transparent = true;

@@ -866,6 +866,45 @@ describe.skipIf(!hasCia)('monster and item models', () => {
     expect(n).toBeGreaterThan(100);
   });
 
+  test('material animations of the monsters: what is played, what is not (eyes)', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await game.monsters();
+    const { buildComposite } = await import('../src/cgfx/tileset');
+    const { MONSTER_MODEL_ARCHIVE } = await import('../src/game/monsters');
+    const arc = parseArchive(await game.dump.readRomfs(MONSTER_MODEL_ARCHIVE));
+    const seen = new Set<number>();
+    const ignored = new Map<string, number>();
+    const animated = new Map<string, number>();
+    let models = 0, tracks = 0;
+    for (const m of book.monsters) {
+      const x = book.modelOf(m);
+      if (!x || seen.has(x.model)) continue;
+      seen.add(x.model);
+      const model = buildComposite(arc, x.model, x.texture).models.get(x.model)!;
+      models++;
+      const names = new Set<string>();
+      for (const a of model.animations) {
+        for (const p of a.ignored ?? []) {
+          const k = p.replace(/"[^"]*"/g, '""');
+          ignored.set(k, (ignored.get(k) ?? 0) + 1);
+        }
+        for (const t of a.material) {
+          tracks++;
+          names.add(t.material);
+        }
+      }
+      for (const mat of model.materials) {
+        if (!names.has(mat.name)) continue;
+        const bf = mat.blendFunc;
+        const k = `units ${mat.units.filter((u) => u.name).length} layer ${mat.layer} blend ${bf ? `${+bf.blend} ${bf.srcRgb}/${bf.dstRgb} ${bf.srcA}/${bf.dstA}` : '-'} test ${mat.alphaFunc?.enabled ? mat.alphaFunc.func : '-'}`;
+        animated.set(k, (animated.get(k) ?? 0) + 1);
+      }
+    }
+    console.log(`material animations: ${models} models, ${tracks} tracks; animated materials:`, [...animated].sort((a, b) => b[1] - a[1]));
+    console.log('material animation elements not played:', [...ignored].sort((a, b) => b[1] - a[1]));
+    expect(tracks).toBeGreaterThan(0);
+  });
+
   test('every item model is in an item model archive', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { ItemBook, itemModelArchive } = await import('../src/game/items');
