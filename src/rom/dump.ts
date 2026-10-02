@@ -7,9 +7,10 @@ import { blzDecompress } from './blz';
 import { parseCia } from './cia';
 import { readExefsFile } from './exefs';
 import { isCodeCompressed, parseNcch } from './ncch';
-import { parseRomfs } from './romfs';
+import { parseRomfs, type RomfsFile } from './romfs';
 import { BlobSource, type ByteSource } from './source';
-import { identifyTitle, KAHARA, titleByRootFiles, type TitleDef } from './titles';
+import { identifyTitle, KAHARA, titleById, titleByRootFiles, titleByUpdateId, type TitleDef } from './titles';
+import { hex8, u32 } from '../util/bytes';
 
 /** RPG2's title ID (the editor and the export are RPG2's for now). */
 export const TITLE_ID = KAHARA.titleId;
@@ -26,6 +27,8 @@ export interface Dump {
   /** The game of the dump. */
   title: TitleDef;
   titleVersion?: number;
+  /** The Update applied on top of the Base (withUpdate), when there is one. */
+  update?: UpdateInfo;
   code: Uint8Array;
   /** Root RomFS file names (e.g. "A90C8038"). */
   names(): string[];
@@ -34,38 +37,119 @@ export interface Dump {
   readRomfs(name: string): Promise<Uint8Array>;
 }
 
-export async function openImage(file: Blob, label: string): Promise<Dump> {
+/** A decrypted CIA or NCCH: its title ID, version, code.bin (decompressed) and RomFS. */
+interface Image {
+  titleId: string;
+  titleVersion?: number;
+  code: Uint8Array;
+  files: Map<string, RomfsFile>;
+  romfs: ByteSource;
+}
+
+async function readImage(file: Blob): Promise<Image> {
   const src = new BlobSource(file);
   const head = await src.read(0, Math.min(0x200, src.size));
   let ncchSrc: ByteSource = src;
   let titleVersion: number | undefined;
-  let title: TitleDef | undefined;
+  let titleId: string | undefined;
   if (ascii(head, 0x100, 4) !== 'NCCH') {
     const cia = await parseCia(src);
-    title = identifyTitle(cia.titleId);
+    titleId = cia.titleId;
     ncchSrc = cia.content0;
     titleVersion = cia.titleVersion;
   }
   const ncch = await parseNcch(ncchSrc);
-  if (title && ncch.programId !== title.titleId) throw new Error(`プログラム ID が違います (${ncch.programId})`);
-  title ??= identifyTitle(ncch.programId);
+  if (titleId && ncch.programId !== titleId) throw new Error(`プログラム ID が違います (${ncch.programId})`);
   let code = await readExefsFile(ncch.exefs, '.code');
   if (isCodeCompressed(ncch.exheader)) code = blzDecompress(code);
-  const files = await parseRomfs(ncch.romfs);
-  const romfs = ncch.romfs;
+  return { titleId: titleId ?? ncch.programId, titleVersion, code, files: await parseRomfs(ncch.romfs), romfs: ncch.romfs };
+}
+
+const readFile = (img: Image, path: string): Promise<Uint8Array> => {
+  const f = img.files.get('/' + path);
+  if (!f) throw new Error(`RomFS に ${path} がありません`);
+  return img.romfs.read(f.offset, f.size);
+};
+
+export async function openImage(file: Blob, label: string): Promise<Dump> {
+  const img = await readImage(file);
+  const title = identifyTitle(img.titleId);
+  const { files } = img;
   return {
     label,
     title,
-    titleVersion,
-    code,
+    titleVersion: img.titleVersion,
+    code: img.code,
     names: () => [...files.keys()].filter((p) => p.lastIndexOf('/') === 0).map((p) => p.slice(1)),
     files: () => [...files.values()].map((f) => ({ path: f.path.slice(1), size: f.size })),
-    readRomfs: async (name) => {
-      const f = files.get('/' + name);
-      if (!f) throw new Error(`RomFS に ${name} がありません`);
-      return romfs.read(f.offset, f.size);
-    },
+    readRomfs: (name) => readFile(img, name),
   };
+}
+
+/** What the Update of a dump brings (naauao oahu/analysis.md §3). */
+export interface UpdateInfo {
+  label: string;
+  titleVersion?: number;
+  /** Root files the game reads from the Update (patch:/patchList.bin), e.g. "21350000". */
+  patched: string[];
+}
+
+/** An opened Update: its code.bin and the RomFS files it replaces. */
+export interface UpdateImage extends UpdateInfo {
+  title: TitleDef;
+  code: Uint8Array;
+  readRomfs(name: string): Promise<Uint8Array>;
+}
+
+/**
+ * patch:/patchList.bin: u32 count, then the hashes of the root files to read from the Update instead of the Base
+ * (FUN_002cb430 / FUN_0011ad1c of RPG3's Update).
+ */
+export function parsePatchList(b: Uint8Array): string[] {
+  const n = u32(b, 0);
+  if (4 + n * 4 > b.length) throw new Error('patchList.bin が読めません');
+  return Array.from({ length: n }, (_, i) => hex8(u32(b, 4 + i * 4)));
+}
+
+/** A decrypted Update CIA (0004000E…) of a game Panana reads. */
+export async function openUpdate(file: Blob, label: string): Promise<UpdateImage> {
+  const img = await readImage(file);
+  const title = titleByUpdateId(img.titleId);
+  if (!title) {
+    const base = titleById(img.titleId);
+    throw new Error(base ? `これは『${base.name}』の Base です。Update (${base.updateTitleId ?? 'なし'}) の CIA を選んでください。` : `タイトル ID が ${img.titleId} です。Update の CIA ではありません。`);
+  }
+  const patched = img.files.has('/patchList.bin') ? parsePatchList(await readFile(img, 'patchList.bin')) : [];
+  for (const n of patched) if (!img.files.has('/' + n)) throw new Error(`Update の RomFS に patchList.bin の ${n} がありません`);
+  return { label, title, titleVersion: img.titleVersion, patched, code: img.code, readRomfs: (name) => readFile(img, name) };
+}
+
+/** The dump as the game sees it with its Update installed: the Update's code.bin, and the patched files from it. */
+export function withUpdate(base: Dump, update: UpdateImage): Dump {
+  if (update.title !== base.title) throw new Error(`Update は『${update.title.name}』のものです (ダンプは『${base.title.name}』)`);
+  const patched = new Set(update.patched);
+  const files = base.files?.bind(base);
+  return {
+    label: `${base.label} + ${update.label}`,
+    title: base.title,
+    titleVersion: base.titleVersion,
+    update: { label: update.label, titleVersion: update.titleVersion, patched: update.patched },
+    code: update.code,
+    names: () => [...new Set([...base.names(), ...patched])],
+    files: files && (() => files()),
+    readRomfs: (name) => (patched.has(name.toUpperCase()) ? update.readRomfs(name.toUpperCase()) : base.readRomfs(name)),
+  };
+}
+
+/** Opens the dump among `files`: a Base, or a Base and its Update (in any order). */
+export async function openImages(files: Blob[], label: (f: Blob) => string): Promise<Dump> {
+  if (files.length === 1) return openImage(files[0]!, label(files[0]!));
+  if (files.length !== 2) throw new Error('CIA は 1 つ (Base)、または 2 つ (Base と Update) 選んでください');
+  const ids = await Promise.all(files.map(async (f) => (await readImage(f)).titleId));
+  const u = ids.findIndex((id) => titleByUpdateId(id));
+  if (u < 0) throw new Error('2 つ選ぶときは、Base と Update の CIA にしてください');
+  const b = 1 - u;
+  return withUpdate(await openImage(files[b]!, label(files[b]!)), await openUpdate(files[u]!, label(files[u]!)));
 }
 
 /** Folder input: any file named code.bin (or .code) plus files whose name is an 8-digit hex hash. */
@@ -117,6 +201,7 @@ export function overlayDump(dump: Dump, mod: BaseMod): Dump {
     label: `${dump.label} + ${mod.label}`,
     title: dump.title,
     titleVersion: dump.titleVersion,
+    update: dump.update,
     code: mod.ips ? applyIps(dump.code, mod.ips) : dump.code,
     names: () => [...new Set([...dump.names(), ...mod.romfs.keys()])],
     files: files && (() => {

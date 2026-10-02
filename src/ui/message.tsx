@@ -3,8 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { hexId } from '../editor/message';
 import type { MessageStore } from '../game/gmsg';
-import type { Master } from '../game/master';
-import { FIXED_NAMES, MESSAGE_KINDS, parseBody, tagKind, tagLabel, textToUnits } from '../game/msgtext';
+import { MESSAGE_KINDS, parseBody, textToUnits } from '../game/msgtext';
 
 /**
  * The message as a reader sees it: ruby as <ruby>, page breaks as ▼ and a rule, references and fixed names expanded
@@ -12,7 +11,8 @@ import { FIXED_NAMES, MESSAGE_KINDS, parseBody, tagKind, tagLabel, textToUnits }
  * coloured dot as a grey ●, colours dropped.
  */
 export function MessagePreview({ texts, units, depth = 0 }: { texts: MessageStore; units: Uint16Array; depth?: number }): ReactNode {
-  const tokens = parseBody(units).tokens;
+  const syn = texts.syntax;
+  const tokens = parseBody(units, syn).tokens;
   const nested = (key: number, id: number, title: string): ReactNode => {
     const u = depth < 2 ? texts.units(id) : undefined;
     return (
@@ -26,17 +26,18 @@ export function MessagePreview({ texts, units, depth = 0 }: { texts: MessageStor
       {tokens.map((t, i): ReactNode => {
         const prev = tokens[i - 1];
         if (t.t === 'text') return t.s;
-        if (t.t === 'br') return prev?.t === 'tag' && prev.x === 0x10 ? null : <br key={i} />; // the page break eats it
+        if (t.t === 'br') return prev?.t === 'tag' && prev.x === syn.page ? null : <br key={i} />; // the page break eats it
         if (t.t === 'ruby') return <ruby key={i}>{t.base}<rp>(</rp><rt>{t.reading}</rt><rp>)</rp></ruby>;
         if (t.t === 'ref') return nested(i, t.id, `メッセージ ${hexId(t.id)} の差し込み`);
         if (t.t === 'raw') return <span key={i} className="msg-ctl" title="制御コード (意味は未解析)">{hexId(t.c)}</span>;
-        const k = tagKind(t.x);
-        const title = `タグ ${hexId(t.x)}: ${tagLabel(t.x)}`;
+        const k = syn.kind(t.x);
+        const label = syn.label(t.x);
+        const title = `タグ ${hexId(t.x)}: ${label}`;
         if (k === 'page') return [<span key={`${i}p`} className="msg-page" title={title}>▼</span>, <hr key={`${i}r`} className="msg-page-rule" />];
-        if (k === 'fixed') return nested(i, FIXED_NAMES[t.x]!, `${title} (メッセージ ${hexId(FIXED_NAMES[t.x]!)})`);
+        if (k === 'fixed') return nested(i, syn.fixedNames[t.x]!, `${title} (メッセージ ${hexId(syn.fixedNames[t.x]!)})`);
         if (k === 'deco') return <span key={i} className="msg-dot" title={`${title} (色はアイテムで決まる)`}>●</span>;
-        if (k === 'name' || k === 'number') return <span key={i} className="msg-ph" title={title}>{tagLabel(t.x)}</span>;
-        if (k === 'voice' || k === 'emotion') return depth ? null : <span key={i} className="msg-kind" title={`${title} (画面には出ない)`}>{tagLabel(t.x)}</span>;
+        if (k === 'name' || k === 'number') return <span key={i} className="msg-ph" title={title}>{label}</span>;
+        if (k === 'voice' || k === 'emotion') return depth ? null : <span key={i} className="msg-kind" title={`${title} (画面には出ない)`}>{label}</span>;
         if (k === 'other') return <span key={i} className="msg-ctl" title={title}>{hexId(t.x)}</span>;
         return null; // colour: not drawn
       })}
@@ -48,8 +49,7 @@ export function MessagePreview({ texts, units, depth = 0 }: { texts: MessageStor
  * Text box for a message. Edits are applied when the box loses focus, through `apply` (so the caller can
  * record an undo point and save); a bad {XXXX} code is reported and not applied.
  */
-export function MessageEditor({ master, id, apply }: { master: Master; id: number; apply: (f: () => void) => void }): ReactNode {
-  const texts = master.texts;
+export function MessageEditor({ texts, id, apply }: { texts: MessageStore; id: number; apply: (f: () => void) => void }): ReactNode {
   const file = texts.file(id);
   const t = texts.text(id);
   if (!file || !t) return <div className="msg-edit"><div className="muted">{id ? `${hexId(id)}: 見つからない ID` : '(なし)'}</div></div>;
@@ -80,20 +80,19 @@ export function MessageEditor({ master, id, apply }: { master: Master; id: numbe
         </select>
       </label>
       {/* keyed by the stored text: an edit elsewhere (undo, revert) starts the box over */}
-      <MessageText key={`${id}\n${t.text}`} master={master} id={id} apply={apply} />
+      <MessageText key={`${id}\n${t.text}`} texts={texts} id={id} apply={apply} />
       {texts.isEdited(id) && <button className="small" onClick={() => apply(() => texts.revert(id))}>元の文に戻す</button>}
     </div>
   );
 }
 
-function MessageText({ master, id, apply }: { master: Master; id: number; apply: (f: () => void) => void }): ReactNode {
-  const texts = master.texts;
+function MessageText({ texts, id, apply }: { texts: MessageStore; id: number; apply: (f: () => void) => void }): ReactNode {
   const stored = texts.text(id)!;
   const [draft, setDraft] = useState(stored.text);
   let units: Uint16Array = texts.units(id)!;
   let error = '';
   try {
-    if (draft !== stored.text) units = textToUnits({ ...stored, text: draft });
+    if (draft !== stored.text) units = textToUnits({ ...stored, text: draft }, texts.syntax);
   } catch (e) {
     error = (e as Error).message;
   }

@@ -236,7 +236,7 @@ function MessageDetail({ session, selected, users, byId, apply }: {
     return (
       <>
         <div className="book-head"><h2>{`メッセージ ${hexId(id)}`}</h2><span className="muted">{id}</span></div>
-        <MessageEditor master={master} id={id} apply={apply} />
+        <MessageEditor texts={master.texts} id={id} apply={apply} />
         {sharedWith(id)}
         <div className="muted small">{MESSAGE_HELP}</div>
       </>
@@ -272,7 +272,7 @@ function MessageDetail({ session, selected, users, byId, apply }: {
         return (
           <div key={i} className="msg-slot">
             <div className="msg-slot-head">{label}{dup && <span className="muted"> (上と同じ ID)</span>}</div>
-            {!dup && <MessageEditor master={master} id={s.id} apply={apply} />}
+            {!dup && <MessageEditor texts={master.texts} id={s.id} apply={apply} />}
             {!dup && sharedWith(s.id, u)}
           </div>
         );
@@ -304,7 +304,7 @@ function StoryDetail({ session, row, byId, apply }: {
         const users = byId.get(id) ?? [];
         return (
           <div key={id} className="msg-slot">
-            <MessageEditor master={master} id={id} apply={apply} />
+            <MessageEditor texts={master.texts} id={id} apply={apply} />
             {users.length > 0 && (
               <div className="muted small">
                 {'マップのイベント行でも使われています: '}

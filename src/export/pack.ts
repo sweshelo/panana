@@ -117,8 +117,9 @@ const addedMap = (m: MapInfo): AddedMap => ({
   extra: m.extra,
 });
 
-export function buildModZip(pkg: Map<string, Uint8Array>): Uint8Array {
+/** The LayeredFS zip of a package: its paths under the title's folder (RPG2's unless another title ID is given). */
+export function buildModZip(pkg: Map<string, Uint8Array>, titleId = TITLE_ID): Uint8Array {
   const entries: Record<string, [Uint8Array, { level: 0; mtime: Date }]> = {};
-  for (const [path, data] of pkg) entries[`${TITLE_ID}/${path}`] = [data, { level: 0, mtime: new Date(1980, 0, 1) }];
+  for (const [path, data] of pkg) entries[`${titleId}/${path}`] = [data, { level: 0, mtime: new Date(1980, 0, 1) }];
   return zipSync(entries);
 }

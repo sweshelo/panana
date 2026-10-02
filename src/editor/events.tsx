@@ -104,7 +104,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
             <Field label={`メッセージ (+0x${off.toString(16).toUpperCase()})`}>
               <Num value={id} min={0} onChange={(v) => apply(() => w32(ev.table.row(row), off, v))} />
             </Field>
-            <MessageEditor master={game.master} id={id} apply={apply} />
+            <MessageEditor texts={game.master.texts} id={id} apply={apply} />
           </div>
         );
       })}

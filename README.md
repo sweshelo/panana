@@ -2,7 +2,8 @@
 Pananaとは、ハワイ語で羅針盤の意。
 
 電波人間のRPG2 (v1.1.0, TID 00040000000A7900) のデータを、ブラウザの中で読んで調べ・編集する静的サイトです。
-電波人間のRPG3 (内部名 oahu、TID 00040000000EF000) にも対応を進めています (#59)。いまは Base の CIA を開いて RomFS ビューアで中身を見られます (Update は不要)。
+電波人間のRPG3 (内部名 oahu、TID 00040000000EF000) にも対応を進めています (#59)。Base の CIA だけで、メッセージ (`#/messages/<ID>`) と RomFS の中身を見て、メッセージを編集できます。
+MOD の書き出し (LayeredFS の zip、`00040000000EF000/romfs/…`) には Update の CIA も要ります。Base と一緒に選ぶか、開いたあとで「Update を追加…」で足すと、`patchList.bin` にあるアーカイブを Update から読み、編集をそこに重ねて書き出します (Update の修正を消さないため)。
 上のバーでページを切り替えます (URL は `#/map/<マップ名>`、`#/monsters/<行>`、`#/items/<ID>`、`#/shops/<店ID>`、`#/groups/<行>`、`#/actions/<行>`、`#/messages/<ダンジョン>.<行>`、`#/messages/fn:<関数>`、`#/messages/0x<ID>`、`#/sounds/<行>` または `#/romfs/<パス>[:<エントリのハッシュ>]`)。
 
 - **マップ編集**: ダンジョンのマップを 2D / 3D を見ながら編集し、LayeredFS 用の MOD (`00040000000A7900/romfs/A90C8038` など) として書き出す。
