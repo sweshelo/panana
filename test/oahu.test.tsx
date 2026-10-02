@@ -8,7 +8,12 @@ import { GsTable } from '../src/archive/gstable';
 import { equalUnits, Gmsg, toUnits } from '../src/game/gmsg';
 import { OAHU_SYNTAX, textToUnits, unitsToText } from '../src/game/msgtext';
 import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
+import { OahuActionPage } from '../src/oahu/ActionPage';
+import { OahuGroupPage } from '../src/oahu/GroupPage';
+import { OahuMonsterPage } from '../src/oahu/MonsterPage';
+import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
+import { OAHU_ELEMENT_NAMES } from '../src/oahu/tables';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
 import { GmsgView, GsTableView, viewsFor } from '../src/romfs/formats';
@@ -91,7 +96,7 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
     expect(choker.kind).toBe(3);
     expect(choker.effects.map((e) => items.effectText(e))).toEqual(['能力アップ: さいだいＨＰ +15']);
     const mantle = items.items.find((it) => it.name === 'ひのマント')!;
-    expect(mantle.effects.map((e) => items.effectText(e))).toEqual(['たいせい (属性): 火 +2', '浮遊 1']);
+    expect(mantle.effects.map((e) => items.effectText(e))).toEqual(['たいせい (属性): 火 +2', '浮遊']);
     const claw = items.items.find((it) => it.name === 'するどいつめ')!;
     expect(items.effectText(claw.effects[0]!)).toBe('アクション (打撃): #233 どくこうげき');
     expect(items.items.find((it) => it.name === 'ふつうのさお')!.limit).toBe(1);
@@ -208,5 +213,97 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
     expect(unitsToText(new Gmsg(unpackEntry(out, cmd).body).units(80000)!, OAHU_SYNTAX).text).toBe('ＭＯＤ');
     const zip = unzipSync(u.modZip());
     expect(Object.keys(zip).sort()).toEqual(['00040000000EF000/romfs/3B630000', '00040000000EF000/romfs/58190000', '00040000000EF000/romfs/619D0000', '00040000000EF000/romfs/838B0000']);
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actions (Base + Update)', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('the fields of a monster: stats, drops, skills, resistances', () => {
+    const { battle } = s;
+    const m = battle.monsters;
+    expect([m.rows, battle.groups.rows, battle.actions.rows, battle.conditions.rows]).toEqual([201, 190, 1126, 125]);
+    expect(battle.monsterName(1)).toBe('はなもぐら');
+    const g = (k: string): number => m.get(1, k);
+    expect([g('level'), g('hpMin'), g('hpMax'), g('attackMax'), g('defenseMax'), g('speedMax'), g('exp'), g('gold')]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
+    expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([['タンポポのたね(色1)', 4], ['キズぐすり', 7], ['ちていじんプリント', 10]]);
+    expect(battle.skills(1)[0]).toEqual({ slot: 1, action: 995, condition: 1 });
+    expect(battle.actionName(995)).toBe('たいあたり');
+    expect(m.get(150, 'exp')).toBe(65000);
+    expect(m.get(180, 'exp')).toBe(100000);
+    expect(battle.monsterList().length).toBeGreaterThan(150);
+    expect(battle.groupsOf(1)).toContain(5);
+  });
+
+  test('actions, states and groups', () => {
+    const { battle } = s;
+    expect(battle.actions.get(233, 'state')).toBe(1);
+    expect(battle.conditionName(1)).toBe('どく');
+    expect(battle.conditionName(42)).toBe('状態 42');
+    expect(battle.conditionName(64)).toBe('毒たいせい');
+    expect(battle.actions.get(969, 'element')).toBe(2);
+    expect(battle.actions.get(984, 'range')).toBe(3);
+    // Two elements: 10〜25 need the 5th bit (アイスメテオ 16 = 氷・土, ダークシャイニング 25 = 光・闇).
+    expect([190, 202, 220].map((r) => OAHU_ELEMENT_NAMES[battle.actions.get(r, 'element')])).toEqual(['火・氷', '氷・土', '光・闇']);
+    // A monster's row (kind 2) names the monster, points back at it, and its skills follow it.
+    expect(battle.actions.get(566, 'kind')).toBe(2);
+    expect(battle.actions.get(566, 'subject')).toBe(79);
+    expect(battle.monsters.get(79, 'own')).toBe(566);
+    expect(battle.actionUsers(566).monsters).toEqual([79]);
+    expect(battle.usedSkills(79).map((x) => x.action)).toEqual([567, 568]);
+    expect(battle.actions.get(267, 'kind')).toBe(4);
+    expect(battle.items.itemActions().every((a) => battle.actions.get(a.row, 'kind') === 4)).toBe(true);
+    expect(battle.conditions.get(36, 'combine')).toBe(4);
+    expect(battle.actionUsers(995).monsters).toContain(1);
+    expect(battle.group(1).fixed.map((r) => battle.monsterName(r))).toEqual(['たからばこぞう']);
+    expect(battle.group(5).leads.map((x) => battle.monsterName(x.monster))).toEqual(['はなもぐら', 'てっぽうオトシゴ']);
+  });
+
+  test('the books render; an edit goes into the master', () => {
+    const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
+    for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい']) expect(html).toContain(t);
+    expect(renderToString(<OahuGroupPage session={s} arg="5" />)).toContain('てっぽうオトシゴ');
+    expect(renderToString(<OahuActionPage session={s} arg="233" />)).toContain('どくこうげき');
+    s.battle.monsters.set(1, 'gold', 777);
+    s.battle.groups.set(5, 'lead1Weight', 9);
+    const out = parseArchive(s.modFiles().get('21350000')!);
+    const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
+    expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
+    expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
+  });
+
+  test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {
+    const { battle } = s;
+    expect([1, 43, 55].map((r) => battle.monsters.get(r, 'design'))).toEqual([136, 138, 137]);
+    const models = new OahuMonsterModels(s.dump);
+    const d = await models.design(136);
+    expect(d?.model).toBe(0xd6f7bc00);
+    const loaded = await battle.monsterModel(1)!.load();
+    expect(loaded?.set.models.get(0)?.name).toBe('enemy_66_01');
+    expect(loaded?.set.textures.has('enemy_66_01_body')).toBe(true);
+  });
+
+  test('skills and group slots are written packed; the fallback slot follows its skill', () => {
+    const { battle } = s;
+    const row = battle.monsterList().find((m) => battle.usedSkills(m.id).length >= 3 && battle.monsters.get(m.id, 'fallback') === 1)!.id;
+    const before = battle.usedSkills(row);
+    const now = before.map((x) => ({ action: x.action, condition: x.condition, from: x.slot }));
+    // remove the first skill: the fallback (slot 2) is now slot 1
+    battle.setSkills(row, now.slice(1));
+    expect(battle.usedSkills(row).map((x) => x.action)).toEqual(before.slice(1).map((x) => x.action));
+    expect(battle.monsters.get(row, `skill${before.length}`)).toBe(0);
+    expect(battle.monsters.get(row, `cond${before.length}`)).toBe(1);
+    expect(battle.monsters.get(row, 'fallback')).toBe(0);
+    battle.monsters.revert(row);
+    battle.setGroupSlots(5, [{ monster: 1, weight: 3, count: 5 }], []);
+    expect(battle.group(5).leads).toEqual([{ monster: 1, weight: 3, count: 5 }]);
+    expect(battle.group(5).mates).toEqual([]);
+    battle.setFixed(5, [2, 1]);
+    expect(battle.group(5).fixed).toEqual([2, 1]);
+    battle.groups.revert(5);
+    expect(battle.groups.changed(5)).toBe(false);
   });
 });

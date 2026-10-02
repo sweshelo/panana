@@ -1,12 +1,12 @@
 // Encounter groups (monsterGroup): every row with its candidates and the maps that use it (section 6);
 // the candidates can be edited, and a group can be copied into a new row.
-import { useMemo, useState, type ReactNode } from 'react';
-import { countLabel, GROUP_SLOTS, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import { useMemo, type ReactNode } from 'react';
+import { countLabel, GROUP_SLOTS, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { hex8 } from '../util/bytes';
 import type { Session } from '../session';
-import { NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
-import { GroupList, groupHref, groupUses, MonsterPhoto, type GroupUse } from '../ui/GroupDetail';
+import { useEdits, useSticky, type PageProps } from '../ui/book';
+import { GroupList, groupHref, GroupSlotEditor, groupUses, rpg2Monster, type GroupUse } from '../ui/GroupDetail';
 import { MonsterPicker } from '../ui/MonsterPicker';
 
 export { groupHref, groupUses, type GroupUse };
@@ -78,62 +78,15 @@ function GroupDetailEditor({ session, book, g, uses, onEdit }: { session: Sessio
   );
 }
 
-/** Table of one side's candidates: monster, weight (with its share), count; add and remove. */
+/** One side's candidates of an RPG2 group. */
 function SlotEditor({ session, book, g, side, title, onEdit }: {
   session: Session; book: MonsterBook; g: MonsterGroup; side: 'leads' | 'mates'; title: string; onEdit: () => void;
 }): ReactNode {
-  /** The monster picker, and what to do with the pick. */
-  const [picking, setPicking] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
-  const slots = g[side];
-  const total = slots.reduce((a, s) => a + s.weight, 0);
-  const set = (next: GroupSlot[]): void => {
-    book.setGroupSlots(g.row, side === 'leads' ? next : g.leads, side === 'mates' ? next : g.mates);
-    onEdit();
-  };
-  const change = (k: number, patch: Partial<GroupSlot>): void => set(slots.map((s, i) => (i === k ? { ...s, ...patch } : s)));
-  const counts = Array.from({ length: 8 }, (_, c) => c);
+  const counts = Array.from({ length: 8 }, (_, c): [number, string] => [c, countLabel(c)]);
   return (
-    <section>
-      <h3>{title}</h3>
-      <table className="enc-table group-slots">
-        <tbody>
-          <tr><th>モンスター</th><th>重み</th><th>割合</th><th>数</th><th></th></tr>
-          {slots.map((s, k) => (
-            <tr key={k}>
-              <td>
-                <div className="row">
-                  <button className="monster-pick" title="モンスターを選び直す" onClick={() => setPicking({ current: s.monster, onPick: (row) => change(k, { monster: row }) })}>
-                    <MonsterPhoto game={session.game} book={book} row={s.monster} />
-                    <span>{book.monster(s.monster)?.name ?? `#${s.monster}`}</span>
-                  </button>
-                  <a href={`#/monsters/${s.monster}`} title="モンスター図鑑で開く">↗</a>
-                </div>
-              </td>
-              <td>
-                {/* weight 0 would drop the slot (the game skips it), so removing is done with × */}
-                <NumberInput value={s.weight} min={1} max={255} onCommit={(v) => change(k, { weight: v })} />
-              </td>
-              <td className="num">{`${Math.round((s.weight / total) * 100)}%`}</td>
-              <td>
-                <select value={s.count} onChange={(e) => change(k, { count: Number(e.target.value) })}>
-                  {[...counts, ...(s.count >= 8 ? [s.count] : [])].map((c) => <option key={c} value={c}>{countLabel(c)}</option>)}
-                </select>
-              </td>
-              <td><button title="外す" onClick={() => set(slots.filter((_, i) => i !== k))}>×</button></td>
-            </tr>
-          ))}
-          {!slots.length && <tr><td className="muted" colSpan={5}>なし</td></tr>}
-        </tbody>
-      </table>
-      <button
-        disabled={slots.length >= GROUP_SLOTS}
-        title={slots.length >= GROUP_SLOTS ? `候補は ${GROUP_SLOTS} 個まで` : ''}
-        onClick={() => setPicking({ current: 0, onPick: (row) => set([...slots, { monster: row, weight: 1, count: 0 }]) })}
-      >＋ 追加</button>
-      {picking && (
-        <MonsterPicker session={session} book={book} current={picking.current} onClose={() => setPicking(null)}
-          onPick={(row) => { setPicking(null); picking.onPick(row); }} />
-      )}
-    </section>
+    <GroupSlotEditor title={title} slots={g[side]} max={GROUP_SLOTS} monster={rpg2Monster(session.game, book)}
+      counts={(cur) => (cur >= 8 ? [...counts, [cur, countLabel(cur)]] : counts)}
+      set={(next) => { book.setGroupSlots(g.row, side === 'leads' ? next : g.leads, side === 'mates' ? next : g.mates); onEdit(); }}
+      picker={(current, pick, close) => <MonsterPicker session={session} book={book} current={current} onClose={close} onPick={pick} />} />
   );
 }

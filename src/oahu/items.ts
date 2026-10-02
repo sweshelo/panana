@@ -60,7 +60,7 @@ export function oahuCategoryLabel(b: number): string {
   return OAHU_ITEM_CATEGORY[b] ?? `${OAHU_ITEM_KIND[b & 0xf] ?? `分類 ${b & 0xf}`} (0x${b.toString(16).toUpperCase().padStart(2, '0')})`;
 }
 
-/** "能力アップ: こうげき +20", "経験値 120%", "アクション (打撃): #233 どくこうげき". */
+/** "能力アップ: こうげき +20", "経験値増加 120%", "アクション (打撃): #233 どくこうげき". */
 export function oahuEffectText(e: OahuEquipEffect, actionName: (row: number) => string = (r) => `#${r}`): string {
   const k = OAHU_EQUIP_EFFECTS[e.kind];
   if (!k) return `効果 0x${e.kind.toString(16).toUpperCase().padStart(2, '0')}${e.sub ? ` (${e.sub})` : ''}: ${e.value}`;
@@ -72,6 +72,7 @@ export function oahuEffectText(e: OahuEquipEffect, actionName: (row: number) => 
     case 'element': return `${head}: ${OAHU_EFFECT_SUBS.element[e.value] ?? e.value}`;
     case 'action': return `${head}: ${actionName(e.value)}`;
     case 'number': return `${head} ${e.value}`;
+    case 'flag': return e.value === 1 ? head : `${head} (${e.value})`;
   }
 }
 
@@ -180,6 +181,11 @@ export class OahuItems {
     const m = this.messageId(id, key);
     if (!m) return;
     this.texts.setText(m, text);
+    this.messageChanged(m);
+  }
+
+  /** Rebuild the items showing message `m` (after its text changed). */
+  messageChanged(m: number): void {
     for (const it of this.items) if (OAHU_ITEM_MESSAGE_KEYS.some((k) => this.get(it.id, k) === m)) this.refresh(it.id);
   }
 
@@ -280,11 +286,11 @@ export class OahuItems {
     return name && !name.includes('使') ? `#${row} ${name}` : `#${row}`;
   }
 
-  /** Rows of actionData that are item actions (kind 2), for the effect picker. */
+  /** Rows of actionData that are item actions (kind 4), for the effect picker. */
   itemActions(): { row: number; label: string }[] {
     const kind = field(OAHU_ACTION_DATA, 'kind');
     const out: { row: number; label: string }[] = [];
-    for (let row = 1; row < this.actions.rows; row++) if (readField(this.actions.row(row), kind) === 2) out.push({ row, label: this.actionName(row) });
+    for (let row = 1; row < this.actions.rows; row++) if (readField(this.actions.row(row), kind) === 4) out.push({ row, label: this.actionName(row) });
     return out;
   }
 

@@ -3,8 +3,9 @@
 // The photo and the 3D view are the item's BCH model (itemModels.ts); a badge of the category when it has none.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fieldRange, field, type FieldContext } from '../game/tabledef';
-import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { MessageEditor } from '../ui/message';
 import { ModelView } from '../ui/ModelView';
 import { useAsync } from '../ui/useAsync';
 import { RowFields } from '../ui/RowFields';
@@ -12,18 +13,18 @@ import { hex8 } from '../util/bytes';
 import { textureUrl, type OahuItemModels } from './itemModels';
 import { OAHU_ITEM_FILE, type OahuItem, type OahuItemNumber, type OahuItems } from './items';
 import type { OahuSession } from './session';
-import { OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
+import { OAHU_EFFECT_KINDS, OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
 
 export const oahuItemHref = (id: number): string => `#/items/${id}`;
 
 /** The first letter of the main category (items without a model). */
-export function ItemBadge({ item }: { item: OahuItem }): ReactNode {
+export function ItemBadge({ item, className = 'photo' }: { item: OahuItem; className?: string }): ReactNode {
   const label = OAHU_ITEM_KIND[item.kind] ?? '?';
-  return <span className={`photo item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
+  return <span className={`${className} item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
 }
 
 /** The photo of an item's model (or its texture), made once it scrolls into view; the badge without one. */
-export function ItemPhoto({ models, item }: { models: OahuItemModels; item: OahuItem }): ReactNode {
+export function ItemPhoto({ models, item, className = 'photo' }: { models: OahuItemModels; item: OahuItem; className?: string }): ReactNode {
   const box = useRef<HTMLSpanElement>(null);
   const [url, setUrl] = useState<string | null | undefined>(undefined);
   useEffect(() => {
@@ -40,9 +41,9 @@ export function ItemPhoto({ models, item }: { models: OahuItemModels; item: Oahu
       io.disconnect();
     };
   }, [models, item.model]);
-  if (url === null) return <ItemBadge item={item} />;
+  if (url === null) return <ItemBadge item={item} className={className} />;
   return (
-    <span ref={box} className="photo" title={item.category}>
+    <span ref={box} className={className} title={item.category}>
       {url && <img src={url} alt="" />}
     </span>
   );
@@ -192,10 +193,10 @@ function CopyButtons({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
   );
 }
 
-/** The name and the description messages: text boxes in the editors' text form ({ruby:…} and tags). */
+/** The name and the description messages: their previews, edited in the editors' text form ({ruby:…} and tags) on a click. */
 function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onEdit: () => void }): ReactNode {
   const texts = items.texts;
-  const box = (key: string, label: string, offset: number, multi: boolean): ReactNode => {
+  const box = (key: string, label: string, offset: number): ReactNode => {
     const id = items.messageId(it.id, key);
     if (!id || !texts.units(id)) return null;
     return (
@@ -203,7 +204,7 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
         <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
         <td className="book-desc">
           {texts.editable(id) || texts.isAdded(id)
-            ? <TextBox value={texts.text(id)?.text ?? ''} multi={multi} edited={texts.isEdited(id)} onCommit={(v) => { items.setText(it.id, key, v); onEdit(); }} />
+            ? <MessageEditor texts={texts} id={id} compact apply={(f) => { f(); items.messageChanged(id); onEdit(); }} />
             : <span>{items.message(id)}</span>}
         </td>
       </tr>
@@ -212,8 +213,8 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
   return (
     <table className="enc-table desc-table">
       <tbody>
-        {box('name', '名前', 0x14, false)}
-        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset, true))}
+        {box('name', '名前', 0x14)}
+        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset))}
       </tbody>
     </table>
   );
@@ -255,7 +256,7 @@ function FieldEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
             {!!it.action && !actions.some((a) => a.row === it.action) && <option value={it.action}>{items.actionName(it.action)}</option>}
             {actions.map((a) => <option key={a.row} value={a.row}>{a.label}</option>)}
           </select>
-          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。アイテムのアクション (種類 2) から選べます。たね・つりざおなどは別の意味の値です。'} />
+          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。道具のアクション (種類 4) から選べます。たね・つりざおなどは別の意味の値です。'} />
         </div>
       )}
       {it.kind === 3 && <EquipEffects items={items} it={it} set={set} mark={mark} />}
@@ -266,7 +267,8 @@ function FieldEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
 const EQUIP_INFO = [
   '装備している間に付く効果です。1 つの装備に 2 つまで。',
   '効果 1 = 種類 +0x3B・対象 +0x3C・値 +0x34 (s16)、効果 2 = 種類 +0x3D・対象 +0x3E・値 +0x36 (s16)。',
-  '種類の名前は、その種類を持つ装備と RPG2 の同じ装備の効果から付けたもので、確かめていません。名前のない種類は番号で表示します。',
+  '種類は code.bin の対応表 (FUN_001A6348) で conditionData の状態に当たり、名前はその状態の名前です (名前が「なし」の状態は、持っている装備から付けた名前か「状態 番号」)。',
+  '値の読み方 (足し算・%・付くかどうか) は、その状態の足し合わせ方 (conditionData +0x36) から。',
 ].join('\n');
 
 function EquipEffects({ items, it, set, mark }: {
@@ -275,7 +277,7 @@ function EquipEffects({ items, it, set, mark }: {
   set: (key: OahuItemNumber, v: number) => void;
   mark: (key: string) => { className: string; title: string };
 }): ReactNode {
-  const kinds = Array.from({ length: 0x34 }, (_, k) => k);
+  const kinds = Array.from({ length: OAHU_EFFECT_KINDS + 1 }, (_, k) => k);
   return (
     <div className="model-line equip-effects">
       <div className="with-info">{'装備の効果'}<InfoTip text={EQUIP_INFO} /></div>
@@ -295,7 +297,7 @@ function EquipEffects({ items, it, set, mark }: {
             <select {...mark(kindKey)} value={kind} onChange={(e) => set(kindKey, Number(e.target.value))}>
               <option value={0}>なし</option>
               {kinds.slice(1).map((k) => <option key={k} value={k}>{`0x${k.toString(16).toUpperCase().padStart(2, '0')} ${OAHU_EQUIP_EFFECTS[k]?.label ?? ''}`}</option>)}
-              {kind >= 0x34 && <option value={kind}>{`0x${kind.toString(16).toUpperCase()}`}</option>}
+              {kind > OAHU_EFFECT_KINDS && <option value={kind}>{`0x${kind.toString(16).toUpperCase()}`}</option>}
             </select>
             {!!kind && (subs
               ? <select {...mark(subKey)} value={sub} onChange={(e) => set(subKey, Number(e.target.value))}>

@@ -16,7 +16,7 @@ import { GroupDetail } from '../ui/GroupDetail';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
-import { Radar } from '../ui/Radar';
+import { ResistCharts } from '../ui/MonsterSlots';
 import { ActionBook } from '../game/actions';
 import { BossEditor, DropEditor, NameEditor, SkillEditor, StatEditor } from './monsteredit';
 
@@ -215,18 +215,12 @@ function resistCharts(n: number): [string, number[]][] {
   ];
 }
 
-const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`;
-
 /**
  * Resistances by chart, each with its effect: elements, the ailments of the elements, and the other ailments with the
- * stat downs and instant death. The handles of the charts can be dragged; the tables (folded) pick any value (-9..+10).
+ * stat downs and instant death.
  */
 function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
   const bp = book.battle;
-  const set = (k: number, v: number): void => {
-    book.setResist(m.row, k, v);
-    edited();
-  };
   const effect = (k: number, v: number): string => {
     if (k < ELEMENTS) {
       const mul = bp.multiplier(v);
@@ -234,56 +228,23 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
     }
     return `係数 ${bp.coefficient(v)}%`;
   };
-  const values = Array.from({ length: RESIST_MAX - RESIST_MIN + 1 }, (_, i) => i + RESIST_MIN);
   const charts = resistCharts(m.resist.length);
   return (
-    <div className="resists">
-      <div className="radars">
-        {charts.map(([label, ks]) => (
-          <figure key={label} className="radar-box">
-            <Radar
-              axes={ks.map((k) => ({ label: m.resist[k]!.name, value: m.resist[k]!.value, original: book.originalResist(m.row, k) }))}
-              min={RESIST_MIN}
-              max={RESIST_MAX}
-              rings={[-9, -5, 0, 5, 10]}
-              format={(v, j) => `${fmt(v)} ${effect(ks[j]!, v)}`}
-              onChange={(j, v) => set(ks[j]!, v)}
-            />
-            <figcaption>{`${label} (ドラッグで変更。点線 = 元の値)`}</figcaption>
-          </figure>
-        ))}
-      </div>
-      <details className="fold">
-        <summary>数値で編集</summary>
-        {charts.map(([label, ks]) => (
-          <table key={label} className="res-table">
-            <tbody>
-              <tr><th>{label}</th><th>値</th><th>{ks[0]! < ELEMENTS ? 'ダメージ' : '係数'}</th></tr>
-              {ks.map((k) => {
-                const r = m.resist[k]!;
-                const orig = book.originalResist(m.row, k);
-                const cls = r.value > 0 ? 'plus' : r.value < 0 ? 'minus' : '';
-                return (
-                  <tr key={k}>
-                    <td>{r.name}</td>
-                    <td>
-                      <select
-                        className={r.value !== orig ? 'edited' : ''}
-                        title={r.value !== orig ? `元の値 ${fmt(orig)}` : `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})`}
-                        value={r.value}
-                        onChange={(e) => set(k, Number(e.target.value))}
-                      >
-                        {[...new Set([...values, r.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
-                      </select>
-                    </td>
-                    <td className={`num ${cls}`}>{k < ELEMENTS ? effect(k, r.value) : `${bp.coefficient(r.value)}%`}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ))}
-      </details>
-    </div>
+    <ResistCharts
+      charts={charts.map(([label, ks]) => ({
+        label,
+        effectHead: ks[0]! < ELEMENTS ? 'ダメージ' : '係数',
+        axes: ks.map((k) => {
+          const r = m.resist[k]!;
+          return { name: r.name, value: r.value, original: book.originalResist(m.row, k), title: `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})` };
+        }),
+      }))}
+      min={RESIST_MIN}
+      max={RESIST_MAX}
+      rings={[-9, -5, 0, 5, 10]}
+      effect={(c, j, v) => effect(charts[c]![1][j]!, v)}
+      cell={(c, j, v) => { const k = charts[c]![1][j]!; return k < ELEMENTS ? effect(k, v) : `${bp.coefficient(v)}%`; }}
+      onChange={(c, j, v) => { book.setResist(m.row, charts[c]![1][j]!, v); edited(); }}
+    />
   );
 }

@@ -1,14 +1,16 @@
-// One opened 電波人間のRPG3 dump: its messages, the master's tables and the items, their edits saved to IndexedDB and
+// One opened 電波人間のRPG3 dump: its messages, the master's tables, the items and the battle tables, their edits saved to IndexedDB and
 // restored when the dump is opened again (with or without the Update), and the MOD export (LayeredFS zip; it needs
 // the Update, #59).
 import { buildModZip } from '../export/pack';
 import { withUpdate, type Dump, type UpdateImage } from '../rom/dump';
 import { OAHU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
+import { OahuBattle } from './battle';
 import { OahuItemModels } from './itemModels';
 import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
+import { OahuMonsterModels } from './monsterModels';
 
 const EDITS_KEY = 'oahu/edits/v1';
 
@@ -22,6 +24,7 @@ export class OahuSession {
   private saveTimer = 0;
 
   readonly items: OahuItems;
+  readonly battle: OahuBattle;
   readonly itemModels: OahuItemModels;
 
   private constructor(
@@ -31,6 +34,7 @@ export class OahuSession {
   ) {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
+    this.battle = new OahuBattle(master, this.items, new OahuMonsterModels(dump), this.itemModels);
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {

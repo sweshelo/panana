@@ -1,9 +1,9 @@
-// Picking an item from their photos (the shop list and the chest contents of the map editor share it).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// Picking an RPG2 item from their photos (the shop list, the chest contents of the map editor, a monster's drops).
+import type { ReactNode } from 'react';
 import type { Game } from '../game/game';
 import { ITEM_CATEGORY, type Item, type ItemBook } from '../game/items';
 import { itemRef } from '../pages/items';
-import { Dialog } from './Dialog';
+import { GridPicker } from './GridPicker';
 import { Photo } from './Photo';
 
 /**
@@ -19,43 +19,14 @@ export function ItemPicker({ game, items, title = 'アイテムを選ぶ', curre
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
-  const [query, setQuery] = useState('');
-  const [cat, setCat] = useState('');
-  const grid = useRef<HTMLDivElement>(null);
-  useEffect(() => grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }), []);
-  const q = query.trim();
-  const c = cat ? Number(cat) : 0;
-  const shown = items.items.filter((it) => (!c || (it.categoryByte & 0xf) === c) && (!q || it.name.includes(q) || String(it.id) === q));
-  return (
-    <Dialog title={title} onClose={onClose}>
-      <div className="row">
-        <input type="search" placeholder="名前か ID で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select value={cat} onChange={(e) => setCat(e.target.value)}>
-          <option value="">すべての分類</option>
-          {Object.entries(ITEM_CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-      </div>
-      <div className="picker-list">
-        <div className="monster-grid" ref={grid}>
-          {shown.map((it) => {
-            const why = unavailable?.(it) ?? null;
-            return (
-              <button
-                key={it.id}
-                className={`monster-cell${why ? ' sold' : ''}${it.id === current ? ' current' : ''}`}
-                disabled={!!why}
-                title={why ?? `#${it.id} ${it.category}${it.price ? `・${it.price} G` : '・買値 0'}`}
-                onClick={() => onPick(it.id)}
-              >
-                <Photo model={itemRef(game, it)} className="photo photo-lg" />
-                <span>{it.name}</span>
-                <span className="muted small">{it.price ? `${it.price} G` : '0 G'}</span>
-              </button>
-            );
-          })}
-          {!shown.length && <div className="muted">見つかりません</div>}
-        </div>
-      </div>
-    </Dialog>
-  );
+  const entries = items.items.map((it) => ({
+    id: it.id,
+    name: it.name,
+    icon: <Photo model={itemRef(game, it)} className="photo photo-lg" />,
+    sub: it.price ? `${it.price} G` : '0 G',
+    title: `#${it.id} ${it.category}${it.price ? `・${it.price} G` : '・買値 0'}`,
+    unavailable: unavailable?.(it) ?? null,
+    category: it.categoryByte & 0xf,
+  }));
+  return <GridPicker title={title} entries={entries} current={current} categories={ITEM_CATEGORY} placeholder="名前か ID で絞り込み" onPick={onPick} onClose={onClose} />;
 }

@@ -201,9 +201,12 @@ describe('table fields', () => {
 
   test('RPG3 equipment effects as text', () => {
     expect(oahuEffectText({ slot: 1, kind: 0x1b, sub: 2, value: 20 })).toBe('能力アップ: こうげき +20');
-    expect(oahuEffectText({ slot: 1, kind: 0x31, sub: 0, value: 120 })).toBe('経験値 120%');
+    expect(oahuEffectText({ slot: 1, kind: 0x31, sub: 0, value: 120 })).toBe('経験値増加 120%');
     expect(oahuEffectText({ slot: 1, kind: 0x0a, sub: 0, value: 6 })).toBe('打撃の属性: 水');
-    expect(oahuEffectText({ slot: 2, kind: 0x07, sub: 0, value: 1 })).toBe('効果 0x07: 1');
+    expect(oahuEffectText({ slot: 2, kind: 0x07, sub: 0, value: 1 })).toBe('こうげき倍増 +1');
+    expect(oahuEffectText({ slot: 1, kind: 0x13, sub: 1, value: 1 })).toBe('属性ターゲット: 火');
+    expect(oahuEffectText({ slot: 1, kind: 0x01, sub: 0, value: 1 })).toBe('必中');
+    expect(oahuEffectText({ slot: 1, kind: 0x40, sub: 0, value: 1 })).toBe('効果 0x40: 1');
   });
 });
 
