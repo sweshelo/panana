@@ -1,7 +1,7 @@
 // RPG3's monster book (#/monsters/<row>), built from the same parts as RPG2's (ui/FieldEdit, ui/MonsterSlots,
-// ui/GroupDetail): the name and description, stats, drops, skills and their AI, the actions of its states,
-// resistances and the groups it is in. The model and motions wait for BCH (#64).
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+// ui/GroupDetail): the model, the name and description, stats, drops, skills and their AI, the actions of its states,
+// resistances and the groups it is in.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FieldContext } from '../game/tabledef';
 import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { FieldChoice, StatFields, type FieldAccess } from '../ui/FieldEdit';
@@ -9,11 +9,12 @@ import { SlotTiles } from '../ui/GroupDetail';
 import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
 import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
+import { ModelView } from '../ui/ModelView';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
 import {
-  oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref,
+  oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
 } from './pickers';
 import type { OahuSession } from './session';
 import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS } from './tables';
@@ -70,10 +71,11 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={monsters.length} />
           <table className="book-table">
-            <thead><tr><th>#</th><th>名前</th><th>Lv</th><th>HP</th><th>群れ</th></tr></thead>
+            <thead><tr><th></th><th>#</th><th>名前</th><th>Lv</th><th>HP</th><th>群れ</th></tr></thead>
             <tbody>
               {rows.map((m) => (
                 <tr key={m.id} className={m.id === selected ? 'active' : ''} onClick={() => (location.hash = oahuMonsterHref(m.id))}>
+                  <td className="photo-cell">{oahuMonsterIcon(battle, m.id)}</td>
                   <td className="num muted">{m.id}</td>
                   <td>{m.name}{battle.monsterChanged(m.id) && <EditedMark text=" ●" />}</td>
                   <td className="num">{m.level}</td>
@@ -103,23 +105,28 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
     <>
       <div className="book-head">
         <h2 className="with-info">{battle.monsterName(row)}<InfoTip text="変更はマスター (21350000) の monsterParameter.bin とメッセージとして書き出されます。" /></h2>
-        <span className="muted">{`#${row}  ミュージアム ${rows.get(row, 'museum')}`}</span>
+        <span className="muted">{`#${row}  図鑑 ${rows.get(row, 'book')}  ミュージアム ${rows.get(row, 'museum')}  デザイン ${rows.get(row, 'design')}`}</span>
         {battle.monsterChanged(row) && <button onClick={() => { battle.revertMonster(row); onEdit(); }}>このモンスターの変更を元に戻す</button>}
       </div>
-      <MessageFields rows={rows} row={row} fields={OAHU_MONSTER_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
-      <StatFields f={f} edited={onEdit} stats={[
-        { label: 'Lv', k: 'level' },
-        { label: 'HP', range: ['hpMin', 'hpMax'], info: STAT_INFO },
-        { label: 'AP', range: ['apMin', 'apMax'] },
-        { label: 'こうげき', range: ['attackMin', 'attackMax'] },
-        { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
-        { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
-        { label: '回避', k: 'evasion' },
-        { label: '経験値', k: 'exp' },
-        { label: 'ゴールド', k: 'gold' },
-        { label: 'こうげき倍増', k: 'attacks', info: '1 ターンにこうげきする回数を増やす状態 (効果 9、conditionData 52) の値。' },
-        { label: 'ゴースト', k: 'ghost', info: 'ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。' },
-      ]} />
+      <div className="book-top">
+        <div>
+          <MessageFields rows={rows} row={row} fields={OAHU_MONSTER_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
+          <StatFields f={f} edited={onEdit} stats={[
+            { label: 'Lv', k: 'level' },
+            { label: 'HP', range: ['hpMin', 'hpMax'], info: STAT_INFO },
+            { label: 'AP', range: ['apMin', 'apMax'] },
+            { label: 'こうげき', range: ['attackMin', 'attackMax'] },
+            { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
+            { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
+            { label: '回避', k: 'evasion' },
+            { label: '経験値', k: 'exp' },
+            { label: 'ゴールド', k: 'gold' },
+            { label: 'こうげき倍増', k: 'attacks', info: '1 ターンにこうげきする回数を増やす状態 (効果 9、conditionData 52) の値。' },
+            { label: 'ゴースト', k: 'ghost', info: 'ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。' },
+          ]} />
+        </div>
+        <MonsterModel battle={battle} row={row} />
+      </div>
       <div className="book-cols monster-cols">
         <DropEditor battle={battle} row={row} f={f} onEdit={onEdit} />
         <SkillEditor battle={battle} row={row} f={f} onEdit={onEdit} />
@@ -295,4 +302,11 @@ function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number
     <ResistCharts charts={charts} min={-9} max={10} rings={[-9, -5, 0, 5, 10]} effect={() => ''}
       onChange={(c, j, v) => { rows.set(row, RESIST_CHARTS[c]![1][j]!, v); onEdit(); }} />
   );
+}
+
+/** The 3D view of the monster's model, made once the page is in the browser (the viewer needs the DOM). */
+function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
+  const [shown, setShown] = useState(false);
+  useEffect(() => setShown(true), []);
+  return shown ? <ModelView model={battle.monsterModel(row)} name={battle.monsterName(row)} /> : <div className="model-placeholder" />;
 }

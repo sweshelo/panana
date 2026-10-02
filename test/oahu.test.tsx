@@ -11,6 +11,7 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
+import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -261,6 +262,17 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
     expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
+  });
+
+  test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {
+    const { battle } = s;
+    expect([1, 43, 55].map((r) => battle.monsters.get(r, 'design'))).toEqual([136, 138, 137]);
+    const models = new OahuMonsterModels(s.dump);
+    const d = await models.design(136);
+    expect(d?.model).toBe(0xd6f7bc00);
+    const loaded = await battle.monsterModel(1)!.load();
+    expect(loaded?.set.models.get(0)?.name).toBe('enemy_66_01');
+    expect(loaded?.set.textures.has('enemy_66_01_body')).toBe(true);
   });
 
   test('skills and group slots are written packed; the fallback slot follows its skill', () => {

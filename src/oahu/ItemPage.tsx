@@ -17,13 +17,13 @@ import { OAHU_EFFECT_KINDS, OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA
 export const oahuItemHref = (id: number): string => `#/items/${id}`;
 
 /** The first letter of the main category (items without a model). */
-export function ItemBadge({ item }: { item: OahuItem }): ReactNode {
+export function ItemBadge({ item, className = 'photo' }: { item: OahuItem; className?: string }): ReactNode {
   const label = OAHU_ITEM_KIND[item.kind] ?? '?';
-  return <span className={`photo item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
+  return <span className={`${className} item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
 }
 
 /** The photo of an item's model (or its texture), made once it scrolls into view; the badge without one. */
-export function ItemPhoto({ models, item }: { models: OahuItemModels; item: OahuItem }): ReactNode {
+export function ItemPhoto({ models, item, className = 'photo' }: { models: OahuItemModels; item: OahuItem; className?: string }): ReactNode {
   const box = useRef<HTMLSpanElement>(null);
   const [url, setUrl] = useState<string | null | undefined>(undefined);
   useEffect(() => {
@@ -40,9 +40,9 @@ export function ItemPhoto({ models, item }: { models: OahuItemModels; item: Oahu
       io.disconnect();
     };
   }, [models, item.model]);
-  if (url === null) return <ItemBadge item={item} />;
+  if (url === null) return <ItemBadge item={item} className={className} />;
   return (
-    <span ref={box} className="photo" title={item.category}>
+    <span ref={box} className={className} title={item.category}>
       {url && <img src={url} alt="" />}
     </span>
   );

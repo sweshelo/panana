@@ -7,6 +7,9 @@ import { decodeGroupSlots, encodeGroupSlots, type GroupSlot } from '../game/mons
 import type { TableDef } from '../game/tabledef';
 import type { OahuItems } from './items';
 import type { OahuMaster } from './master';
+import type { OahuItemModels } from './itemModels';
+import type { OahuMonsterModels } from './monsterModels';
+import type { ModelRef } from '../pages/modelview';
 import { OahuRows } from './rows';
 import { OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_GROUP, OAHU_MONSTER_PARAMETER, OAHU_SKILLS, OAHU_STATE_NAMES } from './tables';
 
@@ -64,7 +67,15 @@ export class OahuBattle {
   constructor(
     private readonly master: OahuMaster,
     readonly items: OahuItems,
+    private readonly models?: OahuMonsterModels,
+    readonly itemModels?: OahuItemModels,
   ) {}
+
+  /** A monster's model (by its design row); null without the dump's models. */
+  monsterModel(row: number): ModelRef | null {
+    if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
+    return this.models.ref(this.monsters.get(row, 'design'));
+  }
 
   /** The tables are taken from the master when first used. */
   private rows(def: TableDef): OahuRows {

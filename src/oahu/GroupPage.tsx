@@ -35,7 +35,7 @@ export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: str
           groups={groups}
           monsters={groupMonsters}
           name={(r) => battle.monsterName(r)}
-          icon={(r, i) => <Fragment key={i}>{oahuMonsterIcon(battle.monsterName(r))}</Fragment>}
+          icon={(r, i) => <Fragment key={i}>{oahuMonsterIcon(battle, r)}</Fragment>}
           changed={(g) => battle.groups.changed(g.row)}
           filters={[
             ['used', 'モンスターのいる群れ', used],
@@ -111,7 +111,7 @@ function FixedEditor({ battle, g, onEdit }: { battle: OahuBattle; g: OahuGroup; 
           const name = battle.monsterName(m);
           return (
             <div key={i} className="slot-row">
-              <Board icon={oahuMonsterIcon(name)} name={name} sub={`Lv${battle.monsters.get(m, 'level')}`} id={m} href={oahuMonsterHref(m)}
+              <Board icon={oahuMonsterIcon(battle, m)} name={name} sub={`Lv${battle.monsters.get(m, 'level')}`} id={m} href={oahuMonsterHref(m)}
                 edited={battle.groups.original(g.row, `fixed${i + 1}`) !== m} title="モンスターを選び直す" onClick={() => setPicking(i)} />
               <button className="small slot-remove" title="外す" onClick={() => set(g.fixed.filter((_, j) => j !== i))}>×</button>
             </div>

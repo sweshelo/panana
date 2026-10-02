@@ -10,6 +10,7 @@ import { OahuItemModels } from './itemModels';
 import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
+import { OahuMonsterModels } from './monsterModels';
 
 const EDITS_KEY = 'oahu/edits/v1';
 
@@ -32,8 +33,8 @@ export class OahuSession {
     readonly master: OahuMaster,
   ) {
     this.items = new OahuItems(master, messages.texts);
-    this.battle = new OahuBattle(master, this.items);
     this.itemModels = new OahuItemModels(dump);
+    this.battle = new OahuBattle(master, this.items, new OahuMonsterModels(dump), this.itemModels);
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {
