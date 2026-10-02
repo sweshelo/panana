@@ -1,5 +1,5 @@
 // The pages of an opened dump: top bar, hash routing (#/page/arg), the map editor and the React pages.
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MapEditor } from '../editor/mapeditor';
 import { buildShops, loadShopTable } from '../game/shops';
 import { ActionPage } from '../pages/actions';
@@ -11,12 +11,15 @@ import { MonsterPage } from '../pages/monsters';
 import { ShopPage } from '../pages/shops';
 import { SoundPage } from '../pages/sounds';
 import { WorldPage } from '../pages/world';
+import { kaharaRomfsProfile } from '../romfs/kahara';
+import { RomfsPage } from '../romfs/RomfsPage';
 import type { Session } from '../session';
 import type { PageProps } from './book';
 import { ExportDialog } from './ExportDialog';
 import { Dom } from './mount';
 import { useAsync } from './useAsync';
 import { InfoTooltip } from './InfoTip';
+import { useHashRoute } from './route';
 
 export const PAGES = [
   ['map', 'マップ編集'],
@@ -29,25 +32,18 @@ export const PAGES = [
   ['events', 'イベント'],
   ['messages', 'メッセージ'],
   ['sounds', 'BGM・効果音'],
+  ['romfs', 'RomFS'],
 ] as const;
 type Page = (typeof PAGES)[number][0];
 
 const TITLES: Record<Page, string> = {
-  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ', sounds: 'BGM・効果音',
+  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS',
 };
 
-const subscribeHash = (f: () => void): (() => void) => {
-  window.addEventListener('hashchange', f);
-  return () => window.removeEventListener('hashchange', f);
-};
+const PAGE_IDS = PAGES.map(([id]) => id);
 
-/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID] or #/sounds[/row]. */
-function useRoute(): { page: Page; arg: string | undefined; hash: string } {
-  const hash = useSyncExternalStore(subscribeHash, () => location.hash);
-  const [p, arg] = hash.replace(/^#\/?/, '').split('/');
-  const page = PAGES.some(([id]) => id === p) ? (p as Page) : 'map';
-  return { page, arg, hash };
-}
+/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID], #/sounds[/row] or #/romfs[/path[:entry]]. */
+const useRoute = (): { page: Page; arg: string | undefined; hash: string } => useHashRoute(PAGE_IDS, 'map');
 
 function Loading(): ReactNode {
   return <div className="start"><p>読み込み中…</p></div>;
@@ -96,6 +92,8 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
       return <MessagePage {...props} />;
     case 'world':
       return <WorldPage {...props} />;
+    case 'romfs':
+      return <RomfsPage dump={props.session.game.dump} profile={kaharaRomfsProfile} arg={props.arg} />;
     case 'sounds':
       return props.session.sounds ? <SoundPage {...props} sounds={props.session.sounds} /> : <Failed message="音の表 (soundData) を読めませんでした。" />;
   }
