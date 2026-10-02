@@ -98,7 +98,7 @@ export const OAHU_ELEMENT_NAMES: Record<number, string> = {
 
 /** Kind of an action row (actionData w0 bit0-2), from the rows that have it and the code that tests it. */
 export const OAHU_ACTION_KIND: Record<number, string> = {
-  0: 'ワザ', 1: 'アンテナ', 2: 'モンスター', 3: '自動・特殊', 4: '道具', 5: '状態で動けない', 6: '種類 6',
+  0: 'ワザ', 1: 'アンテナ', 2: 'つかまえたモンスター', 3: '自動・特殊', 4: '道具', 5: '状態で動けない', 6: '種類 6',
 };
 
 /**
@@ -126,8 +126,8 @@ export const OAHU_ACTION_DATA: TableDef = {
   rowSize: 0x30,
   fields: [
     f('bits', 0x00, 'u32', 'ビット', { unsure: true, hex: true }),
-    f('kind', 0x00, 'u32', '種類', { bits: [0, 3], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_KIND }, note: 'コードは w0 & 7 で比べる (3 = 自動 @0x1C04BC、4 = 道具 @0x1BB5E8)。2 はモンスターの行で、名前がモンスターの名前、すぐあとにそのモンスターのワザが並ぶ' }),
-    f('subject', 0x00, 'u32', '番号', { bits: [3, 11], alias: true, note: '種類 2 (モンスター) ではモンスターの行 (同じモンスターの 2 つ目の行は 1 つ目の番号)。種類 4 (道具) ではアイテムの番号に近い値で、@0x1BA50C が 333・334 と比べる' }),
+    f('kind', 0x00, 'u32', '種類', { bits: [0, 3], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_KIND }, note: 'コードは w0 & 7 で比べる (3 = 自動 @0x1C04BC、4 = 道具 @0x1BB5E8)。2 はつかまえたモンスターを戦闘で使ったときのアクションで、名前がモンスターの名前。monsterParameter +0x3C が指し、すぐあとにそのモンスターのワザが並ぶ' }),
+    f('subject', 0x00, 'u32', '番号', { bits: [3, 11], alias: true, note: '種類 2 (つかまえたモンスター) ではモンスターの行 (同じモンスターの 2 つ目の行は 1 つ目の番号)。種類 4 (道具) ではアイテムの番号に近い値で、@0x1BA50C が 333・334 と比べる' }),
     f('side', 0x00, 'u32', '狙う側', { bits: [19, 2], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_SIDE }, note: '1 = 自分の側 (FUN_0018F13C)' }),
     f('range', 0x00, 'u32', '範囲', { bits: [21, 4], alias: true, ref: { kind: 'enum', values: ACTION_RANGE }, note: '8 と比べられる (FUN_0018F13C)。番号の意味は RPG2 の w0 bit9-12 と同じと推定 (2 単体・6 全体・1 自分)' }),
     f('element', 0x00, 'u32', '属性', { bits: [27, 5], alias: true, ref: { kind: 'enum', values: OAHU_ELEMENT_NAMES }, note: 'w0 >> 27 (@0x1BD028)。1〜8 は 1 つの属性、10〜25 は 2 つの属性 (フレイムアイス 10 = 火・氷 など)。2 つのときはダメージを半分ずつそれぞれの属性のたいせいで計算して足す (FUN_001B82B0)' }),
@@ -266,7 +266,7 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     f('ai', 0x38, 'u32', 'ワザの選び方', { bits: [12, 3], ref: { kind: 'enum', values: OAHU_AI_MODE }, note: 'FUN_001BE560 の 5 通り。RPG2 の AI の型と同じと推定' }),
     f('fallback', 0x38, 'u32', '使えるワザがないとき', { bits: [15, 3], note: 'ワザの枠の番号 (0〜5)' }),
     f('u38b18', 0x38, 'u32', '+0x38 bit18-21', { bits: [18, 4], unsure: true, note: '戦闘のユニットどうしで比べる値 (@0x1C0170)。15 は特別' }),
-    f('own', 0x3c, 'u32', 'モンスターのアクション', { bits: [0, 11], ref: actionRef, note: 'actionData の種類 2 (モンスター) の行。名前はモンスターの名前で、すぐあとにワザが並ぶ。電波人間の +0x6A にモンスターが入っているとき、その電波人間のふつうのこうげきがこの行になる (FUN_004CB7C0)' }),
+    f('own', 0x3c, 'u32', 'つかまえたときのアクション', { bits: [0, 11], ref: actionRef, note: 'つかまえたモンスターを戦闘で使ったときのアクション (actionData の種類 2 の行)。アンテナ「つかまえる」でつかまえたモンスターは電波人間の +0x6A に入り、その電波人間のこの行動がこの行になる (FUN_004CB7C0)' }),
     f('name', 0x40, 'u32', '名前', { ref: msg }),
     f('desc', 0x44, 'u32', '説明', { ref: msg }),
     f('design', 0x48, 'u16', 'デザイン', { bits: [0, 8], alias: true, note: '402F0000 の monsterDesign.bin の行 (モデル +0x0C・色のテクスチャ +0x10・ワザのモーション +0x14)' }),

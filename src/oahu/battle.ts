@@ -63,7 +63,7 @@ export const OAHU_MONSTER_TEXTS: [string, string][] = [['name', '名前'], ['des
 /** Message fields of an action row. */
 export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['result1', '結果'], ['result2', '結果 (複数・別)']];
 /** Fields of a monster row that name an action. */
-export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'auto', 'body', 'body2', 'act2B', 'act2C'];
+export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'own', 'auto', 'body', 'body2', 'act2B', 'act2C'];
 
 export class OahuBattle {
   private readonly loaded = new Map<string, OahuRows>();

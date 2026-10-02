@@ -252,6 +252,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(battle.actions.get(566, 'kind')).toBe(2);
     expect(battle.actions.get(566, 'subject')).toBe(79);
     expect(battle.monsters.get(79, 'own')).toBe(566);
+    expect(battle.actionUsers(566).monsters).toEqual([79]);
     expect(battle.usedSkills(79).map((x) => x.action)).toEqual([567, 568]);
     expect(battle.actions.get(267, 'kind')).toBe(4);
     expect(battle.items.itemActions().every((a) => battle.actions.get(a.row, 'kind') === 4)).toBe(true);

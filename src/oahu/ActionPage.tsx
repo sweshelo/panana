@@ -112,8 +112,8 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
 const ELEMENT_INFO = 'w0 bit27-31。10〜25 は 2 つの属性 (火・氷 など) で、ダメージを半分ずつそれぞれの属性のたいせいで計算して足します (FUN_001B82B0)。';
 
 /**
- * A monster's own row (kind 2): named after the monster (monsterParameter +0x3C points here) and followed by its
- * skills. A 電波人間 whose +0x6A holds the monster attacks with it (FUN_004CB7C0).
+ * The action of a caught monster (kind 2): named after the monster (monsterParameter +0x3C points here) and followed
+ * by its skills. A 電波人間 holding a monster caught with the antenna つかまえる (+0x6A) uses it (FUN_004CB7C0).
  */
 function MonsterRowNote({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
   const monsters = useMemo(() => {
@@ -124,10 +124,10 @@ function MonsterRowNote({ battle, row }: { battle: OahuBattle; row: number }): R
   const skills = useMemo(() => [...new Set(monsters.flatMap((m) => battle.usedSkills(m).map((s) => s.action)))].sort((a, b) => a - b), [battle, monsters]);
   return (
     <div className="muted small book-desc">
-      {'モンスターの行です。'}
+      {'アンテナ「つかまえる」でつかまえたモンスターを、戦闘で使ったときのアクションです。'}
       {monsters.length > 0 && <>{'この行を持つモンスター: '}{monsters.map((m, i) => <Fragment key={m}>{i > 0 && '・'}<a href={oahuMonsterHref(m)}>{`${battle.monsterName(m)} (#${m})`}</a></Fragment>)}{'。'}</>}
       {skills.length > 0 && <>{'ワザ: '}{skills.map((a, i) => <Fragment key={a}>{i > 0 && '・'}<a href={oahuActionHref(a)}>{`#${a}`}</a></Fragment>)}{'。'}</>}
-      {'電波人間の +0x6A がこのモンスターを指すときも、その電波人間のふつうのこうげきにこの行が使われます (FUN_004CB7C0。+0x6A の意味は未確認)。'}
+      {'つかまえたモンスターは電波人間の +0x6A に入り、使うとこの行が実行されます (FUN_004CB7C0)。威力・属性・演出もこの行のものが使われます。'}
     </div>
   );
 }

@@ -233,6 +233,7 @@ function SkillEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
 }
 
 const STATE_ACTIONS: [string, string, string][] = [
+  ['own', 'つかまえたとき', '+0x3C。アンテナ「つかまえる」でつかまえたこのモンスターを、戦闘で使ったときのアクション (actionData の種類 2 の行)。'],
   ['auto', '自動', '効果 0x2D。ターンごとに自動で使うアクション。'],
   ['body', 'ボディ', '効果 0x2F。攻撃を受けたときのアクション (どくボディなど)。'],
   ['body2', 'ボディ 2', '効果 0x2F の 2 つ目。'],
@@ -250,7 +251,7 @@ function StateActions({ battle, row, onEdit }: { battle: OahuBattle; row: number
   };
   return (
     <section>
-      <Heading title="状態のアクション" info="モンスターが最初から持つ状態 (装備の効果と同じ番号) が使うアクション (FUN_004CCBE8)。" />
+      <Heading title="ほかのアクション" info="つかまえたときのアクションと、モンスターが最初から持つ状態 (装備の効果と同じ番号) が使うアクション (FUN_004CCBE8)。" />
       <table className="enc-table ai-fields">
         <tbody>
           {STATE_ACTIONS.map(([k, label, info]) => {
