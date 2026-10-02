@@ -160,16 +160,18 @@ export class MessageStore {
   private readonly host: MessageFile | undefined;
 
   /**
-   * `syntax`: the game's tag numbers. `canAddMessages`: whether new messages may be added (RPG2's
-   * MessageMod_JP.gsmb; not for RPG3 yet).
+   * `syntax`: the game's tag numbers. `canAddMessages`: whether new messages may be added: true = to RPG2's
+   * MessageMod_JP.gsmb, a file name = past the last ID of that file of the archive (RPG3: its files are 10000 IDs
+   * apart, so a file can grow without meeting the next one).
    */
-  constructor(files: MessageFile[], readonly syntax: MessageSyntax = KAHARA_SYNTAX, canAddMessages = true) {
+  constructor(files: MessageFile[], readonly syntax: MessageSyntax = KAHARA_SYNTAX, canAddMessages: boolean | string = true) {
     this.files = files.filter((f) => !f.gmsg.reading);
     this.readings = files.filter((f) => f.gmsg.reading);
     const last = files.reduce((a, f) => (f.gmsg.raw.length ? Math.max(a, f.gmsg.last) : a), LAST_GAME_MESSAGE);
     const own = this.files.find((f) => f.gmsg.first > LAST_GAME_MESSAGE && f.gmsg.last === last);
     const template = this.files.find((f) => f.editable);
-    this.host = !canAddMessages ? undefined : own?.editable
+    const append = typeof canAddMessages === 'string' ? this.files.find((f) => f.name === canAddMessages && f.editable) : undefined;
+    this.host = typeof canAddMessages === 'string' ? append : !canAddMessages ? undefined : own?.editable
       ? own
       : template && { name: NEW_MESSAGE_FILE, entryIndex: -1, gmsg: Gmsg.empty(template.gmsg, Math.max(NEW_MESSAGE_FIRST, last + 1)), editable: true };
   }
@@ -184,8 +186,11 @@ export class MessageStore {
   }
 
   /** Whether messages can be added. */
-  canAdd(): boolean {
-    return !!this.host;
+  /** Whether `n` more messages can be added (their IDs must not be another file's). */
+  canAdd(n = 1): boolean {
+    if (!this.host) return false;
+    const next = this.addedBase + this.added.length;
+    return !this.files.some((f) => f !== this.host && f.gmsg.raw.length > 0 && f.gmsg.first < next + n && f.gmsg.last >= next);
   }
 
   isAdded(id: number): boolean {
@@ -194,7 +199,7 @@ export class MessageStore {
 
   /** Add a message; returns its ID. */
   add(units: Uint16Array): number {
-    if (!this.host) throw new Error('メッセージを追加できるファイルがありません');
+    if (!this.canAdd()) throw new Error('メッセージを追加できるファイルがありません');
     this.added.push(units.slice());
     return this.addedBase + this.added.length - 1;
   }
@@ -300,7 +305,7 @@ export class MessageStore {
     if (!keepAdded) this.added.length = 0;
     const base = this.addedBase;
     for (const [id, u] of [...saved].sort((a, b) => a[0] - b[0])) {
-      if (this.host && id >= base) {
+      if (this.host && id >= base && !this.files.some((f) => f.gmsg.has(id))) {
         if (keepAdded) continue;
         if (id === base + this.added.length) this.add(Uint16Array.from(u));
       } else if (this.editable(id)) this.set(id, Uint16Array.from(u));

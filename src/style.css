@@ -529,3 +529,21 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .romfs-msg { white-space: pre-wrap; }
 .hexdump { font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.45; margin: 0 0 8px; overflow-x: auto; }
 .page-romfs td.num, .page-romfs td.mono { white-space: nowrap; }
+
+/* RPG3 item book (src/oahu/ItemPage.tsx) and the fields of a table row (src/ui/RowFields.tsx) */
+.item-badge { display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: bold; color: #fff; background: #4a5568; }
+.item-kind-1 { background: #2f855a; }
+.item-kind-2 { background: #b7791f; }
+.item-kind-3 { background: #2b6cb0; }
+.item-kind-4, .item-kind-5 { background: #2c7a7b; }
+.item-kind-6 { background: #9c4221; }
+.model-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
+.model-placeholder .item-badge { width: 96px; height: 96px; font-size: 48px; }
+.row-fields-box { margin-top: 16px; max-width: 900px; }
+.row-fields-box summary { cursor: pointer; }
+.row-fields { font-size: 13px; margin-top: 6px; }
+.row-fields td.edited { color: var(--warn); font-weight: bold; }
+.row-fields-text { max-width: 420px; overflow-wrap: anywhere; }
+.romfs-fields th { white-space: nowrap; }
+.romfs-fields td.romfs-msg { min-width: 8em; max-width: 24em; }
+.book-table td.nowrap { white-space: nowrap; }

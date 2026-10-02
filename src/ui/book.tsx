@@ -1,5 +1,5 @@
 // Pieces shared by the book pages (a searchable list on the left, the selected entry on the right).
-import { useEffect, useReducer, useRef, type ReactNode, type RefObject } from 'react';
+import { useEffect, useReducer, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { Session } from '../session';
 
 /** What the shell gives every page: the route argument, and a counter bumped each time the page is shown. */
@@ -99,4 +99,17 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
       onInput={(e) => !(e.nativeEvent as InputEvent).inputType && commit(e.currentTarget)}
     />
   );
+}
+
+/** A text box applied when left (or on Enter for one line). */
+export function TextBox({ value, multi, edited, onCommit }: { value: string; multi: boolean; edited: boolean; onCommit: (v: string) => void }): ReactNode {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const commit = (): void => {
+    if (text !== value) onCommit(text);
+  };
+  const cls = `name-input${edited ? ' edited' : ''}`;
+  return multi
+    ? <textarea className={cls} rows={2} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
+    : <input type="text" className={cls} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
 }

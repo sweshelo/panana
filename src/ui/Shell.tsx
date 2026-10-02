@@ -93,7 +93,7 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
     case 'world':
       return <WorldPage {...props} />;
     case 'romfs':
-      return <RomfsPage dump={props.session.game.dump} profile={kaharaRomfsProfile} arg={props.arg} />;
+      return <RomfsPage dump={props.session.game.dump} profile={kaharaRomfsProfile} arg={props.arg} context={{ message: (id) => props.session.game.master.texts.preview(id, true) }} />;
     case 'sounds':
       return props.session.sounds ? <SoundPage {...props} sounds={props.session.sounds} /> : <Failed message="音の表 (soundData) を読めませんでした。" />;
   }

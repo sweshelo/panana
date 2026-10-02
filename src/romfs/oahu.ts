@@ -1,5 +1,6 @@
 // RomFS of 電波人間のRPG3 (oahu): naauao oahu/analysis.md §4. The root names are RPG2's hashes with the low 16 bits
 // moved up (RPG2 56562135 -> RPG3 21350000).
+import { OAHU_TABLES } from '../oahu/tables';
 import { OAHU } from '../rom/titles';
 import type { RomfsProfile } from './profile';
 
@@ -35,4 +36,5 @@ export const oahuRomfsProfile: RomfsProfile = {
     9: 'GS テーブル',
     10: 'BCH',
   },
+  tables: OAHU_TABLES,
 };

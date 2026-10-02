@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { entryBlob, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
+import type { FieldContext } from '../game/tabledef';
 import type { Dump, RomfsListing } from '../rom/dump';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { download } from '../ui/download';
@@ -41,7 +42,13 @@ const sizeText = (n: number): string => (Number.isNaN(n) ? '' : n >= 1 << 20 ? `
 
 type Filter = 'all' | 'root' | 'folders' | 'known';
 
-export function RomfsPage({ dump, profile, arg }: { dump: Dump; profile: RomfsProfile; arg: string | undefined }): ReactNode {
+export function RomfsPage({ dump, profile, arg, context }: {
+  dump: Dump;
+  profile: RomfsProfile;
+  arg: string | undefined;
+  /** Names table values (messages, rows) in the table views. */
+  context?: FieldContext;
+}): ReactNode {
   const files = useMemo(() => romfsFiles(dump), [dump]);
   const paths = useMemo(() => new Set(files.map((f) => f.path)), [files]);
   const route = useSticky<RomfsRoute>(parseRomfsArg(arg), (r) => paths.has(r.path), () => ({ path: paths.has(profile.title.master) ? profile.title.master : files[0]?.path ?? '' }));
@@ -89,13 +96,13 @@ export function RomfsPage({ dump, profile, arg }: { dump: Dump; profile: RomfsPr
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {route.path && <FileDetail key={route.path} dump={dump} profile={profile} path={route.path} entry={route.entry} />}
+        {route.path && <FileDetail key={route.path} dump={dump} profile={profile} path={route.path} entry={route.entry} context={context} />}
       </div>
     </div>
   );
 }
 
-function FileDetail({ dump, profile, path, entry }: { dump: Dump; profile: RomfsProfile; path: string; entry?: number }): ReactNode {
+function FileDetail({ dump, profile, path, entry, context }: { dump: Dump; profile: RomfsProfile; path: string; entry?: number; context?: FieldContext }): ReactNode {
   const data = useAsync(() => dump.readRomfs(path), [dump, path]);
   const arc = useMemo(() => (data instanceof Uint8Array ? asArchive(data, path) : null), [data, path]);
   const note = fileNote(profile, path);
@@ -109,8 +116,8 @@ function FileDetail({ dump, profile, path, entry }: { dump: Dump; profile: Romfs
       </div>
       {!data ? <p className="muted">読み込み中…</p>
         : data instanceof Error ? <div className="error">{data.message}</div>
-        : arc ? <ArchiveView arc={arc} path={path} profile={profile} entry={entry} />
-        : <FormatBody body={data} name={path.split('/').pop()!} profile={profile} />}
+        : arc ? <ArchiveView arc={arc} path={path} profile={profile} entry={entry} context={context} />
+        : <FormatBody body={data} name={path.split('/').pop()!} profile={profile} context={context} />}
     </>
   );
 }
@@ -120,7 +127,7 @@ const entryName = (arc: Archive, e: ArcEntry): string | null => (e.comp === 1 ? 
 
 const COMP: Record<number, string> = { 0: 'なし', 1: 'ZIP', 6: 'LZ10' };
 
-function ArchiveView({ arc, path, profile, entry }: { arc: Archive; path: string; profile: RomfsProfile; entry?: number }): ReactNode {
+function ArchiveView({ arc, path, profile, entry, context }: { arc: Archive; path: string; profile: RomfsProfile; entry?: number; context?: FieldContext }): ReactNode {
   const names = useMemo(() => arc.entries.map((e) => entryName(arc, e)), [arc]);
   const [query, setQuery] = useState('');
   const q = query.trim().toUpperCase();
@@ -158,13 +165,13 @@ function ArchiveView({ arc, path, profile, entry }: { arc: Archive; path: string
           </tbody>
         </table>
       </div>
-      {selected ? <EntryView key={selected.index} arc={arc} e={selected} profile={profile} />
+      {selected ? <EntryView key={selected.index} arc={arc} e={selected} profile={profile} context={context} />
         : <p className="muted">エントリを選ぶと中身を表示します。</p>}
     </>
   );
 }
 
-function EntryView({ arc, e, profile }: { arc: Archive; e: ArcEntry; profile: RomfsProfile }): ReactNode {
+function EntryView({ arc, e, profile, context }: { arc: Archive; e: ArcEntry; profile: RomfsProfile; context?: FieldContext }): ReactNode {
   const unpacked = useMemo(() => {
     try {
       return unpackEntry(arc, e);
@@ -183,7 +190,7 @@ function EntryView({ arc, e, profile }: { arc: Archive; e: ArcEntry; profile: Ro
         <button onClick={() => download(unpacked.body, file)}>展開して保存</button>
         {e.comp !== 0 && <button onClick={() => download(entryBlob(arc, e), `${hex8(e.hash)}.${e.comp === 1 ? 'zip' : 'lz'}`)}>圧縮のまま保存</button>}
       </div>
-      <FormatBody body={unpacked.body} name={unpacked.name} profile={profile} />
+      <FormatBody body={unpacked.body} name={unpacked.name} profile={profile} context={context} />
     </div>
   );
 }

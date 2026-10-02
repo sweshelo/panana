@@ -10,7 +10,14 @@ import { OahuMessages } from '../src/oahu/messages';
 import { OahuSession } from '../src/oahu/session';
 import { parsePatchList, withUpdate, type Dump, type UpdateImage } from '../src/rom/dump';
 import { OAHU } from '../src/rom/titles';
-import { w16, w32 } from '../src/util/bytes';
+import { u32, w16, w32 } from '../src/util/bytes';
+import { GsTable } from '../src/archive/gstable';
+import { MessageStore } from '../src/game/gmsg';
+import { fieldPlace, fieldText, readField, writeField, type FieldDef } from '../src/game/tabledef';
+import { OahuMaster } from '../src/oahu/master';
+import { OahuItemPage } from '../src/oahu/ItemPage';
+import { oahuEffectText } from '../src/oahu/items';
+import { OAHU_ITEM_DATA } from '../src/oahu/tables';
 
 /** A text GMSG with messages from `first` (type code 9, then the units). */
 function gmsg(first: number, bodies: number[][]): Uint8Array {
@@ -35,7 +42,7 @@ function gmsg(first: number, bodies: number[][]): Uint8Array {
 }
 
 /** A root archive (version 7) of stored (uncompressed) entries. */
-function archive(hash: number, entries: { hash: number; type: number; body: Uint8Array }[]): Uint8Array {
+function archive(hash: number, entries: { hash: number; type: number; body: Uint8Array; comp?: number }[]): Uint8Array {
   const head = 12 + entries.length * 28;
   const out = new Uint8Array(head + entries.reduce((a, e) => a + e.body.length, 0));
   w32(out, 0, 7);
@@ -48,6 +55,7 @@ function archive(hash: number, entries: { hash: number; type: number; body: Uint
     w32(out, o + 4, e.type);
     w32(out, o + 8, e.body.length);
     w32(out, o + 12, pos);
+    w32(out, o + 16, e.comp ?? 0);
     w32(out, o + 20, 1);
     w32(out, o + 24, e.body.length);
     out.set(e.body, pos);
@@ -137,3 +145,142 @@ describe('RPG3 messages', () => {
     expect(parseMessageArg('x')).toBeUndefined();
   });
 });
+
+/** A GS table (+0x00 rows, +0x04 row size, +0x10 data offset, name at +0x30) with these rows. */
+function gsTable(name: string, rowSize: number, rows: Uint8Array[]): Uint8Array {
+  const off = 0x40;
+  const b = new Uint8Array(off + rows.length * rowSize);
+  w32(b, 0, rows.length);
+  w32(b, 4, rowSize);
+  w32(b, 0x10, off);
+  w32(b, 0x14, rows.length * rowSize);
+  w32(b, 0x18, b.length);
+  b.set([...name].map((c) => c.charCodeAt(0)), 0x30);
+  rows.forEach((r, i) => b.set(r, off + i * rowSize));
+  return b;
+}
+
+/** A stored entry whose body is a one-file ZIP would carry the name; tests name the entries through findByName's ZIP, so build those. */
+import { zipSync } from 'fflate';
+function named(hash: number, type: number, name: string, body: Uint8Array): { hash: number; type: number; body: Uint8Array; comp: number } {
+  return { hash, type, body: zipSync({ [name]: [body, { level: 0 }] }), comp: 1 };
+}
+
+describe('table fields', () => {
+  const row = new Uint8Array(8);
+  const flags: FieldDef = { key: 'rarity', offset: 0, type: 'u32', bits: [15, 3], label: '☆' };
+  const signed: FieldDef = { key: 'v', offset: 4, type: 's32', bits: [8, 18], label: 'v' };
+  const s16f: FieldDef = { key: 's', offset: 4, type: 's16', label: 's' };
+
+  test('bits are read and written without touching the others', () => {
+    w32(row, 0, 0xa010b001);
+    expect(readField(row, flags)).toBe(1);
+    writeField(row, flags, 5);
+    expect(u32(row, 0)).toBe(0xa012b001);
+    expect(() => writeField(row, flags, 8)).toThrow();
+    expect(fieldPlace(flags)).toBe('+0x00 u32 bit15-17');
+  });
+
+  test('signed bit fields and s16 read negatives; unsigned ones do not', () => {
+    w32(row, 4, 0x43fffc00);
+    expect(readField(row, signed)).toBe(-4);
+    expect(readField(row, { ...signed, type: 'u32' })).toBe(0x3fffc);
+    writeField(row, signed, 600);
+    expect(u32(row, 4)).toBe(0x40025800);
+    w16(row, 4, 0xfffc);
+    expect(readField(row, s16f)).toBe(-4);
+    writeField(row, s16f, -2);
+    expect(readField(row, s16f)).toBe(-2);
+  });
+
+  test('values as text: messages, enums, rows', () => {
+    expect(fieldText({ key: 'n', offset: 0, type: 'u32', label: 'n', ref: { kind: 'message' } }, 5, { message: (id) => `m${id}` })).toBe('m5');
+    expect(fieldText({ key: 'c', offset: 0, type: 'u8', label: 'c', ref: { kind: 'enum', values: { 3: '装備' } } }, 3)).toBe('装備');
+    expect(fieldText({ key: 'a', offset: 0, type: 'u32', label: 'a', ref: { kind: 'row', table: 't' } }, 9, { rowName: () => 'x' })).toBe('#9 x');
+  });
+
+  test('RPG3 equipment effects as text', () => {
+    expect(oahuEffectText({ slot: 1, kind: 0x1b, sub: 2, value: 20 })).toBe('能力アップ: こうげき +20');
+    expect(oahuEffectText({ slot: 1, kind: 0x31, sub: 0, value: 120 })).toBe('経験値 120%');
+    expect(oahuEffectText({ slot: 1, kind: 0x0a, sub: 0, value: 6 })).toBe('打撃の属性: 水');
+    expect(oahuEffectText({ slot: 2, kind: 0x07, sub: 0, value: 1 })).toBe('効果 0x07: 1');
+  });
+});
+
+describe('RPG3 new messages and rows', () => {
+  test('new messages go past the end of a file of the archive, never into the next file', () => {
+    const files = [
+      { name: 'MessageSystemCommon_JP.gsmb', entryIndex: 0, gmsg: new Gmsg(gmsg(0, [units('a'), units('b')])), editable: true },
+      { name: 'MessageBattle_JP.gsmb', entryIndex: 1, gmsg: new Gmsg(gmsg(4, [units('c')])), editable: true },
+    ];
+    const store = new MessageStore(files, OAHU_SYNTAX, 'MessageSystemCommon_JP.gsmb');
+    expect(store.addedBase).toBe(2);
+    expect(store.canAdd(2)).toBe(true);
+    expect(store.canAdd(3)).toBe(false);
+    const id = store.add(Uint16Array.from([9, ...units('new'), 0]));
+    expect(id).toBe(2);
+    expect(store.file(id)!.name).toBe('MessageSystemCommon_JP.gsmb');
+    store.setText(4, 'C');
+    // a saved edit of another file's ID past the base is an edit, not an added message
+    const saved = store.saved();
+    store.restore(saved);
+    expect(store.addedIds()).toEqual([2]);
+    expect(store.isEdited(4)).toBe(true);
+    const [[f, bytes]] = store.rebuilt().filter(([x]) => x.name === 'MessageSystemCommon_JP.gsmb') as [[(typeof files)[0], Uint8Array]];
+    expect(f.entryIndex).toBe(0);
+    const g = new Gmsg(bytes);
+    expect([g.first, g.last]).toEqual([0, 2]);
+    expect(store.newFile()).toBeNull();
+  });
+
+  test('saved rows put back only the bytes they changed', async () => {
+    const rows = [new Uint8Array(4), Uint8Array.of(1, 2, 3, 4)];
+    const dump = fakeDump({ '21350000': archive(0x21350000, [named(0x100, 9, 'itemData.bin', gsTable('ItemData', 4, rows))]) });
+    const m = await OahuMaster.load(dump);
+    m.table('itemData.bin').row(1)[0] = 9;
+    const saved = m.saved();
+    expect(saved.map(([t, r]) => [t, r])).toEqual([['itemData.bin', 1]]);
+    expect(m.changedEntries().size).toBe(1);
+    // the same row with another byte changed (an Update): the edit lands, the other byte stays
+    const dump2 = fakeDump({ '21350000': archive(0x21350000, [named(0x100, 9, 'itemData.bin', gsTable('ItemData', 4, [rows[0]!, Uint8Array.of(1, 2, 7, 4)]))]) });
+    const m2 = await OahuMaster.load(dump2);
+    m2.restore(saved);
+    expect([...m2.table('itemData.bin').row(1)]).toEqual([9, 2, 7, 4]);
+  });
+});
+
+describe('RPG3 item book', () => {
+  test('the book lists the items and shows the fields of the selected one', async () => {
+    const row = (name: number, price: number, cat: number): Uint8Array => {
+      const r = new Uint8Array(0x40);
+      w32(r, 0, price);
+      w32(r, 0x10, 0xa010b001);
+      w32(r, 0x14, name);
+      w32(r, 0x34, 1);
+      r[0x3a] = cat;
+      return r;
+    };
+    const item = gsTable('ItemData', 0x40, [new Uint8Array(0x40), row(1, 20, 0x11), new Uint8Array(0x40)]);
+    const action = gsTable('ActionData', 0x30, [new Uint8Array(0x30), new Uint8Array(0x30)]);
+    const files = {
+      '21350000': archive(0x21350000, [
+        named(0x49607c00, 6, 'MessageSystemCommon_JP.gsmb', gmsg(0, [units('なし'), units('キズぐすり')])),
+        named(0x100, 9, 'itemData.bin', item),
+        named(0x200, 9, 'actionData.bin', action),
+      ]),
+    };
+    const s = await OahuSession.open(fakeDump(files));
+    expect(s.items.items.map((it) => [it.id, it.name, it.price, it.category, it.rarity])).toEqual([[1, 'キズぐすり', 20, '道具 (回復など)', 1]]);
+    expect(s.items.canCopy(1)).toBe(true);
+    const n = s.items.copyItem(1);
+    expect(n).toBe(2);
+    expect(s.items.messageId(2, 'name')).toBe(2);
+    const html = renderToString(<OahuItemPage session={s} arg="2" />);
+    expect(html).toContain('キズぐすり');
+    expect(html).toContain('このアイテムを消す');
+    expect(html).toContain('itemData の行 2 のすべての欄');
+    expect(html).toContain(OAHU_ITEM_DATA.fields.find((f) => f.key === 'limit')!.label);
+    expect(() => s.modFiles()).toThrow('Update'); // the export needs the Update
+  });
+});
+

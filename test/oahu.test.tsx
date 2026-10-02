@@ -61,6 +61,84 @@ describe.skipIf(!hasOahuBase)('RPG3 Base', () => {
     expect(renderToString(<GmsgView body={msg.body} name={null} profile={oahuRomfsProfile} />)).toContain(`ID 0〜${g.last}`);
     expect(text.length).toBeGreaterThan(0);
   });
+
+  test('itemData is shown by its fields, with the names of the messages', async () => {
+    const m = parseArchive(await dump.readRomfs('21350000'));
+    const item = findByName(m, 'itemData.bin')!;
+    const s = await OahuSession.open(dump);
+    const html = renderToString(<GsTableView body={item.body} name="itemData.bin" profile={oahuRomfsProfile} context={{ message: (id) => s.messages.texts.preview(id, true) }} />);
+    for (const label of ['買値', '売値', '名前', 'アクション', '分類', '上限']) expect(html).toContain(`>${label}</th>`);
+    expect(html).toContain('キズぐすり');
+    expect(html).toContain('道具 (回復など)');
+  });
+});
+
+describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImage(Bun.file(OAHU_BASE), 'base'));
+  });
+
+  test('the fields of the known items', () => {
+    const { items } = s;
+    expect(items.table.rows).toBe(1191);
+    expect(items.items.length).toBe(981);
+    const kizu = items.item(1)!;
+    expect([kizu.name, kizu.price, kizu.sell, kizu.rarity, kizu.limit, kizu.action, kizu.categoryByte, kizu.kind]).toEqual(['キズぐすり', 20, 2, 1, 99, 267, 0x11, 1]);
+    expect(items.actionName(267)).toContain('キズぐすり');
+    expect(items.itemActions().some((a) => a.row === 267)).toBe(true);
+    const choker = items.items.find((it) => it.name === 'ハートのチョーカー')!;
+    expect(choker.kind).toBe(3);
+    expect(choker.effects.map((e) => items.effectText(e))).toEqual(['能力アップ: さいだいＨＰ +15']);
+    const mantle = items.items.find((it) => it.name === 'ひのマント')!;
+    expect(mantle.effects.map((e) => items.effectText(e))).toEqual(['たいせい (属性): 火 +2', '浮遊 1']);
+    const claw = items.items.find((it) => it.name === 'するどいつめ')!;
+    expect(items.effectText(claw.effects[0]!)).toBe('アクション (打撃): #233 どくこうげき');
+    expect(items.items.find((it) => it.name === 'ふつうのさお')!.limit).toBe(1);
+  });
+
+  test('a copied item gets messages past MessageSystemCommon; it is kept with the Update and exported in the master', async () => {
+    const { items } = s;
+    const texts = s.messages.texts;
+    items.set(1, 'price', 30);
+    items.setText(1, 'name', 'キズぐすりＭ');
+    expect(items.canCopy(3)).toBe(true);
+    const n = items.copyItem(3);
+    expect(items.added(n)).toBe(true);
+    const copy = items.item(n)!;
+    const nameId = items.messageId(n, 'name');
+    expect(nameId).toBe(8658);
+    expect(copy.name).toBe('キズぐすり+');
+    expect(items.get(n, 'order')).toBe(Math.max(...items.items.filter((x) => x.id !== n).map((x) => items.get(x.id, 'order'))) + 1);
+    items.setText(n, 'name', 'キズぐすりＺ');
+    items.set(n, 'price', 12345);
+    expect(items.item(3)!.name).toBe('キズぐすり+');
+    expect(texts.addedIds().length).toBe(new Set(['name', 'menu', 'shop0', 'shop1', 'shop2'].map((k) => items.messageId(3, k))).size);
+
+    const u = await s.withUpdate(await openUpdate(Bun.file(OAHU_UPDATE), 'update'));
+    expect(u.items.item(1)!.price).toBe(30);
+    expect(u.items.item(1)!.name).toBe('キズぐすりＭ');
+    expect(u.items.item(n)!.name).toBe('キズぐすりＺ');
+    expect(u.items.item(n)!.price).toBe(12345);
+    const files = u.modFiles();
+    expect(files.has('21350000')).toBe(true);
+    const out = parseArchive(files.get('21350000')!);
+    const before = parseArchive(await u.dump.readRomfs('21350000'));
+    for (const e of out.entries) {
+      const name = unpackEntry(out, e).name;
+      const same = equalBytes(unpackEntry(before, before.entries[e.index]!).body, unpackEntry(out, e).body);
+      expect(same).toBe(!['itemData.bin', 'MessageSystemCommon_JP.gsmb', 'MessageSystemCommon_IN.gsmb'].includes(name ?? ''));
+    }
+    const t = new GsTable(findByName(out, 'itemData.bin')!.body);
+    const g = new Gmsg(findByName(out, 'MessageSystemCommon_JP.gsmb')!.body);
+    expect(g.last).toBe(8657 + texts.addedIds().length);
+    expect(unitsToText(g.units(new DataView(t.row(n).buffer, t.row(n).byteOffset).getUint32(0x14, true))!, OAHU_SYNTAX).text).toBe('キズぐすりＺ');
+    expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0, true)).toBe(30);
+
+    u.items.removeItem(n);
+    expect(u.items.item(n)).toBeUndefined();
+    expect(u.messages.texts.addedIds()).toEqual([]);
+  });
 });
 
 describe.skipIf(!hasOahuUpdate)('RPG3 Update', () => {
