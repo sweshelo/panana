@@ -114,7 +114,7 @@ export const OAHU_STATE_CODE: Record<number, string> = {
 
 /** Category of an action (+0x2C), named from the actions that have it. FUN_004CC980 looks for 2 and 6 (ブレス・呪文). */
 export const OAHU_ACTION_CATEGORY: Record<number, string> = {
-  1: '打撃', 2: 'ブレス・ビーム', 5: '能力の増減', 6: '呪文・状態', 7: 'アンテナ (戦闘のあと)', 8: 'アイテム', 10: 'アンテナ (自動)', 13: '特殊', 21: 'ためる',
+  1: '打撃', 2: 'ブレス・ビーム', 5: '能力の増減', 6: '呪文・状態', 7: 'アンテナ (戦闘のあと)', 8: '回復・アイテム', 10: 'アンテナ (自動)', 13: '特殊', 21: 'ためる',
 };
 
 /** Side an action aims at (w0 bit19-20): FUN_0018F13C takes the units of its own side for 1. */
@@ -146,7 +146,7 @@ export const OAHU_ACTION_DATA: TableDef = {
     f('perf5', 0x26, 'u16', '演出 5', { unsure: true }),
     f('u28', 0x28, 'u16', '+0x28', { unsure: true }),
     f('u2A', 0x2a, 'u8', '+0x2A', { unsure: true }),
-    f('u2B', 0x2b, 's8', '+0x2B', { unsure: true, note: 'FUN_0018F13C が使う側の値と比べる' }),
+    f('ap', 0x2b, 's8', '消費 AP', { note: '呪文・アンテナ・つかまえたモンスターのアクションにある。ワザの条件 (monsterBrain.bin) が AP を見るとき、使う側の今の AP (ユニット +0x62) より多ければ使わない (FUN_0018F13C)' }),
     f('category', 0x2c, 'u8', '系統', { ref: { kind: 'enum', values: OAHU_ACTION_CATEGORY }, unsure: true, note: '名前はその系統のアクションから付けたもの' }),
     f('u2D', 0x2d, 'u8', '+0x2D', { unsure: true }),
     f('state', 0x2e, 'u8', '状態', { ref: { kind: 'enum', values: OAHU_STATE_CODE }, note: '付ける (治す) 状態の番号。装備の効果 0x14 の対象と同じ番号 (どくこうげき 1、ファイアビーム 2 やけど、氷の双爪 8 こおり)' }),
@@ -225,6 +225,86 @@ export const OAHU_MONSTER_RESISTS: [string, string, number, number][] = [
 /** The other 5-bit fields read as resistances: unit slots 25〜28, the state numbers 16〜19 (stat changes). */
 const RESIST_OTHER: [string, string, number, number][] = [['rAttack', 'こうげき', 0x28, 25], ['rDefense', 'ぼうぎょ', 0x2c, 0], ['rSpeed', 'すばやさ', 0x2c, 5], ['rEvasion', 'かいひ', 0x2c, 10]];
 
+/**
+ * The conditions of a monster's skill slots: rows of monsterBrain.bin (402F0000, 16 × 3 bytes; the master object's
+ * +0x818). FUN_0018F13C checks them for each slot (FUN_001BE560) and narrows the targets. The names in 「」 are the
+ * test monsters 「知能：…」 that give one skill each condition.
+ */
+export const OAHU_SKILL_CONDITION: Record<number, string> = {
+  0: 'なし',
+  1: 'いつでも',
+  2: 'いつでも (AP)',
+  3: '1 回だけ',
+  4: '1 回だけ (AP)',
+  5: '弱いじめ',
+  6: '仕留める',
+  7: '強者狙い',
+  8: '回復潰し',
+  9: '特技潰し',
+  10: 'ピンチ救い',
+  11: 'お助け',
+  12: '自分の HP 50% 以下',
+  13: '自分の HP 50% 以下',
+  14: '自分の HP 25% 以下',
+  15: '自分の HP 25% 以下',
+};
+
+/** What each row of monsterBrain.bin does, read from its bits (OAHU_MONSTER_BRAIN). */
+export const OAHU_SKILL_CONDITION_NOTE: Record<number, string> = {
+  0: '何も確かめない。「使えないとき」の枠のワザはこの条件で使われる',
+  1: 'いつでも使う (AP を確かめるのは電波人間のアンテナだけ)',
+  2: 'AP が足りるときだけ',
+  3: 'まだ使っていないワザだけ (1 回だけ。「知能：標準抑」)',
+  4: 'まだ使っていないワザだけ、AP が足りるときだけ',
+  5: '効く相手から、HP 65% 以下の相手を優先し、属性のたいせいが一番低い相手を狙う (「知能：弱いじめ」)',
+  6: '効く相手のうち HP 25% 以下の相手だけ。いなければ使わない。属性のたいせいが一番低く、HP が一番少ない相手を狙う (「知能：仕留める」)',
+  7: '効く相手のうち、強さの値が上位半分の相手を狙う。AP が要る。ターゲットの効果に引き寄せられない (「知能：強者狙い」)',
+  8: '効く相手から、回復 (系統 8)・特殊 (系統 13) のアクションを持つ相手、行動できる相手、自分のアクションを使える相手を優先。AP が要る。ターゲットの効果に引き寄せられない (「知能：回復潰し」)',
+  9: '効く相手から、行動できる相手、自分のアクションを使える相手を優先。AP が要る。ターゲットの効果に引き寄せられない (「知能：特技潰し」)',
+  10: 'HP 25% 以下の相手 (回復なら味方) がいるときだけ、その相手に (「知能：ピンチ救い」)',
+  11: 'HP 65% 以下の相手 (回復なら味方) がいるときだけ、その相手に (「知能：お助け」)',
+  12: '自分の HP が 50% 以下のときだけ',
+  13: '自分の HP が 50% 以下のときだけ (12 と同じ中身)',
+  14: '自分の HP が 25% 以下のときだけ。ターゲットの効果に引き寄せられない',
+  15: '自分の HP が 25% 以下のときだけ (14 と同じ中身)',
+};
+
+/** How a condition uses one of its target tests (2-bit fields of monsterBrain.bin): FUN_001F869C's last argument. */
+export const OAHU_BRAIN_MODE: Record<number, string> = { 0: 'しない', 1: '当てはまる相手だけ', 2: '当てはまる相手を優先', 3: '当てはまる相手だけ' };
+
+const brainFlag = (key: string, offset: number, bit: number, label: string, note: string): FieldDef =>
+  f(key, offset, 'u8', label, { bits: [bit, 1], note });
+const brainMode = (key: string, offset: number, bit: number, label: string, note: string): FieldDef =>
+  f(key, offset, 'u8', label, { bits: [bit, 2], ref: { kind: 'enum', values: OAHU_BRAIN_MODE }, note });
+
+/**
+ * monsterBrain.bin (402F0000): 16 × 3 bytes, the conditions of the skill slots (OAHU_SKILL_CONDITION). Read by
+ * FUN_0018F13C: the first byte says when the skill can be used, the rest how the targets are narrowed. A "only" test that
+ * leaves nobody makes the skill unusable; a "prefer" test that leaves nobody keeps the targets as they were.
+ */
+export const OAHU_MONSTER_BRAIN: TableDef = {
+  file: 'monsterBrain.bin',
+  rowSize: 3,
+  fields: [
+    brainFlag('noLure', 0, 0, 'ターゲットに引き寄せられない', '相手の側を狙うとき、効果 0x12・0x13 (ターゲット・属性ターゲット) を持つ相手を 8 割の確率で選ぶのをしない'),
+    brainFlag('ap', 0, 1, 'AP が要る', '消費 AP (actionData +0x2B) が今の AP より多ければ使わない'),
+    brainFlag('apOwn', 0, 2, 'AP が要る (アンテナ)', '電波人間が自分のアクションの並び (+0x6D4 の 12 個、アンテナと推定) にあるアクションを使うときだけ AP を確かめる。モンスターには働かない'),
+    brainFlag('hp50', 0, 3, '自分の HP 50% 以下', '自分の HP が 50% より多ければ使わない'),
+    brainFlag('hp25', 0, 4, '自分の HP 25% 以下', '自分の HP が 25% より多ければ使わない'),
+    brainFlag('once', 0, 5, 'まだ使っていない', '使ったワザの記録 (16 個、FUN_001F3390 が足す) にあれば使わない。記録は戦闘ごとと推定'),
+    brainMode('effective', 0, 6, '効く相手', 'アクションを当てて効き目がある相手 (FUN_004CBEFC)'),
+    brainMode('targetHp25', 1, 0, '相手の HP 25% 以下', 'FUN_0029F7D4'),
+    brainMode('targetHp65', 1, 2, '相手の HP 65% 以下', 'FUN_0029F810'),
+    brainMode('healer', 1, 4, '回復・特殊の相手', '相手のアクションの系統が 8 (回復) か 13 (特殊)。相手の側を狙うときだけ (FUN_0039B0D8)'),
+    brainFlag('strong20', 1, 6, '強い相手 (上位 2 割)', '強さの値 (FUN_004CD6BC: 電波人間 +0x33C、モンスター monsterParameter +0x4A) の大きい順に並べて、上位 2 割 (1 人以上) に絞る'),
+    brainFlag('strongHalf', 1, 7, '強い相手 (上位半分)', '同じ並びで上位半分に絞る (bit6 が立っていなければ)'),
+    brainFlag('weakElement', 2, 0, '属性のたいせいが低い相手', 'アクションの属性 (1〜8) へのたいせいが一番低い相手に絞る'),
+    brainMode('canAct', 2, 1, '行動できる相手', 'モンスター、または状態 8〜13 (こおり・マヒ・ねむり・ゆうわく・あやつり) のない、倒れていない電波人間 (FUN_0029D3F0。ほかにも確かめる値があり、名前は推定)'),
+    brainMode('canUse', 2, 3, '自分のアクションを使える相手', '封じられていない相手 (FUN_004CBABC → FUN_004CAD54)'),
+    brainFlag('lowestHp', 2, 5, 'HP が一番少ない相手', '今の HP が一番少ない相手に絞る'),
+  ],
+};
+
 /** Number of skills of a monster (+0x54, u16 each: action << 4 | condition). */
 export const OAHU_SKILLS = 6;
 /** How the AI picks a skill (+0x38 bit12-14): FUN_001BE560 has a case for 0〜4, as RPG2's 5 modes. */
@@ -282,7 +362,7 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     f('guard', 0x52, 'u16', 'かばう (対象)', { bits: [12, 4], unsure: true, note: '効果 0x35 (conditionData 80 かばう) の対象。値は +0x6D' }),
     ...Array.from({ length: OAHU_SKILLS }, (_, i) => [
       f(`skill${i + 1}`, 0x54 + i * 2, 'u16', `ワザ ${i + 1}`, { bits: [4, 12], ref: actionRef }),
-      f(`cond${i + 1}`, 0x54 + i * 2, 'u16', `ワザ ${i + 1} の条件`, { bits: [0, 4], unsure: true, note: '使える条件の表 (マスター +0x818) の行。1 = いつでも、が多い' }),
+      f(`cond${i + 1}`, 0x54 + i * 2, 'u16', `ワザ ${i + 1} の条件`, { bits: [0, 4], ref: { kind: 'enum', values: OAHU_SKILL_CONDITION }, note: '402F0000 の monsterBrain.bin の行 (OAHU_MONSTER_BRAIN)。使えるかどうかと狙う相手を決める (FUN_0018F13C)' }),
     ]).flat(),
     f('u60', 0x60, 'u16', '+0x60', { unsure: true, hex: true }),
     f('u62', 0x62, 'u16', '+0x62', { unsure: true }),
@@ -326,7 +406,7 @@ export const OAHU_MONSTER_GROUP: TableDef = {
 };
 
 export const OAHU_TABLES: Record<string, TableDef> = Object.fromEntries(
-  [OAHU_ITEM_DATA, OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_GROUP].map((d) => [d.file, d]),
+  [OAHU_ITEM_DATA, OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_GROUP, OAHU_MONSTER_BRAIN].map((d) => [d.file, d]),
 );
 
 /** Stats of the stat-up effect (0x1B) and elements of the element effects, by their number (+0x3C / +0x3E). */

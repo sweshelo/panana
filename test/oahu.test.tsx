@@ -13,7 +13,8 @@ import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
-import { OAHU_ELEMENT_NAMES } from '../src/oahu/tables';
+import { OAHU_ELEMENT_NAMES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION } from '../src/oahu/tables';
+import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
 import { GmsgView, GsTableView, viewsFor } from '../src/romfs/formats';
@@ -284,6 +285,22 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const loaded = await battle.monsterModel(1)!.load();
     expect(loaded?.set.models.get(0)?.name).toBe('enemy_66_01');
     expect(loaded?.set.textures.has('enemy_66_01_body')).toBe(true);
+  });
+
+  test('skill conditions: monsterBrain.bin (402F0000) has a row per condition, named after the test monsters 「知能：…」', async () => {
+    const t = new GsTable(findByName(parseArchive(await s.dump.readRomfs('402F0000')), 'monsterBrain.bin')!.body);
+    expect([t.rows, t.rowSize]).toEqual([16, OAHU_MONSTER_BRAIN.rowSize]);
+    const get = (row: number, k: string): number => readField(t.row(row), OAHU_MONSTER_BRAIN.fields.find((x) => x.key === k)!);
+    expect([0, 1, 2, 3].map((r) => [get(r, 'ap'), get(r, 'apOwn'), get(r, 'once')])).toEqual([[0, 0, 0], [0, 1, 0], [1, 0, 0], [0, 1, 1]]);
+    expect([get(6, 'effective'), get(6, 'targetHp25'), get(6, 'lowestHp'), get(6, 'weakElement')]).toEqual([1, 1, 1, 1]);
+    expect([get(5, 'targetHp65'), get(7, 'strongHalf'), get(8, 'healer'), get(9, 'canAct'), get(9, 'canUse')]).toEqual([2, 1, 2, 2, 2]);
+    expect([12, 14].map((r) => [get(r, 'hp50'), get(r, 'hp25')])).toEqual([[1, 0], [0, 1]]);
+    const { battle } = s;
+    const tests = battle.monsterList().filter((m) => m.name.startsWith('知能：'));
+    const named = new Map(tests.flatMap((m) => battle.usedSkills(m.id).filter((k) => k.condition > 1).map((k): [number, string] => [k.condition, m.name.slice(3)])));
+    for (const [c, n] of named) if (c !== 3) expect(OAHU_SKILL_CONDITION[c]).toBe(n);
+    expect(named.get(3)).toBe('標準抑');
+    expect(battle.actions.get(1089, 'ap')).toBe(1);
   });
 
   test('skills and group slots are written packed; the fallback slot follows its skill', () => {
