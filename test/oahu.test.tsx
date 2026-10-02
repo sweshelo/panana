@@ -262,4 +262,25 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
     expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
   });
+
+  test('skills and group slots are written packed; the fallback slot follows its skill', () => {
+    const { battle } = s;
+    const row = battle.monsterList().find((m) => battle.usedSkills(m.id).length >= 3 && battle.monsters.get(m.id, 'fallback') === 1)!.id;
+    const before = battle.usedSkills(row);
+    const now = before.map((x) => ({ action: x.action, condition: x.condition, from: x.slot }));
+    // remove the first skill: the fallback (slot 2) is now slot 1
+    battle.setSkills(row, now.slice(1));
+    expect(battle.usedSkills(row).map((x) => x.action)).toEqual(before.slice(1).map((x) => x.action));
+    expect(battle.monsters.get(row, `skill${before.length}`)).toBe(0);
+    expect(battle.monsters.get(row, `cond${before.length}`)).toBe(1);
+    expect(battle.monsters.get(row, 'fallback')).toBe(0);
+    battle.monsters.revert(row);
+    battle.setGroupSlots(5, [{ monster: 1, weight: 3, count: 5 }], []);
+    expect(battle.group(5).leads).toEqual([{ monster: 1, weight: 3, count: 5 }]);
+    expect(battle.group(5).mates).toEqual([]);
+    battle.setFixed(5, [2, 1]);
+    expect(battle.group(5).fixed).toEqual([2, 1]);
+    battle.groups.revert(5);
+    expect(battle.groups.changed(5)).toBe(false);
+  });
 });

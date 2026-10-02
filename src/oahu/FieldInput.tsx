@@ -1,9 +1,10 @@
-// Inputs of one field of a table row (rows.ts): a number box or a list of choices in the range of the field, marked
-// when the value differs from the archive's (its value in the tooltip). The RPG3 books edit their rows with them.
+// Inputs of one field of a table row (rows.ts) through the inputs shared with RPG2 (ui/FieldEdit): a number box or a
+// list of choices in the range of the field, marked when the value differs from the archive's. Also the message fields.
 import type { ReactNode } from 'react';
 import type { MessageStore } from '../game/gmsg';
 import { fieldRange } from '../game/tabledef';
-import { NumberInput, TextBox } from '../ui/book';
+import { TextBox } from '../ui/book';
+import { FieldChoice, FieldNumber as SharedNumber, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import type { OahuRows } from './rows';
 
@@ -16,29 +17,23 @@ export interface FieldProps {
   added?: boolean;
 }
 
-function mark({ rows, row, k, added }: FieldProps): { className: string; title: string } {
-  const now = rows.get(row, k);
-  const was = rows.original(row, k);
-  return !added && now !== was ? { className: 'edited', title: `元の値 ${was}` } : { className: '', title: '' };
+/** The fields of one row of a table, for the shared inputs (ui/FieldEdit). */
+export function rowAccess(rows: OahuRows, row: number, added = false): FieldAccess {
+  return {
+    get: (k) => rows.get(row, k),
+    original: (k) => rows.original(row, k),
+    set: (k, v) => rows.set(row, k, v),
+    range: (k) => fieldRange(rows.field(k)),
+    added,
+  };
 }
 
 export function FieldNumber(p: FieldProps & { min?: number; max?: number }): ReactNode {
-  const { rows, row, k, onEdit } = p;
-  const [lo, hi] = fieldRange(rows.field(k));
-  const m = mark(p);
-  return <NumberInput value={rows.get(row, k)} min={p.min ?? lo} max={p.max ?? hi} className={`num-input ${m.className}`} title={m.title} onCommit={(v) => { rows.set(row, k, v); onEdit(); }} />;
+  return <SharedNumber f={rowAccess(p.rows, p.row, p.added)} k={p.k} edited={p.onEdit} min={p.min} max={p.max} />;
 }
 
 export function FieldSelect(p: FieldProps & { options: [number, string][] }): ReactNode {
-  const { rows, row, k, onEdit, options } = p;
-  const v = rows.get(row, k);
-  const m = mark(p);
-  return (
-    <select className={m.className} title={m.title} value={v} onChange={(e) => { rows.set(row, k, Number(e.target.value)); onEdit(); }}>
-      {!options.some(([o]) => o === v) && <option value={v}>{String(v)}</option>}
-      {options.map(([o, label]) => <option key={o} value={o}>{label}</option>)}
-    </select>
-  );
+  return <FieldChoice f={rowAccess(p.rows, p.row, p.added)} k={p.k} edited={p.onEdit} options={p.options} />;
 }
 
 /** A labelled box of the stats grid. */

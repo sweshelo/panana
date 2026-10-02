@@ -3,7 +3,7 @@
 // the books show and what refers to what.
 import { cleanActionName } from '../game/actions';
 import type { MessageStore } from '../game/gmsg';
-import { decodeGroupSlots, type GroupSlot } from '../game/monsters';
+import { decodeGroupSlots, encodeGroupSlots, type GroupSlot } from '../game/monsters';
 import type { TableDef } from '../game/tabledef';
 import type { OahuItems } from './items';
 import type { OahuMaster } from './master';
@@ -116,6 +116,27 @@ export class OahuBattle {
     return Array.from({ length: OAHU_SKILLS }, (_, i) => ({ slot: i + 1, action: this.monsters.get(row, `skill${i + 1}`), condition: this.monsters.get(row, `cond${i + 1}`) }));
   }
 
+  /** The skills in use (action not 0); the game's rows keep them packed to the front. */
+  usedSkills(row: number): OahuSkill[] {
+    return this.skills(row).filter((s) => s.action);
+  }
+
+  /**
+   * Write the skills packed to the front; the empty slots get action 0 and condition 1 as in the archive. `from` gives
+   * each new slot's old slot (1〜6, 0 = new), so the slot used when none can be (+0x38 bit15-17) follows its skill.
+   */
+  setSkills(row: number, skills: { action: number; condition: number; from: number }[]): void {
+    if (skills.length > OAHU_SKILLS) throw new Error(`ワザは ${OAHU_SKILLS} 個までです`);
+    const fallback = this.monsters.get(row, 'fallback') + 1;
+    const moved = skills.findIndex((s) => s.from === fallback);
+    for (let i = 0; i < OAHU_SKILLS; i++) {
+      const s = skills[i];
+      this.monsters.set(row, `skill${i + 1}`, s?.action ?? 0);
+      this.monsters.set(row, `cond${i + 1}`, s ? s.condition : 1);
+    }
+    this.monsters.set(row, 'fallback', Math.max(0, moved));
+  }
+
   drops(row: number): OahuDrop[] {
     return [1, 2, 3].map((slot) => ({ slot, item: this.monsters.get(row, `drop${slot}`), rate: this.monsters.get(row, `rate${slot}`) }));
   }
@@ -183,6 +204,16 @@ export class OahuBattle {
     return n;
   }
 
+  /** Action row → the monsters having it as a skill. */
+  skillUsers(): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    for (let m = 1; m < this.monsters.rows; m++) {
+      if (!this.monsters.get(m, 'name')) continue;
+      for (const s of this.usedSkills(m)) if (!out.get(s.action)?.includes(m)) out.set(s.action, [...(out.get(s.action) ?? []), m]);
+    }
+    return out;
+  }
+
   /** Monsters with the action in a skill slot or as a state's action; items whose action it is. */
   actionUsers(row: number): { monsters: number[]; items: number[] } {
     const monsters: number[] = [];
@@ -195,6 +226,15 @@ export class OahuBattle {
     if (row <= 0 || row >= this.conditions.rows) return row ? `#${row}` : 'なし';
     const n = this.message(this.conditions.get(row, 'name'));
     return n && n !== 'なし' ? n : OAHU_STATE_NAMES[row] ?? `状態 ${row}`;
+  }
+
+  setGroupSlots(row: number, leads: GroupSlot[], mates: GroupSlot[]): void {
+    encodeGroupSlots(this.groups.row(row), leads, mates);
+  }
+
+  /** The fixed formation (+0x28), packed to the front. */
+  setFixed(row: number, monsters: number[]): void {
+    for (let i = 0; i < 5; i++) this.groups.set(row, `fixed${i + 1}`, monsters[i] ?? 0);
   }
 
   group(row: number): OahuGroup {
