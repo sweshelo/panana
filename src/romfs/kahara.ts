@@ -1,4 +1,5 @@
 // RomFS of 電波人間のRPG2 (kahara): docs/analysis.md "RomFS" and the archives the editor reads.
+import { KAHARA_TABLES } from '../game/kaharatables';
 import { KAHARA } from '../rom/titles';
 import type { RomfsProfile } from './profile';
 
@@ -21,4 +22,5 @@ export const kaharaRomfsProfile: RomfsProfile = {
     8: 'マップのパーツ (0x180 + CGFX)',
     9: 'GS テーブル',
   },
+  tables: KAHARA_TABLES,
 };

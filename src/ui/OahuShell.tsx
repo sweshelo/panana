@@ -1,6 +1,8 @@
-// The pages of a 電波人間のRPG3 (oahu) dump (#59): the RomFS viewer and the messages, the Update and the export.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// The pages of a 電波人間のRPG3 (oahu) dump (#59): the messages, the items, the RomFS viewer, the Update and the export.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { FieldContext } from '../game/tabledef';
 import { OahuExportDialog } from '../oahu/ExportDialog';
+import { OahuItemPage } from '../oahu/ItemPage';
 import { OahuMessagePage } from '../oahu/MessagePage';
 import type { OahuSession } from '../oahu/session';
 import { openUpdate } from '../rom/dump';
@@ -8,10 +10,10 @@ import { oahuRomfsProfile } from '../romfs/oahu';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { useHashRoute } from './route';
 
-export const OAHU_PAGES = [['messages', 'メッセージ'], ['romfs', 'RomFS']] as const;
+export const OAHU_PAGES = [['messages', 'メッセージ'], ['items', 'アイテム'], ['romfs', 'RomFS']] as const;
 type OahuPage = (typeof OAHU_PAGES)[number][0];
 const PAGE_IDS = OAHU_PAGES.map(([id]) => id);
-const TITLES: Record<OahuPage, string> = { messages: 'メッセージ', romfs: 'RomFS' };
+const TITLES: Record<OahuPage, string> = { messages: 'メッセージ', items: 'アイテム図鑑', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens it. */
 function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void {
@@ -51,6 +53,10 @@ export function OahuShell({ session, onSession, onChangeDump }: {
   const detail = !!arg && hash.startsWith(`#/${page}/`);
   const addUpdate = (): void => pickUpdate(session, onSession);
   const u = dump.update;
+  const context = useMemo((): FieldContext => ({
+    message: (id) => session.messages.texts.preview(id, true),
+    rowName: (table, row) => (table === 'actionData.bin' ? session.items.actionName(row).replace(/^#\d+ ?/, '') : undefined),
+  }), [session]);
   return (
     <div className="shell" data-page={page} data-detail={detail || undefined}>
       <nav className={menu ? 'topnav open' : 'topnav'}>
@@ -65,7 +71,7 @@ export function OahuShell({ session, onSession, onChangeDump }: {
           <span className="muted small dump-label">{dump.label}</span>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.join(', ')}`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="書き出しと、code.bin を使う機能には Update が要ります" onClick={addUpdate}>Update を追加…</button>}
-          <button className="primary" title="変更したメッセージを LayeredFS 用の MOD として書き出します (Update が必要)" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
+          <button className="primary" title="変更したメッセージとアイテムを LayeredFS 用の MOD として書き出します (Update が必要)" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
           <button onClick={onChangeDump}>ダンプを変える</button>
         </div>
       </nav>
@@ -76,7 +82,9 @@ export function OahuShell({ session, onSession, onChangeDump }: {
         const a = visits.current.get(id);
         return (
           <div key={id} className={`page page-${id}`}>
-            {id === 'messages' ? <OahuMessagePage session={session} arg={a} /> : <RomfsPage dump={dump} profile={oahuRomfsProfile} arg={a} />}
+            {id === 'messages' ? <OahuMessagePage session={session} arg={a} />
+              : id === 'items' ? <OahuItemPage session={session} arg={a} />
+              : <RomfsPage dump={dump} profile={oahuRomfsProfile} arg={a} context={context} />}
           </div>
         );
       })}

@@ -1,5 +1,6 @@
 // What the RomFS viewer knows about one game: names of root files and the meaning of the entry types. Each game has
 // its own profile (kahara.ts, oahu.ts); the viewer itself is shared.
+import type { TableDef } from '../game/tabledef';
 import type { TitleDef } from '../rom/titles';
 
 export interface RomfsProfile {
@@ -10,6 +11,8 @@ export interface RomfsProfile {
   files: Record<string, string>;
   /** Entry types of the root archives (type -> what entries of that type hold). */
   entryTypes: Record<number, string>;
+  /** Field definitions of the GS tables (file name -> fields): the viewer names the columns with them. */
+  tables?: Record<string, TableDef>;
 }
 
 export const fileNote = (p: RomfsProfile, path: string): string | undefined => p.files[path.toUpperCase()];
