@@ -7,6 +7,7 @@ import { baseModFromFiles, type BaseMod, type Dump } from '../rom/dump';
 import { Session } from '../session';
 import { idbGet, idbSet } from '../util/idb';
 import { OahuShell } from './OahuShell';
+import { OahuSession } from '../oahu/session';
 import { Shell } from './Shell';
 import { StartScreen } from './StartScreen';
 
@@ -22,8 +23,8 @@ type State =
   | { kind: 'start'; error?: string }
   | { kind: 'loading' }
   | { kind: 'ready'; session: Session; editor: MapEditor; id: number }
-  /** A 電波人間のRPG3 dump: viewed, not edited yet (#59). */
-  | { kind: 'oahu'; dump: Dump };
+  /** A 電波人間のRPG3 dump (#59). */
+  | { kind: 'oahu'; session: OahuSession; id: number };
 
 /** The session and the map editor of a game (the edits saved last time are restored). */
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
@@ -46,7 +47,7 @@ export function Root(): ReactNode {
     try {
       const dump = await open();
       if (dump.title.key === 'oahu') {
-        setState({ kind: 'oahu', dump });
+        setState({ kind: 'oahu', session: await OahuSession.open(dump), id: ++ids.current });
         return;
       }
       if (dump.titleVersion !== undefined && dump.titleVersion !== 1040)
@@ -95,7 +96,9 @@ export function Root(): ReactNode {
 
   if (state.kind === 'loading') return <div className="start"><p>読み込み中…</p></div>;
   if (state.kind === 'start') return <StartScreen error={state.error} onOpen={load} />;
-  if (state.kind === 'oahu') return <OahuShell dump={state.dump} onChangeDump={() => setState({ kind: 'start' })} />;
+  if (state.kind === 'oahu')
+    return <OahuShell key={state.id} session={state.session} onSession={(session) => setState({ kind: 'oahu', session, id: ++ids.current })}
+      onChangeDump={() => setState({ kind: 'start' })} />;
   const { session } = state;
   return (
     <Shell

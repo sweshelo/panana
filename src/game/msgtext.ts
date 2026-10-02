@@ -3,6 +3,7 @@
 //   0x0000          end; 0x000A line break
 //   0x0001 X        tag (2 units; X = 0x24 / 0x2A take 2 more units): ruby 0x27 ' / 0x28 ( / 0x29 ),
 //                   0x10 page break (eats the next line break), others see tagKind
+//                   (RPG2's numbers; another game's are in its MessageSyntax, e.g. OAHU_SYNTAX)
 //   0x0002 0x0026 ID 0x0000   another message inserted (place names etc.)
 
 export const hex4 = (c: number): string => c.toString(16).toUpperCase().padStart(4, '0');
@@ -20,7 +21,7 @@ const TAG = 0x0001;
 const REF = 0x0002;
 
 /** Tokens of the body (after the type code) up to the terminator, and where the terminator starts. */
-export function parseBody(u: Uint16Array): { tokens: MessageToken[]; end: number } {
+export function parseBody(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): { tokens: MessageToken[]; end: number } {
   const out: MessageToken[] = [];
   let i = 1;
   for (; i < u.length; i++) {
@@ -29,7 +30,7 @@ export function parseBody(u: Uint16Array): { tokens: MessageToken[]; end: number
     if (c === 0x0a) out.push({ t: 'br' });
     else if (c === TAG && i + 1 < u.length) {
       const x = u[i + 1]!;
-      const n = x === 0x24 || x === 0x2a ? 2 : 0;
+      const n = syn.argTags[x] ?? 0;
       if (i + 1 + n >= u.length) {
         out.push({ t: 'raw', c });
         continue;
@@ -46,16 +47,17 @@ export function parseBody(u: Uint16Array): { tokens: MessageToken[]; end: number
       else out.push({ t: 'text', s: String.fromCharCode(c) });
     }
   }
-  return { tokens: groupRuby(out), end: i };
+  return { tokens: groupRuby(out, syn), end: i };
 }
 
-/** tag 0x27, text, tag 0x28, text, tag 0x29 -> ruby. */
-function groupRuby(ts: MessageToken[]): MessageToken[] {
+/** Ruby tag, text, tag, text, tag -> ruby (RPG2: 0x27 / 0x28 / 0x29; the syntax's). */
+function groupRuby(ts: MessageToken[], syn: MessageSyntax): MessageToken[] {
   const out: MessageToken[] = [];
   const isTag = (t: MessageToken | undefined, x: number): boolean => t?.t === 'tag' && t.x === x;
+  const [open, mid, close] = syn.ruby;
   for (let i = 0; i < ts.length; i++) {
     const [a, b, c, d, e] = ts.slice(i, i + 5);
-    if (isTag(a, 0x27) && b?.t === 'text' && isTag(c, 0x28) && d?.t === 'text' && isTag(e, 0x29)) {
+    if (isTag(a, open) && b?.t === 'text' && isTag(c, mid) && d?.t === 'text' && isTag(e, close)) {
       out.push({ t: 'ruby', base: b.s, reading: d.s });
       i += 4;
     } else out.push(ts[i]!);
@@ -63,12 +65,12 @@ function groupRuby(ts: MessageToken[]): MessageToken[] {
   return out;
 }
 
-function tokenUnits(t: MessageToken): number[] {
+function tokenUnits(t: MessageToken, syn: MessageSyntax): number[] {
   switch (t.t) {
     case 'text': return Array.from({ length: t.s.length }, (_, k) => t.s.charCodeAt(k));
     case 'br': return [0x0a];
     case 'tag': return [TAG, t.x, ...t.args];
-    case 'ruby': return [TAG, 0x27, ...tokenUnits({ t: 'text', s: t.base }), TAG, 0x28, ...tokenUnits({ t: 'text', s: t.reading }), TAG, 0x29];
+    case 'ruby': return [TAG, syn.ruby[0], ...tokenUnits({ t: 'text', s: t.base }, syn), TAG, syn.ruby[1], ...tokenUnits({ t: 'text', s: t.reading }, syn), TAG, syn.ruby[2]];
     case 'ref': return [REF, 0x26, t.id, 0];
     case 'raw': return [t.c];
   }
@@ -86,15 +88,15 @@ export interface MessageText {
  *   line breaks as they are, {ruby:親字|よみ}, {page} (page break), {tag:XXXX} / {tag:XXXX,AAAA,BBBB} (other tags),
  *   {msg:XXXX} (another message), {XXXX} (any other unit, and the braces themselves).
  */
-export function unitsToText(u: Uint16Array): MessageText {
+export function unitsToText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): MessageText {
   if (!u.length) return { kind: 0, text: '', tail: new Uint16Array() };
-  const { tokens, end } = parseBody(u);
+  const { tokens, end } = parseBody(u, syn);
   const text = tokens.map((t) => {
     switch (t.t) {
       case 'text': return t.s.replace(/[{}|]/g, (ch) => `{${hex4(ch.charCodeAt(0))}}`);
       case 'br': return '\n';
-      case 'tag': return t.x === 0x10 && !t.args.length ? '{page}' : `{tag:${[t.x, ...t.args].map(hex4).join(',')}}`;
-      case 'ruby': return /[{}|]/.test(t.base + t.reading) ? tokenUnits(t).map((c) => (c < 0x20 ? `{${hex4(c)}}` : String.fromCharCode(c))).join('') : `{ruby:${t.base}|${t.reading}}`;
+      case 'tag': return t.x === syn.page && !t.args.length ? '{page}' : `{tag:${[t.x, ...t.args].map(hex4).join(',')}}`;
+      case 'ruby': return /[{}|]/.test(t.base + t.reading) ? tokenUnits(t, syn).map((c) => (c < 0x20 ? `{${hex4(c)}}` : String.fromCharCode(c))).join('') : `{ruby:${t.base}|${t.reading}}`;
       case 'ref': return `{msg:${hex4(t.id)}}`;
       case 'raw': return `{${hex4(t.c)}}`;
     }
@@ -103,7 +105,7 @@ export function unitsToText(u: Uint16Array): MessageText {
 }
 
 /** Inverse of unitsToText. A message always ends with a 0x0000. */
-export function textToUnits(m: MessageText): Uint16Array {
+export function textToUnits(m: MessageText, syn: MessageSyntax = KAHARA_SYNTAX): Uint16Array {
   const out: number[] = [m.kind];
   const s = m.text.replace(/\r\n?/g, '\n');
   const hex = (v: string, at: number): number => {
@@ -118,15 +120,15 @@ export function textToUnits(m: MessageText): Uint16Array {
       const body = s.slice(i + 1, close);
       const at = i + 1;
       const [name, arg] = body.includes(':') ? [body.slice(0, body.indexOf(':')), body.slice(body.indexOf(':') + 1)] : [body, ''];
-      if (name === 'page' && !arg) out.push(TAG, 0x10);
+      if (name === 'page' && !arg) out.push(TAG, syn.page);
       else if (name === 'ruby') {
         const [base, reading] = arg.split('|');
         if (!base || reading === undefined) throw new Error(`ルビは {ruby:親字|よみ} で書きます (${at} 文字目)`);
-        out.push(...tokenUnits({ t: 'ruby', base, reading }));
+        out.push(...tokenUnits({ t: 'ruby', base, reading }, syn));
       } else if (name === 'tag') {
         const vs = arg.split(',').map((v) => hex(v.trim(), at));
         const x = vs[0]!;
-        const n = x === 0x24 || x === 0x2a ? 2 : 0;
+        const n = syn.argTags[x] ?? 0;
         if (vs.length !== 1 + n) throw new Error(`タグ ${hex4(x)} は引数が ${n} 個です (${at} 文字目)`);
         out.push(TAG, ...vs);
       } else if (name === 'msg') out.push(REF, 0x26, hex(arg, at), 0);
@@ -197,14 +199,14 @@ export function tagLabel(x: number): string {
  * monster, Ē for the colour decoration), voice / colour / emotion / page tags and references dropped, line breaks as
  * spaces.
  */
-export function plainText(u: Uint16Array): string {
-  return parseBody(u).tokens.map((t) => {
+export function plainText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): string {
+  return parseBody(u, syn).tokens.map((t) => {
     switch (t.t) {
       case 'text': return t.s;
       case 'br': return ' ';
       case 'ruby': return t.base;
       case 'tag': {
-        const k = tagKind(t.x);
+        const k = syn.kind(t.x);
         return k === 'name' || k === 'fixed' || k === 'deco' || t.x === 0x100 ? String.fromCharCode(t.x) : '';
       }
       default: return '';
@@ -213,19 +215,19 @@ export function plainText(u: Uint16Array): string {
 }
 
 /** Text as a reader would see it (lists): references and fixed names expanded, names as 〈…〉, formatting dropped. */
-export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0): string {
-  const tokens = parseBody(u).tokens;
+export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0, syn: MessageSyntax = KAHARA_SYNTAX): string {
+  const tokens = parseBody(u, syn).tokens;
   return tokens.map((t, i) => {
     switch (t.t) {
       case 'text': return t.s;
-      case 'br': return tokens[i - 1]?.t === 'tag' && (tokens[i - 1] as { x: number }).x === 0x10 ? '' : '\n';
+      case 'br': return tokens[i - 1]?.t === 'tag' && (tokens[i - 1] as { x: number }).x === syn.page ? '' : '\n';
       case 'ruby': return t.base;
       case 'ref': return (depth < 2 ? lookup(t.id) : undefined) ?? `〈メッセージ ${hex4(t.id)}〉`;
       case 'tag': {
-        const k = tagKind(t.x);
-        if (k === 'fixed') return (depth < 2 ? lookup(FIXED_NAMES[t.x]!) : undefined) ?? `〈${tagLabel(t.x)}〉`;
+        const k = syn.kind(t.x);
+        if (k === 'fixed') return (depth < 2 ? lookup(syn.fixedNames[t.x]!) : undefined) ?? `〈${syn.label(t.x)}〉`;
         if (k === 'page') return '\n';
-        return k === 'name' || k === 'number' ? `〈${tagLabel(t.x)}〉` : '';
+        return k === 'name' || k === 'number' ? `〈${syn.label(t.x)}〉` : '';
       }
       default: return '';
     }
@@ -237,4 +239,46 @@ export const MESSAGE_KINDS: Record<number, string> = {
   0x0001: '名前・台詞',
   0x000c: '説明',
   0x000d: '説明 (メニュー)',
+};
+
+/**
+ * The tag numbers of one game's messages. RPG2 (kahara) is what the rest of this file describes; RPG3 (oahu) moved
+ * the ruby to 0x2B / 0x2C / 0x2D and the page break to 0x14 (naauao oahu/analysis.md §5; its other tags are not
+ * analysed yet, so they show as their numbers).
+ */
+export interface MessageSyntax {
+  /** Ruby: the tags before the base, between the base and the reading, after the reading. */
+  ruby: [number, number, number];
+  /** Page break (written {page}). */
+  page: number;
+  /** Tags followed by arguments: tag -> number of argument units. */
+  argTags: Record<number, number>;
+  kind(x: number): TagKind;
+  label(x: number): string;
+  /** Tags replaced by a fixed name: the message it comes from. */
+  fixedNames: Record<number, number>;
+}
+
+export const KAHARA_SYNTAX: MessageSyntax = {
+  ruby: [0x27, 0x28, 0x29],
+  page: 0x10,
+  argTags: { 0x24: 2, 0x2a: 2 },
+  kind: tagKind,
+  label: tagLabel,
+  fixedNames: FIXED_NAMES,
+};
+
+function oahuTagKind(x: number): TagKind {
+  if (x === 0x14) return 'page';
+  if (x >= 0x118 && x <= 0x124) return 'deco'; // a colour name followed by ● (あか●, みずいろ● …)
+  return 'other';
+}
+
+export const OAHU_SYNTAX: MessageSyntax = {
+  ruby: [0x2b, 0x2c, 0x2d],
+  page: 0x14,
+  argTags: {},
+  kind: oahuTagKind,
+  label: (x) => (x === 0x14 ? 'ページ送り' : oahuTagKind(x) === 'deco' ? '色つきの ●' : `タグ ${hex4(x)}`),
+  fixedNames: {},
 };

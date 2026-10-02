@@ -8,7 +8,7 @@ import { ActionView } from '../src/pages/actions';
 import { Radar } from '../src/ui/Radar';
 import { MessagePreview } from '../src/ui/message';
 import type { MessageStore } from '../src/game/gmsg';
-import { textToUnits } from '../src/game/msgtext';
+import { KAHARA_SYNTAX, textToUnits } from '../src/game/msgtext';
 import { w32 } from '../src/util/bytes';
 import { WorldPage } from '../src/pages/world';
 import { PAGES } from '../src/ui/Shell';
@@ -71,7 +71,7 @@ describe('editor state', () => {
 
 describe('shared pieces', () => {
   test('message preview: ruby, page break (eats its line break), referenced message', () => {
-    const texts = { units: (id: number) => (id === 0x66 ? textToUnits({ kind: 1, text: 'デンパタウン', tail: new Uint16Array([0]) }) : undefined) } as unknown as MessageStore;
+    const texts = { syntax: KAHARA_SYNTAX, units: (id: number) => (id === 0x66 ? textToUnits({ kind: 1, text: 'デンパタウン', tail: new Uint16Array([0]) }) : undefined) } as unknown as MessageStore;
     const units = textToUnits({ kind: 1, text: 'ここ、{msg:0066}。{page}\n{ruby:祠|ほこら}', tail: new Uint16Array([0]) });
     const html = renderToString(<MessagePreview texts={texts} units={units} />);
     expect(html).toContain('<ruby>祠<rp>(</rp><rt>ほこら</rt><rp>)</rp></ruby>');

@@ -1,7 +1,7 @@
 // Start screen: open a decrypted CIA / CXI, an extracted folder, or the dump cached last time.
 import { useEffect, useState, type ReactNode } from 'react';
 import { cachedDumpInfo, openCachedDump } from '../rom/cache';
-import { openFolder, openImage, type Dump } from '../rom/dump';
+import { openFolder, openImages, type Dump } from '../rom/dump';
 import { KAHARA, OAHU } from '../rom/titles';
 import { idbClear } from '../util/idb';
 
@@ -17,16 +17,16 @@ export function StartScreen({ error, onOpen }: { error?: string; onOpen: (open: 
     <div className="start">
       <h1>Panana</h1>
       <p>{`『${KAHARA.name}』v1.1.0 (${KAHARA.titleId}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`}</p>
-      <p>{`『${OAHU.name}』(${OAHU.titleId}) は、Base の CIA で RomFS の中身を見られます (編集は準備中)。`}</p>
+      <p>{`『${OAHU.name}』(${OAHU.titleId}) は、Base の CIA でメッセージと RomFS の中身を見て、メッセージを編集できます。MOD の書き出しには Update の CIA も要ります (Base と一緒に選ぶか、開いたあとで足せます)。`}</p>
       <p className="muted">ROM のデータはブラウザの中だけで読み取ります (どこにも送信しません)。読み取った一部のファイルは、この端末の IndexedDB にキャッシュします。</p>
       {error && <div className="error">{error}</div>}
       <div className="choices">
         <label className="choice">
           <b>復号済みの CIA / CXI</b>
-          <span className="muted">GodMode9 などで復号したダンプ (RPG3 は Base のもの)</span>
-          <input type="file" accept=".cia,.cxi,.app,.bin" onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onOpen(() => openImage(f, f.name));
+          <span className="muted">GodMode9 などで復号したダンプ (RPG3 は Base、または Base と Update の 2 つ)</span>
+          <input type="file" multiple accept=".cia,.cxi,.app,.bin" onChange={(e) => {
+            const fs = [...(e.target.files ?? [])];
+            if (fs.length) onOpen(() => openImages(fs, (f) => (f as File).name));
           }} />
         </label>
         <label className="choice">
@@ -55,8 +55,8 @@ export function StartScreen({ error, onOpen }: { error?: string; onOpen: (open: 
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);
-          const f = e.dataTransfer.files?.[0];
-          if (f) onOpen(() => openImage(f, f.name));
+          const fs = [...(e.dataTransfer.files ?? [])];
+          if (fs.length) onOpen(() => openImages(fs, (f) => (f as File).name));
         }}
       >ここに .cia / .cxi をドロップ</div>
     </div>

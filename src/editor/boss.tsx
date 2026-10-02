@@ -178,7 +178,7 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
                 {!!id && <button className="small" title="このメッセージを出さない" onClick={() => setMsg(0)}>×</button>}
               </span>
             </Field>
-            {!!id && <MessageEditor master={master} id={id} apply={apply} />}
+            {!!id && <MessageEditor texts={master.texts} id={id} apply={apply} />}
           </div>
         );
       })}

@@ -6,7 +6,7 @@
 // A message runs to the next offset (the last one to the end of the file). Text messages are UTF-16LE (msgtext.ts);
 // readings are 1-byte strings. The game checks neither the size nor the end (FUN_001e78f0).
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
-import { plainText, previewText, textToUnits, unitsToText, type MessageText } from './msgtext';
+import { KAHARA_SYNTAX, plainText, previewText, textToUnits, unitsToText, type MessageSyntax, type MessageText } from './msgtext';
 
 export class Gmsg {
   readonly first: number;
@@ -25,7 +25,9 @@ export class Gmsg {
   constructor(private readonly data: Uint8Array) {
     if (String.fromCharCode(...data.subarray(0, 4)) !== 'GMSG') throw new Error('GMSG ではありません');
     this.first = u32(data, 8);
-    this.last = u32(data, 12);
+    // RPG3's empty MessageEvent_JP has 0xFFFFFFFF here (naauao oahu/analysis.md §5): no messages
+    const last = u32(data, 12);
+    this.last = last === 0xffffffff ? this.first - 1 : last;
     this.reading = u32(data, 0x10) === 1;
     const n = this.last - this.first + 1; // 0 only for a file made by Gmsg.empty
     const tbl = u32(data, 0x18);
@@ -117,6 +119,8 @@ export const equalUnits = (a: Uint16Array, b: Uint16Array): boolean => a.length 
 
 export interface MessageFile {
   name: string;
+  /** Root archive of the file, when the store holds files of several archives (RPG3). */
+  archive?: string;
   entryIndex: number;
   gmsg: Gmsg;
   editable: boolean;
@@ -155,13 +159,17 @@ export class MessageStore {
   /** The text file new messages go to (entryIndex -1 when it is not in the archive yet). */
   private readonly host: MessageFile | undefined;
 
-  constructor(files: MessageFile[]) {
+  /**
+   * `syntax`: the game's tag numbers. `canAddMessages`: whether new messages may be added (RPG2's
+   * MessageMod_JP.gsmb; not for RPG3 yet).
+   */
+  constructor(files: MessageFile[], readonly syntax: MessageSyntax = KAHARA_SYNTAX, canAddMessages = true) {
     this.files = files.filter((f) => !f.gmsg.reading);
     this.readings = files.filter((f) => f.gmsg.reading);
     const last = files.reduce((a, f) => (f.gmsg.raw.length ? Math.max(a, f.gmsg.last) : a), LAST_GAME_MESSAGE);
     const own = this.files.find((f) => f.gmsg.first > LAST_GAME_MESSAGE && f.gmsg.last === last);
     const template = this.files.find((f) => f.editable);
-    this.host = own?.editable
+    this.host = !canAddMessages ? undefined : own?.editable
       ? own
       : template && { name: NEW_MESSAGE_FILE, entryIndex: -1, gmsg: Gmsg.empty(template.gmsg, Math.max(NEW_MESSAGE_FIRST, last + 1)), editable: true };
   }
@@ -209,20 +217,20 @@ export class MessageStore {
 
   plain(id: number): string | undefined {
     const u = this.units(id);
-    return u && plainText(u);
+    return u && plainText(u, this.syntax);
   }
 
   /** What the reader sees (see previewText); `oneLine` turns line breaks into spaces. */
   preview(id: number, oneLine = false, depth = 0): string | undefined {
     const u = this.units(id);
     if (!u) return undefined;
-    const s = previewText(u, (ref) => this.preview(ref, true, depth + 1), depth);
+    const s = previewText(u, (ref) => this.preview(ref, true, depth + 1), depth, this.syntax);
     return oneLine ? s.replace(/\n/g, ' ') : s;
   }
 
   text(id: number): MessageText | undefined {
     const u = this.units(id);
-    return u && unitsToText(u);
+    return u && unitsToText(u, this.syntax);
   }
 
   editable(id: number): boolean {
@@ -245,9 +253,9 @@ export class MessageStore {
     const cur = this.text(id);
     if (!cur) throw new Error(`メッセージ ${id} がありません`);
     const o = this.original(id);
-    const orig = o && unitsToText(o);
+    const orig = o && unitsToText(o, this.syntax);
     if (orig && text.replace(/\r\n?/g, '\n') === orig.text && cur.kind === orig.kind) this.revert(id);
-    else this.set(id, textToUnits({ ...cur, text }));
+    else this.set(id, textToUnits({ ...cur, text }, this.syntax));
   }
 
   /** Change the type code (the first unit), keeping the text. */
@@ -292,7 +300,7 @@ export class MessageStore {
     if (!keepAdded) this.added.length = 0;
     const base = this.addedBase;
     for (const [id, u] of [...saved].sort((a, b) => a[0] - b[0])) {
-      if (id >= base) {
+      if (this.host && id >= base) {
         if (keepAdded) continue;
         if (id === base + this.added.length) this.add(Uint16Array.from(u));
       } else if (this.editable(id)) this.set(id, Uint16Array.from(u));
@@ -301,16 +309,28 @@ export class MessageStore {
 
   /** Rebuilt files that hold an edit (and the readings blanked): archive entry index -> file bytes. */
   replacements(): Map<number, Uint8Array> {
-    const out = new Map<number, Uint8Array>();
+    return new Map(this.rebuilt().map(([f, b]) => [f.entryIndex, b]));
+  }
+
+  /**
+   * The files that hold an edit, rebuilt, and the readings blanked. A copy of the file that holds an ID (same name and
+   * range, e.g. RPG3's MessageCommand_JP in 4 archives) gets the edit too, so every copy says the same.
+   */
+  rebuilt(): [MessageFile, Uint8Array][] {
+    const out: [MessageFile, Uint8Array][] = [];
     const host = this.added.length ? this.host : undefined;
+    const holds = (f: MessageFile, id: number): boolean => {
+      const o = this.file(id);
+      return o === f || (!!o && f.editable && o.name === f.name && o.gmsg.first === f.gmsg.first && o.gmsg.last === f.gmsg.last);
+    };
     for (const f of this.files) {
-      const mine = new Map([...this.edits].filter(([id]) => this.file(id) === f).map(([id, u]) => [id, fromUnits(u)] as const));
+      const mine = new Map([...this.edits].filter(([id]) => holds(f, id)).map(([id, u]) => [id, fromUnits(u)] as const));
       const extra = f === host ? this.added.map(fromUnits) : [];
-      if (mine.size || extra.length) out.set(f.entryIndex, f.gmsg.build(mine, extra));
+      if (mine.size || extra.length) out.push([f, f.gmsg.build(mine, extra)]);
     }
     for (const f of this.readings) {
       const mine = new Map([...this.edits.keys()].filter((id) => f.gmsg.has(id)).map((id) => [id, new Uint8Array(f.gmsg.raw[id - f.gmsg.first]!.length)] as const));
-      if (mine.size) out.set(f.entryIndex, f.gmsg.build(mine));
+      if (mine.size) out.push([f, f.gmsg.build(mine)]);
     }
     return out;
   }
