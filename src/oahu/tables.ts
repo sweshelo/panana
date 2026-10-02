@@ -204,8 +204,8 @@ export const OAHU_STATE_NAMES: Record<number, string> = {
   33: 'ガードシールド', 41: 'ステルス', 66: '防御',
 };
 
-/** Rate value of a drop (monsterParameter): as in RPG2, a larger value is rarer (BattleParameter's table). */
-const RATE_NOTE = 'ドロップの率の値 (0〜15)。RPG2 と同じく大きいほど出にくいと推定';
+/** Rate value of a drop (monsterParameter): 1 in battleParameter u16 [0xE6 + value × 2] battles (OahuBattle.dropOdds). */
+const RATE_NOTE = 'ドロップの率の値 (0〜15)。battleParameter +0xE6 の表で「何回に 1 回」になる (0 は必ず、大きいほど出にくい)';
 const itemRef = { kind: 'row', table: 'itemData.bin' } as const;
 const actionRef = { kind: 'row', table: 'actionData.bin' } as const;
 const monsterRef = { kind: 'row', table: 'monsterParameter.bin' } as const;

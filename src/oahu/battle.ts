@@ -36,6 +36,22 @@ export interface OahuDrop {
   rate: number;
 }
 
+export interface OahuDropClass {
+  label: string;
+  /** The party's state that raises it (conditionData row, a percentage; FUN_001F3FAC with the IDs 33〜35). */
+  bonus?: number;
+  /** Rate 0: dropped without a roll (unless the battle forbids drops). */
+  always?: boolean;
+}
+
+/** The drop classes of FUN_004CAB64, in the order of dropClass. */
+export const OAHU_DROP_CLASSES: OahuDropClass[] = [
+  { label: '必ず', always: true },
+  { label: 'おたから', bonus: 37 },
+  { label: 'レア', bonus: 38 },
+  { label: '激レア', bonus: 39 },
+];
+
 export interface OahuGroup {
   row: number;
   leads: GroupSlot[];
@@ -154,6 +170,41 @@ export class OahuBattle {
 
   drops(row: number): OahuDrop[] {
     return [1, 2, 3].map((slot) => ({ slot, item: this.monsters.get(row, `drop${slot}`), rate: this.monsters.get(row, `rate${slot}`) }));
+  }
+
+  /**
+   * battleParameter.bin u16 [0xE6 + rate × 2] (16 values): a drop of that rate value comes 1 in this many battles. The
+   * unit gets it from FUN_004CD418, the drop is rolled per slot after the battle (FUN_001C3994's loop).
+   */
+  get dropBase(): number[] {
+    const r = this.master.table('battleParameter.bin').row(0);
+    const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
+    return Array.from({ length: 16 }, (_, i) => dv.getUint16(0xe6 + i * 2, true));
+  }
+
+  /**
+   * The class of a drop by its "1 in N" (FUN_004CAB64): N ≤ the value of rate 0 is a sure drop (no bonus), below the
+   * value of rate 10 おたから, below rate 13 レア, else 激レア. The class picks the party's bonus state.
+   */
+  dropClass(rate: number): OahuDropClass {
+    const base = this.dropBase;
+    const n = base[rate & 15]!;
+    return OAHU_DROP_CLASSES[n <= base[0]! ? 0 : n < base[10]! ? 1 : n < base[13]! ? 2 : 3]!;
+  }
+
+  /**
+   * "1 in N" of a drop with rate value `rate` when the party's bonus of its class is `bonus` % (100 = none), as
+   * FUN_001C3994 computes it in float: p = 1 − (1 − 1/B)^(bonus × 0.01), at least 0.00001; N = trunc(1/p), then
+   * rand(N) = 0. A negative bonus always drops, 0 never; a B of 0 never, 1 always.
+   */
+  dropOdds(rate: number, bonus = 100): number {
+    const b = this.dropBase[rate & 15]!;
+    if (this.dropClass(rate).always || bonus < 0 || b === 1) return b === 0 ? Infinity : 1;
+    if (bonus === 0 || b === 0) return Infinity;
+    const f = Math.fround;
+    let p = f(1 - f(Math.pow(f(1 - f(1 / b)), f(bonus * f(0.01)))));
+    if (p < f(0.00001)) p = f(0.00001);
+    return Math.max(1, Math.trunc(f(1 / p)));
   }
 
   itemName(id: number): string {

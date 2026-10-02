@@ -230,6 +230,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const g = (k: string): number => m.get(1, k);
     expect([g('level'), g('hpMin'), g('hpMax'), g('attackMax'), g('defenseMax'), g('speedMax'), g('exp'), g('gold')]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
     expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([['タンポポのたね(色1)', 4], ['キズぐすり', 7], ['ちていじんプリント', 10]]);
+    // battleParameter +0xE6, rolled in float (FUN_001C3994): 1/3 and 1/6 come out as 1/2 and 1/5
+    expect(battle.dropBase).toEqual([1, 3, 4, 6, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
+    expect(Array.from({ length: 16 }, (_, r) => battle.dropOdds(r))).toEqual([1, 2, 4, 5, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
+    expect([0, 1, 9, 10, 12, 13, 15].map((r) => battle.dropClass(r).label)).toEqual(['必ず', 'おたから', 'おたから', 'レア', 'レア', '激レア', '激レア']);
+    expect([battle.dropOdds(4, 200), battle.dropOdds(4, 0), battle.dropOdds(15, -1)]).toEqual([4, Infinity, 1]);
     expect(battle.skills(1)[0]).toEqual({ slot: 1, action: 995, condition: 1 });
     expect(battle.actionName(995)).toBe('たいあたり');
     expect(m.get(150, 'exp')).toBe(65000);
@@ -265,6 +270,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
   test('the books render; an edit goes into the master', () => {
     const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
     for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい']) expect(html).toContain(t);
+    for (const t of ['おたから・12.5%', 'レア・0.39%', '4: 1/8']) expect(html).toContain(t);
     expect(renderToString(<OahuGroupPage session={s} arg="5" />)).toContain('てっぽうオトシゴ');
     expect(renderToString(<OahuActionPage session={s} arg="233" />)).toContain('どくこうげき');
     s.battle.monsters.set(1, 'gold', 777);
