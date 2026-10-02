@@ -5,6 +5,7 @@ import { buildModZip } from '../export/pack';
 import { withUpdate, type Dump, type UpdateImage } from '../rom/dump';
 import { OAHU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
+import { OahuItemModels } from './itemModels';
 import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
@@ -21,6 +22,7 @@ export class OahuSession {
   private saveTimer = 0;
 
   readonly items: OahuItems;
+  readonly itemModels: OahuItemModels;
 
   private constructor(
     readonly dump: Dump,
@@ -28,6 +30,7 @@ export class OahuSession {
     readonly master: OahuMaster,
   ) {
     this.items = new OahuItems(master, messages.texts);
+    this.itemModels = new OahuItemModels(dump);
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {

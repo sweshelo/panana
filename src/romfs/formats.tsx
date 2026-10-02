@@ -1,6 +1,8 @@
 // Views of one file of the RomFS viewer, by format. A format is added by putting a FormatView in FORMAT_VIEWS (the
 // first whose `match` takes the bytes is used; the hex dump takes the rest).
 import { useMemo, useState, type ReactNode } from 'react';
+import { BchView } from '../bch/BchView';
+import { isBch } from '../bch/bch';
 import { GsTable } from '../archive/gstable';
 import { Gmsg, toUnits } from '../game/gmsg';
 import { defFor, fieldPlace, fieldText, readField, type FieldContext, type TableDef } from '../game/tabledef';
@@ -196,6 +198,7 @@ const isGmsg = (b: Uint8Array): boolean => b.length >= 0x20 && ascii(b, 0, 4) ==
 export const FORMAT_VIEWS: FormatView[] = [
   { id: 'gmsg', label: 'メッセージ', match: isGmsg, View: GmsgView },
   { id: 'gstable', label: '表', match: (b) => isGsTable(b), View: GsTableView },
+  { id: 'bch', label: 'モデル', match: isBch, View: BchView },
 ];
 
 export const HEX_VIEW: FormatView = { id: 'hex', label: '16 進', match: () => true, View: HexView };
