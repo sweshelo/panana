@@ -42,7 +42,8 @@ describe.skipIf(!hasOahuBase)('RPG3 sounds (Base)', () => {
     const cave = uses.get(24)!;
     expect(cave.some((u) => u.kind === 'map' && u.where === 'mapData 行 1' && u.links?.some((l) => l.label === 'ドローンのどうくつ'))).toBe(true);
     const boss = uses.get(8)!.filter((u) => u.kind === 'battle');
-    expect(boss.length).toBe(22);
+    // 24 groups in the Base's master, 22 in the Update's
+    expect(boss.length).toBe(24);
     expect(boss.some((u) => u.where.startsWith('群れ #19 ') && u.links?.[0]?.href === '#/groups/19')).toBe(true);
     expect(uses.get(23)?.some((u) => u.kind === 'code')).toBeFalsy();
     // the steps
@@ -73,6 +74,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 sounds (Base + Update)', (
     // FUN_0021112C(&hash of group 19, 0) at 0x2BAE18: BGM_BATTLE_2 by the group's bit
     expect(uses.get(8)!.some((u) => u.where.startsWith('@0x2BAE18') && u.links?.[0]?.href === '#/groups/19')).toBe(true);
     expect(uses.get(9)!.filter((u) => u.kind === 'battle').length).toBe(5);
+    expect(uses.get(8)!.filter((u) => u.kind === 'battle' && u.where.startsWith('群れ')).length).toBe(22);
     const html = renderToString(<OahuSoundBook session={s} sounds={{ rows: 597, name: () => '', kind: () => 'bgm', item: () => 0, volume: () => 0, named: true, index: () => null, label: () => '' } as unknown as SoundNames} arg="23" />);
     expect(html).toContain('FUN_00213970');
     expect(html).not.toContain('Update を追加すると');
