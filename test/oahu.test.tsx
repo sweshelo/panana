@@ -11,14 +11,13 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
 import { OahuCodePage } from '../src/oahu/CodePage';
-import { OAHU_EQUIP_EFFECTS } from '../src/oahu/tables';
+import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
 import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
-import { OAHU_ELEMENT_NAMES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION } from '../src/oahu/tables';
 import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -285,6 +284,31 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
     expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
+  });
+
+  test('form changes: category 21 / 22 actions point at the new form (+0x1A), the ボディ ones fire by +0x2A', () => {
+    const { battle } = s;
+    // ポーン 148 → 149 → 150: ボディ (効果 0x2F) actions with trigger 101 (a blow that would defeat it).
+    expect(battle.formChanges(148)).toEqual([{ action: 530, via: 'body', to: 149, trigger: 101 }]);
+    expect(battle.formChanges(149)).toEqual([{ action: 531, via: 'body', to: 150, trigger: 101 }]);
+    expect(battle.formChanges(150)).toEqual([]);
+    // ドローンＺ 160 → じしょう・まおう 161 (category 22, the whitened screen) → 162.
+    expect(battle.actions.get(966, 'category')).toBe(22);
+    expect(battle.formChanges(160).map((c) => c.to)).toEqual([161]);
+    expect(battle.formChanges(161)).toEqual([{ action: 562, via: 'body', to: 162, trigger: 101 }]);
+    // たからばこぞう 18 hides by a skill (picked by the AI), 19 jumps out when hit by breath or spells (107).
+    expect(battle.formChanges(18)).toEqual([{ action: 644, via: 'skill3', to: 19, trigger: null }]);
+    expect(battle.formChanges(19)).toEqual([{ action: 645, via: 'skill2', to: 18, trigger: null }, { action: 645, via: 'body', to: 18, trigger: 107 }]);
+    // テンペスター's barrier: broken by a wind attack (110 = element 3).
+    expect(battle.formChanges(112).find((c) => c.via === 'body')).toEqual({ action: 1026, via: 'body', to: 111, trigger: 110 });
+    expect(oahuTriggerLabel(110)).toBe('風の攻撃を受けたとき');
+    expect(oahuTriggerLabel(30)).toBe('30% の確率');
+    expect(battle.formSources(149)).toEqual([{ monster: 148, change: { action: 530, via: 'body', to: 149, trigger: 101 } }]);
+    // Every category 21 / 22 action points at a monster row.
+    for (let a = 1; a < battle.actions.rows; a++) if (OAHU_FORM_CATEGORIES.includes(battle.actions.get(a, 'category'))) expect(battle.formTarget(a)).toBeGreaterThan(0);
+    const html = renderToString(<OahuMonsterPage session={s} arg="148" />);
+    for (const t of ['変身', '倒される一撃を受けたとき', '#149']) expect(html).toContain(t);
+    expect(renderToString(<OahuActionPage session={s} arg="530" />)).toContain('形態を変える');
   });
 
   test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {

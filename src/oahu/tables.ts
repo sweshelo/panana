@@ -112,10 +112,37 @@ export const OAHU_STATE_CODE: Record<number, string> = {
   33: 'おたから', 34: 'レアおたから', 37: 'ステルス', 41: 'すべての状態異常', 42: '状態を消す',
 };
 
-/** Category of an action (+0x2C), named from the actions that have it. FUN_004CC980 looks for 2 and 6 (ブレス・呪文). */
+/**
+ * Category of an action (+0x2C), named from the actions that have it. FUN_004CC980 looks for 2 and 6 (ブレス・呪文). The
+ * battle result takes it as its kind (+0x10), and FUN_001B51E8 applies the result by it: 21 and 22 change the unit's
+ * form to the monster row of +0x1A (FUN_0029C93C); 22 also whitens the screen (@0x219F3C, only #966 ドローンＺ → まおう).
+ */
 export const OAHU_ACTION_CATEGORY: Record<number, string> = {
-  1: '打撃', 2: 'ブレス・ビーム', 5: '能力の増減', 6: '呪文・状態', 7: 'アンテナ (戦闘のあと)', 8: '回復・アイテム', 10: 'アンテナ (自動)', 13: '特殊', 21: 'ためる',
+  1: '打撃', 2: 'ブレス・ビーム', 5: '能力の増減', 6: '呪文・状態', 7: 'アンテナ (戦闘のあと)', 8: '回復・アイテム', 10: 'アンテナ (自動)', 13: '特殊',
+  21: '形態を変える', 22: '形態を変える (演出つき)',
 };
+/** Categories that change the unit's form (OAHU_ACTION_CATEGORY 21, 22): +0x1A is the monster row of the new form. */
+export const OAHU_FORM_CATEGORIES = [21, 22];
+
+/**
+ * When a kind-3 action of the states fires (+0x2A): FUN_001B7D18 checks it for the actions of effect 0x2F (a monster's
+ * ボディ, +0x34) after each hit, the same codes are checked for the automatic actions (@0x1C04C8). 1〜100 is a chance in
+ * %. 101 fires on a blow that would defeat the unit, which then survives (the fatal mark +0x1B bit6 is cleared), and a
+ * form change by it refills the HP (FUN_0029D6C0). 102〜107 are not checked for the attacks of caught monsters.
+ */
+export const OAHU_ACTION_TRIGGER: Record<number, string> = {
+  0: 'いつでも',
+  101: '倒される一撃を受けたとき (倒れずに発動)',
+  102: '打撃を受けたとき', 103: '打撃を受けたとき (20%)', 104: '打撃を受けたとき (30%)', 105: '打撃を受けたとき (50%)', 106: '打撃を受けたとき (80%)',
+  107: 'ブレス・呪文などを受けたとき (系統 2・3・6・15)',
+  ...Object.fromEntries(ELEMENT.slice(1).map((e, i): [number, string] => [108 + i, `${e}の攻撃を受けたとき`])),
+  116: '仲間がいるとき', 117: '仲間がいるとき (50%)', 118: '自分だけのとき', 119: '自分だけのとき (50%)',
+};
+
+/** Label of a trigger code (+0x2A): the named codes, else "n %" for 1〜100. */
+export function oahuTriggerLabel(v: number): string {
+  return OAHU_ACTION_TRIGGER[v] ?? (v >= 1 && v <= 100 ? `${v}% の確率` : `${v} (未確認)`);
+}
 
 /** Side an action aims at (w0 bit19-20): FUN_0018F13C takes the units of its own side for 1. */
 export const OAHU_ACTION_SIDE: Record<number, string> = { 0: '相手の側', 1: '自分の側' };
@@ -137,7 +164,7 @@ export const OAHU_ACTION_DATA: TableDef = {
     f('result1', 0x10, 'u32', '結果', { ref: msg, note: '1 体に効いたとき・成功したときの文 (「にダメージ与えた」「は どくをあびた」「が かけつけた」)' }),
     f('result2', 0x14, 'u32', '結果 (複数・別)', { ref: msg, note: '複数に効いたときの文 (「に 平均ダメージ与えた」「のHPが 平均回復した」) か、もう一方の結果 (「しかし　だれも来なかった…」「の寿命が縮んだ」)。文から推定' }),
     f('min', 0x18, 'u16', '最小', { note: '威力・回復量など (RPG2 の +0x18)' }),
-    f('max', 0x1a, 'u16', '最大'),
+    f('max', 0x1a, 'u16', '最大', { note: '系統 21・22 (形態を変える) では次の形態の monsterParameter の行 (FUN_001B459C が結果の +0x16 に入れる)' }),
     f('u1C', 0x1c, 'u16', '+0x1C', { unsure: true }),
     f('perf1', 0x1e, 'u16', '演出 1', { unsure: true, note: '演出の表の行と推定 (RPG2 の +0x1E)。続く欄も同じ並びの番号' }),
     f('perf2', 0x20, 'u16', '演出 2', { unsure: true }),
@@ -145,7 +172,7 @@ export const OAHU_ACTION_DATA: TableDef = {
     f('perf4', 0x24, 'u16', '演出 4', { unsure: true }),
     f('perf5', 0x26, 'u16', '演出 5', { unsure: true }),
     f('u28', 0x28, 'u16', '+0x28', { unsure: true }),
-    f('u2A', 0x2a, 'u8', '+0x2A', { unsure: true }),
+    f('trigger', 0x2a, 'u8', '発動の条件', { note: '種類 3 のアクションを、ボディ (効果 0x2F) や自動 (効果 0x2D) の枠からいつ出すか (FUN_001B7D18)。1〜100 は確率 (%)。101 = 倒される一撃を受けたとき (倒れずに発動し、形態を変えるなら HP も戻る)。102〜106 打撃、107 ブレス・呪文など、108〜115 属性 1〜8 の攻撃を受けたとき。116〜119 は味方の数 (推定)' }),
     f('ap', 0x2b, 's8', '消費 AP', { note: '呪文・アンテナ・つかまえたモンスターのアクションにある。ワザの条件 (monsterBrain.bin) が AP を見るとき、使う側の今の AP (ユニット +0x62) より多ければ使わない (FUN_0018F13C)' }),
     f('category', 0x2c, 'u8', '系統', { ref: { kind: 'enum', values: OAHU_ACTION_CATEGORY }, unsure: true, note: '名前はその系統のアクションから付けたもの' }),
     f('u2D', 0x2d, 'u8', '+0x2D', { unsure: true }),
@@ -338,9 +365,9 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     ...RESIST_OTHER.map(([key, label, o, b]) => f(key, o, 's32', `たいせい ${label}の増減`, { bits: [b, 5], unsure: true, note: '状態の番号 16〜19 (能力の増減) の位置。能力ダウンへのたいせいと推定' })),
     f('ghost', 0x30, 'u32', 'ゴースト', { bits: [0, 1], note: '効果 0x10 (conditionData 60 ゴースト化)' }),
     f('charm', 0x30, 'u32', '効果 0x30', { bits: [1, 1], unsure: true, note: 'conditionData 75 ゆうわく の状態を付ける' }),
-    f('act2B', 0x30, 'u32', 'アクション (効果 0x2B)', { bits: [2, 12], ref: actionRef, unsure: true }),
+    f('act2B', 0x30, 'u32', 'アクション (効果 0x2B)', { bits: [2, 12], ref: actionRef, unsure: true, note: 'ほかの形態からこの行に変わった直後に続けて出すアクション (FUN_001B459C が新しい行のこの欄を読む)。元のデータではどの行も 0' }),
     f('act2C', 0x30, 'u32', 'アクション (効果 0x2C)', { bits: [14, 12], ref: actionRef, unsure: true }),
-    f('body', 0x34, 'u32', 'ボディのアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2F (攻撃を受けたとき。どくボディなど)' }),
+    f('body', 0x34, 'u32', 'ボディのアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2F (攻撃を受けたとき。どくボディなど)。種類 3 のアクションだけが、その +0x2A の条件で出る (FUN_001B7D18)。ボスの変身 (系統 21・22) もここに入る' }),
     f('body2', 0x34, 'u32', 'ボディのアクション 2', { bits: [12, 12], ref: actionRef, note: '効果 0x2F の 2 つ目' }),
     f('auto', 0x38, 'u32', '自動のアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2D' }),
     f('ai', 0x38, 'u32', 'ワザの選び方', { bits: [12, 3], ref: { kind: 'enum', values: OAHU_AI_MODE }, note: 'FUN_001BE560 の 5 通り。RPG2 の AI の型と同じと推定' }),
@@ -366,7 +393,7 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     ]).flat(),
     f('u60', 0x60, 'u16', '+0x60', { unsure: true, hex: true }),
     f('u62', 0x62, 'u16', '+0x62', { unsure: true }),
-    f('flags', 0x64, 'u16', 'フラグ', { unsure: true, hex: true, note: 'bit0 と bit4 が読まれる' }),
+    f('flags', 0x64, 'u16', 'フラグ', { unsure: true, hex: true, note: 'bit0 と bit4 が読まれる。bit4 が 0 の行 (ボスの最後でない形態) は、@0x1F6838 の攻撃では倒れない' }),
     f('book', 0x66, 'u8', '+0x66', { unsure: true, note: '図鑑の番号か (同じモンスターの 2 つ目の行は 0)' }),
     f('museum', 0x67, 'u8', 'ミュージアムの番号', { note: 'ミュージアムの読み出しが使う' }),
     f('u68', 0x68, 'u8', '+0x68', { unsure: true }),
