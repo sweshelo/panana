@@ -60,7 +60,7 @@ export function oahuCategoryLabel(b: number): string {
   return OAHU_ITEM_CATEGORY[b] ?? `${OAHU_ITEM_KIND[b & 0xf] ?? `分類 ${b & 0xf}`} (0x${b.toString(16).toUpperCase().padStart(2, '0')})`;
 }
 
-/** "能力アップ: こうげき +20", "経験値 120%", "アクション (打撃): #233 どくこうげき". */
+/** "能力アップ: こうげき +20", "経験値増加 120%", "アクション (打撃): #233 どくこうげき". */
 export function oahuEffectText(e: OahuEquipEffect, actionName: (row: number) => string = (r) => `#${r}`): string {
   const k = OAHU_EQUIP_EFFECTS[e.kind];
   if (!k) return `効果 0x${e.kind.toString(16).toUpperCase().padStart(2, '0')}${e.sub ? ` (${e.sub})` : ''}: ${e.value}`;
@@ -72,6 +72,7 @@ export function oahuEffectText(e: OahuEquipEffect, actionName: (row: number) => 
     case 'element': return `${head}: ${OAHU_EFFECT_SUBS.element[e.value] ?? e.value}`;
     case 'action': return `${head}: ${actionName(e.value)}`;
     case 'number': return `${head} ${e.value}`;
+    case 'flag': return e.value === 1 ? head : `${head} (${e.value})`;
   }
 }
 

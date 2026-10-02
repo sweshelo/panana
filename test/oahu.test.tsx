@@ -8,6 +8,9 @@ import { GsTable } from '../src/archive/gstable';
 import { equalUnits, Gmsg, toUnits } from '../src/game/gmsg';
 import { OAHU_SYNTAX, textToUnits, unitsToText } from '../src/game/msgtext';
 import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
+import { OahuActionPage } from '../src/oahu/ActionPage';
+import { OahuGroupPage } from '../src/oahu/GroupPage';
+import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuSession } from '../src/oahu/session';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -91,7 +94,7 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
     expect(choker.kind).toBe(3);
     expect(choker.effects.map((e) => items.effectText(e))).toEqual(['能力アップ: さいだいＨＰ +15']);
     const mantle = items.items.find((it) => it.name === 'ひのマント')!;
-    expect(mantle.effects.map((e) => items.effectText(e))).toEqual(['たいせい (属性): 火 +2', '浮遊 1']);
+    expect(mantle.effects.map((e) => items.effectText(e))).toEqual(['たいせい (属性): 火 +2', '浮遊']);
     const claw = items.items.find((it) => it.name === 'するどいつめ')!;
     expect(items.effectText(claw.effects[0]!)).toBe('アクション (打撃): #233 どくこうげき');
     expect(items.items.find((it) => it.name === 'ふつうのさお')!.limit).toBe(1);
@@ -208,5 +211,55 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
     expect(unitsToText(new Gmsg(unpackEntry(out, cmd).body).units(80000)!, OAHU_SYNTAX).text).toBe('ＭＯＤ');
     const zip = unzipSync(u.modZip());
     expect(Object.keys(zip).sort()).toEqual(['00040000000EF000/romfs/3B630000', '00040000000EF000/romfs/58190000', '00040000000EF000/romfs/619D0000', '00040000000EF000/romfs/838B0000']);
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actions (Base + Update)', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('the fields of a monster: stats, drops, skills, resistances', () => {
+    const { battle } = s;
+    const m = battle.monsters;
+    expect([m.rows, battle.groups.rows, battle.actions.rows, battle.conditions.rows]).toEqual([201, 190, 1126, 125]);
+    expect(battle.monsterName(1)).toBe('はなもぐら');
+    const g = (k: string): number => m.get(1, k);
+    expect([g('level'), g('hpMin'), g('hpMax'), g('attackMax'), g('defenseMax'), g('speedMax'), g('exp'), g('gold')]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
+    expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([['タンポポのたね(色1)', 4], ['キズぐすり', 7], ['ちていじんプリント', 10]]);
+    expect(battle.skills(1)[0]).toEqual({ slot: 1, action: 995, condition: 1 });
+    expect(battle.actionName(995)).toBe('たいあたり');
+    expect(m.get(150, 'exp')).toBe(65000);
+    expect(m.get(180, 'exp')).toBe(100000);
+    expect(battle.monsterList().length).toBeGreaterThan(150);
+    expect(battle.groupsOf(1)).toContain(5);
+  });
+
+  test('actions, states and groups', () => {
+    const { battle } = s;
+    expect(battle.actions.get(233, 'state')).toBe(1);
+    expect(battle.conditionName(1)).toBe('どく');
+    expect(battle.conditionName(42)).toBe('状態 42');
+    expect(battle.conditionName(64)).toBe('毒たいせい');
+    expect(battle.actions.get(969, 'element')).toBe(2);
+    expect(battle.actions.get(984, 'range')).toBe(3);
+    expect(battle.conditions.get(36, 'combine')).toBe(4);
+    expect(battle.actionUsers(995).monsters).toContain(1);
+    expect(battle.group(1).fixed.map((r) => battle.monsterName(r))).toEqual(['たからばこぞう']);
+    expect(battle.group(5).leads.map((x) => battle.monsterName(x.monster))).toEqual(['はなもぐら', 'てっぽうオトシゴ']);
+  });
+
+  test('the books render; an edit goes into the master', () => {
+    const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
+    for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい']) expect(html).toContain(t);
+    expect(renderToString(<OahuGroupPage session={s} arg="5" />)).toContain('てっぽうオトシゴ');
+    expect(renderToString(<OahuActionPage session={s} arg="233" />)).toContain('どくこうげき');
+    s.battle.monsters.set(1, 'gold', 777);
+    s.battle.groups.set(5, 'lead1Weight', 9);
+    const out = parseArchive(s.modFiles().get('21350000')!);
+    const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
+    expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
+    expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
   });
 });

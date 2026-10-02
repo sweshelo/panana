@@ -9,7 +9,7 @@ import { RowFields } from '../ui/RowFields';
 import { hex8 } from '../util/bytes';
 import { OAHU_ITEM_FILE, type OahuItem, type OahuItemNumber, type OahuItems } from './items';
 import type { OahuSession } from './session';
-import { OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
+import { OAHU_EFFECT_KINDS, OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
 
 export const oahuItemHref = (id: number): string => `#/items/${id}`;
 
@@ -211,7 +211,8 @@ function FieldEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
 const EQUIP_INFO = [
   '装備している間に付く効果です。1 つの装備に 2 つまで。',
   '効果 1 = 種類 +0x3B・対象 +0x3C・値 +0x34 (s16)、効果 2 = 種類 +0x3D・対象 +0x3E・値 +0x36 (s16)。',
-  '種類の名前は、その種類を持つ装備と RPG2 の同じ装備の効果から付けたもので、確かめていません。名前のない種類は番号で表示します。',
+  '種類は code.bin の対応表 (FUN_001A6348) で conditionData の状態に当たり、名前はその状態の名前です (名前が「なし」の状態は、持っている装備から付けた名前か「状態 番号」)。',
+  '値の読み方 (足し算・%・付くかどうか) は、その状態の足し合わせ方 (conditionData +0x36) から。',
 ].join('\n');
 
 function EquipEffects({ items, it, set, mark }: {
@@ -220,7 +221,7 @@ function EquipEffects({ items, it, set, mark }: {
   set: (key: OahuItemNumber, v: number) => void;
   mark: (key: string) => { className: string; title: string };
 }): ReactNode {
-  const kinds = Array.from({ length: 0x34 }, (_, k) => k);
+  const kinds = Array.from({ length: OAHU_EFFECT_KINDS + 1 }, (_, k) => k);
   return (
     <div className="model-line equip-effects">
       <div className="with-info">{'装備の効果'}<InfoTip text={EQUIP_INFO} /></div>
@@ -240,7 +241,7 @@ function EquipEffects({ items, it, set, mark }: {
             <select {...mark(kindKey)} value={kind} onChange={(e) => set(kindKey, Number(e.target.value))}>
               <option value={0}>なし</option>
               {kinds.slice(1).map((k) => <option key={k} value={k}>{`0x${k.toString(16).toUpperCase().padStart(2, '0')} ${OAHU_EQUIP_EFFECTS[k]?.label ?? ''}`}</option>)}
-              {kind >= 0x34 && <option value={kind}>{`0x${kind.toString(16).toUpperCase()}`}</option>}
+              {kind > OAHU_EFFECT_KINDS && <option value={kind}>{`0x${kind.toString(16).toUpperCase()}`}</option>}
             </select>
             {!!kind && (subs
               ? <select {...mark(subKey)} value={sub} onChange={(e) => set(subKey, Number(e.target.value))}>
