@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { bchOffset, bchSummary, parseBch } from '../src/bch/bch';
 import { bchModelSet } from '../src/bch/models';
+import { OahuSession } from '../src/oahu/session';
 import { openImage, type Dump } from '../src/rom/dump';
 import { viewsFor } from '../src/romfs/formats';
 import { asArchive } from '../src/romfs/sniff';
@@ -73,4 +74,26 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
     expect(set.models.get(0)?.name).toBe('bgpt_15_green_26');
     expect([...set.textures.keys()]).toContain('twn_flower');
   });
+
+  test('item models: every model hash of itemData is found, and the textures its materials name come with it', async () => {
+    const s = await OahuSession.open(dump);
+    const hashes = [...new Set(s.items.items.map((it) => it.model).filter((h) => h))];
+    expect(hashes.length).toBe(804);
+    const kinds = new Map<string, number>();
+    for (const h of hashes) {
+      const m = (await s.itemModels.model(h))!;
+      expect(m).not.toBeNull();
+      const k = `${m.archive} ${m.kind}`;
+      kinds.set(k, (kinds.get(k) ?? 0) + 1);
+      if (m.kind !== 'model') continue;
+      const { set } = (await m.ref.load())!;
+      for (const model of set.models.values())
+        for (const mat of model.materials) for (const t of mat.textures) if (t) expect(set.textures.has(t)).toBe(true);
+    }
+    expect(Object.fromEntries(kinds)).toEqual({
+      '838B0000 model': 239, '96EB0000 model': 229, 'D4270000 model': 142, '982C0000 model': 10, '980C0000 texture': 95, '21350000 texture': 89,
+    });
+    const potion = (await s.itemModels.model(s.items.item(1)!.model))!;
+    expect(potion.kind === 'model' && (await potion.ref.load())!.set.models.get(0)!.name).toBe('item');
+  }, 120_000);
 });
