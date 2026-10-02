@@ -11,13 +11,13 @@ import { Board, EmptyBoard } from '../ui/Board';
 import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
 import { ModelView } from '../ui/ModelView';
 import { RowFields } from '../ui/RowFields';
-import { OAHU_MONSTER_TEXTS, type OahuBattle } from './battle';
+import { OAHU_MONSTER_TEXTS, type OahuBattle, type OahuFormChange } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
 import {
-  oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
+  oahuActionEntry, oahuActionHref, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
 } from './pickers';
 import type { OahuSession } from './session';
-import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS } from './tables';
+import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS, oahuTriggerLabel } from './tables';
 
 export { oahuActionHref, oahuGroupHref, oahuMonsterHref } from './pickers';
 
@@ -132,6 +132,7 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
         <SkillEditor battle={battle} row={row} f={f} onEdit={onEdit} />
         <StateActions battle={battle} row={row} onEdit={onEdit} />
       </div>
+      <FormChanges battle={battle} row={row} />
       <h3 className="with-info">たいせい<InfoTip text={RESIST_INFO} /></h3>
       <ResistEditor battle={battle} row={row} onEdit={onEdit} />
       <h3>{`いる群れ (${groups.length})`}</h3>
@@ -235,9 +236,9 @@ function SkillEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
 const STATE_ACTIONS: [string, string, string][] = [
   ['own', 'つかまえたとき', '+0x3C。アンテナ「つかまえる」でつかまえたこのモンスターを、戦闘で使ったときのアクション (actionData の種類 2 の行)。'],
   ['auto', '自動', '効果 0x2D。ターンごとに自動で使うアクション。'],
-  ['body', 'ボディ', '効果 0x2F。攻撃を受けたときのアクション (どくボディなど)。'],
+  ['body', 'ボディ', '効果 0x2F。攻撃を受けたときのアクション (どくボディなど)。種類 3 のアクションが、その「発動の条件」(+0x2A) を満たすと出ます。ボスの変身もここに入ります。'],
   ['body2', 'ボディ 2', '効果 0x2F の 2 つ目。'],
-  ['act2B', '効果 0x2B', '効果 0x2B のアクション (意味は未確認)。'],
+  ['act2B', '効果 0x2B', '効果 0x2B のアクション。ほかの形態からこの行に変わった直後に続けて出します (FUN_001B459C)。元のデータではどの行も 0 です。'],
   ['act2C', '効果 0x2C', '効果 0x2C のアクション (意味は未確認)。'],
 ];
 
@@ -277,6 +278,51 @@ function StateActions({ battle, row, onEdit }: { battle: OahuBattle; row: number
         <OahuActionPicker battle={battle} title="アクションを選ぶ" current={rows.get(row, picking)} onClose={() => setPicking(null)}
           onPick={(a) => { setPicking(null); set(picking, a); }} />
       )}
+    </section>
+  );
+}
+
+const FORM_INFO = [
+  'RPG3 の変身はアクションで起きます。系統 21・22 (形態を変える) のアクションが出ると、そのアクションの +0x1A の行の形態に作り直します (FUN_0029C93C)。',
+  'ワザの枠に入れると、ほかのワザと同じように AI が選びます。ボディ (効果 0x2F) などの枠に入れた種類 3 のアクションは、アクションの「発動の条件」(+0x2A) を満たすと出ます (FUN_001B7D18)。',
+  '条件 101 (倒される一撃を受けたとき) では倒れずに変身し、HP が戻ります。RPG2 のボス特殊番号と次の形態 (+0x50) に当たる欄はありません。',
+].join('\n');
+
+function formVia(via: string): string {
+  if (via.startsWith('skill')) return `ワザ ${via.slice(5)}`;
+  return STATE_ACTIONS.find(([k]) => k === via)?.[1] ?? via;
+}
+
+/** The form changes from this row and into it (the actions of category 21 / 22 and the rows they point at). */
+function FormChanges({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
+  const out = battle.formChanges(row);
+  const into = battle.formSources(row);
+  if (!out.length && !into.length) return null;
+  const line = (c: OahuFormChange): ReactNode => (
+    <>
+      <a href={oahuActionHref(c.action)}>{battle.actionLabel(c.action)}</a>
+      <span className="muted">{c.trigger === null ? '' : ` (${oahuTriggerLabel(c.trigger)})`}</span>
+    </>
+  );
+  return (
+    <section>
+      <Heading title="変身" info={FORM_INFO} />
+      <table className="enc-table ai-fields">
+        <tbody>
+          {out.map((c) => (
+            <tr key={`o${c.via}`}>
+              <td>{formVia(c.via)}</td>
+              <td>{line(c)}{' → '}<a href={oahuMonsterHref(c.to)}>{`${battle.monsterName(c.to)} (#${c.to})`}</a></td>
+            </tr>
+          ))}
+          {into.map(({ monster, change }) => (
+            <tr key={`i${monster}${change.via}`}>
+              <td>この形態になる</td>
+              <td><a href={oahuMonsterHref(monster)}>{`${battle.monsterName(monster)} (#${monster})`}</a>{` の${formVia(change.via)} `}{line(change)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

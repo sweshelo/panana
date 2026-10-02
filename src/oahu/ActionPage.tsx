@@ -9,7 +9,7 @@ import { OAHU_ACTION_TEXTS, type OahuBattle } from './battle';
 import { enumOptions, FieldNumber, FieldSelect, MessageFields, Stat } from './FieldInput';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
 import type { OahuSession } from './session';
-import { OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_ELEMENT_NAMES, OAHU_STATE_CODE } from './tables';
+import { OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_ELEMENT_NAMES, OAHU_STATE_CODE, oahuTriggerLabel } from './tables';
 
 const PAGE = 300;
 
@@ -73,6 +73,7 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
   const rows = battle.actions;
   const p = { rows, row, onEdit };
   const users = useMemo(() => battle.actionUsers(row), [battle, row]);
+  const formTarget = battle.formTarget(row);
   const shared = useMemo(() => OAHU_ACTION_TEXTS.filter(([k]) => battle.actionsSharing(row, k) > 1).map(([, label]) => label), [battle, row]);
   return (
     <>
@@ -89,7 +90,15 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
         <Stat label="範囲" info="w0 bit21-24。番号の意味は RPG2 と同じと推定しています。"><FieldSelect {...p} k="range" options={enumOptions(ACTION_RANGE, true)} /></Stat>
         <Stat label="狙う側" info="w0 bit19-20。1 なら自分の側 (回復・能力アップ)。"><FieldSelect {...p} k="side" options={enumOptions(OAHU_ACTION_SIDE)} /></Stat>
         <Stat label="状態" info="+0x2E。付ける (治す) 状態の番号で、装備の効果 0x14 の対象と同じ並び。"><FieldSelect {...p} k="state" options={[[0, 'なし'], ...enumOptions(OAHU_STATE_CODE, true)]} /></Stat>
+        <Stat label="発動の条件" info={TRIGGER_INFO}><FieldSelect {...p} k="trigger" options={TRIGGER_OPTIONS} /></Stat>
       </div>
+      {formTarget > 0 && (
+        <div className="row">
+          {'形態を変える: 使ったモンスターを '}
+          <a href={oahuMonsterHref(formTarget)}>{`${battle.monsterName(formTarget)} (#${formTarget})`}</a>
+          {' の形態に作り直します (+0x1A の行)。'}
+        </div>
+      )}
       {(users.monsters.length > 0 || users.items.length > 0) && (
         <div className="row">
           {'使うもの: '}
@@ -108,6 +117,12 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
     </>
   );
 }
+
+const TRIGGER_INFO = [
+  '+0x2A。種類 3 (自動・特殊) のアクションを、モンスターのボディ (効果 0x2F) や自動 (効果 0x2D) の枠からいつ出すか (FUN_001B7D18)。',
+  'ワザの枠から AI が選ぶときは使われません。1〜100 は確率 (%) です。116〜119 は味方の数による条件と推定しています。',
+].join('\n');
+const TRIGGER_OPTIONS = Array.from({ length: 120 }, (_, v): [number, string] => [v, `${v}: ${oahuTriggerLabel(v)}`]);
 
 const ELEMENT_INFO = 'w0 bit27-31。10〜25 は 2 つの属性 (火・氷 など) で、ダメージを半分ずつそれぞれの属性のたいせいで計算して足します (FUN_001B82B0)。';
 

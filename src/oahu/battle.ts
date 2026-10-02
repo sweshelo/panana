@@ -11,7 +11,7 @@ import type { OahuItemModels } from './itemModels';
 import type { OahuMonsterModels } from './monsterModels';
 import type { ModelRef } from '../pages/modelview';
 import { OahuRows } from './rows';
-import { OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_GROUP, OAHU_MONSTER_PARAMETER, OAHU_SKILLS, OAHU_STATE_NAMES } from './tables';
+import { OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_FORM_CATEGORIES, OAHU_MONSTER_GROUP, OAHU_MONSTER_PARAMETER, OAHU_SKILLS, OAHU_STATE_NAMES } from './tables';
 
 export interface OahuMonster {
   id: number;
@@ -57,6 +57,20 @@ export interface OahuAction {
   power: [number, number];
   state: number;
 }
+
+/** A way a monster row changes into another form: an action of category 21 / 22 it has (OAHU_FORM_CATEGORIES). */
+export interface OahuFormChange {
+  action: number;
+  /** Where the monster has the action: "skill1"〜"skill6" or a field of OAHU_STATE_FIELDS ("body" …). */
+  via: string;
+  /** monsterParameter row of the new form (the action's +0x1A). */
+  to: number;
+  /** When it fires (+0x2A, OAHU_ACTION_TRIGGER): a kind-3 action in a state's field; null for a skill (the AI picks it). */
+  trigger: number | null;
+}
+
+/** Fields of a monster row with the actions of its states (not the skill slots). */
+export const OAHU_STATE_FIELDS = ['auto', 'body', 'body2', 'act2B', 'act2C'];
 
 /** Message fields of a monster row. */
 export const OAHU_MONSTER_TEXTS: [string, string][] = [['name', '名前'], ['desc', '説明']];
@@ -235,6 +249,35 @@ export class OahuBattle {
     for (let m = 1; m < this.monsters.rows; m++) if (this.monsters.get(m, 'name') && OAHU_MONSTER_ACTIONS.some((k) => this.monsters.get(m, k) === row)) monsters.push(m);
     const items = this.items.items.filter((it) => it.action === row || it.effects.some((e) => e.value === row && e.kind >= 0x2b && e.kind <= 0x2f)).map((it) => it.id);
     return { monsters, items };
+  }
+
+  /** The monster row an action changes its user into (category 21 / 22, +0x1A), else 0. */
+  formTarget(action: number): number {
+    if (action <= 0 || action >= this.actions.rows || !OAHU_FORM_CATEGORIES.includes(this.actions.get(action, 'category'))) return 0;
+    const to = this.actions.get(action, 'max');
+    return to > 0 && to < this.monsters.rows ? to : 0;
+  }
+
+  /** The form changes of a monster row: its skills and the actions of its states that change the form. */
+  formChanges(row: number): OahuFormChange[] {
+    const out: OahuFormChange[] = [];
+    const add = (via: string, action: number, state: boolean): void => {
+      const to = this.formTarget(action);
+      if (to) out.push({ action, via, to, trigger: state && this.actions.get(action, 'kind') === 3 ? this.actions.get(action, 'trigger') : null });
+    };
+    for (const s of this.usedSkills(row)) add(`skill${s.slot}`, s.action, false);
+    for (const k of OAHU_STATE_FIELDS) add(k, this.monsters.get(row, k), true);
+    return out;
+  }
+
+  /** The monster rows that change into this row, with the action that does it. */
+  formSources(row: number): { monster: number; change: OahuFormChange }[] {
+    const out: { monster: number; change: OahuFormChange }[] = [];
+    for (let m = 1; m < this.monsters.rows; m++) {
+      if (m === row || !this.monsters.get(m, 'name')) continue;
+      for (const c of this.formChanges(m)) if (c.to === row) out.push({ monster: m, change: c });
+    }
+    return out;
   }
 
   conditionName(row: number): string {
