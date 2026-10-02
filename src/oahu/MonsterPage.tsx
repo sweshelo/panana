@@ -10,6 +10,7 @@ import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
 import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
 import { ModelView } from '../ui/ModelView';
+import { oneIn, pct } from '../pages/monsteredit';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
@@ -166,7 +167,11 @@ interface EditProps {
   onEdit: () => void;
 }
 
-const DROP_INFO = '3 枠はそれぞれ別に抽選されます (FUN_004CD440)。率は 0〜15 の値で、RPG2 と同じく大きいほど出にくいと推定しています。';
+const DROP_INFO = [
+  '率の値ごとに battleParameter の表 (+0xE6) で「何回に 1 回落とすか」が決まり、3 枠はそれぞれ別に抽選されます (FUN_001C3994)。',
+  '値 0 は抽選なしで必ず、1〜9 はおたから、10〜12 はレア、13〜15 は激レア (FUN_004CAB64)。パーティーの「ドロップ率」「レアドロップ率」「激レアドロップ率」(状態 37〜39、%) がそれぞれに効きます。',
+  '確率 = 1 − (1 − 1/表の値)^(% / 100)。表示は補正なしのときです。',
+].join('\n');
 
 function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
   const [, max] = f.range('drop1');
@@ -176,7 +181,8 @@ function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
       slots={battle.drops(row).map((d) => ({
         item: d.item,
         original: f.original(`drop${d.slot}`),
-        rate: <FieldChoice f={f} k={`rate${d.slot}`} edited={onEdit} labels={(v) => `率 ${v}`} />,
+        sub: `${battle.dropClass(d.rate).label}・${pct(battle.dropOdds(d.rate))}`,
+        rate: <FieldChoice f={f} k={`rate${d.slot}`} edited={onEdit} labels={(v) => `${v}: ${oneIn(battle.dropOdds(v))}`} />,
       }))}
       entry={(id) => oahuItemEntry(battle, id)}
       setItem={(k, id) => { f.set(`drop${k + 1}`, id); onEdit(); }}
