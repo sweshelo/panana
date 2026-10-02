@@ -9,7 +9,7 @@ import { OAHU_ACTION_TEXTS, type OahuBattle } from './battle';
 import { enumOptions, FieldNumber, FieldSelect, MessageFields, Stat } from './FieldInput';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
 import type { OahuSession } from './session';
-import { OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_ELEMENT_NAMES, OAHU_STATE_CODE, oahuTriggerLabel } from './tables';
+import { OAHU_ACTION_CATEGORY, OAHU_ACTION_DATA, OAHU_ACTION_KIND, OAHU_ACTION_SIDE, OAHU_ELEMENT_NAMES, OAHU_SKILL_CONDITION, OAHU_STATE_CODE, oahuTriggerLabel } from './tables';
 
 const PAGE = 300;
 
@@ -86,6 +86,7 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
       {shared.length > 0 && <div className="muted small">{`${shared.join('・')}のメッセージはほかのアクションと共通です。書き換えると、同じメッセージを使うすべてのアクションで変わります。`}</div>}
       <div className="stats stat-edit oahu-stats">
         <Stat label="威力・量" info="+0x18 と +0x1A。攻撃の威力、回復の量など。"><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>
+        <Stat label="消費 AP" info="+0x2B。呪文・アンテナ・つかまえたモンスターのアクションにあります。モンスターのワザでは、条件 (monsterBrain.bin) が AP を見るときに、今の AP より多ければ使いません (FUN_0018F13C)。"><FieldNumber {...p} k="ap" /></Stat>
         <Stat label="属性" info={ELEMENT_INFO}><FieldSelect {...p} k="element" options={enumOptions(OAHU_ELEMENT_NAMES)} /></Stat>
         <Stat label="範囲" info="w0 bit21-24。番号の意味は RPG2 と同じと推定しています。"><FieldSelect {...p} k="range" options={enumOptions(ACTION_RANGE, true)} /></Stat>
         <Stat label="狙う側" info="w0 bit19-20。1 なら自分の側 (回復・能力アップ)。"><FieldSelect {...p} k="side" options={enumOptions(OAHU_ACTION_SIDE)} /></Stat>
@@ -102,7 +103,10 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
       {(users.monsters.length > 0 || users.items.length > 0) && (
         <div className="row">
           {'使うもの: '}
-          {users.monsters.map((m) => <a key={`m${m}`} href={oahuMonsterHref(m)}>{battle.monsterName(m)}</a>)}
+          {users.monsters.map((m) => {
+            const conds = [...new Set(battle.usedSkills(m).filter((s) => s.action === row).map((s) => OAHU_SKILL_CONDITION[s.condition]))];
+            return <a key={`m${m}`} href={oahuMonsterHref(m)}>{battle.monsterName(m)}{conds.length > 0 && <span className="muted small">{` (${conds.join('・')})`}</span>}</a>;
+          })}
           {users.items.map((i) => <a key={`i${i}`} href={`#/items/${i}`}>{battle.itemName(i)}</a>)}
         </div>
       )}

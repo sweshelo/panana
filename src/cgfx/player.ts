@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { evalBaked, evalChannel, type CgfxAnimation, type SkeletalTrack } from './anim';
 import type { CgfxBone, CgfxMesh, CgfxModel } from './cgfx';
+import { uvMatrix } from './tev';
 import type { ModelFactory } from './three';
 
 export const ANIMATION_FPS = 60;
@@ -204,8 +205,7 @@ export class AnimatedModel {
               sv = evalChannel(t.channels[1], f, sv);
             }
           }
-        const cos = Math.cos(u.rotate), sin = Math.sin(u.rotate);
-        (uni.value as THREE.Matrix3).set(cos * su, -sin * sv, tu, sin * su, cos * sv, tv, 0, 0, 1);
+        uvMatrix(uni.value as THREE.Matrix3, u.transform, su, sv, u.rotate, tu, tv);
       }
     }
   }

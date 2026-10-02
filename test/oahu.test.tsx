@@ -11,13 +11,14 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
 import { OahuCodePage } from '../src/oahu/CodePage';
-import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, oahuTriggerLabel } from '../src/oahu/tables';
+import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
 import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
+import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
 import { GmsgView, GsTableView, viewsFor } from '../src/romfs/formats';
@@ -234,6 +235,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const g = (k: string): number => m.get(1, k);
     expect([g('level'), g('hpMin'), g('hpMax'), g('attackMax'), g('defenseMax'), g('speedMax'), g('exp'), g('gold')]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
     expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([['タンポポのたね(色1)', 4], ['キズぐすり', 7], ['ちていじんプリント', 10]]);
+    // battleParameter +0xE6, rolled in float (FUN_001C3994): 1/3 and 1/6 come out as 1/2 and 1/5
+    expect(battle.dropBase).toEqual([1, 3, 4, 6, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
+    expect(Array.from({ length: 16 }, (_, r) => battle.dropOdds(r))).toEqual([1, 2, 4, 5, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
+    expect([0, 1, 9, 10, 12, 13, 15].map((r) => battle.dropClass(r).label)).toEqual(['必ず', 'おたから', 'おたから', 'レア', 'レア', '激レア', '激レア']);
+    expect([battle.dropOdds(4, 200), battle.dropOdds(4, 0), battle.dropOdds(15, -1)]).toEqual([4, Infinity, 1]);
     expect(battle.skills(1)[0]).toEqual({ slot: 1, action: 995, condition: 1 });
     expect(battle.actionName(995)).toBe('たいあたり');
     expect(m.get(150, 'exp')).toBe(65000);
@@ -269,6 +275,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
   test('the books render; an edit goes into the master', () => {
     const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
     for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい']) expect(html).toContain(t);
+    for (const t of ['おたから・12.5%', 'レア・0.39%', '4: 1/8']) expect(html).toContain(t);
     expect(renderToString(<OahuGroupPage session={s} arg="5" />)).toContain('てっぽうオトシゴ');
     expect(renderToString(<OahuActionPage session={s} arg="233" />)).toContain('どくこうげき');
     s.battle.monsters.set(1, 'gold', 777);
@@ -313,6 +320,22 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const loaded = await battle.monsterModel(1)!.load();
     expect(loaded?.set.models.get(0)?.name).toBe('enemy_66_01');
     expect(loaded?.set.textures.has('enemy_66_01_body')).toBe(true);
+  });
+
+  test('skill conditions: monsterBrain.bin (402F0000) has a row per condition, named after the test monsters 「知能：…」', async () => {
+    const t = new GsTable(findByName(parseArchive(await s.dump.readRomfs('402F0000')), 'monsterBrain.bin')!.body);
+    expect([t.rows, t.rowSize]).toEqual([16, OAHU_MONSTER_BRAIN.rowSize]);
+    const get = (row: number, k: string): number => readField(t.row(row), OAHU_MONSTER_BRAIN.fields.find((x) => x.key === k)!);
+    expect([0, 1, 2, 3].map((r) => [get(r, 'ap'), get(r, 'apOwn'), get(r, 'once')])).toEqual([[0, 0, 0], [0, 1, 0], [1, 0, 0], [0, 1, 1]]);
+    expect([get(6, 'effective'), get(6, 'targetHp25'), get(6, 'lowestHp'), get(6, 'weakElement')]).toEqual([1, 1, 1, 1]);
+    expect([get(5, 'targetHp65'), get(7, 'strongHalf'), get(8, 'healer'), get(9, 'canAct'), get(9, 'canUse')]).toEqual([2, 1, 2, 2, 2]);
+    expect([12, 14].map((r) => [get(r, 'hp50'), get(r, 'hp25')])).toEqual([[1, 0], [0, 1]]);
+    const { battle } = s;
+    const tests = battle.monsterList().filter((m) => m.name.startsWith('知能：'));
+    const named = new Map(tests.flatMap((m) => battle.usedSkills(m.id).filter((k) => k.condition > 1).map((k): [number, string] => [k.condition, m.name.slice(3)])));
+    for (const [c, n] of named) if (c !== 3) expect(OAHU_SKILL_CONDITION[c]).toBe(n);
+    expect(named.get(3)).toBe('標準抑');
+    expect(battle.actions.get(1089, 'ap')).toBe(1);
   });
 
   test('skills and group slots are written packed; the fallback slot follows its skill', () => {

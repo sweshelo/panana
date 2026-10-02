@@ -10,6 +10,7 @@ import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
 import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
 import { ModelView } from '../ui/ModelView';
+import { oneIn, pct } from '../pages/monsteredit';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle, type OahuFormChange } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
@@ -17,7 +18,7 @@ import {
   oahuActionEntry, oahuActionHref, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
 } from './pickers';
 import type { OahuSession } from './session';
-import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS, oahuTriggerLabel } from './tables';
+import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILL_CONDITION, OAHU_SKILL_CONDITION_NOTE, OAHU_SKILLS, oahuTriggerLabel } from './tables';
 
 export { oahuActionHref, oahuGroupHref, oahuMonsterHref } from './pickers';
 
@@ -167,7 +168,11 @@ interface EditProps {
   onEdit: () => void;
 }
 
-const DROP_INFO = '3 枠はそれぞれ別に抽選されます (FUN_004CD440)。率は 0〜15 の値で、RPG2 と同じく大きいほど出にくいと推定しています。';
+const DROP_INFO = [
+  '率の値ごとに battleParameter の表 (+0xE6) で「何回に 1 回落とすか」が決まり、3 枠はそれぞれ別に抽選されます (FUN_001C3994)。',
+  '値 0 は抽選なしで必ず、1〜9 はおたから、10〜12 はレア、13〜15 は激レア (FUN_004CAB64)。パーティーの「ドロップ率」「レアドロップ率」「激レアドロップ率」(状態 37〜39、%) がそれぞれに効きます。',
+  '確率 = 1 − (1 − 1/表の値)^(% / 100)。表示は補正なしのときです。',
+].join('\n');
 
 function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
   const [, max] = f.range('drop1');
@@ -177,7 +182,8 @@ function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
       slots={battle.drops(row).map((d) => ({
         item: d.item,
         original: f.original(`drop${d.slot}`),
-        rate: <FieldChoice f={f} k={`rate${d.slot}`} edited={onEdit} labels={(v) => `率 ${v}`} />,
+        sub: `${battle.dropClass(d.rate).label}・${pct(battle.dropOdds(d.rate))}`,
+        rate: <FieldChoice f={f} k={`rate${d.slot}`} edited={onEdit} labels={(v) => `${v}: ${oneIn(battle.dropOdds(v))}`} />,
       }))}
       entry={(id) => oahuItemEntry(battle, id)}
       setItem={(k, id) => { f.set(`drop${k + 1}`, id); onEdit(); }}
@@ -189,9 +195,12 @@ function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
   );
 }
 
+const CONDITION_OPTIONS = Object.entries(OAHU_SKILL_CONDITION).map(([k, n]): [number, string] => [Number(k), `${k} ${n}`]);
+
 const SKILL_INFO = [
   '最大 6 枠。ドラッグで並べ替え、× で外します。',
-  '枠ごとの「条件」は、そのワザを使える条件の表 (マスター +0x818) の行です (下位 4 ビット)。中身はまだ分かりません。',
+  '枠ごとの「条件」は、402F0000 の monsterBrain.bin の行です (下位 4 ビット)。そのワザを使えるかどうか (AP・自分の HP・1 回だけ) と、どの相手を狙うかを決めます (FUN_0018F13C)。名前は開発用のモンスター「知能：…」から。',
+  ...Object.entries(OAHU_SKILL_CONDITION).map(([k, n]) => `${k} ${n}: ${OAHU_SKILL_CONDITION_NOTE[Number(k)]}`),
   '選び方 (+0x38 bit12-14) は、使えるワザからどう選ぶか。使えるワザがないときは「使えないとき」の枠のワザを使います (FUN_001BE560)。',
 ].join('\n');
 
@@ -211,7 +220,7 @@ function SkillEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
           action: s.action,
           entry: oahuActionEntry(battle, s.action),
           edited: f.original(`skill${s.slot}`) !== s.action,
-          extra: <span className="slot-cond" title="使える条件の表 (マスター +0x818) の行">条件 <FieldChoice f={f} k={`cond${s.slot}`} edited={onEdit} /></span>,
+          extra: <span className="slot-cond" title={OAHU_SKILL_CONDITION_NOTE[s.condition]}>条件 <FieldChoice f={f} k={`cond${s.slot}`} edited={onEdit} options={CONDITION_OPTIONS} /></span>,
         }))}
         max={OAHU_SKILLS}
         move={(from, to) => set(moveTo(now, from, to))}
