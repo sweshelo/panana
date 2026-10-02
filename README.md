@@ -221,7 +221,7 @@ bun test
 ```
 
 `rom.test.ts` は `ROM_CIA` (既定 `../elpulse/00040000000A7900.cia`) と `golden.json` がないときはスキップします。
-`oahu.test.tsx` (RPG3) は `ROM_OAHU_BASE` / `ROM_OAHU_UPDATE` (既定 `../elpulse/0004000E000EF000-v0.1.0.cia` / `-v4.7.0.cia`) がないときはスキップします (CI の ROM の束にはまだ入っていません)。
+`oahu.test.tsx` (RPG3) は `ROM_OAHU_BASE` / `ROM_OAHU_UPDATE` (既定 `../elpulse/0004000E000EF000-v0.1.0.cia` / `-v4.7.0.cia`) がないときはスキップします。CI の rom ジョブは、同じ R2 バケットの `oahu-base.cia` / `oahu-update.cia` を取ってきて走らせます。
 - code.bin (BLZ の展開) が ctrtool の結果と一致
 - 全 205 マップの名前・ダンジョン・階・区画のハッシュとサイズ、D01B02001 / D02B02002 のタイルと区画 3/4/5/8 が mapdump.py と一致
 - LZ10 の圧縮結果が gsarc.lz10_compress とバイト一致
@@ -236,6 +236,7 @@ ROM のテストは `rom` ジョブで、暗号化したダンプを非公開の
 準備 (一度だけ):
 1. `golden.json` を作ってから、PowerShell で暗号化したバンドルを作る: `.\scripts\pack-rom-bundle.ps1 -Elpulse ..\elpulse` (パスフレーズを聞かれる) → `rom-bundle.tar.gpg` (CIA・`golden.json`・あれば `mod/out`)。gpg (Gpg4win など) が要ります
 2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードする (300 MB を超えるときは `aws s3 cp` など S3 API で)
+   RPG3 の復号済み CIA は、同じバケットに `oahu-base.cia` (Base) と `oahu-update.cia` (Update) としてそのまま置く (キーはリポジトリ変数 `OAHU_BASE_KEY` / `OAHU_UPDATE_KEY` で変えられる)
 3. R2 の API トークンを「Object Read only・このバケットだけ」で作る
 4. リポジトリの Settings → Secrets and variables → Actions に登録: `ROM_BUNDLE_PASSPHRASE`、`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`
    (バケット名・キーを変えるときは Variables の `ROM_BUNDLE_BUCKET`・`ROM_BUNDLE_KEY`)
