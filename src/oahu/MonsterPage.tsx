@@ -1,19 +1,25 @@
-// RPG3's monster book (#/monsters/<row>): every monster of monsterParameter with its level, HP, experience and gold;
-// the name and description, stats, drops, skills and their AI, resistances and the actions of its states are edited.
-// The model and motions wait for BCH (#64).
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+// RPG3's monster book (#/monsters/<row>), built from the same parts as RPG2's (ui/FieldEdit, ui/MonsterSlots,
+// ui/GroupDetail): the model, the name and description, stats, drops, skills and their AI, the actions of its states,
+// resistances and the groups it is in.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FieldContext } from '../game/tabledef';
 import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { FieldChoice, StatFields, type FieldAccess } from '../ui/FieldEdit';
+import { SlotTiles } from '../ui/GroupDetail';
 import { InfoTip } from '../ui/InfoTip';
+import { Board, EmptyBoard } from '../ui/Board';
+import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
+import { ModelView } from '../ui/ModelView';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle } from './battle';
-import { enumOptions, FieldNumber, FieldSelect, MessageFields, Stat, type FieldProps } from './FieldInput';
+import { enumOptions, MessageFields, rowAccess } from './FieldInput';
+import {
+  oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
+} from './pickers';
 import type { OahuSession } from './session';
-import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS } from './tables';
+import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILLS } from './tables';
 
-export const oahuMonsterHref = (row: number): string => `#/monsters/${row}`;
-export const oahuGroupHref = (row: number): string => `#/groups/${row}`;
-export const oahuActionHref = (row: number): string => `#/actions/${row}`;
+export { oahuActionHref, oahuGroupHref, oahuMonsterHref } from './pickers';
 
 /** Names of the rows the field values of the battle tables point at. */
 export function battleContext(battle: OahuBattle): FieldContext {
@@ -26,14 +32,23 @@ export function battleContext(battle: OahuBattle): FieldContext {
   };
 }
 
+type Filter = 'all' | 'seen' | 'changed';
+
 export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { battle } = session;
   const [edits, edited] = useEdits();
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState<Filter>('all');
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   const monsters = useMemo(() => battle.monsterList(), [battle, edits]);
+  const groups = useMemo(() => {
+    const out = new Map<number, number[]>();
+    for (const g of battle.groupList()) {
+      for (const m of new Set([...g.leads, ...g.mates].map((s) => s.monster).concat(g.fixed))) out.set(m, [...(out.get(m) ?? []), g.row]);
+    }
+    return out;
+  }, [battle, edits]);
   const selected = useSticky(Number(arg) || undefined, (r) => monsters.some((m) => m.id === r), () => monsters[0]?.id ?? 1);
   useActiveRow(list, selected);
   useScrollTop(detail, selected);
@@ -43,27 +58,29 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
   };
   const q = query.trim();
   const rows = monsters.filter((m) => {
-    if (q && !m.name.includes(q) && String(m.id) !== q) return false;
+    if (q && String(m.id) !== q && ![m.name, ...battle.usedSkills(m.id).map((s) => battle.actionName(s.action)), ...battle.drops(m.id).map((d) => battle.itemName(d.item))].some((t) => t.includes(q))) return false;
+    if (filter === 'seen') return groups.has(m.id);
     if (filter === 'changed') return battle.monsterChanged(m.id);
     return true;
   });
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・行で検索" filter={filter} setFilter={setFilter} options={[['all', 'すべて'], ['changed', '変更したもの']]} />
+        <ListFilter query={query} setQuery={setQuery} placeholder="名前・ワザ・ドロップで検索" filter={filter} setFilter={setFilter}
+          options={[['all', 'すべて'], ['seen', '群れにいる'], ['changed', '変更したもの']]} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={monsters.length} />
           <table className="book-table">
-            <thead><tr><th>行</th><th>名前</th><th>Lv</th><th>HP</th><th>経験値</th><th>G</th></tr></thead>
+            <thead><tr><th></th><th>#</th><th>名前</th><th>Lv</th><th>HP</th><th>群れ</th></tr></thead>
             <tbody>
               {rows.map((m) => (
                 <tr key={m.id} className={m.id === selected ? 'active' : ''} onClick={() => (location.hash = oahuMonsterHref(m.id))}>
+                  <td className="photo-cell">{oahuMonsterIcon(battle, m.id)}</td>
                   <td className="num muted">{m.id}</td>
                   <td>{m.name}{battle.monsterChanged(m.id) && <EditedMark text=" ●" />}</td>
                   <td className="num">{m.level}</td>
-                  <td className="num nowrap">{m.hp[0] === m.hp[1] ? m.hp[1] : `${m.hp[0]}〜${m.hp[1]}`}</td>
-                  <td className="num">{m.exp}</td>
-                  <td className="num">{m.gold}</td>
+                  <td className="num">{m.hp[1]}</td>
+                  <td className="num muted">{groups.get(m.id)?.length || ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -71,7 +88,7 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {monsters.some((m) => m.id === selected) && <MonsterDetail key={selected} session={session} row={selected} onEdit={onEdit} />}
+        {monsters.some((m) => m.id === selected) && <MonsterDetail key={selected} session={session} row={selected} groups={groups.get(selected) ?? []} onEdit={onEdit} />}
       </div>
     </div>
   );
@@ -79,140 +96,218 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
 
 const STAT_INFO = '戦闘のたびに、下と上の間の乱数になります (FUN_004CCBE8)。上の値は固定のとき (ボスなど) の値です。';
 
-function MonsterDetail({ session, row, onEdit }: { session: OahuSession; row: number; onEdit: () => void }): ReactNode {
+function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession; row: number; groups: number[]; onEdit: () => void }): ReactNode {
   const { battle } = session;
   const rows = battle.monsters;
-  const p = { rows, row, onEdit };
-  const range = (label: string, lo: string, hi: string, info?: string): ReactNode => (
-    <Stat label={label} info={info}><FieldNumber {...p} k={lo} />〜<FieldNumber {...p} k={hi} /></Stat>
-  );
-  const groups = battle.groupsOf(row);
-  const context = battleContext(battle);
+  const f = rowAccess(rows, row);
+  const monster = oahuGroupMonster(battle);
   return (
     <>
       <div className="book-head">
-        <h2>{battle.monsterName(row)}</h2>
-        <span className="muted">{`行 ${row}  ミュージアム ${rows.get(row, 'museum')}`}</span>
-      </div>
-      <MessageFields rows={rows} row={row} fields={OAHU_MONSTER_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
-      <div className="stats stat-edit oahu-stats">
-        <Stat label="レベル"><FieldNumber {...p} k="level" /></Stat>
-        {range('HP', 'hpMin', 'hpMax', STAT_INFO)}
-        {range('AP', 'apMin', 'apMax')}
-        {range('こうげき', 'attackMin', 'attackMax')}
-        {range('ぼうぎょ', 'defenseMin', 'defenseMax')}
-        {range('すばやさ', 'speedMin', 'speedMax')}
-        <Stat label="かいひ"><FieldNumber {...p} k="evasion" /></Stat>
-        <Stat label="経験値"><FieldNumber {...p} k="exp" /></Stat>
-        <Stat label="ゴールド"><FieldNumber {...p} k="gold" /></Stat>
-        <Stat label="こうげき倍増" info="1 ターンにこうげきする回数を増やす状態 (効果 9、conditionData 52) の値。"><FieldNumber {...p} k="attacks" /></Stat>
-        <Stat label="ゴースト" info="ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。"><FieldNumber {...p} k="ghost" /></Stat>
-      </div>
-      <div className="monster-cols stats">
-        <section>
-          <h3>ドロップ</h3>
-          <Drops battle={battle} row={row} onEdit={onEdit} />
-          <h3>ワザ <InfoTip text={SKILL_INFO} /></h3>
-          <Skills battle={battle} row={row} onEdit={onEdit} />
-        </section>
-        <section>
-          <h3>たいせい <InfoTip text={RESIST_INFO} /></h3>
-          <Resists {...p} />
-          <h3>状態のアクション</h3>
-          <table className="enc-table oahu-fields">
-            <tbody>
-              {([['auto', '自動 (効果 0x2D)'], ['body', 'ボディ (効果 0x2F)'], ['body2', 'ボディ 2'], ['act2B', '効果 0x2B'], ['act2C', '効果 0x2C']] as const).map(([k, label]) => (
-                <tr key={k}><th>{label}</th><td><ActionRef {...p} k={k} battle={battle} /></td></tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      </div>
-      {groups.length > 0 && (
-        <div className="row">
-          {'群れ: '}
-          {groups.map((g) => <a key={g} href={oahuGroupHref(g)}>{`#${g}`}</a>)}
-        </div>
-      )}
-      <div className="row">
-        <span className="muted small">変更はマスター (21350000) の monsterParameter.bin とメッセージとして書き出されます。</span>
+        <h2 className="with-info">{battle.monsterName(row)}<InfoTip text="変更はマスター (21350000) の monsterParameter.bin とメッセージとして書き出されます。" /></h2>
+        <span className="muted">{`#${row}  図鑑 ${rows.get(row, 'book')}  ミュージアム ${rows.get(row, 'museum')}  デザイン ${rows.get(row, 'design')}`}</span>
         {battle.monsterChanged(row) && <button onClick={() => { battle.revertMonster(row); onEdit(); }}>このモンスターの変更を元に戻す</button>}
+      </div>
+      <div className="book-top">
+        <div>
+          <MessageFields rows={rows} row={row} fields={OAHU_MONSTER_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
+          <StatFields f={f} edited={onEdit} stats={[
+            { label: 'Lv', k: 'level' },
+            { label: 'HP', range: ['hpMin', 'hpMax'], info: STAT_INFO },
+            { label: 'AP', range: ['apMin', 'apMax'] },
+            { label: 'こうげき', range: ['attackMin', 'attackMax'] },
+            { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
+            { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
+            { label: '回避', k: 'evasion' },
+            { label: '経験値', k: 'exp' },
+            { label: 'ゴールド', k: 'gold' },
+            { label: 'こうげき倍増', k: 'attacks', info: '1 ターンにこうげきする回数を増やす状態 (効果 9、conditionData 52) の値。' },
+            { label: 'ゴースト', k: 'ghost', info: 'ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。' },
+          ]} />
+        </div>
+        <MonsterModel battle={battle} row={row} />
+      </div>
+      <div className="book-cols monster-cols">
+        <DropEditor battle={battle} row={row} f={f} onEdit={onEdit} />
+        <SkillEditor battle={battle} row={row} f={f} onEdit={onEdit} />
+        <StateActions battle={battle} row={row} onEdit={onEdit} />
+      </div>
+      <h3 className="with-info">たいせい<InfoTip text={RESIST_INFO} /></h3>
+      <ResistEditor battle={battle} row={row} onEdit={onEdit} />
+      <h3>{`いる群れ (${groups.length})`}</h3>
+      <div className="book-where">
+        {!groups.length && <div className="muted">どの群れにもいません</div>}
+        {groups.map((g) => {
+          const x = battle.group(g);
+          return (
+            <details key={g}>
+              <summary><a href={oahuGroupHref(g)}>{`群れ #${g}`}</a>{!x.leads.some((s) => s.monster === row) && !x.fixed.includes(row) && <span className="muted"> 仲間としてのみ</span>}</summary>
+              <div className="enc-group">
+                <SlotTiles title="先頭・3 体目" slots={x.leads} monster={monster} count={String} />
+                <SlotTiles title="2・4 体目" slots={x.mates} monster={monster} count={String} />
+                {x.fixed.length > 0 && <SlotTiles title="決まった並び" slots={x.fixed.map((m) => ({ monster: m, weight: 0, count: 1 }))} monster={monster} count={String} />}
+              </div>
+            </details>
+          );
+        })}
       </div>
       <details className="row-fields-box">
         <summary>{`monsterParameter の行 ${row} のすべての欄`}</summary>
-        <RowFields def={OAHU_MONSTER_PARAMETER} row={rows.row(row)} original={rows.originalRow(row)} context={context} />
+        <RowFields def={OAHU_MONSTER_PARAMETER} row={rows.row(row)} original={rows.originalRow(row)} context={battleContext(battle)} />
       </details>
     </>
   );
 }
 
+interface EditProps {
+  battle: OahuBattle;
+  row: number;
+  f: FieldAccess;
+  onEdit: () => void;
+}
+
+const DROP_INFO = '3 枠はそれぞれ別に抽選されます (FUN_004CD440)。率は 0〜15 の値で、RPG2 と同じく大きいほど出にくいと推定しています。';
+
+function DropEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
+  const [, max] = f.range('drop1');
+  return (
+    <DropSlots
+      info={DROP_INFO}
+      slots={battle.drops(row).map((d) => ({
+        item: d.item,
+        original: f.original(`drop${d.slot}`),
+        rate: <FieldChoice f={f} k={`rate${d.slot}`} edited={onEdit} labels={(v) => `率 ${v}`} />,
+      }))}
+      entry={(id) => oahuItemEntry(battle, id)}
+      setItem={(k, id) => { f.set(`drop${k + 1}`, id); onEdit(); }}
+      picker={(k, current, pick, close) => (
+        <OahuItemPicker battle={battle} title={`ドロップ ${k + 1} のアイテムを選ぶ`} current={current}
+          unavailable={(it) => (it.id > max ? `ドロップの欄に入らない番号です (${max} まで)` : null)} onPick={pick} onClose={close} />
+      )}
+    />
+  );
+}
+
 const SKILL_INFO = [
-  'ワザの枠 6 つ (+0x54〜、u16 ずつ): 上位 12 ビットがアクション (actionData の行)、下位 4 ビットが使える条件の表の行です (FUN_001BE560)。',
-  '選び方 (+0x38 bit12-14) は、使えるワザからどう選ぶか。使えるワザがないときは +0x38 bit15-17 の枠のワザを使います。',
+  '最大 6 枠。ドラッグで並べ替え、× で外します。',
+  '枠ごとの「条件」は、そのワザを使える条件の表 (マスター +0x818) の行です (下位 4 ビット)。中身はまだ分かりません。',
+  '選び方 (+0x38 bit12-14) は、使えるワザからどう選ぶか。使えるワザがないときは「使えないとき」の枠のワザを使います (FUN_001BE560)。',
 ].join('\n');
 
-function Skills({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
-  const p = { rows: battle.monsters, row, onEdit };
+function SkillEditor({ battle, row, f, onEdit }: EditProps): ReactNode {
+  const skills = battle.usedSkills(row);
+  const set = (next: { action: number; condition: number; from: number }[]): void => {
+    battle.setSkills(row, next);
+    onEdit();
+  };
+  const now = skills.map((s) => ({ action: s.action, condition: s.condition, from: s.slot }));
+  const fallback = f.get('fallback');
   return (
-    <>
-      <table className="enc-table oahu-fields">
-        <thead><tr><th>枠</th><th>アクション</th><th>条件</th></tr></thead>
+    <section>
+      <Heading title="ワザと行動" info={SKILL_INFO} />
+      <SkillSlots
+        slots={skills.map((s) => ({
+          action: s.action,
+          entry: oahuActionEntry(battle, s.action),
+          edited: f.original(`skill${s.slot}`) !== s.action,
+          extra: <span className="slot-cond" title="使える条件の表 (マスター +0x818) の行">条件 <FieldChoice f={f} k={`cond${s.slot}`} edited={onEdit} /></span>,
+        }))}
+        max={OAHU_SKILLS}
+        move={(from, to) => set(moveTo(now, from, to))}
+        pick={(i, a) => set(i < 0 ? [...now, { action: a, condition: 1, from: 0 }] : now.map((s, j) => (j === i ? { ...s, action: a } : s)))}
+        remove={(i) => set(now.filter((_, j) => j !== i))}
+        picker={(current, pick, close) => <OahuActionPicker battle={battle} current={current} onPick={pick} onClose={close} />}
+        empty="ワザがありません。"
+      />
+      <table className="enc-table ai-fields">
         <tbody>
-          {battle.skills(row).map((s) => (
-            <tr key={s.slot}>
-              <td className="num muted">{s.slot}</td>
-              <td><ActionRef {...p} k={`skill${s.slot}`} battle={battle} /></td>
-              <td><FieldNumber {...p} k={`cond${s.slot}`} /></td>
-            </tr>
-          ))}
+          <tr><td className="with-info">AI<InfoTip text="ワザの選び方 (+0x38 bit12-14)。FUN_001BE560 が 5 通りに分けていて、RPG2 の AI の型と同じと推定しています。" /></td>
+            <td><FieldChoice f={f} k="ai" edited={onEdit} options={enumOptions(OAHU_AI_MODE, true)} /></td></tr>
+          <tr><td>使えないとき</td>
+            <td><FieldChoice f={f} k="fallback" edited={onEdit} options={skills.map((s, i): [number, string] => [i, `${i + 1}: ${battle.actionName(s.action)}`])} />
+              {fallback >= skills.length && <span className="muted small">{` 枠 ${fallback + 1} (空)`}</span>}</td></tr>
         </tbody>
       </table>
-      <div className="row">
-        {'選び方 '}<FieldSelect {...p} k="ai" options={enumOptions(OAHU_AI_MODE, true)} />
-        {' 使えないとき '}<FieldNumber {...p} k="fallback" min={0} max={5} />{' の枠'}
-      </div>
-    </>
+    </section>
   );
 }
 
-/** An action number with its name, linked to the action book. */
-function ActionRef(p: FieldProps & { battle: OahuBattle }): ReactNode {
-  const v = p.rows.get(p.row, p.k);
-  return (
-    <span className="with-info">
-      <FieldNumber {...p} />
-      {v ? <a href={oahuActionHref(v)}>{p.battle.actionName(v) || `#${v}`}</a> : <span className="muted">なし</span>}
-    </span>
-  );
-}
+const STATE_ACTIONS: [string, string, string][] = [
+  ['own', 'つかまえたとき', '+0x3C。アンテナ「つかまえる」でつかまえたこのモンスターを、戦闘で使ったときのアクション (actionData の種類 2 の行)。'],
+  ['auto', '自動', '効果 0x2D。ターンごとに自動で使うアクション。'],
+  ['body', 'ボディ', '効果 0x2F。攻撃を受けたときのアクション (どくボディなど)。'],
+  ['body2', 'ボディ 2', '効果 0x2F の 2 つ目。'],
+  ['act2B', '効果 0x2B', '効果 0x2B のアクション (意味は未確認)。'],
+  ['act2C', '効果 0x2C', '効果 0x2C のアクション (意味は未確認)。'],
+];
 
-function Drops({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
-  const p = { rows: battle.monsters, row, onEdit };
+/** The actions the monster's states use, as boards picked from the action list. */
+function StateActions({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const [picking, setPicking] = useState<string | null>(null);
+  const rows = battle.monsters;
+  const set = (k: string, v: number): void => {
+    rows.set(row, k, v);
+    onEdit();
+  };
   return (
-    <table className="enc-table oahu-fields">
-      <thead><tr><th></th><th>アイテム</th><th>率 <InfoTip text="ドロップの率の値 (0〜15)。RPG2 と同じく、大きいほど出にくいと推定しています。" /></th></tr></thead>
-      <tbody>
-        {battle.drops(row).map((d) => (
-          <tr key={d.slot}>
-            <td className="num muted">{d.slot}</td>
-            <td><span className="with-info"><FieldNumber {...p} k={`drop${d.slot}`} />{d.item ? <a href={`#/items/${d.item}`}>{battle.itemName(d.item)}</a> : <span className="muted">なし</span>}</span></td>
-            <td><FieldNumber {...p} k={`rate${d.slot}`} /></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <section>
+      <Heading title="ほかのアクション" info="つかまえたときのアクションと、モンスターが最初から持つ状態 (装備の効果と同じ番号) が使うアクション (FUN_004CCBE8)。" />
+      <table className="enc-table ai-fields">
+        <tbody>
+          {STATE_ACTIONS.map(([k, label, info]) => {
+            const v = rows.get(row, k);
+            const e = v ? oahuActionEntry(battle, v) : null;
+            return (
+              <tr key={k}>
+                <td className="with-info">{label}<InfoTip text={info} /></td>
+                <td>
+                  <div className="slot-row">
+                    {e
+                      ? <Board icon={e.icon} name={e.name} id={v} href={e.href} edited={v !== rows.original(row, k)} title="アクションを選び直す" onClick={() => setPicking(k)} />
+                      : <EmptyBoard label="＋ アクション" onClick={() => setPicking(k)} />}
+                    <button className="small slot-remove" title="なしにする" disabled={!v} onClick={() => set(k, 0)}>×</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {picking && (
+        <OahuActionPicker battle={battle} title="アクションを選ぶ" current={rows.get(row, picking)} onClose={() => setPicking(null)}
+          onPick={(a) => { setPicking(null); set(picking, a); }} />
+      )}
+    </section>
   );
 }
 
 const RESIST_INFO = [
-  'たいせいは −9〜+9 (5 ビットの符号つき)。RPG2 と同じく、属性は +10 で効かなくなると推定しています。',
+  '値は −9〜+10 (正ほど強い)。RPG2 と同じく、属性は +10 で効かなくなると推定しています。',
   '戦闘のユニットの状態 1〜31 に読み込まれ、装備の効果 0x15 (属性) と 0x14 (状態異常) の対象の番号と同じ並びです (FUN_004CCBE8)。',
+  '能力の増減は、状態の番号 16〜19 の位置にある値で、能力ダウンへのたいせいと推定しています。',
 ].join('\n');
 
-function Resists(p: { rows: OahuBattle['monsters']; row: number; onEdit: () => void }): ReactNode {
+const RESIST_CHARTS: [string, string[]][] = [
+  ['属性', OAHU_MONSTER_RESISTS.slice(0, 8).map(([k]) => k)],
+  ['状態異常・突然死', OAHU_MONSTER_RESISTS.slice(8).map(([k]) => k)],
+  ['能力の増減', ['rAttack', 'rDefense', 'rSpeed', 'rEvasion']],
+];
+
+function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const rows = battle.monsters;
+  const charts: ResistChart[] = RESIST_CHARTS.map(([label, keys]) => ({
+    label,
+    axes: keys.map((k) => ({ name: rows.field(k).label.replace(/^たいせい /, '').replace(/の増減$/, ''), value: rows.get(row, k), original: rows.original(row, k) })),
+  }));
   return (
-    <div className="stats stat-edit oahu-resists">
-      {OAHU_MONSTER_RESISTS.map(([k, label]) => <Stat key={k} label={label}><FieldNumber {...p} k={k} min={-9} max={10} /></Stat>)}
-    </div>
+    <ResistCharts charts={charts} min={-9} max={10} rings={[-9, -5, 0, 5, 10]} effect={() => ''}
+      onChange={(c, j, v) => { rows.set(row, RESIST_CHARTS[c]![1][j]!, v); onEdit(); }} />
   );
+}
+
+/** The 3D view of the monster's model, made once the page is in the browser (the viewer needs the DOM). */
+function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
+  const [shown, setShown] = useState(false);
+  useEffect(() => setShown(true), []);
+  return shown ? <ModelView model={battle.monsterModel(row)} name={battle.monsterName(row)} /> : <div className="model-placeholder" />;
 }

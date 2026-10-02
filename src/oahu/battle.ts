@@ -3,10 +3,13 @@
 // the books show and what refers to what.
 import { cleanActionName } from '../game/actions';
 import type { MessageStore } from '../game/gmsg';
-import { decodeGroupSlots, type GroupSlot } from '../game/monsters';
+import { decodeGroupSlots, encodeGroupSlots, type GroupSlot } from '../game/monsters';
 import type { TableDef } from '../game/tabledef';
 import type { OahuItems } from './items';
 import type { OahuMaster } from './master';
+import type { OahuItemModels } from './itemModels';
+import type { OahuMonsterModels } from './monsterModels';
+import type { ModelRef } from '../pages/modelview';
 import { OahuRows } from './rows';
 import { OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_GROUP, OAHU_MONSTER_PARAMETER, OAHU_SKILLS, OAHU_STATE_NAMES } from './tables';
 
@@ -44,6 +47,10 @@ export interface OahuGroup {
 export interface OahuAction {
   row: number;
   name: string;
+  /** w0 bit0-2 (OAHU_ACTION_KIND): 2 = a monster's row, followed by its skills. */
+  kind: number;
+  /** w0 bit3-13: the monster row of a kind-2 row. */
+  subject: number;
   category: number;
   element: number;
   range: number;
@@ -54,9 +61,9 @@ export interface OahuAction {
 /** Message fields of a monster row. */
 export const OAHU_MONSTER_TEXTS: [string, string][] = [['name', '名前'], ['desc', '説明']];
 /** Message fields of an action row. */
-export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['help', '説明'], ['result1', '結果 1'], ['result2', '結果 2']];
+export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['result1', '結果'], ['result2', '結果 (複数・別)']];
 /** Fields of a monster row that name an action. */
-export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'auto', 'body', 'body2', 'act2B', 'act2C'];
+export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'own', 'auto', 'body', 'body2', 'act2B', 'act2C'];
 
 export class OahuBattle {
   private readonly loaded = new Map<string, OahuRows>();
@@ -64,7 +71,15 @@ export class OahuBattle {
   constructor(
     private readonly master: OahuMaster,
     readonly items: OahuItems,
+    private readonly models?: OahuMonsterModels,
+    readonly itemModels?: OahuItemModels,
   ) {}
+
+  /** A monster's model (by its design row); null without the dump's models. */
+  monsterModel(row: number): ModelRef | null {
+    if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
+    return this.models.ref(this.monsters.get(row, 'design'));
+  }
 
   /** The tables are taken from the master when first used. */
   private rows(def: TableDef): OahuRows {
@@ -116,6 +131,27 @@ export class OahuBattle {
     return Array.from({ length: OAHU_SKILLS }, (_, i) => ({ slot: i + 1, action: this.monsters.get(row, `skill${i + 1}`), condition: this.monsters.get(row, `cond${i + 1}`) }));
   }
 
+  /** The skills in use (action not 0); the game's rows keep them packed to the front. */
+  usedSkills(row: number): OahuSkill[] {
+    return this.skills(row).filter((s) => s.action);
+  }
+
+  /**
+   * Write the skills packed to the front; the empty slots get action 0 and condition 1 as in the archive. `from` gives
+   * each new slot's old slot (1〜6, 0 = new), so the slot used when none can be (+0x38 bit15-17) follows its skill.
+   */
+  setSkills(row: number, skills: { action: number; condition: number; from: number }[]): void {
+    if (skills.length > OAHU_SKILLS) throw new Error(`ワザは ${OAHU_SKILLS} 個までです`);
+    const fallback = this.monsters.get(row, 'fallback') + 1;
+    const moved = skills.findIndex((s) => s.from === fallback);
+    for (let i = 0; i < OAHU_SKILLS; i++) {
+      const s = skills[i];
+      this.monsters.set(row, `skill${i + 1}`, s?.action ?? 0);
+      this.monsters.set(row, `cond${i + 1}`, s ? s.condition : 1);
+    }
+    this.monsters.set(row, 'fallback', Math.max(0, moved));
+  }
+
   drops(row: number): OahuDrop[] {
     return [1, 2, 3].map((slot) => ({ slot, item: this.monsters.get(row, `drop${slot}`), rate: this.monsters.get(row, `rate${slot}`) }));
   }
@@ -157,7 +193,7 @@ export class OahuBattle {
     for (let row = 1; row < this.actions.rows; row++) {
       const g = (k: string): number => this.actions.get(row, k);
       if (!g('name') && !g('bits')) continue;
-      out.push({ row, name: this.actionName(row) || `#${row}`, category: g('category'), element: g('element'), range: g('range'), power: [g('min'), g('max')], state: g('state') });
+      out.push({ row, name: this.actionName(row) || `#${row}`, kind: g('kind'), subject: g('subject'), category: g('category'), element: g('element'), range: g('range'), power: [g('min'), g('max')], state: g('state') });
     }
     return out;
   }
@@ -183,6 +219,16 @@ export class OahuBattle {
     return n;
   }
 
+  /** Action row → the monsters having it as a skill. */
+  skillUsers(): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    for (let m = 1; m < this.monsters.rows; m++) {
+      if (!this.monsters.get(m, 'name')) continue;
+      for (const s of this.usedSkills(m)) if (!out.get(s.action)?.includes(m)) out.set(s.action, [...(out.get(s.action) ?? []), m]);
+    }
+    return out;
+  }
+
   /** Monsters with the action in a skill slot or as a state's action; items whose action it is. */
   actionUsers(row: number): { monsters: number[]; items: number[] } {
     const monsters: number[] = [];
@@ -195,6 +241,15 @@ export class OahuBattle {
     if (row <= 0 || row >= this.conditions.rows) return row ? `#${row}` : 'なし';
     const n = this.message(this.conditions.get(row, 'name'));
     return n && n !== 'なし' ? n : OAHU_STATE_NAMES[row] ?? `状態 ${row}`;
+  }
+
+  setGroupSlots(row: number, leads: GroupSlot[], mates: GroupSlot[]): void {
+    encodeGroupSlots(this.groups.row(row), leads, mates);
+  }
+
+  /** The fixed formation (+0x28), packed to the front. */
+  setFixed(row: number, monsters: number[]): void {
+    for (let i = 0; i < 5; i++) this.groups.set(row, `fixed${i + 1}`, monsters[i] ?? 0);
   }
 
   group(row: number): OahuGroup {

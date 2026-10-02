@@ -1,22 +1,81 @@
 // RPG3's item book (#/items/<ID>): every item of itemData with its category and prices; the name and descriptions,
 // prices, ☆, limit, a tool's action and an equipment's effects are edited, and an item can be copied as a new one.
-// The model is shown once BCH can be read (#64); until then a badge of the category.
-import { useMemo, useRef, useState, type ReactNode } from 'react';
+// The photo and the 3D view are the item's BCH model (itemModels.ts); a badge of the category when it has none.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fieldRange, field, type FieldContext } from '../game/tabledef';
-import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { MessageEditor } from '../ui/message';
+import { ModelView } from '../ui/ModelView';
+import { useAsync } from '../ui/useAsync';
 import { RowFields } from '../ui/RowFields';
 import { hex8 } from '../util/bytes';
+import { textureUrl, type OahuItemModels } from './itemModels';
 import { OAHU_ITEM_FILE, type OahuItem, type OahuItemNumber, type OahuItems } from './items';
 import type { OahuSession } from './session';
 import { OAHU_EFFECT_KINDS, OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
 
 export const oahuItemHref = (id: number): string => `#/items/${id}`;
 
-/** The first letter of the main category, until the models can be shown. */
-export function ItemBadge({ item }: { item: OahuItem }): ReactNode {
+/** The first letter of the main category (items without a model). */
+export function ItemBadge({ item, className = 'photo' }: { item: OahuItem; className?: string }): ReactNode {
   const label = OAHU_ITEM_KIND[item.kind] ?? '?';
-  return <span className={`photo item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
+  return <span className={`${className} item-badge item-kind-${item.kind}`} title={item.category}>{label[0]}</span>;
+}
+
+/** The photo of an item's model (or its texture), made once it scrolls into view; the badge without one. */
+export function ItemPhoto({ models, item, className = 'photo' }: { models: OahuItemModels; item: OahuItem; className?: string }): ReactNode {
+  const box = useRef<HTMLSpanElement>(null);
+  const [url, setUrl] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    setUrl(undefined);
+    let live = true;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      models.photo(item.model).then((u) => live && setUrl(u), () => live && setUrl(null));
+    });
+    io.observe(box.current!);
+    return () => {
+      live = false;
+      io.disconnect();
+    };
+  }, [models, item.model]);
+  if (url === null) return <ItemBadge item={item} className={className} />;
+  return (
+    <span ref={box} className={className} title={item.category}>
+      {url && <img src={url} alt="" />}
+    </span>
+  );
+}
+
+/** The 3D view of an item's model, or its texture (floors, walls, clothes patterns). */
+function ItemModel({ models, it }: { models: OahuItemModels; it: OahuItem }): ReactNode {
+  const m = useAsync(() => models.model(it.model), [models, it.model]);
+  const where = it.model ? `モデル ${hex8(it.model)}` : 'モデルなし';
+  if (m === undefined) return <div className="model-placeholder"><div className="muted small">{`${where} を読み込み中…`}</div></div>;
+  if (m instanceof Error || m === null) {
+    return (
+      <div className="model-placeholder">
+        <ItemBadge item={it} />
+        <div className="muted small">{m instanceof Error ? `${where} を読めませんでした: ${m.message}` : it.model ? `${where} はどのアーカイブにも見つかりませんでした` : where}</div>
+      </div>
+    );
+  }
+  if (m.kind === 'texture') {
+    return (
+      <div className="model-placeholder item-texture">
+        <img src={textureUrl(m.texture)} alt="" />
+        <div className="muted small">{`${where} (${m.archive}) はテクスチャ ${m.texture.name} (${m.texture.width}×${m.texture.height}) のみ`}</div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <ModelView model={m.ref} name={it.name} />
+      <div className="muted small">{`${where} (${m.archive})`}</div>
+    </div>
+  );
 }
 
 const PAGE = 300;
@@ -56,7 +115,7 @@ export function OahuItemPage({ session, arg }: { session: OahuSession; arg: stri
             <tbody>
               {rows.slice(0, limit).map((x) => (
                 <tr key={x.id} className={x.id === selected ? 'active' : ''} onClick={() => (location.hash = oahuItemHref(x.id))}>
-                  <td className="photo-cell"><ItemBadge item={x} /></td>
+                  <td className="photo-cell"><ItemPhoto models={session.itemModels} item={x} /></td>
                   <td className="num muted">{x.id}</td>
                   <td>{x.name}{items.changed(x.id) && <EditedMark text=" ●" />}</td>
                   <td className="muted nowrap">{x.category}</td>
@@ -89,10 +148,7 @@ function ItemDetail({ session, it, onEdit }: { session: OahuSession; it: OahuIte
           <TextEditor items={items} it={it} onEdit={onEdit} />
           <FieldEditor items={items} it={it} onEdit={onEdit} />
         </div>
-        <div className="model-placeholder">
-          <ItemBadge item={it} />
-          <div className="muted small">{it.model ? `モデル ${hex8(it.model)} (BCH)。表示は BCH の読み込み (#64) から。` : 'モデルなし'}</div>
-        </div>
+        <ItemModel models={session.itemModels} it={it} />
       </div>
       <div className="row">
         <span className="muted small">変更はマスター (21350000) の itemData.bin とメッセージとして書き出されます。</span>
@@ -137,10 +193,10 @@ function CopyButtons({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
   );
 }
 
-/** The name and the description messages: text boxes in the editors' text form ({ruby:…} and tags). */
+/** The name and the description messages: their previews, edited in the editors' text form ({ruby:…} and tags) on a click. */
 function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onEdit: () => void }): ReactNode {
   const texts = items.texts;
-  const box = (key: string, label: string, offset: number, multi: boolean): ReactNode => {
+  const box = (key: string, label: string, offset: number): ReactNode => {
     const id = items.messageId(it.id, key);
     if (!id || !texts.units(id)) return null;
     return (
@@ -148,7 +204,7 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
         <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
         <td className="book-desc">
           {texts.editable(id) || texts.isAdded(id)
-            ? <TextBox value={texts.text(id)?.text ?? ''} multi={multi} edited={texts.isEdited(id)} onCommit={(v) => { items.setText(it.id, key, v); onEdit(); }} />
+            ? <MessageEditor texts={texts} id={id} compact apply={(f) => { f(); items.messageChanged(id); onEdit(); }} />
             : <span>{items.message(id)}</span>}
         </td>
       </tr>
@@ -157,8 +213,8 @@ function TextEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onE
   return (
     <table className="enc-table desc-table">
       <tbody>
-        {box('name', '名前', 0x14, false)}
-        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset, true))}
+        {box('name', '名前', 0x14)}
+        {OAHU_ITEM_TEXTS.map(([key, offset, label]) => box(key, label, offset))}
       </tbody>
     </table>
   );
@@ -200,7 +256,7 @@ function FieldEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
             {!!it.action && !actions.some((a) => a.row === it.action) && <option value={it.action}>{items.actionName(it.action)}</option>}
             {actions.map((a) => <option key={a.row} value={a.row}>{a.label}</option>)}
           </select>
-          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。アイテムのアクション (種類 2) から選べます。たね・つりざおなどは別の意味の値です。'} />
+          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。道具のアクション (種類 4) から選べます。たね・つりざおなどは別の意味の値です。'} />
         </div>
       )}
       {it.kind === 3 && <EquipEffects items={items} it={it} set={set} mark={mark} />}

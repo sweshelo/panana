@@ -1,6 +1,6 @@
 // Editors of a MonsterParameter row in the monster book: stats, drops, skills and AI, boss forms.
 // Fields: src/game/monsters.ts PARAM (elpulse docs/battle.md §2〜§4).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ACTION_KIND, ELEMENT, type ActionBook } from '../game/actions';
 import {
   AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
@@ -12,11 +12,12 @@ import { actionEdits, ActionEditor } from '../ui/ActionEditor';
 import { BattleMessagePicker } from '../ui/BattleMessagePicker';
 import { Dialog } from '../ui/Dialog';
 import { Board, EmptyBoard } from '../ui/Board';
-import { NumberInput } from '../ui/book';
+import { FieldCheck as SharedFieldCheck, FieldChoice, FieldNumber, StatFields, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import { performancePhase, TransformPreview } from '../ui/PerformanceEditor';
 import { ItemPicker } from '../ui/ItemPicker';
 import { MonsterPicker } from '../ui/MonsterPicker';
+import { ActionBadge, DropSlots, Heading, moveTo, SkillSlots, type BoardEntry } from '../ui/MonsterSlots';
 import { Photo } from '../ui/Photo';
 import { useAsync } from '../ui/useAsync';
 import { itemRef } from './items';
@@ -28,42 +29,28 @@ interface EditProps {
   edited: () => void;
 }
 
+/** The fields of a monster's row. */
+function paramAccess(book: MonsterBook, m: Monster): FieldAccess {
+  return {
+    get: (k) => book.get(m.row, k as ParamKey),
+    original: (k) => book.original(m.row, k as ParamKey),
+    set: (k, v) => book.set(m.row, k as ParamKey, v),
+    range: (k) => [0, fieldMax(PARAM[k as ParamKey])],
+  };
+}
+
 /** A number box for a field, marked when it differs from the archive. */
-function Field({ book, m, edited, k, min = 0 }: EditProps & { k: ParamKey; min?: number }): ReactNode {
-  const orig = book.original(m.row, k);
-  const v = book.get(m.row, k);
-  return (
-    <NumberInput
-      value={v}
-      min={min}
-      max={fieldMax(PARAM[k])}
-      className={`num-input${v !== orig ? ' edited' : ''}`}
-      title={v !== orig ? `元の値 ${orig}` : `0〜${fieldMax(PARAM[k])}`}
-      onCommit={(x) => { book.set(m.row, k, x); edited(); }}
-    />
-  );
+function Field({ book, m, edited, k }: EditProps & { k: ParamKey }): ReactNode {
+  return <FieldNumber f={paramAccess(book, m)} k={k} edited={edited} />;
 }
 
 /** A select of a field's values with labels. */
 function FieldSelect({ book, m, edited, k, labels }: EditProps & { k: ParamKey; labels: (v: number) => string }): ReactNode {
-  const orig = book.original(m.row, k);
-  const v = book.get(m.row, k);
-  return (
-    <select className={v !== orig ? 'edited' : ''} title={v !== orig ? `元の値 ${labels(orig)}` : ''} value={v}
-      onChange={(e) => { book.set(m.row, k, Number(e.target.value)); edited(); }}>
-      {Array.from({ length: fieldMax(PARAM[k]) + 1 }, (_, i) => <option key={i} value={i}>{labels(i)}</option>)}
-    </select>
-  );
+  return <FieldChoice f={paramAccess(book, m)} k={k} edited={edited} labels={labels} />;
 }
 
 function FieldCheck({ book, m, edited, k, label }: EditProps & { k: ParamKey; label: string }): ReactNode {
-  const v = book.get(m.row, k);
-  return (
-    <label className={v !== book.original(m.row, k) ? 'edited-label' : ''}>
-      <input type="checkbox" checked={v === 1} onChange={(e) => { book.set(m.row, k, e.target.checked ? 1 : 0); edited(); }} />
-      {label}
-    </label>
-  );
+  return <SharedFieldCheck f={paramAccess(book, m)} k={k} edited={edited} label={label} />;
 }
 
 const NAME_INFO = [
@@ -110,43 +97,24 @@ export function NameEditor({ session, book, m, edited }: EditProps & { session: 
   );
 }
 
-const RANGES: [string, ParamKey, ParamKey][] = [
-  ['HP', 'hpMin', 'hpMax'], ['こうげき', 'attackMin', 'attackMax'], ['ぼうぎょ', 'defenseMin', 'defenseMax'], ['すばやさ', 'speedMin', 'speedMax'],
-];
-
-/** A section heading with its explanation behind an info icon. */
-function Heading({ title, info }: { title: string; info: string }): ReactNode {
-  return <h3 className="with-info">{title}<InfoTip text={info} /></h3>;
-}
+const RANGE_INFO = '出現ごとに「最小〜最大」の乱数になります。\n最小 0 の欄は元のデータにも多く、最大の値で固定と見られます。';
 
 /** Level, the stat ranges (min 〜 max), evasion, rewards, HP regeneration and ghost. */
 export function StatEditor(p: EditProps): ReactNode {
-  const { m } = p;
-  const one = (label: string, k: ParamKey, unit = ''): ReactNode => (
-    <div className="stat"><span className="muted">{label}</span><span><Field {...p} k={k} />{unit}</span></div>
-  );
-  const range = (label: string, lo: ParamKey, hi: ParamKey, info?: string): ReactNode => (
-    <div key={label} className="stat stat-range">
-      <span className="muted with-info">{label}{info && <InfoTip text={info} />}</span>
-      <span><Field {...p} k={lo} />〜<Field {...p} k={hi} /></span>
-    </div>
-  );
+  const f = paramAccess(p.book, p.m);
   return (
-    <>
-      <div className="stats stat-edit">
-        {one('Lv', 'level')}
-        {RANGES.map(([label, lo, hi], i) =>
-          range(label, lo, hi, i === 0 ? '出現ごとに「最小〜最大」の乱数になります。\n最小 0 の欄は元のデータにも多く、最大の値で固定と見られます。' : undefined))}
-        {one('回避', 'evasion', '%')}
-        {one('経験値', 'exp')}
-        {one('ゴールド', 'gold')}
-        {one('HP 自動回復', 'regen')}
-        <div className="stat"><span className="muted">ゴースト</span><FieldCheck {...p} k="ghost" label="状態 21" /></div>
-      </div>
-      {RANGES.some(([, lo, hi]) => p.book.get(m.row, lo) > p.book.get(m.row, hi)) && (
-        <div className="issue warn">⚠ 最小が最大より大きい欄があります (ゲームで確かめていません)。</div>
-      )}
-    </>
+    <StatFields f={f} edited={p.edited} stats={[
+      { label: 'Lv', k: 'level' },
+      { label: 'HP', range: ['hpMin', 'hpMax'], info: RANGE_INFO },
+      { label: 'こうげき', range: ['attackMin', 'attackMax'] },
+      { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
+      { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
+      { label: '回避', k: 'evasion', unit: '%' },
+      { label: '経験値', k: 'exp' },
+      { label: 'ゴールド', k: 'gold' },
+      { label: 'HP 自動回復', k: 'regen' },
+      { label: 'ゴースト', node: <FieldCheck {...p} k="ghost" label="状態 21" /> },
+    ]} />
   );
 }
 
@@ -168,48 +136,32 @@ const DROP_INFO = [
 export function DropEditor({ session, ...p }: EditProps & { session: Session }): ReactNode {
   const { book, m, edited } = p;
   const { game } = session;
-  const [picking, setPicking] = useState<number | null>(null);
   const data = useAsync(() => session.items(), [session]);
   const items = data && !(data instanceof Error) ? data.items : null;
-  const setItem = (k: number, id: number): void => {
-    book.set(m.row, DROPS[k]![0], id);
-    edited();
+  const entry = (id: number): BoardEntry => {
+    const it = items?.item(id);
+    return { icon: <Photo model={it ? itemRef(game, it) : null} />, name: game.master.itemName(id) || `#${id}`, href: `#/items/${id}` };
   };
   return (
-    <section>
-      <Heading title="ドロップ" info={DROP_INFO} />
-      <div className="slot-list drop-slots">
-        {m.dropSlots.map((d, k) => {
-          const [ik, rk] = DROPS[k]!;
-          const orig = book.original(m.row, ik);
-          const it = d.item ? items?.item(d.item) : undefined;
-          return (
-            <div key={k} className="slot-row">
-              {d.item
-                ? <Board
-                    icon={<Photo model={it ? itemRef(game, it) : null} />}
-                    name={game.master.itemName(d.item) || `#${d.item}`}
-                    sub={`${dropClass(d.rate)[1]}・${pct(book.battle.dropOdds(d.rate))}`}
-                    id={d.item}
-                    href={`#/items/${d.item}`}
-                    edited={d.item !== orig}
-                    title={d.item !== orig ? `元: ${game.master.itemName(orig) || 'なし'}` : 'アイテムを選び直す'}
-                    onClick={() => setPicking(k)}
-                  />
-                : <EmptyBoard label="＋ アイテム" title="この枠にアイテムを入れる" onClick={() => setPicking(k)} />}
-              <FieldSelect {...p} k={rk} labels={(v) => `${v}: ${oneIn(book.battle.dropOdds(v))}`} />
-              <button className="small slot-remove" title="この枠を空にする" disabled={!d.item} onClick={() => setItem(k, 0)}>×</button>
-            </div>
-          );
-        })}
-      </div>
-      {picking !== null && items && (
-        <ItemPicker game={game} items={items} title={`ドロップ ${picking + 1} のアイテムを選ぶ`} current={m.dropSlots[picking]?.item}
-          unavailable={(it) => (it.id > fieldMax(PARAM.drop0) ? 'ドロップの欄 (10 ビット) に入らない番号です' : null)}
-          onClose={() => setPicking(null)} onPick={(id) => { setPicking(null); setItem(picking, id); }} />
-      )}
+    <>
+      <DropSlots
+        info={DROP_INFO}
+        slots={m.dropSlots.map((d, k) => ({
+          item: d.item,
+          original: book.original(m.row, DROPS[k]![0]),
+          sub: `${dropClass(d.rate)[1]}・${pct(book.battle.dropOdds(d.rate))}`,
+          rate: <FieldSelect {...p} k={DROPS[k]![1]} labels={(v) => `${v}: ${oneIn(book.battle.dropOdds(v))}`} />,
+        }))}
+        entry={entry}
+        setItem={(k, id) => { book.set(m.row, DROPS[k]![0], id); edited(); }}
+        picker={(k, current, pick, close) => items && (
+          <ItemPicker game={game} items={items} title={`ドロップ ${k + 1} のアイテムを選ぶ`} current={current}
+            unavailable={(it) => (it.id > fieldMax(PARAM.drop0) ? 'ドロップの欄 (10 ビット) に入らない番号です' : null)}
+            onClose={close} onPick={pick} />
+        )}
+      />
       {data instanceof Error && <div className="error">{data.message}</div>}
-    </section>
+    </>
   );
 }
 
@@ -220,11 +172,8 @@ function motionLabel(n: number): string {
   return m ? `${m[0]} (${m[1]})` : `モーション 0x${n.toString(16).toUpperCase()}`;
 }
 
-/** Badge of an action (no model): its element, or its kind. */
-function ActionBadge({ element, kind }: { element: number; kind: number }): ReactNode {
-  const label = ELEMENT[element] || (ACTION_KIND[kind] ?? '?').slice(0, 1);
-  return <span className={`badge-icon elem-${element}`}>{label}</span>;
-}
+/** Badge of an RPG2 action: its element, or its kind. */
+const badge = (element: number, kind: number): ReactNode => <ActionBadge element={element} label={ELEMENT[element] || (ACTION_KIND[kind] ?? '?').slice(0, 1)} />;
 
 const SKILL_INFO = [
   '最大 6 枠。ドラッグで並べ替え、× で外します。',
@@ -239,10 +188,6 @@ const SKILL_INFO = [
 export function SkillEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
   const [editing, setEditing] = useState<number | null>(null);
-  const [picking, setPicking] = useState<{ current?: number; onPick: (a: number) => void } | null>(null);
-  const [dragging, setDragging] = useState<number | null>(null);
-  const [dropAt, setDropAt] = useState<number | null>(null);
-  const dragFrom = useRef<number | null>(null);
   const skills = m.skills.map((s) => s.action);
   const orig = book.originalSkills(m.row);
   const set = (next: number[]): void => {
@@ -250,72 +195,33 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
     edited();
   };
   const shares = skillShares(skills);
-  const move = (from: number, to: number): void => {
-    const next = [...skills];
-    const [a] = next.splice(from, 1);
-    next.splice(from < to ? to - 1 : to, 0, a!);
-    set(next);
-  };
-  const endDrag = (): void => {
-    dragFrom.current = null;
-    setDragging(null);
-    setDropAt(null);
-  };
   return (
     <section>
       <Heading title="ワザと行動" info={SKILL_INFO} />
-      <div className="slot-list skill-slots">
-        {m.skills.map((s, i) => {
+      <SkillSlots
+        slots={m.skills.map((s, i) => {
           const a = actions.action(s.action);
           const sub = [motionLabel(actions.motion(s.action)), a?.formChange ? `→ #${a.formChange} に変身` : ''].filter(Boolean).join('・');
-          const cls = ['slot-row', i === dragging ? 'dragging' : '', i === dropAt ? 'drop-before' : '',
-            dropAt === skills.length && i === skills.length - 1 ? 'drop-after' : ''].filter(Boolean).join(' ');
-          return (
-            <div key={`${i}:${s.action}`} className={cls} draggable
-              onDragStart={(e) => {
-                dragFrom.current = i;
-                e.dataTransfer.setData('text/plain', `skill ${i}`);
-                e.dataTransfer.effectAllowed = 'move';
-                requestAnimationFrame(() => setDragging(i));
-              }}
-              onDragOver={(e) => {
-                if (dragFrom.current === null) return;
-                e.preventDefault();
-                const r = e.currentTarget.getBoundingClientRect();
-                setDropAt(e.clientY > r.top + r.height / 2 ? i + 1 : i);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                if (dragFrom.current !== null && dropAt !== null) move(dragFrom.current, dropAt);
-                endDrag();
-              }}
-              onDragEnd={endDrag}
-            >
-              <span className="drag-handle" title="ドラッグで並べ替え">⠿</span>
-              <Board
-                icon={<ActionBadge element={a?.element ?? 0} kind={a?.kind ?? 0} />}
-                name={s.name}
-                sub={sub || undefined}
-                id={s.action}
-                href={`#/actions/${s.action}`}
-                edited={orig[i] !== s.action}
-                title="ワザを選び直す"
-                onClick={() => setPicking({ current: s.action, onPick: (x) => set(skills.map((y, j) => (j === i ? x : y))) })}
-              />
-              <span className="num slot-share" title="AI が「均等」のときの出やすさ">{m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}</span>
-              <button className="small" title="このワザを編集 (名前・モーションなど)" onClick={() => setEditing(i)}>✎</button>
-              <button className="small slot-remove" title="この枠を外す" onClick={() => set(skills.filter((_, j) => j !== i))}>×</button>
-            </div>
-          );
+          return {
+            action: s.action,
+            entry: { icon: badge(a?.element ?? 0, a?.kind ?? 0), name: s.name, href: `#/actions/${s.action}` },
+            sub: sub || undefined,
+            edited: orig[i] !== s.action,
+            extra: (
+              <>
+                <span className="num slot-share" title="AI が「均等」のときの出やすさ">{m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}</span>
+                <button className="small" title="このワザを編集 (名前・モーションなど)" onClick={() => setEditing(i)}>✎</button>
+              </>
+            ),
+          };
         })}
-        {skills.length < SKILL_SLOTS && (
-          <div className="slot-row">
-            <span className="drag-handle" />
-            <EmptyBoard label="＋ ワザを追加" onClick={() => setPicking({ onPick: (x) => set([...skills, x]) })} />
-          </div>
-        )}
-        {!m.skills.length && <div className="muted small">ワザがないと既定の行動だけになります。</div>}
-      </div>
+        max={SKILL_SLOTS}
+        move={(from, to) => set(moveTo(skills, from, to))}
+        pick={(i, x) => set(i < 0 ? [...skills, x] : skills.map((y, j) => (j === i ? x : y)))}
+        remove={(i) => set(skills.filter((_, j) => j !== i))}
+        picker={(current, pick, close) => <ActionPicker actions={actions} current={current} onClose={close} onPick={pick} />}
+        empty="ワザがないと既定の行動だけになります。"
+      />
       <table className="enc-table ai-fields">
         <tbody>
           <tr>
@@ -330,10 +236,6 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
       {editing !== null && skills[editing] !== undefined && (
         <SkillEditDialog session={session} actions={actions} m={m} action={skills[editing]!} edited={edited}
           onCopy={(n) => set(skills.map((y, j) => (j === editing ? n : y)))} onClose={() => setEditing(null)} />
-      )}
-      {picking && (
-        <ActionPicker actions={actions} current={picking.current} onClose={() => setPicking(null)}
-          onPick={(a) => { setPicking(null); picking.onPick(a); }} />
       )}
     </section>
   );

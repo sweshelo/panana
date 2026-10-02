@@ -9,9 +9,11 @@ import { OAHU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
 import { OahuBattle } from './battle';
 import { OAHU_LAYOUT, OahuCode } from './code';
+import { OahuItemModels } from './itemModels';
 import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
+import { OahuMonsterModels } from './monsterModels';
 
 const EDITS_KEY = 'oahu/edits/v1';
 
@@ -28,6 +30,7 @@ export class OahuSession {
 
   readonly items: OahuItems;
   readonly battle: OahuBattle;
+  readonly itemModels: OahuItemModels;
   /** The Update's code.bin; null without the Update (or when the Update is another version, see {@link codeError}). */
   readonly code: OahuCode | null = null;
   /** Why an Update's code.bin cannot be used. */
@@ -41,7 +44,8 @@ export class OahuSession {
     readonly master: OahuMaster,
   ) {
     this.items = new OahuItems(master, messages.texts);
-    this.battle = new OahuBattle(master, this.items);
+    this.itemModels = new OahuItemModels(dump);
+    this.battle = new OahuBattle(master, this.items, new OahuMonsterModels(dump), this.itemModels);
     try {
       this.code = OahuCode.of(dump);
     } catch (e) {

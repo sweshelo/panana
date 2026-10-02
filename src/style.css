@@ -254,6 +254,13 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 .viewer-picture { display: none; width: 100%; height: 300px; object-fit: contain; image-rendering: pixelated; }
 .viewer.picture canvas { display: none; }
 .viewer.picture .viewer-picture { display: block; }
+/* BCH in the RomFS viewer (src/bch/BchView.tsx) */
+.bch-view { display: flex; flex-direction: column; gap: 8px; max-width: 900px; }
+.bch-textures { display: flex; flex-wrap: wrap; gap: 10px; }
+.bch-texture { margin: 0; display: flex; flex-direction: column; gap: 2px; max-width: 160px; }
+.bch-texture canvas { max-width: 160px; max-height: 160px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(#3a3f4b 0 25%, #2a2e37 0 50%) 0 0 / 12px 12px; border: 1px solid var(--border); border-radius: 4px; }
+.bch-texture figcaption { display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.bch-anims ul { margin: 4px 0; padding-left: 20px; columns: 2; }
 
 /* Encounter groups */
 .group-slots select { max-width: 120px; }
@@ -403,6 +410,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .badge-icon.elem-6 { background: #1d3f63; color: #8fc4ff; }
 .badge-icon.elem-7 { background: #5f5a3c; color: #fffbe0; }
 .badge-icon.elem-8 { background: #3b2556; color: #d7b8ff; }
+.book-table td.action-monster { font-weight: bold; }
 
 /* info icon + tooltip (src/ui/InfoTip.tsx) */
 .with-info { display: inline-flex; align-items: center; gap: 6px; }
@@ -537,6 +545,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .item-kind-6 { background: #9c4221; }
 .model-placeholder { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px; border: 1px dashed var(--border); border-radius: 6px; text-align: center; }
 .model-placeholder .item-badge { width: 96px; height: 96px; font-size: 48px; }
+.item-texture img { width: 192px; height: 192px; object-fit: contain; image-rendering: pixelated; }
 .row-fields-box { margin-top: 16px; max-width: 900px; }
 .row-fields-box summary { cursor: pointer; }
 .row-fields { font-size: 13px; margin-top: 6px; }
@@ -556,3 +565,10 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .monster-cols.oahu-group-cols { grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); }
 .oahu-group-cols select { max-width: 220px; }
 .oahu-group-cols .num-input { width: 52px; }
+.photo-lg.item-badge { font-size: 28px; }
+.skill-slots .slot-row:has(.slot-cond) { grid-template-columns: 14px minmax(0, 1fr) auto auto; }
+.slot-cond { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.msg-preview-closed { cursor: pointer; border: 1px solid transparent; }
+.msg-preview-closed:hover, .msg-preview-closed:focus-visible { border-color: var(--accent); outline: none; }
+.msg-preview-closed.edited { border-left: 3px solid var(--warn); }
+.msg-edit-open .row { margin-top: 4px; }

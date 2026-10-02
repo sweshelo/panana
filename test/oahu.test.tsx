@@ -16,7 +16,9 @@ import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
+import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
+import { OAHU_ELEMENT_NAMES } from '../src/oahu/tables';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
 import { GmsgView, GsTableView, viewsFor } from '../src/romfs/formats';
@@ -249,6 +251,16 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(battle.conditionName(64)).toBe('毒たいせい');
     expect(battle.actions.get(969, 'element')).toBe(2);
     expect(battle.actions.get(984, 'range')).toBe(3);
+    // Two elements: 10〜25 need the 5th bit (アイスメテオ 16 = 氷・土, ダークシャイニング 25 = 光・闇).
+    expect([190, 202, 220].map((r) => OAHU_ELEMENT_NAMES[battle.actions.get(r, 'element')])).toEqual(['火・氷', '氷・土', '光・闇']);
+    // A monster's row (kind 2) names the monster, points back at it, and its skills follow it.
+    expect(battle.actions.get(566, 'kind')).toBe(2);
+    expect(battle.actions.get(566, 'subject')).toBe(79);
+    expect(battle.monsters.get(79, 'own')).toBe(566);
+    expect(battle.actionUsers(566).monsters).toEqual([79]);
+    expect(battle.usedSkills(79).map((x) => x.action)).toEqual([567, 568]);
+    expect(battle.actions.get(267, 'kind')).toBe(4);
+    expect(battle.items.itemActions().every((a) => battle.actions.get(a.row, 'kind') === 4)).toBe(true);
     expect(battle.conditions.get(36, 'combine')).toBe(4);
     expect(battle.actionUsers(995).monsters).toContain(1);
     expect(battle.group(1).fixed.map((r) => battle.monsterName(r))).toEqual(['たからばこぞう']);
@@ -266,6 +278,38 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const t = new GsTable(findByName(out, 'monsterParameter.bin')!.body);
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true) & 0xfffff).toBe(777);
     expect(new GsTable(findByName(out, 'monsterGroup.bin')!.body).row(5)[2]).toBe(9);
+  });
+
+  test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {
+    const { battle } = s;
+    expect([1, 43, 55].map((r) => battle.monsters.get(r, 'design'))).toEqual([136, 138, 137]);
+    const models = new OahuMonsterModels(s.dump);
+    const d = await models.design(136);
+    expect(d?.model).toBe(0xd6f7bc00);
+    const loaded = await battle.monsterModel(1)!.load();
+    expect(loaded?.set.models.get(0)?.name).toBe('enemy_66_01');
+    expect(loaded?.set.textures.has('enemy_66_01_body')).toBe(true);
+  });
+
+  test('skills and group slots are written packed; the fallback slot follows its skill', () => {
+    const { battle } = s;
+    const row = battle.monsterList().find((m) => battle.usedSkills(m.id).length >= 3 && battle.monsters.get(m.id, 'fallback') === 1)!.id;
+    const before = battle.usedSkills(row);
+    const now = before.map((x) => ({ action: x.action, condition: x.condition, from: x.slot }));
+    // remove the first skill: the fallback (slot 2) is now slot 1
+    battle.setSkills(row, now.slice(1));
+    expect(battle.usedSkills(row).map((x) => x.action)).toEqual(before.slice(1).map((x) => x.action));
+    expect(battle.monsters.get(row, `skill${before.length}`)).toBe(0);
+    expect(battle.monsters.get(row, `cond${before.length}`)).toBe(1);
+    expect(battle.monsters.get(row, 'fallback')).toBe(0);
+    battle.monsters.revert(row);
+    battle.setGroupSlots(5, [{ monster: 1, weight: 3, count: 5 }], []);
+    expect(battle.group(5).leads).toEqual([{ monster: 1, weight: 3, count: 5 }]);
+    expect(battle.group(5).mates).toEqual([]);
+    battle.setFixed(5, [2, 1]);
+    expect(battle.group(5).fixed).toEqual([2, 1]);
+    battle.groups.revert(5);
+    expect(battle.groups.changed(5)).toBe(false);
   });
 });
 
