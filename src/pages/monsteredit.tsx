@@ -328,7 +328,7 @@ function LineEditor({ session, actions, book, m, edited }: EditProps & { session
         {line > 0 && <button className="small" title="セリフを出さないようにします (+0x38 = 0)" onClick={() => apply(() => book.set(m.row, 'line', 0))}>なしにする</button>}
       </div>
       {picking && (
-        <BattleMessagePicker session={session} title="セリフのメッセージを選ぶ" current={line} users={users()} freeLabel="使われていないものだけ"
+        <BattleMessagePicker texts={session.game.master.texts} title="セリフのメッセージを選ぶ" current={line} users={users()} freeLabel="使われていないものだけ"
           info="戦闘の文章などコードが直接使うものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
           onClose={() => setPicking(false)} onPick={(id) => { setPicking(false); apply(() => book.set(m.row, 'line', id)); }} />
       )}

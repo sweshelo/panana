@@ -432,8 +432,45 @@ export const OAHU_MONSTER_GROUP: TableDef = {
   ],
 };
 
+/**
+ * mapNavi.bin: 135 × 0x30, the R button's navi (naauao oahu/story.md §1). The row is the story step (save key 0x74);
+ * rows of 100 and more are the collection hints (`cmp r0, #0x64` at 0x1F1708).
+ */
+export const OAHU_MAP_NAVI: TableDef = {
+  file: 'mapNavi.bin',
+  rowSize: 0x30,
+  fields: [
+    f('sound', 0x00, 'u32', '段階が変わったときの音', { note: '0 以外なら FUN_00213010 が FUN_0021387C(値) に渡す (BGM と推定)。バニラは全行 0', unsure: true }),
+    f('place', 0x04, 'u32', '目的地', { hex: true, note: 'mapGroup の +0x08 (場所のハッシュ)。0 = 目的地なし' }),
+    f('screen', 0x08, 'u32', '画面の部品', { hex: true, unsure: true, note: 'FUN_001DF738 が FUN_002A44E4(…, 値) に渡す、画面の部品を ID で探す値。バニラは全行 0x01100010' }),
+    f('title', 0x0c, 'u32', '見出し', { ref: msg }),
+    ...[0, 1, 2, 3].flatMap((i) => [
+      f(`hint${i}`, 0x10 + i * 8, 'u32', `ヒント ${i + 1}`, { ref: msg, note: i ? undefined : 'ヒントの番号はセーブのキー 0xFC。0 = なし' }),
+      f(`motion${i}`, 0x14 + i * 8, 'u16', `ヒント ${i + 1} のナビの動き`, { note: i ? undefined : 'FUN_0023AE8C に渡すモーションの番号 (FUN_001F1484)' }),
+      f(`face${i}`, 0x16 + i * 8, 'u8', `ヒント ${i + 1} の +0x16`, { unsure: true, note: i ? undefined : 'FUN_0023ACFC (→ FUN_004AEA10) に渡す値。表情と推定' }),
+      f(`mode${i}`, 0x17 + i * 8, 'u8', `ヒント ${i + 1} の再生のしかた`, { hex: true, unsure: true, note: i ? undefined : '下位 2 ビット = FUN_0023AE8C の第 3 引数、0x04 = FUN_00210030(…, 1)、0x08 = FUN_0023AF08' }),
+    ]),
+  ],
+};
+
+/**
+ * flagData.bin: 259 × 0x10, the save values (naauao oahu/story.md §3.1). The row is the key passed to
+ * FUN_004A2D3C and the other readers.
+ */
+export const OAHU_FLAG_DATA: TableDef = {
+  file: 'flagData.bin',
+  rowSize: 0x10,
+  fields: [
+    f('max', 0x00, 'u32', '最大値', { note: '0 = 制限なし' }),
+    f('count', 0x08, 'u16', '要素の数'),
+    f('u0A', 0x0a, 'u8', '+0x0A', { unsure: true }),
+    f('bits4', 0x0b, 'u8', 'ビット数 × 4'),
+    f('u0C', 0x0c, 'u8', '+0x0C', { unsure: true }),
+  ],
+};
+
 export const OAHU_TABLES: Record<string, TableDef> = Object.fromEntries(
-  [OAHU_ITEM_DATA, OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_GROUP, OAHU_MONSTER_BRAIN].map((d) => [d.file, d]),
+  [OAHU_ITEM_DATA, OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_GROUP, OAHU_MONSTER_BRAIN, OAHU_MAP_NAVI, OAHU_FLAG_DATA].map((d) => [d.file, d]),
 );
 
 /** Stats of the stat-up effect (0x1B) and elements of the element effects, by their number (+0x3C / +0x3E). */

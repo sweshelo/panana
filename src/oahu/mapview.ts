@@ -17,6 +17,9 @@ export const OAHU_POINT_SECTIONS = [3, 4, 5, 8, 2, 1, 9] as const;
 
 export type OahuSelection = { type: 'none' } | { type: 'tile'; index: number } | { type: 'rec'; section: number; index: number };
 
+/** Whether a record's event is placed in the preview state (story.ts OahuConditions.placed). */
+export type Placement = 'shown' | 'hidden' | 'gone' | 'unknown';
+
 export class OahuMapView {
   readonly grid: GridCanvas;
   readonly scene: MapScene;
@@ -25,6 +28,8 @@ export class OahuMapView {
   selection: OahuSelection = { type: 'none' };
   /** Sections shown. */
   readonly layers: Record<number, boolean> = { 1: true, 2: true, 3: true, 4: true, 5: true, 8: true, 9: true };
+  /** The story preview (#87): whether the record's EventObject row is placed in the chosen state; null = no preview. */
+  placement: ((section: number, index: number) => Placement) | null = null;
   status = '';
   private hover: [number, number] | null = null;
   private drag: { section: number; index: number; moved: boolean } | null = null;
@@ -154,6 +159,9 @@ export class OahuMapView {
         const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
         const x = px * s, y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        const placed = this.placement?.(k, i) ?? 'shown';
+        g.globalAlpha = placed === 'hidden' || placed === 'gone' ? 0.25 : 1;
+        g.setLineDash(placed === 'hidden' || placed === 'gone' ? [3, 2] : []);
         g.fillStyle = SECTION_COLORS[k]!;
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
         g.lineWidth = selected ? 2.5 : 1;
@@ -172,6 +180,13 @@ export class OahuMapView {
         else g.arc(x, y, rad, 0, Math.PI * 2);
         g.fill();
         g.stroke();
+        g.globalAlpha = 1;
+        g.setLineDash([]);
+        if (placed === 'unknown') {
+          g.fillStyle = '#fff';
+          g.font = `bold ${Math.max(9, rad * 1.4)}px sans-serif`;
+          g.fillText('?', x + rad * 0.8, y - rad * 0.6);
+        }
       });
     }
     g.strokeStyle = '#ffeb3b';
@@ -260,6 +275,8 @@ export class OahuMapView {
       (this.doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        const placed = this.placement?.(k, i) ?? 'shown';
+        if ((placed === 'hidden' || placed === 'gone') && !selected) return;
         const model = k === 2 ? this.objectModel(r.raw[0]! | (r.raw[1]! << 8)) : null;
         if (model) {
           model.position.set(px * CELL, 0, py * CELL);
