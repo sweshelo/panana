@@ -5,6 +5,7 @@ import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
 import { recCellPos, sectionBytes } from '../src/game/sections';
 import { OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAPDB_ENTRY, oahuExitKind, oahuRecEventRow, type OahuMaps } from '../src/oahu/maps';
+import { oahuEventEntries } from '../src/oahu/events';
 import { OahuSession } from '../src/oahu/session';
 import { openImage, openUpdate, withUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes, u32 } from '../src/util/bytes';
@@ -110,6 +111,36 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     maps.revert(m);
     expect(maps.isChanged(m)).toBe(false);
     expect(maps.doc(m).tiles[0]!.kind).toBe(before);
+    expect(maps.changedArchives().size).toBe(0);
+  });
+
+  test('event list: exits lead to maps, and the scripts (0x2E) of D10 build classes that show field messages', async () => {
+    const entries = await oahuEventEntries(maps, session.code!.code, [40000, 49999]);
+    expect(entries.length).toBe(2524);
+    const dests = entries.filter((e) => e.dest);
+    expect(dests.length).toBeGreaterThan(600);
+    // +0x14 is the point ID (+0x00) of an exit of the destination map
+    expect(dests.filter((e) => maps.exitByPoint(e.dest!.map, e.dest!.point) >= 0).length).toBeGreaterThan(600);
+    const scripts = entries.filter((e) => e.kind === 0x2e);
+    expect(scripts.length).toBe(636);
+    // most scripts are built by the executor (the others are chosen by progress or have no class for the pair)
+    expect(scripts.filter((e) => e.scripts.length).length).toBeGreaterThan(500);
+    const withMessages = scripts.filter((e) => e.scripts.some((s) => s.cls.messages.length));
+    expect(withMessages.length).toBeGreaterThan(100);
+    for (const e of withMessages.slice(0, 20)) for (const s of e.scripts) for (const id of s.cls.messages) expect(session.messages.texts.preview(id, true)).toBeTruthy();
+  });
+
+  test('an edited EventObject row is exported in its dungeon archive', async () => {
+    const d = maps.dungeonOf(maps.mapByName('D10B01001')!)!;
+    const t = (await maps.eventTable(d))!;
+    const before = t.row(11)[0x57]!;
+    t.row(11)[0x57] = before ^ 1;
+    maps.changed();
+    const out = maps.changedArchives().get(d.archive)!;
+    expect(out).toBeDefined();
+    const saved = maps.saved();
+    expect(saved.events!.length).toBe(1);
+    t.row(11)[0x57] = before;
     expect(maps.changedArchives().size).toBe(0);
   });
 });

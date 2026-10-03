@@ -49,6 +49,9 @@ export const oahuExitLabel = (k: number): string => OAHU_EXIT_KIND[k] ?? (k >= 0
 export const oahuCharaKind = (raw: Uint8Array): number => u32(raw, 0);
 export const oahuCharaLabel = (k: number): string => (k <= 2 ? 'キャラクター' : `オブジェクト ${k}`);
 
+/** "B1F" for floor -1, "2F" for 2. */
+export const oahuFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
+
 /** A row of the map table (§2.2). */
 export interface OahuMapInfo {
   /** Row in the map table. */
@@ -94,9 +97,14 @@ export interface OahuTileSource {
   resource: number;
   /** Archive of the tile models (type 8 entries). */
   modelArchive: string;
-  /** Archive and entries of the textures loaded with the tiles. */
+  /** Archive and entries of the textures loaded with the tiles (mapResource +0x04 / +0x08). */
   textureArchive: string;
   textureEntries: number[];
+  /** Models of the model archive loaded with the tiles: the sky (+0x0C, "bgpt_01_caveA_sky") and the base (+0x14). */
+  sky: number;
+  base: number;
+  /** Battle background (+0x10, "btmp_01_caveA"), an entry of archive 52120000. */
+  battleBackground: number;
 }
 
 export type SavedEvent = [archive: string, row: number, before: Uint8Array, after: Uint8Array];
@@ -108,6 +116,8 @@ export interface OahuMapSaved {
 }
 
 const hexName = (n: number): string => hex8(n).toUpperCase();
+/** A map database with no entries. */
+const EMPTY_DB = new Uint8Array(4);
 
 export class OahuMaps {
   readonly maps: OahuMapInfo[];
@@ -127,13 +137,14 @@ export class OahuMaps {
   private constructor(
     private readonly dump: Dump,
     private readonly master: OahuMaster,
-    private readonly archive: Archive,
+    /** null: the dump has no map archive (test dumps); there are no maps. */
+    private readonly archive: Archive | null,
   ) {
-    const db = findEntry(archive, OAHU_MAPDB_ENTRY);
-    const table = findEntry(archive, OAHU_MAP_TABLE_ENTRY);
-    if (!db || !table) throw new Error(`${OAHU_MAP_ARCHIVE} にマップ DB / マップ表がありません`);
-    this.db = new MapDb(unpackEntry(archive, db).body);
-    const t = unpackEntry(archive, table).body;
+    const db = archive && findEntry(archive, OAHU_MAPDB_ENTRY);
+    const table = archive && findEntry(archive, OAHU_MAP_TABLE_ENTRY);
+    if (archive && (!db || !table)) throw new Error(`${OAHU_MAP_ARCHIVE} にマップ DB / マップ表がありません`);
+    this.db = new MapDb(archive && db ? unpackEntry(archive, db).body : EMPTY_DB);
+    const t = archive && table ? unpackEntry(archive, table).body : new Uint8Array(0);
     this.maps = [];
     for (let i = 0; i + MAP_ROW <= t.length; i += MAP_ROW) {
       const slots = Array.from({ length: 10 }, (_, k) => u32(t, i + k * 4));
@@ -152,9 +163,9 @@ export class OahuMaps {
       this.byHash.set(info.hash, info);
       this.byName.set(name, info);
     }
-    const groups = master.table('mapGroup.bin');
+    const groups = archive ? master.table('mapGroup.bin') : null;
     this.dungeons = [];
-    for (let r = 0; r < groups.rows; r++) {
+    for (let r = 0; groups && r < groups.rows; r++) {
       const row = groups.row(r);
       const archive = u32(row, 0x14);
       this.dungeons.push({
@@ -166,10 +177,11 @@ export class OahuMaps {
         mapDataIndoor: u8(row, 0x2f),
       });
     }
-    this.mapDataKeys = master.table('mapData.bin').hashIndex();
+    this.mapDataKeys = archive ? master.table('mapData.bin').hashIndex() : new Map();
   }
 
   static async load(dump: Dump, master: OahuMaster): Promise<OahuMaps> {
+    if (!dump.names().includes(OAHU_MAP_ARCHIVE)) return new OahuMaps(dump, master, null);
     return new OahuMaps(dump, master, parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)));
   }
 
@@ -188,6 +200,11 @@ export class OahuMaps {
   }
   mapByName(name: string): OahuMapInfo | undefined {
     return this.byName.get(name);
+  }
+
+  /** The exit (section 3 record) of a map with point ID `id` (+0x00), the destination of exits (§3.4). */
+  exitByPoint(info: OahuMapInfo, id: number): number {
+    return info.world ? -1 : (this.doc(info).recs[3] ?? []).findIndex((r) => u32(r.raw, 0) === id);
   }
 
   /** The document of a map (loaded once, then edited in place). */
@@ -289,7 +306,10 @@ export class OahuMaps {
       resource,
       modelArchive: hexName(u32(rr, 0)),
       textureArchive: hexName(u32(rr, 4)),
-      textureEntries: [u32(rr, 8), u32(rr, 0x0c), u32(rr, 0x10), u32(rr, 0x14)].filter((h) => h),
+      textureEntries: [u32(rr, 8)].filter((h) => h),
+      sky: u32(rr, 0x0c),
+      base: u32(rr, 0x14),
+      battleBackground: u32(rr, 0x10),
     };
   }
 
@@ -340,6 +360,7 @@ export class OahuMaps {
   /** Changed archives of the MOD (root name -> bytes). */
   changedArchives(): Map<string, Uint8Array> {
     const out = new Map<string, Uint8Array>();
+    if (!this.archive) return out;
     const dbBytes = this.db.build();
     const dbEntry = findEntry(this.archive, OAHU_MAPDB_ENTRY)!;
     if (!equalBytes(dbBytes, unpackEntry(this.archive, dbEntry).body)) out.set(OAHU_MAP_ARCHIVE, rebuildArchive(this.archive, new Map([[dbEntry.index, dbBytes]])));
