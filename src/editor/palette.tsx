@@ -1,13 +1,21 @@
-// Tile palette: (kind, letter) pairs of the current tileset that have a model, with thumbnails.
+// Tile palette: (kind, letter) pairs of the current tileset that have a model, with thumbnails. Shared by both
+// games: the game gives the palette of the tileset (kind -> letter indices) and the model of a (kind, letter).
 import { useMemo, type ReactNode } from 'react';
 import type { ModelFactory } from '../cgfx/three';
 import { letterByte, letterIndex } from '../game/sections';
 import { useEditorState } from '../ui/useEditorState';
 import { kindColor, kindName, ROT_ARROW } from './legend';
-import type { EditorState } from './state';
+import type { MapEditState } from './state';
 import { renderThumb } from './thumbs';
 
-export function Palette({ st, factory }: { st: EditorState; factory: ModelFactory | null }): ReactNode {
+export function Palette({ st, factory, palette, partModel }: {
+  st: MapEditState;
+  factory: ModelFactory | null;
+  /** Tile kind -> letter indices of the open map's tileset. */
+  palette: Map<number, number[]>;
+  /** Model hash of a (kind, letter index) in the open map's tileset. */
+  partModel: (kind: number, letter: number) => number;
+}): ReactNode {
   useEditorState(st);
   /** Thumbnails by tileset / model hash (rendered once per factory). */
   const thumbs = useMemo(() => new Map<string, string | null>(), [factory]);
@@ -25,7 +33,6 @@ export function Palette({ st, factory }: { st: EditorState; factory: ModelFactor
     st.brush = { ...b, rot: (b.rot + d + 4) & 3 };
     st.emit('tool');
   };
-  const pal = st.game.master.palette(st.tileset);
   return (
     <div className="palette">
       <h3>タイル</h3>
@@ -36,12 +43,12 @@ export function Palette({ st, factory }: { st: EditorState; factory: ModelFactor
         <button title="右に回す (R)" onClick={() => rot(1)}>⟳</button>
       </div>
       <div className="palette-list">
-        {[...pal].map(([kind, letters]) => (
+        {[...palette].map(([kind, letters]) => (
           <div key={kind} className="pal-kind">
             <div className="pal-kind-name">{`${kind} ${kindName(kind)}`}</div>
             <div className="pal-items">
               {letters.map((l) => {
-                const hash = st.game.master.partModel(kind, st.tileset, l);
+                const hash = partModel(kind, l);
                 const url = thumb(hash);
                 const active = b.kind === kind && letterIndex(b.letter) === l;
                 return (

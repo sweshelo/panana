@@ -214,7 +214,7 @@ export function buildRecs(recs: Rec[], L: RecordLayout): Uint8Array {
 /** The fields of a map a document needs (RPG2's {@link MapInfo} or RPG3's map table row). */
 export type DocSource = Pick<MapInfo, 'hash' | 'name' | 'dungeon' | 'floor' | 'sections'>;
 
-export function loadDoc(db: MapDb, info: DocSource, format: MapFormat = KAHARA_MAP_FORMAT): MapDoc {
+export function loadDoc(db: Pick<MapDb, 'get'>, info: DocSource, format: MapFormat = KAHARA_MAP_FORMAT): MapDoc {
   const doc: MapDoc = {
     hash: info.hash,
     name: info.name,

@@ -1,11 +1,12 @@
-// Editing model: one MapDoc per opened map, snapshot-based undo / redo, selection, tools.
+// Editing model: one MapDoc per opened map, snapshot-based undo / redo, selection, tools. MapEditState is the
+// part both games share (RPG3's is src/oahu/mapedit.ts); EditorState adds RPG2's tables (master, event tables).
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
-import type { Stamp } from './place';
+import { duplicateRecord, placeStamp, type PlaceContext, type Stamp } from './place';
 import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
 import { FIX_TABLE } from '../game/boss';
-import { cloneDoc, LETTER_DEFAULT, sectionBytes, type MapDoc, type Tile } from '../game/sections';
+import { cloneDoc, LAYOUTS, LETTER_DEFAULT, POINT_SECTIONS, sectionBytes, type MapDoc, type Rec, type RecordLayout, type Tile } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 
 export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
@@ -30,45 +31,58 @@ export interface Clip {
 
 export const GRID = 30; // docs/map-editor-design.md §7: limit to 30 x 30
 
-type Listener = (what: 'doc' | 'selection' | 'tool' | 'map') => void;
+export type EditEvent = 'doc' | 'selection' | 'tool' | 'map';
+type Listener = (what: EditEvent) => void;
 
-/** Undo point: the map, plus the tables shared between maps (events of loaded dungeons, treasure). */
-interface Snapshot {
+/** Undo point: the map, plus the game's tables shared between maps (what saveTables returns). */
+interface Snapshot<T> {
   doc: MapDoc;
-  events: [number, Uint8Array][];
-  treasure: Uint8Array;
-  mapData: Uint8Array;
-  /** monsterFixGroup (boss battles). */
-  fix: Uint8Array;
-  /** mapChara (the monsters shown for boss battles). */
-  chara: Uint8Array;
-  messages: [number, Uint16Array][];
+  tables: T;
 }
 
-export class EditorState {
+/**
+ * The editing model shared by RPG2 and RPG3: documents, tools, selection, clipboard and undo / redo. A game says
+ * where its records are (layouts, point sections), what else an edit can change (saveTables / restoreTables, kept
+ * with every undo point), and how records are added and copied (placeStamp / duplicateRecord).
+ */
+export abstract class MapEditState<S = unknown, T = unknown> {
   readonly docs = new Map<number, MapDoc>();
-  /** EventObject tables of the dungeons opened so far (edited in place). */
-  readonly events = new Map<number, EventTable>();
-  private readonly undoStacks = new Map<number, Snapshot[]>();
-  private readonly redoStacks = new Map<number, Snapshot[]>();
+  private readonly undoStacks = new Map<number, Snapshot<T>[]>();
+  private readonly redoStacks = new Map<number, Snapshot<T>[]>();
   current: MapDoc | null = null;
-  info: MapInfo | null = null;
-  /** mapData row source of the open map (indoor flag from its tiles when opened). */
-  ref: MapRef | null = null;
+  /** Tileset of the open map (the palette and the tile models). */
   tileset = 0;
   tool: Tool = 'select';
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
   selection: Selection = { type: 'none' };
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
-  stamp: Stamp | null = null;
+  stamp: S | null = null;
   /** Last error of an edit (shown in the status bar). */
   error = '';
   /** Bumped on every emit (React components subscribe to it: src/ui/useEditorState.ts). */
   revision = 0;
   private listeners: Listener[] = [];
 
-  constructor(readonly game: Game) {}
+  /** Record layouts of the sections, by RPG2's section numbers. */
+  abstract readonly layouts: Record<number, RecordLayout>;
+  /** Sections with positioned records, drawn last first. */
+  abstract readonly pointSections: readonly number[];
+  /** The tables an edit can change besides the map (copied into every undo point). */
+  protected abstract saveTables(): T;
+  protected abstract restoreTables(t: T): void;
+  /** Add a record for `stamp` at cell coordinates (cx, cy). Returns [section, index]. */
+  abstract placeStamp(doc: MapDoc, stamp: S, cx: number, cy: number): [number, number];
+  /** A copy of a record (with its own EventObject row when it has one). */
+  abstract duplicateRecord(doc: MapDoc, section: number, rec: Rec): Rec;
+  /** Whether the records of a section have a facing that `R` turns. */
+  canRotate(_section: number): boolean {
+    return false;
+  }
+  /** Turn a record by a quarter (`R`; sections where canRotate). */
+  rotateRecord(_rec: Rec, _section: number, _dir: 1 | -1): void {}
+  /** A document was replaced (undo / redo): games that keep documents elsewhere put it there. */
+  protected docReplaced(_doc: MapDoc): void {}
 
   /** Returns the function that removes the listener. */
   on(f: Listener): () => void {
@@ -77,23 +91,9 @@ export class EditorState {
       this.listeners = this.listeners.filter((g) => g !== f);
     };
   }
-  emit(what: 'doc' | 'selection' | 'tool' | 'map'): void {
+  emit(what: EditEvent): void {
     this.revision++;
     for (const f of [...this.listeners]) f(what);
-  }
-
-  open(info: MapInfo): void {
-    let doc = this.docs.get(info.hash);
-    if (!doc) {
-      doc = this.game.doc(info);
-      this.docs.set(info.hash, doc);
-    }
-    this.current = doc;
-    this.info = info;
-    this.ref = this.game.mapRef(info, doc);
-    this.tileset = this.game.master.tileset(this.ref);
-    this.selection = { type: 'none' };
-    this.emit('map');
   }
 
   /** Record an undo point, then mutate the current document. */
@@ -105,32 +105,11 @@ export class EditorState {
     this.emit('doc');
   }
 
-  get currentEvents(): EventTable | null {
-    return this.current ? this.events.get(this.current.dungeon) ?? null : null;
+  private snapshot(doc: MapDoc): Snapshot<T> {
+    return { doc: cloneDoc(doc), tables: this.saveTables() };
   }
 
-  private snapshot(doc: MapDoc): Snapshot {
-    return {
-      doc: cloneDoc(doc),
-      events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
-      treasure: this.game.master.treasureGroup.data.slice(),
-      mapData: this.game.master.mapData.data.slice(),
-      fix: this.game.master.table(FIX_TABLE).data.slice(),
-      chara: this.game.master.mapChara.data.slice(),
-      messages: this.game.master.texts.saved(),
-    };
-  }
-
-  private restore(s: Snapshot): void {
-    for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
-    this.game.master.restoreTreasure(s.treasure);
-    this.game.master.restoreTable('mapData.bin', s.mapData);
-    this.game.master.restoreTable(FIX_TABLE, s.fix);
-    this.game.master.restoreTable('mapChara.bin', s.chara);
-    this.game.master.texts.restore(s.messages, true);
-  }
-
-  /** Change the shared tables (events / treasure / messages / mapData) with an undo point on the current map. */
+  /** Change the shared tables (events, treasure, messages …) with an undo point on the current map. */
   editTables(f: () => void): void {
     this.checkpoint();
     f();
@@ -154,7 +133,7 @@ export class EditorState {
     this.emit('doc');
   }
 
-  private swap(from: Map<number, Snapshot[]>, to: Map<number, Snapshot[]>): void {
+  private swap(from: Map<number, Snapshot<T>[]>, to: Map<number, Snapshot<T>[]>): void {
     const doc = this.current;
     if (!doc) return;
     const s = from.get(doc.hash);
@@ -163,9 +142,10 @@ export class EditorState {
     const t = to.get(doc.hash) ?? [];
     t.push(this.snapshot(doc));
     to.set(doc.hash, t);
-    this.restore(prev);
+    this.restoreTables(prev.tables);
     this.docs.set(doc.hash, prev.doc);
     this.current = prev.doc;
+    this.docReplaced(prev.doc);
     this.selection = { type: 'none' };
     this.emit('doc');
     this.emit('selection');
@@ -190,6 +170,90 @@ export class EditorState {
   select(s: Selection): void {
     this.selection = s;
     this.emit('selection');
+  }
+}
+
+/** RPG2's shared tables of an undo point (events of loaded dungeons, treasure, …). */
+interface KaharaTables {
+  events: [number, Uint8Array][];
+  treasure: Uint8Array;
+  mapData: Uint8Array;
+  /** monsterFixGroup (boss battles). */
+  fix: Uint8Array;
+  /** mapChara (the monsters shown for boss battles). */
+  chara: Uint8Array;
+  messages: [number, Uint16Array][];
+}
+
+export class EditorState extends MapEditState<Stamp, KaharaTables> {
+  /** EventObject tables of the dungeons opened so far (edited in place). */
+  readonly events = new Map<number, EventTable>();
+  info: MapInfo | null = null;
+  /** mapData row source of the open map (indoor flag from its tiles when opened). */
+  ref: MapRef | null = null;
+  readonly layouts = LAYOUTS;
+  readonly pointSections = POINT_SECTIONS;
+
+  constructor(readonly game: Game) {
+    super();
+  }
+
+  open(info: MapInfo): void {
+    let doc = this.docs.get(info.hash);
+    if (!doc) {
+      doc = this.game.doc(info);
+      this.docs.set(info.hash, doc);
+    }
+    this.current = doc;
+    this.info = info;
+    this.ref = this.game.mapRef(info, doc);
+    this.tileset = this.game.master.tileset(this.ref);
+    this.selection = { type: 'none' };
+    this.emit('map');
+  }
+
+  get currentEvents(): EventTable | null {
+    return this.current ? this.events.get(this.current.dungeon) ?? null : null;
+  }
+
+  protected saveTables(): KaharaTables {
+    return {
+      events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
+      treasure: this.game.master.treasureGroup.data.slice(),
+      mapData: this.game.master.mapData.data.slice(),
+      fix: this.game.master.table(FIX_TABLE).data.slice(),
+      chara: this.game.master.mapChara.data.slice(),
+      messages: this.game.master.texts.saved(),
+    };
+  }
+
+  protected restoreTables(s: KaharaTables): void {
+    for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
+    this.game.master.restoreTreasure(s.treasure);
+    this.game.master.restoreTable('mapData.bin', s.mapData);
+    this.game.master.restoreTable(FIX_TABLE, s.fix);
+    this.game.master.restoreTable('mapChara.bin', s.chara);
+    this.game.master.texts.restore(s.messages, true);
+  }
+
+  placeContext(doc: MapDoc): PlaceContext {
+    return { doc, docs: this.docs.values(), events: this.currentEvents, master: this.game.master };
+  }
+
+  placeStamp(doc: MapDoc, stamp: Stamp, cx: number, cy: number): [number, number] {
+    return placeStamp(this.placeContext(doc), stamp, cx, cy);
+  }
+
+  duplicateRecord(doc: MapDoc, section: number, rec: Rec): Rec {
+    return duplicateRecord(this.placeContext(doc), section, rec);
+  }
+
+  /** Doors on walls (section 7): facing +0x16 (0..3). */
+  override canRotate(section: number): boolean {
+    return section === 7;
+  }
+  override rotateRecord(rec: Rec, _section: number, dir: 1 | -1): void {
+    rec.raw[0x16] = (rec.raw[0x16]! + dir + 4) & 3;
   }
 
   /** Section k of an opened map changed compared with the ROM? */

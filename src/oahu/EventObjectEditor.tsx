@@ -14,11 +14,13 @@ export function pointLabel(maps: OahuMaps, map: OahuMapInfo, id: number): string
   return i >= 0 ? `の出入口 #${i}` : `の地点 ${hex8(id).toUpperCase()}`;
 }
 
-export function EventObjectEditor({ maps, row, original, onEdit }: {
+export function EventObjectEditor({ maps, row, original, edit = (f) => f(), onEdit }: {
   maps: OahuMaps;
   /** The row in the table (edited in place). */
   row: Uint8Array;
   original: Uint8Array | null;
+  /** Runs a change of the row (the map page records an undo point first). */
+  edit?: (f: () => void) => void;
   onEdit: () => void;
 }): ReactNode {
   const conds = oahuConditions(row);
@@ -42,7 +44,7 @@ export function EventObjectEditor({ maps, row, original, onEdit }: {
                 <td className="mono muted">{fieldPlace(f)}</td>
                 <td>
                   <NumberInput value={v} min={lo} max={hi} className={`num-input${o !== v ? ' edited' : ''}`} title={o !== v ? `元の値 ${o}` : `${lo}〜${hi}`}
-                    onCommit={(x) => { writeField(row, f, x); onEdit(); }} />
+                    onCommit={(x) => { edit(() => writeField(row, f, x)); onEdit(); }} />
                 </td>
                 <td className="mono muted small">{f.hex ? (f.type === 'u32' ? hex8(v).toUpperCase() : `0x${v.toString(16).toUpperCase()}`) : ''}</td>
               </tr>

@@ -8,7 +8,7 @@ import { isIndoor } from '../game/objects';
 import type { Session } from '../session';
 import { mountReact } from '../ui/mount';
 import { Signal } from '../ui/useEditorState';
-import { Controller } from './controller';
+import { Controller, editorKey } from './controller';
 import { h } from './dom';
 import { MapEditorUi } from './panes';
 import type { EditorState } from './state';
@@ -244,35 +244,7 @@ export class MapEditor {
 
   private readonly onKey = (e: KeyboardEvent): void => {
     const st = this.st;
-    const ctl = this.ctl;
     if (!this.active || document.querySelector('dialog[open]')) return;
-    const t = e.target as HTMLElement;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
-    const mod = e.ctrlKey || e.metaKey;
-    const letters = st.game.master.palette(st.tileset).get(st.brush.kind) ?? [0];
-    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) st.undo();
-    else if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) st.redo();
-    else if (mod && e.key.toLowerCase() === 'c') ctl.copy();
-    else if (mod && e.key.toLowerCase() === 'v') ctl.paste();
-    else if (mod && e.key.toLowerCase() === 'd') ctl.duplicateRec();
-    else if (mod) return;
-    else if (e.key === 'Delete' || e.key === 'Backspace') ctl.deleteSelection();
-    else if (e.key === 'r' || e.key === 'R') ctl.rotate(e.shiftKey ? -1 : 1);
-    else if (e.key === '[') ctl.cycleLetter(letters, -1);
-    else if (e.key === ']') ctl.cycleLetter(letters, 1);
-    else if (e.key === 'v') st.setTool('select');
-    else if (e.key === 'b') st.setTool('paint');
-    else if (e.key === 'e') st.setTool('erase');
-    else if (e.key === 'm') st.setTool('rect');
-    else if (e.key === 'g') st.setTool('room');
-    else if (e.key === 'Escape') {
-      if (st.tool === 'place') st.setTool('select');
-      else st.select({ type: 'none' });
-    }
-    else if (e.key.startsWith('Arrow') && (e.shiftKey || st.selection.type === 'rec')) {
-      const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key] as [number, number];
-      ctl.shiftSelection(d[0], d[1]);
-    } else return;
-    e.preventDefault();
+    if (editorKey(e, this.ctl, () => st.game.master.palette(st.tileset).get(st.brush.kind) ?? [0])) e.preventDefault();
   };
 }
