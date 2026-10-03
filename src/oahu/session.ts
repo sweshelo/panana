@@ -11,6 +11,7 @@ import { OahuBattle } from './battle';
 import { OAHU_LAYOUT, OahuCode } from './code';
 import { OahuItemModels } from './itemModels';
 import { OahuItems } from './items';
+import { OahuMaps, type OahuMapSaved } from './maps';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
 import { OahuMonsterModels } from './monsterModels';
@@ -23,6 +24,8 @@ interface Saved {
   rows?: SavedRow[];
   /** Code patches (kept without the Update too; they are only built and exported with it). */
   patches?: CodePatch[];
+  /** Map sections and EventObject rows. */
+  maps?: OahuMapSaved;
 }
 
 export class OahuSession {
@@ -42,6 +45,7 @@ export class OahuSession {
     readonly dump: Dump,
     readonly messages: OahuMessages,
     readonly master: OahuMaster,
+    readonly maps: OahuMaps,
   ) {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
@@ -54,13 +58,14 @@ export class OahuSession {
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {
-    return new OahuSession(dump, await OahuMessages.load(dump), await OahuMaster.load(dump));
+    const master = await OahuMaster.load(dump);
+    return new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master));
   }
 
   static async open(dump: Dump): Promise<OahuSession> {
     const s = await OahuSession.load(dump);
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
-    if (saved) s.restore(saved);
+    if (saved) await s.restore(saved);
     return s;
   }
 
@@ -68,20 +73,21 @@ export class OahuSession {
   async withUpdate(update: UpdateImage): Promise<OahuSession> {
     this.saveNow();
     const next = await OahuSession.load(withUpdate(this.dump, update));
-    next.restore(this.saved());
+    await next.restore(this.saved());
     return next;
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved() };
   }
 
   /** Messages first: the rows of copied items name the messages added for them. */
-  private restore(saved: Saved): void {
+  private async restore(saved: Saved): Promise<void> {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.patches) this.codePatches = saved.patches.map((p) => ({ ...p }));
     this.items.reload();
+    if (saved.maps) await this.maps.restore(saved.maps);
   }
 
   readonly scheduleSave = (): void => {
@@ -119,7 +125,9 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    return this.messages.changedArchives(new Map([[OAHU_MASTER, this.master.changedEntries()]]));
+    const files = this.messages.changedArchives(new Map([[OAHU_MASTER, this.master.changedEntries()]]));
+    for (const [name, b] of this.maps.changedArchives()) files.set(name, b);
+    return files;
   }
 
   /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
