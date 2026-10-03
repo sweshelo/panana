@@ -371,6 +371,21 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect([a.rows, battle.texts.addedIds().length]).toEqual([rows, added]);
   });
 
+  test('a message shared by several actions can be made one action\'s own', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const row = [...Array(a.rows).keys()].find((r) => r > 0 && battle.actionsWithText(r, 'name').length > 0)!;
+    const before = a.get(row, 'name');
+    const others = battle.actionsWithText(row, 'name');
+    expect(renderToString(<OahuActionPage session={s} arg={String(row)} />)).toContain('このアクションだけの文にする');
+    const n = battle.ownActionText(row, 'name');
+    expect([a.get(row, 'name'), battle.actionsWithText(row, 'name'), a.get(others[0]!, 'name')]).toEqual([n, [], before]);
+    expect(battle.message(n)).toBe(battle.message(before));
+    battle.revertAction(row);
+    battle.texts.removeAdded(n);
+    expect(a.get(row, 'name')).toBe(before);
+  });
+
   test('the look of a form change: category 22 swaps in the model of monsterParameter +0x62 (ドローンＺ 160 → 161)', () => {
     const { battle } = s;
     const m = battle.monsters;

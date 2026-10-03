@@ -3,13 +3,14 @@
 // the monsters and items that use an action are listed.
 import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ACTION_RANGE } from '../game/actions';
-import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { useEdits, useScrollTop, useSticky } from '../ui/book';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_ACTION_TEXTS, type OahuBattle } from './battle';
 import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
+import { ActionButtons, ActionHead, ActionListPane, ActionTexts, ActionUsers } from '../ui/ActionParts';
 import { FieldCheck } from '../ui/FieldEdit';
-import { enumOptions, FieldNumber, FieldSelect, MessageFields, rowAccess, Stat } from './FieldInput';
+import { enumOptions, FieldNumber, FieldSelect, rowAccess, Stat } from './FieldInput';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
 import { oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuMonsterIcon, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
@@ -18,19 +19,14 @@ import {
   OAHU_RATE_CATEGORIES, OAHU_SKILL_CONDITION, OAHU_STATE_CATEGORIES, OAHU_STATE_CODE, oahuCategoryValues, oahuTriggerLabel,
 } from './tables';
 
-const PAGE = 300;
-
 export function OahuActionPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { battle } = session;
   const [edits, edited] = useEdits();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
-  const [limit, setLimit] = useState(PAGE);
-  const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   const actions = useMemo(() => battle.actionList(), [battle, edits]);
   const selected = useSticky(Number(arg) || undefined, (r) => r > 0 && r < battle.actions.rows, () => actions[0]?.row ?? 1);
-  useActiveRow(list, selected);
   useScrollTop(detail, selected);
   const onEdit = (): void => {
     edited();
@@ -46,101 +42,26 @@ export function OahuActionPage({ session, arg }: { session: OahuSession; arg: st
   });
   return (
     <div className="book">
-      <div className="book-side">
-        <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・行で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
-          options={[['all', 'すべて'], ...Object.entries(OAHU_ACTION_KIND).map(([k, v]): [string, string] => [`k${k}`, `種類: ${v}`]),
-            ...Object.entries(OAHU_ACTION_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, `系統: ${v}`]), ['changed', '変更したもの']]} />
-        <div className="book-list" ref={list}>
-          <Count shown={rows.length} total={actions.length} />
-          <table className="book-table">
-            <thead><tr><th>行</th><th>名前</th><th>系統</th><th>属性</th><th>威力</th></tr></thead>
-            <tbody>
-              {rows.slice(0, limit).map((a) => (
-                <tr key={a.row} className={a.row === selected ? 'active' : ''} onClick={() => (location.hash = oahuActionHref(a.row))}>
-                  <td className="num muted">{a.row}</td>
-                  <td className={a.kind === 2 ? 'action-monster' : ''}>{a.name}{battle.actionChanged(a.row) && <EditedMark text=" ●" />}</td>
-                  <td className="muted nowrap">{a.kind === 2 ? OAHU_ACTION_KIND[2] : shortCategory(a.category)}</td>
-                  <td className="nowrap">{a.element ? OAHU_ELEMENT_NAMES[a.element] ?? a.element : ''}</td>
-                  <td className="num nowrap">{a.power[0] || a.power[1] ? `${a.power[0]}〜${a.power[1]}` : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length > limit && <div className="row"><button onClick={() => setLimit(limit + PAGE * 5)}>{`続きを表示 (${rows.length - limit} 件)`}</button></div>}
-        </div>
-      </div>
+      <ActionListPane
+        rows={rows.map((a) => ({
+          row: a.row,
+          name: a.name,
+          edited: battle.actionChanged(a.row),
+          nameClass: a.kind === 2 ? 'action-monster' : '',
+          cells: [
+            a.kind === 2 ? OAHU_ACTION_KIND[2] : shortCategory(a.category),
+            a.element ? OAHU_ELEMENT_NAMES[a.element] ?? a.element : '',
+            a.power[0] || a.power[1] ? `${a.power[0]}〜${a.power[1]}` : '',
+          ],
+        }))}
+        total={actions.length} columns={[['系統'], ['属性'], ['威力']]} selected={selected} href={oahuActionHref}
+        query={query} setQuery={setQuery} placeholder="名前・行で検索" filter={filter} setFilter={setFilter}
+        filters={[['all', 'すべて'], ...Object.entries(OAHU_ACTION_KIND).map(([k, v]): [string, string] => [`k${k}`, `種類: ${v}`]),
+          ...Object.entries(OAHU_ACTION_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, `系統: ${v}`]), ['changed', '変更したもの']]} />
       <div className="book-detail" ref={detail}>
         <ActionDetail key={selected} battle={battle} row={selected} onEdit={onEdit} />
       </div>
     </div>
-  );
-}
-
-function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
-  const rows = battle.actions;
-  const p = { rows, row, onEdit };
-  const users = useMemo(() => battle.actionUsers(row), [battle, row]);
-  const category = rows.get(row, 'category');
-  const values = oahuCategoryValues(category);
-  const access = rowAccess(rows, row);
-  const multiplier = OAHU_MULTIPLIER_CATEGORIES.includes(category) || rows.get(row, 'multiplier') !== 10;
-  const stateFields = OAHU_STATE_CATEGORIES.includes(category) || category === 2 || rows.get(row, 'state') !== 0;
-  const rateFields = OAHU_RATE_CATEGORIES.includes(category);
-  const trigger = triggerField(rows.get(row, 'kind'), category, rows.get(row, 'trigger'));
-  const shared = useMemo(() => OAHU_ACTION_TEXTS.filter(([k]) => battle.actionsSharing(row, k) > 1).map(([, label]) => label), [battle, row]);
-  return (
-    <>
-      <div className="book-head">
-        <h2>{battle.actionName(row) || `アクション ${row}`}</h2>
-        <span className="muted">{`actionData の行 ${row}  ${OAHU_ACTION_KIND[rows.get(row, 'kind')] ?? `種類 ${rows.get(row, 'kind')}`} / ${OAHU_ACTION_CATEGORY[rows.get(row, 'category')] ?? `系統 ${rows.get(row, 'category')}`}`}</span>
-      </div>
-      {rows.get(row, 'kind') === 2 && <MonsterRowNote battle={battle} row={row} />}
-      <MessageFields rows={rows} row={row} fields={OAHU_ACTION_TEXTS} texts={battle.texts} message={(id) => battle.message(id)} onEdit={onEdit} />
-      {shared.length > 0 && <div className="muted small">{`${shared.join('・')}のメッセージはほかのアクションと共通です。書き換えると、同じメッセージを使うすべてのアクションで変わります。`}</div>}
-      <div className="stats stat-edit oahu-stats">
-        <Stat label="系統" info={CATEGORY_INFO}><FieldSelect {...p} k="category" options={CATEGORY_OPTIONS} /></Stat>
-        <Stat label="消費 AP" info="+0x2B。呪文・アンテナ・つかまえたモンスターのアクションにあります。モンスターのワザでは、条件 (monsterBrain.bin) が AP を見るときに、今の AP より多ければ使いません (FUN_0018F13C)。"><FieldNumber {...p} k="ap" /></Stat>
-        <Stat label="属性" info={ELEMENT_INFO}><FieldSelect {...p} k="element" options={enumOptions(OAHU_ELEMENT_NAMES)} /></Stat>
-        <Stat label="範囲" info="w0 bit21-24。番号の意味は RPG2 と同じと推定しています。"><FieldSelect {...p} k="range" options={enumOptions(ACTION_RANGE, true)} /></Stat>
-        <Stat label="狙う側" info="w0 bit19-20。1 なら自分の側 (回復・能力アップ)。"><FieldSelect {...p} k="side" options={enumOptions(OAHU_ACTION_SIDE)} /></Stat>
-        {values.kind === 'range' || values.kind === 'percent'
-          ? <>
-            <Stat label={values.labels![0]} info={values.info}><FieldNumber {...p} k="min" /></Stat>
-            <Stat label={values.labels![1]} info={values.info}><FieldNumber {...p} k="max" /></Stat>
-          </>
-          : values.kind === 'monster' && <Stat label="+0x18" info={values.info}><FieldNumber {...p} k="min" /></Stat>}
-        {multiplier && <Stat label={category === 4 ? '返す割合' : '打撃の倍率'} info={MULTIPLIER_INFO}><FieldNumber {...p} k="multiplier" /><span className="muted small">{`×${(rows.get(row, 'multiplier') / 10).toFixed(1)}`}</span></Stat>}
-        {stateFields && <Stat label="状態" info="+0x2E。付ける (治す) 状態の番号で、装備の効果 0x14 の対象と同じ並び。"><FieldSelect {...p} k="state" options={[[0, 'なし'], ...enumOptions(OAHU_STATE_CODE, true)]} /></Stat>}
-        {stateFields && <Stat label="状態の強さ" info={STRENGTH_INFO}><FieldNumber {...p} k="strength" /></Stat>}
-        {rateFields && <Stat label="成功率の段階" info={RATE_INFO}><FieldNumber {...p} k="rate" /></Stat>}
-        {rateFields && category !== 23 && <Stat label="持続ターン" info={TURNS_INFO}><FieldNumber {...p} k="turnsMin" />〜<FieldNumber {...p} k="turnsMax" /></Stat>}
-        {trigger && <Stat label={trigger.label} info={trigger.info}>{trigger.select ? <FieldSelect {...p} k="trigger" options={TRIGGER_OPTIONS} /> : <FieldNumber {...p} k="trigger" />}</Stat>}
-      </div>
-      <div className="row">
-        <FieldCheck f={access} k="breath" edited={onEdit} label="ブレス (ブレス封じで使えない)" />
-        <FieldCheck f={access} k="noFloat" edited={onEdit} label="浮遊の相手に当たらない" />
-      </div>
-      <ActionValues battle={battle} row={row} onEdit={onEdit} />
-      {(users.monsters.length > 0 || users.items.length > 0) && (
-        <div className="row">
-          {'使うもの: '}
-          {users.monsters.map((m) => {
-            const conds = [...new Set(battle.usedSkills(m).filter((s) => s.action === row).map((s) => OAHU_SKILL_CONDITION[s.condition]))];
-            return <a key={`m${m}`} href={oahuMonsterHref(m)}>{battle.monsterName(m)}{conds.length > 0 && <span className="muted small">{` (${conds.join('・')})`}</span>}</a>;
-          })}
-          {users.items.map((i) => <a key={`i${i}`} href={`#/items/${i}`}>{battle.itemName(i)}</a>)}
-        </div>
-      )}
-      <div className="row">
-        <span className="muted small">変更はマスター (21350000) の actionData.bin とメッセージとして書き出されます。</span>
-        {battle.actionChanged(row) && !rows.added(row) && <button onClick={() => { battle.revertAction(row); onEdit(); }}>このアクションの変更を元に戻す</button>}
-        <CopyButtons battle={battle} row={row} onEdit={onEdit} />
-      </div>
-      <details className="row-fields-box" open>
-        <summary>{`actionData の行 ${row} のすべての欄`}</summary>
-        <RowFields def={OAHU_ACTION_DATA} row={rows.row(row)} original={rows.added(row) ? undefined : rows.originalRow(row)} context={battleContext(battle)} />
-      </details>
-    </>
   );
 }
 
@@ -150,26 +71,70 @@ const COPY_INFO = [
   '写したアクションは、モンスターのワザやアイテムの「使うアクション」で選ぶと使われます。',
 ].join('\n');
 
-/** Copy the action to a new row at the end, or remove the last added one. */
-function CopyButtons({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
-  const can = battle.canCopyAction(row);
+function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const rows = battle.actions;
+  const p = { rows, row, onEdit };
+  const users = useMemo(() => battle.actionUsers(row), [battle, row]);
+  const category = rows.get(row, 'category');
+  const values = oahuCategoryValues(category);
+  const access = rowAccess(rows, row, rows.added(row));
+  const multiplier = OAHU_MULTIPLIER_CATEGORIES.includes(category) || rows.get(row, 'multiplier') !== 10;
+  const stateFields = OAHU_STATE_CATEGORIES.includes(category) || category === 2 || rows.get(row, 'state') !== 0;
+  const rateFields = OAHU_RATE_CATEGORIES.includes(category);
+  const trigger = triggerField(rows.get(row, 'kind'), category, rows.get(row, 'trigger'));
+  const texts = OAHU_ACTION_TEXTS.map(([key, label]) => ({
+    key, label, id: rows.get(row, key), place: `actionData +0x${rows.field(key).offset.toString(16).toUpperCase()}`,
+    shared: battle.actionsWithText(row, key),
+    own: battle.canOwnActionText(row, key) ? () => { battle.ownActionText(row, key); } : undefined,
+  }));
+  const kind = rows.get(row, 'kind');
   return (
     <>
-      <span className="with-info">
-        <button disabled={!can} title={can ? '' : 'メッセージの空きがありません'} onClick={() => {
-          const n = battle.copyAction(row);
-          onEdit();
-          location.hash = oahuActionHref(n);
-        }}>写して新しいアクションを作る</button>
-        <InfoTip text={COPY_INFO} />
-      </span>
-      {battle.canRemoveAction(row) && (
-        <button title="最後に追加したアクションを消します (使っているワザやアイテムは直してください)" onClick={() => {
-          battle.removeAction(row);
-          onEdit();
-          location.hash = oahuActionHref(row - 1);
-        }}>このアクションを消す</button>
-      )}
+      <ActionHead title={battle.actionName(row) || `アクション ${row}`}
+        sub={`actionData の行 ${row}  ${OAHU_ACTION_KIND[kind] ?? `種類 ${kind}`} / ${OAHU_ACTION_CATEGORY[category] ?? `系統 ${category}`}`} />
+      {kind === 2 && <MonsterRowNote battle={battle} row={row} />}
+      <ActionTexts texts={battle.texts} fields={texts} message={(id) => battle.message(id)} onEdit={onEdit} href={oahuActionHref} />
+      <div className="stats stat-edit action-stats">
+        <Stat label="種類" info="w0 bit0-2。3 (自動・特殊) はボディ・自動の枠から「発動の条件」で出ます。2 はつかまえたモンスターの行、4 は道具。"><FieldSelect {...p} k="kind" options={enumOptions(OAHU_ACTION_KIND, true)} /></Stat>
+        <Stat label="系統" info={CATEGORY_INFO} wide><FieldSelect {...p} k="category" options={CATEGORY_OPTIONS} /></Stat>
+        <Stat label="狙う側" info="w0 bit19-20。1 なら自分の側 (回復・能力アップ)。"><FieldSelect {...p} k="side" options={enumOptions(OAHU_ACTION_SIDE)} /></Stat>
+        <Stat label="範囲" info="w0 bit21-24。番号の意味は RPG2 と同じと推定しています。"><FieldSelect {...p} k="range" options={enumOptions(ACTION_RANGE, true)} /></Stat>
+        <Stat label="属性" info={ELEMENT_INFO}><FieldSelect {...p} k="element" options={enumOptions(OAHU_ELEMENT_NAMES)} /></Stat>
+        <Stat label="消費 AP" info="+0x2B。呪文・アンテナ・つかまえたモンスターのアクションにあります。モンスターのワザでは、条件 (monsterBrain.bin) が AP を見るときに、今の AP より多ければ使いません (FUN_0018F13C)。"><FieldNumber {...p} k="ap" /></Stat>
+        {values.kind === 'range' && <Stat label={values.labels![0] === '最小' ? '量' : values.labels!.join('〜')} info={values.info}><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>}
+        {values.kind === 'percent' && <>
+          <Stat label={values.labels![0]} info={values.info}><FieldNumber {...p} k="min" /></Stat>
+          <Stat label={values.labels![1]} info={values.info}><FieldNumber {...p} k="max" /></Stat>
+        </>}
+        {values.kind === 'monster' && <Stat label="+0x18" info={values.info}><FieldNumber {...p} k="min" /></Stat>}
+        {multiplier && <Stat label={category === 4 ? '返す割合' : '打撃の倍率'} info={MULTIPLIER_INFO}><FieldNumber {...p} k="multiplier" /><span className="muted small">{`×${(rows.get(row, 'multiplier') / 10).toFixed(1)}`}</span></Stat>}
+        {stateFields && <Stat label="付ける状態" info="+0x2E。付ける (治す) 状態の番号で、装備の効果 0x14 の対象と同じ並び。"><FieldSelect {...p} k="state" options={[[0, 'なし'], ...enumOptions(OAHU_STATE_CODE, true)]} /></Stat>}
+        {stateFields && <Stat label="状態の強さ" info={STRENGTH_INFO}><FieldNumber {...p} k="strength" /></Stat>}
+        {rateFields && <Stat label="成功率の段階" info={RATE_INFO}><FieldNumber {...p} k="rate" /></Stat>}
+        {rateFields && category !== 23 && <Stat label="状態のターン" info={TURNS_INFO}><FieldNumber {...p} k="turnsMin" />〜<FieldNumber {...p} k="turnsMax" /></Stat>}
+        {trigger && <Stat label={trigger.label} info={trigger.info} wide={trigger.select}>{trigger.select ? <FieldSelect {...p} k="trigger" options={TRIGGER_OPTIONS} /> : <FieldNumber {...p} k="trigger" />}</Stat>}
+      </div>
+      {values.kind === 'range' && rows.get(row, 'min') > rows.get(row, 'max') && <div className="issue warn">⚠ 最小が最大より大きい</div>}
+      <div className="row">
+        <FieldCheck f={access} k="breath" edited={onEdit} label="ブレス (ブレス封じで使えない)" />
+        <FieldCheck f={access} k="noFloat" edited={onEdit} label="浮遊の相手に当たらない" />
+      </div>
+      <ActionValues battle={battle} row={row} onEdit={onEdit} />
+      <ActionButtons note="変更はマスター (21350000) の actionData.bin とメッセージとして書き出されます。" copyInfo={COPY_INFO}
+        canCopy={battle.canCopyAction(row)} cannotCopy="メッセージの空きがありません"
+        onCopy={() => { const n = battle.copyAction(row); onEdit(); location.hash = oahuActionHref(n); }}
+        onRemove={battle.canRemoveAction(row) ? () => { battle.removeAction(row); onEdit(); location.hash = oahuActionHref(row - 1); } : undefined}
+        onRevert={battle.actionChanged(row) && !rows.added(row) ? () => { battle.revertAction(row); onEdit(); } : undefined} />
+      <ActionUsers
+        monsters={users.monsters.map((m) => ({
+          key: `m${m}`, name: battle.monsterName(m), href: oahuMonsterHref(m),
+          note: [...new Set(battle.usedSkills(m).filter((s) => s.action === row).map((s) => OAHU_SKILL_CONDITION[s.condition]))].join('・'),
+        }))}
+        items={users.items.map((i) => ({ key: `i${i}`, name: battle.itemName(i), href: `#/items/${i}` }))} />
+      <details className="row-fields-box">
+        <summary>{`actionData の行 ${row} のすべての欄`}</summary>
+        <RowFields def={OAHU_ACTION_DATA} row={rows.row(row)} original={rows.added(row) ? undefined : rows.originalRow(row)} context={battleContext(battle)} />
+      </details>
     </>
   );
 }

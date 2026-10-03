@@ -318,6 +318,29 @@ export class OahuBattle {
     for (const m of mine.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
   }
 
+  /** The other action rows using the same message as this row's field (a shared text changes for all of them). */
+  actionsWithText(row: number, key: string): number[] {
+    const m = this.actions.get(row, key);
+    if (!m) return [];
+    const out: number[] = [];
+    for (let r = 1; r < this.actions.rows; r++) if (r !== row && OAHU_ACTION_TEXTS.some(([k]) => this.actions.get(r, k) === m)) out.push(r);
+    return out;
+  }
+
+  /** Whether the row's message can be made its own (a message can be added). */
+  canOwnActionText(row: number, key: string): boolean {
+    const m = this.actions.get(row, key);
+    return !!m && !!this.texts.units(m) && this.texts.canAdd(1);
+  }
+
+  /** Give the row's field a new message with the same text (MessageSystemCommon from 8658), for this row alone. */
+  ownActionText(row: number, key: string): number {
+    const m = this.actions.get(row, key);
+    const n = this.texts.add(this.texts.units(m)!);
+    for (const [k] of OAHU_ACTION_TEXTS) if (this.actions.get(row, k) === m) this.actions.set(row, k, n);
+    return n;
+  }
+
   /** How many action rows use the same message as this row's field (a shared text changes for all of them). */
   actionsSharing(row: number, key: string): number {
     const m = this.actions.get(row, key);

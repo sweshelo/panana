@@ -360,6 +360,9 @@ input.edited { border-color: var(--warn); }
 .stat-edit .num-input { width: 64px; }
 .stat-edit .stat-range .num-input { width: 56px; }
 .stat-edit .stat > span:last-child { display: flex; align-items: center; gap: 2px; }
+.stat-edit .stat > span:last-child { min-width: 0; }
+.stat-edit .stat select { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+.stat-edit .stat-wide { grid-column: span 2; }
 .stat-edit { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .monster-cols { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1200px; }
 .monster-cols > section { min-width: 0; }
@@ -558,8 +561,11 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .oahu-fields td { white-space: nowrap; padding: 1px 4px; }
 .oahu-fields .num-input { width: 64px; }
 .oahu-fields .with-info a { margin-left: 4px; }
-.oahu-stats { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
-.oahu-stats .num-input { width: 68px; }
+.action-stats { grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+.action-stats .num-input { width: 68px; }
+.book-table td.action-name { min-width: 8em; }
+.action-users { flex-wrap: wrap; gap: 4px 8px; }
+.action-users > .muted:not(:first-child) { margin-left: 12px; }
 .oahu-resists { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .oahu-resists .num-input { width: 56px; }
 .monster-cols.oahu-group-cols { grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); }

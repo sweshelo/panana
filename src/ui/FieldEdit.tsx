@@ -43,14 +43,14 @@ export function FieldNumber({ f, k, edited, min, max }: FieldProps & { min?: num
 }
 
 /** A select of a field's values: `options`, or every value of the field with `labels`. */
-export function FieldChoice({ f, k, edited, labels, options }: FieldProps & { labels?: (v: number) => string; options?: [number, string][] }): ReactNode {
+export function FieldChoice({ f, k, edited, labels, options, disabled, title }: FieldProps & { labels?: (v: number) => string; options?: [number, string][]; disabled?: boolean; title?: string }): ReactNode {
   const v = f.get(k);
   const [lo, hi] = f.range(k);
   const opts = options ?? Array.from({ length: hi - lo + 1 }, (_, i): [number, string] => [lo + i, (labels ?? String)(lo + i)]);
   const label = (x: number): string => opts.find(([o]) => o === x)?.[1] ?? String(x);
   const ch = changed(f, k);
   return (
-    <select className={ch ? 'edited' : ''} title={ch ? `元の値 ${label(f.original(k))}` : ''} value={v}
+    <select className={ch ? 'edited' : ''} title={ch ? `元の値 ${label(f.original(k))}` : title ?? ''} value={v} disabled={disabled}
       onChange={(e) => { f.set(k, Number(e.target.value)); edited(); }}>
       {!opts.some(([o]) => o === v) && <option value={v}>{String(v)}</option>}
       {opts.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
@@ -66,6 +66,11 @@ export function FieldCheck({ f, k, edited, label }: FieldProps & { label: string
       {label}
     </label>
   );
+}
+
+/** A labelled box of the stats grid around any inputs; `wide` takes two columns (a long list of choices). */
+export function Stat({ label, info, wide, children }: { label: string; info?: string; wide?: boolean; children: ReactNode }): ReactNode {
+  return <label className={`stat${wide ? ' stat-wide' : ''}`}><span className="muted">{label}{info && <InfoTip text={info} />}</span><span>{children}</span></label>;
 }
 
 /** A box of the stats grid: one field ("経験値"), a range of two ("HP 10〜12") or any input. */
