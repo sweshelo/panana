@@ -95,7 +95,7 @@ jobs:
           ROM_OAHU_BASE: ${{ env.ROM_DIR }}/oahu-base.cia
           ROM_OAHU_UPDATE: ${{ env.ROM_DIR }}/oahu-update.cia
           REQUIRE_ROM: '1'
-        run: bun test test/rom.test.ts test/boss.test.ts test/oahu.test.tsx test/bch.test.ts
+        run: bun test test/rom.test.ts test/boss.test.ts test/oahu.test.tsx test/oahu-sound.test.tsx test/bch.test.ts
 
       - name: Remove the dump
         if: always()

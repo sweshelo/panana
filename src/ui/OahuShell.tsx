@@ -1,4 +1,4 @@
-// The pages of a 電波人間のRPG3 (oahu) dump (#59): the messages, the items, the shops, the monsters, groups and actions, the code (code.ips; needs the Update), the RomFS viewer, the Update and the export.
+// The pages of a 電波人間のRPG3 (oahu) dump (#59): the messages, the items, the shops, the monsters, groups and actions, the BGM and sound effects, the code (code.ips; needs the Update), the RomFS viewer, the Update and the export.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FieldContext } from '../game/tabledef';
 import { OahuActionPage } from '../oahu/ActionPage';
@@ -8,6 +8,7 @@ import { OahuGroupPage } from '../oahu/GroupPage';
 import { OahuItemPage } from '../oahu/ItemPage';
 import { OahuMessagePage } from '../oahu/MessagePage';
 import { OahuShopPage } from '../oahu/ShopPage';
+import { OahuSoundPage } from '../oahu/SoundPage';
 import { battleContext, OahuMonsterPage } from '../oahu/MonsterPage';
 import type { OahuSession } from '../oahu/session';
 import { openUpdate } from '../rom/dump';
@@ -16,10 +17,10 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
 
-export const OAHU_PAGES = [['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
+export const OAHU_PAGES = [['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
 type OahuPage = (typeof OAHU_PAGES)[number][0];
 const PAGE_IDS = OAHU_PAGES.map(([id]) => id);
-const TITLES: Record<OahuPage, string> = { messages: 'メッセージ', items: 'アイテム図鑑', shops: 'ショップ', monsters: 'モンスター図鑑', groups: '群れ', actions: 'アクション', code: 'コード', romfs: 'RomFS' };
+const TITLES: Record<OahuPage, string> = { messages: 'メッセージ', items: 'アイテム図鑑', shops: 'ショップ', monsters: 'モンスター図鑑', groups: '群れ', actions: 'アクション', sounds: 'BGM・効果音', code: 'コード', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens it. */
 function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void {
@@ -92,6 +93,7 @@ export function OahuShell({ session, onSession, onChangeDump }: {
               : id === 'monsters' ? <OahuMonsterPage session={session} arg={a} />
               : id === 'groups' ? <OahuGroupPage session={session} arg={a} />
               : id === 'actions' ? <OahuActionPage session={session} arg={a} />
+              : id === 'sounds' ? <OahuSoundPage session={session} arg={a} />
               : id === 'code' ? <OahuCodePage session={session} onAddUpdate={addUpdate} />
               : <RomfsPage dump={dump} profile={oahuRomfsProfile} arg={a} context={context} />}
           </div>

@@ -3,6 +3,7 @@
 import { u16, u32 } from '../util/bytes';
 import type { MapInfo } from './codebin';
 import type { Game } from './game';
+import type { SoundRenderer } from '../sound/render';
 import type { MapDoc } from './sections';
 
 export const BCSAR_PATH = 'sound/sound.bcsar';
@@ -45,6 +46,11 @@ export const SOUND_SLOTS = [
 export type SoundSlot = (typeof SOUND_SLOTS)[number][0];
 /** Largest soundData row a mapData byte can hold. */
 export const MAX_MAP_SOUND = 0xff;
+
+/** What plays the sounds of a soundData row (Game for RPG2, OahuSession for RPG3). */
+export interface SoundSource {
+  soundRenderer(): Promise<SoundRenderer>;
+}
 
 export type SoundKind = 'bgm' | 'me' | 'se' | 'other';
 export const SOUND_KIND: Record<SoundKind, string> = { bgm: 'BGM', me: 'ME (短い曲)', se: '効果音', other: 'その他' };

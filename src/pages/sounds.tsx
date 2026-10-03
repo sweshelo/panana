@@ -1,11 +1,11 @@
 // BGM and sound effects: every soundData row with its name (sound/sound.bcsar) and the maps whose mapData picks it
 // as their field BGM, battle BGM or footsteps (those are changed in the map editor, src/editor/sounds.tsx).
+// SoundView is the list and the head of the detail, shared with RPG3's page (src/oahu/SoundPage.tsx).
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import { mapShortTitle } from '../game/names';
-import { mapDataUsers, SOUND_KIND, SOUND_SLOTS, soundUses, type SoundKind, type SoundNames, type SoundUse } from '../game/sound';
+import { mapDataUsers, SOUND_KIND, SOUND_SLOTS, soundUses, type SoundKind, type SoundNames, type SoundSource, type SoundUse } from '../game/sound';
 import { hex8 } from '../util/bytes';
-import type { Game } from '../game/game';
 import { Count, ListFilter, useActiveRow, useSticky, type PageProps } from '../ui/book';
 import { PlayButton } from '../ui/SoundPicker';
 
@@ -20,20 +20,63 @@ export function SoundPage({ session, arg, visit, sounds }: PageProps & { sounds:
   // Recomputed on every visit: the map editor may have changed the sounds or the maps.
   const { uses, users } = useMemo(() => ({ uses: soundUses(game), users: mapDataUsers(game, session.docOf) }), [game, session, visit]);
   const selected = useSticky(arg ? Number(arg) : undefined, (r) => r >= 1 && r < sounds.rows, () => 1);
+  const use = uses.get(selected) ?? [];
   return (
     <div className="book">
-      <SoundView game={game} sounds={sounds} uses={uses} users={users} selected={selected} mapTitle={(m) => mapShortTitle(m, game.code.maps)} />
+      <SoundView game={game} sounds={sounds} selected={selected} href={soundHref} uses={(r) => uses.get(r)?.length ?? 0}
+        usesTitle="この音を使う mapData の欄の数" usedLabel="マップで使う">
+        <MapUses use={use} users={users} mapTitle={(m) => mapShortTitle(m, game.code.maps)} />
+      </SoundView>
     </div>
   );
 }
 
-export function SoundView({ game, sounds, uses, users, selected, mapTitle }: {
-  game: Game;
+export function MapUses({ use, users, mapTitle }: { use: SoundUse[]; users: Map<number, MapInfo[]>; mapTitle: (m: MapInfo) => string }): ReactNode {
+  return (
+    <>
+      <h3>{`使っているマップの設定 (${use.length})`}</h3>
+      {use.length ? (
+        <table className="enc-table">
+          <tbody>
+            <tr><th>mapData</th><th>欄</th><th>マップ</th></tr>
+            {use.map((u) => {
+              const maps = users.get(u.mapDataRow) ?? [];
+              return (
+                <tr key={`${u.mapDataRow}.${u.slot}`}>
+                  <td className="num">{u.mapDataRow}</td>
+                  <td>{SLOT_LABEL[u.slot]}</td>
+                  <td>
+                    {maps.length
+                      ? maps.map((m, i) => <span key={m.hash}>{i ? '、' : ''}<a href={`#/map/${m.name}`} title={m.name}>{mapTitle(m)}</a></span>)
+                      : <span className="muted">(読めるマップにはなし)</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <div className="muted">どのマップの設定 (mapData のフィールド・戦闘の BGM、足音) も使っていません。</div>
+      )}
+      <p className="muted small">マップの BGM・足音は、マップ編集の右ペイン「BGM・効果音」で変えられます (mapData は 1 バイトなので行 255 まで)。</p>
+    </>
+  );
+}
+
+/**
+ * The list of the soundData rows (name, kind, number of uses) and the detail of the selected one: play button, item
+ * ID, volume, then `children` (where the game uses it).
+ */
+export function SoundView({ game, sounds, selected, href, uses, usesTitle, usedLabel, children }: {
+  game: SoundSource;
   sounds: SoundNames;
-  uses: Map<number, SoundUse[]>;
-  users: Map<number, MapInfo[]>;
   selected: number;
-  mapTitle: (m: MapInfo) => string;
+  href: (row: number) => string;
+  /** How many places use a row (the list's last column and the "used" filter). */
+  uses: (row: number) => number;
+  usesTitle: string;
+  usedLabel: string;
+  children: ReactNode;
 }): ReactNode {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -43,27 +86,26 @@ export function SoundView({ game, sounds, uses, users, selected, mapTitle }: {
   const rows: number[] = [];
   for (let r = 1; r < sounds.rows; r++) {
     if (q && String(r) !== q && !sounds.name(r).includes(q)) continue;
-    if (filter === 'used' ? !uses.has(r) : filter !== 'all' && sounds.kind(r) !== filter) continue;
+    if (filter === 'used' ? !uses(r) : filter !== 'all' && sounds.kind(r) !== filter) continue;
     rows.push(r);
   }
-  const use = uses.get(selected) ?? [];
   return (
     <>
       <div className="book-side">
         <ListFilter query={query} setQuery={setQuery} placeholder="名前 (BGM_CAVE など) か行番号で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['bgm', 'BGM'], ['me', 'ME (短い曲)'], ['se', '効果音'], ['other', 'その他'], ['used', 'マップで使う']]} />
+          options={[['all', 'すべて'], ['bgm', 'BGM'], ['me', 'ME (短い曲)'], ['se', '効果音'], ['other', 'その他'], ['used', usedLabel]]} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={sounds.rows - 1} />
           <table className="book-table">
-            <thead><tr><th /><th>#</th><th>名前</th><th>種類</th><th title="この音を使う mapData の欄の数">マップ</th></tr></thead>
+            <thead><tr><th /><th>#</th><th>名前</th><th>種類</th><th title={usesTitle}>使用</th></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r} className={r === selected ? 'active' : ''} onClick={() => (location.hash = soundHref(r))}>
+                <tr key={r} className={r === selected ? 'active' : ''} onClick={() => (location.hash = href(r))}>
                   <td className="play-cell"><PlayButton game={game} sounds={sounds} row={r} /></td>
                   <td className="num muted">{r}</td>
                   <td className="mono">{sounds.name(r) || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{SOUND_KIND[sounds.kind(r)]}</td>
-                  <td className="num muted">{uses.get(r)?.length || ''}</td>
+                  <td className="num muted">{uses(r) || ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -85,31 +127,7 @@ export function SoundView({ game, sounds, uses, users, selected, mapTitle }: {
             <tr><td>+0x08 音量</td><td>{sounds.volume(selected)}</td><td /></tr>
           </tbody>
         </table>
-        <h3>{`使っているマップの設定 (${use.length})`}</h3>
-        {use.length ? (
-          <table className="enc-table">
-            <tbody>
-              <tr><th>mapData</th><th>欄</th><th>マップ</th></tr>
-              {use.map((u) => {
-                const maps = users.get(u.mapDataRow) ?? [];
-                return (
-                  <tr key={`${u.mapDataRow}.${u.slot}`}>
-                    <td className="num">{u.mapDataRow}</td>
-                    <td>{SLOT_LABEL[u.slot]}</td>
-                    <td>
-                      {maps.length
-                        ? maps.map((m, i) => <span key={m.hash}>{i ? '、' : ''}<a href={`#/map/${m.name}`} title={m.name}>{mapTitle(m)}</a></span>)
-                        : <span className="muted">(読めるマップにはなし)</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : (
-          <div className="muted">どのマップの設定 (mapData のフィールド・戦闘の BGM、足音) も使っていません。</div>
-        )}
-        <p className="muted small">マップの BGM・足音は、マップ編集の右ペイン「BGM・効果音」で変えられます (mapData は 1 バイトなので行 255 まで)。</p>
+        {children}
       </div>
     </>
   );
