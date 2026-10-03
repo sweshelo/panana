@@ -1,68 +1,80 @@
 // The views of RPG3's map page: the top-down grid and the 3D scene shared with RPG2's map editor
-// (editor/gridcanvas.ts, editor/mapscene.ts), the selection (a tile or a record), and moving records by dragging.
-// Edits go to the map's document and are written to the map database when the drag ends (OahuMaps.commit).
+// (editor/gridcanvas.ts, editor/mapscene.ts), driven by the editor's Controller (tools, selection, dragging) on the
+// page's OahuEditState. The views follow the state's events; the edits go to the map database (mapedit.ts).
 import * as THREE from 'three';
 import { ModelFactory } from '../cgfx/three';
+import { norm, Controller } from '../editor/controller';
 import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
-import { kindColor, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
+import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
 import { MapScene, TileFallback, TileLayer } from '../editor/mapscene';
-import { CELL, letterIndex, letterLabel, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
+import { GRID, type EditEvent } from '../editor/state';
+import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
 import type { Dump } from '../rom/dump';
 import { Signal } from '../ui/useEditorState';
-import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo, type OahuMaps } from './maps';
+import { OAHU_POINT_SECTIONS, type OahuEditState } from './mapedit';
+import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo } from './maps';
 import { oahuObjectModels, oahuTileModels } from './mapModels';
-
-/** Sections with positioned records, drawn last first (exits on top). */
-export const OAHU_POINT_SECTIONS = [3, 4, 5, 8, 2, 1, 9] as const;
-
-export type OahuSelection = { type: 'none' } | { type: 'tile'; index: number } | { type: 'rec'; section: number; index: number };
 
 export class OahuMapView {
   readonly grid: GridCanvas;
   readonly scene: MapScene;
-  /** Emitted when the selection or the document changes (the inspector re-renders). */
+  readonly ctl: Controller;
+  /** Emitted when what the panes show besides the edit state changes (models, status). */
   readonly signal = new Signal();
-  selection: OahuSelection = { type: 'none' };
-  /** Sections shown. */
-  readonly layers: Record<number, boolean> = { 1: true, 2: true, 3: true, 4: true, 5: true, 8: true, 9: true };
+  /** Emitted when the hovered cell changes (the status bar). */
+  readonly hover = new Signal();
   status = '';
-  private hover: [number, number] | null = null;
-  private drag: { section: number; index: number; moved: boolean } | null = null;
+  /** The last edit's error, shown in the status bar until the mouse moves. */
+  errorMsg = '';
+  /** Tile models of the map's tileset (the palette's thumbnails too). */
+  factory: ModelFactory | null = null;
   private readonly tileLayer = new TileLayer();
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
-  private factory: ModelFactory | null = null;
-  private tileset = 0;
+  private readonly overlay = new THREE.Group();
   private readonly objects = new Map<number, ModelFactory | null>();
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
+  private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
+  private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
+  private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
+  private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+  private readonly unsubscribe: () => void;
   private disposed = false;
 
   constructor(
     private readonly dump: Dump,
-    private readonly maps: OahuMaps,
+    readonly st: OahuEditState,
     readonly info: OahuMapInfo,
-    readonly doc: MapDoc,
   ) {
-    this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s));
+    this.ctl = new Controller(st);
+    this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d');
-    this.scene.scene.add(this.tileLayer.group, this.markers);
+    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay);
     const pointer = {
-      down: (cx: number, cy: number) => this.down(cx, cy),
-      move: (cx: number, cy: number) => this.move(cx, cy),
-      up: () => this.up(),
-      leave: () => {
-        this.hover = null;
-        this.grid.draw();
-      },
+      down: (cx: number, cy: number, e: { shiftKey: boolean; button: number }) => this.ctl.down(cx, cy, e),
+      move: (cx: number, cy: number) => this.ctl.move(cx, cy),
+      up: () => this.ctl.up(),
+      leave: () => this.ctl.leave(),
     };
     this.grid.pointer = pointer;
     this.scene.pointer = pointer;
+    this.ctl.onHover = () => {
+      this.grid.draw();
+      this.errorMsg = '';
+      this.hover.emit();
+    };
+    this.unsubscribe = st.on((what) => this.changed(what));
     void this.loadTiles();
+  }
+
+  get doc(): MapDoc {
+    return this.st.current!;
   }
 
   dispose(): void {
     this.disposed = true;
+    this.unsubscribe();
     this.factory?.dispose();
     for (const f of this.objects.values()) f?.dispose();
     this.scene.dispose();
@@ -73,84 +85,38 @@ export class OahuMapView {
     this.scene.fitCells(this.doc.tiles);
   }
 
-  /** Redraw both views and tell the inspector. */
+  /** Redraw both views (after a display setting changed). */
   refresh(): void {
     this.grid.draw();
     this.sync3d();
     this.signal.emit();
   }
 
-  select(s: OahuSelection): void {
-    this.selection = s;
-    this.refresh();
-  }
-
-  /** The document was edited outside the views (the inspector): write it to the map database. */
-  commit(): void {
-    this.maps.commit(this.info);
-    this.refresh();
-  }
-
-  // ---- pointer
-
-  /** The record under a point (nearest within 0.4 cell), else the tile. */
-  private hit(cx: number, cy: number): OahuSelection {
-    let best: OahuSelection = { type: 'none' }, bd = 0.4 * 0.4;
-    for (const k of OAHU_POINT_SECTIONS) {
-      if (!this.layers[k]) continue;
-      (this.doc.recs[k] ?? []).forEach((r, i) => {
-        const [x, y] = recCellPos(r, OAHU_LAYOUTS[k]!);
-        const d = (x - cx) ** 2 + (y - cy) ** 2;
-        if (d < bd) {
-          bd = d;
-          best = { type: 'rec', section: k, index: i };
-        }
-      });
+  private changed(what: EditEvent): void {
+    if (this.st.current?.hash !== this.info.hash) return;
+    if (what === 'doc' || what === 'selection' || what === 'map') this.sync3d();
+    this.grid.draw();
+    if (this.st.error) {
+      this.errorMsg = this.st.error;
+      this.st.error = '';
+      this.signal.emit();
     }
-    if (best.type !== 'none') return best;
-    const tx = Math.floor(cx), ty = Math.floor(cy);
-    const index = this.doc.tiles.findIndex((t) => t.x === tx && t.y === ty);
-    return index >= 0 ? { type: 'tile', index } : { type: 'none' };
-  }
-
-  private down(cx: number, cy: number): void {
-    const s = this.hit(cx, cy);
-    this.drag = s.type === 'rec' && !this.info.world ? { section: s.section, index: s.index, moved: false } : null;
-    this.select(s);
-  }
-
-  private move(cx: number, cy: number): void {
-    if (this.drag) {
-      const r = this.doc.recs[this.drag.section]?.[this.drag.index];
-      if (!r) return;
-      const [ox, oy] = [r.x, r.y];
-      setRecCellPos(r, OAHU_LAYOUTS[this.drag.section]!, cx, cy);
-      if (r.x !== ox || r.y !== oy) {
-        this.drag.moved = true;
-        this.refresh();
-      }
-      return;
-    }
-    const h: [number, number] = [Math.floor(cx), Math.floor(cy)];
-    if (this.hover?.[0] !== h[0] || this.hover?.[1] !== h[1]) {
-      this.hover = h;
-      this.grid.draw();
-    }
-  }
-
-  private up(): void {
-    if (this.drag?.moved) this.commit();
-    this.drag = null;
   }
 
   // ---- 2D
 
   private paint(g: CanvasRenderingContext2D, s: number): void {
-    const sel = this.selection;
-    for (const t of this.doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), t.rot, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[t.rot]);
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash) return;
+    const st = this.st, layers = this.ctl.layers, sel = st.selection;
+    if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), t.rot, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[t.rot]);
+    if (layers.room) {
+      g.fillStyle = ROOM_COLOR;
+      for (const c of doc.cells6) g.fillRect(c.x * s + 2, c.y * s + 2, s - 4, s - 4);
+    }
     for (const k of [...OAHU_POINT_SECTIONS].reverse()) {
-      if (!this.layers[k]) continue;
-      (this.doc.recs[k] ?? []).forEach((r, i) => {
+      if (!layers.sections[k]) continue;
+      (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
         const x = px * s, y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
@@ -176,25 +142,41 @@ export class OahuMapView {
     }
     g.strokeStyle = '#ffeb3b';
     g.lineWidth = 2;
-    if (sel.type === 'tile') {
-      const t = this.doc.tiles[sel.index];
-      if (t) strokeCell(g, s, t.x, t.y);
+    if (sel.type === 'tiles') for (const [x, y] of sel.cells) g.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
+    if (sel.type === 'rect') {
+      const r = norm(sel);
+      g.setLineDash([6, 4]);
+      g.strokeRect(r.x0 * s, r.y0 * s, (r.x1 - r.x0 + 1) * s, (r.y1 - r.y0 + 1) * s);
+      g.setLineDash([]);
     }
-    if (this.hover) {
+    const hv = this.ctl.hover;
+    if (hv) {
+      const [x, y] = hv;
+      if (st.tool === 'paint') {
+        g.globalAlpha = 0.6;
+        drawTileGlyph(g, s, x, y, kindColor(st.brush.kind), st.brush.rot, `${st.brush.kind}${letterLabel(st.brush.letter)}`, ROT_ARROW[st.brush.rot]);
+        g.globalAlpha = 1;
+      }
       g.strokeStyle = '#fff';
       g.lineWidth = 1.5;
-      strokeCell(g, s, this.hover[0], this.hover[1]);
+      if (st.clip && st.tool === 'rect') {
+        g.setLineDash([4, 3]);
+        g.strokeRect(x * s, y * s, st.clip.w * s, st.clip.h * s);
+        g.setLineDash([]);
+      }
+      strokeCell(g, s, x, y);
     }
   }
 
   // ---- 3D
 
+  /** Every model of the tileset's palette (painting finds its model), and the map's own tiles. */
   private async loadTiles(): Promise<void> {
-    const src = this.maps.tileSource(this.info, this.doc);
-    this.tileset = src.tileset;
-    const hashes = this.doc.tiles.map((t) => this.maps.partModel(t.kind, src.tileset, letterIndex(t.letter)));
-    // every letter of the kinds in the map, so that edits find their model
-    for (const k of new Set(this.doc.tiles.map((t) => t.kind))) for (let l = 0; l < 8; l++) hashes.push(this.maps.partModel(k, src.tileset, l));
+    const maps = this.st.maps;
+    const src = maps.tileSource(this.info, this.doc);
+    const hashes = this.doc.tiles.map((t) => maps.partModel(t.kind, src.tileset, letterIndex(t.letter)));
+    for (const [kind, letters] of maps.palette(src.tileset)) for (const l of letters) hashes.push(maps.partModel(kind, src.tileset, l));
+    for (const k of new Set(this.doc.tiles.map((t) => t.kind))) for (let l = 0; l < 8; l++) hashes.push(maps.partModel(k, src.tileset, l));
     this.status = 'タイルのモデルを読み込み中…';
     this.signal.emit();
     try {
@@ -211,9 +193,10 @@ export class OahuMapView {
   }
 
   private objectModel(row: number): THREE.Object3D | null {
+    const maps = this.st.maps;
     if (!this.objects.has(row)) {
       this.objects.set(row, null);
-      const ref = this.maps.objectModel(row);
+      const ref = maps.objectModel(row);
       if (ref)
         oahuObjectModels(this.dump, ref).then((set) => {
           if (this.disposed || !set.models.size) return;
@@ -223,7 +206,7 @@ export class OahuMapView {
       return null;
     }
     const f = this.objects.get(row);
-    const ref = this.maps.objectModel(row);
+    const ref = maps.objectModel(row);
     return f && ref ? f.instance(ref.entry) : null;
   }
 
@@ -238,14 +221,17 @@ export class OahuMapView {
   }
 
   private sync3d(): void {
-    const f = this.factory, ts = this.tileset;
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash || this.disposed) return;
+    const maps = this.st.maps;
+    const f = this.factory, ts = this.st.tileset, layers = this.ctl.layers;
     this.tileLayer.sync(
-      this.doc.tiles.map((t) => ({
+      (layers.tiles ? doc.tiles : []).map((t) => ({
         x: t.x,
         y: t.y,
         sig: `${t.kind}/${t.rot}/${t.letter}/${f ? 1 : 0}`,
         make: () => {
-          const h = f ? this.maps.partModel(t.kind, ts, letterIndex(t.letter)) : 0;
+          const h = f ? maps.partModel(t.kind, ts, letterIndex(t.letter)) : 0;
           const m = h ? f!.instance(h) : null;
           if (!m) return this.fallback.make(kindColor(t.kind), t.rot);
           m.rotation.y = (-t.rot * Math.PI) / 2;
@@ -254,10 +240,10 @@ export class OahuMapView {
       })),
     );
     this.markers.clear();
-    const sel = this.selection;
+    const sel = this.st.selection;
     for (const k of OAHU_POINT_SECTIONS) {
-      if (!this.layers[k]) continue;
-      (this.doc.recs[k] ?? []).forEach((r, i) => {
+      if (!layers.sections[k]) continue;
+      (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         const model = k === 2 ? this.objectModel(r.raw[0]! | (r.raw[1]! << 8)) : null;
@@ -272,6 +258,23 @@ export class OahuMapView {
         if (selected) m.scale.setScalar(1.4);
         this.markers.add(m);
       });
+    }
+    this.overlay.clear();
+    if (layers.room)
+      for (const c of doc.cells6) {
+        const m = new THREE.Mesh(this.roomGeo, this.roomMat);
+        m.position.set((c.x + 0.5) * CELL, 8, (c.y + 0.5) * CELL);
+        this.overlay.add(m);
+      }
+    const cells: [number, number][] = sel.type === 'tiles' ? sel.cells : [];
+    if (sel.type === 'rect') {
+      const r = norm(sel);
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) cells.push([x, y]);
+    }
+    for (const [x, y] of cells) {
+      const box = new THREE.LineSegments(this.selGeo, this.selMat);
+      box.position.set((x + 0.5) * CELL, 20, (y + 0.5) * CELL);
+      this.overlay.add(box);
     }
     this.scene.draw();
   }

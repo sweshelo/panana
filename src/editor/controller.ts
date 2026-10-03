@@ -1,8 +1,7 @@
-// Pointer / keyboard logic shared by the 2D and 3D views. Views convert the pointer to cell coordinates
-// (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
-import { LAYOUTS, POINT_SECTIONS, WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
-import { inGrid, removeTile, setTile, tileAt, type EditorState, type Selection } from './state';
-import { duplicateRecord, placeStamp, type PlaceContext } from './place';
+// Pointer / keyboard logic shared by the 2D and 3D views of both games. Views convert the pointer to cell
+// coordinates (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
+import { WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
+import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './state';
 
 export interface Layers {
   tiles: boolean;
@@ -20,10 +19,13 @@ export class Controller {
     | { kind: 'rect'; x0: number; y0: number }
     | { kind: 'room'; on: boolean; last: string } = null;
 
-  layers: Layers = { tiles: true, sections: { 1: true, 2: true, 3: true, 4: true, 5: true, 7: true, 8: true, 9: false }, room: true };
+  /** Section 9 starts hidden (RPG2: unknown points; RPG3: plants and fishing spots, many per map). */
+  layers: Layers;
   onHover: () => void = () => {};
 
-  constructor(readonly st: EditorState) {}
+  constructor(readonly st: MapEditState) {
+    this.layers = { tiles: true, sections: Object.fromEntries(st.pointSections.map((k) => [k, k !== 9])), room: true };
+  }
 
   /** Record under a point (cell coords), searching the visible point layers. */
   hitRec(cx: number, cy: number, radius = 0.3): { section: number; index: number } | null {
@@ -31,9 +33,9 @@ export class Controller {
     if (!doc) return null;
     let best: { section: number; index: number } | null = null;
     let bestD = radius;
-    for (const k of POINT_SECTIONS) {
+    for (const k of this.st.pointSections) {
       if (!this.layers.sections[k]) continue;
-      const L = LAYOUTS[k]!;
+      const L = this.st.layouts[k]!;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, L);
         const d = Math.hypot(px - cx, py - cy);
@@ -57,7 +59,7 @@ export class Controller {
         const hit = this.hitRec(cx, cy);
         if (hit) {
           const r = doc.recs[hit.section]![hit.index]!;
-          const [px, py] = recCellPos(r, LAYOUTS[hit.section]!);
+          const [px, py] = recCellPos(r, st.layouts[hit.section]!);
           st.select({ type: 'rec', ...hit });
           this.drag = { kind: 'rec', ...hit, dx: px - cx, dy: py - cy, moved: false };
           return;
@@ -91,7 +93,7 @@ export class Controller {
         if (!stamp || !inGrid(x, y)) return;
         let placed: [number, number] | null = null;
         try {
-          st.edit((d) => (placed = placeStamp(this.placeContext(d), stamp, cx, cy)));
+          st.edit((d) => (placed = st.placeStamp(d, stamp, cx, cy)));
         } catch (err) {
           st.error = (err as Error).message;
           st.emit('tool');
@@ -123,7 +125,7 @@ export class Controller {
     const key = `${x},${y}`;
     switch (d.kind) {
       case 'rec': {
-        const L = LAYOUTS[d.section]!;
+        const L = st.layouts[d.section]!;
         if (!d.moved) {
           st.checkpoint();
           d.moved = true;
@@ -166,11 +168,10 @@ export class Controller {
   rotate(dir: 1 | -1): void {
     const st = this.st;
     const s = st.selection;
-    if (s.type === 'rec' && s.section === 7) {
-      // doors on walls: facing +0x16 (0..3)
+    if (s.type === 'rec' && st.canRotate(s.section)) {
       st.edit((doc) => {
-        const r = doc.recs[7]![s.index]!;
-        r.raw[0x16] = (r.raw[0x16]! + dir + 4) & 3;
+        const r = doc.recs[s.section]?.[s.index];
+        if (r) st.rotateRecord(r, s.section, dir);
       });
       return;
     }
@@ -225,11 +226,6 @@ export class Controller {
     st.emit('selection');
   }
 
-  placeContext(doc: MapDoc): PlaceContext {
-    const st = this.st;
-    return { doc, docs: st.docs.values(), events: st.currentEvents, master: st.game.master };
-  }
-
   duplicateRec(): void {
     const st = this.st;
     const s = st.selection;
@@ -239,9 +235,9 @@ export class Controller {
       st.edit((doc) => {
         const list = doc.recs[s.section]!;
         const r = list[s.index]!;
-        const L = LAYOUTS[s.section]!;
-        const copy = duplicateRecord(this.placeContext(doc), s.section, r);
-      const [px, py] = recCellPos(r, L);
+        const L = st.layouts[s.section]!;
+        const copy = st.duplicateRecord(doc, s.section, r);
+        const [px, py] = recCellPos(r, L);
         setRecCellPos(copy, L, px + (L.unit === 'cell' ? 1 : 0.4), py);
         list.push(copy);
         idx = list.length - 1;
@@ -302,7 +298,7 @@ export class Controller {
     const s = st.selection;
     if (s.type === 'rec') {
       // one unit of the record (a cell, or 1/5 cell for fine coordinates; 50 for world coordinates)
-      const step = LAYOUTS[s.section]?.unit === 'world' ? WORLD_SNAP : 1;
+      const step = st.layouts[s.section]?.unit === 'world' ? WORLD_SNAP : 1;
       st.edit((doc) => {
         const r = doc.recs[s.section]![s.index]!;
         r.x += dx * step;
@@ -321,8 +317,8 @@ export class Controller {
       }
       doc.tiles = rest.filter((t) => !moving.some((m) => m.x === t.x && m.y === t.y)).concat(moving);
       const inside = (x: number, y: number): boolean => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1;
-      for (const k of POINT_SECTIONS) {
-        const L = LAYOUTS[k]!;
+      for (const k of st.pointSections) {
+        const L = st.layouts[k]!;
         for (const p of doc.recs[k] ?? []) {
           const [px, py] = recCellPos(p, L);
           if (!inside(Math.floor(px), Math.floor(py))) continue;
@@ -345,4 +341,39 @@ function toggleRoom(doc: MapDoc, x: number, y: number, on: boolean): void {
     if (!doc.sec6Header.length) return; // the map has no section 6 header to extend
     doc.cells6.push({ value: 0, x, y });
   } else if (!on && i >= 0) doc.cells6.splice(i, 1);
+}
+
+/**
+ * The editor's keyboard shortcuts (tools, undo, copy, rotate, letters, moving the selection). `letters`: the letter
+ * indices of the brush's kind in the tileset ([ / ]). Returns whether the key was used.
+ */
+export function editorKey(e: KeyboardEvent, ctl: Controller, letters: () => number[]): boolean {
+  const st = ctl.st;
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return false;
+  const mod = e.ctrlKey || e.metaKey;
+  const key = e.key.toLowerCase();
+  if (mod && key === 'z' && !e.shiftKey) st.undo();
+  else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) st.redo();
+  else if (mod && key === 'c') ctl.copy();
+  else if (mod && key === 'v') ctl.paste();
+  else if (mod && key === 'd') ctl.duplicateRec();
+  else if (mod) return false;
+  else if (e.key === 'Delete' || e.key === 'Backspace') ctl.deleteSelection();
+  else if (e.key === 'r' || e.key === 'R') ctl.rotate(e.shiftKey ? -1 : 1);
+  else if (e.key === '[') ctl.cycleLetter(letters(), -1);
+  else if (e.key === ']') ctl.cycleLetter(letters(), 1);
+  else if (e.key === 'v') st.setTool('select');
+  else if (e.key === 'b') st.setTool('paint');
+  else if (e.key === 'e') st.setTool('erase');
+  else if (e.key === 'm') st.setTool('rect');
+  else if (e.key === 'g') st.setTool('room');
+  else if (e.key === 'Escape') {
+    if (st.tool === 'place') st.setTool('select');
+    else st.select({ type: 'none' });
+  } else if (e.key.startsWith('Arrow') && (e.shiftKey || st.selection.type === 'rec')) {
+    const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key] as [number, number];
+    ctl.shiftSelection(d[0], d[1]);
+  } else return false;
+  return true;
 }
