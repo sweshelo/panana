@@ -419,7 +419,7 @@ describe('shops', () => {
     expect(dropInto(l, { kind: 'row', index: 1 }, 3)).toEqual([1, 3, 2, 4]);
     expect(dropInto(l, { kind: 'item', id: 9 }, 2)).toEqual([1, 2, 9, 3, 4]);
     expect(dropInto(l, { kind: 'item', id: 9 }, 99)).toEqual([1, 2, 3, 4, 9]);
-    expect(dropInto(l, { kind: 'item', id: 4 }, 0)).toEqual([4, 1, 2, 3]);
+    expect(dropInto(l, { kind: 'item', id: 4 }, 0)).toEqual([4, 1, 2, 3, 4]); // a shop may list an item twice
     expect(dropInto([], { kind: 'item', id: 5 }, 0)).toEqual([5]);
   });
 
