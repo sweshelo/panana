@@ -31,6 +31,8 @@ export interface ArmOptions {
   stubs?: Map<number, Stub>;
   maxDepth?: number;
   maxSteps?: number;
+  /** End of the executable mapping (RPG2's TEXT_END by default; RPG3's .text is longer). */
+  textEnd?: number;
 }
 
 const ror = (v: number, n: number): number => (n & 31 ? ((v >>> (n & 31)) | (v << (32 - (n & 31)))) >>> 0 : v >>> 0);
@@ -51,6 +53,7 @@ export class ArmMachine {
   private readonly stubs: Map<number, Stub>;
   private readonly maxDepth: number;
   private readonly maxSteps: number;
+  private readonly textEnd: number;
 
   constructor(
     readonly code: Uint8Array,
@@ -59,6 +62,7 @@ export class ArmMachine {
     this.stubs = opts.stubs ?? new Map();
     this.maxDepth = opts.maxDepth ?? 4;
     this.maxSteps = opts.maxSteps ?? 400000;
+    this.textEnd = opts.textEnd ?? TEXT_END;
   }
 
   // ---- memory
@@ -88,7 +92,7 @@ export class ArmMachine {
   }
   private word(a: number): number | null {
     const o = a - BASE;
-    if (o < 0 || a >= TEXT_END || o + 4 > this.code.length) return null;
+    if (o < 0 || a >= this.textEnd || o + 4 > this.code.length) return null;
     return (this.code[o]! | (this.code[o + 1]! << 8) | (this.code[o + 2]! << 16) | (this.code[o + 3]! << 24)) >>> 0;
   }
 

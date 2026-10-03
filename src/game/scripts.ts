@@ -18,6 +18,18 @@ const MSG_LAST = 0x21af;
 /** Callees with more callers than this are shared parts, not followed. */
 const MAX_FANIN = 6;
 
+/** Where a game's code ends, which literals are messages, and the "complete a row" function. */
+export interface CodeProfile {
+  textEnd: number;
+  msgFirst: number;
+  msgLast: number;
+  /** 0 = not known (no completed rows are read). */
+  complete: number;
+}
+
+/** RPG2's code.bin. */
+export const KAHARA_CODE: CodeProfile = { textEnd: TEXT_END, msgFirst: MSG_FIRST, msgLast: MSG_LAST, complete: F_COMPLETE };
+
 /**
  * "Make the action" (vtable[4] of the handler the map record builds) by section and record kind.
  * docs/events.md §1. Sections 4 (chests) and 8 (ranges) have one handler each.
@@ -119,8 +131,9 @@ export class CodeIndex {
   constructor(
     readonly code: Uint8Array,
     vtables: Iterable<number> = [],
+    readonly profile: CodeProfile = KAHARA_CODE,
   ) {
-    const end = Math.min(TEXT_END, BASE + code.length);
+    const end = Math.min(profile.textEnd, BASE + code.length);
     const starts = new Set<number>();
     const pushes: number[] = [];
     for (let a = BASE; a < end; a += 4) {
@@ -151,7 +164,7 @@ export class CodeIndex {
       if (this.starts[mid]! <= f) lo = mid + 1;
       else hi = mid;
     }
-    return this.starts[lo] ?? TEXT_END;
+    return this.starts[lo] ?? this.profile.textEnd;
   }
 
   scan(f: number): FunctionScan {
@@ -159,12 +172,13 @@ export class CodeIndex {
     if (s) return s;
     s = { calls: [], messages: new Set(), completes: new Set() };
     const code = this.code;
+    const { msgFirst, msgLast, complete } = this.profile;
     for (let a = f; a < this.end(f); a += 4) {
       const w = u32(code, a - BASE);
       const t = blTarget(w, a);
       if (t !== null) {
         s.calls.push(t);
-        if (t === F_COMPLETE) {
+        if (complete && t === complete) {
           // mov r0, #n shortly before (nops skipped)
           for (let b = a - 4; b > a - 16; b -= 4) {
             const p = u32(code, b - BASE);
@@ -178,7 +192,7 @@ export class CodeIndex {
         const lit = a + 8 + (w & 0x800000 ? imm : -imm);
         if (lit >= BASE && lit + 4 <= BASE + code.length) {
           const v = u32(code, lit - BASE);
-          if (v >= MSG_FIRST && v <= MSG_LAST) s.messages.add(v);
+          if (v >= msgFirst && v <= msgLast) s.messages.add(v);
         }
       }
     }
@@ -193,7 +207,7 @@ export class CodeIndex {
     const messages = new Set<number>(), completes = new Set<number>();
     while (stack.length) {
       const f = stack.pop()!;
-      if (seen.has(f) || f < BASE || f >= TEXT_END) continue;
+      if (seen.has(f) || f < BASE || f >= this.profile.textEnd) continue;
       seen.add(f);
       const s = this.scan(f);
       s.messages.forEach((v) => messages.add(v));
@@ -223,11 +237,11 @@ export interface ScriptClass {
  * Describe the classes: roots = vtable entries unique among `built` plus the callbacks the builds registered;
  * then the messages / completed rows reachable from them.
  */
-export function describeClasses(code: Uint8Array, built: BuiltAction[], others: Iterable<number> = []): Map<number, ScriptClass> {
+export function describeClasses(code: Uint8Array, built: BuiltAction[], others: Iterable<number> = [], profile: CodeProfile = KAHARA_CODE): Map<number, ScriptClass> {
   const vtables = new Set(built.map((b) => b.vtable));
   // entries shared with any script class (`others`: the classes of the other rows) are not the class's own
   const all = new Set([...vtables, ...others]);
-  const index = new CodeIndex(code, all);
+  const index = new CodeIndex(code, all, profile);
   const shared = new Map<number, number>();
   for (const vt of all) for (const e of vtableEntries(code, vt)) shared.set(e, (shared.get(e) ?? 0) + 1);
   const pointers = new Map<number, Set<number>>();
@@ -238,7 +252,7 @@ export function describeClasses(code: Uint8Array, built: BuiltAction[], others: 
   }
   const out = new Map<number, ScriptClass>();
   for (const vt of vtables) {
-    const roots = vtableEntries(code, vt).filter((e) => e >= BASE && e < TEXT_END && shared.get(e) === 1);
+    const roots = vtableEntries(code, vt).filter((e) => e >= BASE && e < profile.textEnd && shared.get(e) === 1);
     for (const p of pointers.get(vt) ?? []) if (index.isStart(p) && (index.fanin.get(p) ?? 0) <= MAX_FANIN && !roots.includes(p)) roots.push(p);
     const { messages, completes } = index.reach(roots);
     out.set(vt, { vtable: vt, roots, messages, completes });
