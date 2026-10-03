@@ -14,6 +14,7 @@ import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
 import { OahuMonsterModels } from './monsterModels';
+import { OahuShops, type SavedShop } from './shops';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
 import { SoundArchive } from '../sound/formats';
 import { SoundRenderer } from '../sound/render';
@@ -27,6 +28,8 @@ interface Saved {
   rows?: SavedRow[];
   /** Code patches (kept without the Update too; they are only built and exported with it). */
   patches?: CodePatch[];
+  /** Edited shop stocks. */
+  shops?: SavedShop[];
 }
 
 export class OahuSession {
@@ -46,6 +49,8 @@ export class OahuSession {
     readonly dump: Dump,
     readonly messages: OahuMessages,
     readonly master: OahuMaster,
+    /** ShopItem / Shop (null when the dump has neither archive). */
+    readonly shops: OahuShops | null,
   ) {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
@@ -58,7 +63,7 @@ export class OahuSession {
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {
-    return new OahuSession(dump, await OahuMessages.load(dump), await OahuMaster.load(dump));
+    return new OahuSession(dump, await OahuMessages.load(dump), await OahuMaster.load(dump), await OahuShops.load(dump));
   }
 
   static async open(dump: Dump): Promise<OahuSession> {
@@ -77,7 +82,7 @@ export class OahuSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, shops: this.shops?.saved() ?? [] };
   }
 
   /** Messages first: the rows of copied items name the messages added for them. */
@@ -85,6 +90,7 @@ export class OahuSession {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.patches) this.codePatches = saved.patches.map((p) => ({ ...p }));
+    if (saved.shops) this.shops?.restore(saved.shops);
     this.items.reload();
   }
 
@@ -123,7 +129,9 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    return this.messages.changedArchives(new Map([[OAHU_MASTER, this.master.changedEntries()]]));
+    const more = new Map([[OAHU_MASTER, this.master.changedEntries()]]);
+    for (const [name, repl] of this.shops?.changedEntries() ?? []) more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
+    return this.messages.changedArchives(more, this.shops?.archives());
   }
 
   /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
