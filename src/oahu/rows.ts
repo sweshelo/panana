@@ -43,6 +43,21 @@ export class OahuRows {
     writeField(this.row(row), this.field(key), v);
   }
 
+  /** Whether an edit added the row (past the archive's rows). */
+  added(row: number): boolean {
+    return row >= this.master.originalRows(this.def.file);
+  }
+
+  /** Append a row (a copy of `from`); returns its index. */
+  addRow(from: Uint8Array): number {
+    return this.master.addRow(this.def.file, from);
+  }
+
+  /** Drop the last row when an edit added it. */
+  removeLastRow(): void {
+    this.master.removeLastRow(this.def.file);
+  }
+
   changed(row: number): boolean {
     return !equalBytes(this.row(row), this.originalRow(row));
   }

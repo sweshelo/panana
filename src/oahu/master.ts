@@ -43,6 +43,26 @@ export class OahuMaster {
     return row < t.rows ? t.row(row) : new Uint8Array(t.rowSize);
   }
 
+  /** Rows in the archive (rows from here on were added by edits). */
+  originalRows(name: string): number {
+    this.table(name);
+    return new GsTable(this.tables.get(name)!.original).rows;
+  }
+
+  /** Append a row to a table; returns its index. The game takes the number of rows from the table's header. */
+  addRow(name: string, row: Uint8Array): number {
+    const t = this.table(name);
+    t.data = t.withRows([...Array.from({ length: t.rows }, (_, i) => t.row(i).slice()), row.slice()]);
+    return t.rows - 1;
+  }
+
+  /** Drop the last row of a table when an edit added it. */
+  removeLastRow(name: string): void {
+    const t = this.table(name);
+    if (t.rows <= this.originalRows(name)) throw new Error(`${name} の元の行は消せません`);
+    t.data = t.withRows(Array.from({ length: t.rows - 1 }, (_, i) => t.row(i).slice()));
+  }
+
   /** Changed tables: archive entry index -> bytes. */
   changedEntries(): Map<number, Uint8Array> {
     const out = new Map<number, Uint8Array>();
@@ -74,7 +94,9 @@ export class OahuMaster {
       } catch {
         continue;
       }
-      if (r >= t.rows || after.length !== t.rowSize) continue;
+      if (after.length !== t.rowSize) continue;
+      // A row added by an edit (OahuMaster.addRow): grow the table up to it (rows saved in order, zeros between).
+      if (r >= t.rows) t.data = t.withRows([...Array.from({ length: t.rows }, (_, i) => t.row(i).slice()), ...Array.from({ length: r + 1 - t.rows }, () => new Uint8Array(t.rowSize))]);
       const row = t.row(r);
       for (let i = 0; i < row.length; i++) if (after[i] !== before[i]) row[i] = after[i]!;
     }

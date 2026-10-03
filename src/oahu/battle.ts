@@ -5,7 +5,7 @@ import { cleanActionName } from '../game/actions';
 import type { MessageStore } from '../game/gmsg';
 import { decodeGroupSlots, encodeGroupSlots, type GroupSlot } from '../game/monsters';
 import type { TableDef } from '../game/tabledef';
-import type { OahuItems } from './items';
+import { OAHU_ITEM_MESSAGE_KEYS, type OahuItems } from './items';
 import type { OahuMaster } from './master';
 import type { OahuItemModels } from './itemModels';
 import type { OahuMonsterModels } from './monsterModels';
@@ -264,7 +264,7 @@ export class OahuBattle {
   }
 
   actionChanged(row: number): boolean {
-    return this.actions.changed(row) || OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)));
+    return this.actions.added(row) || this.actions.changed(row) || OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)));
   }
 
   revertAction(row: number): void {
@@ -273,6 +273,49 @@ export class OahuBattle {
       const m = this.actions.get(row, k);
       if (m) this.texts.revert(m);
     }
+  }
+
+  /** The distinct messages of an action row (name and results). */
+  private actionMessages(row: number): number[] {
+    return [...new Set(OAHU_ACTION_TEXTS.map(([k]) => this.actions.get(row, k)).filter(Boolean))];
+  }
+
+  /** Whether the action can be copied: messages for its texts can be added (the table grows by a row). */
+  canCopyAction(row: number): boolean {
+    return row > 0 && row < this.actions.rows && this.texts.canAdd(this.actionMessages(row).length);
+  }
+
+  /**
+   * Copy an action to a new row at the end of actionData: the same values, with messages of its own (same texts) so
+   * they can change alone. The game reads the number of rows from the table's header (FUN_0029D5D8 checks the row
+   * against it). Returns the new row.
+   */
+  copyAction(row: number): number {
+    if (!this.canCopyAction(row)) throw new Error('メッセージを追加できないので、アクションを写せません');
+    const copied = new Map<number, number>();
+    for (const m of this.actionMessages(row)) copied.set(m, this.texts.add(this.texts.units(m)!));
+    const n = this.actions.addRow(this.actions.row(row));
+    for (const [k] of OAHU_ACTION_TEXTS) {
+      const m = this.actions.get(n, k);
+      if (m) this.actions.set(n, k, copied.get(m)!);
+    }
+    return n;
+  }
+
+  /** Whether the action is the last row and was added by an edit (only that one can be removed: the rows stay in order). */
+  canRemoveAction(row: number): boolean {
+    return row === this.actions.rows - 1 && this.actions.added(row);
+  }
+
+  /** Remove an added action (the last row), dropping its messages when they are the last added and unused. */
+  removeAction(row: number): void {
+    if (!this.canRemoveAction(row)) throw new Error('消せるのは最後に追加したアクションだけです');
+    const mine = this.actionMessages(row).filter((m) => this.texts.isAdded(m));
+    this.actions.removeLastRow();
+    const used = new Set<number>();
+    for (let r = 1; r < this.actions.rows; r++) for (const [k] of OAHU_ACTION_TEXTS) used.add(this.actions.get(r, k));
+    for (const it of this.items.items) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.items.messageId(it.id, k));
+    for (const m of mine.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
   }
 
   /** How many action rows use the same message as this row's field (a shared text changes for all of them). */

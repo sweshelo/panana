@@ -15,7 +15,7 @@ import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle, type OahuFormChange } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
 import {
-  oahuActionEntry, oahuActionHref, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon,
+  oahuActionEntry, oahuActionHref, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon, OahuMonsterPicker,
 } from './pickers';
 import type { OahuSession } from './session';
 import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILL_CONDITION, OAHU_SKILL_CONDITION_NOTE, OAHU_SKILLS, oahuTriggerLabel } from './tables';
@@ -133,7 +133,7 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
         <SkillEditor battle={battle} row={row} f={f} onEdit={onEdit} />
         <StateActions battle={battle} row={row} onEdit={onEdit} />
       </div>
-      <FormChanges battle={battle} row={row} />
+      <FormChanges battle={battle} row={row} onEdit={onEdit} />
       <h3 className="with-info">たいせい<InfoTip text={RESIST_INFO} /></h3>
       <ResistEditor battle={battle} row={row} onEdit={onEdit} />
       <h3>{`いる群れ (${groups.length})`}</h3>
@@ -295,6 +295,13 @@ const FORM_INFO = [
   'RPG3 の変身はアクションで起きます。系統 21・22 (形態を変える) のアクションが出ると、そのアクションの +0x1A の行の形態に作り直します (FUN_0029C93C)。',
   'ワザの枠に入れると、ほかのワザと同じように AI が選びます。ボディ (効果 0x2F) などの枠に入れた種類 3 のアクションは、アクションの「発動の条件」(+0x2A) を満たすと出ます (FUN_001B7D18)。',
   '条件 101 (倒される一撃を受けたとき) では倒れずに変身し、HP が戻ります。RPG2 のボス特殊番号と次の形態 (+0x50) に当たる欄はありません。',
+  '見た目 (モデル) が変わるのは系統 22 だけです。系統 22 は、戦闘の始めに読んでおいた「変身の見た目」(+0x62) のモデルと入れ替えます (FUN_0029BAD0・FUN_0029C790)。系統 21 は能力と名前だけが変わり、見た目は元のままです。',
+].join('\n');
+
+const MODEL_INFO = [
+  'monsterParameter +0x62。戦闘の始めに、この行のモンスターのモデルも読んでおきます (0 なら読みません、FUN_0029BAD0)。',
+  '系統 22 のアクションで変身すると、このモデルと入れ替わります (FUN_0029C790)。能力と名前はアクションの +0x1A の行になるので、ふつうは同じ行にします。',
+  '読んでおけるモデルは 1 つだけです。元のデータではドローンＺ (#160 → #161) だけが持っています。',
 ].join('\n');
 
 function formVia(via: string): string {
@@ -303,10 +310,22 @@ function formVia(via: string): string {
 }
 
 /** The form changes from this row and into it (the actions of category 21 / 22 and the rows they point at). */
-function FormChanges({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
+function FormChanges({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const [picking, setPicking] = useState(false);
+  const rows = battle.monsters;
   const out = battle.formChanges(row);
   const into = battle.formSources(row);
-  if (!out.length && !into.length) return null;
+  const model = rows.get(row, 'formModel');
+  if (!out.length && !into.length && !model) return null;
+  const set = (v: number): void => {
+    rows.set(row, 'formModel', v);
+    onEdit();
+  };
+  const looks = (c: OahuFormChange): string => {
+    if (battle.actions.get(c.action, 'category') !== 22) return '系統 21 なので見た目は変わりません';
+    if (!model) return '変身の見た目 (+0x62) がないので見た目は変わりません';
+    return model === c.to ? '' : `見た目は ${battle.monsterName(model)} (#${model}) になります`;
+  };
   const line = (c: OahuFormChange): ReactNode => (
     <>
       <a href={oahuActionHref(c.action)}>{battle.actionLabel(c.action)}</a>
@@ -321,9 +340,23 @@ function FormChanges({ battle, row }: { battle: OahuBattle; row: number }): Reac
           {out.map((c) => (
             <tr key={`o${c.via}`}>
               <td>{formVia(c.via)}</td>
-              <td>{line(c)}{' → '}<a href={oahuMonsterHref(c.to)}>{`${battle.monsterName(c.to)} (#${c.to})`}</a></td>
+              <td>
+                {line(c)}{' → '}<a href={oahuMonsterHref(c.to)}>{`${battle.monsterName(c.to)} (#${c.to})`}</a>
+                {looks(c) && <span className="muted small">{` ${looks(c)}`}</span>}
+              </td>
             </tr>
           ))}
+          <tr>
+            <td className="with-info">変身の見た目<InfoTip text={MODEL_INFO} /></td>
+            <td>
+              <div className="slot-row">
+                {model
+                  ? <Board icon={oahuMonsterIcon(battle, model, true)} name={battle.monsterName(model)} id={model} href={oahuMonsterHref(model)} edited={model !== rows.original(row, 'formModel')} title="モンスターを選び直す" onClick={() => setPicking(true)} />
+                  : <EmptyBoard label="＋ モンスター" onClick={() => setPicking(true)} />}
+                <button className="small slot-remove" title="なしにする" disabled={!model} onClick={() => set(0)}>×</button>
+              </div>
+            </td>
+          </tr>
           {into.map(({ monster, change }) => (
             <tr key={`i${monster}${change.via}`}>
               <td>この形態になる</td>
@@ -332,6 +365,7 @@ function FormChanges({ battle, row }: { battle: OahuBattle; row: number }): Reac
           ))}
         </tbody>
       </table>
+      {picking && <OahuMonsterPicker battle={battle} title="変身の見た目を選ぶ" current={model} onClose={() => setPicking(false)} onPick={(m) => { setPicking(false); set(m); }} />}
     </section>
   );
 }

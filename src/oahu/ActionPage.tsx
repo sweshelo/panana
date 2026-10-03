@@ -133,12 +133,43 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
       )}
       <div className="row">
         <span className="muted small">変更はマスター (21350000) の actionData.bin とメッセージとして書き出されます。</span>
-        {battle.actionChanged(row) && <button onClick={() => { battle.revertAction(row); onEdit(); }}>このアクションの変更を元に戻す</button>}
+        {battle.actionChanged(row) && !rows.added(row) && <button onClick={() => { battle.revertAction(row); onEdit(); }}>このアクションの変更を元に戻す</button>}
+        <CopyButtons battle={battle} row={row} onEdit={onEdit} />
       </div>
       <details className="row-fields-box" open>
         <summary>{`actionData の行 ${row} のすべての欄`}</summary>
-        <RowFields def={OAHU_ACTION_DATA} row={rows.row(row)} original={rows.originalRow(row)} context={battleContext(battle)} />
+        <RowFields def={OAHU_ACTION_DATA} row={rows.row(row)} original={rows.added(row) ? undefined : rows.originalRow(row)} context={battleContext(battle)} />
       </details>
+    </>
+  );
+}
+
+const COPY_INFO = [
+  'このアクションを actionData の最後に新しい行として写します。ゲームは表の頭にある行数まで読むので、行を足せます (FUN_0029D5D8)。',
+  '名前と結果のメッセージは同じ本文の新しいメッセージ (MessageSystemCommon の 8658 番から) になり、元と別に書き換えられます。',
+  '写したアクションは、モンスターのワザやアイテムの「使うアクション」で選ぶと使われます。',
+].join('\n');
+
+/** Copy the action to a new row at the end, or remove the last added one. */
+function CopyButtons({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const can = battle.canCopyAction(row);
+  return (
+    <>
+      <span className="with-info">
+        <button disabled={!can} title={can ? '' : 'メッセージの空きがありません'} onClick={() => {
+          const n = battle.copyAction(row);
+          onEdit();
+          location.hash = oahuActionHref(n);
+        }}>写して新しいアクションを作る</button>
+        <InfoTip text={COPY_INFO} />
+      </span>
+      {battle.canRemoveAction(row) && (
+        <button title="最後に追加したアクションを消します (使っているワザやアイテムは直してください)" onClick={() => {
+          battle.removeAction(row);
+          onEdit();
+          location.hash = oahuActionHref(row - 1);
+        }}>このアクションを消す</button>
+      )}
     </>
   );
 }
@@ -198,6 +229,7 @@ function ActionValues({ battle, row, onEdit }: { battle: OahuBattle; row: number
       </tr>
     );
   };
+  const looks = category === 21 || category === 22 ? battle.actionUsers(row).monsters.filter((m) => category === 21 || battle.monsters.get(m, 'formModel') !== monster) : [];
   const bodyUsers = values.kind === 'monster' && kind !== 3 ? battle.stateSlotUsers(row).filter((u) => SLOT_LABEL[u.via]) : [];
   return (
     <section>
@@ -219,6 +251,13 @@ function ActionValues({ battle, row, onEdit }: { battle: OahuBattle; row: number
         </tbody>
       </table>
       {values.kind === 'actions' && min > max && <div className="muted small">最初の行が最後の行より後ろにあります。</div>}
+      {looks.length > 0 && (
+        <div className="muted small">
+          {category === 21
+            ? `系統 21 では見た目は変わりません (${looks.map((m) => battle.monsterName(m)).join('・')} の見た目のまま)。見た目も変えるには系統 22 にして、使うモンスターの「変身の見た目」(+0x62) を新しい形態にします。`
+            : `${looks.map((m) => `${battle.monsterName(m)} (変身の見た目: ${battle.monsters.get(m, 'formModel') ? battle.monsterName(battle.monsters.get(m, 'formModel')) : 'なし'})`).join('・')} は、変身の見た目 (+0x62) が新しい形態と違うので、見た目が新しい形態になりません。モンスターのページの「変身」で直せます。`}
+        </div>
+      )}
       {bodyUsers.length > 0 && (
         <div className="muted small">
           {`${bodyUsers.map((u) => `${battle.monsterName(u.monster)} (${SLOT_LABEL[u.via]})`).join('・')} の枠に入っていますが、種類が 3 (自動・特殊) ではないので、この枠からは出ません。`}
