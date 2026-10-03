@@ -18,6 +18,8 @@ import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuSession } from '../src/oahu/session';
+import { OahuShopPage } from '../src/oahu/ShopPage';
+import { parseOahuShopItems } from '../src/oahu/shops';
 import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -413,5 +415,68 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     s.codePatches = [{ id: 'q', title: 'bad', source: '@0x1A658C\n  foo r0\n', enabled: true }];
     expect(s.codeIps()).toBeNull();
     s.codePatches = [];
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('ShopItem (782 × 0x10) and Shop (44 × 0x38) in 3B630000 and E3C10000', () => {
+    const shops = s.shops!;
+    expect(shops.archiveNames()).toEqual(['3B630000', 'E3C10000']);
+    expect(shops.shops.map((x) => x.id)).toEqual([...Array(37).keys()].filter((i) => i !== 17 && i !== 19));
+    expect(shops.shops.reduce((a, x) => a + shops.rows(x.id).length, 0) + shops.shops.length).toBe(782);
+    expect(shops.originalMax).toBe(54);
+    // ジュエルショップ: payment 1, prices in ShopItem +0x08, the モト only once
+    for (const id of [27, 28, 29, 30, 31, 32]) expect(shops.shop(id)!.settings!.payment).toBe(1);
+    expect(shops.shop(33)!.settings!.payment).toBe(2);
+    expect(shops.shop(0)!.settings!.payment).toBe(0);
+    expect(shops.rows(27)[0]).toEqual({ item: 102, price: 1, once: 2 });
+    expect(shops.rows(26).map((r) => r.once)).toEqual([0, 12, 13]);
+    expect(shops.onceNumbers).toEqual([...Array(17).keys()].map((i) => i + 1).filter((n) => n !== 9));
+    expect(s.items.item(shops.rows(0)[0]!.item)!.name).toBe('キズぐすり');
+    expect(shops.shop(0)!.settings!.room).toBe(0x0b589c00);
+    expect(s.messages.texts.plain(shops.shop(2)!.settings!.messages[2]!)).toBe('欲しい数、入力しろ。');
+  });
+
+  test('the table is rebuilt byte for byte; a stock edit is written to both archives', async () => {
+    const shops = s.shops!;
+    const arc = parseArchive(await s.dump.readRomfs('3B630000'));
+    const original = unpackEntry(arc, arc.entries.find((e) => e.hash === 0x67297400)!).body;
+    expect(equalBytes(shops.build(), original)).toBe(true);
+    shops.set(27, [...shops.rows(27), { item: 1, price: 3, once: 0 }]);
+    shops.set(0, shops.rows(0).slice(1));
+    expect(shops.changedShops()).toEqual([0, 27]);
+    const files = s.modFiles();
+    expect([...files.keys()].sort()).toEqual(['3B630000', 'E3C10000']);
+    const out = [parseArchive(files.get('3B630000')!), parseArchive(files.get('E3C10000')!)];
+    const tables = out.map((a) => unpackEntry(a, a.entries.find((e) => e.hash === 0x67297400)!).body);
+    expect(equalBytes(tables[0]!, tables[1]!)).toBe(true);
+    const t = new GsTable(tables[0]!);
+    expect(t.rows).toBe(782);
+    const back = parseOahuShopItems(t);
+    expect(back.get(27)!.rows.at(-1)).toEqual({ item: 1, price: 3, once: 0 });
+    expect(back.get(0)!.rows.length).toBe(8);
+    // the rest of 3B630000 (models, Shop, MessageCommand) is as it was
+    for (const e of out[0]!.entries) if (e.hash !== 0x67297400) expect(equalBytes(unpackEntry(out[0]!, e).body, unpackEntry(arc, arc.entries[e.index]!).body)).toBe(true);
+    // saved and restored like the other edits
+    const saved = shops.saved();
+    shops.set(27, shops.originalRows(27));
+    shops.set(0, shops.originalRows(0));
+    expect(shops.changed()).toBe(false);
+    shops.restore(saved);
+    expect(shops.changedShops()).toEqual([0, 27]);
+    const html = renderToString(<OahuShopPage session={s} arg="27" />);
+    expect(html).toContain('値段 (ジュエル)');
+    expect(html).toContain('じゅうたくちのモト');
+    expect(html).not.toContain('同一アイテム');
+    // 店 25 (幻影の店) sells キズぐすり eight times: only a note
+    expect(shops.rows(25).map((r) => r.item)).toEqual(Array(8).fill(2));
+    expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain('同一アイテムが既に陳列されています (キズぐすり)');
+    shops.set(27, shops.originalRows(27));
+    shops.set(0, shops.originalRows(0));
   });
 });
