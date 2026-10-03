@@ -105,10 +105,10 @@ export class OahuBattle {
     readonly itemModels?: OahuItemModels,
   ) {}
 
-  /** A monster's model (by its design row); null without the dump's models. */
-  monsterModel(row: number): ModelRef | null {
+  /** A monster's model (by its design row); null without the dump's models. `motions`: with its skill motions (viewers). */
+  monsterModel(row: number, motions = false): ModelRef | null {
     if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
-    return this.models.ref(this.monsters.get(row, 'design'));
+    return this.models.ref(this.monsters.get(row, 'design'), motions);
   }
 
   /** The tables are taken from the master when first used. */

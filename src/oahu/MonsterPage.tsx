@@ -398,5 +398,5 @@ function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number
 function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
-  return shown ? <ModelView model={battle.monsterModel(row)} name={battle.monsterName(row)} /> : <div className="model-placeholder" />;
+  return shown ? <ModelView model={battle.monsterModel(row, true)} name={battle.monsterName(row)} /> : <div className="model-placeholder" />;
 }

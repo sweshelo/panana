@@ -18,6 +18,9 @@ import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuMaster } from '../src/oahu/master';
+import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
+import { OahuPerformances } from '../src/oahu/performance';
+import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
@@ -384,6 +387,29 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     battle.revertAction(row);
     battle.texts.removeAdded(n);
     expect(a.get(row, 'name')).toBe(before);
+  });
+
+  test('performances: directData of 402F0000, the counterpart row, the skill motions and the preview phases', async () => {
+    const { battle } = s;
+    const a = battle.actions;
+    expect([995, 526].map((r) => ['perfUser', 'perfUser2', 'perfTarget', 'perfTarget2', 'perfField', 'perfSecond'].map((k) => a.get(r, k)))).toEqual([[872, 0, 873, 0, 0, 0], [458, 0, 115, 0, 459, 277]]);
+    const t = (await s.performances.tables())!;
+    expect([t.direct.rows, t.direct.rowSize]).toEqual([985, 0x16]);
+    const keys = animKeys(s.master);
+    const hit = OahuPerformances.forUnit(t.direct, 873, false)!;
+    const monsterHit = OahuPerformances.forUnit(t.direct, 873, true)!;
+    expect([keys[hit.anim], keys[monsterHit.anim], hit.counterpart]).toEqual(['012_', '008_', 131]);
+    const beam = OahuPerformances.forUnit(t.direct, 458, true)!;
+    expect(keys[beam.anim]).toBe('006_');
+    const names = await s.performances.effectNames();
+    expect(effectLabel(t.effects.effect(beam.effect), names)).toBe('fx_e28_firebeam_a @head');
+    // The skill motions come from the BCH of monsterDesign +0x14.
+    const loaded = (await battle.monsterModel(150, true)!.load())!;
+    const motions = loaded.set.models.get(loaded.hash)!.animations.map((x) => x.name.slice(0, 4));
+    for (const k of ['001_', '005_', '006_', '008_']) expect(motions).toContain(k);
+    const phases = oahuPreviewPhases(s, { ...t, names, sounds: null }, 526, 150, 0);
+    expect(phases.map((p) => [p.anim, p.effects.length > 0, !!p.model])).toEqual([['006_', true, true], ['012_', true, false], ['', true, false]]);
+    expect(renderToString(<OahuActionPage session={s} arg="526" />)).toContain('プレビュー');
   });
 
   test('the look of a form change: category 22 swaps in the model of monsterParameter +0x62 (ドローンＺ 160 → 161)', () => {

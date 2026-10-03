@@ -11,6 +11,7 @@ import { Board, EmptyBoard } from '../ui/Board';
 import { ActionButtons, ActionHead, ActionListPane, ActionTexts, ActionUsers } from '../ui/ActionParts';
 import { FieldCheck } from '../ui/FieldEdit';
 import { enumOptions, FieldNumber, FieldSelect, rowAccess, Stat } from './FieldInput';
+import { OahuActionPreview } from './ActionPreview';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
 import { oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuMonsterIcon, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
@@ -59,7 +60,7 @@ export function OahuActionPage({ session, arg }: { session: OahuSession; arg: st
         filters={[['all', 'すべて'], ...Object.entries(OAHU_ACTION_KIND).map(([k, v]): [string, string] => [`k${k}`, `種類: ${v}`]),
           ...Object.entries(OAHU_ACTION_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, `系統: ${v}`]), ['changed', '変更したもの']]} />
       <div className="book-detail" ref={detail}>
-        <ActionDetail key={selected} battle={battle} row={selected} onEdit={onEdit} />
+        <ActionDetail key={selected} session={session} row={selected} onEdit={onEdit} />
       </div>
     </div>
   );
@@ -71,7 +72,8 @@ const COPY_INFO = [
   '写したアクションは、モンスターのワザやアイテムの「使うアクション」で選ぶと使われます。',
 ].join('\n');
 
-function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+function ActionDetail({ session, row, onEdit }: { session: OahuSession; row: number; onEdit: () => void }): ReactNode {
+  const { battle } = session;
   const rows = battle.actions;
   const p = { rows, row, onEdit };
   const users = useMemo(() => battle.actionUsers(row), [battle, row]);
@@ -125,6 +127,7 @@ function ActionDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number
         onCopy={() => { const n = battle.copyAction(row); onEdit(); location.hash = oahuActionHref(n); }}
         onRemove={battle.canRemoveAction(row) ? () => { battle.removeAction(row); onEdit(); location.hash = oahuActionHref(row - 1); } : undefined}
         onRevert={battle.actionChanged(row) && !rows.added(row) ? () => { battle.revertAction(row); onEdit(); } : undefined} />
+      <OahuActionPreview session={session} row={row} users={users.monsters} />
       <ActionUsers
         monsters={users.monsters.map((m) => ({
           key: `m${m}`, name: battle.monsterName(m), href: oahuMonsterHref(m),
