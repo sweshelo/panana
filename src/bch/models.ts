@@ -5,10 +5,13 @@ import type { TilesetModels } from '../cgfx/tileset';
 import type { ModelRef } from '../pages/modelview';
 import type { Dump } from '../rom/dump';
 import { hex8 } from '../util/bytes';
-import { parseBch, unwrapBch } from './bch';
+import { bchAnimations, parseBch, unwrapBch } from './bch';
 
-/** The models of a BCH (by index) with its textures, plus the textures of `extra` BCHs that are not already there. */
-export function bchModelSet(body: Uint8Array, extra: Uint8Array[] = []): TilesetModels {
+/**
+ * The models of a BCH (by index) with its textures, plus the textures of `extra` BCHs that are not already there and
+ * the animations of `motions` BCHs (added to every model; a name already there is kept).
+ */
+export function bchModelSet(body: Uint8Array, extra: Uint8Array[] = [], motions: Uint8Array[] = []): TilesetModels {
   const f = parseBch(unwrapBch(body));
   const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
   f.models.forEach((m, i) => {
@@ -19,6 +22,17 @@ export function bchModelSet(body: Uint8Array, extra: Uint8Array[] = []): Tileset
   for (const b of extra) {
     try {
       for (const t of parseBch(unwrapBch(b)).textures) if (!set.textures.has(t.name)) set.textures.set(t.name, t);
+    } catch (err) {
+      set.errors.push((err as Error).message);
+    }
+  }
+  for (const b of motions) {
+    try {
+      const anims = bchAnimations(unwrapBch(b));
+      for (const m of set.models.values()) {
+        const have = new Set(m.animations.map((a) => a.name));
+        m.animations = [...m.animations, ...anims.filter((a) => !have.has(a.name))];
+      }
     } catch (err) {
       set.errors.push((err as Error).message);
     }
@@ -38,11 +52,12 @@ export function bchBytesRef(body: Uint8Array, index = 0): ModelRef {
 
 /**
  * Model `index` of the BCH in entry `entry` of the root archive `archive` of an RPG3 dump (for the books' photos and
- * viewers). `textures` are entries of the same archive whose textures the model also uses.
+ * viewers). `textures` are entries of the same archive whose textures the model also uses, `motions` entries whose
+ * animations it plays (RPG3's skill motions).
  */
-export function bchEntryRef(dump: Dump, archive: string, entry: number, index = 0, textures: number[] = []): ModelRef {
+export function bchEntryRef(dump: Dump, archive: string, entry: number, index = 0, textures: number[] = [], motions: number[] = []): ModelRef {
   return {
-    key: `bch/${dump.title.key}/${archive}/${hex8(entry)}/${index}/${textures.map(hex8).join('+')}`,
+    key: `bch/${dump.title.key}/${archive}/${hex8(entry)}/${index}/${textures.map(hex8).join('+')}${motions.length ? `/m${motions.map(hex8).join('+')}` : ''}`,
     load: async () => {
       const arc = parseArchive(await dump.readRomfs(archive));
       const e = findEntry(arc, entry);
@@ -51,7 +66,11 @@ export function bchEntryRef(dump: Dump, archive: string, entry: number, index = 
         const x = findEntry(arc, t);
         return x ? [unpackEntry(arc, x).body] : [];
       });
-      return { set: bchModelSet(unpackEntry(arc, e).body, extra), hash: index };
+      const motion = motions.flatMap((t) => {
+        const x = findEntry(arc, t);
+        return x ? [unpackEntry(arc, x).body] : [];
+      });
+      return { set: bchModelSet(unpackEntry(arc, e).body, extra, motion), hash: index };
     },
   };
 }

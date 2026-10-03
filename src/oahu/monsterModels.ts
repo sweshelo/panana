@@ -38,14 +38,14 @@ export class OahuMonsterModels {
     return { model: u32(0x0c), texture: u32(0x10), motion: u32(0x14) };
   }
 
-  /** The model of a design row with its colour's textures, for the photos and the viewer. */
-  ref(design: number): ModelRef {
+  /** The model of a design row with its colour's textures (for the photos), and its skill motions for the viewers. */
+  ref(design: number, motions = false): ModelRef {
     return {
-      key: `oahu-monster/${this.dump.title.key}/${design}`,
+      key: `oahu-monster/${this.dump.title.key}/${design}${motions ? '/motions' : ''}`,
       load: async () => {
         const d = await this.design(design);
         if (!d?.model) return null;
-        return bchEntryRef(this.dump, OAHU_MONSTER_MODEL_ARCHIVE, d.model, 0, d.texture ? [d.texture] : []).load();
+        return bchEntryRef(this.dump, OAHU_MONSTER_MODEL_ARCHIVE, d.model, 0, d.texture ? [d.texture] : [], motions && d.motion ? [d.motion] : []).load();
       },
     };
   }

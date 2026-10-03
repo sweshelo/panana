@@ -1,6 +1,7 @@
 // One opened 電波人間のRPG3 dump: its messages, the master's tables, the items and the battle tables, their edits saved to IndexedDB and
 // restored when the dump is opened again (with or without the Update), and the MOD export (LayeredFS zip; it needs
 // the Update, #59). code.bin features (code.ips) use the Update's code.bin only (#65).
+import { OahuPerformances } from './performance';
 import { buildModZip } from '../export/pack';
 import { buildPatches, patchRecords, type BuiltPatch, type CodePatch } from '../game/patch';
 import { buildIps } from '../rom/ips';
@@ -41,6 +42,8 @@ export class OahuSession {
   readonly items: OahuItems;
   readonly battle: OahuBattle;
   readonly itemModels: OahuItemModels;
+  /** The performances of the actions (402F0000) and the names of the effects, read when first used. */
+  readonly performances: OahuPerformances;
   /** The Update's code.bin; null without the Update (or when the Update is another version, see {@link codeError}). */
   readonly code: OahuCode | null = null;
   /** Why an Update's code.bin cannot be used. */
@@ -58,6 +61,7 @@ export class OahuSession {
   ) {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
+    this.performances = new OahuPerformances(dump);
     this.battle = new OahuBattle(master, this.items, new OahuMonsterModels(dump), this.itemModels);
     try {
       this.code = OahuCode.of(dump);

@@ -28,7 +28,7 @@ import { SoundPicker } from '../src/ui/SoundPicker';
 import { MapUses, SoundView } from '../src/pages/sounds';
 
 function action(row: number, w0: number, name: string): Action {
-  const raw = new Uint8Array(0x22);
+  const raw = new Uint8Array(0x3c);
   w32(raw, 0, w0);
   raw.set([40, 0, 30, 0], 0x18);
   return { ...decodeAction(raw), row, name, raw };
@@ -39,14 +39,14 @@ describe('action page', () => {
   const refs: Record<number, ActionRefs> = { 1: { items: [{ id: 7, name: 'やくそう' }], monsters: [] } };
   const book = { actions, action: (r: number) => actions[r], refsOf: (r: number) => refs[r] ?? { items: [], monsters: [] } };
 
-  test('list shows item actions by default, detail shows fields, refs and raw words', () => {
+  test('list shows item actions by default, detail shows fields, refs and all the fields of the row', () => {
     const html = renderToString(<ActionView book={book} selected={1} />);
     expect(html).toContain('1 / 2 件');
     expect(html).toContain('<tr class="active">');
     expect(html).toContain('効果: HP 回復 30〜40 (戦闘)');
     expect(html).toContain('href="#/items/7"');
-    expect(html).toContain('+0x18');
-    expect(html).toContain('残り 2 バイト: 0 0');
+    expect(html).toContain('量 (最小)');
+    expect(html).toContain('actionData の行 1 のすべての欄');
     expect(html).not.toContain('たいあたり');
   });
 
