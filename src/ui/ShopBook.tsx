@@ -51,8 +51,8 @@ export interface ShopBookProps<T extends { item: number }> {
   newRow: (shop: ShopBookShop, item: number) => T;
   /** Whether two rows are the same (for the edited marks). */
   same: (a: T, b: T) => boolean;
-  /** The item picker: `unavailable` greys out what the shop sells already. */
-  picker: (props: { title: string; unavailable: (id: number) => string | null; onPick: (id: number) => void; onClose: () => void }) => ReactNode;
+  /** The item picker (any item can be picked, also one the shop sells already). */
+  picker: (props: { title: string; onPick: (id: number) => void; onClose: () => void }) => ReactNode;
   /** What is shown next to the name, under it in the list and below the stock. */
   info?: (shop: ShopBookShop) => ReactNode;
   sub?: (shop: ShopBookShop) => string;
@@ -134,7 +134,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
       e.preventDefault();
       const at = gap(e);
       endDrag();
-      const next = dropRows(stock, d, at, (r) => r.item, (id) => props.newRow(shop, id));
+      const next = dropRows(stock, d, at, (id) => props.newRow(shop, id));
       if (!sameList(next, stock, same)) edit(shop, next);
     },
   } : {};
@@ -249,6 +249,9 @@ function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, i
   const [picking, setPicking] = useState(false);
   const notes = [...(warnings?.(shop, stock) ?? [])];
   if (stock.some((r) => !item(r.item))) notes.push('ないアイテムが入っています。');
+  // the game lists an item as often as it is in ShopItem (RPG3's 幻影 shop sells only キズぐすり), so this is only a note
+  const twice = [...new Set(stock.map((r) => r.item).filter((id, i, all) => all.indexOf(id) !== i))];
+  if (twice.length) notes.push(`同一アイテムが既に陳列されています (${twice.map((id) => item(id)?.name ?? `#${id}`).join('、')})。`);
   return (
     <div>
       <div className="row">
@@ -260,7 +263,6 @@ function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, i
       {notes.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
       {picking && picker({
         title: '追加するアイテムを選ぶ',
-        unavailable: (id) => (stock.some((r) => r.item === id) ? 'この店で売っています' : null),
         onClose: () => setPicking(false),
         onPick: (id) => { setPicking(false); edit([...stock, newRow(shop, id)]); },
       })}

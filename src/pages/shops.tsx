@@ -48,7 +48,7 @@ export function ShopPage({ session, arg, data, shops }: PageProps & { data: Item
         items.setShops(stock.lists);
         session.scheduleSave();
       } : undefined}
-      picker={(p) => <ItemPicker game={game} items={items} title={p.title} unavailable={(it) => p.unavailable(it.id)} onClose={p.onClose} onPick={p.onPick} />}
+      picker={(p) => <ItemPicker game={game} items={items} title={p.title} onClose={p.onClose} onPick={p.onPick} />}
       warnings={(_, rows) => {
         const w: string[] = [];
         if (!rows.length) w.push('品物のない店はゲームで確かめていません (開いたときに止まるおそれがあります)。');

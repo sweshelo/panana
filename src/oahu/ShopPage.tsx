@@ -76,7 +76,7 @@ function ShopList({ session, shops, arg }: { session: OahuSession; shops: OahuSh
         ...([...shops.rows(s.id), ...shops.originalRows(s.id)].some((r) => r.once) ? [onceColumn] : []),
       ]}
       setRows={setRows}
-      picker={(p) => <OahuItemPicker battle={session.battle} current={0} title={p.title} unavailable={(it) => p.unavailable(it.id)} onClose={p.onClose} onPick={p.onPick} />}
+      picker={(p) => <OahuItemPicker battle={session.battle} current={0} title={p.title} onClose={p.onClose} onPick={p.onPick} />}
       sub={(s) => {
         const pay = payment(s);
         const first = s.messages.find((m) => m);

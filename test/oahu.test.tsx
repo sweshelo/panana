@@ -472,6 +472,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     const html = renderToString(<OahuShopPage session={s} arg="27" />);
     expect(html).toContain('値段 (ジュエル)');
     expect(html).toContain('じゅうたくちのモト');
+    expect(html).not.toContain('同一アイテム');
+    // 店 25 (幻影の店) sells キズぐすり eight times: only a note
+    expect(shops.rows(25).map((r) => r.item)).toEqual(Array(8).fill(2));
+    expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain('同一アイテムが既に陳列されています (キズぐすり)');
     shops.set(27, shops.originalRows(27));
     shops.set(0, shops.originalRows(0));
   });
