@@ -194,10 +194,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     const st = new OahuEditState(maps);
     st.open(m);
     const ctl = new Controller(st);
-    const chests = st.current!.recs[4] ?? [];
+    const chests = [...(st.current!.recs[4] ?? [])];
     expect(chests.length).toBeGreaterThan(0);
     st.select({ type: 'rec', section: 4, index: 0 });
     ctl.duplicateRec();
+    expect(st.error).toBe('');
     expect(st.current!.recs[4]!.length).toBe(chests.length + 1);
     expect(table.rows).toBe(rows + 1);
     const copy = st.current!.recs[4]!.at(-1)!;
@@ -236,6 +237,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(oahuRecEventRow(3, r.raw)).toBe(rows);
     st.undo();
     expect(table.rows).toBe(rows);
+    const changed = [0, 1, 2, 3, 4, 5, 6, 8, 9].filter((k) => !equalBytes(maps.db.get(m.sections[k]!), maps.db.original(m.sections[k]!)));
+    expect(changed).toEqual([]);
     expect(maps.isChanged(m)).toBe(false);
   });
 });
