@@ -1,15 +1,14 @@
 // Picking a sound (a soundData row) in a <dialog>: every row as a card with its name from sound.bcsar and a play
 // button, filtered by kind (BGM / 効果音 …) and by name or row. The BGM and footsteps of the map editor use it.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Game } from '../game/game';
-import { SOUND_KIND, type SoundKind, type SoundNames } from '../game/sound';
+import { SOUND_KIND, type SoundKind, type SoundNames, type SoundSource } from '../game/sound';
 import { soundPlayer, usePlayer } from '../sound/player';
 import { Dialog } from './Dialog';
 
 type KindFilter = SoundKind | '';
 
 /** ▶ plays the sound of a soundData row (■ stops it); the reason shows in the tooltip when it cannot play. */
-export function PlayButton({ game, sounds, row, className = '' }: { game: Game; sounds: SoundNames; row: number; className?: string }): ReactNode {
+export function PlayButton({ game, sounds, row, className = '' }: { game: SoundSource; sounds: SoundNames; row: number; className?: string }): ReactNode {
   const st = usePlayer();
   const index = sounds.index(row);
   if (index === null) return null;
@@ -40,7 +39,7 @@ export function PlayButton({ game, sounds, row, className = '' }: { game: Game; 
  * `usage` gives a short note per row (e.g. the maps that use it).
  */
 export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, usage, title = '音を選ぶ', onPick, onClose }: {
-  game: Game;
+  game: SoundSource;
   sounds: SoundNames;
   current: number;
   kind?: KindFilter;
@@ -113,7 +112,7 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
 
 /** A button naming the sound (clicking it opens the picker), with a play button. */
 export function SoundButton({ game, sounds, value, onChange, ...opts }: {
-  game: Game;
+  game: SoundSource;
   sounds: SoundNames;
   value: number;
   kind?: KindFilter;

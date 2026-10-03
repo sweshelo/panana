@@ -16,6 +16,10 @@ import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
 import { OahuMonsterModels } from './monsterModels';
 import { OahuShops, type SavedShop } from './shops';
+import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
+import { SoundArchive } from '../sound/formats';
+import { SoundRenderer } from '../sound/render';
+import { u32 } from '../util/bytes';
 
 const EDITS_KEY = 'oahu/edits/v1';
 
@@ -144,5 +148,42 @@ export class OahuSession {
     const ips = this.codeIps();
     if (ips) pkg.set('exefs/code.ips', ips);
     return buildModZip(pkg, OAHU.titleId);
+  }
+
+  private soundNames: Promise<SoundNames> | null = null;
+
+  /** Names of the soundData rows, from the Base's sound/sound.bcsar (cached by name, apart from RPG2's). */
+  sounds(): Promise<SoundNames> {
+    this.soundNames ??= (async () => {
+      const t = this.master.table('soundData.bin');
+      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
+      // +8: the volume byte, then D0 padding
+      const volumes = Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!);
+      const key = 'oahu/sound/names/v1';
+      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
+      if (!names)
+        try {
+          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
+          await idbSet(key, names).catch(() => {});
+        } catch {
+          names = null;
+        }
+      return new SoundNames(items, names, volumes);
+    })();
+    return this.soundNames;
+  }
+
+  private renderer: Promise<SoundRenderer> | null = null;
+
+  /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
+  soundRenderer(): Promise<SoundRenderer> {
+    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
+      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
+      (err: Error) => {
+        this.renderer = null;
+        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
+      },
+    );
+    return this.renderer;
   }
 }
