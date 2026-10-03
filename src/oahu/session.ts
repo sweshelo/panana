@@ -14,6 +14,11 @@ import { OahuItems } from './items';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
 import { OahuMonsterModels } from './monsterModels';
+import { OahuShops, type SavedShop } from './shops';
+import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
+import { SoundArchive } from '../sound/formats';
+import { SoundRenderer } from '../sound/render';
+import { u32 } from '../util/bytes';
 
 const EDITS_KEY = 'oahu/edits/v1';
 
@@ -23,6 +28,8 @@ interface Saved {
   rows?: SavedRow[];
   /** Code patches (kept without the Update too; they are only built and exported with it). */
   patches?: CodePatch[];
+  /** Edited shop stocks. */
+  shops?: SavedShop[];
 }
 
 export class OahuSession {
@@ -42,6 +49,8 @@ export class OahuSession {
     readonly dump: Dump,
     readonly messages: OahuMessages,
     readonly master: OahuMaster,
+    /** ShopItem / Shop (null when the dump has neither archive). */
+    readonly shops: OahuShops | null,
   ) {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
@@ -54,7 +63,7 @@ export class OahuSession {
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {
-    return new OahuSession(dump, await OahuMessages.load(dump), await OahuMaster.load(dump));
+    return new OahuSession(dump, await OahuMessages.load(dump), await OahuMaster.load(dump), await OahuShops.load(dump));
   }
 
   static async open(dump: Dump): Promise<OahuSession> {
@@ -73,7 +82,7 @@ export class OahuSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, shops: this.shops?.saved() ?? [] };
   }
 
   /** Messages first: the rows of copied items name the messages added for them. */
@@ -81,6 +90,7 @@ export class OahuSession {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.patches) this.codePatches = saved.patches.map((p) => ({ ...p }));
+    if (saved.shops) this.shops?.restore(saved.shops);
     this.items.reload();
   }
 
@@ -119,7 +129,9 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    return this.messages.changedArchives(new Map([[OAHU_MASTER, this.master.changedEntries()]]));
+    const more = new Map([[OAHU_MASTER, this.master.changedEntries()]]);
+    for (const [name, repl] of this.shops?.changedEntries() ?? []) more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
+    return this.messages.changedArchives(more, this.shops?.archives());
   }
 
   /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
@@ -128,5 +140,42 @@ export class OahuSession {
     const ips = this.codeIps();
     if (ips) pkg.set('exefs/code.ips', ips);
     return buildModZip(pkg, OAHU.titleId);
+  }
+
+  private soundNames: Promise<SoundNames> | null = null;
+
+  /** Names of the soundData rows, from the Base's sound/sound.bcsar (cached by name, apart from RPG2's). */
+  sounds(): Promise<SoundNames> {
+    this.soundNames ??= (async () => {
+      const t = this.master.table('soundData.bin');
+      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
+      // +8: the volume byte, then D0 padding
+      const volumes = Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!);
+      const key = 'oahu/sound/names/v1';
+      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
+      if (!names)
+        try {
+          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
+          await idbSet(key, names).catch(() => {});
+        } catch {
+          names = null;
+        }
+      return new SoundNames(items, names, volumes);
+    })();
+    return this.soundNames;
+  }
+
+  private renderer: Promise<SoundRenderer> | null = null;
+
+  /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
+  soundRenderer(): Promise<SoundRenderer> {
+    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
+      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
+      (err: Error) => {
+        this.renderer = null;
+        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
+      },
+    );
+    return this.renderer;
   }
 }

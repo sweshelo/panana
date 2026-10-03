@@ -195,18 +195,23 @@ export function buildShops(stock: Map<number, number[]>, table: GsTable | null):
 export type ShopDrag = { kind: 'row'; index: number } | { kind: 'item'; id: number };
 
 /**
- * The list after a drop at `at` (0..length: the gap before that row). A row moves; an item is inserted, or moved
- * when the shop already sells it.
+ * The list after a drop at `at` (0..length: the gap before that row). A row moves; an item is inserted (also when the
+ * shop sells it already: a shop may list an item more than once).
  */
 export function dropInto(list: number[], drag: ShopDrag, at: number): number[] {
-  const from = drag.kind === 'row' ? drag.index : list.indexOf(drag.id);
-  const id = drag.kind === 'row' ? list[drag.index]! : drag.id;
+  return dropRows(list, drag, at, (id) => id);
+}
+
+/** {@link dropInto} for rows that carry more than the item ID (RPG3's ShopItem): `make` builds the row of a new item. */
+export function dropRows<T>(list: T[], drag: ShopDrag, at: number, make: (id: number) => T): T[] {
+  const from = drag.kind === 'row' ? drag.index : -1;
+  const row = drag.kind === 'row' ? list[drag.index]! : make(drag.id);
   const next = [...list];
   let to = Math.max(0, Math.min(at, list.length));
   if (from >= 0) {
     next.splice(from, 1);
     if (to > from) to--;
   }
-  next.splice(to, 0, id);
+  next.splice(to, 0, row);
   return next;
 }

@@ -25,7 +25,7 @@ import type { MonsterBook, MonsterGroup } from '../src/game/monsters';
 import { GroupDetail, GroupList, GroupPicker } from '../src/ui/GroupDetail';
 import { SoundNames, soundUses } from '../src/game/sound';
 import { SoundPicker } from '../src/ui/SoundPicker';
-import { SoundView } from '../src/pages/sounds';
+import { MapUses, SoundView } from '../src/pages/sounds';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x22);
@@ -353,7 +353,9 @@ describe('sounds', () => {
   test('list page: every row, the detail with the maps that use it', () => {
     const map = { hash: 0x10, name: 'D01B01001', dungeon: 1, dungeonCode: 'D01', floor: -1, mapDataKey: 0, sections: [] } as unknown as MapInfo;
     const html = renderToString(
-      <SoundView game={game} sounds={sounds} uses={soundUses(game)} users={new Map([[0, [map]]])} selected={2} mapTitle={() => '山のどうくつ B1'} />,
+      <SoundView game={game} sounds={sounds} selected={2} href={(r) => `#/sounds/${r}`} uses={(r) => soundUses(game).get(r)?.length ?? 0} usesTitle="" usedLabel="マップで使う">
+        <MapUses use={soundUses(game).get(2) ?? []} users={new Map([[0, [map]]])} mapTitle={() => '山のどうくつ B1'} />
+      </SoundView>,
     );
     expect(html).toContain('300 / 300 件');
     expect(html).toContain('0x01000001');
