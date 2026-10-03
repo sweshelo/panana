@@ -1,6 +1,6 @@
 // Inspector: properties of the selection (tile / point record / rectangle) or of the map.
 import { useState, type ReactNode } from 'react';
-import { CELL, LAYOUTS, LETTER_DEFAULT, P3, P7, POINT_SECTIONS, recEventRow, letterByte, letterIndex, loadDoc, pointKindLabel, recCellPos, type MapDoc, type Rec } from '../game/sections';
+import { CELL, LAYOUTS, LETTER_DEFAULT, P3, P7, POINT_SECTIONS, recEventRow, letterByte, letterIndex, loadDoc, pointKindLabel, recCellPos, UNIT_LABEL, UNIT_NOTE, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
 import { norm } from './controller';
 import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
@@ -110,7 +110,6 @@ function Rect({ editor, s }: { editor: MapEditor; s: { x0: number; y0: number; x
 
 type Upd = (f: (rec: Rec) => void) => void;
 
-const UNIT_LABEL = { cell: 'セル', fine: '細かい単位', world: 'ワールド' } as const;
 
 function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k: number; i: number }): ReactNode {
   const { st, session } = editor;
@@ -129,7 +128,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
       <h3><Dot k={k} />{` ${L.label} #${i}`}</h3>
       <Field label={`x (${UNIT_LABEL[L.unit]})`}><Num value={r.x} onChange={(v) => upd((rec) => (rec.x = v))} /></Field>
       <Field label={`y (${UNIT_LABEL[L.unit]})`}><Num value={r.y} onChange={(v) => upd((rec) => (rec.y = v))} /></Field>
-      <div className="muted">{`セル (${cx.toFixed(1)}, ${cy.toFixed(1)})` + (L.unit === 'fine' ? '  ワールド = 50 + 値 × 100 (0〜299)' : L.unit === 'world' ? '  1 セル = 500' : '')}</div>
+      <div className="muted">{`セル (${cx.toFixed(1)}, ${cy.toFixed(1)})` + (UNIT_NOTE[L.unit] ? `  ${UNIT_NOTE[L.unit]}` : '')}</div>
       {!!row && <div className="model-line">{`モデル: ${objectCategory(row)} ${row === OBJ_INVISIBLE ? '' : editor.v3.objectName(row)} (mapObject #${row})`}</div>}
       {k === 3 && <PointFields editor={editor} r={r} setU32={setU32} setByte={setByte} />}
       {k === 7 && <WallDoorFields editor={editor} r={r} setU32={setU32} setByte={setByte} />}

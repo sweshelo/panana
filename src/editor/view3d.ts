@@ -1,7 +1,6 @@
 // 3D view: tile models placed like the game (cell centre ((x + 0.5) * 500, 0, (y + 0.5) * 500), rotation =
 // -rot * 90° about Y; docs/map-editor-design.md §6), markers for points, editing on the ground plane.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
@@ -14,6 +13,7 @@ import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } f
 import { norm, type Controller } from './controller';
 import { eventLinks } from './events';
 import { kindColor, SECTION_COLORS } from './legend';
+import { MapScene, TileFallback, TileLayer } from './mapscene';
 import { GRID, tileAt, type EditorState } from './state';
 
 const MARKER_Y = 40;
@@ -23,20 +23,14 @@ const BOSS_HEIGHT = 420;
 export class View3D {
   readonly canvas: HTMLCanvasElement;
   readonly renderer: THREE.WebGLRenderer;
-  private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(45, 1, 50, 100000);
-  private readonly controls: OrbitControls;
-  private readonly tileGroup = new THREE.Group();
+  private readonly view: MapScene;
+  private readonly tileLayer = new TileLayer();
+  private readonly fallback = new TileFallback();
   private readonly markerGroup = new THREE.Group();
   private readonly overlay = new THREE.Group();
-  private readonly tiles = new Map<string, { sig: string; obj: THREE.Object3D }>();
-  private readonly ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  private readonly raycaster = new THREE.Raycaster();
   readonly clipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e9);
   showCeiling = false;
   factory: ModelFactory | null = null;
-  private raf = 0;
-  private pointerDown = false;
   private readonly markerGeo = {
     box: new THREE.BoxGeometry(120, 80, 120),
     door: new THREE.BoxGeometry(260, 180, 60),
@@ -46,83 +40,25 @@ export class View3D {
     ring: new THREE.RingGeometry(70, 95, 24),
   };
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
-  private readonly fallbackMats = new Map<number, THREE.MeshLambertMaterial>();
-  private readonly fallbackGeo = new THREE.BoxGeometry(CELL * 0.96, 20, CELL * 0.96);
-  private readonly arrowGeo = new THREE.ConeGeometry(60, 140, 3);
 
   constructor(
     private readonly st: EditorState,
     private readonly ctl: Controller,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.localClippingEnabled = true;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.canvas = this.renderer.domElement;
-    this.canvas.className = 'view3d';
-    this.scene.background = new THREE.Color(0x15171c);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 2.2));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-    sun.position.set(0.4, 1, 0.3);
-    this.scene.add(sun);
-    this.scene.add(this.tileGroup, this.markerGroup, this.overlay);
-
-    const grid = new THREE.GridHelper(GRID * CELL, GRID, 0x3a4050, 0x2a2f3a);
-    grid.position.set((GRID * CELL) / 2, -2, (GRID * CELL) / 2);
-    this.scene.add(grid);
-
-    this.camera.position.set(8000, 9000, 16000);
-    this.controls = new OrbitControls(this.camera, this.canvas);
-    this.controls.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
-    this.controls.enableDamping = false;
-    this.controls.screenSpacePanning = false;
-    this.controls.addEventListener('change', () => this.draw());
-
-    const c = this.canvas;
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      const p = this.pick(e);
-      if (!p) return;
-      this.pointerDown = true;
-      c.setPointerCapture(e.pointerId);
-      this.ctl.down(p[0], p[1], e);
-    });
-    c.addEventListener('pointermove', (e) => {
-      const p = this.pick(e);
-      if (p) this.ctl.move(p[0], p[1]);
-    });
-    c.addEventListener('pointerup', () => {
-      if (this.pointerDown) this.ctl.up();
-      this.pointerDown = false;
-    });
-    c.addEventListener('pointerleave', () => this.ctl.leave());
-    new ResizeObserver(() => this.resize()).observe(c);
-  }
-
-  /** Pointer -> cell coordinates on the ground plane (y = 0). */
-  private pick(e: { clientX: number; clientY: number }): [number, number] | null {
-    const r = this.canvas.getBoundingClientRect();
-    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    this.raycaster.setFromCamera(ndc, this.camera);
-    const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(this.ground, hit)) return null;
-    return [hit.x / CELL, hit.z / CELL];
-  }
-
-  private resize(): void {
-    const c = this.canvas;
-    const w = c.clientWidth, h = c.clientHeight;
-    if (!w || !h) return;
-    this.renderer.setPixelRatio(window.devicePixelRatio || 1);
-    this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.draw();
+    this.view = new MapScene('view3d', GRID);
+    this.renderer = this.view.renderer;
+    this.canvas = this.view.canvas;
+    this.view.scene.add(this.tileLayer.group, this.markerGroup, this.overlay);
+    this.view.pointer = {
+      down: (cx, cy, e) => this.ctl.down(cx, cy, e),
+      move: (cx, cy) => this.ctl.move(cx, cy),
+      up: () => this.ctl.up(),
+      leave: () => this.ctl.leave(),
+    };
   }
 
   setFactory(f: ModelFactory | null): void {
-    for (const t of this.tiles.values()) this.tileGroup.remove(t.obj);
-    this.tiles.clear();
+    this.tileLayer.clear();
     this.factory = f;
     if (f) {
       f.clipping = [this.clipPlane];
@@ -145,31 +81,16 @@ export class View3D {
 
   fit(): void {
     const doc = this.st.current;
-    if (!doc || !doc.tiles.length) return;
-    const xs = doc.tiles.map((t) => t.x), ys = doc.tiles.map((t) => t.y);
-    const cx = ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * CELL;
-    const cz = ((Math.min(...ys) + Math.max(...ys) + 1) / 2) * CELL;
-    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 2;
-    this.controls.target.set(cx, 0, cz);
-    this.camera.position.set(cx, span * CELL * 1.05, cz + span * CELL * 0.75);
-    this.controls.update();
-    this.draw();
+    if (doc) this.view.fitCells(doc.tiles);
   }
 
   /** Top-down camera. */
   topView(): void {
-    const t = this.controls.target;
-    const d = this.camera.position.distanceTo(t);
-    this.camera.position.set(t.x, t.y + d, t.z + 1);
-    this.controls.update();
+    this.view.topView();
   }
 
   draw(): void {
-    if (this.raf) return;
-    this.raf = requestAnimationFrame(() => {
-      this.raf = 0;
-      this.renderer.render(this.scene, this.camera);
-    });
+    this.view.draw();
   }
 
   /** Bring the scene in line with the document. */
@@ -190,43 +111,16 @@ export class View3D {
       model.rotation.y = (-rot * Math.PI) / 2;
       return model;
     }
-    // No model: a flat coloured slab with an arrow for the orientation.
-    const g = new THREE.Group();
-    let mat = this.fallbackMats.get(kind);
-    if (!mat) {
-      mat = new THREE.MeshLambertMaterial({ color: new THREE.Color(kindColor(kind)) });
-      this.fallbackMats.set(kind, mat);
-    }
-    g.add(new THREE.Mesh(this.fallbackGeo, mat));
-    const arrow = new THREE.Mesh(this.arrowGeo, mat);
-    arrow.rotation.x = -Math.PI / 2;
-    arrow.position.set(0, 20, -120);
-    g.add(arrow);
-    g.rotation.y = (-rot * Math.PI) / 2;
-    return g;
+    return this.fallback.make(kindColor(kind), rot);
   }
 
   private syncTiles(doc: MapDoc): void {
-    const want = new Map<string, { sig: string; kind: number; rot: number; letter: number; x: number; y: number }>();
-    if (this.ctl.layers.tiles)
-      for (const t of doc.tiles) {
-        const key = `${t.x},${t.y}`;
-        want.set(key, { sig: `${t.kind}/${t.rot}/${t.letter}/${this.st.tileset}`, kind: t.kind, rot: t.rot, letter: t.letter, x: t.x, y: t.y });
-      }
-    for (const [key, cur] of this.tiles) {
-      const w = want.get(key);
-      if (!w || w.sig !== cur.sig) {
-        this.tileGroup.remove(cur.obj);
-        this.tiles.delete(key);
-      }
-    }
-    for (const [key, w] of want) {
-      if (this.tiles.has(key)) continue;
-      const obj = this.tileObject(w.kind, w.rot, w.letter);
-      obj.position.set((w.x + 0.5) * CELL, 0, (w.y + 0.5) * CELL);
-      this.tileGroup.add(obj);
-      this.tiles.set(key, { sig: w.sig, obj });
-    }
+    const ts = this.st.tileset;
+    this.tileLayer.sync(
+      this.ctl.layers.tiles
+        ? doc.tiles.map((t) => ({ x: t.x, y: t.y, sig: `${t.kind}/${t.rot}/${t.letter}/${ts}`, make: () => this.tileObject(t.kind, t.rot, t.letter) }))
+        : [],
+    );
   }
 
   private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {

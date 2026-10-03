@@ -3,6 +3,7 @@ import { LAYOUTS, P3, P7, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPo
 import { norm, type Controller } from './controller';
 import { eventLinks } from './events';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from './legend';
+import { drawTileGlyph, GridCanvas, strokeCell } from './gridcanvas';
 import { GRID, tileAt, type EditorState } from './state';
 
 export type Style2D = 'symbols' | 'minimap';
@@ -12,128 +13,36 @@ const QUARTER_2D: Record<number, number> = { 0: 0, 1: -Math.PI / 2, 2: Math.PI, 
 
 export class View2D {
   readonly canvas: HTMLCanvasElement;
-  private readonly ctx: CanvasRenderingContext2D;
-  private scale = 28; // px per cell
-  private ox = 20;
-  private oy = 20;
-  private pan: { x: number; y: number; ox: number; oy: number } | null = null;
+  private readonly gc: GridCanvas;
   style: Style2D = 'symbols';
-  private raf = 0;
 
   constructor(
     private readonly st: EditorState,
     private readonly ctl: Controller,
   ) {
-    this.canvas = document.createElement('canvas');
-    this.canvas.className = 'view2d';
-    this.ctx = this.canvas.getContext('2d')!;
-    const c = this.canvas;
-    c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('pointerdown', (e) => {
-      c.setPointerCapture(e.pointerId);
-      if (e.button === 1 || e.button === 2) {
-        this.pan = { x: e.clientX, y: e.clientY, ox: this.ox, oy: this.oy };
-        return;
-      }
-      const [cx, cy] = this.toCell(e);
-      this.ctl.down(cx, cy, e);
-      this.draw();
-    });
-    c.addEventListener('pointermove', (e) => {
-      if (this.pan) {
-        this.ox = this.pan.ox + e.clientX - this.pan.x;
-        this.oy = this.pan.oy + e.clientY - this.pan.y;
-        this.draw();
-        return;
-      }
-      const [cx, cy] = this.toCell(e);
-      this.ctl.move(cx, cy);
-    });
-    c.addEventListener('pointerup', () => {
-      this.pan = null;
-      this.ctl.up();
-    });
-    c.addEventListener('pointerleave', () => this.ctl.leave());
-    c.addEventListener(
-      'wheel',
-      (e) => {
-        e.preventDefault();
-        const r = c.getBoundingClientRect();
-        const mx = e.clientX - r.left;
-        const my = e.clientY - r.top;
-        const f = Math.exp(-e.deltaY * 0.0015);
-        const ns = Math.max(6, Math.min(120, this.scale * f));
-        this.ox = mx - ((mx - this.ox) * ns) / this.scale;
-        this.oy = my - ((my - this.oy) * ns) / this.scale;
-        this.scale = ns;
-        this.draw();
-      },
-      { passive: false },
-    );
-    new ResizeObserver(() => this.draw()).observe(c);
-  }
-
-  private toCell(e: { clientX: number; clientY: number }): [number, number] {
-    const r = this.canvas.getBoundingClientRect();
-    return [(e.clientX - r.left - this.ox) / this.scale, (e.clientY - r.top - this.oy) / this.scale];
+    this.gc = new GridCanvas('view2d', (g, s) => this.render(g, s), GRID);
+    this.canvas = this.gc.canvas;
+    this.gc.pointer = {
+      down: (cx, cy, e) => this.ctl.down(cx, cy, e),
+      move: (cx, cy) => this.ctl.move(cx, cy),
+      up: () => this.ctl.up(),
+      leave: () => this.ctl.leave(),
+    };
   }
 
   /** Fit the map's tiles in the view. */
   fit(): void {
     const doc = this.st.current;
-    const r = this.canvas.getBoundingClientRect();
-    if (!doc || !doc.tiles.length || !r.width) return;
-    const xs = doc.tiles.map((t) => t.x);
-    const ys = doc.tiles.map((t) => t.y);
-    const x0 = Math.min(...xs) - 1, x1 = Math.max(...xs) + 2, y0 = Math.min(...ys) - 1, y1 = Math.max(...ys) + 2;
-    this.scale = Math.max(6, Math.min(80, Math.min(r.width / (x1 - x0), r.height / (y1 - y0))));
-    this.ox = (r.width - (x1 - x0) * this.scale) / 2 - x0 * this.scale;
-    this.oy = (r.height - (y1 - y0) * this.scale) / 2 - y0 * this.scale;
-    this.draw();
+    if (doc) this.gc.fitCells(doc.tiles);
   }
 
   draw(): void {
-    if (this.raf) return;
-    this.raf = requestAnimationFrame(() => {
-      this.raf = 0;
-      this.render();
-    });
+    this.gc.draw();
   }
 
-  private render(): void {
-    const c = this.canvas;
-    const dpr = window.devicePixelRatio || 1;
-    const w = c.clientWidth, h = c.clientHeight;
-    if (!w || !h) return;
-    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
-      c.width = Math.round(w * dpr);
-      c.height = Math.round(h * dpr);
-    }
-    const g = this.ctx;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const css = getComputedStyle(c);
-    g.fillStyle = css.getPropertyValue('--view-bg') || '#1b1d22';
-    g.fillRect(0, 0, w, h);
+  private render(g: CanvasRenderingContext2D, s: number): void {
     const doc = this.st.current;
     if (!doc) return;
-    const s = this.scale;
-    g.save();
-    g.translate(this.ox, this.oy);
-
-    // grid
-    g.strokeStyle = css.getPropertyValue('--grid') || 'rgba(255,255,255,0.07)';
-    g.lineWidth = 1;
-    g.beginPath();
-    for (let i = 0; i <= GRID; i++) {
-      g.moveTo(i * s + 0.5, 0);
-      g.lineTo(i * s + 0.5, GRID * s);
-      g.moveTo(0, i * s + 0.5);
-      g.lineTo(GRID * s, i * s + 0.5);
-    }
-    g.stroke();
-    g.strokeStyle = 'rgba(255,255,255,0.25)';
-    g.strokeRect(0.5, 0.5, GRID * s, GRID * s);
-
     if (this.style === 'minimap') this.drawMinimap(doc, g, s);
     else if (this.ctl.layers.tiles) this.drawTiles(doc, g, s);
 
@@ -161,44 +70,12 @@ export class View2D {
         g.strokeRect(x * s, y * s, this.st.clip.w * s, this.st.clip.h * s);
         g.setLineDash([]);
       }
-      g.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
+      strokeCell(g, s, x, y);
     }
-    g.restore();
-
-    // axis labels
-    g.fillStyle = 'rgba(255,255,255,0.45)';
-    g.font = '10px system-ui, sans-serif';
-    if (s >= 14)
-      for (let i = 0; i < GRID; i++) {
-        g.fillText(String(i), this.ox + i * s + s / 2 - 4, Math.max(10, this.oy - 4));
-        g.fillText(String(i), Math.max(2, this.ox - 16), this.oy + i * s + s / 2 + 3);
-      }
   }
 
   private drawTile(g: CanvasRenderingContext2D, s: number, x: number, y: number, kind: number, rot: number, letter: number): void {
-    const px = x * s, py = y * s;
-    g.fillStyle = kindColor(kind);
-    g.fillRect(px + 1, py + 1, s - 2, s - 2);
-    // orientation marker: a notch on the side the tile faces
-    g.fillStyle = 'rgba(0,0,0,0.45)';
-    const m = Math.max(2, s * 0.14);
-    if (rot === 0) g.fillRect(px + 1, py + 1, s - 2, m);
-    if (rot === 1) g.fillRect(px + s - 1 - m, py + 1, m, s - 2);
-    if (rot === 2) g.fillRect(px + 1, py + s - 1 - m, s - 2, m);
-    if (rot === 3) g.fillRect(px + 1, py + 1, m, s - 2);
-    if (s >= 18) {
-      g.fillStyle = '#111';
-      g.font = `${Math.round(s * 0.36)}px system-ui, sans-serif`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillText(`${kind}${letterLabel(letter)}`, px + s / 2, py + s / 2 + 1);
-      if (s >= 30) {
-        g.font = `${Math.round(s * 0.22)}px system-ui, sans-serif`;
-        g.fillText(ROT_ARROW[rot]!, px + s * 0.82, py + s * 0.8);
-      }
-      g.textAlign = 'start';
-      g.textBaseline = 'alphabetic';
-    }
+    drawTileGlyph(g, s, x, y, kindColor(kind), rot, `${kind}${letterLabel(letter)}`, ROT_ARROW[rot]);
   }
 
   private drawTiles(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {

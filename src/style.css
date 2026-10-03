@@ -63,7 +63,7 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
 .shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
-.shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code { display: block; }
+.shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code, .shell[data-page='maps'] .page-maps { display: block; }
 .page-code { overflow: auto; }
 .code-page { max-width: 960px; }
 .code-page h3 { margin: 18px 0 6px; }
@@ -134,6 +134,22 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .obj-items { padding: 4px 0 6px; }
 .obj-item .pal-label { max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-hint { background: #1f3350; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 6px; font-size: 12px; margin: 4px 0; }
+
+/* RPG3 map page (oahu/MapPage.tsx): the editor's views and inspector inside the book's detail */
+.map-detail { min-width: 0; min-height: 0; height: 100%; }
+.oahu-map {
+  display: grid; height: 100%;
+  grid-template-columns: 1fr 300px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: 'head head' 'views right' 'status status';
+}
+.oahu-map header { flex-wrap: wrap; }
+.oahu-map[data-mode='split'] .views { grid-template-columns: 1fr 1fr; }
+.oahu-map[data-mode='2d'] .pane3d, .oahu-map[data-mode='3d'] .pane2d { display: none; }
+.row-fields .num-input { width: 110px; }
+@media (max-width: 900px) {
+  .oahu-map { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto auto; grid-template-areas: 'head' 'views' 'right' 'status'; height: auto; min-height: 100%; }
+}
 
 /* chest contents */
 .badge { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 9px; background: #4a3b1c; color: #f0d890; }
