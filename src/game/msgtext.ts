@@ -4,7 +4,7 @@
 //   0x0001 X        tag (2 units; X = 0x24 / 0x2A take 2 more units): ruby 0x27 ' / 0x28 ( / 0x29 ),
 //                   0x10 page break (eats the next line break), others see tagKind
 //                   (RPG2's numbers; another game's are in its MessageSyntax, e.g. OAHU_SYNTAX)
-//   0x0002 0x0026 ID 0x0000   another message inserted (place names etc.)
+//   0x0002 0x0026 ID 0x0000   another message inserted (place names etc.; RPG3: 0x002A, the syntax's ref)
 
 export const hex4 = (c: number): string => c.toString(16).toUpperCase().padStart(4, '0');
 
@@ -37,7 +37,7 @@ export function parseBody(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): {
       }
       out.push({ t: 'tag', x, args: [...u.subarray(i + 2, i + 2 + n)] });
       i += 1 + n;
-    } else if (c === REF && i + 3 < u.length && u[i + 1] === 0x26 && u[i + 3] === 0) {
+    } else if (c === REF && i + 3 < u.length && u[i + 1] === syn.ref && u[i + 3] === 0) {
       out.push({ t: 'ref', id: u[i + 2]! });
       i += 3;
     } else if (c < 0x20) out.push({ t: 'raw', c });
@@ -71,7 +71,7 @@ function tokenUnits(t: MessageToken, syn: MessageSyntax): number[] {
     case 'br': return [0x0a];
     case 'tag': return [TAG, t.x, ...t.args];
     case 'ruby': return [TAG, syn.ruby[0], ...tokenUnits({ t: 'text', s: t.base }, syn), TAG, syn.ruby[1], ...tokenUnits({ t: 'text', s: t.reading }, syn), TAG, syn.ruby[2]];
-    case 'ref': return [REF, 0x26, t.id, 0];
+    case 'ref': return [REF, syn.ref, t.id, 0];
     case 'raw': return [t.c];
   }
 }
@@ -131,7 +131,7 @@ export function textToUnits(m: MessageText, syn: MessageSyntax = KAHARA_SYNTAX):
         const n = syn.argTags[x] ?? 0;
         if (vs.length !== 1 + n) throw new Error(`タグ ${hex4(x)} は引数が ${n} 個です (${at} 文字目)`);
         out.push(TAG, ...vs);
-      } else if (name === 'msg') out.push(REF, 0x26, hex(arg, at), 0);
+      } else if (name === 'msg') out.push(REF, syn.ref, hex(arg, at), 0);
       else if (!arg && /^[0-9A-Fa-f]{1,4}$/.test(name)) out.push(parseInt(name, 16));
       else throw new Error(`「{${body}}」は分かりません。{ruby:親字|よみ}、{page}、{tag:XXXX}、{msg:XXXX}、{XXXX} が使えます (${at} 文字目)`);
       i = close;
@@ -243,8 +243,8 @@ export const MESSAGE_KINDS: Record<number, string> = {
 
 /**
  * The tag numbers of one game's messages. RPG2 (kahara) is what the rest of this file describes; RPG3 (oahu) moved
- * the ruby to 0x2B / 0x2C / 0x2D and the page break to 0x14 (naauao oahu/analysis.md §5; its other tags are not
- * analysed yet, so they show as their numbers).
+ * the ruby to 0x2B / 0x2C / 0x2D, the page break to 0x14 and the inserted message to 0x0002 0x002A (naauao
+ * oahu/analysis.md §5; its other tags are not analysed yet, so they show as their numbers).
  */
 export interface MessageSyntax {
   /** Ruby: the tags before the base, between the base and the reading, after the reading. */
@@ -257,6 +257,8 @@ export interface MessageSyntax {
   label(x: number): string;
   /** Tags replaced by a fixed name: the message it comes from. */
   fixedNames: Record<number, number>;
+  /** The unit after 0x0002 of an inserted message (0x0002 ref ID 0x0000). */
+  ref: number;
 }
 
 export const KAHARA_SYNTAX: MessageSyntax = {
@@ -266,6 +268,7 @@ export const KAHARA_SYNTAX: MessageSyntax = {
   kind: tagKind,
   label: tagLabel,
   fixedNames: FIXED_NAMES,
+  ref: 0x26,
 };
 
 function oahuTagKind(x: number): TagKind {
@@ -281,4 +284,6 @@ export const OAHU_SYNTAX: MessageSyntax = {
   kind: oahuTagKind,
   label: (x) => (x === 0x14 ? 'ページ送り' : oahuTagKind(x) === 'deco' ? '色つきの ●' : `タグ ${hex4(x)}`),
   fixedNames: {},
+  // place names in the navi's titles and hints, 1864 uses (naauao oahu/analysis.md §5)
+  ref: 0x2a,
 };
