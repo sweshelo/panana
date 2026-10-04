@@ -11,12 +11,16 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
 import { OahuCodePage } from '../src/oahu/CodePage';
-import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
+import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, oahuCategoryValues, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
 import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
+import { OahuMaster } from '../src/oahu/master';
+import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
+import { OahuPerformances } from '../src/oahu/performance';
+import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
@@ -311,6 +315,116 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const html = renderToString(<OahuMonsterPage session={s} arg="148" />);
     for (const t of ['変身', '倒される一撃を受けたとき', '#149']) expect(html).toContain(t);
     expect(renderToString(<OahuActionPage session={s} arg="530" />)).toContain('形態を変える');
+  });
+
+  test('action categories: +0x18 / +0x1A by category, the fields of states and hits (docs/oahu/actions.md)', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    // ジャシン's #870: category 21, +0x1A = the new form (row 147), fired from ボディ by a fatal blow.
+    expect([870, 966].map((r) => [a.get(r, 'category'), a.get(r, 'min'), a.get(r, 'max'), a.get(r, 'trigger')])).toEqual([[21, 1, 147, 101], [22, 1, 161, 101]]);
+    expect(oahuCategoryValues(21).kind).toBe('monster');
+    const jashin = renderToString(<OahuActionPage session={s} arg="870" />);
+    for (const t of ['新しい形態', 'ジャシン', '倒される一撃を受けたとき']) expect(jashin).toContain(t);
+    // なかまをよんだ: a monster row in +0x1A, or (#579) a group row in +0x18.
+    expect(battle.summonTarget(485)).toEqual({ monster: 40 });
+    expect(battle.summonTarget(579)).toEqual({ group: 152 });
+    expect(renderToString(<OahuActionPage session={s} arg="579" />)).toContain('群れ #152');
+    // Category 35 picks one of the action rows +0x18〜+0x1A when an item is used.
+    expect([a.get(326, 'min'), a.get(326, 'max')]).toEqual([327, 329]);
+    // States: どく 1 / もうどく 2 (+0x1C), the rate and turns of w1; hits: +0x2D in tenths.
+    expect([79, 81].map((r) => a.get(r, 'strength'))).toEqual([1, 2]);
+    expect([a.get(91, 'strength'), a.get(4, 'strength')]).toEqual([-1, 500]);
+    expect([a.get(79, 'rate'), a.get(79, 'turnsMin'), a.get(79, 'turnsMax')]).toEqual([1, 2, 4]);
+    expect([a.get(335, 'multiplier'), a.get(609, 'multiplier'), a.get(243, 'multiplier')]).toEqual([10, 30, 2]);
+    expect(a.get(142, 'noFloat')).toBe(1);
+    // A category that does not read +0x18 / +0x1A says so; changing the category changes the fields shown.
+    a.set(335, 'max', 5);
+    expect(renderToString(<OahuActionPage session={s} arg="335" />)).toContain('では使われません');
+    a.set(335, 'category', 19);
+    expect(battle.summonTarget(335)).toEqual({ monster: 5 });
+    expect(renderToString(<OahuActionPage session={s} arg="335" />)).toContain('呼ぶモンスター');
+    battle.revertAction(335);
+    expect(battle.actionChanged(335)).toBe(false);
+  });
+
+  test('a copied action is a new row at the end of actionData with messages of its own; it is saved, exported and removed', async () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const rows = a.rows;
+    const added = battle.texts.addedIds().length;
+    expect(battle.canCopyAction(966)).toBe(true);
+    const n = battle.copyAction(966);
+    expect([n, a.rows, a.added(n), battle.actionChanged(n)]).toEqual([rows, rows + 1, true, true]);
+    expect(battle.actionName(n)).toBe(battle.actionName(966));
+    expect(a.get(n, 'name')).not.toBe(a.get(966, 'name'));
+    expect([a.get(n, 'category'), battle.formTarget(n)]).toEqual([22, 161]);
+    expect(battle.texts.addedIds().length).toBeGreaterThan(added);
+    a.set(n, 'max', 150);
+    const html = renderToString(<OahuActionPage session={s} arg={String(n)} />);
+    for (const t of ['写して新しいアクションを作る', 'このアクションを消す']) expect(html).toContain(t);
+    expect(html).not.toContain('このアクションの変更を元に戻す');
+    const out = parseArchive(s.modFiles().get('21350000')!);
+    const t = new GsTable(findByName(out, 'actionData.bin')!.body);
+    expect(t.rows).toBe(rows + 1);
+    expect(t.row(n)[0x1a]).toBe(150);
+    const m = await OahuMaster.load(s.dump);
+    m.restore(s.master.saved());
+    expect([m.table('actionData.bin').rows, m.table('actionData.bin').row(n)[0x1a]]).toEqual([rows + 1, 150]);
+    battle.removeAction(n);
+    expect([a.rows, battle.texts.addedIds().length]).toEqual([rows, added]);
+  });
+
+  test('a message shared by several actions can be made one action\'s own', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const row = [...Array(a.rows).keys()].find((r) => r > 0 && battle.actionsWithText(r, 'name').length > 0)!;
+    const before = a.get(row, 'name');
+    const others = battle.actionsWithText(row, 'name');
+    expect(renderToString(<OahuActionPage session={s} arg={String(row)} />)).toContain('このアクションだけの文にする');
+    const n = battle.ownActionText(row, 'name');
+    expect([a.get(row, 'name'), battle.actionsWithText(row, 'name'), a.get(others[0]!, 'name')]).toEqual([n, [], before]);
+    expect(battle.message(n)).toBe(battle.message(before));
+    battle.revertAction(row);
+    battle.texts.removeAdded(n);
+    expect(a.get(row, 'name')).toBe(before);
+  });
+
+  test('performances: directData of 402F0000, the counterpart row, the skill motions and the preview phases', async () => {
+    const { battle } = s;
+    const a = battle.actions;
+    expect([995, 526].map((r) => ['perfUser', 'perfUser2', 'perfTarget', 'perfTarget2', 'perfField', 'perfSecond'].map((k) => a.get(r, k)))).toEqual([[872, 0, 873, 0, 0, 0], [458, 0, 115, 0, 459, 277]]);
+    const t = (await s.performances.tables())!;
+    expect([t.direct.rows, t.direct.rowSize]).toEqual([985, 0x16]);
+    const keys = animKeys(s.master);
+    const hit = OahuPerformances.forUnit(t.direct, 873, false)!;
+    const monsterHit = OahuPerformances.forUnit(t.direct, 873, true)!;
+    expect([keys[hit.anim], keys[monsterHit.anim], hit.counterpart]).toEqual(['012_', '008_', 131]);
+    const beam = OahuPerformances.forUnit(t.direct, 458, true)!;
+    expect(keys[beam.anim]).toBe('006_');
+    const names = await s.performances.effectNames();
+    expect(effectLabel(t.effects.effect(beam.effect), names)).toBe('fx_e28_firebeam_a @head');
+    // The skill motions come from the BCH of monsterDesign +0x14.
+    const loaded = (await battle.monsterModel(150, true)!.load())!;
+    const motions = loaded.set.models.get(loaded.hash)!.animations.map((x) => x.name.slice(0, 4));
+    for (const k of ['001_', '005_', '006_', '008_']) expect(motions).toContain(k);
+    const phases = oahuPreviewPhases(s, { ...t, names, sounds: null }, 526, 150, 0);
+    expect(phases.map((p) => [p.anim, p.effects.length > 0, !!p.model])).toEqual([['006_', true, true], ['012_', true, false], ['', true, false]]);
+    expect(renderToString(<OahuActionPage session={s} arg="526" />)).toContain('プレビュー');
+  });
+
+  test('the look of a form change: category 22 swaps in the model of monsterParameter +0x62 (ドローンＺ 160 → 161)', () => {
+    const { battle } = s;
+    const m = battle.monsters;
+    expect(m.get(160, 'formModel')).toBe(161);
+    for (let r = 1; r < m.rows; r++) if (r !== 160) expect(m.get(r, 'formModel')).toBe(0);
+    m.set(1, 'skill1', 966);
+    expect(renderToString(<OahuActionPage session={s} arg="966" />)).toContain('見た目が新しい形態になりません');
+    m.set(1, 'formModel', 161);
+    expect(renderToString(<OahuActionPage session={s} arg="966" />)).not.toContain('見た目が新しい形態になりません');
+    const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
+    for (const t of ['変身の見た目', 'じしょう・まおう']) expect(html).toContain(t);
+    battle.revertMonster(1);
+    expect(renderToString(<OahuActionPage session={s} arg="870" />)).toContain('種別 21 では見た目は変わりません');
   });
 
   test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {

@@ -98,7 +98,7 @@ export const OAHU_ELEMENT_NAMES: Record<number, string> = {
 
 /** Kind of an action row (actionData w0 bit0-2), from the rows that have it and the code that tests it. */
 export const OAHU_ACTION_KIND: Record<number, string> = {
-  0: 'ワザ', 1: 'アンテナ', 2: 'つかまえたモンスター', 3: '自動・特殊', 4: '道具', 5: '状態で動けない', 6: '種類 6',
+  0: 'ワザ', 1: 'アンテナ', 2: 'つかまえたモンスター', 3: '自動・特殊', 4: '道具', 5: '状態で動けない', 6: 'カテゴリ 6',
 };
 
 /**
@@ -113,16 +113,75 @@ export const OAHU_STATE_CODE: Record<number, string> = {
 };
 
 /**
- * Category of an action (+0x2C), named from the actions that have it. FUN_004CC980 looks for 2 and 6 (ブレス・呪文). The
- * battle result takes it as its kind (+0x10), and FUN_001B51E8 applies the result by it: 21 and 22 change the unit's
- * form to the monster row of +0x1A (FUN_0029C93C); 22 also whitens the screen (@0x219F3C, only #966 ドローンＺ → まおう).
+ * Category of an action (+0x2C, docs/oahu/actions.md §3). The battle result takes it as its kind (+0x10): FUN_001B5A80
+ * builds the result and FUN_001B51E8 applies it, both by a jump table of 0〜38; 39 and over do nothing.
  */
 export const OAHU_ACTION_CATEGORY: Record<number, string> = {
-  1: '打撃', 2: 'ブレス・ビーム', 5: '能力の増減', 6: '呪文・状態', 7: 'アンテナ (戦闘のあと)', 8: '回復・アイテム', 10: 'アンテナ (自動)', 13: '特殊',
-  21: '形態を変える', 22: '形態を変える (演出つき)',
+  0: '何もしない', 1: '打撃', 2: 'ブレス・呪文', 3: '自爆', 4: '反撃 (トゲトゲ)', 5: '状態を付ける (味方)', 6: '状態を付ける (相手)',
+  7: 'フィールドの効果', 8: 'HP 回復', 9: 'AP 回復', 10: 'HP 回復 (最大 HP の %)', 11: 'AP 回復 (最大 AP の %)', 12: '状態を治す',
+  13: 'ふっかつ', 14: '未使用 14', 15: 'つかまえる', 16: 'ぼうぎょ', 17: 'AP を吸う', 18: 'ゴールドを盗む', 19: '仲間を呼ぶ', 20: '分裂',
+  21: '形態を変える (見た目はそのまま)', 22: '形態を変える (見た目も)', 23: 'にげる', 24: '最大 HP アップ', 25: '最大 AP アップ', 26: 'こうげきアップ',
+  27: 'ぼうぎょアップ', 28: 'すばやさアップ', 29: '能力アップ (6 番目)', 30: '経験値', 31: '体の色を変える', 32: 'ランプの時間',
+  33: 'ランプの回復', 34: '精霊のほこら', 35: 'ランダムなアクション', 36: '状態のダメージ', 37: '突然死のカウント', 38: '状態が治った',
+  39: '何もしない (テレポーター)', 40: '何もしない (様子をみる)',
 };
 /** Categories that change the unit's form (OAHU_ACTION_CATEGORY 21, 22): +0x1A is the monster row of the new form. */
 export const OAHU_FORM_CATEGORIES = [21, 22];
+
+/**
+ * What +0x18 and +0x1A hold for a category (docs/oahu/actions.md §3):
+ * range (min〜max, FUN_001B3174), percent (% of the max and a cap), monster (+0x1A = a monster row, low 8 bits),
+ * summon (+0x1A = a monster row, else +0x18 = a group row), actions (a range of action rows), none (not read).
+ */
+export type OahuValueKind = 'range' | 'percent' | 'monster' | 'summon' | 'actions' | 'none';
+
+export interface OahuCategoryValues {
+  kind: OahuValueKind;
+  /** Labels of +0x18 and +0x1A. */
+  labels?: [string, string];
+  info?: string;
+}
+
+const RANGE = (info: string, labels: [string, string] = ['最小', '最大']): OahuCategoryValues => ({ kind: 'range', labels, info });
+export const OAHU_CATEGORY_VALUES: Record<number, OahuCategoryValues> = {
+  2: RANGE('ダメージ。+0x18〜+0x1A の乱数 (FUN_001B6F4C)。'),
+  3: RANGE('ダメージ。+0x18〜+0x1A の乱数で、当てたあと使った側の HP が 0 になる (@0x1B5294)。'),
+  8: RANGE('回復量。+0x18〜+0x1A の乱数 (FUN_001B4A28)。装備の効果 0x1D で増える。'),
+  9: RANGE('回復量。+0x18〜+0x1A の乱数 (FUN_001B44E0)。'),
+  10: { kind: 'percent', labels: ['最大 HP の %', '上限'], info: '最大 HP の +0x18 % を回復し、+0x1A で頭打ち (FUN_001B721C)。' },
+  11: { kind: 'percent', labels: ['最大 AP の %', '上限'], info: '最大 AP の +0x18 % を回復し、+0x1A で頭打ち (FUN_001B6494)。元のデータでは未使用。' },
+  13: RANGE('ふっかつしたときの HP。最大 HP の +0x18〜+0x1A % (FUN_001B4F24)。', ['最小 %', '最大 %']),
+  17: RANGE('吸う AP。+0x18〜+0x1A の乱数で、相手の今の AP まで。'),
+  18: RANGE('盗むゴールド。+0x18〜+0x1A の乱数で、持っているゴールドまで。'),
+  19: { kind: 'summon', labels: ['群れ', 'モンスター'], info: '+0x1A のモンスターを呼ぶ。+0x1A が 0 なら +0x18 の群れ (monsterGroup の行) から選ぶ (FUN_004EADC8)。+0x1A は下位 8 ビットだけ読まれる。' },
+  21: { kind: 'monster', labels: ['+0x18', '新しい形態'], info: '使った側を +0x1A の行の形態に作り直す (FUN_001B459C → FUN_0029C93C)。+0x1A は下位 8 ビットだけ読まれる。+0x18 は 0 か 1 (1 なら結果 +0x1C bit6、意味は未確認)。能力と名前だけが変わり、モデルは元のまま。' },
+  22: { kind: 'monster', labels: ['+0x18', '新しい形態'], info: '21 と同じに作り直したあと、画面を白くする演出の中で、使った側のモデルを「変身の見た目」(monsterParameter +0x62) で読んでおいたモデルと入れ替える (@0x219F3C → FUN_0029C790)。使う側の +0x62 が 0 なら見た目は変わらない。' },
+  24: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  25: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  26: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  27: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  28: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  29: RANGE('上がる量。+0x18〜+0x1A の乱数 (FUN_001B46E4)。'),
+  32: RANGE('延ばす時間。+0x18〜+0x1A の乱数。'),
+  33: RANGE('回復する量。+0x18〜+0x1A の乱数 (0 = ぜんかい)。'),
+  35: { kind: 'actions', labels: ['最初の行', '最後の行'], info: '道具を使うとき、+0x18〜+0x1A の範囲からアクションの行を 1 つ選び直す (@0x229978)。' },
+  36: { kind: 'percent', labels: ['最大 HP の %', '上限'], info: '最大 HP の +0x18 % (100 まで) のダメージで、+0x1A (9999 まで) で頭打ち (FUN_001B752C)。' },
+};
+
+/** How +0x18 / +0x1A are read for a category: not read when missing. */
+export function oahuCategoryValues(category: number): OahuCategoryValues {
+  return OAHU_CATEGORY_VALUES[category] ?? { kind: 'none' };
+}
+
+/** Categories that give or cure a state: +0x2E, the strength +0x1C (and for giving, w1's rate and turns) are read. */
+export const OAHU_STATE_CATEGORIES = [5, 6, 7, 12];
+/** Categories that read the success grade and turns of w1 (FUN_001B786C; にげる reads only the grade, @0x1B49D0). */
+export const OAHU_RATE_CATEGORIES = [5, 6, 7, 23];
+/** Categories whose damage +0x2D multiplies (打撃 @0x1B6930, 反撃 @0x1B770C). */
+export const OAHU_MULTIPLIER_CATEGORIES = [1, 4];
+
+/** Colours of category 31 (+0x2A): 255 puts the colour back. */
+export const OAHU_BODY_COLOR_RESET = 255;
 
 /**
  * When a kind-3 action of the states fires (+0x2A): FUN_001B7D18 checks it for the actions of effect 0x2F (a monster's
@@ -134,7 +193,7 @@ export const OAHU_ACTION_TRIGGER: Record<number, string> = {
   0: 'いつでも',
   101: '倒される一撃を受けたとき (倒れずに発動)',
   102: '打撃を受けたとき', 103: '打撃を受けたとき (20%)', 104: '打撃を受けたとき (30%)', 105: '打撃を受けたとき (50%)', 106: '打撃を受けたとき (80%)',
-  107: 'ブレス・呪文などを受けたとき (系統 2・3・6・15)',
+  107: 'ブレス・呪文などを受けたとき (種別 2・3・6・15)',
   ...Object.fromEntries(ELEMENT.slice(1).map((e, i): [number, string] => [108 + i, `${e}の攻撃を受けたとき`])),
   116: '仲間がいるとき', 117: '仲間がいるとき (50%)', 118: '自分だけのとき', 119: '自分だけのとき (50%)',
 };
@@ -153,29 +212,37 @@ export const OAHU_ACTION_DATA: TableDef = {
   rowSize: 0x30,
   fields: [
     f('bits', 0x00, 'u32', 'ビット', { unsure: true, hex: true }),
-    f('kind', 0x00, 'u32', '種類', { bits: [0, 3], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_KIND }, note: 'コードは w0 & 7 で比べる (3 = 自動 @0x1C04BC、4 = 道具 @0x1BB5E8)。2 はつかまえたモンスターを戦闘で使ったときのアクションで、名前がモンスターの名前。monsterParameter +0x3C が指し、すぐあとにそのモンスターのワザが並ぶ' }),
-    f('subject', 0x00, 'u32', '番号', { bits: [3, 11], alias: true, note: '種類 2 (つかまえたモンスター) ではモンスターの行 (同じモンスターの 2 つ目の行は 1 つ目の番号)。種類 4 (道具) ではアイテムの番号に近い値で、@0x1BA50C が 333・334 と比べる' }),
-    f('side', 0x00, 'u32', '狙う側', { bits: [19, 2], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_SIDE }, note: '1 = 自分の側 (FUN_0018F13C)' }),
+    f('kind', 0x00, 'u32', 'カテゴリ', { bits: [0, 3], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_KIND }, note: 'コードは w0 & 7 で比べる (3 = 自動 @0x1C04BC、4 = 道具 @0x1BB5E8)。2 はつかまえたモンスターを戦闘で使ったときのアクションで、名前がモンスターの名前。monsterParameter +0x3C が指し、すぐあとにそのモンスターのワザが並ぶ' }),
+    f('subject', 0x00, 'u32', '番号', { bits: [3, 11], alias: true, note: 'カテゴリ 2 (つかまえたモンスター) ではモンスターの行 (同じモンスターの 2 つ目の行は 1 つ目の番号)。カテゴリ 4 (道具) ではアイテムの番号に近い値で、@0x1BA50C が 333・334 と比べる' }),
+    f('side', 0x00, 'u32', '陣営', { bits: [19, 2], alias: true, ref: { kind: 'enum', values: OAHU_ACTION_SIDE }, note: '1 = 自分の側 (FUN_0018F13C)' }),
     f('range', 0x00, 'u32', '範囲', { bits: [21, 4], alias: true, ref: { kind: 'enum', values: ACTION_RANGE }, note: '8 と比べられる (FUN_0018F13C)。番号の意味は RPG2 の w0 bit9-12 と同じと推定 (2 単体・6 全体・1 自分)' }),
     f('element', 0x00, 'u32', '属性', { bits: [27, 5], alias: true, ref: { kind: 'enum', values: OAHU_ELEMENT_NAMES }, note: 'w0 >> 27 (@0x1BD028)。1〜8 は 1 つの属性、10〜25 は 2 つの属性 (フレイムアイス 10 = 火・氷 など)。2 つのときはダメージを半分ずつそれぞれの属性のたいせいで計算して足す (FUN_001B82B0)' }),
-    f('w1', 0x04, 'u32', '+0x04', { unsure: true, hex: true }),
+    f('inBattle', 0x00, 'u32', '戦闘で使える', { bits: [14, 1], alias: true, unsure: true, note: '1092 行に立つ。立っていないのはステルスと、戦闘の外で使う道具 (推定)' }),
+    f('fieldOnly', 0x00, 'u32', '戦闘の外だけ', { bits: [15, 1], alias: true, unsure: true, note: '種別 24〜34・39 の道具だけ (推定)' }),
+    f('inMenu', 0x00, 'u32', 'メニューで使える', { bits: [16, 1], alias: true, unsure: true, note: '回復・ふっかつ・げどく・ステルスと、それらの道具 (推定)' }),
+    f('noFloat', 0x00, 'u32', '浮遊に当たらない', { bits: [17, 1], alias: true, note: '浮遊 (効果 0x11) の相手には当たらない (@0x1B705C、@0x1B865C)。マグニチュード・のしかかりなど' }),
+    f('breath', 0x00, 'u32', 'ブレス', { bits: [18, 1], alias: true, note: '使う側がブレス封じ (状態 14) のときは使えない (@0x1B5B7C)' }),
+    f('w1', 0x04, 'u32', '+0x04', { unsure: true, hex: true, note: 'bit24-31 は全行 0x1A。bit0-8・bit20-23 は未確認' }),
+    f('rate', 0x04, 'u32', '成功率の段階', { bits: [9, 3], alias: true, note: '状態を付けるとき・にげるときの成功率。戦闘の設定 (FUN_0029D61C) +0x74 の表の段階で、たいせいの補正を掛ける (FUN_001B786C、@0x1B49D0)' }),
+    f('turnsMin', 0x04, 'u32', '持続ターン (最小)', { bits: [12, 4], alias: true, note: '最小〜最大の乱数。両方 0 ならずっと続く (FUN_001B786C)' }),
+    f('turnsMax', 0x04, 'u32', '持続ターン (最大)', { bits: [16, 4], alias: true, note: '突然死 (状態 22) で 0 なら即死' }),
     f('name', 0x08, 'u32', '名前', { ref: msg, note: '戦闘で出る名前。道具のアクションは「使った」のメッセージ' }),
     f('u0C', 0x0c, 'u32', '+0x0C', { unsure: true, note: 'メッセージの番号に見えるが、打撃 243 行が同じ 60202 (なごみの会話) で、行と関係のないなごみの会話や、どのファイルにもない 160872 なども入る。説明ではない' }),
     f('result1', 0x10, 'u32', '結果', { ref: msg, note: '1 体に効いたとき・成功したときの文 (「にダメージ与えた」「は どくをあびた」「が かけつけた」)' }),
     f('result2', 0x14, 'u32', '結果 (複数・別)', { ref: msg, note: '複数に効いたときの文 (「に 平均ダメージ与えた」「のHPが 平均回復した」) か、もう一方の結果 (「しかし　だれも来なかった…」「の寿命が縮んだ」)。文から推定' }),
-    f('min', 0x18, 'u16', '最小', { note: '威力・回復量など (RPG2 の +0x18)' }),
-    f('max', 0x1a, 'u16', '最大', { note: '系統 21・22 (形態を変える) では次の形態の monsterParameter の行 (FUN_001B459C が結果の +0x16 に入れる)' }),
-    f('u1C', 0x1c, 'u16', '+0x1C', { unsure: true }),
-    f('perf1', 0x1e, 'u16', '演出 1', { unsure: true, note: '演出の表の行と推定 (RPG2 の +0x1E)。続く欄も同じ並びの番号' }),
-    f('perf2', 0x20, 'u16', '演出 2', { unsure: true }),
-    f('perf3', 0x22, 'u16', '演出 3', { unsure: true }),
-    f('perf4', 0x24, 'u16', '演出 4', { unsure: true }),
-    f('perf5', 0x26, 'u16', '演出 5', { unsure: true }),
-    f('u28', 0x28, 'u16', '+0x28', { unsure: true }),
-    f('trigger', 0x2a, 'u8', '発動の条件', { note: '種類 3 のアクションを、ボディ (効果 0x2F) や自動 (効果 0x2D) の枠からいつ出すか (FUN_001B7D18)。1〜100 は確率 (%)。101 = 倒される一撃を受けたとき (倒れずに発動し、形態を変えるなら HP も戻る)。102〜106 打撃、107 ブレス・呪文など、108〜115 属性 1〜8 の攻撃を受けたとき。116〜119 は味方の数 (推定)' }),
+    f('min', 0x18, 'u16', '値 1', { note: '種別で意味が変わる (OAHU_CATEGORY_VALUES)。多くは最小。種別 19 では群れの行' }),
+    f('max', 0x1a, 'u16', '値 2', { note: '種別で意味が変わる。多くは最大。種別 19 は呼ぶモンスター、21・22 は新しい形態の monsterParameter の行 (下位 8 ビット、FUN_001B459C)' }),
+    f('strength', 0x1c, 's16', '状態の強さ', { note: 'どく 1 / もうどく 2、能力の増減 ±1〜3、おたから・ゴールドは倍率 % (200 など)、ステルスは段階。今の強さ以下なら効かない (FUN_001B786C)' }),
+    f('perfUser', 0x1e, 'u16', '使用者の演出', { note: 'directData (402F0000) の行。使う側に再生する (FUN_0032AFB0、@0x2199F0)' }),
+    f('perfUser2', 0x20, 'u16', '使用者の演出 2', { note: 'directData の行。+0x1E と同時に使う側に重ねる (@0x219A54)' }),
+    f('perfTarget', 0x22, 'u16', '対象の演出', { note: 'directData の行。対象ごとに再生する (被弾のモーションと着弾、@0x21903C)' }),
+    f('perfTarget2', 0x24, 'u16', '対象の演出 2', { note: 'directData の行。+0x22 と同時に対象に重ねる (@0x219058)' }),
+    f('perfField', 0x26, 'u16', '場の演出', { note: 'directData の行。対象の側に 1 回だけ出す (@0x218FF8)' }),
+    f('perfSecond', 0x28, 'u16', '2 回目の対象の演出', { note: 'directData の行。戦闘の +0x408 が立っているとき、別の対象の並びに +0x22・+0x24 の代わりに出す (@0x21DD6C)。いつ立つかは未確認' }),
+    f('trigger', 0x2a, 'u8', '発動の条件', { note: '種別 15 ではつかまえる倍率 (@0x1B73FC)、種別 31 では体の色 (255 = 元に戻す)、アンテナ・呪文では段階 1〜3 (演出の行を選ぶ @0x219958)。カテゴリ 3 では、ボディ (効果 0x2F) や自動 (効果 0x2D) の枠からいつ出すか (FUN_001B7D18)。1〜100 は確率 (%)。101 = 倒される一撃を受けたとき (倒れずに発動し、形態を変えるなら HP も戻る)。102〜106 打撃、107 ブレス・呪文など、108〜115 属性 1〜8 の攻撃を受けたとき。116〜119 は味方の数 (推定)' }),
     f('ap', 0x2b, 's8', '消費 AP', { note: '呪文・アンテナ・つかまえたモンスターのアクションにある。ワザの条件 (monsterBrain.bin) が AP を見るとき、使う側の今の AP (ユニット +0x62) より多ければ使わない (FUN_0018F13C)' }),
-    f('category', 0x2c, 'u8', '系統', { ref: { kind: 'enum', values: OAHU_ACTION_CATEGORY }, unsure: true, note: '名前はその系統のアクションから付けたもの' }),
-    f('u2D', 0x2d, 'u8', '+0x2D', { unsure: true }),
+    f('category', 0x2c, 'u8', '種別', { ref: { kind: 'enum', values: OAHU_ACTION_CATEGORY }, note: '戦闘の結果の種類になる (FUN_001B5A80)。+0x18・+0x1A の意味は種別で変わる' }),
+    f('multiplier', 0x2d, 'u8', '打撃の倍率', { note: '1/10 単位 (10 = そのまま)。打撃のダメージに掛ける (@0x1B6930)。種別 4 では返すダメージの割合 (@0x1B770C)' }),
     f('state', 0x2e, 'u8', '状態', { ref: { kind: 'enum', values: OAHU_STATE_CODE }, note: '付ける (治す) 状態の番号。装備の効果 0x14 の対象と同じ番号 (どくこうげき 1、ファイアビーム 2 やけど、氷の双爪 8 こおり)' }),
     f('u2F', 0x2f, 'u8', '+0x2F', { unsure: true }),
   ],
@@ -286,7 +353,7 @@ export const OAHU_SKILL_CONDITION_NOTE: Record<number, string> = {
   5: '効く相手から、HP 65% 以下の相手を優先し、属性のたいせいが一番低い相手を狙う (「知能：弱いじめ」)',
   6: '効く相手のうち HP 25% 以下の相手だけ。いなければ使わない。属性のたいせいが一番低く、HP が一番少ない相手を狙う (「知能：仕留める」)',
   7: '効く相手のうち、強さの値が上位半分の相手を狙う。AP が要る。ターゲットの効果に引き寄せられない (「知能：強者狙い」)',
-  8: '効く相手から、回復 (系統 8)・特殊 (系統 13) のアクションを持つ相手、行動できる相手、自分のアクションを使える相手を優先。AP が要る。ターゲットの効果に引き寄せられない (「知能：回復潰し」)',
+  8: '効く相手から、回復 (種別 8)・特殊 (種別 13) のアクションを持つ相手、行動できる相手、自分のアクションを使える相手を優先。AP が要る。ターゲットの効果に引き寄せられない (「知能：回復潰し」)',
   9: '効く相手から、行動できる相手、自分のアクションを使える相手を優先。AP が要る。ターゲットの効果に引き寄せられない (「知能：特技潰し」)',
   10: 'HP 25% 以下の相手 (回復なら味方) がいるときだけ、その相手に (「知能：ピンチ救い」)',
   11: 'HP 65% 以下の相手 (回復なら味方) がいるときだけ、その相手に (「知能：お助け」)',
@@ -322,7 +389,7 @@ export const OAHU_MONSTER_BRAIN: TableDef = {
     brainMode('effective', 0, 6, '効く相手', 'アクションを当てて効き目がある相手 (FUN_004CBEFC)'),
     brainMode('targetHp25', 1, 0, '相手の HP 25% 以下', 'FUN_0029F7D4'),
     brainMode('targetHp65', 1, 2, '相手の HP 65% 以下', 'FUN_0029F810'),
-    brainMode('healer', 1, 4, '回復・特殊の相手', '相手のアクションの系統が 8 (回復) か 13 (特殊)。相手の側を狙うときだけ (FUN_0039B0D8)'),
+    brainMode('healer', 1, 4, '回復・特殊の相手', '相手のアクションの種別が 8 (回復) か 13 (特殊)。相手の側を狙うときだけ (FUN_0039B0D8)'),
     brainFlag('strong20', 1, 6, '強い相手 (上位 2 割)', '強さの値 (FUN_004CD6BC: 電波人間 +0x33C、モンスター monsterParameter +0x4A) の大きい順に並べて、上位 2 割 (1 人以上) に絞る'),
     brainFlag('strongHalf', 1, 7, '強い相手 (上位半分)', '同じ並びで上位半分に絞る (bit6 が立っていなければ)'),
     brainFlag('weakElement', 2, 0, '属性のたいせいが低い相手', 'アクションの属性 (1〜8) へのたいせいが一番低い相手に絞る'),
@@ -367,13 +434,13 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
     f('charm', 0x30, 'u32', '効果 0x30', { bits: [1, 1], unsure: true, note: 'conditionData 75 ゆうわく の状態を付ける' }),
     f('act2B', 0x30, 'u32', 'アクション (効果 0x2B)', { bits: [2, 12], ref: actionRef, unsure: true, note: 'ほかの形態からこの行に変わった直後に続けて出すアクション (FUN_001B459C が新しい行のこの欄を読む)。元のデータではどの行も 0' }),
     f('act2C', 0x30, 'u32', 'アクション (効果 0x2C)', { bits: [14, 12], ref: actionRef, unsure: true }),
-    f('body', 0x34, 'u32', 'ボディのアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2F (攻撃を受けたとき。どくボディなど)。種類 3 のアクションだけが、その +0x2A の条件で出る (FUN_001B7D18)。ボスの変身 (系統 21・22) もここに入る' }),
+    f('body', 0x34, 'u32', 'ボディのアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2F (攻撃を受けたとき。どくボディなど)。カテゴリ 3 のアクションだけが、その +0x2A の条件で出る (FUN_001B7D18)。ボスの変身 (種別 21・22) もここに入る' }),
     f('body2', 0x34, 'u32', 'ボディのアクション 2', { bits: [12, 12], ref: actionRef, note: '効果 0x2F の 2 つ目' }),
     f('auto', 0x38, 'u32', '自動のアクション', { bits: [0, 12], ref: actionRef, note: '効果 0x2D' }),
     f('ai', 0x38, 'u32', 'ワザの選び方', { bits: [12, 3], ref: { kind: 'enum', values: OAHU_AI_MODE }, note: 'FUN_001BE560 の 5 通り。RPG2 の AI の型と同じと推定' }),
     f('fallback', 0x38, 'u32', '使えるワザがないとき', { bits: [15, 3], note: 'ワザの枠の番号 (0〜5)' }),
     f('u38b18', 0x38, 'u32', '+0x38 bit18-21', { bits: [18, 4], unsure: true, note: '戦闘のユニットどうしで比べる値 (@0x1C0170)。15 は特別' }),
-    f('own', 0x3c, 'u32', 'つかまえたときのアクション', { bits: [0, 11], ref: actionRef, note: 'つかまえたモンスターを戦闘で使ったときのアクション (actionData の種類 2 の行)。アンテナ「つかまえる」でつかまえたモンスターは電波人間の +0x6A に入り、その電波人間のこの行動がこの行になる (FUN_004CB7C0)' }),
+    f('own', 0x3c, 'u32', 'つかまえたときのアクション', { bits: [0, 11], ref: actionRef, note: 'つかまえたモンスターを戦闘で使ったときのアクション (actionData のカテゴリ 2 の行)。アンテナ「つかまえる」でつかまえたモンスターは電波人間の +0x6A に入り、その電波人間のこの行動がこの行になる (FUN_004CB7C0)' }),
     f('name', 0x40, 'u32', '名前', { ref: msg }),
     f('desc', 0x44, 'u32', '説明', { ref: msg }),
     f('design', 0x48, 'u16', 'デザイン', { bits: [0, 8], alias: true, note: '402F0000 の monsterDesign.bin の行 (モデル +0x0C・色のテクスチャ +0x10・ワザのモーション +0x14)' }),
@@ -392,7 +459,7 @@ export const OAHU_MONSTER_PARAMETER: TableDef = {
       f(`cond${i + 1}`, 0x54 + i * 2, 'u16', `ワザ ${i + 1} の条件`, { bits: [0, 4], ref: { kind: 'enum', values: OAHU_SKILL_CONDITION }, note: '402F0000 の monsterBrain.bin の行 (OAHU_MONSTER_BRAIN)。使えるかどうかと狙う相手を決める (FUN_0018F13C)' }),
     ]).flat(),
     f('u60', 0x60, 'u16', '+0x60', { unsure: true, hex: true }),
-    f('u62', 0x62, 'u16', '+0x62', { unsure: true }),
+    f('formModel', 0x62, 'u16', '変身の見た目', { note: '戦闘の始めに、この行のモンスターのモデルも読んでおく (FUN_0029BAD0、0 なら読まない)。種別 22 のアクションで変身すると、このモデルと入れ替わる (FUN_0029C790)' }),
     f('flags', 0x64, 'u16', 'フラグ', { unsure: true, hex: true, note: 'bit0 と bit4 が読まれる。bit4 が 0 の行 (ボスの最後でない形態) は、@0x1F6838 の攻撃では倒れない' }),
     f('book', 0x66, 'u8', '+0x66', { unsure: true, note: '図鑑の番号か (同じモンスターの 2 つ目の行は 0)' }),
     f('museum', 0x67, 'u8', 'ミュージアムの番号', { note: 'ミュージアムの読み出しが使う' }),

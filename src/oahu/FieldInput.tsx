@@ -36,10 +36,7 @@ export function FieldSelect(p: FieldProps & { options: [number, string][] }): Re
   return <FieldChoice f={rowAccess(p.rows, p.row, p.added)} k={p.k} edited={p.onEdit} options={p.options} />;
 }
 
-/** A labelled box of the stats grid. */
-export function Stat({ label, info, children }: { label: string; info?: string; children: ReactNode }): ReactNode {
-  return <label className="stat"><span className="muted">{label}{info && <InfoTip text={info} />}</span><span>{children}</span></label>;
-}
+export { Stat } from '../ui/FieldEdit';
 
 /** The choices of an enum field ("2: 単体"). */
 export function enumOptions(values: Record<number, string>, numbered = false): [number, string][] {

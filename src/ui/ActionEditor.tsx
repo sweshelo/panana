@@ -1,7 +1,9 @@
 // Editing an action (actionData row): its name, element, infliction level, amount and motion, copying it as a new
 // action, and putting it back. Used by the action page and, in a dialog, by the skill slots of the monster editor.
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ACTION_SIDE, ActionEdits, actionRangeLabel, actionTypeLabel, ELEMENT, type ActionBook } from '../game/actions';
+import { ACTION_KIND, ACTION_SIDE, ActionEdits, actionRangeLabel, actionTypeLabel, ELEMENT, type ActionBook, type ActionFields } from '../game/actions';
+import { KAHARA_ACTION_DATA } from '../game/kaharatables';
+import { fieldRange } from '../game/tabledef';
 import { ACTION_DIRECTION } from '../game/performance';
 import { u16 } from '../util/bytes';
 import { animationKey } from '../cgfx/player';
@@ -9,9 +11,9 @@ import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
 import type { Game } from '../game/game';
 import type { Session } from '../session';
-import { NumberInput } from './book';
+import { ActionTexts } from './ActionParts';
 import { BattleMessagePicker } from './BattleMessagePicker';
-import { Dialog } from './Dialog';
+import { FieldChoice, FieldNumber, Stat, type FieldAccess } from './FieldEdit';
 import { InfoTip } from './InfoTip';
 import { PerformanceSlots } from './PerformanceEditor';
 
@@ -147,9 +149,60 @@ export function motionLabel(anim: number): string {
   return m ? `${m[0]} (${m[1]})` : anim ? `モーション 0x${anim.toString(16).toUpperCase()}` : 'なし';
 }
 
+const KIND_OPTIONS = [0, 1, 2, 3].map((k): [number, string] => [k, `${k}: ${ACTION_KIND[k]}`]);
+const ELEMENT_OPTIONS = ELEMENT.map((e, i): [number, string] => [i, e || 'なし']);
+
+/**
+ * The fields of an action for the shared inputs (ui/FieldEdit, keyed as KAHARA_ACTION_DATA): read from the decoded
+ * row, written through ActionEdits (which keeps the bits around them).
+ */
+function actionAccess(actions: ActionBook, edits: ActionEdits, row: number): FieldAccess {
+  const a = actions.action(row)!;
+  const o = actions.original(row);
+  const get = (f: ActionFields, k: string): number => {
+    switch (k) {
+      case 'strengthMin': return f.strength[0];
+      case 'strengthMax': return f.strength[1];
+      case 'min': return f.amount[0];
+      case 'max': return f.amount[1];
+      default: return (f as unknown as Record<string, number>)[k] ?? 0;
+    }
+  };
+  const set = (k: string, v: number): void => {
+    switch (k) {
+      case 'kind': return edits.setKind(row, v, a.type);
+      case 'type': return edits.setKind(row, a.kind, v);
+      case 'side': return edits.setTarget(row, v, a.range);
+      case 'range': return edits.setTarget(row, a.side, v);
+      case 'element': return edits.setElement(row, v);
+      case 'level': return edits.setLevel(row, v);
+      case 'state': return edits.setState(row, v);
+      case 'strengthMin': return edits.setStrength(row, v, a.strength[1]);
+      case 'strengthMax': return edits.setStrength(row, a.strength[0], v);
+      case 'turns': return edits.setTurns(row, v);
+      case 'min': return edits.setAmount(row, v, a.amount[1]);
+      case 'max': return edits.setAmount(row, a.amount[0], v);
+    }
+  };
+  return {
+    get: (k) => get(a, k),
+    original: (k) => (o ? get(o, k) : get(a, k)),
+    set: (k, v) => {
+      try {
+        set(k, v);
+      } catch (err) {
+        alert((err as Error).message);
+      }
+    },
+    range: (k) => fieldRange(KAHARA_ACTION_DATA.fields.find((f) => f.key === k)!),
+    added: !o,
+  };
+}
+
 /**
  * The editable fields of an action. `onChange` after every edit (the caller rebuilds its ActionBook and saves);
  * `monsters` = whose models to check the motion against (the users of the action, or the monster being edited).
+ * The same layout as RPG3's (oahu/ActionPage): the message boxes, then a grid of the fields.
  */
 export function ActionEditor({ session, actions, row, monsters, onChange }: {
   session: Session;
@@ -166,6 +219,10 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
   const [pickName, setPickName] = useState(false);
   if (!a) return null;
   const texts = game.master.texts;
+  const edited = (): void => {
+    book?.reload();
+    onChange();
+  };
   const apply = (f: () => void): void => {
     try {
       f();
@@ -173,150 +230,57 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
       alert((err as Error).message);
       return;
     }
-    book?.reload();
-    onChange();
+    edited();
   };
-  const sharedName = a.nameId ? actions.actions.filter((x) => x.row !== row && x.nameId === a.nameId) : [];
-  const nameText = a.nameId ? texts.text(a.nameId)?.text ?? '' : '';
+  const f = actionAccess(actions, edits, row);
+  const p = { f, edited };
   const anim = actions.motion(row);
   const canMotion = edits.canSetMotion(row);
   const missing = anim && SKILL_MOTION[anim] ? monsters.filter((m) => motions.get(m.row) && !motions.get(m.row)!.has(SKILL_MOTION[anim]![1])) : [];
-  const orig = edits.added(row) ? null : actions.original(row);
-  const mark = (changed: boolean): string => (changed ? 'edited' : '');
-  const [lo, hi] = a.amount;
+  const warnings = [kindWarning(actions, a), targetWarning(actions, a), a.strength[0] > a.strength[1] ? '状態の強さの最小が最大より大きい' : '', a.amount[0] > a.amount[1] ? '量の最小が最大より大きい' : ''].filter(Boolean);
   return (
     <>
-    <table className="enc-table ai-fields action-edit">
-      <tbody>
-        <tr>
-          <td className="with-info">名前<InfoTip text={NAME_INFO} /></td>
-          <td>
-            {a.nameId && texts.editable(a.nameId)
-              ? <NameInput key={`${row}:${a.nameId}`} value={nameText} edited={texts.isEdited(a.nameId)} onCommit={(t) => apply(() => texts.setText(a.nameId, t))} />
-              : <span className="muted">{a.nameId ? a.name : '(名前なし)'}</span>}
-            {a.nameId > 0 && (
-              <div className="small">
-                {sharedName.length > 0 && <span className="muted">{`同じ名前: ${sharedName.slice(0, 4).map((x) => `#${x.row}`).join('、')}${sharedName.length > 4 ? ` ほか ${sharedName.length - 4}` : ''} `}</span>}
-                {sharedName.length > 0 && edits.canOwnName(row) && (
-                  <button className="small" title="同じ本文の新しいメッセージを作り、このワザの名前にします" onClick={() => apply(() => edits.ownName(row))}>このワザだけの名前にする</button>
-                )}
-                <button className="small" title="名前に使うメッセージを選び直します" onClick={() => setPickName(true)}>別のメッセージにする</button>
-              </div>
-            )}
-            {pickName && (
-              <NamePicker session={session} actions={actions} current={a.nameId} onClose={() => setPickName(false)}
-                onPick={(id) => { setPickName(false); apply(() => edits.setName(row, id)); }} />
-            )}
-          </td>
-        </tr>
-        <tr>
-          <td className="with-info">カテゴリ<InfoTip text={KIND_INFO} /></td>
-          <td><div className="inline-fields">
-            <select value={a.kind} className={mark(!!orig && a.kind !== orig.kind)} title={orig && a.kind !== orig.kind ? `元は ${ACTION_KIND[orig.kind]}` : ''}
-              onChange={(e) => apply(() => edits.setKind(row, Number(e.target.value), a.type))}>
-              {[0, 1, 2, 3].map((k) => <option key={k} value={k}>{`${k}: ${ACTION_KIND[k]}`}</option>)}
-            </select>
-            種別
-            <select value={a.type} className={mark(!!orig && a.type !== orig.type)} title={orig && a.type !== orig.type ? `元は ${actionTypeLabel(orig.kind, orig.type)}` : ''}
-              onChange={(e) => apply(() => edits.setKind(row, a.kind, Number(e.target.value)))}>
-              {Array.from({ length: 16 }, (_, t) => <option key={t} value={t}>{actionTypeLabel(a.kind, t)}</option>)}
-            </select>
-          </div>
-            {kindWarning(actions, a) && <div className="issue warn">{`⚠ ${kindWarning(actions, a)}`}</div>}
-          </td>
-        </tr>
-        <tr>
-          <td className="with-info">対象<InfoTip text={TARGET_INFO} /></td>
-          <td>
-            <div className="inline-fields">
-              <select value={a.side} className={mark(!!orig && a.side !== orig.side)} title={orig && a.side !== orig.side ? `元は ${ACTION_SIDE[orig.side] ?? orig.side}` : ''}
-                onChange={(e) => apply(() => edits.setTarget(row, Number(e.target.value), a.range))}>
-                {[0, 1, 2, 3].filter((v) => v <= 1 || v === a.side).map((v) => <option key={v} value={v}>{`${v}: ${ACTION_SIDE[v] ?? '?'}`}</option>)}
-              </select>
-              の
-              <select value={a.range} className={mark(!!orig && a.range !== orig.range)} title={orig && a.range !== orig.range ? `元は ${actionRangeLabel(orig.range)}` : ''}
-                onChange={(e) => apply(() => edits.setTarget(row, a.side, Number(e.target.value)))}>
-                {Array.from({ length: 16 }, (_, v) => v).filter((v) => v <= 8 || v === a.range).map((v) => <option key={v} value={v}>{actionRangeLabel(v)}</option>)}
-              </select>
-              {rangePower(book, a) && <span className="muted small">{rangePower(book, a)}</span>}
-            </div>
-            {targetWarning(actions, a) && <div className="issue warn">{`⚠ ${targetWarning(actions, a)}`}</div>}
-          </td>
-        </tr>
-        <tr>
-          <td>属性</td>
-          <td>
-            <select value={a.element} className={mark(!!orig && a.element !== orig.element)} onChange={(e) => apply(() => edits.setElement(row, Number(e.target.value)))}>
-              {Array.from({ length: 16 }, (_, i) => i).filter((i) => i < ELEMENT.length || i === a.element).map((i) => <option key={i} value={i}>{ELEMENT[i] || (i ? `${i}` : 'なし')}</option>)}
-            </select>
-          </td>
-        </tr>
-        <tr>
-          <td className="with-info">付与の段階<InfoTip text={LEVEL_INFO} /></td>
-          <td>
-            <select value={a.level} className={mark(!!orig && a.level !== orig.level)} disabled={!a.state} title={a.state ? '' : '付ける状態がないので使われません'}
-              onChange={(e) => apply(() => edits.setLevel(row, Number(e.target.value)))}>
-              {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{levelLabel(book, i)}</option>)}
-            </select>
-          </td>
-        </tr>
+      <ActionTexts texts={texts} message={(id) => texts.text(id)?.text ?? ''} onEdit={edited} href={(r) => `#/actions/${r}`} fields={[{
+        key: 'name', label: '名前', id: a.nameId, place: 'actionData +0x04',
+        shared: a.nameId ? actions.actions.filter((x) => x.row !== row && x.nameId === a.nameId).map((x) => x.row) : [],
+        own: edits.canOwnName(row) ? () => { edits.ownName(row); } : undefined,
+        extra: <>
+          <button className="small" title="名前に使うメッセージを選び直します" onClick={() => setPickName(true)}>別のメッセージにする</button>
+          <InfoTip text={NAME_INFO} />
+        </>,
+      }]} />
+      {pickName && (
+        <NamePicker session={session} actions={actions} current={a.nameId} onClose={() => setPickName(false)}
+          onPick={(id) => { setPickName(false); apply(() => edits.setName(row, id)); }} />
+      )}
+      <div className="stats stat-edit action-stats">
+        <Stat label="カテゴリ" info={KIND_INFO}><FieldChoice {...p} k="kind" options={KIND_OPTIONS} /></Stat>
+        <Stat label="種別" info={KIND_INFO} wide><FieldChoice {...p} k="type" labels={(t) => actionTypeLabel(a.kind, t)} /></Stat>
+        <Stat label="陣営" info={TARGET_INFO}><FieldChoice {...p} k="side" options={[0, 1, 2, 3].filter((v) => v <= 1 || v === a.side).map((v) => [v, `${v}: ${ACTION_SIDE[v] ?? '?'}`])} /></Stat>
+        <Stat label="範囲" info={TARGET_INFO}>
+          <FieldChoice {...p} k="range" options={Array.from({ length: 16 }, (_, v) => v).filter((v) => v <= 8 || v === a.range).map((v) => [v, actionRangeLabel(v)])} />
+          {rangePower(book, a) && <span className="muted small">{rangePower(book, a)}</span>}
+        </Stat>
+        <Stat label="属性"><FieldChoice {...p} k="element" options={ELEMENT_OPTIONS} /></Stat>
+        <Stat label="量" info="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです"><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>
         {a.raw.length > 0x32 && (
-          <tr>
-            <td className="with-info">付ける状態<InfoTip text={STATE_INFO} /></td>
-            <td>
-              <select value={a.state} className={mark(!!orig && a.state !== orig.state)} title={orig && a.state !== orig.state ? `元は ${stateName(book, orig.state)}` : ''}
-                onChange={(e) => apply(() => edits.setState(row, Number(e.target.value)))}>
-                <option value={0}>なし</option>
-                {stateOptions(book, a.state).map(([id, name]) => <option key={id} value={id}>{`${name} (${id})`}</option>)}
-              </select>
-            </td>
-          </tr>
+          <Stat label="付ける状態" info={STATE_INFO}>
+            <FieldChoice {...p} k="state" options={[[0, 'なし'], ...stateOptions(book, a.state).map(([id, name]): [number, string] => [id, `${id}: ${name}`])]} />
+          </Stat>
         )}
-        <tr>
-          <td className="with-info">状態の強さ<InfoTip text={STRENGTH_INFO} /></td>
-          <td><div className="inline-fields">
-            <NumberInput value={a.strength[0]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[0] !== orig.strength[0])}`} onCommit={(v) => apply(() => edits.setStrength(row, v, a.strength[1]))} />
-            〜
-            <NumberInput value={a.strength[1]} min={0} max={15} className={`num-input ${mark(!!orig && a.strength[1] !== orig.strength[1])}`} onCommit={(v) => apply(() => edits.setStrength(row, a.strength[0], v))} />
-            {a.strength[0] > a.strength[1] && <span className="issue warn">最小が最大より大きい</span>}
-          </div></td>
-        </tr>
-        {a.raw.length >= 0x18 && !(a.kind === 3 && a.type === 5) && (
-          <tr>
-            <td className="with-info">状態のターン<InfoTip text="+0x16 (s16)。付けた状態が続くターン数です。" /></td>
-            <td>
-              <NumberInput value={a.turns} min={-32768} max={32767} className={`num-input ${mark(!!orig && a.turns !== orig.turns)}`} onCommit={(v) => apply(() => edits.setTurns(row, v))} />
-            </td>
-          </tr>
-        )}
-        {a.raw.length >= 0x1c && (
-          <tr>
-            <td className="with-info">量<InfoTip text="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです" /></td>
-            <td><div className="inline-fields">
-              <NumberInput value={lo} min={-32768} max={32767} className={`num-input ${mark(!!orig && lo !== orig.amount[0])}`} onCommit={(v) => apply(() => edits.setAmount(row, v, hi))} />
-              〜
-              <NumberInput value={hi} min={-32768} max={32767} className={`num-input ${mark(!!orig && hi !== orig.amount[1])}`} onCommit={(v) => apply(() => edits.setAmount(row, lo, v))} />
-            </div></td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-    <h4 className="with-info">{'演出'}<InfoTip text={MOTION_INFO} /></h4>
-    <PerformanceSlots session={session} actions={actions} edits={edits} row={row} onChange={onChange} />
-    {!canMotion && actions.slot(row, 0x1e) === 0 && <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>}
-    {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
+        <Stat label="付与の段階" info={LEVEL_INFO}>
+          <FieldChoice {...p} k="level" disabled={!a.state} title="付ける状態がないので使われません" labels={(l) => levelLabel(book, l)} />
+        </Stat>
+        <Stat label="状態の強さ" info={STRENGTH_INFO}><FieldNumber {...p} k="strengthMin" />〜<FieldNumber {...p} k="strengthMax" /></Stat>
+        {!(a.kind === 3 && a.type === 5) && <Stat label="状態のターン" info="+0x16 (s16)。付けた状態が続くターン数です。"><FieldNumber {...p} k="turns" /></Stat>}
+      </div>
+      {warnings.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
+      <h3 className="with-info">{'演出'}<InfoTip text={MOTION_INFO} /></h3>
+      <PerformanceSlots session={session} actions={actions} edits={edits} row={row} onChange={onChange} />
+      {!canMotion && actions.slot(row, 0x1e) === 0 && <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>}
+      {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
     </>
   );
-}
-
-/** A one-line text box applied on Enter or when left. */
-function NameInput({ value, edited, onCommit }: { value: string; edited: boolean; onCommit: (t: string) => void }): ReactNode {
-  const [text, setText] = useState(value);
-  useEffect(() => setText(value), [value]);
-  const commit = (): void => {
-    if (text !== value) onCommit(text);
-  };
-  return <input type="text" className={`name-input${edited ? ' edited' : ''}`} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
 }
 
 /**

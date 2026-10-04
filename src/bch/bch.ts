@@ -578,6 +578,13 @@ export function parseBch(src: Uint8Array): CgfxFile {
   return { models, textures };
 }
 
+/** Only the animations of a BCH (RPG3 keeps a monster's skill motions in a BCH of their own, without a model). */
+export function bchAnimations(src: Uint8Array): CgfxFile['models'][number]['animations'] {
+  const { b, h } = relocateBch(src);
+  const r = new Reader(b);
+  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12));
+}
+
 /** Type 8 entries: a 0x180-byte header, then the BCH. */
 export function unwrapBch(b: Uint8Array): Uint8Array {
   const o = bchOffset(b);

@@ -87,7 +87,7 @@ export const ABILITY_RANGES: [number, number][] = [[0x00, 0x04], [0x08, 0x1c], [
  * Names of the animation numbers (animData.bin of the master, +0 = the name as a file offset): "001_" .. The game
  * plays the animation of the model whose name starts with it (docs/monster-motion.md §1.3). '' = none.
  */
-export function animKeys(master: Master): string[] {
+export function animKeys(master: Pick<Master, 'table'>): string[] {
   let t: GsTable;
   try {
     t = master.table('animData.bin');
@@ -195,11 +195,22 @@ export interface Effect {
 }
 
 /** effectData and directDataAddEffect of 2713402F (read only: the editor picks existing effects). */
+/** Where the tables of the effects differ between the games (RPG2's 2713402F, RPG3's 402F0000). */
+export interface EffectLayout {
+  /** directDataAddEffect: the byte holding the count, and how many u16 effectData rows a row holds. */
+  addCount: number;
+  addSlots: number;
+  /** effectData +0x2B bits that make the effect 3 frames late. */
+  lateMask: number;
+}
+
+export const KAHARA_EFFECT_LAYOUT: EffectLayout = { addCount: 6, addSlots: 3, lateMask: 0x17 };
+
 export class EffectTable {
   readonly effects: Effect[] = [];
   private readonly adds: number[][] = [];
 
-  constructor(effectData: GsTable | null, addEffect: GsTable | null) {
+  constructor(effectData: GsTable | null, addEffect: GsTable | null, layout: EffectLayout = KAHARA_EFFECT_LAYOUT) {
     if (effectData && effectData.rowSize >= 0x2a) {
       const d = effectData.data;
       for (let i = 0; i < effectData.rows; i++) {
@@ -218,15 +229,15 @@ export class EffectTable {
           offset: [s16(r, 0x22), s16(r, 0x24), s16(r, 0x26)],
           length: u16(r, 0x28),
           afterMotion: !!(r[0x2a]! & 1),
-          late: !!(r[0x2a]! & 0x10) || !!u16(r, 0x28) || !!(r[0x2b]! & 0x17) || !!r[0x2c],
+          late: !!(r[0x2a]! & 0x10) || !!u16(r, 0x28) || !!(r[0x2b]! & layout.lateMask) || !!r[0x2c],
         });
       }
     }
-    if (addEffect && addEffect.rowSize >= 7) {
+    if (addEffect && addEffect.rowSize > layout.addCount) {
       for (let i = 0; i < addEffect.rows; i++) {
         const r = addEffect.row(i);
-        const n = Math.min(r[6]!, 3);
-        this.adds.push([0, 2, 4].slice(0, n).map((o) => u16(r, o)).filter(Boolean));
+        const n = Math.min(r[layout.addCount]!, layout.addSlots);
+        this.adds.push(Array.from({ length: n }, (_, k) => u16(r, k * 2)).filter(Boolean));
       }
     }
   }

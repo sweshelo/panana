@@ -72,17 +72,35 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
   value: number; min: number; max: number; className?: string; title?: string; onCommit: (v: number) => void;
 }): ReactNode {
   const ref = useRef<HTMLInputElement>(null);
+  // the value last applied: the box may tell the same change twice (change, then blur) before the new value comes back
+  const last = useRef(value);
+  last.current = value;
+  const commit = (el: HTMLInputElement): void => {
+    const v = Math.round(Number(el.value));
+    if (el.value !== '' && Number.isFinite(v) && v >= min && v <= max) {
+      if (v !== last.current) {
+        last.current = v;
+        onCommit(v);
+      }
+    } else el.value = String(last.current);
+  };
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
   // follow the value from outside (undo, another pane) unless the box is being typed in
   useEffect(() => {
     const el = ref.current;
     if (el && document.activeElement !== el) el.value = String(value);
   }, [value]);
-  const commit = (el: HTMLInputElement): void => {
-    const v = Math.round(Number(el.value));
-    if (el.value !== '' && Number.isFinite(v) && v >= min && v <= max) {
-      if (v !== value) onCommit(v);
-    } else el.value = String(value);
-  };
+  // The DOM's change event (React's onChange is the input event): the spinner buttons, the arrow keys and the wheel
+  // fire it at each step, typing only when the box is left or Enter is pressed, so a half-typed number is not applied.
+  // The browsers tell a step from typing in the input event differently (inputType), so that one is not used.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onChange = (): void => commitRef.current(el);
+    el.addEventListener('change', onChange);
+    return () => el.removeEventListener('change', onChange);
+  }, []);
   return (
     <input
       ref={ref}
@@ -94,9 +112,6 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
       title={title}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => e.key === 'Enter' && commit(e.currentTarget)}
-      // the spinner buttons and the arrow keys step the value without typing: apply it at once (typing waits for
-      // Enter / leaving the box, so a half-typed number is not applied)
-      onInput={(e) => !(e.nativeEvent as InputEvent).inputType && commit(e.currentTarget)}
     />
   );
 }

@@ -5,7 +5,7 @@ import { cleanActionName } from '../game/actions';
 import type { MessageStore } from '../game/gmsg';
 import { decodeGroupSlots, encodeGroupSlots, type GroupSlot } from '../game/monsters';
 import type { TableDef } from '../game/tabledef';
-import type { OahuItems } from './items';
+import { OAHU_ITEM_MESSAGE_KEYS, type OahuItems } from './items';
 import type { OahuMaster } from './master';
 import type { OahuItemModels } from './itemModels';
 import type { OahuMonsterModels } from './monsterModels';
@@ -105,10 +105,10 @@ export class OahuBattle {
     readonly itemModels?: OahuItemModels,
   ) {}
 
-  /** A monster's model (by its design row); null without the dump's models. */
-  monsterModel(row: number): ModelRef | null {
+  /** A monster's model (by its design row); null without the dump's models. `motions`: with its skill motions (viewers). */
+  monsterModel(row: number, motions = false): ModelRef | null {
     if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
-    return this.models.ref(this.monsters.get(row, 'design'));
+    return this.models.ref(this.monsters.get(row, 'design'), motions);
   }
 
   /** The tables are taken from the master when first used. */
@@ -264,7 +264,7 @@ export class OahuBattle {
   }
 
   actionChanged(row: number): boolean {
-    return this.actions.changed(row) || OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)));
+    return this.actions.added(row) || this.actions.changed(row) || OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)));
   }
 
   revertAction(row: number): void {
@@ -273,6 +273,72 @@ export class OahuBattle {
       const m = this.actions.get(row, k);
       if (m) this.texts.revert(m);
     }
+  }
+
+  /** The distinct messages of an action row (name and results). */
+  private actionMessages(row: number): number[] {
+    return [...new Set(OAHU_ACTION_TEXTS.map(([k]) => this.actions.get(row, k)).filter(Boolean))];
+  }
+
+  /** Whether the action can be copied: messages for its texts can be added (the table grows by a row). */
+  canCopyAction(row: number): boolean {
+    return row > 0 && row < this.actions.rows && this.texts.canAdd(this.actionMessages(row).length);
+  }
+
+  /**
+   * Copy an action to a new row at the end of actionData: the same values, with messages of its own (same texts) so
+   * they can change alone. The game reads the number of rows from the table's header (FUN_0029D5D8 checks the row
+   * against it). Returns the new row.
+   */
+  copyAction(row: number): number {
+    if (!this.canCopyAction(row)) throw new Error('メッセージを追加できないので、アクションを写せません');
+    const copied = new Map<number, number>();
+    for (const m of this.actionMessages(row)) copied.set(m, this.texts.add(this.texts.units(m)!));
+    const n = this.actions.addRow(this.actions.row(row));
+    for (const [k] of OAHU_ACTION_TEXTS) {
+      const m = this.actions.get(n, k);
+      if (m) this.actions.set(n, k, copied.get(m)!);
+    }
+    return n;
+  }
+
+  /** Whether the action is the last row and was added by an edit (only that one can be removed: the rows stay in order). */
+  canRemoveAction(row: number): boolean {
+    return row === this.actions.rows - 1 && this.actions.added(row);
+  }
+
+  /** Remove an added action (the last row), dropping its messages when they are the last added and unused. */
+  removeAction(row: number): void {
+    if (!this.canRemoveAction(row)) throw new Error('消せるのは最後に追加したアクションだけです');
+    const mine = this.actionMessages(row).filter((m) => this.texts.isAdded(m));
+    this.actions.removeLastRow();
+    const used = new Set<number>();
+    for (let r = 1; r < this.actions.rows; r++) for (const [k] of OAHU_ACTION_TEXTS) used.add(this.actions.get(r, k));
+    for (const it of this.items.items) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.items.messageId(it.id, k));
+    for (const m of mine.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
+  }
+
+  /** The other action rows using the same message as this row's field (a shared text changes for all of them). */
+  actionsWithText(row: number, key: string): number[] {
+    const m = this.actions.get(row, key);
+    if (!m) return [];
+    const out: number[] = [];
+    for (let r = 1; r < this.actions.rows; r++) if (r !== row && OAHU_ACTION_TEXTS.some(([k]) => this.actions.get(r, k) === m)) out.push(r);
+    return out;
+  }
+
+  /** Whether the row's message can be made its own (a message can be added). */
+  canOwnActionText(row: number, key: string): boolean {
+    const m = this.actions.get(row, key);
+    return !!m && !!this.texts.units(m) && this.texts.canAdd(1);
+  }
+
+  /** Give the row's field a new message with the same text (MessageSystemCommon from 8658), for this row alone. */
+  ownActionText(row: number, key: string): number {
+    const m = this.actions.get(row, key);
+    const n = this.texts.add(this.texts.units(m)!);
+    for (const [k] of OAHU_ACTION_TEXTS) if (this.actions.get(row, k) === m) this.actions.set(row, k, n);
+    return n;
   }
 
   /** How many action rows use the same message as this row's field (a shared text changes for all of them). */
@@ -305,8 +371,27 @@ export class OahuBattle {
   /** The monster row an action changes its user into (category 21 / 22, +0x1A), else 0. */
   formTarget(action: number): number {
     if (action <= 0 || action >= this.actions.rows || !OAHU_FORM_CATEGORIES.includes(this.actions.get(action, 'category'))) return 0;
-    const to = this.actions.get(action, 'max');
+    const to = this.actions.get(action, 'max') & 0xff; // only the low byte is read (@0x1B45AC)
     return to > 0 && to < this.monsters.rows ? to : 0;
+  }
+
+  /** Who a category 19 action calls: the monster row of +0x1A (low byte), else the group row of +0x18. */
+  summonTarget(action: number): { monster: number } | { group: number } | null {
+    if (action <= 0 || action >= this.actions.rows || this.actions.get(action, 'category') !== 19) return null;
+    const monster = this.actions.get(action, 'max') & 0xff;
+    if (monster) return { monster };
+    const group = this.actions.get(action, 'min');
+    return group ? { group } : null;
+  }
+
+  /** Monsters having the action in a slot only a kind-3 action fires from (ボディ・自動 …), with the slot. */
+  stateSlotUsers(action: number): { monster: number; via: string }[] {
+    const out: { monster: number; via: string }[] = [];
+    for (let m = 1; m < this.monsters.rows; m++) {
+      if (!this.monsters.get(m, 'name')) continue;
+      for (const k of OAHU_STATE_FIELDS) if (this.monsters.get(m, k) === action) out.push({ monster: m, via: k });
+    }
+    return out;
   }
 
   /** The form changes of a monster row: its skills and the actions of its states that change the form. */
