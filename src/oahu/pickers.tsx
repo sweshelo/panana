@@ -3,7 +3,8 @@
 import { useMemo, type ReactNode } from 'react';
 import { ActionTablePicker, type ActionEntry } from '../ui/ActionPicker';
 import type { GroupMonster } from '../ui/GroupDetail';
-import { GridPicker } from '../ui/GridPicker';
+import { GridPicker, type PickerChoice } from '../ui/GridPicker';
+import type { MonsterGroup } from '../ui/MonsterPicker';
 import { ActionBadge, type BoardEntry } from '../ui/MonsterSlots';
 import { Photo } from '../ui/Photo';
 import { ItemPhoto } from './ItemPage';
@@ -55,11 +56,18 @@ export function oahuGroupMonster(battle: OahuBattle): (row: number) => GroupMons
   };
 }
 
-export function OahuMonsterPicker({ battle, current, title = 'モンスターを選ぶ', onPick, onClose }: {
-  battle: OahuBattle; current: number; title?: string; onPick: (row: number) => void; onClose: () => void;
+/**
+ * Pick a monster from the photos, like RPG2's MonsterPicker: `groups` come first, each under its heading (e.g. the
+ * monsters with the skill), then every monster under "すべて"; `choices` are other values before them (電波人間).
+ */
+export function OahuMonsterPicker({ battle, current, title = 'モンスターを選ぶ', groups = [], choices = [], onPick, onClose }: {
+  battle: OahuBattle; current: number; title?: string; groups?: MonsterGroup[]; choices?: PickerChoice[]; onPick: (row: number) => void; onClose: () => void;
 }): ReactNode {
   const entries = useMemo(() => battle.monsterList().map((m) => ({ id: m.id, name: m.name, sub: `#${m.id} Lv${m.level}`, icon: oahuMonsterIcon(battle, m.id, true) })), [battle]);
-  return <GridPicker title={title} entries={entries} current={current} onPick={onPick} onClose={onClose} />;
+  return (
+    <GridPicker title={title} entries={entries} current={current} sections={groups.map((g) => ({ label: g.label, ids: g.rows }))} choices={choices}
+      placeholder="名前で絞り込み" onPick={onPick} onClose={onClose} />
+  );
 }
 
 export function OahuItemPicker({ battle, current, title = 'アイテムを選ぶ', unavailable, onPick, onClose }: {

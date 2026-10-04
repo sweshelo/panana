@@ -98,24 +98,23 @@ export function OahuActionPreview({ session, row, users }: { session: OahuSessio
   useEffect(() => void viewer?.show(phases), [phases, viewer]);
   if (loaded === 'none') return <div className="muted small">演出の表 (402F0000 の directData) を読めませんでした。</div>;
   if (!OAHU_PERF_SLOTS.some((s) => a.get(row, s.key))) return null;
-  const who = (m: number, onClick: () => void, label: string, onAlly: () => void): ReactNode => (
-    <span className="inline-fields">
-      <button className="small perf-who" title={`${label}を選ぶ`} onClick={onClick}>
-        {m ? <Photo model={battle.monsterModel(m)} /> : <span className="photo picker-none" />}
-        <span>{m ? `${battle.monsterName(m)} #${m}` : '電波人間 (仮の姿)'}</span>
-      </button>
-      {m > 0 && <button className="small" title="電波人間 (仮の姿) にする" onClick={onAlly}>電波人間</button>}
-    </span>
+  const ally = [{ value: 0, label: '電波人間', sub: '仮の姿' }];
+  const who = (m: number, onClick: () => void, label: string): ReactNode => (
+    <button className="small perf-who" title={`${label}を選ぶ`} onClick={onClick}>
+      {m ? <Photo model={battle.monsterModel(m)} /> : <span className="photo picker-none" />}
+      <span>{m ? `${battle.monsterName(m)} #${m}` : '電波人間 (仮の姿)'}</span>
+    </button>
   );
   return (
     <div className="perf-preview">
       <div className="row small">
         <span className="with-info">{'プレビュー'}<InfoTip text={PREVIEW_INFO} /></span>
-        <label>{'使う側 '}{who(user, () => setPicking('user'), '使う側', () => setUser(0))}</label>
-        <label>{'対象 '}{who(target, () => setPicking('target'), '対象', () => setTarget(0))}</label>
+        <label>{'使う側 '}{who(user, () => setPicking('user'), '使う側')}</label>
+        <label>{'対象 '}{who(target, () => setPicking('target'), '対象')}</label>
       </div>
       {picking && (
         <OahuMonsterPicker battle={battle} current={picking === 'user' ? user : target} title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
+          choices={ally} groups={picking === 'user' && users.length ? [{ label: 'このワザを持つモンスター', rows: users }] : []}
           onClose={() => setPicking(null)} onPick={(m) => { if (picking === 'user') setUser(m); else setTarget(m); setPicking(null); }} />
       )}
       {viewer && <Dom node={viewer.el} />}
