@@ -118,6 +118,8 @@ const blTarget = (w: number, at: number): number | null => {
 export interface FunctionScan {
   calls: number[];
   messages: Set<number>;
+  /** Where each message ID is in the literal pool: [literal address, ID]. */
+  messageAt: [number, number][];
   completes: Set<number>;
 }
 
@@ -156,6 +158,17 @@ export class CodeIndex {
     return this.startSet.has(a);
   }
 
+  /** Start of the function that holds `a` (the last start at or before it). */
+  startOf(a: number): number {
+    let lo = 0, hi = this.starts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.starts[mid]! <= a) lo = mid + 1;
+      else hi = mid;
+    }
+    return this.starts[lo - 1] ?? BASE;
+  }
+
   /** End of the function at `f` (the next start). */
   end(f: number): number {
     let lo = 0, hi = this.starts.length;
@@ -170,7 +183,7 @@ export class CodeIndex {
   scan(f: number): FunctionScan {
     let s = this.cache.get(f);
     if (s) return s;
-    s = { calls: [], messages: new Set(), completes: new Set() };
+    s = { calls: [], messages: new Set(), messageAt: [], completes: new Set() };
     const code = this.code;
     const { msgFirst, msgLast, complete } = this.profile;
     for (let a = f; a < this.end(f); a += 4) {
@@ -192,7 +205,10 @@ export class CodeIndex {
         const lit = a + 8 + (w & 0x800000 ? imm : -imm);
         if (lit >= BASE && lit + 4 <= BASE + code.length) {
           const v = u32(code, lit - BASE);
-          if (v >= msgFirst && v <= msgLast) s.messages.add(v);
+          if (v >= msgFirst && v <= msgLast) {
+            s.messages.add(v);
+            if (!s.messageAt.some(([l]) => l === lit)) s.messageAt.push([lit, v]);
+          }
         }
       }
     }
@@ -201,21 +217,23 @@ export class CodeIndex {
   }
 
   /** Messages and completed rows of the functions reachable from `roots` (callees with few callers only). */
-  reach(roots: number[]): { functions: number[]; messages: number[]; completes: number[] } {
+  reach(roots: number[]): { functions: number[]; messages: number[]; messageAt: [number, number][]; completes: number[] } {
     const seen = new Set<number>();
     const stack = [...roots];
     const messages = new Set<number>(), completes = new Set<number>();
+    const messageAt = new Map<number, number>();
     while (stack.length) {
       const f = stack.pop()!;
       if (seen.has(f) || f < BASE || f >= this.profile.textEnd) continue;
       seen.add(f);
       const s = this.scan(f);
       s.messages.forEach((v) => messages.add(v));
+      for (const [l, v] of s.messageAt) messageAt.set(l, v);
       s.completes.forEach((v) => completes.add(v));
       for (const t of s.calls) if ((this.fanin.get(t) ?? 0) <= MAX_FANIN) stack.push(t);
     }
     const num = (a: number, b: number) => a - b;
-    return { functions: [...seen].sort(num), messages: [...messages].sort(num), completes: [...completes].sort(num) };
+    return { functions: [...seen].sort(num), messages: [...messages].sort(num), messageAt: [...messageAt].sort(([a], [b]) => a - b), completes: [...completes].sort(num) };
   }
 }
 
@@ -230,7 +248,11 @@ export interface ScriptClass {
   /** Functions of the class no other script class shares, and the callbacks its build registered. */
   roots: number[];
   messages: number[];
+  /** The literals that hold the messages: [literal address, ID] (a script's message is changed there). */
+  messageAt: [number, number][];
   completes: number[];
+  /** The functions reached from the roots, as [start, end) (what the class runs). */
+  ranges: [number, number][];
 }
 
 /**
@@ -254,8 +276,8 @@ export function describeClasses(code: Uint8Array, built: BuiltAction[], others: 
   for (const vt of vtables) {
     const roots = vtableEntries(code, vt).filter((e) => e >= BASE && e < profile.textEnd && shared.get(e) === 1);
     for (const p of pointers.get(vt) ?? []) if (index.isStart(p) && (index.fanin.get(p) ?? 0) <= MAX_FANIN && !roots.includes(p)) roots.push(p);
-    const { messages, completes } = index.reach(roots);
-    out.set(vt, { vtable: vt, roots, messages, completes });
+    const { functions, messages, messageAt, completes } = index.reach(roots);
+    out.set(vt, { vtable: vt, roots, messages, messageAt, completes, ranges: functions.map((f) => [f, index.end(f)]) });
   }
   return out;
 }

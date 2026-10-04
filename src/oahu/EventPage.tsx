@@ -2,22 +2,19 @@
 // EventObject row with where the maps place it, its conditions, where an exit leads, and for scripts (kind 0x2E) the
 // class the Update's code builds for it with the messages it shows (oahu/scripts.ts). The row is editable.
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Count, ListFilter, useActiveRow, useSticky } from '../ui/book';
+import { Count, ListFilter, useActiveRow, useEdits, useSticky } from '../ui/book';
+import { BattleMessagePicker } from '../ui/BattleMessagePicker';
+import { codeWordAt } from './story';
+import { setWord, wordAt, WriteSiteTable } from './StoryParts';
 import { fnLabel } from '../game/scriptasm';
-import { EventObjectEditor, pointLabel } from './EventObjectEditor';
-import { oahuEventEntries, oahuEventKey, oahuKindName, type OahuEventEntry } from './events';
+import { conditionNames, EventObjectEditor, pointLabel } from './EventObjectEditor';
+import { oahuEventKey, oahuKindName, type OahuEventEntry } from './events';
 import { oahuDungeonLabel, oahuMapHref, useMaps } from './MapPage';
 import { OAHU_LAYOUTS } from './maps';
 import { OAHU_SCRIPT_KIND } from './scripts';
 import type { OahuSession } from './session';
 
 type Filter = 'all' | 'script' | 'exit' | 'cond' | 'unplaced' | 'changed';
-
-/** MessageField_JP's ID range (the messages the scripts' code names). */
-function fieldRange(session: OahuSession): [number, number] {
-  const f = session.messages.texts.files.find((x) => x.name === 'MessageField_JP.gsmb');
-  return f ? [f.gmsg.first, f.gmsg.last] : [40000, 49999];
-}
 
 export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSession; arg: string | undefined; onAddUpdate: () => void }): ReactNode {
   const { maps } = session;
@@ -30,7 +27,7 @@ export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSess
   useEffect(() => {
     let live = true;
     const t = setTimeout(() => {
-      oahuEventEntries(maps, code, fieldRange(session)).then((e) => live && setEntries(e));
+      session.eventEntries().then((e) => live && setEntries(e));
     }, entries ? 300 : 0);
     return () => {
       live = false;
@@ -101,6 +98,46 @@ export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSess
   );
 }
 
+/** The messages of a script class at their literals, each replaceable by another message (code.ips, #87). */
+function ScriptMessages({ session, messageAt }: { session: OahuSession; messageAt: [number, number][] }): ReactNode {
+  const texts = session.messages.texts;
+  const [, redraw] = useEdits();
+  const [picking, setPicking] = useState<number | null>(null);
+  const users = useMemo(() => new Map<number, string[]>(), []);
+  return (
+    <>
+      <ul>
+        {messageAt.map(([lit]) => {
+          const id = wordAt(session, lit);
+          const changed = id !== codeWordAt(session.code!.code, lit);
+          return (
+            <li key={lit}>
+              <a href={`#/messages/${id}`}>{id}</a>{' '}{texts.preview(id, true) ?? <span className="muted">(なし)</span>}
+              {changed && <span className="edited-mark" title={`元は ${codeWordAt(session.code!.code, lit)}`}> ●</span>}
+              {' '}<button className="small" title={`0x${lit.toString(16).toUpperCase()} のリテラル`} onClick={() => setPicking(lit)}>差し替え</button>
+              {changed && <button className="small" onClick={() => { setWord(session, lit, codeWordAt(session.code!.code, lit)); redraw(); }}>元に戻す</button>}
+            </li>
+          );
+        })}
+      </ul>
+      {picking !== null && (
+        <BattleMessagePicker texts={texts} anchor={session.fieldRange()[0]} title="スクリプトのメッセージを選ぶ" current={wordAt(session, picking)} users={users} freeLabel="(絞り込みなし)"
+          info="スクリプトが出す会話は MessageField_JP にあります。追加したメッセージも選べます。"
+          onPick={(v) => { setWord(session, picking, v); setPicking(null); redraw(); }} onClose={() => setPicking(null)} />
+      )}
+    </>
+  );
+}
+
+/** The write sites the row's script class runs (story.ts), with the values editable. */
+function ScriptWrites({ session, e }: { session: OahuSession; e: OahuEventEntry }): ReactNode {
+  const [, redraw] = useEdits();
+  const { writes } = session.story();
+  const sites = writes.filter((w) => e.scripts.some((s) => s.cls.ranges.some(([a, b]) => w.at >= a && w.at < b)));
+  const owners = useMemo(() => new Map(sites.map((w) => [w.at, [e]])), [sites, e]);
+  return <WriteSiteTable session={session} sites={sites} owners={owners} onEdit={redraw} />;
+}
+
 function EventDetail({ session, e }: { session: OahuSession; e: OahuEventEntry }): ReactNode {
   const { maps } = session;
   const texts = session.messages.texts;
@@ -137,17 +174,19 @@ function EventDetail({ session, e }: { session: OahuSession; e: OahuEventEntry }
                 {`${fnLabel(s.make)} が作るクラス 0x${s.cls.vtable.toString(16).toUpperCase()}。処理: `}
                 {s.cls.roots.length ? s.cls.roots.map(fnLabel).join(' ') : <span className="muted">(共通の処理だけ)</span>}
               </div>
-              {s.cls.messages.length > 0
-                ? <ul>{s.cls.messages.map((id) => <li key={id}><a href={`#/messages/${id}`}>{id}</a>{' '}{texts.preview(id, true) ?? <span className="muted">(なし)</span>}</li>)}</ul>
+              {s.cls.messageAt.length > 0
+                ? <ScriptMessages session={session} messageAt={s.cls.messageAt} />
                 : <div className="muted">コードに書かれたメッセージはありません</div>}
             </Fragment>
           ))}
-          <div className="muted small">クラスは、ハンドラの「動作の生成」関数をこの行と今のダンジョンで実際に動かして求めています (Update の code.bin)。メッセージは、そのクラスだけが持つ関数から呼ばれる関数が読み込む MessageField_JP の ID です。</div>
+          <div className="muted small">クラスは、ハンドラの「動作の生成」関数をこの行と今のダンジョンで実際に動かして求めています (Update の code.bin)。メッセージは、そのクラスだけが持つ関数から呼ばれる関数が読み込む MessageField_JP の ID です。「差し替え」は関数のリテラルの ID を書き換え (code.ips)、同じ関数を使うほかのスクリプトのメッセージも変わります。</div>
+          <h3>このスクリプトが書く段階・物語の値</h3>
+          <ScriptWrites session={session} e={e} />
         </>
       )}
       <h3>行の欄</h3>
       {table && e.row < table.rows
-        ? <EventObjectEditor maps={maps} row={table.row(e.row)} original={maps.originalEventRow(d, e.row)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />
+        ? <EventObjectEditor maps={maps} row={table.row(e.row)} original={maps.originalEventRow(d, e.row)} story={conditionNames(session, e.dungeon)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />
         : <div className="muted">読み込み中…</div>}
     </>
   );

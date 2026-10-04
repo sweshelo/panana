@@ -333,7 +333,7 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
   const users = new Map<number, string[]>();
   for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), `#${x.row}`]);
   return (
-    <BattleMessagePicker session={session} title="名前のメッセージを選ぶ" current={current} users={users} freeLabel="アクションが使っていないものだけ"
+    <BattleMessagePicker texts={session.game.master.texts} title="名前のメッセージを選ぶ" current={current} users={users} freeLabel="アクションが使っていないものだけ"
       info="アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
       onPick={onPick} onClose={onClose} />
   );

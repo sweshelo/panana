@@ -1,10 +1,12 @@
-// The pages of a 電波人間のRPG3 (oahu) dump (#59): the maps and events, the messages, the items, the shops, the monsters, groups and actions, the BGM and sound effects, the code (code.ips; needs the Update), the RomFS viewer, the Update and the export.
+// The pages of a 電波人間のRPG3 (oahu) dump (#59): the maps and events, the story and the save values (#87), the messages, the items, the shops, the monsters, groups and actions, the BGM and sound effects, the code (code.ips; needs the Update), the RomFS viewer, the Update and the export.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FieldContext } from '../game/tabledef';
 import { OahuActionPage } from '../oahu/ActionPage';
 import { OahuCodePage } from '../oahu/CodePage';
 import { OahuEventPage } from '../oahu/EventPage';
 import { OahuExportDialog } from '../oahu/ExportDialog';
+import { OahuFlagPage } from '../oahu/FlagPage';
+import { OahuStoryPage } from '../oahu/StoryPage';
 import { OahuGroupPage } from '../oahu/GroupPage';
 import { OahuItemPage } from '../oahu/ItemPage';
 import { OahuMapPage } from '../oahu/MapPage';
@@ -19,10 +21,10 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
 
-export const OAHU_PAGES = [['maps', 'マップ'], ['events', 'イベント'], ['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
+export const OAHU_PAGES = [['maps', 'マップ'], ['events', 'イベント'], ['story', 'ストーリー'], ['flags', 'セーブの値'], ['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
 type OahuPage = (typeof OAHU_PAGES)[number][0];
 const PAGE_IDS = OAHU_PAGES.map(([id]) => id);
-const TITLES: Record<OahuPage, string> = { maps: 'マップ', events: 'イベント一覧', messages: 'メッセージ', items: 'アイテム図鑑', shops: 'ショップ', monsters: 'モンスター図鑑', groups: '群れ', actions: 'アクション', sounds: 'BGM・効果音', code: 'コード', romfs: 'RomFS' };
+const TITLES: Record<OahuPage, string> = { maps: 'マップ', events: 'イベント一覧', story: 'ストーリー', flags: 'セーブの値', messages: 'メッセージ', items: 'アイテム図鑑', shops: 'ショップ', monsters: 'モンスター図鑑', groups: '群れ', actions: 'アクション', sounds: 'BGM・効果音', code: 'コード', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens it. */
 function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void {
@@ -91,6 +93,8 @@ export function OahuShell({ session, onSession, onChangeDump }: {
           <div key={id} className={`page page-${id}`}>
             {id === 'maps' ? <OahuMapPage session={session} arg={a} />
               : id === 'events' ? <OahuEventPage session={session} arg={a} onAddUpdate={addUpdate} />
+              : id === 'story' ? <OahuStoryPage session={session} arg={a} onAddUpdate={addUpdate} />
+              : id === 'flags' ? <OahuFlagPage session={session} arg={a} onAddUpdate={addUpdate} />
               : id === 'messages' ? <OahuMessagePage session={session} arg={a} />
               : id === 'items' ? <OahuItemPage session={session} arg={a} />
               : id === 'shops' ? <OahuShopPage session={session} arg={a} />

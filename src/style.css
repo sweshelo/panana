@@ -63,7 +63,8 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .shell[data-page='map'] .page-map, .shell[data-page='monsters'] .page-monsters, .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
 .shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
-.shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code, .shell[data-page='maps'] .page-maps { display: block; }
+.shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code, .shell[data-page='maps'] .page-maps,
+.shell[data-page='story'] .page-story, .shell[data-page='flags'] .page-flags { display: block; }
 .page-code { overflow: auto; }
 .code-page { max-width: 960px; }
 .code-page h3 { margin: 18px 0 6px; }
@@ -147,6 +148,12 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .oahu-map[data-mode='split'] .views { grid-template-columns: 1fr 1fr; }
 .oahu-map[data-mode='2d'] .pane3d, .oahu-map[data-mode='3d'] .pane2d { display: none; }
 .row-fields .num-input { width: 110px; }
+.story-preview { flex-basis: 100%; }
+/* RPG3 story pages (oahu/StoryPage.tsx, FlagPage.tsx) */
+.story-state { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; margin: 6px 0; }
+.story-state .num-input { width: 70px; }
+.hint-slot { border-left: 2px solid var(--border); padding-left: 8px; margin: 8px 0; }
+.hint-slot h4 { margin: 4px 0; font-size: 13px; }
 @media (max-width: 900px) {
   .oahu-map { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto auto; grid-template-areas: 'head' 'views' 'right' 'status'; height: auto; min-height: 100%; }
 }
