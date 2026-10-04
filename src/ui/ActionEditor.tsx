@@ -265,7 +265,7 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
         <Stat label="量" info="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです"><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>
         {a.raw.length > 0x32 && (
           <Stat label="付ける状態" info={STATE_INFO}>
-            <FieldChoice {...p} k="state" options={[[0, 'なし'], ...stateOptions(book, a.state).map(([id, name]): [number, string] => [id, `${name} (${id})`])]} />
+            <FieldChoice {...p} k="state" options={[[0, 'なし'], ...stateOptions(book, a.state).map(([id, name]): [number, string] => [id, `${id}: ${name}`])]} />
           </Stat>
         )}
         <Stat label="付与の段階" info={LEVEL_INFO}>

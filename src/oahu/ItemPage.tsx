@@ -256,7 +256,7 @@ function FieldEditor({ items, it, onEdit }: { items: OahuItems; it: OahuItem; on
             {!!it.action && !actions.some((a) => a.row === it.action) && <option value={it.action}>{items.actionName(it.action)}</option>}
             {actions.map((a) => <option key={a.row} value={a.row}>{a.label}</option>)}
           </select>
-          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。道具のアクション (種類 4) から選べます。たね・つりざおなどは別の意味の値です。'} />
+          <InfoTip text={'道具を使ったときのアクション (+0x34、actionData の行)。道具のアクション (カテゴリ 4) から選べます。たね・つりざおなどは別の意味の値です。'} />
         </div>
       )}
       {it.kind === 3 && <EquipEffects items={items} it={it} set={set} mark={mark} />}

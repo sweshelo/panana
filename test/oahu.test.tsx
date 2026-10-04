@@ -424,7 +424,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
     for (const t of ['変身の見た目', 'じしょう・まおう']) expect(html).toContain(t);
     battle.revertMonster(1);
-    expect(renderToString(<OahuActionPage session={s} arg="870" />)).toContain('系統 21 では見た目は変わりません');
+    expect(renderToString(<OahuActionPage session={s} arg="870" />)).toContain('種別 21 では見た目は変わりません');
   });
 
   test('a monster model: its design row in monsterDesign.bin names the model and colour entries of 28480000', async () => {

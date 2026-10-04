@@ -89,7 +89,7 @@ export function OahuActionPicker({ battle, current, title = 'ワザを選ぶ', o
       return {
         row: a.row,
         name: a.name,
-        kind: a.kind === 2 ? OAHU_ACTION_KIND[2]! : OAHU_ACTION_CATEGORY[a.category] ?? `系統 ${a.category}`,
+        kind: a.kind === 2 ? OAHU_ACTION_KIND[2]! : OAHU_ACTION_CATEGORY[a.category] ?? `種別 ${a.category}`,
         element: a.element ? OAHU_ELEMENT_NAMES[a.element] ?? String(a.element) : '',
         users: names,
         tags: names.length ? ['skill'] : [],
