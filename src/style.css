@@ -136,14 +136,16 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .obj-item .pal-label { max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-hint { background: #1f3350; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 6px; font-size: 12px; margin: 4px 0; }
 
-/* RPG3 map page (oahu/MapPage.tsx): the editor's views and inspector inside the book's detail */
+/* RPG3 map page (oahu/MapPage.tsx): the editor's panes, views and inspector inside the book's detail */
 .map-detail { min-width: 0; min-height: 0; height: 100%; }
 .oahu-map {
   display: grid; height: 100%;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 240px 1fr 300px;
   grid-template-rows: auto 1fr auto;
-  grid-template-areas: 'head head' 'views right' 'status status';
+  grid-template-areas: 'head head head' 'left views right' 'status status status';
 }
+.template-list { display: flex; flex-wrap: wrap; gap: 3px; padding: 4px 0 6px; }
+.template-list button { font-size: 11px; text-align: left; }
 .oahu-map header { flex-wrap: wrap; }
 .oahu-map[data-mode='split'] .views { grid-template-columns: 1fr 1fr; }
 .oahu-map[data-mode='2d'] .pane3d, .oahu-map[data-mode='3d'] .pane2d { display: none; }
@@ -155,7 +157,7 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .hint-slot { border-left: 2px solid var(--border); padding-left: 8px; margin: 8px 0; }
 .hint-slot h4 { margin: 4px 0; font-size: 13px; }
 @media (max-width: 900px) {
-  .oahu-map { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto auto; grid-template-areas: 'head' 'views' 'right' 'status'; height: auto; min-height: 100%; }
+  .oahu-map { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto auto auto; grid-template-areas: 'head' 'views' 'left' 'right' 'status'; height: auto; min-height: 100%; }
 }
 
 /* chest contents */

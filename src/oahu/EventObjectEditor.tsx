@@ -32,7 +32,7 @@ function pickBy(kind: number): { kind: ValueKind; by: 'global' | 'here' | 'dunge
 }
 
 /** The names of what a condition reads, and a select of the named values to point it at another one. */
-function ConditionLine({ row, c, story, onEdit }: { row: Uint8Array; c: OahuEventCondition; story: ConditionNames; onEdit: () => void }): ReactNode {
+function ConditionLine({ row, c, story, edit, onEdit }: { row: Uint8Array; c: OahuEventCondition; story: ConditionNames; edit: (f: () => void) => void; onEdit: () => void }): ReactNode {
   const reads = conditionReads(story.code, story.ranges, c.kind, c.v1, c.v2, story.here);
   const named = reads.map((t) => story.names[valueNameKey(t.kind, t.index)]).filter(Boolean);
   const how = pickBy(c.kind);
@@ -59,8 +59,10 @@ function ConditionLine({ row, c, story, onEdit }: { row: Uint8Array; c: OahuEven
           onChange={(e) => {
             const opt = options.find((x) => valueNameKey(how!.kind, x.index) === e.target.value);
             if (!opt) return;
-            w32(row, o, opt.v1);
-            w32(row, o + 4, opt.v2);
+            edit(() => {
+              w32(row, o, opt.v1);
+              w32(row, o + 4, opt.v2);
+            });
             onEdit();
           }}>
           <option value="">名前で選ぶ…</option>
@@ -82,13 +84,15 @@ export function pointLabel(maps: OahuMaps, map: OahuMapInfo, id: number): string
   return i >= 0 ? `の出入口 #${i}` : `の地点 ${hex8(id).toUpperCase()}`;
 }
 
-export function EventObjectEditor({ maps, row, original, story, onEdit }: {
+export function EventObjectEditor({ maps, row, original, story, edit = (f) => f(), onEdit }: {
   maps: OahuMaps;
   /** Names of the save values the conditions read (#87). */
   story?: ConditionNames;
   /** The row in the table (edited in place). */
   row: Uint8Array;
   original: Uint8Array | null;
+  /** Runs a change of the row (the map page records an undo point first). */
+  edit?: (f: () => void) => void;
   onEdit: () => void;
 }): ReactNode {
   const conds = oahuConditions(row);
@@ -100,7 +104,7 @@ export function EventObjectEditor({ maps, row, original, story, onEdit }: {
         {dest && <> ・ 行き先 <a href={`#/maps/${encodeURIComponent(dest.name)}`}>{dest.name}</a>{` ${pointLabel(maps, dest, u32(row, 0x14))}`}</>}
       </p>
       {conds.map((c) => story
-        ? <ConditionLine key={c.field} row={row} c={c} story={story} onEdit={onEdit} />
+        ? <ConditionLine key={c.field} row={row} c={c} story={story} edit={edit} onEdit={onEdit} />
         : <p key={c.field} className="small muted">{`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}</p>)}
       <table className="enc-table row-fields">
         <tbody>
@@ -114,7 +118,7 @@ export function EventObjectEditor({ maps, row, original, story, onEdit }: {
                 <td className="mono muted">{fieldPlace(f)}</td>
                 <td>
                   <NumberInput value={v} min={lo} max={hi} className={`num-input${o !== v ? ' edited' : ''}`} title={o !== v ? `元の値 ${o}` : `${lo}〜${hi}`}
-                    onCommit={(x) => { writeField(row, f, x); onEdit(); }} />
+                    onCommit={(x) => { edit(() => writeField(row, f, x)); onEdit(); }} />
                 </td>
                 <td className="mono muted small">{f.hex ? (f.type === 'u32' ? hex8(v).toUpperCase() : `0x${v.toString(16).toUpperCase()}`) : ''}</td>
               </tr>

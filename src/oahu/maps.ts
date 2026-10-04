@@ -217,6 +217,17 @@ export class OahuMaps {
     return d;
   }
 
+  /** Put an edited copy of a document in place (undo / redo of the map page) and write it to the map database. */
+  setDoc(info: OahuMapInfo, doc: MapDoc): void {
+    this.docs.set(info.hash, doc);
+    this.commit(info);
+  }
+
+  /** A map as it is in the ROM (a new document; the edits are not in it). */
+  originalDoc(info: OahuMapInfo): MapDoc {
+    return loadDoc({ get: (h) => this.db.original(h) }, info, OAHU_MAP_FORMAT);
+  }
+
   /** Write a document's sections back to the map database (call after editing it). */
   commit(info: OahuMapInfo): void {
     const d = this.docs.get(info.hash);
@@ -272,6 +283,33 @@ export class OahuMaps {
     return this.events.get(d.archive)?.table ?? null;
   }
 
+  /** Append a row to a dungeon's (loaded) EventObject table; returns its row number. */
+  addEventRow(d: OahuDungeon, row: Uint8Array): number {
+    const t = this.events.get(d.archive);
+    if (!t) throw new Error('このダンジョンのイベントの表を読み込めていません');
+    const rows = Array.from({ length: t.table.rows }, (_, i) => t.table.row(i).slice());
+    t.table.data = t.table.withRows([...rows, row]);
+    return rows.length;
+  }
+
+  /** The bytes of the loaded EventObject tables (an undo point of the map page). */
+  eventTableBytes(): [archive: string, bytes: Uint8Array][] {
+    return [...this.events].map(([name, t]) => [name, t.table.data.slice()]);
+  }
+  restoreEventTableBytes(saved: [archive: string, bytes: Uint8Array][]): void {
+    for (const [name, bytes] of saved) {
+      const t = this.events.get(name);
+      if (t) t.table.data = bytes.slice();
+    }
+    this.changed();
+  }
+
+  /** Rows of the ROM's EventObject table of a dungeon (0 when it is not loaded). */
+  originalEventRows(d: OahuDungeon): number {
+    const t = this.events.get(d.archive);
+    return t ? new GsTable(t.original).rows : 0;
+  }
+
   originalEventRow(d: OahuDungeon, row: number): Uint8Array | null {
     const t = this.events.get(d.archive);
     if (!t) return null;
@@ -313,12 +351,41 @@ export class OahuMaps {
     };
   }
 
+  /**
+   * Tile kinds with a model in a tileset: kind -> letter indices worth offering (as RPG2's Master.palette: letters
+   * that repeat a model already listed are left out).
+   */
+  palette(tileset: number): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    const rows = this.archive ? this.master.table('mapParts.bin').rows : 0;
+    for (let kind = 0; kind + 1 < rows; kind++) {
+      const base = this.partModel(kind, tileset, 0);
+      if (!base) continue;
+      const letters = [0];
+      const seen = new Set([base]);
+      for (let l = 1; l < 8; l++) {
+        const h = this.partModel(kind, tileset, l);
+        if (h && !seen.has(h)) {
+          seen.add(h);
+          letters.push(l);
+        }
+      }
+      out.set(kind, letters);
+    }
+    return out;
+  }
+
   /** Model hash of a tile (mapParts[kind + 1] + 8 + tileset * 0x20 + letter * 4), 0 = none. */
   partModel(kind: number, tileset: number, letter: number): number {
     const parts = this.master.table('mapParts.bin');
     const r = kind + 1;
     if (r >= parts.rows || tileset > 15 || letter > 7) return 0;
     return u32(parts.row(r), 8 + tileset * 0x20 + letter * 4);
+  }
+
+  /** Rows of mapObject (0 without the map archive). */
+  get objectRows(): number {
+    return this.archive ? this.master.table('mapObject.bin').rows : 0;
   }
 
   /** mapObject row -> {archive, entry} of its BCH (0 = none). */
@@ -339,6 +406,8 @@ export class OahuMaps {
     for (const [name, t] of this.events) {
       const o = new GsTable(t.original);
       for (let r = 0; r < o.rows; r++) if (!equalBytes(o.row(r), t.table.row(r))) events.push([name, r, o.row(r).slice(), t.table.row(r).slice()]);
+      // added rows: no bytes before
+      for (let r = o.rows; r < t.table.rows; r++) events.push([name, r, new Uint8Array(0), t.table.row(r).slice()]);
     }
     return { sections, events };
   }
@@ -349,7 +418,13 @@ export class OahuMaps {
     for (const [name, r, before, after] of saved.events ?? []) {
       const d = this.dungeons.find((x) => x.archive === name);
       const t = d ? await this.eventTable(d).catch(() => null) : null;
-      if (!t || r >= t.rows || after.length !== t.rowSize) continue;
+      if (!t || after.length !== t.rowSize) continue;
+      if (!before.length) {
+        // an added row: append it when the rows before it are there
+        if (r === t.rows) this.addEventRow(d!, after.slice());
+        continue;
+      }
+      if (r >= t.rows) continue;
       const row = t.row(r);
       for (let i = 0; i < row.length; i++) if (after[i] !== before[i]) row[i] = after[i]!;
     }
