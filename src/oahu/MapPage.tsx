@@ -1,6 +1,7 @@
 // RPG3's maps (#/maps/NAME; naauao oahu/map.md), edited with the parts of RPG2's map editor: the editing model and
 // tools (editor/state.ts, editor/controller.ts), the views (editor/gridcanvas.ts, editor/mapscene.ts), the tool
-// buttons, palette and checks (editor/panes.tsx, editor/palette.tsx). Left: tools, adding records, the tileset's
+// buttons, palette and checks (editor/panes.tsx, editor/palette.tsx), the map picker dialog (ui/MapPicker.tsx).
+// Header: the map (picked in the dialog), view mode and undo. Left: tools, adding records, the tileset's
 // palette and the layers; right: the inspector of the selected tile or record (and the EventObject row it names)
 // and the checks.
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -13,6 +14,7 @@ import { IssueList, Tools } from '../editor/panes';
 import { tileAt } from '../editor/state';
 import type { Issue } from '../editor/validate';
 import { NumberInput, useSticky } from '../ui/book';
+import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
 import { useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8 } from '../util/bytes';
 import { EventObjectEditor } from './EventObjectEditor';
@@ -39,49 +41,31 @@ export function oahuDungeonLabel(session: OahuSession, row: number): string {
 export function OahuMapPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { maps } = session;
   useMaps(maps);
-  const [query, setQuery] = useState('');
   const name = useSticky(arg ? decodeURIComponent(arg) : undefined, (n) => !!maps.mapByName(n), () => (maps.mapByName('D10B01001') ?? maps.maps[0]!).name);
   const info = maps.mapByName(name)!;
   // the dungeons' event codes (D10 …) come with their tables
   useEffect(() => {
     for (const d of maps.dungeons) if (d.archive && !d.code) void maps.eventTable(d).catch(() => null);
   }, [maps]);
-  const groups = useMemo(() => {
-    const q = query.trim().toUpperCase();
-    const out = new Map<number, OahuMapInfo[]>();
-    for (const m of maps.maps) if (!q || m.name.includes(q)) out.set(m.dungeon, [...(out.get(m.dungeon) ?? []), m]);
-    return [...out].sort(([a], [b]) => a - b);
-  }, [maps, query]);
-  const list = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    list.current?.querySelector('tr.active')?.scrollIntoView({ block: 'nearest' });
-  }, [name]);
   return (
-    <div className="book">
-      <div className="book-side">
-        <div className="row"><input type="search" placeholder="マップ名で検索 (D10B01001)" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
-        <div className="book-list" ref={list}>
-          <table className="book-table">
-            <tbody>
-              {groups.map(([d, ms]) => [
-                <tr key={`d${d}`} className="group"><th colSpan={3}>{oahuDungeonLabel(session, d)}</th></tr>,
-                ...ms.map((m) => (
-                  <tr key={m.hash} className={m.name === name ? 'active' : ''} onClick={() => (location.hash = oahuMapHref(m))}>
-                    <td>{m.name}{maps.isChanged(m) && <span className="edited-mark"> ●</span>}</td>
-                    <td className="num muted">{oahuFloorLabel(m.floor)}</td>
-                    <td className="num muted small">{m.world ? '' : `${maps.doc(m).tiles.length} マス`}</td>
-                  </tr>
-                )),
-              ])}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div className="map-detail">
-        <MapDetail key={info.hash} session={session} info={info} />
-      </div>
+    <div className="map-detail">
+      <MapDetail key={info.hash} session={session} info={info} />
     </div>
   );
+}
+
+/** The maps by dungeon for the map picker (the same dialog as RPG2's map editor). */
+function useMapGroups(session: OahuSession): MapPickerGroups {
+  const { maps } = session;
+  const revision = useMaps(maps);
+  return useMemo(() => {
+    const out = new Map<number, MapPickerRow[]>();
+    for (const m of maps.maps) {
+      const title = m.world ? 'ワールドマップ (表示のみ)' : `${oahuFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
+      out.set(m.dungeon, [...(out.get(m.dungeon) ?? []), { hash: m.hash, title, code: m.name }]);
+    }
+    return [...out].sort(([a], [b]) => a - b).map(([d, rows]): [string, MapPickerRow[]] => [oahuDungeonLabel(session, d), rows]);
+  }, [session, maps, revision]);
 }
 
 type Mode = 'split' | '2d' | '3d';
@@ -121,11 +105,15 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
     requestAnimationFrame(() => view?.refresh());
   }, [view, mode]);
   const open = view && st.current?.hash === info.hash;
+  const groups = useMapGroups(session);
+  const modified = new Set(maps.maps.filter((m) => maps.isChanged(m)).map((m) => m.hash));
   return (
     <div className="oahu-map" data-mode={mode}>
       <header>
-        <b className="map-title">{info.name}</b>
-        <span className="muted small">{`${oahuDungeonLabel(session, info.dungeon)}・${oahuFloorLabel(info.floor) || '地上'}・マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
+        <MapPickerButton groups={groups} value={info.hash} className="map-select" modified={modified}
+          label={`${oahuDungeonLabel(session, info.dungeon)}・${oahuFloorLabel(info.floor) || '地上'}  ${info.name}`}
+          onChange={(h) => { const m = maps.map(h); if (m) location.hash = oahuMapHref(m); }} />
+        <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
         <span className="grow" />
         {!info.world && (
           <span className="seg">
