@@ -1,22 +1,45 @@
 // The views of RPG3's map page: the top-down grid and the 3D scene shared with RPG2's map editor
 // (editor/gridcanvas.ts, editor/mapscene.ts), driven by the editor's Controller (tools, selection, dragging) on the
-// page's OahuEditState. The views follow the state's events; the edits go to the map database (mapedit.ts).
+// page's OahuEditState. The views follow the state's events; the edits go to the map database (mapedit.ts). The 3D view
+// draws the models the game places for props, chests and the characters and objects of section 5 (mapObjects.ts).
 import * as THREE from 'three';
+import { AnimatedModel, animationKey } from '../cgfx/player';
+import type { TilesetModels } from '../cgfx/tileset';
 import { ModelFactory } from '../cgfx/three';
 import { norm, Controller } from '../editor/controller';
 import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
 import { MapScene, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/state';
+import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
+import type { ModelRef } from '../pages/modelview';
 import type { Dump } from '../rom/dump';
 import { Signal } from '../ui/useEditorState';
 import { OAHU_POINT_SECTIONS, type OahuEditState } from './mapedit';
 import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo } from './maps';
 import { oahuObjectModels, oahuTileModels } from './mapModels';
+import { oahuRecordLook, type OahuRecordLook, type OahuRecordModel } from './mapObjects';
 
 /** Whether a record's event is placed in the preview state (story.ts OahuConditions.placed). */
 export type Placement = 'shown' | 'hidden' | 'gone' | 'unknown';
+
+interface LoadedModel {
+  factory: ModelFactory;
+  hash: number;
+  name: string;
+  pose: THREE.Object3D | null;
+}
+
+/** The model at the first frame of its "001_" motion (an NPC's wait, a closed chest); null = it has none. */
+function posed(f: ModelFactory, hash: number): THREE.Object3D | null {
+  const motions = f.set.models.get(hash)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
+  const first = motions.find((a) => animationKey(a.name) === '001_');
+  if (!first) return null;
+  const m = new AnimatedModel(f, hash);
+  m.select(first.name);
+  return new THREE.Group().add(m.group);
+}
 
 export class OahuMapView {
   readonly grid: GridCanvas;
@@ -29,6 +52,8 @@ export class OahuMapView {
   /** The story preview (#87): whether the record's EventObject row is placed in the chosen state; null = no preview. */
   placement: ((section: number, index: number) => Placement) | null = null;
   status = '';
+  /** Draw the models of props, chests and characters (else markers only). */
+  showModels = true;
   /** The last edit's error, shown in the status bar until the mouse moves. */
   errorMsg = '';
   /** Tile models of the map's tileset (the palette's thumbnails too). */
@@ -37,7 +62,11 @@ export class OahuMapView {
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
   private readonly overlay = new THREE.Group();
-  private readonly objects = new Map<number, ModelFactory | null>();
+  /**
+   * Loaded models of records ("o<mapObject row>" / "m<monsterDesign row>"); null while loading or when there is none.
+   * `pose` is the model at the first frame of its "001_" motion (NPCs wait, chests are closed) when it has one.
+   */
+  private readonly objects = new Map<string, LoadedModel | null>();
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
   private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
@@ -51,6 +80,8 @@ export class OahuMapView {
     private readonly dump: Dump,
     readonly st: OahuEditState,
     readonly info: OahuMapInfo,
+    /** The model of a monsterDesign row (OahuBattle.designModel). */
+    private readonly designModel: (design: number) => ModelRef | null = () => null,
   ) {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
@@ -81,7 +112,7 @@ export class OahuMapView {
     this.disposed = true;
     this.unsubscribe();
     this.factory?.dispose();
-    for (const f of this.objects.values()) f?.dispose();
+    for (const f of this.objects.values()) f?.factory.dispose();
     this.scene.dispose();
   }
 
@@ -207,22 +238,58 @@ export class OahuMapView {
     this.refresh();
   }
 
-  private objectModel(row: number): THREE.Object3D | null {
+  /** What the game places for a record (null = no model in this section). */
+  look(section: number, index: number): OahuRecordLook | null {
+    const rec = this.doc.recs[section]?.[index];
+    if (!rec) return null;
     const maps = this.st.maps;
-    if (!this.objects.has(row)) {
-      this.objects.set(row, null);
-      const ref = maps.objectModel(row);
-      if (ref)
-        oahuObjectModels(this.dump, ref).then((set) => {
-          if (this.disposed || !set.models.size) return;
-          this.objects.set(row, new ModelFactory(set));
-          this.sync3d();
-        }, () => {});
+    const d = maps.dungeonOf(this.info);
+    const events = d ? maps.loadedEventTable(d) : null;
+    return oahuRecordLook(section, rec.raw, { events, mapChara: maps.master.table('mapChara.bin'), indoor: isIndoor(this.doc) });
+  }
+
+  /** The file name of a loaded model ("npc_22"), '' while it is loading or when there is none. */
+  modelName(m: OahuRecordModel | null): string {
+    const key = m && this.modelKey(m);
+    return (key && this.objects.get(key)?.name) || '';
+  }
+
+  private modelKey(m: OahuRecordModel): string | null {
+    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : null;
+  }
+
+  /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
+  private recordModel(m: OahuRecordModel): THREE.Object3D | null {
+    const key = this.modelKey(m);
+    if (!key) return null;
+    if (!this.objects.has(key)) {
+      this.objects.set(key, null);
+      void this.loadModel(m).then((loaded) => {
+        if (this.disposed || !loaded) return loaded?.factory.dispose();
+        this.objects.set(key, loaded);
+        this.sync3d();
+        this.signal.emit();
+      }, () => {});
       return null;
     }
-    const f = this.objects.get(row);
-    const ref = maps.objectModel(row);
-    return f && ref ? f.instance(ref.entry) : null;
+    const o = this.objects.get(key);
+    if (!o) return null;
+    return o.pose ? o.pose.clone() : o.factory.instance(o.hash);
+  }
+
+  private async loadModel(m: OahuRecordModel): Promise<LoadedModel | null> {
+    let got: { set: TilesetModels; hash: number } | null | undefined = null;
+    if (m.type === 'object') {
+      const ref = this.st.maps.objectModel(m.row);
+      if (!ref) return null;
+      const set = await oahuObjectModels(this.dump, ref);
+      got = set.models.size ? { set, hash: ref.entry } : null;
+    } else if (m.type === 'monster') {
+      got = await this.designModel(m.design)?.load();
+    }
+    if (!got) return null;
+    const factory = new ModelFactory(got.set);
+    return { factory, hash: got.hash, name: got.set.paths.get(got.hash) ?? '', pose: posed(factory, got.hash) };
   }
 
   private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
@@ -263,10 +330,12 @@ export class OahuMapView {
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         const placed = this.placement?.(k, i) ?? 'shown';
         if ((placed === 'hidden' || placed === 'gone') && !selected) return;
-        const model = k === 2 ? this.objectModel(r.raw[0]! | (r.raw[1]! << 8)) : null;
+        const look = this.showModels ? this.look(k, i) : null;
+        const model = look?.model ? this.recordModel(look.model) : null;
         if (model) {
           model.position.set(px * CELL, 0, py * CELL);
-          model.rotation.y = (-(r.raw[0x10]! & 3) * Math.PI) / 2;
+          model.rotation.y = look!.angle;
+          if (look!.model!.type === 'object') model.scale.setScalar(maps.objectScale(look!.model!.row));
           this.markers.add(model);
         }
         if (model && !selected) return;

@@ -22,6 +22,8 @@ export function oahuKindName(kind: number): string {
   if (kind === 0) return 'なし';
   if (kind === OAHU_SCRIPT_KIND) return `スクリプト (${h})`;
   if (EXIT_KINDS.has(kind)) return `出入口・扉 (${h})`;
+  if (kind === 0x10) return `宝箱 (${h})`;
+  if (kind === 0x12) return `宝箱・別の動き (${h})`;
   return `種類 ${h}`;
 }
 

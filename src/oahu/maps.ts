@@ -7,7 +7,7 @@ import { GsTable } from '../archive/gstable';
 import { MapDb } from '../game/mapdb';
 import { loadDoc, sectionBytes, type MapDoc, type MapFormat, type RecordLayout } from '../game/sections';
 import type { Dump } from '../rom/dump';
-import { cstr, equalBytes, hex8, s32, u16, u32, u8 } from '../util/bytes';
+import { cstr, equalBytes, f32, hex8, s32, u16, u32, u8 } from '../util/bytes';
 import type { OahuMaster } from './master';
 
 /** Archive of the map database and the map table (§2). */
@@ -64,6 +64,8 @@ export interface OahuMapInfo {
   mapDataKey: number;
   /** mapGroup row. */
   dungeon: number;
+  /** +0x30: copied to runtime +0x546A with the map's group (3 / 4 / 5; how often enemies come, estimated). */
+  encounterRate: number;
   floor: number;
   /** The world map: its sections have another shape (§8), it is shown read-only. */
   world: boolean;
@@ -136,7 +138,7 @@ export class OahuMaps {
 
   private constructor(
     private readonly dump: Dump,
-    private readonly master: OahuMaster,
+    readonly master: OahuMaster,
     /** null: the dump has no map archive (test dumps); there are no maps. */
     private readonly archive: Archive | null,
   ) {
@@ -156,6 +158,7 @@ export class OahuMaps {
         sections: OAHU_SECTION_SLOT.map((s, k) => (k === 7 ? 0 : slots[s]!)),
         mapDataKey: u32(t, i + 0x28),
         dungeon: s32(t, i + 0x2c),
+        encounterRate: s32(t, i + 0x30),
         floor: s32(t, i + 0x34),
         world: name.startsWith('W'),
       };
@@ -394,6 +397,13 @@ export class OahuMaps {
     if (row <= 0 || row >= t.rows) return null;
     const r = t.row(row);
     return u32(r, 0) && u32(r, 4) ? { archive: hexName(u32(r, 0)), entry: u32(r, 4) } : null;
+  }
+
+  /** Scale of a mapObject row's model (+0x20; 1.5 / 1.6 for most NPCs). */
+  objectScale(row: number): number {
+    const t = this.master.table('mapObject.bin');
+    if (row <= 0 || row >= t.rows) return 1;
+    return f32(t.row(row), 0x20) || 1;
   }
 
   // ---- saving and export

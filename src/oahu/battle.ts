@@ -111,6 +111,11 @@ export class OahuBattle {
     return this.models.ref(this.monsters.get(row, 'design'), motions);
   }
 
+  /** The model of a monsterDesign row (the monsters standing on the maps); null without the dump's models. */
+  designModel(design: number): ModelRef | null {
+    return this.models ? this.models.ref(design) : null;
+  }
+
   /** The tables are taken from the master when first used. */
   private rows(def: TableDef): OahuRows {
     let r = this.loaded.get(def.file);
