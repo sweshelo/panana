@@ -1,15 +1,18 @@
-// Picking a battle message (MessageBattle and the added ones) by its text: the names of the actions, the line a
-// monster says when it turns into a form. The list can be limited to the messages nothing listed uses.
+// Picking a message of one file (and the added ones) by its text: in RPG2 the battle messages (the names of the
+// actions, the line a monster says when it turns into a form), in RPG3 the field messages (the navi's titles and
+// hints, the scripts' lines). The list can be limited to the messages nothing listed uses.
 import { useState, type ReactNode } from 'react';
-import type { Session } from '../session';
+import type { MessageStore } from '../game/gmsg';
 import { Dialog } from './Dialog';
 import { InfoTip } from './InfoTip';
 
 /** A message of MessageBattle (0x17DB〜0x1BDE), to find the file when there is no current message. */
 export const BATTLE_MESSAGE = 0x1b00;
 
-export function BattleMessagePicker({ session, title, current, users, freeLabel, info, onPick, onClose }: {
-  session: Session;
+export function BattleMessagePicker({ texts, anchor = BATTLE_MESSAGE, title, current, users, freeLabel, info, onPick, onClose }: {
+  texts: MessageStore;
+  /** A message of the file to list when there is no current message (or it is an added one). */
+  anchor?: number;
   title: string;
   current: number;
   /** Who uses each message ("#12", "まおう #45"), for the column and the "free" filter. */
@@ -20,10 +23,9 @@ export function BattleMessagePicker({ session, title, current, users, freeLabel,
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
-  const texts = session.game.master.texts;
   const [query, setQuery] = useState('');
   const [free, setFree] = useState(true);
-  const file = texts.file(current && !texts.isAdded(current) ? current : BATTLE_MESSAGE);
+  const file = texts.file(current && !texts.isAdded(current) ? current : anchor);
   const q = query.trim();
   const ids: number[] = [];
   const range = [...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []), ...texts.addedIds()];

@@ -16,18 +16,19 @@ import type { Issue } from '../editor/validate';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
 import { useEditorState, useSignal } from '../ui/useEditorState';
-import { hex8 } from '../util/bytes';
-import { EventObjectEditor } from './EventObjectEditor';
+import { hex8, u32 } from '../util/bytes';
+import { conditionNames, EventObjectEditor } from './EventObjectEditor';
 import { OAHU_LAYOUTS, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo, type OahuMaps } from './maps';
 import { OAHU_POINT_SECTIONS, oahuEditState, oahuRecLabel, oahuStampLabel, oahuValidate, type OahuEditState, type OahuStamp } from './mapedit';
-import { OahuMapView } from './mapview';
+import { OahuMapView, type Placement } from './mapview';
+import { OahuConditions } from './story';
 import type { OahuSession } from './session';
 
 export const oahuMapHref = (m: OahuMapInfo): string => `#/maps/${encodeURIComponent(m.name)}`;
 
 /** Re-render on every change of the maps (edits, loaded event tables). */
 export function useMaps(maps: OahuMaps): number {
-  return useSyncExternalStore((f) => maps.on(f), () => maps.revision);
+  return useSyncExternalStore((f) => maps.on(f), () => maps.revision, () => maps.revision);
 }
 
 /** "D10 ダンジョン名" for a mapGroup row. */
@@ -107,6 +108,7 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
   const open = view && st.current?.hash === info.hash;
   const groups = useMapGroups(session);
   const modified = new Set(maps.maps.filter((m) => maps.isChanged(m)).map((m) => m.hash));
+  const preview = useStoryPreview(session, view, info);
   return (
     <div className="oahu-map" data-mode={mode}>
       <header>
@@ -129,6 +131,7 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
         {view && <button onClick={() => view.fit()}>全体を表示</button>}
         {view && <button onClick={() => view.scene.topView()}>真上から</button>}
         {open && maps.isChanged(info) && <button onClick={() => st.revert()}>このマップの変更を元に戻す</button>}
+        {preview && <div className="story-preview small">{preview}</div>}
       </header>
       {info.world ? (
         <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao oahu/map.md §8) なので、まだ表示できません。</p>
@@ -161,6 +164,52 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The story preview (#87): with a preview state (the save values page), the records whose EventObject row is not
+ * placed in it are drawn faint (2D) or left out (3D), and "?" marks the ones whose conditions the state cannot answer.
+ */
+function useStoryPreview(session: OahuSession, view: OahuMapView | null, info: OahuMapInfo): ReactNode {
+  const { maps } = session;
+  const revision = useMaps(maps);
+  const storyRevision = useSyncExternalStore((f) => session.onStory(f), () => session.storyRevision, () => session.storyRevision);
+  const [on, setOn] = useState(true);
+  const state = session.storyState;
+  const dungeon = maps.dungeonOf(info);
+  const table = dungeon ? maps.loadedEventTable(dungeon) : null;
+  const [counts, setCounts] = useState<Record<Placement, number> | null>(null);
+  useEffect(() => {
+    if (dungeon && !table && state) void maps.eventTable(dungeon).catch(() => null);
+    if (!view) return;
+    if (!on || !state || !session.code || !table || info.world) {
+      view.placement = null;
+      view.refresh();
+      setCounts(null);
+      return;
+    }
+    const conds = new OahuConditions(session.code.code, session.story().ranges, state);
+    const doc = view.doc;
+    const at = (k: number, i: number): Placement => {
+      const rec = doc.recs[k]?.[i];
+      if (!rec || ![3, 4, 5, 8].includes(k) || (k === 8 && u32(rec.raw, 0) >= 100)) return 'shown';
+      const r = oahuRecEventRow(k, rec.raw);
+      return r < table.rows ? conds.placed(table.row(r), info.dungeon) : 'shown';
+    };
+    view.placement = at;
+    view.refresh();
+    const out: Record<Placement, number> = { shown: 0, hidden: 0, gone: 0, unknown: 0 };
+    for (const k of [3, 4, 5, 8]) (doc.recs[k] ?? []).forEach((_, i) => out[at(k, i)]++);
+    setCounts(out);
+  }, [view, on, state, session, table, info, revision, storyRevision]);
+  if (info.world || !session.code) return null;
+  if (!state) return <span className="muted">物語の状態を決めると、出る・消えるイベントをこのマップで確かめられます (<a href="#/flags">セーブの値</a>のページでプレビューの状態を作る)。</span>;
+  return (
+    <>
+      <label><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />{` 物語の状態で表示 (段階 ${state.step}、`}<a href="#/flags">値を変える</a>{')'}</label>
+      {counts && <span className="muted">{` ・ 置かれる ${counts.shown}・まだ出ない ${counts.hidden}・消えた ${counts.gone}${counts.unknown ? `・判定できない (?) ${counts.unknown}` : ''}`}</span>}
+    </>
   );
 }
 
@@ -408,7 +457,7 @@ function RecFields({ session, st, section, rec, index }: {
           {!dungeon?.archive ? <p className="muted small">このダンジョンにはイベント表がありません。</p>
             : !table ? <p className="muted small">読み込み中…</p>
             : evRow >= table.rows ? <p className="warn-box">{`表は ${table.rows} 行です。`}</p>
-            : <EventObjectEditor maps={maps} row={table.row(evRow)} original={maps.originalEventRow(dungeon, evRow)} edit={(f) => st.editTables(f)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />}
+            : <EventObjectEditor maps={maps} row={table.row(evRow)} original={maps.originalEventRow(dungeon, evRow)} story={conditionNames(session, info.dungeon)} edit={(f) => st.editTables(f)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />}
         </>
       )}
     </>

@@ -16,6 +16,10 @@ import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
 import { OahuMonsterModels } from './monsterModels';
 import { OahuShops, type SavedShop } from './shops';
+import { oahuEventEntries, type OahuEventEntry } from './events';
+import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
+import { CodeIndex } from '../game/scripts';
+import { OAHU_TEXT_END } from './scripts';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
 import { SoundArchive } from '../sound/formats';
 import { SoundRenderer } from '../sound/render';
@@ -33,6 +37,10 @@ interface Saved {
   maps?: OahuMapSaved;
   /** Edited shop stocks. */
   shops?: SavedShop[];
+  /** The story (#87): code edits (write immediates, script messages), names of the save values, the preview state. */
+  storyEdits?: StoryCodeEdit[];
+  storyNames?: Record<string, string>;
+  storyState?: StoryState | null;
 }
 
 export class OahuSession {
@@ -47,6 +55,27 @@ export class OahuSession {
   readonly codeError: string = '';
   /** Code patches written to code.ips. */
   codePatches: CodePatch[] = [];
+  /** Edits of the story's immediates and the scripts' message literals (code.ips; story.ts). */
+  storyEdits: StoryCodeEdit[] = [];
+  /** Names given to save values ("values.4" -> "ドローン撃破"; story.ts valueNameKey). */
+  storyNames: Record<string, string> = {};
+  /** The state the map page previews the events with (null = no preview). */
+  storyState: StoryState | null = null;
+  /** Bumped when the preview state changes (the map page follows it). */
+  storyRevision = 0;
+  private readonly storyListeners = new Set<() => void>();
+
+  onStory(f: () => void): () => void {
+    this.storyListeners.add(f);
+    return () => this.storyListeners.delete(f);
+  }
+
+  /** The preview state was changed: save it and redraw the maps. */
+  storyStateChanged(): void {
+    this.storyRevision++;
+    for (const f of this.storyListeners) f();
+    this.scheduleSave();
+  }
 
   private constructor(
     readonly dump: Dump,
@@ -87,7 +116,10 @@ export class OahuSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [] };
+    return {
+      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
+      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState,
+    };
   }
 
   /** Messages first: the rows of copied items name the messages added for them. */
@@ -96,6 +128,9 @@ export class OahuSession {
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.patches) this.codePatches = saved.patches.map((p) => ({ ...p }));
     if (saved.shops) this.shops?.restore(saved.shops);
+    if (saved.storyEdits) this.storyEdits = saved.storyEdits.map((e) => ({ ...e }));
+    if (saved.storyNames) this.storyNames = { ...saved.storyNames };
+    if (saved.storyState) this.storyState = saved.storyState;
     this.items.reload();
     if (saved.maps) await this.maps.restore(saved.maps);
   }
@@ -125,11 +160,56 @@ export class OahuSession {
     return this.codePatches.filter((p) => p.enabled);
   }
 
-  /** code.ips of the enabled patches (those with errors left out), or null when there is none. */
+  /** code.ips of the enabled patches (those with errors left out) and the story's edits, or null when there is none. */
   codeIps(): Uint8Array | null {
-    if (!this.code || !this.enabledPatches().length) return null;
-    const records = patchRecords(this.buildPatches().values());
+    if (!this.code) return null;
+    const records = [...(this.enabledPatches().length ? patchRecords(this.buildPatches().values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
     return records.length ? buildIps(records, this.code.code) : null;
+  }
+
+  // ---- the story (#87)
+
+  /** MessageField_JP's ID range (the messages the scripts' code names). */
+  fieldRange(): [number, number] {
+    const f = this.messages.texts.files.find((x) => x.name === 'MessageField_JP.gsmb');
+    return f ? [f.gmsg.first, f.gmsg.last] : [40000, 49999];
+  }
+
+  private entries: { revision: number; p: Promise<OahuEventEntry[]> } | null = null;
+
+  /**
+   * Every EventObject row with its places and classes (events.ts), rebuilt when the maps change. The tables it loads
+   * bump the maps' revision too, so the list counts as current for the revision it ends at (-1 while it is built).
+   */
+  eventEntries(): Promise<OahuEventEntry[]> {
+    const have = this.entries;
+    if (have && (have.revision === this.maps.revision || have.revision < 0)) return have.p;
+    const entry: { revision: number; p: Promise<OahuEventEntry[]> } = { revision: -1, p: Promise.resolve([]) };
+    entry.p = oahuEventEntries(this.maps, this.code?.code ?? null, this.fieldRange()).then(
+      (e) => {
+        entry.revision = this.maps.revision;
+        return e;
+      },
+      (err: unknown) => {
+        if (this.entries === entry) this.entries = null;
+        throw err;
+      },
+    );
+    this.entries = entry;
+    return entry.p;
+  }
+
+  private storyCache: { keys: OahuSaveKey[]; ranges: OahuValueRange[]; writes: OahuWriteSite[]; reads: OahuReadSite[] } | null = null;
+
+  /** The save keys, the dungeons' ranges of 0xF9 / 0xFA, and (with the Update) where the code writes and reads them. */
+  story(): { keys: OahuSaveKey[]; ranges: OahuValueRange[]; writes: OahuWriteSite[]; reads: OahuReadSite[] } {
+    if (!this.storyCache) {
+      const ranges = oahuValueRanges(this.master);
+      const code = this.code?.code;
+      const index = code ? new CodeIndex(code, [], { textEnd: OAHU_TEXT_END, msgFirst: 0, msgLast: -1, complete: 0 }) : undefined;
+      this.storyCache = { keys: oahuSaveKeys(this.master), ranges, writes: code ? oahuWriteSites(code, index) : [], reads: code ? oahuReadSites(code, ranges, index) : [] };
+    }
+    return this.storyCache;
   }
 
   /** RomFS files of the MOD (root name -> bytes). */
