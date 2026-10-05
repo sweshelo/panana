@@ -7,6 +7,10 @@ import { recCellPos, sectionBytes } from '../src/game/sections';
 import { OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAPDB_ENTRY, oahuExitKind, oahuRecEventRow, type OahuMaps } from '../src/oahu/maps';
 import { oahuEventEntries } from '../src/oahu/events';
 import { OahuEditState, oahuValidate } from '../src/oahu/mapedit';
+import { oahuObjectModels } from '../src/oahu/mapModels';
+import { oahuRecordLook } from '../src/oahu/mapObjects';
+import { oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
+import { isIndoor } from '../src/game/objects';
 import { Controller } from '../src/editor/controller';
 import { tileAt } from '../src/editor/state';
 import { OahuSession } from '../src/oahu/session';
@@ -240,5 +244,84 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     const changed = [0, 1, 2, 3, 4, 5, 6, 8, 9].filter((k) => !equalBytes(maps.db.get(m.sections[k]!), maps.db.original(m.sections[k]!)));
     expect(changed).toEqual([]);
     expect(maps.isChanged(m)).toBe(false);
+  });
+
+  test('models of chests, characters and objects: every record names a mapObject row with a BCH, a monster design or a Denpa person', async () => {
+    const mapChara = session.master.table('mapChara.bin');
+    const kinds = new Map<string, number>();
+    const rows = new Set<number>();
+    for (const m of maps.maps) {
+      if (m.world) continue;
+      const d = maps.dungeonOf(m)!;
+      const events = await maps.eventTable(d);
+      const doc = maps.doc(m);
+      for (const k of [2, 4, 5]) {
+        for (const r of doc.recs[k] ?? []) {
+          const look = oahuRecordLook(k, r.raw, { events, mapChara, indoor: isIndoor(doc) });
+          const key = `${k}/${look?.model?.type ?? 'none'}`;
+          kinds.set(key, (kinds.get(key) ?? 0) + 1);
+          if (look?.model?.type === 'object') rows.add(look.model.row);
+          if (k === 4) expect(look!.model).toEqual(expect.objectContaining({ type: 'object' }));
+        }
+      }
+    }
+    // 281 chests (outside 0x34〜0x36, inside 0x37〜0x39); characters: NPCs, monsters and Denpa people
+    expect(kinds.get('4/object')).toBe(281);
+    expect(kinds.get('5/object')).toBeGreaterThan(300);
+    expect(kinds.get('5/monster')).toBeGreaterThan(0);
+    expect(kinds.get('5/denpa')).toBeGreaterThan(0);
+    for (const row of rows) expect(maps.objectModel(row)).not.toBeNull();
+    // the chest and NPC models are BCH entries with their textures
+    for (const row of [0x34, 0x37, 482]) {
+      const ref = maps.objectModel(row)!;
+      const set = await oahuObjectModels(dump, ref);
+      expect(set.errors).toEqual([]);
+      expect(set.models.get(ref.entry)?.name).toBe(row === 482 ? 'npc_22' : row === 0x34 ? 'gimk_05_trebox_1' : 'gimk_05_trebox_04');
+    }
+  });
+
+  test('chest contents: chests (EventObject kinds 0x10 / 0x12) name treasureGroup rows of items, G and jewels', async () => {
+    const t = oahuTreasureTable(session.master);
+    expect(t.rows).toBe(283);
+    let chests = 0;
+    for (const d of maps.dungeons) {
+      const events = d.archive ? await maps.eventTable(d) : null;
+      for (let i = 0; events && i < events.rows; i++) {
+        const row = oahuChestTreasureRow(events.row(i));
+        if (row === null) continue;
+        chests++;
+        expect(row).toBeLessThan(t.rows);
+      }
+    }
+    expect(chests).toBeGreaterThan(250);
+    const kinds = new Set<number>();
+    for (let r = 0; r < t.rows; r++) for (const s of oahuTreasureSlots(t, r)) kinds.add(s.kind);
+    expect([...kinds].sort()).toEqual([1, 2, 3, 4]);
+    // row 135: 100 G / 300 G / 1000 G by weights 5 / 3 / 1
+    expect(oahuTreasureSlots(t, 135)).toEqual([{ value: 100, weight: 5, kind: 2 }, { value: 300, weight: 3, kind: 2 }, { value: 1000, weight: 1, kind: 2 }]);
+    // writing the same entries back leaves the row as it is
+    const before = t.row(136).slice();
+    oahuWriteTreasure(t, 136, oahuTreasureSlots(t, 136));
+    expect(equalBytes(t.row(136), before)).toBe(true);
+  });
+
+  test('section 6: the map groups and the cell groups are monsterGroup hashes', () => {
+    const index = session.master.table('monsterGroup.bin').hashIndex();
+    let groups = 0, cells = 0;
+    for (const m of maps.maps) {
+      if (m.world) continue;
+      const doc = maps.doc(m);
+      const group = doc.sec6Header.length ? u32(doc.sec6Header, 0) : 0;
+      if (group) {
+        groups++;
+        expect(index.has(group)).toBe(true);
+      }
+      for (const c of doc.cells6) {
+        cells++;
+        expect(index.has(c.value)).toBe(true);
+      }
+    }
+    expect(groups).toBe(89);
+    expect(cells).toBe(988);
   });
 });

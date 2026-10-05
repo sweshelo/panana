@@ -2,8 +2,8 @@
 // tools (editor/state.ts, editor/controller.ts), the views (editor/gridcanvas.ts, editor/mapscene.ts), the tool
 // buttons, palette and checks (editor/panes.tsx, editor/palette.tsx), the map picker dialog (ui/MapPicker.tsx).
 // Header: the map (picked in the dialog), view mode and undo. Left: tools, adding records, the tileset's
-// palette and the layers; right: the inspector of the selected tile or record (and the EventObject row it names)
-// and the checks.
+// palette and the layers; right: the inspector of the selected tile or record (and the EventObject row it names, a
+// chest's contents, what a character is), the map's enemies when nothing is selected, and the checks.
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LETTER_DEFAULT, letterLabel, type Rec } from '../game/sections';
@@ -21,6 +21,7 @@ import { conditionNames, EventObjectEditor } from './EventObjectEditor';
 import { OAHU_LAYOUTS, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo, type OahuMaps } from './maps';
 import { OAHU_POINT_SECTIONS, oahuEditState, oahuRecLabel, oahuStampLabel, oahuValidate, type OahuEditState, type OahuStamp } from './mapedit';
 import { OahuMapView, type Placement } from './mapview';
+import { CharaInfo, EncounterPanel, ModelLine, TreasureEditor } from './MapParts';
 import { OahuConditions } from './story';
 import type { OahuSession } from './session';
 
@@ -82,7 +83,7 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
   useEffect(() => {
     if (info.world) return;
     st.open(info);
-    const v = new OahuMapView(session.dump, st, info);
+    const v = new OahuMapView(session.dump, st, info, (d) => session.battle.designModel(d));
     pane2d.current!.append(v.grid.canvas);
     pane3d.current!.append(v.scene.canvas);
     setView(v);
@@ -254,6 +255,7 @@ function Layers({ view }: { view: OahuMapView }): ReactNode {
       {box(`タイル ${doc.tiles.length}`, layers.tiles, (v) => (layers.tiles = v))}
       {box(`区画 6 のセル ${doc.cells6.length}`, layers.room, (v) => (layers.room = v), 'rgba(80,200,255,0.8)')}
       {OAHU_POINT_SECTIONS.map((k) => box(`${OAHU_LAYOUTS[k]!.label} ${doc.recs[k]?.length ?? 0}`, !!layers.sections[k], (v) => (layers.sections[k] = v), SECTION_COLORS[k]))}
+      {box('モデル (置物・宝箱・キャラ)', view.showModels, (v) => (view.showModels = v))}
     </div>
   );
 }
@@ -373,14 +375,19 @@ function Inspector({ session, st, view }: { session: OahuSession; st: OahuEditSt
   const sel = st.selection;
   const doc = view.doc;
   if (sel.type === 'rec' && doc.recs[sel.section]?.[sel.index])
-    return <RecFields session={session} st={st} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
+    return <RecFields session={session} st={st} view={view} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
   if (sel.type === 'tiles' && sel.cells.length === 1) {
     const [x, y] = sel.cells[0]!;
     if (tileAt(doc, x, y)) return <TileFields st={st} x={x} y={y} />;
   }
   if (sel.type === 'tiles' && sel.cells.length > 1) return <p className="muted small">{`${sel.cells.length} マスを選択中 (R で回す、[ ] で文字を変える、Delete で消す)`}</p>;
   if (sel.type === 'rect') return <p className="muted small">範囲を選択中 (Ctrl+C でコピー、Ctrl+V で貼り付け、Shift+矢印で中身ごと動かす、Delete で消す)</p>;
-  return <p className="muted small">タイルかレコードを選んでください。</p>;
+  return (
+    <>
+      <p className="muted small">タイルかレコードを選んでください。</p>
+      {st.info && <EncounterPanel session={session} st={st} info={st.info} />}
+    </>
+  );
 }
 
 function TileFields({ st, x, y }: { st: OahuEditState; x: number; y: number }): ReactNode {
@@ -412,9 +419,10 @@ function TileFields({ st, x, y }: { st: OahuEditState; x: number; y: number }): 
   );
 }
 
-function RecFields({ session, st, section, rec, index }: {
+function RecFields({ session, st, view, section, rec, index }: {
   session: OahuSession;
   st: OahuEditState;
+  view: OahuMapView;
   section: number;
   rec: Rec;
   index: number;
@@ -434,6 +442,7 @@ function RecFields({ session, st, section, rec, index }: {
     <>
       <h3>{`${L.label} #${index}`}</h3>
       <p className="muted small">{oahuRecLabel(section, rec.raw)}</p>
+      <ModelLine view={view} look={view.look(section, index)} />
       <div className="row">
         <label className="field"><span>{`x (${L.unit === 'cell' ? 'マス' : L.unit === 'quarter' ? '1/4 マス' : '1/5 マス'})`}</span><NumberInput value={rec.x} min={0} max={max} onCommit={(v) => st.edit(() => { rec.x = v; })} /></label>
         <label className="field"><span>y</span><NumberInput value={rec.y} min={0} max={max} onCommit={(v) => st.edit(() => { rec.y = v; })} /></label>
@@ -457,7 +466,11 @@ function RecFields({ session, st, section, rec, index }: {
           {!dungeon?.archive ? <p className="muted small">このダンジョンにはイベント表がありません。</p>
             : !table ? <p className="muted small">読み込み中…</p>
             : evRow >= table.rows ? <p className="warn-box">{`表は ${table.rows} 行です。`}</p>
-            : <EventObjectEditor maps={maps} row={table.row(evRow)} original={maps.originalEventRow(dungeon, evRow)} story={conditionNames(session, info.dungeon)} edit={(f) => st.editTables(f)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />}
+            : <>
+                {section === 5 && u32(rec.raw, 0) <= 2 && <CharaInfo session={session} ev={table.row(evRow)} />}
+                {section === 4 && <TreasureEditor session={session} ev={table.row(evRow)} apply={(f) => st.editTables(f)} />}
+                <EventObjectEditor maps={maps} row={table.row(evRow)} original={maps.originalEventRow(dungeon, evRow)} story={conditionNames(session, info.dungeon)} edit={(f) => st.editTables(f)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />
+              </>}
         </>
       )}
     </>

@@ -1,6 +1,7 @@
-// RPG3's side of the map editor (editor/state.ts MapEditState): the open map of OahuMaps, the EventObject tables in
-// every undo point, adding records (props, copies of the dungeon's own records) and copying them with their own
+// RPG3's side of the map editor (editor/state.ts MapEditState): the open map of OahuMaps, the EventObject tables and
+// the chest contents in every undo point, adding records (props, copies of the dungeon's own records) and copying them with their own
 // EventObject rows, and the checks shown under the inspector.
+import type { GsTable } from '../archive/gstable';
 import { MapEditState, GRID, tileAt, type Selection } from '../editor/state';
 import type { Issue } from '../editor/validate';
 import { letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
@@ -17,6 +18,7 @@ import {
   type OahuMapInfo,
   type OahuMaps,
 } from './maps';
+import { oahuTreasureTable } from './treasure';
 
 /** Sections with positioned records, drawn last first (exits on top). */
 export const OAHU_POINT_SECTIONS = [3, 4, 5, 8, 2, 1, 9] as const;
@@ -60,7 +62,11 @@ export function oahuRecLabel(section: number, raw: Uint8Array): string {
   return `区画 ${section}`;
 }
 
-type Tables = [archive: string, bytes: Uint8Array][];
+/** What an undo point copies besides the map: the loaded EventObject tables and the chest contents (treasureGroup). */
+interface Tables {
+  events: [archive: string, bytes: Uint8Array][];
+  treasure: Uint8Array | null;
+}
 
 export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   info: OahuMapInfo | null = null;
@@ -92,10 +98,16 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   }
 
   protected saveTables(): Tables {
-    return this.maps.eventTableBytes();
+    const treasure = this.treasureTable();
+    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null };
   }
   protected restoreTables(t: Tables): void {
-    this.maps.restoreEventTableBytes(t);
+    const treasure = this.treasureTable();
+    if (treasure && t.treasure) treasure.data = t.treasure.slice();
+    this.maps.restoreEventTableBytes(t.events);
+  }
+  private treasureTable(): GsTable | null {
+    return this.maps.objectRows ? oahuTreasureTable(this.maps.master) : null;
   }
   protected override docReplaced(doc: MapDoc): void {
     const info = this.maps.map(doc.hash);
