@@ -8,7 +8,7 @@ import { OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAPDB_ENTRY, oahu
 import { oahuEventEntries } from '../src/oahu/events';
 import { OahuEditState, oahuValidate } from '../src/oahu/mapedit';
 import { oahuObjectModels } from '../src/oahu/mapModels';
-import { oahuRecordLook } from '../src/oahu/mapObjects';
+import { oahuObjectLift, oahuRecordLook } from '../src/oahu/mapObjects';
 import { oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
 import { isIndoor } from '../src/game/objects';
 import { Controller } from '../src/editor/controller';
@@ -246,8 +246,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(maps.isChanged(m)).toBe(false);
   });
 
-  test('models of chests, characters and objects: every record names a mapObject row with a BCH, a monster design or a Denpa person', async () => {
+  test('models of chests, characters, objects and invisible walls: every record names a mapObject row with a BCH, a monster design, a Denpa person or a wall', async () => {
     const mapChara = session.master.table('mapChara.bin');
+    const mapObject = session.master.table('mapObject.bin');
     const kinds = new Map<string, number>();
     const rows = new Set<number>();
     for (const m of maps.maps) {
@@ -255,12 +256,15 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
       const d = maps.dungeonOf(m)!;
       const events = await maps.eventTable(d);
       const doc = maps.doc(m);
-      for (const k of [2, 4, 5]) {
+      for (const k of [2, 4, 5, 8]) {
         for (const r of doc.recs[k] ?? []) {
-          const look = oahuRecordLook(k, r.raw, { events, mapChara, indoor: isIndoor(doc) });
+          const look = oahuRecordLook(k, r.raw, { events, mapChara, mapObject, indoor: isIndoor(doc) });
           const key = `${k}/${look?.model?.type ?? 'none'}`;
           kinds.set(key, (kinds.get(key) ?? 0) + 1);
           if (look?.model?.type === 'object') rows.add(look.model.row);
+          if (look?.model?.type === 'invisible') expect([look.model.width, look.model.depth]).toEqual([[240, 340, 540][look.model.row - 0x1e6]!, 140]);
+          // section 5: the healing spring (kind 3) and the kind 9 objects use their default model
+          if (k === 5 && (u32(r.raw, 0) === 3 || u32(r.raw, 0) === 9)) expect(look?.model).toEqual({ type: 'object', row: u32(r.raw, 0) === 3 ? 0x33 : 0x67 });
           if (k === 4) expect(look!.model).toEqual(expect.objectContaining({ type: 'object' }));
         }
       }
@@ -270,6 +274,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(kinds.get('5/object')).toBeGreaterThan(300);
     expect(kinds.get('5/monster')).toBeGreaterThan(0);
     expect(kinds.get('5/denpa')).toBeGreaterThan(0);
+    // section 8 kinds 100〜102 (D70): invisible walls of mapObject 0x1E6〜0x1E8
+    expect(kinds.get('8/invisible')).toBe(26);
+    // mapObject +0x35 lifts rows 60〜72 by −2
+    expect(oahuObjectLift(mapObject, 60)).toBe(-2);
+    expect(oahuObjectLift(mapObject, 0x34)).toBe(0);
     for (const row of rows) expect(maps.objectModel(row)).not.toBeNull();
     // the chest and NPC models are BCH entries with their textures
     for (const row of [0x34, 0x37, 482]) {

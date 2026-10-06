@@ -36,6 +36,7 @@ export function ModelLine({ view, look }: { view: OahuMapView; look: OahuRecordL
   const text = !m ? 'モデルなし'
     : m.type === 'object' ? `mapObject #${m.row}${name ? ` ${name}` : ''}`
     : m.type === 'monster' ? `モンスターのデザイン #${m.design}${name ? ` ${name}` : ''}`
+    : m.type === 'invisible' ? `見えない壁 (mapObject #${m.row}、${m.width} × ${m.depth}。灰色の箱で表示)`
     : '電波人間 (パーツから組み立てるので、まだ表示できません)';
   return <p className="muted small">{`モデル: ${text}`}</p>;
 }
