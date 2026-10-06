@@ -7,7 +7,7 @@ import { GsTable } from '../archive/gstable';
 import { MapDb } from '../game/mapdb';
 import { loadDoc, sectionBytes, type MapDoc, type MapFormat, type RecordLayout } from '../game/sections';
 import type { Dump } from '../rom/dump';
-import { cstr, equalBytes, f32, hex8, s32, u16, u32, u8 } from '../util/bytes';
+import { cstr, equalBytes, f32, hex8, s32, u16, u32, u8, w32 } from '../util/bytes';
 import type { OahuMaster } from './master';
 
 /** Archive of the map database and the map table (§2). */
@@ -64,12 +64,30 @@ export interface OahuMapInfo {
   mapDataKey: number;
   /** mapGroup row. */
   dungeon: number;
-  /** +0x30: copied to runtime +0x546A with the map's group (3 / 4 / 5; how often enemies come, estimated). */
-  encounterRate: number;
+  /**
+   * +0x30: how the enemies walking on the map come (OAHU_ENCOUNTER_LEVELS; 3 / 4 / 5 in the ROM). FUN_002760AC copies it
+   * to runtime +0x546A when the map has a group (else 0); FUN_002C60B4 takes the count and the delay from the table.
+   */
+  encounterLevel: number;
   floor: number;
   /** The world map: its sections have another shape (§8), it is shown read-only. */
   world: boolean;
 }
+
+/**
+ * Levels of map table +0x30 (code.bin 0x557DA0, 12 bytes each from level 1; FUN_002C60B4 / FUN_002C8E90): how many
+ * enemies walk on the map at most (runtime +0x161 of the spawner) and the random delay before the next one comes
+ * (+0x24, min〜max; seconds, estimated). 0 = none come.
+ */
+export const OAHU_ENCOUNTER_LEVELS: Record<number, { count: number; min: number; max: number }> = {
+  1: { count: 2, min: 2, max: 5 },
+  2: { count: 3, min: 2, max: 5 },
+  3: { count: 4, min: 1, max: 3 },
+  4: { count: 6, min: 1, max: 3 },
+  5: { count: 10, min: 1, max: 1.5 },
+};
+/** Byte offset of +0x30 in the map table. */
+const MAP_ENCOUNTER = 0x30;
 
 /** A dungeon (mapGroup row) and its event archive. */
 export interface OahuDungeon {
@@ -115,6 +133,8 @@ export interface OahuMapSaved {
   /** Changed sections: [hash, bytes]. */
   sections?: [number, Uint8Array][];
   events?: SavedEvent[];
+  /** Changed map table +0x30: [map table row, level]. */
+  encounter?: [number, number][];
 }
 
 const hexName = (n: number): string => hex8(n).toUpperCase();
@@ -132,6 +152,9 @@ export class OahuMaps {
   private readonly events = new Map<string, EventTable>();
   /** mapData key -> row (the table's hash index). */
   private readonly mapDataKeys: Map<number, number>;
+  /** The map table (B68E0000 / 5405E800) as edited, and as it is in the ROM. */
+  private table: Uint8Array;
+  private readonly tableOriginal: Uint8Array;
   /** Bumped on every change (React pages subscribe through it). */
   revision = 0;
   private readonly listeners = new Set<() => void>();
@@ -147,6 +170,8 @@ export class OahuMaps {
     if (archive && (!db || !table)) throw new Error(`${OAHU_MAP_ARCHIVE} にマップ DB / マップ表がありません`);
     this.db = new MapDb(archive && db ? unpackEntry(archive, db).body : EMPTY_DB);
     const t = archive && table ? unpackEntry(archive, table).body : new Uint8Array(0);
+    this.tableOriginal = t;
+    this.table = t.slice();
     this.maps = [];
     for (let i = 0; i + MAP_ROW <= t.length; i += MAP_ROW) {
       const slots = Array.from({ length: 10 }, (_, k) => u32(t, i + k * 4));
@@ -158,7 +183,7 @@ export class OahuMaps {
         sections: OAHU_SECTION_SLOT.map((s, k) => (k === 7 ? 0 : slots[s]!)),
         mapDataKey: u32(t, i + 0x28),
         dungeon: s32(t, i + 0x2c),
-        encounterRate: s32(t, i + 0x30),
+        encounterLevel: s32(t, i + MAP_ENCOUNTER),
         floor: s32(t, i + 0x34),
         world: name.startsWith('W'),
       };
@@ -246,13 +271,38 @@ export class OahuMaps {
 
   /** Whether a map's sections differ from the ROM's. */
   isChanged(info: OahuMapInfo): boolean {
-    return info.sections.some((h) => h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)));
+    return info.encounterLevel !== this.originalEncounterLevel(info) || info.sections.some((h) => h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)));
   }
 
   /** Put a map back as it is in the ROM. */
   revert(info: OahuMapInfo): void {
     for (const h of info.sections) if (h && this.db.has(h)) this.db.set(h, this.db.original(h).slice());
+    this.writeEncounterLevel(info, this.originalEncounterLevel(info));
     this.docs.delete(info.hash);
+    this.changed();
+  }
+
+  // ---- the map table (§2.2)
+
+  /** Set map table +0x30 (OAHU_ENCOUNTER_LEVELS) of a map. */
+  setEncounterLevel(info: OahuMapInfo, level: number): void {
+    this.writeEncounterLevel(info, level);
+    this.changed();
+  }
+  originalEncounterLevel(info: OahuMapInfo): number {
+    return s32(this.tableOriginal, info.index * MAP_ROW + MAP_ENCOUNTER);
+  }
+  private writeEncounterLevel(info: OahuMapInfo, level: number): void {
+    info.encounterLevel = level;
+    w32(this.table, info.index * MAP_ROW + MAP_ENCOUNTER, level);
+  }
+  /** The bytes of the map table (an undo point of the map page). */
+  mapTableBytes(): Uint8Array {
+    return this.table.slice();
+  }
+  restoreMapTableBytes(bytes: Uint8Array): void {
+    this.table = bytes.slice();
+    for (const info of this.maps) info.encounterLevel = s32(this.table, info.index * MAP_ROW + MAP_ENCOUNTER);
     this.changed();
   }
 
@@ -419,12 +469,17 @@ export class OahuMaps {
       // added rows: no bytes before
       for (let r = o.rows; r < t.table.rows; r++) events.push([name, r, new Uint8Array(0), t.table.row(r).slice()]);
     }
-    return { sections, events };
+    const encounter: [number, number][] = this.maps.filter((m) => m.encounterLevel !== this.originalEncounterLevel(m)).map((m) => [m.index, m.encounterLevel]);
+    return { sections, events, ...(encounter.length ? { encounter } : {}) };
   }
 
   /** Put saved edits back (event rows only change the bytes the edit changed). */
   async restore(saved: OahuMapSaved): Promise<void> {
     for (const [h, b] of saved.sections ?? []) if (this.db.has(h)) this.db.set(h, b);
+    for (const [row, level] of saved.encounter ?? []) {
+      const info = this.maps[row];
+      if (info) this.writeEncounterLevel(info, level);
+    }
     for (const [name, r, before, after] of saved.events ?? []) {
       const d = this.dungeons.find((x) => x.archive === name);
       const t = d ? await this.eventTable(d).catch(() => null) : null;
@@ -448,7 +503,11 @@ export class OahuMaps {
     if (!this.archive) return out;
     const dbBytes = this.db.build();
     const dbEntry = findEntry(this.archive, OAHU_MAPDB_ENTRY)!;
-    if (!equalBytes(dbBytes, unpackEntry(this.archive, dbEntry).body)) out.set(OAHU_MAP_ARCHIVE, rebuildArchive(this.archive, new Map([[dbEntry.index, dbBytes]])));
+    const tableEntry = findEntry(this.archive, OAHU_MAP_TABLE_ENTRY)!;
+    const replaced = new Map<number, Uint8Array>();
+    if (!equalBytes(dbBytes, unpackEntry(this.archive, dbEntry).body)) replaced.set(dbEntry.index, dbBytes);
+    if (!equalBytes(this.table, this.tableOriginal)) replaced.set(tableEntry.index, this.table.slice());
+    if (replaced.size) out.set(OAHU_MAP_ARCHIVE, rebuildArchive(this.archive, replaced));
     for (const [name, t] of this.events) if (!equalBytes(t.table.data, t.original)) out.set(name, rebuildArchive(t.archive, new Map([[t.entryIndex, t.table.data]])));
     return out;
   }

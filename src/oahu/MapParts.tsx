@@ -11,13 +11,15 @@ import type { OahuBattle, OahuGroup } from './battle';
 import { EO } from './events';
 import type { OahuEditState } from './mapedit';
 import { OAHU_CHARA_KIND, oahuCharaKindOf, type OahuRecordLook } from './mapObjects';
-import type { OahuMapInfo } from './maps';
+import { OAHU_ENCOUNTER_LEVELS, type OahuMapInfo } from './maps';
 import type { OahuMapView } from './mapview';
 import { oahuGroupHref, oahuGroupMonster, oahuItemIcon, oahuMonsterIcon, OahuItemPicker } from './pickers';
 import type { OahuSession } from './session';
 import {
   OAHU_CHEST_KINDS,
+  OAHU_TREASURE_BATTLE,
   OAHU_TREASURE_FILE,
+  OAHU_TREASURE_GROUP_MASK,
   OAHU_TREASURE_KIND,
   OAHU_TREASURE_SLOTS,
   oahuChestTreasureRow,
@@ -58,10 +60,16 @@ function chestUsers(session: OahuSession): Map<number, string[]> {
   return out;
 }
 
+/** "たからばこぞう" for a group of a chest battle (its monsters, the fixed formation first). */
+function groupName(battle: OahuBattle, row: number): string {
+  const names = row > 0 && row < battle.groups.table.rows ? groupMonsters(battle.group(row)).map((m) => battle.monsterName(m)).filter(Boolean) : [];
+  return names.length ? names.join('・') : `群れ #${row}`;
+}
+
 function treasureSummary(battle: OahuBattle, slots: OahuTreasureSlot[]): string {
   const total = slots.reduce((a, s) => a + s.weight, 0);
   if (!slots.length) return '(空)';
-  return slots.map((s) => `${oahuTreasureLabel(s, (id) => battle.itemName(id))}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`).join('、');
+  return slots.map((s) => `${oahuTreasureLabel(s, (id) => battle.itemName(id), (r) => groupName(battle, r))}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`).join('、');
 }
 
 /** Pick a treasureGroup row for a chest, or make a new one from the current contents (RPG2's dialog). */
@@ -123,6 +131,7 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
   const t = oahuTreasureTable(master);
   const [picking, setPicking] = useState<{ current?: number; onPick: (id: number) => void } | null>(null);
   const [pickingRow, setPickingRow] = useState(false);
+  const [pickingGroup, setPickingGroup] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
   const row = oahuChestTreasureRow(ev);
   if (row === null) return null;
   const users = chestUsers(session).get(row) ?? [];
@@ -156,7 +165,9 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
                 <span className="loot-item">
                   <select value={s.kind} title="出るものの種類 (+0x06)" onChange={(e) => {
                     const kind = Number(e.target.value);
-                    update(i, { ...s, kind, value: kind === 1 ? (battle.items.item(s.value) ? s.value : 1) : s.value });
+                    const value = kind === 1 ? (battle.items.item(s.value) ? s.value : 1)
+                      : kind === OAHU_TREASURE_BATTLE ? (s.value & OAHU_TREASURE_GROUP_MASK) || 1 : s.value;
+                    update(i, { ...s, kind, value });
                   }}>
                     {Object.entries(OAHU_TREASURE_KIND).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                     {!OAHU_TREASURE_KIND[s.kind] && <option value={s.kind}>{`種類 ${s.kind}`}</option>}
@@ -165,6 +176,10 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
                     ? <button className="loot-item" title="クリックでアイテムを変える" onClick={() => setPicking({ current: s.value, onPick: (id) => update(i, { ...s, value: id }) })}>
                         {oahuItemIcon(battle, battle.items.item(s.value))}
                         <span className="muted">{`${s.value} `}</span>{battle.itemName(s.value) || `アイテム ${s.value}`}
+                      </button>
+                    : s.kind === OAHU_TREASURE_BATTLE
+                    ? <button className="group-pick" title="クリックで群れを変える" onClick={() => setPickingGroup({ current: s.value & OAHU_TREASURE_GROUP_MASK, onPick: (g) => update(i, { ...s, value: g }) })}>
+                        <GroupLine battle={battle} row={s.value & OAHU_TREASURE_GROUP_MASK} />
                       </button>
                     : <NumberInput value={s.value} min={1} max={0x7fffffff} title={s.kind === 2 ? 'G' : s.kind === 3 ? 'ジュエルの数' : '値'} onCommit={(v) => update(i, { ...s, value: v })} />}
                 </span>
@@ -179,13 +194,17 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
             )}
           </div>
           <div className="muted small">
-            {`開けると、並んだものから重みに比例して 1 つ選ばれます (最大 ${OAHU_TREASURE_SLOTS} 個)。G とジュエルは値がそのまま数です。${users.length > 1 ? 'この中身を変えると共有している宝箱も変わります。別の中身にするには「変更…」で新しい行を作ってください。' : ''}${changed ? ' 変更済み。' : ''}`}
+            {`開けると、並んだものから重みに比例して 1 つ選ばれます (最大 ${OAHU_TREASURE_SLOTS} 個)。G とジュエルは値がそのまま数です。「戦闘」は群れ (行 ${OAHU_TREASURE_GROUP_MASK} まで) との戦闘になります。${users.length > 1 ? 'この中身を変えると共有している宝箱も変わります。別の中身にするには「変更…」で新しい行を作ってください。' : ''}${changed ? ' 変更済み。' : ''}`}
           </div>
         </>
       )}
       {picking && (
         <OahuItemPicker battle={battle} current={picking.current ?? 0} title="宝箱に入れるアイテムを選ぶ"
           onClose={() => setPicking(null)} onPick={(id) => { setPicking(null); picking.onPick(id); }} />
+      )}
+      {pickingGroup && (
+        <OahuGroupPicker battle={battle} current={pickingGroup.current} onClose={() => setPickingGroup(null)}
+          onPick={(g) => { setPickingGroup(null); if (g) pickingGroup.onPick(g); }} />
       )}
       {pickingRow && (
         <TreasureRowPicker session={session} current={row} apply={apply} onClose={() => setPickingRow(false)}
@@ -261,6 +280,12 @@ function OahuGroupPicker({ battle, current, onPick, onClose }: { battle: OahuBat
   );
 }
 
+/** "4: 同時に 6 体まで、1〜3 秒ごと" for a level of map table +0x30. */
+function encounterLevelLabel(v: number): string {
+  const l = OAHU_ENCOUNTER_LEVELS[v];
+  return l ? `${v}: 同時に ${l.count} 体まで、${l.min}〜${l.max} 秒ごと` : `${v}: (表にない値)`;
+}
+
 /** The enemies of the open map: the map's group (section 6 header) and the groups of the listed cells. */
 export function EncounterPanel({ session, st, info }: { session: OahuSession; st: OahuEditState; info: OahuMapInfo }): ReactNode {
   const { battle } = session;
@@ -278,6 +303,7 @@ export function EncounterPanel({ session, st, info }: { session: OahuSession; st
       }
       w32(d.sec6Header, 0, row ? hashOf.get(row)! : 0);
     });
+  const levels = [...new Set([...Object.keys(OAHU_ENCOUNTER_LEVELS).map(Number), info.encounterLevel])].sort((a, b) => a - b);
   const cells = new Map<number, [number, number][]>();
   for (const c of doc.cells6) cells.set(c.value, [...(cells.get(c.value) ?? []), [c.x, c.y]]);
   return (
@@ -294,8 +320,13 @@ export function EncounterPanel({ session, st, info }: { session: OahuSession; st
           <SlotTiles title="2・4 体目" slots={battle.group(cur).mates} monster={monster} count={String} />
         </div>
       )}
+      <Field label="敵の出方 (マップ表 +0x30)">
+        <select value={info.encounterLevel} onChange={(e) => st.editTables(() => session.maps.setEncounterLevel(info, Number(e.target.value)))}>
+          {levels.map((v) => <option key={v} value={v}>{encounterLevelLabel(v)}</option>)}
+        </select>
+      </Field>
       <div className="muted small">
-        {`マップ表の +0x30 (出現の度合いと推定): ${info.encounterRate}。区画 6 のセル ${doc.cells6.length} 個は、それぞれの群れだけが出るセルです (値 0 のセルは敵が出ない。RPG3 のデータにはない)。`}
+        {`マップを歩く敵は、この数まで出て、1 体ごとに表の間隔 (秒と推定) をおいて次が出ます。群れがないマップでは使われません。区画 6 のセル ${doc.cells6.length} 個は、それぞれの群れだけが出るセルです (値 0 のセルは敵が出ない。RPG3 のデータにはない)。`}
       </div>
       {[...cells].map(([hash, list]) => (
         <details key={hash} className="enc-cells">
