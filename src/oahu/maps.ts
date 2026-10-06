@@ -125,6 +125,8 @@ export interface OahuTileSource {
   base: number;
   /** Battle background (+0x10, "btmp_01_caveA"), an entry of archive 52120000. */
   battleBackground: number;
+  /** mapObject row of the wall doors (+0x1C; 0 = gimk_02_door_02). */
+  wallDoor: number;
 }
 
 export type SavedEvent = [archive: string, row: number, before: Uint8Array, after: Uint8Array];
@@ -401,6 +403,7 @@ export class OahuMaps {
       sky: u32(rr, 0x0c),
       base: u32(rr, 0x14),
       battleBackground: u32(rr, 0x10),
+      wallDoor: u16(rr, 0x1c),
     };
   }
 

@@ -250,7 +250,14 @@ export class OahuMapView {
     const d = maps.dungeonOf(this.info);
     const events = d ? maps.loadedEventTable(d) : null;
     const { master } = maps;
-    return oahuRecordLook(section, rec.raw, { events, mapChara: master.table('mapChara.bin'), mapObject: master.table('mapObject.bin'), indoor: isIndoor(this.doc) });
+    return oahuRecordLook(section, rec.raw, {
+      events,
+      mapChara: master.table('mapChara.bin'),
+      mapObject: master.table('mapObject.bin'),
+      indoor: isIndoor(this.doc),
+      map: this.info.hash,
+      wallDoor: maps.tileSource(this.info, this.doc).wallDoor,
+    });
   }
 
   /** The file name of a loaded model ("npc_22"), '' while it is loading or when there is none. */
@@ -351,7 +358,8 @@ export class OahuMapView {
         const m0 = look?.model;
         const model = !m0 ? null : m0.type === 'invisible' ? this.wall(m0.width, m0.depth) : this.recordModel(m0);
         if (model) {
-          model.position.set(px * CELL, look!.lift ?? 0, py * CELL);
+          const [ox, oz] = look!.offset ?? [0, 0];
+          model.position.set(px * CELL + ox, look!.lift ?? 0, py * CELL + oz);
           model.rotation.y = look!.angle;
           if (look!.model!.type === 'object') model.scale.setScalar(maps.objectScale(look!.model!.row));
           this.markers.add(model);

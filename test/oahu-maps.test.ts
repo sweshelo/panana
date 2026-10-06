@@ -8,7 +8,7 @@ import { OAHU_ENCOUNTER_LEVELS, OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT,
 import { oahuEventEntries } from '../src/oahu/events';
 import { OahuEditState, oahuValidate } from '../src/oahu/mapedit';
 import { oahuObjectModels } from '../src/oahu/mapModels';
-import { oahuObjectLift, oahuRecordLook } from '../src/oahu/mapObjects';
+import { oahuExitDefaultModel, oahuObjectLift, oahuRecordLook } from '../src/oahu/mapObjects';
 import { OAHU_TREASURE_BATTLE, oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
 import { isIndoor } from '../src/game/objects';
 import { Controller } from '../src/editor/controller';
@@ -256,9 +256,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
       const d = maps.dungeonOf(m)!;
       const events = await maps.eventTable(d);
       const doc = maps.doc(m);
-      for (const k of [2, 4, 5, 8]) {
+      const wallDoor = maps.tileSource(m, doc).wallDoor;
+      for (const k of [2, 3, 4, 5, 8]) {
         for (const r of doc.recs[k] ?? []) {
-          const look = oahuRecordLook(k, r.raw, { events, mapChara, mapObject, indoor: isIndoor(doc) });
+          const look = oahuRecordLook(k, r.raw, { events, mapChara, mapObject, indoor: isIndoor(doc), map: m.hash, wallDoor });
           const key = `${k}/${look?.model?.type ?? 'none'}`;
           kinds.set(key, (kinds.get(key) ?? 0) + 1);
           if (look?.model?.type === 'object') rows.add(look.model.row);
@@ -271,6 +272,13 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     }
     // 281 chests (outside 0x34〜0x36, inside 0x37〜0x39); characters: NPCs, monsters and Denpa people
     expect(kinds.get('4/object')).toBe(281);
+    // exits: stairs, gates, doors and buildings have models; invisible exits (kinds 7 / 9 / 0x0A …) have none
+    expect(kinds.get('3/object')).toBeGreaterThan(700);
+    expect(kinds.get('3/none')).toBeGreaterThan(0);
+    expect(oahuExitDefaultModel(0x15)).toBe(0xbf);
+    expect(oahuExitDefaultModel(4)).toBe(1);
+    expect(oahuExitDefaultModel(5)).toBe(2);
+    expect(oahuExitDefaultModel(0x13, maps.mapByName('M10OUT000')!.hash)).toBe(0xd0);
     expect(kinds.get('5/object')).toBeGreaterThan(300);
     expect(kinds.get('5/monster')).toBeGreaterThan(0);
     expect(kinds.get('5/denpa')).toBeGreaterThan(0);
