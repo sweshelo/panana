@@ -1,8 +1,7 @@
 // What RPG3 places for the records of a map (naauao oahu/map.md §9): the model of props (section 2), exits, doors and
 // buildings (section 3), chests (section 4), the characters and objects of section 5 and the invisible walls of
 // section 8, and how it is turned and moved. Characters name a
-// mapChara row (EventObject +0x4E) that is an NPC (a mapObject model), a monster (a monsterDesign row) or a Denpa person
-// (not drawn).
+// mapChara row (EventObject +0x4E) that is an NPC (a mapObject model), a monster (a monsterDesign row) or a Denpa person.
 import type { GsTable } from '../archive/gstable';
 import { f32, u16, u32 } from '../util/bytes';
 import { EO } from './events';
@@ -13,8 +12,8 @@ export type OahuRecordModel =
   | { type: 'object'; row: number }
   /** A monster model: a monsterDesign row (402F0000; monsterModels.ts). */
   | { type: 'monster'; design: number }
-  /** A Denpa person (mapChara kinds 2 / 3, built from parts; not drawn yet). */
-  | { type: 'denpa' }
+  /** Kind 2: denpaCustom row; kind 3: save-dependent character selector (not a denpaCustom row). */
+  | { type: 'denpa'; kind: 2 | 3; id: number }
   /** An invisible wall (section 8 kinds 100〜102: obj_invisible, a box of `width` × `depth` with no model). */
   | { type: 'invisible'; row: number; width: number; depth: number };
 
@@ -166,10 +165,11 @@ export function oahuCharaModel(mapChara: GsTable, chara: number, variant: number
   if (chara <= 0 || chara >= mapChara.rows) return null;
   const c = mapChara.row(chara);
   const kind = oahuCharaKindOf(c);
-  const id = variant <= 2 ? u16(c, 8 + variant * 2) : 0;
+  if (!Number.isInteger(variant) || variant < 0 || variant > 2) return null;
+  const id = u16(c, 8 + variant * 2);
   if (kind === 0) return id ? { type: 'object', row: id } : null;
   if (kind === 1) return { type: 'monster', design: id };
-  return { type: 'denpa' };
+  return kind === 2 || kind === 3 ? { type: 'denpa', kind, id } : null;
 }
 
 /** The angle of props and the objects placed like them: FUN_00276078 turns directions past 3 into c = 1 (180°). */

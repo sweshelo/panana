@@ -8,6 +8,7 @@ import { Dialog } from '../ui/Dialog';
 import { GroupIconRow, GroupListView, SlotTiles } from '../ui/GroupDetail';
 import { hex8, u16, u32, w32 } from '../util/bytes';
 import type { OahuBattle, OahuGroup } from './battle';
+import { denpaSourceLabel } from './denpaModels';
 import { EO } from './events';
 import type { OahuEditState } from './mapedit';
 import { OAHU_CHARA_KIND, oahuCharaKindOf, type OahuRecordLook } from './mapObjects';
@@ -39,7 +40,7 @@ export function ModelLine({ view, look }: { view: OahuMapView; look: OahuRecordL
     : m.type === 'object' ? `mapObject #${m.row}${name ? ` ${name}` : ''}`
     : m.type === 'monster' ? `モンスターのデザイン #${m.design}${name ? ` ${name}` : ''}`
     : m.type === 'invisible' ? `見えない壁 (mapObject #${m.row}、${m.width} × ${m.depth}。灰色の箱で表示)`
-    : '電波人間 (パーツから組み立てるので、まだ表示できません)';
+    : `電波人間: ${denpaSourceLabel(m)}`;
   return <p className="muted small">{`モデル: ${text}`}</p>;
 }
 
@@ -230,7 +231,7 @@ export function CharaInfo({ session, ev }: { session: OahuSession; ev: Uint8Arra
   return (
     <p className="muted small">
       {`mapChara の行 ${chara}: ${OAHU_CHARA_KIND[kind] ?? `種類 ${kind}`} (+0x00 = ${hex8(u32(c, 0)).toUpperCase()})・EventObject +0x50 = ${variant} で`}
-      {kind === 0 ? ` mapObject #${id}` : kind === 1 ? ` モンスターのデザイン #${id}` : ` 電波人間の設定 ${id} (未解析)`}
+      {kind === 0 ? ` mapObject #${id}` : kind === 1 ? ` モンスターのデザイン #${id}` : kind === 2 || kind === 3 ? ` ${denpaSourceLabel({ type: 'denpa', kind, id })}` : ' モデルなし'}
       {kind === 1 && monsters.length > 0 && ` (${monsters.slice(0, 3).map((m) => m.name).join('、')}${monsters.length > 3 ? ' …' : ''} の見た目)`}
     </p>
   );
