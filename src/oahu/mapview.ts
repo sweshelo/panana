@@ -16,6 +16,7 @@ import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game
 import type { ModelRef } from '../pages/modelview';
 import type { Dump } from '../rom/dump';
 import { Signal } from '../ui/useEditorState';
+import { OahuDenpaModels } from './denpaModels';
 import { OAHU_POINT_SECTIONS, type OahuEditState } from './mapedit';
 import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo } from './maps';
 import { oahuObjectModels, oahuTileModels } from './mapModels';
@@ -67,6 +68,7 @@ export class OahuMapView {
    * `pose` is the model at the first frame of its "001_" motion (NPCs wait, chests are closed) when it has one.
    */
   private readonly objects = new Map<string, LoadedModel | null>();
+  private denpaModels: OahuDenpaModels | null = null;
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
   private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
@@ -255,7 +257,7 @@ export class OahuMapView {
   }
 
   private modelKey(m: OahuRecordModel): string | null {
-    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : null;
+    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : `d${m.kind}/${m.id}`;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -286,6 +288,9 @@ export class OahuMapView {
       got = set.models.size ? { set, hash: ref.entry } : null;
     } else if (m.type === 'monster') {
       got = await this.designModel(m.design)?.load();
+    } else {
+      this.denpaModels ??= new OahuDenpaModels(this.dump, this.st.maps.master);
+      got = await this.denpaModels.load(m);
     }
     if (!got) return null;
     const factory = new ModelFactory(got.set);
