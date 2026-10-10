@@ -20,7 +20,7 @@ import { OahuDenpaModels } from './denpaModels';
 import { OAHU_POINT_SECTIONS, type OahuEditState } from './mapedit';
 import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo } from './maps';
 import { oahuObjectModels, oahuTileModels } from './mapModels';
-import { oahuRecordLook, type OahuRecordLook, type OahuRecordModel } from './mapObjects';
+import { OAHU_WALL_HEIGHT, oahuRecordLook, type OahuRecordLook, type OahuRecordModel } from './mapObjects';
 
 /** Whether a record's event is placed in the preview state (story.ts OahuConditions.placed). */
 export type Placement = 'shown' | 'hidden' | 'gone' | 'unknown';
@@ -75,6 +75,9 @@ export class OahuMapView {
   private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
   private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
   private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+  /** Invisible walls (section 8 kinds 100〜102): a see-through box of their size. */
+  private readonly wallMat = new THREE.MeshBasicMaterial({ color: 0x9e9e9e, transparent: true, opacity: 0.3, depthWrite: false });
+  private readonly wallGeos = new Map<string, THREE.BoxGeometry>();
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -115,6 +118,7 @@ export class OahuMapView {
     this.unsubscribe();
     this.factory?.dispose();
     for (const f of this.objects.values()) f?.factory.dispose();
+    for (const g of this.wallGeos.values()) g.dispose();
     this.scene.dispose();
   }
 
@@ -247,7 +251,15 @@ export class OahuMapView {
     const maps = this.st.maps;
     const d = maps.dungeonOf(this.info);
     const events = d ? maps.loadedEventTable(d) : null;
-    return oahuRecordLook(section, rec.raw, { events, mapChara: maps.master.table('mapChara.bin'), indoor: isIndoor(this.doc) });
+    const { master } = maps;
+    return oahuRecordLook(section, rec.raw, {
+      events,
+      mapChara: master.table('mapChara.bin'),
+      mapObject: master.table('mapObject.bin'),
+      indoor: isIndoor(this.doc),
+      map: this.info.hash,
+      wallDoor: maps.tileSource(this.info, this.doc).wallDoor,
+    });
   }
 
   /** The file name of a loaded model ("npc_22"), '' while it is loading or when there is none. */
@@ -257,7 +269,7 @@ export class OahuMapView {
   }
 
   private modelKey(m: OahuRecordModel): string | null {
-    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : `d${m.kind}/${m.id}`;
+    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : m.type === 'denpa' ? `d${m.kind}/${m.id}` : null;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -288,13 +300,25 @@ export class OahuMapView {
       got = set.models.size ? { set, hash: ref.entry } : null;
     } else if (m.type === 'monster') {
       got = await this.designModel(m.design)?.load();
-    } else {
+    } else if (m.type === 'denpa') {
       this.denpaModels ??= new OahuDenpaModels(this.dump, this.st.maps.master);
       got = await this.denpaModels.load(m);
     }
     if (!got) return null;
     const factory = new ModelFactory(got.set);
     return { factory, hash: got.hash, name: got.set.paths.get(got.hash) ?? '', pose: posed(factory, got.hash) };
+  }
+
+  /** A box for an invisible wall, standing on the ground. */
+  private wall(width: number, depth: number): THREE.Object3D | null {
+    if (!(width > 0 && depth > 0)) return null;
+    const key = `${width}x${depth}`;
+    let geo = this.wallGeos.get(key);
+    if (!geo) {
+      geo = new THREE.BoxGeometry(width, OAHU_WALL_HEIGHT, depth).translate(0, OAHU_WALL_HEIGHT / 2, 0);
+      this.wallGeos.set(key, geo);
+    }
+    return new THREE.Mesh(geo, this.wallMat);
   }
 
   private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
@@ -336,9 +360,11 @@ export class OahuMapView {
         const placed = this.placement?.(k, i) ?? 'shown';
         if ((placed === 'hidden' || placed === 'gone') && !selected) return;
         const look = this.showModels ? this.look(k, i) : null;
-        const model = look?.model ? this.recordModel(look.model) : null;
+        const m0 = look?.model;
+        const model = !m0 ? null : m0.type === 'invisible' ? this.wall(m0.width, m0.depth) : this.recordModel(m0);
         if (model) {
-          model.position.set(px * CELL, 0, py * CELL);
+          const [ox, oz] = look!.offset ?? [0, 0];
+          model.position.set(px * CELL + ox, look!.lift ?? 0, py * CELL + oz);
           model.rotation.y = look!.angle;
           if (look!.model!.type === 'object') model.scale.setScalar(maps.objectScale(look!.model!.row));
           this.markers.add(model);

@@ -4,12 +4,12 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
 import { recCellPos, sectionBytes } from '../src/game/sections';
-import { OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAPDB_ENTRY, oahuExitKind, oahuRecEventRow, type OahuMaps } from '../src/oahu/maps';
+import { OAHU_ENCOUNTER_LEVELS, OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAP_TABLE_ENTRY, OAHU_MAPDB_ENTRY, oahuExitKind, oahuRecEventRow, type OahuMaps } from '../src/oahu/maps';
 import { oahuEventEntries } from '../src/oahu/events';
 import { OahuEditState, oahuValidate } from '../src/oahu/mapedit';
 import { oahuObjectModels } from '../src/oahu/mapModels';
-import { oahuRecordLook } from '../src/oahu/mapObjects';
-import { oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
+import { oahuExitDefaultModel, oahuObjectLift, oahuRecordLook } from '../src/oahu/mapObjects';
+import { OAHU_TREASURE_BATTLE, oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
 import { isIndoor } from '../src/game/objects';
 import { Controller } from '../src/editor/controller';
 import { tileAt } from '../src/editor/state';
@@ -246,8 +246,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(maps.isChanged(m)).toBe(false);
   });
 
-  test('models of chests, characters and objects: every record names a mapObject row with a BCH, a monster design or a Denpa person', async () => {
+  test('models of chests, characters, objects and invisible walls: every record names a mapObject row with a BCH, a monster design, a Denpa person or a wall', async () => {
     const mapChara = session.master.table('mapChara.bin');
+    const mapObject = session.master.table('mapObject.bin');
     const kinds = new Map<string, number>();
     const rows = new Set<number>();
     for (const m of maps.maps) {
@@ -255,21 +256,37 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
       const d = maps.dungeonOf(m)!;
       const events = await maps.eventTable(d);
       const doc = maps.doc(m);
-      for (const k of [2, 4, 5]) {
+      const wallDoor = maps.tileSource(m, doc).wallDoor;
+      for (const k of [2, 3, 4, 5, 8]) {
         for (const r of doc.recs[k] ?? []) {
-          const look = oahuRecordLook(k, r.raw, { events, mapChara, indoor: isIndoor(doc) });
+          const look = oahuRecordLook(k, r.raw, { events, mapChara, mapObject, indoor: isIndoor(doc), map: m.hash, wallDoor });
           const key = `${k}/${look?.model?.type ?? 'none'}`;
           kinds.set(key, (kinds.get(key) ?? 0) + 1);
           if (look?.model?.type === 'object') rows.add(look.model.row);
+          if (look?.model?.type === 'invisible') expect([look.model.width, look.model.depth]).toEqual([[240, 340, 540][look.model.row - 0x1e6]!, 140]);
+          // section 5: the healing spring (kind 3) and the kind 9 objects use their default model
+          if (k === 5 && (u32(r.raw, 0) === 3 || u32(r.raw, 0) === 9)) expect(look?.model).toEqual({ type: 'object', row: u32(r.raw, 0) === 3 ? 0x33 : 0x67 });
           if (k === 4) expect(look!.model).toEqual(expect.objectContaining({ type: 'object' }));
         }
       }
     }
     // 281 chests (outside 0x34〜0x36, inside 0x37〜0x39); characters: NPCs, monsters and Denpa people
     expect(kinds.get('4/object')).toBe(281);
+    // exits: stairs, gates, doors and buildings have models; invisible exits (kinds 7 / 9 / 0x0A …) have none
+    expect(kinds.get('3/object')).toBeGreaterThan(700);
+    expect(kinds.get('3/none')).toBeGreaterThan(0);
+    expect(oahuExitDefaultModel(0x15)).toBe(0xbf);
+    expect(oahuExitDefaultModel(4)).toBe(1);
+    expect(oahuExitDefaultModel(5)).toBe(2);
+    expect(oahuExitDefaultModel(0x13, maps.mapByName('M10OUT000')!.hash)).toBe(0xd0);
     expect(kinds.get('5/object')).toBeGreaterThan(300);
     expect(kinds.get('5/monster')).toBeGreaterThan(0);
     expect(kinds.get('5/denpa')).toBeGreaterThan(0);
+    // section 8 kinds 100〜102 (D70): invisible walls of mapObject 0x1E6〜0x1E8
+    expect(kinds.get('8/invisible')).toBe(26);
+    // mapObject +0x35 lifts rows 60〜72 by −2
+    expect(oahuObjectLift(mapObject, 60)).toBe(-2);
+    expect(oahuObjectLift(mapObject, 0x34)).toBe(0);
     for (const row of rows) expect(maps.objectModel(row)).not.toBeNull();
     // the chest and NPC models are BCH entries with their textures
     for (const row of [0x34, 0x37, 482]) {
@@ -297,6 +314,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     const kinds = new Set<number>();
     for (let r = 0; r < t.rows; r++) for (const s of oahuTreasureSlots(t, r)) kinds.add(s.kind);
     expect([...kinds].sort()).toEqual([1, 2, 3, 4]);
+    // kind 4: a battle with a monsterGroup row of a fixed formation (row 1 = たからばこぞう)
+    for (let r = 0; r < t.rows; r++)
+      for (const s of oahuTreasureSlots(t, r)) if (s.kind === OAHU_TREASURE_BATTLE) expect(session.battle.group(s.value & 0xff).fixed.length).toBeGreaterThan(0);
+    expect(session.battle.monsterName(session.battle.group(1).fixed[0]!)).toBe('たからばこぞう');
     // row 135: 100 G / 300 G / 1000 G by weights 5 / 3 / 1
     expect(oahuTreasureSlots(t, 135)).toEqual([{ value: 100, weight: 5, kind: 2 }, { value: 300, weight: 3, kind: 2 }, { value: 1000, weight: 1, kind: 2 }]);
     // writing the same entries back leaves the row as it is
@@ -323,5 +344,34 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     }
     expect(groups).toBe(89);
     expect(cells).toBe(988);
+  });
+
+  test('map table +0x30: levels 3〜5 of the table; an edit is exported in B68E0000, saved, undone and reverted', async () => {
+    const used = new Set(maps.maps.filter((m) => !m.world).map((m) => m.encounterLevel));
+    expect([...used].sort()).toEqual([3, 4, 5]);
+    for (const v of used) expect(OAHU_ENCOUNTER_LEVELS[v]).toBeDefined();
+    const m = maps.mapByName('D10B01001')!;
+    const before = m.encounterLevel;
+    const st = new OahuEditState(maps);
+    st.open(m);
+    st.editTables(() => maps.setEncounterLevel(m, 1));
+    expect(maps.isChanged(m)).toBe(true);
+    const out = parseArchive(maps.changedArchives().get(OAHU_MAP_ARCHIVE)!);
+    const table = unpackEntry(out, findEntry(out, OAHU_MAP_TABLE_ENTRY)!).body;
+    expect(u32(table, m.index * 0x44 + 0x30)).toBe(1);
+    // the other maps keep their rows
+    const original = unpackEntry(parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)), findEntry(parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)), OAHU_MAP_TABLE_ENTRY)!).body;
+    table[m.index * 0x44 + 0x30] = before;
+    expect(equalBytes(table, original)).toBe(true);
+    const saved = maps.saved();
+    expect(saved.encounter).toEqual([[m.index, 1]]);
+    st.undo();
+    expect(m.encounterLevel).toBe(before);
+    expect(maps.isChanged(m)).toBe(false);
+    await maps.restore(saved);
+    expect(m.encounterLevel).toBe(1);
+    maps.revert(m);
+    expect(m.encounterLevel).toBe(before);
+    expect(maps.changedArchives().size).toBe(0);
   });
 });

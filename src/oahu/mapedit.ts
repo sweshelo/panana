@@ -62,10 +62,11 @@ export function oahuRecLabel(section: number, raw: Uint8Array): string {
   return `区画 ${section}`;
 }
 
-/** What an undo point copies besides the map: the loaded EventObject tables and the chest contents (treasureGroup). */
+/** What an undo point copies besides the map: the loaded EventObject tables, the chest contents (treasureGroup) and the map table. */
 interface Tables {
   events: [archive: string, bytes: Uint8Array][];
   treasure: Uint8Array | null;
+  mapTable: Uint8Array;
 }
 
 export class OahuEditState extends MapEditState<OahuStamp, Tables> {
@@ -99,12 +100,13 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
 
   protected saveTables(): Tables {
     const treasure = this.treasureTable();
-    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null };
+    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null, mapTable: this.maps.mapTableBytes() };
   }
   protected restoreTables(t: Tables): void {
     const treasure = this.treasureTable();
     if (treasure && t.treasure) treasure.data = t.treasure.slice();
     this.maps.restoreEventTableBytes(t.events);
+    this.maps.restoreMapTableBytes(t.mapTable);
   }
   private treasureTable(): GsTable | null {
     return this.maps.objectRows ? oahuTreasureTable(this.maps.master) : null;
