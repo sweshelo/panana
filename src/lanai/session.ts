@@ -7,6 +7,8 @@ import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { hex8 } from '../util/bytes';
 import { lanaiPlain, lanaiText, parseLanaiMessage, type LanaiToken } from './message';
+import { LanaiRows } from './rows';
+import { LANAI_TABLES } from './tables';
 import { LanaiTable } from './table';
 
 /** A table of a root archive. */
@@ -76,6 +78,20 @@ export class LanaiSession {
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */
   table(name: string): LanaiTable | undefined {
     return this.byName.get(name);
+  }
+
+  private readonly rowsOf = new Map<string, LanaiRows>();
+
+  /** A table of the master read through its field definitions (tables.ts). */
+  rows(name: string): LanaiRows {
+    let r = this.rowsOf.get(name);
+    if (!r) {
+      const def = LANAI_TABLES[name];
+      if (!def) throw new Error(`表 ${name} の欄の定義がありません`);
+      r = new LanaiRows(this.need(name), def);
+      this.rowsOf.set(name, r);
+    }
+    return r;
   }
 
   /** A table that must be there. */

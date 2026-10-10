@@ -1,12 +1,15 @@
 // The monsters of 電波人間のRPG FREE! (naauao lanai/monsters.md): MonsterParameter (master 2135000A, 1231 × 0x24) for the
-// names, and the MonsterDesign row it names (+0x10, 570 × 0xA0) for the BCH entries of the model (+0x08), the colour's
-// textures (+0x0C) and the battle motions (+0x10). The BCHs are `enemy_NN[_MM].bch`, `enemy_NN_MM_tex.bch` and
+// names, and the MonsterDesign row it names (+0x00 bits 20-29, a row number; 570 × 0xA0) for the BCH entries of the
+// model (+0x08), the colour's
+// textures (+0x0C) and the battle motions (+0x10): the game reads the look that way (code.bin 0x306E84 and 0x2B7ED0:
+// `lsl #2; lsr #22` of +0x00, then FUN_0031C038 on MonsterDesign with the row number). +0x10 is a 0x8000xxxx value of
+// another numbering (only 40 rows agree with MonsterDesign's row IDs); it is not the look. The BCHs are `enemy_NN[_MM].bch`, `enemy_NN_MM_tex.bch` and
 // `enemy_NN_battle.bch` of the root archives 28480000 (Base) and 719F0000 (Update). Monsters of one species share a
 // model and differ by the texture entry (おおくちばし and アイスバード are both enemy_02).
 // The stats (MonsterParameterMain / Extra / RegularEvent / SpecialEvent, 0x9C) are not linked to these rows yet.
 import { entryBlob, unpackEntry, type ArcEntry, type Archive } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
-import { f32, u16, u32 } from '../util/bytes';
+import { u32 } from '../util/bytes';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -20,9 +23,9 @@ export interface LanaiMonster {
   id: number;
   name: string;
   group: string;
-  /** +0x10: row ID of MonsterDesign. */
+  /** +0x10: a 0x8000xxxx value of another numbering (not the look; meaning not known). */
   design: number;
-  /** Row of MonsterDesign (-1 when the table has no such ID). */
+  /** Row number of MonsterDesign: +0x00 bits 20-29 (-1 when the table has no such row). */
   designRow: number;
 }
 
@@ -33,8 +36,6 @@ export interface LanaiMonsterDesign {
   model: number;
   texture: number;
   motion: number;
-  /** +0x20..+0x48 as f32 (sizes and distances, assumed). */
-  sizes: number[];
 }
 
 /** An entry of the model archives. */
@@ -45,9 +46,6 @@ export interface LanaiModelEntry {
   name: string;
   entry: ArcEntry;
 }
-
-/** Offset of the first f32 of MonsterDesign that looks like a size, and the number of them (naauao: 推定). */
-export const DESIGN_SIZES: [number, number] = [0x20, 11];
 
 export const lanaiMonsterHref = (row: number): string => `#/monsters/${row}`;
 
@@ -60,8 +58,8 @@ export function lanaiMonsters(session: LanaiSession): LanaiMonster[] {
     const t = session.need('MonsterParameter');
     const d = session.need('MonsterDesign');
     out = Array.from({ length: t.rows }, (_, row): LanaiMonster => {
-      const design = t.u32(row, 0x10);
-      return { row, id: t.rowId(row), name: session.plain(t, row, 'name'), group: session.plain(t, row, 'group_name'), design, designRow: d.find(design) };
+      const look = (t.u32(row, 0x00) >>> 20) & 0x3ff;
+      return { row, id: t.rowId(row), name: session.plain(t, row, 'name'), group: session.plain(t, row, 'group_name'), design: t.u32(row, 0x10), designRow: look < d.rows ? look : -1 };
     });
     lists.set(session, out);
   }
@@ -71,14 +69,12 @@ export function lanaiMonsters(session: LanaiSession): LanaiMonster[] {
 export function lanaiMonsterDesign(session: LanaiSession, row: number): LanaiMonsterDesign | null {
   const t = session.need('MonsterDesign');
   if (row < 0 || row >= t.rows) return null;
-  const r = t.row(row);
   return {
     row,
     id: t.rowId(row),
     model: t.u32(row, 0x08),
     texture: t.u32(row, 0x0c),
     motion: t.u32(row, 0x10),
-    sizes: Array.from({ length: DESIGN_SIZES[1] }, (_, i) => f32(r, DESIGN_SIZES[0] + i * 4)),
   };
 }
 
@@ -92,18 +88,6 @@ export function lanaiVoice(t: LanaiTable, row: number): { bytes: number[]; text:
   if (o >= 0) for (let p = o; p < t.data.length && t.data[p] !== 0 && bytes.length < 256; p++) bytes.push(t.data[p]!);
   const text = bytes.map((b) => (b >= 0xa1 && b <= 0xdf ? String.fromCharCode(0xff61 + b - 0xa1) : b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, '0')}`)).join('');
   return { bytes, text };
-}
-
-/** The raw u32s of a row (offset, value). */
-export function rowWords(t: LanaiTable, row: number): [number, number][] {
-  const r = t.row(row);
-  return Array.from({ length: t.rowSize >>> 2 }, (_, i): [number, number] => [i * 4, u32(r, i * 4)]);
-}
-
-/** The two u16 of MonsterParameter +0x14 (meaning not known). */
-export function paramHalves(t: LanaiTable, row: number): [number, number] {
-  const r = t.row(row);
-  return [u16(r, 0x14), u16(r, 0x16)];
 }
 
 /** The entries of the model archives by hash (names from their ZIPs, nothing unpacked). */

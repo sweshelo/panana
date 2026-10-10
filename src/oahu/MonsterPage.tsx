@@ -9,6 +9,7 @@ import { SlotTiles } from '../ui/GroupDetail';
 import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
 import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
+import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
 import { oneIn, pct } from '../pages/monsteredit';
 import { RowFields } from '../ui/RowFields';
@@ -394,9 +395,16 @@ function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number
   );
 }
 
-/** The 3D view of the monster's model, made once the page is in the browser (the viewer needs the DOM). */
+/** The 3D view of the monster's model and its textures, made once the page is in the browser (the viewer needs the DOM). */
 function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
-  return shown ? <ModelView model={battle.monsterModel(row, true)} name={battle.monsterName(row)} /> : <div className="model-placeholder" />;
+  if (!shown) return <div className="model-placeholder" />;
+  const model = battle.monsterModel(row, true);
+  return (
+    <div>
+      <ModelView model={model} name={battle.monsterName(row)} />
+      <ModelTextures model={model} />
+    </div>
+  );
 }

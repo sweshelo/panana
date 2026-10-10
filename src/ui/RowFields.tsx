@@ -1,7 +1,7 @@
 // Every field of one table row by the game's definition (tabledef.ts): where it is, its value, what it names, and the
 // value in the archive when it was changed. The books show it under the entry for the fields they do not edit.
 import type { ReactNode } from 'react';
-import { fieldPlace, fieldText, readField, type FieldContext, type TableDef } from '../game/tabledef';
+import { fieldPlace, fieldText, fieldValue, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { InfoTip } from './InfoTip';
 
 export function RowFields({ def, row, original, context }: { def: TableDef; row: Uint8Array; original?: Uint8Array; context?: FieldContext }): ReactNode {
@@ -13,7 +13,9 @@ export function RowFields({ def, row, original, context }: { def: TableDef; row:
           const v = readField(row, f);
           const o = original && readField(original, f);
           const changed = o !== undefined && o !== v;
-          const text = fieldText(f, v, context);
+          // a hash's value is already in the value column: only the file it names
+          const text = f.ref?.kind === 'hash' ? fieldText(f, v, context).slice(9) : fieldText(f, v, context);
+          const value = fieldValue(f, v);
           return (
             <tr key={f.key} className={f.unsure ? 'muted' : ''}>
               <td>
@@ -21,8 +23,8 @@ export function RowFields({ def, row, original, context }: { def: TableDef; row:
                 {f.note && <InfoTip text={f.note} />}
               </td>
               <td className="mono muted">{fieldPlace(f)}</td>
-              <td className={`num${changed ? ' edited' : ''}`} title={changed ? `元の値 ${fieldText(f, o!, context)}` : undefined}>{f.hex ? text : v}</td>
-              <td className="row-fields-text">{f.hex || text === String(v) ? '' : text}</td>
+              <td className={`num${changed ? ' edited' : ''}`} title={changed ? `元の値 ${fieldText(f, o!, context)}` : undefined}>{f.hex ? text : value}</td>
+              <td className="row-fields-text">{f.hex || text === value || text === String(v) ? '' : text}</td>
             </tr>
           );
         })}

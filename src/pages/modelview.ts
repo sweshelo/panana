@@ -30,10 +30,22 @@ function textureImage(set: TilesetModels): { image: string; name: string } | nul
   return { image: c.toDataURL('image/png'), name: t.name };
 }
 
+const sets = new Map<string, Promise<{ set: TilesetModels; hash: number } | null>>();
+
+/** The converted set of a model (loaded once per key; the viewer, the photo and the texture list share it). */
+export function modelSet(ref: ModelRef): Promise<{ set: TilesetModels; hash: number } | null> {
+  let p = sets.get(ref.key);
+  if (!p) {
+    p = ref.load();
+    sets.set(ref.key, p);
+  }
+  return p;
+}
+
 function factoryOf(ref: ModelRef): Promise<Loaded | null> {
   let p = factories.get(ref.key);
   if (!p) {
-    p = ref.load()
+    p = modelSet(ref)
       .then((r): Loaded | null => {
         if (!r) return null;
         if (r.set.models.has(r.hash)) return { factory: new ModelFactory(r.set), hash: r.hash };

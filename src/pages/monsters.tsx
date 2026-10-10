@@ -13,6 +13,7 @@ import type { MapDoc } from '../game/sections';
 import type { Session } from '../session';
 import { Count, ListFilter, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
 import { GroupDetail } from '../ui/GroupDetail';
+import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
@@ -139,7 +140,10 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
           {m.description && <p className="book-desc">{m.description}</p>}
           <StatEditor {...p} />
         </div>
-        <ModelView model={monsterRef(game, book, m)} name={m.name} motionHints={MONSTER_MOTIONS} />
+        <div>
+          <ModelView model={monsterRef(game, book, m)} name={m.name} motionHints={MONSTER_MOTIONS} />
+          <ModelTextures model={monsterRef(game, book, m)} />
+        </div>
       </div>
       <div className="book-cols monster-cols">
         <DropEditor session={session} {...p} />

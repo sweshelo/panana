@@ -1,31 +1,35 @@
-// RPG FREE!'s monster book (#/monsters/<row>), read only: the rows of MonsterParameter with their names, the fields of
-// the row, the MonsterDesign row it names with its model, colour textures and battle motions (naauao lanai/monsters.md),
-// the model in the 3D viewer and the other monsters of the same model (colour variants).
+// RPG FREE!'s monster book (#/monsters/<row>), built like RPG2's and RPG3's from the shared parts: the list with the
+// photos, the name, the model with its textures (ui/ModelView, ui/ModelTextures), the look (MonsterDesign) and every
+// field of the rows (ui/RowFields through the field definitions of tables.ts, so the fields that become known can be
+// given the shared inputs of ui/FieldEdit). Read only for now (naauao lanai/monsters.md).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { TEX_FORMAT } from '../cgfx/texture';
-import type { CgfxTexture } from '../cgfx/cgfx';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
+import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
+import { Photo } from '../ui/Photo';
+import { RowFields } from '../ui/RowFields';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
-import { lanaiDesignFiles, lanaiMonsterModel, lanaiMonsterSet, type LanaiDesignFiles } from './monsterModels';
-import {
-  DESIGN_SIZES, lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, lanaiVoice, monstersWithModel, paramHalves, rowWords,
-  type LanaiModelIndex, type LanaiMonster, type LanaiMonsterDesign,
-} from './monsters';
+import { lanaiMonsterModel, lanaiMonsterSet } from './monsterModels';
+import { lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex, type LanaiMonster } from './monsters';
+import type { LanaiRows } from './rows';
 import type { LanaiSession } from './session';
 
 export { lanaiMonsterHref } from './monsters';
 
 type Filter = 'all' | 'model' | 'none';
 
-const hex = (v: number): string => `0x${hex8(v)}`;
+/** The photo of a monster's model (none without a MonsterDesign row). */
+function monsterIcon(session: LanaiSession, m: LanaiMonster): ReactNode {
+  const d = m.designRow < 0 ? null : lanaiMonsterDesign(session, m.designRow);
+  return <Photo model={d ? lanaiMonsterModel(session, d, false) : null} title={m.name} />;
+}
 
-/** The model entry's name of a monster ("enemy_02.bch"), '' when it has none or the index is not read yet. */
+/** The model entry's name of a monster ("enemy_02"), '' when it has none or the index is not read yet. */
 function modelName(session: LanaiSession, index: LanaiModelIndex | undefined, m: LanaiMonster): string {
   if (!index || m.designRow < 0) return '';
-  return index.name(session.need('MonsterDesign').u32(m.designRow, 0x08)) ?? '';
+  return (index.name(session.rows('MonsterDesign').get(m.designRow, 'model')) ?? '').replace(/\.bch$/, '');
 }
 
 export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
@@ -44,28 +48,27 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
   const rows = monsters.filter((m) => {
     const model = modelName(session, index, m);
     if (q && String(m.row) !== q && hex8(m.id) !== q.toUpperCase() && ![m.name, m.group, model].some((t) => t.includes(q))) return false;
-    // before the archives are read, a design row is enough
-    const has = m.designRow >= 0 && (!index || !!model);
-    if (filter === 'model') return has && !model.startsWith('dummy');
-    if (filter === 'none') return !has || model.startsWith('dummy');
+    const has = m.designRow >= 0 && (!index || (!!model && !model.startsWith('dummy')));
+    if (filter === 'model') return has;
+    if (filter === 'none') return !has;
     return true;
   });
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・群れの名前・行・モデルで検索" filter={filter} setFilter={setFilter}
+        <ListFilter query={query} setQuery={setQuery} placeholder="名前・群れの名前・モデルで検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ['model', 'モデルあり'], ['none', 'モデルなし']]} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={monsters.length} />
           <table className="book-table">
-            <thead><tr><th>#</th><th>名前</th><th>群れの名前</th><th>モデル</th></tr></thead>
+            <thead><tr><th></th><th>#</th><th>名前</th><th>群れの名前</th></tr></thead>
             <tbody>
               {rows.map((m) => (
                 <tr key={m.row} className={m.row === selected ? 'active' : ''} onClick={() => (location.hash = lanaiMonsterHref(m.row))}>
+                  <td className="photo-cell">{monsterIcon(session, m)}</td>
                   <td className="num muted">{m.row}</td>
                   <td>{m.name || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{m.group}</td>
-                  <td className="mono small muted">{modelName(session, index, m).replace(/\.bch$/, '')}</td>
                 </tr>
               ))}
             </tbody>
@@ -80,12 +83,17 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
 }
 
 const PARAM_INFO = [
-  'master (2135000A) の MonsterParameter (1231 行 × 0x24) の行。名前・voice・群れの名前は文字列の欄です。',
-  '+0x10 が MonsterDesign の行 ID で、見た目 (モデル・色・モーション) が決まります。',
+  'master (2135000A) の MonsterParameter (1231 行 × 0x24)。名前・群れの名前は表の文字列、+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
   '能力の表 (MonsterParameterMain / Extra / RegularEvent / SpecialEvent、0x9C) とのつながりはまだわかっていません。',
+  '今は読むだけです。わかった欄は、RPG2・RPG3 と同じ入力で編集できるようにします。',
 ].join('\n');
 
 const VOICE_INFO = 'voice の欄は、ほかの文字列 (UTF-16) と違い 1 バイトずつの文字列です。半角カナと記号 (\' / | など) で書かれた読みで、音声合成用と推定しています。ほとんどのモンスターは空です。';
+
+const DESIGN_INFO = [
+  'master の MonsterDesign (570 行 × 0xA0)。モデル・色のテクスチャ・戦闘のモーションは、ルートのアーカイブ 28480000 (Base) と 719F0000 (Update) の BCH のエントリです。',
+  '色違いは、同じモデルにテクスチャを名前で差し替えて作ります。',
+].join('\n');
 
 function MonsterDetail({ session, monster: m, index, indexError }: {
   session: LanaiSession;
@@ -93,182 +101,87 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
   index: LanaiModelIndex | undefined;
   indexError: Error | null;
 }): ReactNode {
-  const t = session.need('MonsterParameter');
-  const design = m.designRow >= 0 ? lanaiMonsterDesign(session, m.designRow) : null;
-  const voice = lanaiVoice(t, m.row);
-  const [h0, h1] = paramHalves(t, m.row);
-  const words = rowWords(t, m.row);
-  const meaning: Record<number, ReactNode> = {
-    0x00: <span className="muted">ビット詰めの値 (未解析)</span>,
-    0x04: <>名前「{m.name}」</>,
-    0x08: <>voice {voice.bytes.length ? <>「{voice.text}」 <span className="mono muted small">{voice.bytes.map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')}</span></> : <span className="muted">(空)</span>}</>,
-    0x0c: <>群れの名前「{m.group}」</>,
-    0x10: <>MonsterDesign の行 ID {m.designRow >= 0 ? `(行 ${m.designRow})` : <span className="error-text">(MonsterDesign にない ID)</span>}</>,
-    0x14: <span className="muted">{`u16 × 2: ${h0}, ${h1} (未解析)`}</span>,
-    0x18: <span className="muted">未解析 (0x10 が多い)</span>,
-  };
+  const params = session.rows('MonsterParameter');
+  const designs = session.rows('MonsterDesign');
+  const voice = lanaiVoice(params.table, m.row);
+  const context = (rows: LanaiRows) => rows.context(session, { hashName: (h) => index?.name(h) });
   return (
     <>
       <div className="book-head">
         <h2 className="with-info">{m.name || '(名前なし)'}<InfoTip text={PARAM_INFO} /></h2>
-        <span className="muted">{`#${m.row}  ID ${hex8(m.id)}  ${m.group}`}</span>
+        <span className="muted">{`#${m.row}  ID ${hex8(m.id)}  デザイン ${m.designRow >= 0 ? m.designRow : '(MonsterDesign にない行)'}`}</span>
       </div>
       <div className="book-top">
         <div>
-          <h3>MonsterParameter の欄</h3>
-          <table className="enc-table row-fields">
+          <table className="enc-table desc-table">
             <tbody>
-              <tr><th>場所</th><th>値</th><th>意味</th></tr>
-              {words.map(([o, v]) => (
-                <tr key={o}>
-                  <td className="mono muted">{`+0x${o.toString(16).toUpperCase().padStart(2, '0')}`}</td>
-                  <td className="mono">{t.isString(m.row, o) ? <span title="文字列の欄 (プールの位置)">{`→ ${hex(v)}`}</span> : hex(v)}</td>
-                  <td>{o === 0x08 ? <span className="with-info">{meaning[o]}<InfoTip text={VOICE_INFO} /></span> : meaning[o] ?? <span className="muted">未解析</span>}</td>
-                </tr>
-              ))}
+              <tr><th>名前</th><td className="book-desc">{m.name}</td></tr>
+              <tr><th>群れの名前</th><td className="book-desc">{m.group}</td></tr>
+              <tr>
+                <th className="with-info">voice<InfoTip text={VOICE_INFO} /></th>
+                <td className="book-desc">{voice.bytes.length ? <>{voice.text} <span className="mono muted small">{voice.bytes.map((b) => b.toString(16).toUpperCase().padStart(2, '0')).join(' ')}</span></> : <span className="muted">(空)</span>}</td>
+              </tr>
             </tbody>
           </table>
+          <p className="muted small">能力・ワザ・ドロップ・たいせいの表はまだつながっていません。</p>
         </div>
-        {design ? <MonsterModel session={session} design={design} name={m.name} /> : <div className="model-placeholder muted">MonsterDesign の行がないので、モデルはわかりません</div>}
+        <MonsterModel session={session} monster={m} />
       </div>
       {indexError && <div className="error">{`モデルのアーカイブを読めませんでした: ${indexError.message}`}</div>}
-      {design && <DesignDetail session={session} monster={m} design={design} index={index} />}
-    </>
-  );
-}
-
-const DESIGN_INFO = [
-  'master の MonsterDesign (570 行 × 0xA0)。+0x08 がモデル、+0x0C が色違いのテクスチャ、+0x10 が戦闘用のモーションで、どれもルートアーカイブ 28480000 (Base) か 719F0000 (Update) のエントリのハッシュです。',
-  '色違いは、同じモデルにテクスチャを名前で差し替えて作ります。+0x20〜 の f32 は大きさ・距離と推定しています。',
-].join('\n');
-
-function EntryCell({ index, hash }: { index: LanaiModelIndex | undefined; hash: number }): ReactNode {
-  if (!hash) return <span className="muted">なし</span>;
-  const e = index?.get(hash);
-  return (
-    <>
-      <span className="mono muted">{hex8(hash)}</span>{' '}
-      {!index ? <span className="muted">…</span> : e ? <><span className="mono">{e.name || '(名前なし)'}</span> <span className="muted small">{e.archive}</span></> : <span className="error-text">エントリがありません</span>}
-    </>
-  );
-}
-
-function DesignDetail({ session, monster: m, design: d, index }: { session: LanaiSession; monster: LanaiMonster; design: LanaiMonsterDesign; index: LanaiModelIndex | undefined }): ReactNode {
-  const files = useAsync(() => lanaiDesignFiles(session, d), [session, d.row]);
-  const same = useMemo(() => (d.model ? monstersWithModel(session, d.model) : []), [session, d.model]);
-  const dt = session.need('MonsterDesign');
-  const sizeEnd = DESIGN_SIZES[0] + DESIGN_SIZES[1] * 4;
-  return (
-    <>
-      <h3 className="with-info">{`見た目 (MonsterDesign 行 ${d.row}、ID ${hex8(d.id)})`}<InfoTip text={DESIGN_INFO} /></h3>
-      <table className="enc-table">
-        <tbody>
-          <tr><td>モデル (+0x08)</td><td><EntryCell index={index} hash={d.model} /></td></tr>
-          <tr><td>色のテクスチャ (+0x0C)</td><td><EntryCell index={index} hash={d.texture} /></td></tr>
-          <tr><td>戦闘のモーション (+0x10)</td><td><EntryCell index={index} hash={d.motion} /></td></tr>
-          <tr><td>大きさ (推定)</td><td className="mono small">{d.sizes.map((v) => +v.toFixed(3)).join(', ')}</td></tr>
-        </tbody>
-      </table>
-      {files instanceof Error && <div className="error">{files.message}</div>}
-      {files && !(files instanceof Error) && <DesignFiles files={files} />}
-      <h3>{`同じモデルのモンスター (${same.length})`}</h3>
-      <table className="enc-table">
-        <tbody>
-          <tr><th>#</th><th>名前</th><th>色のテクスチャ</th><th>MonsterDesign</th></tr>
-          {same.map((x) => {
-            const tex = dt.u32(x.designRow, 0x0c);
-            return (
-              <tr key={x.row} className={x.row === m.row ? 'muted' : ''}>
-                <td className="num muted">{x.row}</td>
-                <td>{x.row === m.row ? `${x.name} (これ)` : <a href={lanaiMonsterHref(x.row)}>{x.name || '(名前なし)'}</a>}</td>
-                <td className="mono small">{index?.name(tex) ?? hex8(tex)}{tex === d.texture && x.row !== m.row ? <span className="muted"> (同じ色)</span> : ''}</td>
-                <td className="mono small muted">{`行 ${x.designRow}`}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {m.designRow >= 0 && (
+        <>
+          <h3 className="with-info">{`見た目 (MonsterDesign 行 ${m.designRow})`}<InfoTip text={DESIGN_INFO} /></h3>
+          <RowFields def={designs.def} row={designs.row(m.designRow)} original={designs.originalRow(m.designRow)} context={context(designs)} />
+          <SameModel session={session} monster={m} />
+        </>
+      )}
       <details className="row-fields-box">
-        <summary>{`MonsterDesign の行 ${d.row} のすべての値`}</summary>
-        <table className="enc-table">
-          <tbody>
-            <tr><th>場所</th><th>u32</th><th>f32</th></tr>
-            {rowWords(dt, d.row).map(([o, v]) => {
-              const f = new DataView(new Uint32Array([v]).buffer).getFloat32(0, true);
-              return (
-                <tr key={o} className={o >= DESIGN_SIZES[0] && o < sizeEnd ? '' : 'muted'}>
-                  <td className="mono muted">{`+0x${o.toString(16).toUpperCase().padStart(2, '0')}`}</td>
-                  <td className="mono">{hex(v)}</td>
-                  <td className="mono small">{o >= DESIGN_SIZES[0] && o < sizeEnd ? +f.toFixed(4) : ''}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <summary>{`MonsterParameter の行 ${m.row} のすべての欄`}</summary>
+        <RowFields def={params.def} row={params.row(m.row)} original={params.originalRow(m.row)} context={context(params)} />
       </details>
     </>
   );
 }
 
-function DesignFiles({ files: f }: { files: LanaiDesignFiles }): ReactNode {
+/** The other monsters of the same model (colour variants, other forms). */
+function SameModel({ session, monster: m }: { session: LanaiSession; monster: LanaiMonster }): ReactNode {
+  const designs = session.rows('MonsterDesign');
+  const model = designs.get(m.designRow, 'model');
+  const same = useMemo(() => (model ? monstersWithModel(session, model).filter((x) => x.row !== m.row) : []), [session, model, m.row]);
+  if (!same.length) return null;
+  const texture = designs.get(m.designRow, 'texture');
   return (
     <>
-      {f.errors.length > 0 && <div className="error">{f.errors.join('\n')}</div>}
-      {f.textures.length > 0 && (
-        <>
-          <h3>色のテクスチャ</h3>
-          <div className="bch-textures">{f.textures.map((t) => <TextureThumb key={t.name} t={t} />)}</div>
-        </>
-      )}
-      <div className="book-cols">
-        <section>
-          <h3>{`戦闘のモーション (${f.motions.length + f.materialMotions.length})`}</h3>
-          <ul className="mono small">
-            {f.motions.map((n) => <li key={`s/${n}`}>{n}</li>)}
-            {f.materialMotions.map((n) => <li key={`m/${n}`}>{n}<span className="muted"> (材質)</span></li>)}
-          </ul>
-        </section>
-        <section>
-          <h3>{`モデルのアニメーション (${f.modelAnimations.length})`}</h3>
-          <ul className="mono small">{f.modelAnimations.map((n) => <li key={n}>{n}</li>)}</ul>
-          <div className="muted small">
-            {`H3D ${f.version === null ? '?' : `0x${f.version.toString(16)}`}、モデル ${f.models.join(', ') || 'なし'}、モデル自身のテクスチャ ${f.modelTextures.length}`}
-          </div>
-        </section>
-      </div>
+      <h3>{`同じモデルのモンスター (${same.length})`}</h3>
+      <table className="book-table">
+        <tbody>
+          {same.map((x) => (
+            <tr key={x.row} onClick={() => (location.hash = lanaiMonsterHref(x.row))}>
+              <td className="photo-cell">{monsterIcon(session, x)}</td>
+              <td className="num muted">{x.row}</td>
+              <td>{x.name || <span className="muted">(名前なし)</span>}</td>
+              <td className="muted small">{designs.get(x.designRow, 'texture') === texture ? '同じ色' : `デザイン ${x.designRow}`}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </>
   );
 }
 
-function TextureThumb({ t }: { t: CgfxTexture }): ReactNode {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const c = canvas.current;
-    if (!c) return;
-    c.width = t.width;
-    c.height = t.height;
-    c.getContext('2d')?.putImageData(new ImageData(new Uint8ClampedArray(t.rgba), t.width, t.height), 0, 0);
-  }, [t]);
-  return (
-    <figure className="bch-texture">
-      <canvas ref={canvas} title={`${t.width}×${t.height}`} />
-      <figcaption>
-        <span className="mono">{t.name}</span>
-        <span className="muted small">{`${t.width}×${t.height} ${TEX_FORMAT[t.format] ?? t.format}`}</span>
-      </figcaption>
-    </figure>
-  );
-}
-
-/** The 3D view (made once the page is in the browser: the viewer needs the DOM), with why the model could not be read. */
-function MonsterModel({ session, design, name }: { session: LanaiSession; design: LanaiMonsterDesign; name: string }): ReactNode {
+/** The 3D view and its textures (made once the page is in the browser: the viewer needs the DOM), with why the model could not be read. */
+function MonsterModel({ session, monster: m }: { session: LanaiSession; monster: LanaiMonster }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
-  const set = useAsync(() => (shown ? lanaiMonsterSet(session, design) : Promise.resolve(null)), [shown, session, design.row]);
+  const design = m.designRow < 0 ? null : lanaiMonsterDesign(session, m.designRow);
+  const set = useAsync(() => (shown && design ? lanaiMonsterSet(session, design) : Promise.resolve(null)), [shown, session, m.designRow]);
+  if (!design) return <div className="model-placeholder muted">MonsterDesign の行がないので、モデルはわかりません</div>;
   if (!shown) return <div className="model-placeholder" />;
+  const model = lanaiMonsterModel(session, design);
   return (
     <div>
-      <ModelView model={lanaiMonsterModel(session, design)} name={name || 'monster'} />
+      <ModelView model={model} name={m.name || 'monster'} />
+      <ModelTextures model={model} />
       {set instanceof Error && <div className="muted small">{`モデルを読めませんでした: ${set.message}`}</div>}
       {set && !(set instanceof Error) && set.errors.length > 0 && <div className="muted small">{set.errors.join('\n')}</div>}
     </div>
