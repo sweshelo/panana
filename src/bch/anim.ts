@@ -103,11 +103,13 @@ const TEXCOORD_TARGETS: Record<number, [number, 'scale' | 'translate']> = {
 };
 
 /**
- * H3DAnimation: name, u8 flags (bit 0 loop), u8 type (0 skeletal, 1 material, 2 visibility), u16 curves, f32 frames,
- * elements, metadata. The wait / walk / run motions loop, the skills do not.
+ * H3DAnimation: name, two bytes of type (0 skeletal, 1 material, 2 visibility) and flags (bit 0 loop), u16 curves,
+ * f32 frames, elements, metadata. The two bytes swap places: version 8 (RPG3) has the type at +0x04 and the flags at
+ * +0x05, version 0x21 (RPG FREE!) the flags at +0x04 and the type at +0x05. The wait / walk / run motions loop, the
+ * skills do not.
  */
 function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material', version: number): CgfxAnimation {
-  const anim: CgfxAnimation = { name: str(b, o), kind, loop: (b[o + 4]! & 1) === 1, frames: f32(b, o + 8), skeletal: [], material: [] };
+  const anim: CgfxAnimation = { name: str(b, o), kind, loop: (b[o + (version >= 0x20 ? 4 : 5)]! & 1) === 1, frames: f32(b, o + 8), skeletal: [], material: [] };
   const list = u32(b, o + 0x0c), count = u32(b, o + 0x10);
   for (let i = 0; list && i < count; i++) {
     // H3DAnimationElement: name, u16 target, u16 primitive type, content.
