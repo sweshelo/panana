@@ -298,15 +298,34 @@ const apply = (m: Mat34, x: number, y: number, z: number, w: number): [number, n
   m[8]! * x + m[9]! * y + m[10]! * z + m[11]! * w,
 ];
 
-/** H3DBone (0x64 bytes): flags, s16 parent, scale, rotation, translation, inverse bind matrix, name. */
+/** H3DModel +0x01 bone scaling (SPICA H3DBoneScaling): 0 standard, 1 Maya, 2 SoftImage. */
+const BONE_SCALING_MAYA = 1;
+/** H3DBone flag: segment scale compensate (SPICA H3DBoneFlags.IsSegmentScaleCompensate). */
+const BONE_SSC = 1 << 22;
+
+/**
+ * H3DBone (0x64 bytes): flags, s16 parent, scale, rotation, translation, inverse bind matrix, name. With the model's
+ * Maya bone scaling, the flag bit 22 keeps the parent's scale off the bone (RPG FREE!'s monsters: the tongue chains).
+ */
 function readBones(r: Reader, model: number): CgfxBone[] {
+  const maya = r.b[model + 1] === BONE_SCALING_MAYA;
   return r.inlineList(model + 0x70, 0x64).map((o) => ({
     name: r.str(o + 0x5c),
     parent: s16(r.b, o + 4),
     scale: r.vec3(o + 8),
     rotation: r.vec3(o + 0x14),
     translation: r.vec3(o + 0x20),
+    ssc: maya && (r.u32(o) & BONE_SSC) !== 0,
   }));
+}
+
+/** A local matrix with the parent's scale taken off its rotation and scale (rows of the 3×3 divided by it). */
+function compensateScale(m: Mat34, parentScale: readonly number[]): Mat34 {
+  for (let row = 0; row < 3; row++) {
+    const k = parentScale[row] ? 1 / parentScale[row]! : 1;
+    for (let col = 0; col < 3; col++) m[row * 4 + col]! *= k;
+  }
+  return m;
 }
 
 function worldMatrices(bones: CgfxBone[]): Mat34[] {
@@ -314,7 +333,9 @@ function worldMatrices(bones: CgfxBone[]): Mat34[] {
   const get = (i: number, depth = 0): Mat34 => {
     if (world[i]) return world[i]!;
     const b = bones[i]!;
+    const parent = b.parent >= 0 && b.parent < bones.length && b.parent !== i ? bones[b.parent] : undefined;
     const local = composeTRS(b.scale, b.rotation, b.translation);
+    if (b.ssc && parent) compensateScale(local, parent.scale);
     const m = b.parent >= 0 && b.parent < bones.length && b.parent !== i && depth < 64 ? mul34(get(b.parent, depth + 1), local) : local;
     world[i] = m;
     return m;
@@ -427,6 +448,11 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
   const subs = r.inlineList(o + 0x10, 0x34).map((s) => readSubMesh(r, s));
   const { attrs, stride, address, posOffset, fixed: fixedByName } = layout;
   const has = (n: number): boolean => attrs.some((a) => a.name === n) || fixedByName.has(n);
+  // A fixed bone index / weight has as many elements as its partner when that one is per vertex (RPG FREE!'s tongues:
+  // 4 weights per vertex with fixed indices; taking 3 dropped the 4th bone), else 3 as before.
+  const partner = (n: number): number | undefined => attrs.find((a) => a.name === n)?.elements;
+  const fixedElements = (name: number): number =>
+    name === ATTR.boneIndex ? partner(ATTR.boneWeight) ?? 3 : name === ATTR.boneWeight ? partner(ATTR.boneIndex) ?? 3 : 4;
 
   const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
   const skinIdx: number[] = [], skinW: number[] = [];
@@ -463,7 +489,7 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
               break;
           }
         };
-        for (const [name, v] of fixedByName) take(name, v, name === ATTR.boneIndex || name === ATTR.boneWeight ? 3 : 4);
+        for (const [name, v] of fixedByName) take(name, v, fixedElements(name));
         for (const a of attrs) {
           readValue(r.b, base + a.offset, a, tmp);
           if (a.name !== ATTR.boneIndex) for (let k = 0; k < 4; k++) tmp[k] = tmp[k]! * a.scale;

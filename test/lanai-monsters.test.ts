@@ -89,6 +89,27 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
     expect(anims).toEqual(expect.arrayContaining(['005_E02_skillA', '008_E02_damage']));
   });
 
+  test('motions: wait / walk / run loop (H3DAnimation +0x04 bit 0), skills do not', async () => {
+    const set = await lanaiMonsterSet(s, lanaiMonsterDesign(s, lanaiMonsters(s)[1]!.designRow)!);
+    const anims = [...set.models.values()][0]!.animations.filter((a) => a.kind === 'skeletal');
+    const loop = Object.fromEntries(anims.map((a) => [a.name, a.loop]));
+    expect(loop['001_E74_wait']).toBe(true);
+    expect(loop['004_E74_run']).toBe(true);
+    expect(loop['005_E74_skillA']).toBe(false);
+  });
+
+  test('skin weights sum to 1: fixed bone indices take as many elements as the weights (いちごおばけ tongue)', async () => {
+    const set = await lanaiMonsterSet(s, lanaiMonsterDesign(s, lanaiMonsters(s)[1]!.designRow)!);
+    const model = [...set.models.values()][0]!;
+    for (const mesh of model.meshes) {
+      const w = mesh.skinWeights;
+      if (!w) continue;
+      for (let v = 0; v < w.length; v += 4) expect(Math.abs(w[v]! + w[v + 1]! + w[v + 2]! + w[v + 3]! - 1)).toBeLessThan(0.02);
+    }
+    // the tongue bones scale with segment scale compensate (Maya bone scaling, flag bit 22)
+    expect(model.bones.filter((b) => b.ssc).map((b) => b.name)).toEqual(expect.arrayContaining(['tongue_1', 'tongue_2', 'tongue_3']));
+  });
+
   test('the page', () => {
     const html = renderToString(createElement(LanaiMonsterPage, { session: s, arg: '50' }));
     for (const t of ['アイスバード', 'アイスバードたち', 'MonsterParameter の行', 'MonsterDesign 行 8', '同じモデルのモンスター', 'おおくちばし', 'モデルあり', '1231 / 1231'])

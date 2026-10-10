@@ -102,9 +102,12 @@ const TEXCOORD_TARGETS: Record<number, [number, 'scale' | 'translate']> = {
   19: [0, 'scale'], 21: [0, 'translate'], 22: [1, 'scale'], 24: [1, 'translate'], 25: [2, 'scale'], 27: [2, 'translate'],
 };
 
-/** H3DAnimation: name, u8 type (0 skeletal, 1 material, 2 visibility), u8 flags (bit 0 loop), u16 curves, f32 frames, elements, metadata. */
+/**
+ * H3DAnimation: name, u8 flags (bit 0 loop), u8 type (0 skeletal, 1 material, 2 visibility), u16 curves, f32 frames,
+ * elements, metadata. The wait / walk / run motions loop, the skills do not.
+ */
 function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material', version: number): CgfxAnimation {
-  const anim: CgfxAnimation = { name: str(b, o), kind, loop: (b[o + 5]! & 1) === 1, frames: f32(b, o + 8), skeletal: [], material: [] };
+  const anim: CgfxAnimation = { name: str(b, o), kind, loop: (b[o + 4]! & 1) === 1, frames: f32(b, o + 8), skeletal: [], material: [] };
   const list = u32(b, o + 0x0c), count = u32(b, o + 0x10);
   for (let i = 0; list && i < count; i++) {
     // H3DAnimationElement: name, u16 target, u16 primitive type, content.

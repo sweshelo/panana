@@ -113,6 +113,11 @@ export interface CgfxBone {
   /** Euler angles (radians), R = Rz * Ry * Rx. */
   rotation: [number, number, number];
   translation: [number, number, number];
+  /**
+   * Segment scale compensate (Maya): the parent's scale is not passed on to this bone's rotation and scale, only to its
+   * translation (local = T × parent scale⁻¹ × R × S). BCH: the model's bone scaling is Maya and the bone flag bit 22.
+   */
+  ssc?: boolean;
 }
 
 export interface CgfxModel {

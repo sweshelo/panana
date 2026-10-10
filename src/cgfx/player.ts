@@ -60,6 +60,8 @@ export class AnimatedModel {
   private readonly parts: Part[];
   private readonly restInverse: THREE.Matrix4[];
   private readonly world: THREE.Matrix4[];
+  /** Each bone's own scale at the last pose (segment scale compensate of its children). */
+  private readonly scales: THREE.Vector3[];
   private readonly skin: Float32Array;
   private skeletal: CgfxAnimation | null = null;
   private material: CgfxAnimation[] = [];
@@ -72,6 +74,7 @@ export class AnimatedModel {
     this.parts = own.parts.map((p) => ({ ...p, material: own.model.materials[p.src.material]?.name ?? '' }));
     const n = this.model.bones.length;
     this.world = Array.from({ length: n }, () => new THREE.Matrix4());
+    this.scales = Array.from({ length: n }, () => new THREE.Vector3(1, 1, 1));
     this.skin = new Float32Array(n * 12);
     this.pose(null, 0);
     this.restInverse = this.world.map((m) => m.clone().invert());
@@ -130,9 +133,20 @@ export class AnimatedModel {
     const visit = (i: number, depth: number): THREE.Matrix4 => {
       if (done[i]) return this.world[i]!;
       const bone = bones[i]!;
-      localMatrix(bone, tracks.get(bone.name), frame, local);
       const p = bone.parent;
-      if (p >= 0 && p < bones.length && p !== i && depth < 64) this.world[i]!.multiplyMatrices(visit(p, depth + 1), local);
+      // the parent first: its scale at this frame is needed for segment scale compensate
+      const parent = p >= 0 && p < bones.length && p !== i && depth < 64 ? visit(p, depth + 1) : null;
+      localMatrix(bone, tracks.get(bone.name), frame, local);
+      this.scales[i]!.copy(vScale);
+      if (bone.ssc && parent) {
+        // local = T × parent scale⁻¹ × R × S: divide the rows of the 3×3 (three.js is column-major)
+        const ps = this.scales[p]!, e = local.elements;
+        for (let row = 0; row < 3; row++) {
+          const k = ps.getComponent(row) ? 1 / ps.getComponent(row) : 1;
+          for (let col = 0; col < 3; col++) e[col * 4 + row]! *= k;
+        }
+      }
+      if (parent) this.world[i]!.multiplyMatrices(parent, local);
       else this.world[i]!.copy(local);
       done[i] = 1;
       return this.world[i]!;
