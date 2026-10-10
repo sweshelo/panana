@@ -9,14 +9,18 @@ const str = (b: Uint8Array, o: number): string => (u32(b, o) ? cstr(b, u32(b, o)
 /**
  * Curve {f32 start, f32 end, u8 pre, u8 post, u16 index, segment}; segment {f32 start, f32 end, u8 interpolation,
  * u8 quantization, u16 key count, f32 1 / duration, f32 value scale, f32 value offset, f32 frame scale, keys}.
+ * From version 0x20 (RPG FREE! has 0x21) the segment is in the curve, after the index: u8 interpolation,
+ * u8 quantization, u16 key count, f32 value scale, f32 value offset, f32 frame scale, f32 1 / duration, keys.
  */
-function readCurve(b: Uint8Array, c: number): AnimCurve | null {
-  const s = u32(b, c + 0x0c);
+function readCurve(b: Uint8Array, c: number, version: number): AnimCurve | null {
+  const inline = version >= 0x20;
+  const s = inline ? c + 4 : u32(b, c + 0x0c);
   if (!s) return null;
   const interp = b[s + 8]!;
   const quant = b[s + 9]!;
   const n = u16(b, s + 0x0a);
-  const scale = f32(b, s + 0x10), offset = f32(b, s + 0x14), frameScale = f32(b, s + 0x18);
+  const at = inline ? 0x0c : 0x10;
+  const scale = f32(b, s + at), offset = f32(b, s + at + 4), frameScale = f32(b, s + at + 8);
   let o = u32(b, s + 0x1c);
   if (!o) return null;
   const keys = new Float32Array(n * 4);
@@ -58,13 +62,13 @@ function readCurve(b: Uint8Array, c: number): AnimCurve | null {
 }
 
 /** Slots after a u32 of flags: bit (constBit + i) = a constant in the slot, bit (absentBit + i) = absent, else a curve. */
-function readSlots(b: Uint8Array, o: number, slots: number[], constBits: number[], absentBits: number[]): AnimChannel[] {
+function readSlots(b: Uint8Array, o: number, slots: number[], constBits: number[], absentBits: number[], version: number): AnimChannel[] {
   const flags = u32(b, o);
   return slots.map((slot, i) => {
     const at = o + 4 + slot * 4;
     if (flags & (1 << absentBits[i]!)) return null;
     if (flags & (1 << constBits[i]!)) return f32(b, at);
-    return u32(b, at) ? readCurve(b, u32(b, at)) : null;
+    return u32(b, at) ? readCurve(b, u32(b, at), version) : null;
   });
 }
 
@@ -99,7 +103,7 @@ const TEXCOORD_TARGETS: Record<number, [number, 'scale' | 'translate']> = {
 };
 
 /** H3DAnimation: name, u8 type (0 skeletal, 1 material, 2 visibility), u8 flags (bit 0 loop), u16 curves, f32 frames, elements, metadata. */
-function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material'): CgfxAnimation {
+function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material', version: number): CgfxAnimation {
   const anim: CgfxAnimation = { name: str(b, o), kind, loop: (b[o + 5]! & 1) === 1, frames: f32(b, o + 8), skeletal: [], material: [] };
   const list = u32(b, o + 0x0c), count = u32(b, o + 0x10);
   for (let i = 0; list && i < count; i++) {
@@ -110,14 +114,14 @@ function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material'):
     const target = u16(b, e + 4), prim = u16(b, e + 6);
     const c = e + 8;
     if (kind === 'skeletal' && prim === PRIM.transform) {
-      const ch = readSlots(b, c, [0, 1, 2, 3, 4, 5, 6, 7, 8], TRANSFORM_CONST, TRANSFORM_ABSENT);
+      const ch = readSlots(b, c, [0, 1, 2, 3, 4, 5, 6, 7, 8], TRANSFORM_CONST, TRANSFORM_ABSENT, version);
       // The player's channels: scale xyz, rotation xyz, (unused), translation xyz.
       anim.skeletal.push({ bone: name, channels: [...ch.slice(0, 6), null, ...ch.slice(6)] });
     } else if (kind === 'skeletal' && prim === PRIM.quatTransform) {
       anim.skeletal.push({ bone: name, baked: readQuatTransform(b, c) });
     } else if (kind === 'material' && prim === PRIM.vector2 && TEXCOORD_TARGETS[target]) {
       const [coordinator, what] = TEXCOORD_TARGETS[target]!;
-      const [u, v] = readSlots(b, c, [0, 1], [0, 1], [8, 9]);
+      const [u, v] = readSlots(b, c, [0, 1], [0, 1], [8, 9], version);
       const track: MaterialTrack = { material: name, coordinator, target: what, channels: [u ?? null, v ?? null] };
       anim.material.push(track);
     }
@@ -126,6 +130,6 @@ function readAnimation(b: Uint8Array, o: number, kind: 'skeletal' | 'material'):
 }
 
 /** The skeletal and material animations (pointers from the H3D root dictionaries). */
-export function readBchAnimations(b: Uint8Array, skeletal: number[], material: number[]): CgfxAnimation[] {
-  return [...skeletal.map((p) => readAnimation(b, p, 'skeletal')), ...material.map((p) => readAnimation(b, p, 'material'))];
+export function readBchAnimations(b: Uint8Array, skeletal: number[], material: number[], version = 8): CgfxAnimation[] {
+  return [...skeletal.map((p) => readAnimation(b, p, 'skeletal', version)), ...material.map((p) => readAnimation(b, p, 'material', version))];
 }

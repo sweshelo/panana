@@ -150,14 +150,17 @@ const rgba = (v: number): number[] => [v & 255, (v >>> 8) & 255, (v >>> 16) & 25
 
 /**
  * H3DMaterial (0x58 bytes for versions before 0x21): params, 3 textures, texture commands, 3 mappers (0x10 each:
- * sampler, wrap U, wrap V, mag, min, LOD, bias, border), 3 texture names and the name.
+ * sampler, wrap U, wrap V, mag, min, LOD, bias, border), 3 texture names and the name. From 0x21 (RPG FREE!) it is
+ * 0x2C bytes: the mappers are behind a pointer (+0x18), the names follow at +0x1C.
  */
-function readMaterial(r: Reader, o: number): CgfxMaterial {
+function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
   const params = r.u32(o);
-  const names = [r.str(o + 0x48), r.str(o + 0x4c), r.str(o + 0x50)];
-  const name = r.str(o + 0x54);
+  const at = v21 ? 0x1c : 0x48;
+  const names = [r.str(o + at), r.str(o + at + 4), r.str(o + at + 8)];
+  const name = r.str(o + at + 12);
   const textures = names.map((n) => n || null);
-  const mapper = (i: number): { wrapS: number; wrapT: number } => ({ wrapS: u8(r.b, o + 0x18 + i * 0x10 + 1), wrapT: u8(r.b, o + 0x18 + i * 0x10 + 2) });
+  const mappers = v21 ? r.u32(o + 0x18) : o + 0x18;
+  const mapper = (i: number): { wrapS: number; wrapT: number } => (mappers ? { wrapS: u8(r.b, mappers + i * 0x10 + 1), wrapT: u8(r.b, mappers + i * 0x10 + 2) } : { wrapS: 0, wrapT: 0 });
 
   // H3DMaterialParams: 3 texture coordinators at +0x0C (0x18 each), colours at +0x58 (constants 0-5 at +0x6C),
   // constant assignment at +0xC0, polygon offset at +0xC4, fragment shader commands at +0xC8.
@@ -521,9 +524,9 @@ function treeNames(r: Reader, tree: number, count: number): string[] {
  * ranges, sub mesh cullings, skeleton (dict at +0x70), mesh node visibility (+0x7C), name (+0x84), node count
  * (+0x88), node name tree (+0x8C).
  */
-function readModel(r: Reader, o: number): CgfxModel {
+function readModel(r: Reader, o: number, v21 = false): CgfxModel {
   const name = r.str(o + 0x84);
-  const materials = r.inlineList(o + 0x34, 0x58).map((m) => readMaterial(r, m));
+  const materials = r.inlineList(o + 0x34, v21 ? 0x2c : 0x58).map((m) => readMaterial(r, m, v21));
   const bones = readBones(r, o);
   const world = worldMatrices(bones);
   const nodeCount = r.u32(o + 0x88);
@@ -567,13 +570,13 @@ export function bchSummary(src: Uint8Array): BchSummary {
 export function parseBch(src: Uint8Array): CgfxFile {
   const { b, h } = relocateBch(src);
   const r = new Reader(b);
-  const models = r.ptrList(h.contents + DICT.models * 12).map((p) => readModel(r, p));
+  const models = r.ptrList(h.contents + DICT.models * 12).map((p) => readModel(r, p, h.backward >= 0x21));
   const textures: CgfxTexture[] = [];
   for (const p of r.ptrList(h.contents + DICT.textures * 12)) {
     const t = readTexture(r, p);
     if (t) textures.push(t);
   }
-  const animations = readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12));
+  const animations = readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
   for (const m of models) m.animations = animations;
   return { models, textures };
 }
@@ -582,7 +585,7 @@ export function parseBch(src: Uint8Array): CgfxFile {
 export function bchAnimations(src: Uint8Array): CgfxFile['models'][number]['animations'] {
   const { b, h } = relocateBch(src);
   const r = new Reader(b);
-  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12));
+  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
 }
 
 /** Type 8 entries: a 0x180-byte header, then the BCH. */

@@ -99,6 +99,8 @@ export interface UpdateImage extends UpdateInfo {
   title: TitleDef;
   code: Uint8Array;
   readRomfs(name: string): Promise<Uint8Array>;
+  /** Size of a root file of the Update's RomFS (NaN when it has none). */
+  size?(name: string): number;
 }
 
 /**
@@ -121,7 +123,7 @@ export async function openUpdate(file: Blob, label: string): Promise<UpdateImage
   }
   const patched = img.files.has('/patchList.bin') ? parsePatchList(await readFile(img, 'patchList.bin')) : [];
   for (const n of patched) if (!img.files.has('/' + n)) throw new Error(`Update の RomFS に patchList.bin の ${n} がありません`);
-  return { label, title, titleVersion: img.titleVersion, patched, code: img.code, readRomfs: (name) => readFile(img, name) };
+  return { label, title, titleVersion: img.titleVersion, patched, code: img.code, readRomfs: (name) => readFile(img, name), size: (name) => img.files.get('/' + name)?.size ?? NaN };
 }
 
 /** The dump as the game sees it with its Update installed: the Update's code.bin, and the patched files from it. */
@@ -136,7 +138,12 @@ export function withUpdate(base: Dump, update: UpdateImage): Dump {
     update: { label: update.label, titleVersion: update.titleVersion, patched: update.patched },
     code: update.code,
     names: () => [...new Set([...base.names(), ...patched])],
-    files: files && (() => files()),
+    // the patched files with the Update's sizes (some are only in the Update)
+    files: files && (() => {
+      const out = new Map(files().map((f) => [f.path, f]));
+      for (const n of patched) out.set(n, { path: n, size: update.size?.(n) ?? NaN });
+      return [...out.values()];
+    }),
     readRomfs: (name) => (patched.has(name.toUpperCase()) ? update.readRomfs(name.toUpperCase()) : base.readRomfs(name)),
   };
 }

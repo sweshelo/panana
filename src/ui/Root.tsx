@@ -6,6 +6,8 @@ import { saveDumpCache } from '../rom/cache';
 import { baseModFromFiles, type BaseMod, type Dump } from '../rom/dump';
 import { Session } from '../session';
 import { idbGet, idbSet } from '../util/idb';
+import { LanaiSession } from '../lanai/session';
+import { LanaiShell } from './LanaiShell';
 import { OahuShell } from './OahuShell';
 import { OahuSession } from '../oahu/session';
 import { Shell } from './Shell';
@@ -24,7 +26,9 @@ type State =
   | { kind: 'loading' }
   | { kind: 'ready'; session: Session; editor: MapEditor; id: number }
   /** A 電波人間のRPG3 dump (#59). */
-  | { kind: 'oahu'; session: OahuSession; id: number };
+  | { kind: 'oahu'; session: OahuSession; id: number }
+  /** A 電波人間のRPG FREE! dump (read only). */
+  | { kind: 'lanai'; session: LanaiSession; id: number };
 
 /** The session and the map editor of a game (the edits saved last time are restored). */
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
@@ -48,6 +52,10 @@ export function Root(): ReactNode {
       const dump = await open();
       if (dump.title.key === 'oahu') {
         setState({ kind: 'oahu', session: await OahuSession.open(dump), id: ++ids.current });
+        return;
+      }
+      if (dump.title.key === 'lanai') {
+        setState({ kind: 'lanai', session: await LanaiSession.open(dump), id: ++ids.current });
         return;
       }
       if (dump.titleVersion !== undefined && dump.titleVersion !== 1040)
@@ -98,6 +106,9 @@ export function Root(): ReactNode {
   if (state.kind === 'start') return <StartScreen error={state.error} onOpen={load} />;
   if (state.kind === 'oahu')
     return <OahuShell key={state.id} session={state.session} onSession={(session) => setState({ kind: 'oahu', session, id: ++ids.current })}
+      onChangeDump={() => setState({ kind: 'start' })} />;
+  if (state.kind === 'lanai')
+    return <LanaiShell key={state.id} session={state.session} onSession={(session) => setState({ kind: 'lanai', session, id: ++ids.current })}
       onChangeDump={() => setState({ kind: 'start' })} />;
   const { session } = state;
   return (

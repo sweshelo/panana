@@ -2,6 +2,8 @@
 //   0x00 u32 version (=5), 0x04 u32 archive hash, 0x08 u32 count,
 //   0x0C count x {u32 hash, u32 type, u32 size, u32 offset, u32 comp, u32 unk (-1), u32 raw size}
 //   comp 1 = single-file ZIP, 6 = LZ10, otherwise stored.
+// Version 10 (RPG FREE!, naauao lanai/analysis.md §1.2) has a 0x18-byte header: the count is at +0x10, and +0x08..+0x0F
+// (the Update's version for the archives it replaced) and +0x14 are kept as they are when the archive is rebuilt.
 import { u32, w32 } from '../util/bytes';
 import { lz10Compress, lz10Decompress } from './lz10';
 import { unzipSingle, zipSingle } from './zip';
@@ -24,14 +26,18 @@ export interface Archive {
   entries: ArcEntry[];
 }
 
+/** Size of the header before the entries (0x18 for version 10, else 0x0C). */
+export const archiveHeaderSize = (version: number): number => (version === 10 ? 0x18 : 12);
+
 export function parseArchive(data: Uint8Array): Archive {
   const version = u32(data, 0);
   const hash = u32(data, 4);
-  const n = u32(data, 8);
-  if (12 + n * 28 > data.length) throw new Error('アーカイブのヘッダーが不正です');
+  const head = archiveHeaderSize(version);
+  const n = u32(data, version === 10 ? 0x10 : 8);
+  if (head + n * 28 > data.length) throw new Error('アーカイブのヘッダーが不正です');
   const entries: ArcEntry[] = [];
   for (let i = 0; i < n; i++) {
-    const o = 12 + i * 28;
+    const o = head + i * 28;
     entries.push({
       index: i,
       hash: u32(data, o),
@@ -101,10 +107,12 @@ export function rebuildArchive(arc: Archive, replacements: Map<number, Uint8Arra
   }
   const n = list.length;
   const blobs: Uint8Array[] = [];
-  const hdr = new Uint8Array(12 + 28 * n);
+  const head = archiveHeaderSize(arc.version);
+  const hdr = new Uint8Array(head + 28 * n);
+  hdr.set(arc.data.subarray(0, head));
   w32(hdr, 0, arc.version);
   w32(hdr, 4, arc.hash);
-  w32(hdr, 8, n);
+  w32(hdr, arc.version === 10 ? 0x10 : 8, n);
   let pos = hdr.length;
   for (const [i, { e, add }] of list.entries()) {
     let blob: Uint8Array;
@@ -118,7 +126,7 @@ export function rebuildArchive(arc: Archive, replacements: Map<number, Uint8Arra
       blob = entryBlob(arc, e);
       raw = e.raw;
     }
-    const o = 12 + i * 28;
+    const o = head + i * 28;
     w32(hdr, o, e.hash);
     w32(hdr, o + 4, e.type);
     w32(hdr, o + 8, blob.length);
