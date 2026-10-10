@@ -42,3 +42,4 @@ test/golden/golden.json
 
 # CI 用の暗号化したダンプ (scripts/pack-rom-bundle.ps1)
 rom-bundle.tar.gpg
+roms/

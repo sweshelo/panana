@@ -64,7 +64,8 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .shell[data-page='groups'] .page-groups, .shell[data-page='actions'] .page-actions, .shell[data-page='events'] .page-events, .shell[data-page='messages'] .page-messages,
 .shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
 .shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code, .shell[data-page='maps'] .page-maps,
-.shell[data-page='story'] .page-story, .shell[data-page='flags'] .page-flags { display: block; }
+.shell[data-page='story'] .page-story, .shell[data-page='flags'] .page-flags,
+.shell[data-page='stages'] .page-stages, .shell[data-page='codes'] .page-codes { display: block; }
 .page-code { overflow: auto; }
 .code-page { max-width: 960px; }
 .code-page h3 { margin: 18px 0 6px; }
@@ -282,6 +283,9 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 /* BCH in the RomFS viewer (src/bch/BchView.tsx) */
 .bch-view { display: flex; flex-direction: column; gap: 8px; max-width: 900px; }
 .bch-textures { display: flex; flex-wrap: wrap; gap: 10px; }
+.model-textures { margin-top: 6px; }
+.model-textures > summary { cursor: pointer; }
+.model-textures .bch-textures { margin-top: 6px; }
 .bch-texture { margin: 0; display: flex; flex-direction: column; gap: 2px; max-width: 160px; }
 .bch-texture canvas { max-width: 160px; max-height: 160px; object-fit: contain; image-rendering: pixelated; background: repeating-conic-gradient(#3a3f4b 0 25%, #2a2e37 0 50%) 0 0 / 12px 12px; border: 1px solid var(--border); border-radius: 4px; }
 .bch-texture figcaption { display: flex; flex-direction: column; overflow-wrap: anywhere; }

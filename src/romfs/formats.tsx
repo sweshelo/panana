@@ -7,6 +7,8 @@ import { GsTable } from '../archive/gstable';
 import { Gmsg, toUnits } from '../game/gmsg';
 import { defFor, fieldPlace, fieldText, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { hex4, unitsToText } from '../game/msgtext';
+import { lanaiText, parseLanaiMessage } from '../lanai/message';
+import { LanaiTable } from '../lanai/table';
 import { ascii, hex8, u16, u32 } from '../util/bytes';
 import type { RomfsProfile } from './profile';
 import { formatName, isGsTable } from './sniff';
@@ -129,6 +131,82 @@ export function GsTableView({ body, name, profile, context }: FormatViewProps): 
   );
 }
 
+/**
+ * RPG FREE!'s GS table: the header (name, row IDs, the names of the string fields, the extra pairs) and the rows, the
+ * strings in their text form and the other u32s in hex (or the chosen width); searchable by string or row ID.
+ */
+export function LanaiTableView({ body }: FormatViewProps): ReactNode {
+  const t = useMemo(() => new LanaiTable(body), [body]);
+  const strings = useMemo(() => new Set(t.stringOffsets()), [t]);
+  const [pick, setCell] = useState<Cell>('fields');
+  const [query, setQuery] = useState('');
+  const cell = pick;
+  const width = cell === 'fields' ? 4 : CELLS.find((c) => c[0] === cell)?.[2] ?? 4;
+  const cols = Array.from({ length: Math.floor(t.rowSize / width) }, (_, i) => i * width);
+  const rest = t.rowSize % width;
+  const text = (r: number, o: number): string | undefined => {
+    const at = t.stringOffset(r, o);
+    return at < 0 ? undefined : lanaiText(parseLanaiMessage(body, at).tokens);
+  };
+  const q = query.trim();
+  const rows = useMemo(() => {
+    const all = Array.from({ length: t.rows }, (_, r) => r);
+    if (!q) return all;
+    // a row ID with or without its top bit ("800000C7", "C7")
+    const id = /^(0x)?[0-9A-Fa-f]{1,8}$/.test(q) ? parseInt(q.replace(/^0x/i, ''), 16) : -1;
+    return all.filter((r) => t.rowId(r) === id || (t.rowId(r) & 0x7fffffff) === id || [...strings].some((o) => text(r, o)?.includes(q)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- text reads t and body
+  }, [t, q, strings]);
+  const [shown, more] = usePaged(rows.length, `${q}:${body.length}`);
+  return (
+    <div>
+      <div className="row">
+        <b className="mono">{t.name}</b>
+        <span className="muted">{`${t.rows} 行 × 0x${t.rowSize.toString(16).toUpperCase()} バイト`}</span>
+        <span className="muted">{t.rowIds.length ? '行 ID あり' : '行 ID なし'}</span>
+        {t.fields.length > 0 && <span className="muted" title="欄の名前の表 (文字列の欄)">{t.fields.map((f) => `${f.name} +${f.offset.toString(16).toUpperCase()}`).join('、')}</span>}
+        {t.extra.length > 0 && <span className="muted" title={t.extra.map(([h, v]) => `${hex8(h)} ${hex8(v)}`).join('\n')}>{`追加の領域 ${t.extra.length} 組 (用途は未解析)`}</span>}
+        <span className="grow" />
+        <input type="search" placeholder="文字列か行 ID で検索" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <select value={cell} onChange={(e) => setCell(e.target.value as Cell)}>
+          <option value="fields">文字列と u32</option>
+          {CELLS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        </select>
+      </div>
+      <div className="romfs-grid">
+        <table className="book-table">
+          <thead>
+            <tr>
+              <th>行</th>
+              {t.rowIds.length > 0 && <th>行 ID</th>}
+              {cols.map((o) => <th key={o} className="mono">{(cell === 'fields' && t.fieldName(o)) || `+${o.toString(16).toUpperCase()}`}</th>)}
+              {rest ? <th>…</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, shown).map((r) => {
+              const row = t.row(r);
+              return (
+                <tr key={r}>
+                  <td className="num muted">{r}</td>
+                  {t.rowIds.length > 0 && <td className="mono muted">{hex8(t.rowId(r))}</td>}
+                  {cols.map((o) => {
+                    const s = cell === 'fields' && strings.has(o) ? text(r, o) : undefined;
+                    if (s !== undefined) return <td key={o} className="romfs-msg">{s}</td>;
+                    return <td key={o} className={`mono${row.subarray(o, o + width).some((b) => b) ? '' : ' muted'}`}>{cellText(row, o, cell === 'fields' ? 'x32' : cell)}</td>;
+                  })}
+                  {rest ? <td className="mono">{[...row.subarray(t.rowSize - rest)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</td> : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {more}
+    </div>
+  );
+}
+
 /** A reading (*_IN) message: 1-byte characters up to the terminator. */
 const readingText = (b: Uint8Array): string => String.fromCharCode(...b.subarray(0, b.indexOf(0) < 0 ? b.length : b.indexOf(0)));
 
@@ -198,6 +276,7 @@ const isGmsg = (b: Uint8Array): boolean => b.length >= 0x20 && ascii(b, 0, 4) ==
 export const FORMAT_VIEWS: FormatView[] = [
   { id: 'gmsg', label: 'メッセージ', match: isGmsg, View: GmsgView },
   { id: 'gstable', label: '表', match: (b) => isGsTable(b), View: GsTableView },
+  { id: 'lanai-table', label: '表', match: (b) => LanaiTable.is(b), View: LanaiTableView },
   { id: 'bch', label: 'モデル', match: isBch, View: BchView },
 ];
 

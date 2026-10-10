@@ -150,14 +150,17 @@ const rgba = (v: number): number[] => [v & 255, (v >>> 8) & 255, (v >>> 16) & 25
 
 /**
  * H3DMaterial (0x58 bytes for versions before 0x21): params, 3 textures, texture commands, 3 mappers (0x10 each:
- * sampler, wrap U, wrap V, mag, min, LOD, bias, border), 3 texture names and the name.
+ * sampler, wrap U, wrap V, mag, min, LOD, bias, border), 3 texture names and the name. From 0x21 (RPG FREE!) it is
+ * 0x2C bytes: the mappers are behind a pointer (+0x18), the names follow at +0x1C.
  */
-function readMaterial(r: Reader, o: number): CgfxMaterial {
+function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
   const params = r.u32(o);
-  const names = [r.str(o + 0x48), r.str(o + 0x4c), r.str(o + 0x50)];
-  const name = r.str(o + 0x54);
+  const at = v21 ? 0x1c : 0x48;
+  const names = [r.str(o + at), r.str(o + at + 4), r.str(o + at + 8)];
+  const name = r.str(o + at + 12);
   const textures = names.map((n) => n || null);
-  const mapper = (i: number): { wrapS: number; wrapT: number } => ({ wrapS: u8(r.b, o + 0x18 + i * 0x10 + 1), wrapT: u8(r.b, o + 0x18 + i * 0x10 + 2) });
+  const mappers = v21 ? r.u32(o + 0x18) : o + 0x18;
+  const mapper = (i: number): { wrapS: number; wrapT: number } => (mappers ? { wrapS: u8(r.b, mappers + i * 0x10 + 1), wrapT: u8(r.b, mappers + i * 0x10 + 2) } : { wrapS: 0, wrapT: 0 });
 
   // H3DMaterialParams: 3 texture coordinators at +0x0C (0x18 each), colours at +0x58 (constants 0-5 at +0x6C),
   // constant assignment at +0xC0, polygon offset at +0xC4, fragment shader commands at +0xC8.
@@ -295,15 +298,34 @@ const apply = (m: Mat34, x: number, y: number, z: number, w: number): [number, n
   m[8]! * x + m[9]! * y + m[10]! * z + m[11]! * w,
 ];
 
-/** H3DBone (0x64 bytes): flags, s16 parent, scale, rotation, translation, inverse bind matrix, name. */
+/** H3DModel +0x01 bone scaling (SPICA H3DBoneScaling): 0 standard, 1 Maya, 2 SoftImage. */
+const BONE_SCALING_MAYA = 1;
+/** H3DBone flag: segment scale compensate (SPICA H3DBoneFlags.IsSegmentScaleCompensate). */
+const BONE_SSC = 1 << 22;
+
+/**
+ * H3DBone (0x64 bytes): flags, s16 parent, scale, rotation, translation, inverse bind matrix, name. With the model's
+ * Maya bone scaling, the flag bit 22 keeps the parent's scale off the bone (RPG FREE!'s monsters: the tongue chains).
+ */
 function readBones(r: Reader, model: number): CgfxBone[] {
+  const maya = r.b[model + 1] === BONE_SCALING_MAYA;
   return r.inlineList(model + 0x70, 0x64).map((o) => ({
     name: r.str(o + 0x5c),
     parent: s16(r.b, o + 4),
     scale: r.vec3(o + 8),
     rotation: r.vec3(o + 0x14),
     translation: r.vec3(o + 0x20),
+    ssc: maya && (r.u32(o) & BONE_SSC) !== 0,
   }));
+}
+
+/** A local matrix with the parent's scale taken off its rotation and scale (rows of the 3×3 divided by it). */
+function compensateScale(m: Mat34, parentScale: readonly number[]): Mat34 {
+  for (let row = 0; row < 3; row++) {
+    const k = parentScale[row] ? 1 / parentScale[row]! : 1;
+    for (let col = 0; col < 3; col++) m[row * 4 + col]! *= k;
+  }
+  return m;
 }
 
 function worldMatrices(bones: CgfxBone[]): Mat34[] {
@@ -311,7 +333,9 @@ function worldMatrices(bones: CgfxBone[]): Mat34[] {
   const get = (i: number, depth = 0): Mat34 => {
     if (world[i]) return world[i]!;
     const b = bones[i]!;
+    const parent = b.parent >= 0 && b.parent < bones.length && b.parent !== i ? bones[b.parent] : undefined;
     const local = composeTRS(b.scale, b.rotation, b.translation);
+    if (b.ssc && parent) compensateScale(local, parent.scale);
     const m = b.parent >= 0 && b.parent < bones.length && b.parent !== i && depth < 64 ? mul34(get(b.parent, depth + 1), local) : local;
     world[i] = m;
     return m;
@@ -424,6 +448,11 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
   const subs = r.inlineList(o + 0x10, 0x34).map((s) => readSubMesh(r, s));
   const { attrs, stride, address, posOffset, fixed: fixedByName } = layout;
   const has = (n: number): boolean => attrs.some((a) => a.name === n) || fixedByName.has(n);
+  // A fixed bone index / weight has as many elements as its partner when that one is per vertex (RPG FREE!'s tongues:
+  // 4 weights per vertex with fixed indices; taking 3 dropped the 4th bone), else 3 as before.
+  const partner = (n: number): number | undefined => attrs.find((a) => a.name === n)?.elements;
+  const fixedElements = (name: number): number =>
+    name === ATTR.boneIndex ? partner(ATTR.boneWeight) ?? 3 : name === ATTR.boneWeight ? partner(ATTR.boneIndex) ?? 3 : 4;
 
   const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
   const skinIdx: number[] = [], skinW: number[] = [];
@@ -460,7 +489,7 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
               break;
           }
         };
-        for (const [name, v] of fixedByName) take(name, v, name === ATTR.boneIndex || name === ATTR.boneWeight ? 3 : 4);
+        for (const [name, v] of fixedByName) take(name, v, fixedElements(name));
         for (const a of attrs) {
           readValue(r.b, base + a.offset, a, tmp);
           if (a.name !== ATTR.boneIndex) for (let k = 0; k < 4; k++) tmp[k] = tmp[k]! * a.scale;
@@ -521,9 +550,9 @@ function treeNames(r: Reader, tree: number, count: number): string[] {
  * ranges, sub mesh cullings, skeleton (dict at +0x70), mesh node visibility (+0x7C), name (+0x84), node count
  * (+0x88), node name tree (+0x8C).
  */
-function readModel(r: Reader, o: number): CgfxModel {
+function readModel(r: Reader, o: number, v21 = false): CgfxModel {
   const name = r.str(o + 0x84);
-  const materials = r.inlineList(o + 0x34, 0x58).map((m) => readMaterial(r, m));
+  const materials = r.inlineList(o + 0x34, v21 ? 0x2c : 0x58).map((m) => readMaterial(r, m, v21));
   const bones = readBones(r, o);
   const world = worldMatrices(bones);
   const nodeCount = r.u32(o + 0x88);
@@ -567,13 +596,13 @@ export function bchSummary(src: Uint8Array): BchSummary {
 export function parseBch(src: Uint8Array): CgfxFile {
   const { b, h } = relocateBch(src);
   const r = new Reader(b);
-  const models = r.ptrList(h.contents + DICT.models * 12).map((p) => readModel(r, p));
+  const models = r.ptrList(h.contents + DICT.models * 12).map((p) => readModel(r, p, h.backward >= 0x21));
   const textures: CgfxTexture[] = [];
   for (const p of r.ptrList(h.contents + DICT.textures * 12)) {
     const t = readTexture(r, p);
     if (t) textures.push(t);
   }
-  const animations = readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12));
+  const animations = readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
   for (const m of models) m.animations = animations;
   return { models, textures };
 }
@@ -582,7 +611,7 @@ export function parseBch(src: Uint8Array): CgfxFile {
 export function bchAnimations(src: Uint8Array): CgfxFile['models'][number]['animations'] {
   const { b, h } = relocateBch(src);
   const r = new Reader(b);
-  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12));
+  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
 }
 
 /** Type 8 entries: a 0x180-byte header, then the BCH. */

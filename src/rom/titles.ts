@@ -1,8 +1,9 @@
 // The games Panana knows, told apart by the title ID of the dump. Each game has its internal name (the ExHeader
-// name of its code): kahara = 電波人間のRPG2, oahu = 電波人間のRPG3 (naauao oahu/analysis.md §1).
+// name of its code): kahara = 電波人間のRPG2, oahu = 電波人間のRPG3 (naauao oahu/analysis.md §1), lanai = 電波人間のRPG FREE!
+// (its ExHeader name is empty; the name is from its RomFS, naauao roms/lanai.md §1).
 // Code that only applies to one game carries that name (KaharaXxx / OahuXxx).
 
-export type TitleKey = 'kahara' | 'oahu';
+export type TitleKey = 'kahara' | 'oahu' | 'lanai';
 
 export interface TitleDef {
   key: TitleKey;
@@ -26,7 +27,15 @@ export const OAHU: TitleDef = {
   master: '21350000',
 };
 
-export const TITLES: readonly TitleDef[] = [KAHARA, OAHU];
+export const LANAI: TitleDef = {
+  key: 'lanai',
+  name: '電波人間のRPG FREE!',
+  titleId: '0004000000125D00',
+  updateTitleId: '0004000E00125D00',
+  master: '2135000A',
+};
+
+export const TITLES: readonly TitleDef[] = [KAHARA, OAHU, LANAI];
 
 /** The game of a title ID (its Base), or undefined. */
 export const titleById = (id: string): TitleDef | undefined => TITLES.find((t) => t.titleId === id.toUpperCase());

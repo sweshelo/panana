@@ -1,5 +1,6 @@
 // Telling file formats apart by their bytes (the RomFS viewer picks a view with these).
 import { parseArchive, type Archive } from '../archive/gsarc';
+import { LanaiTable } from '../lanai/table';
 import { ascii, hex8, u32 } from '../util/bytes';
 
 /** Magic numbers at +0x00 -> format name. */
@@ -19,6 +20,8 @@ const MAGICS: [string, string][] = [
   ['SARC', 'SARC'],
   ['DVLB', 'SHBIN (シェーダー)'],
   ['PK\x03\x04', 'ZIP'],
+  ['SPBD', 'PTCL (パーティクル)'],
+  ['CRR0', 'CRR (CRO の登録)'],
 ];
 
 /** Name of the format of `b` ("BCH (H3D モデル)" …), or null when it is not one we know. */
@@ -27,13 +30,18 @@ export function formatName(b: Uint8Array): string | null {
   for (const [magic, name] of MAGICS) if (m === magic) return name;
   if (b.length >= 0x184 && ascii(b, 0x180, 4) === 'BCH\0') return '0x180 バイトのヘッダー + BCH';
   if (b.length >= 0x184 && ascii(b, 0x180, 4) === 'CGFX') return '0x180 バイトのヘッダー + CGFX';
+  if (b.length >= 0x84 && ascii(b, 0x80, 4) === 'CRO0') return 'CRO (モジュール)';
+  if (LanaiTable.is(b)) return 'GS テーブル (RPG FREE! の形式)';
   if (isGsTable(b)) return 'GS テーブル';
   return null;
 }
 
-/** A GS data table: +0x00 rows, +0x04 row size, +0x10 data offset, +0x14 rows × row size, +0x18 file size. */
+/**
+ * A GS data table of RPG2 / RPG3: +0x00 rows, +0x04 row size, +0x10 data offset, +0x14 rows × row size, +0x18 file
+ * size. RPG FREE!'s tables (lanai/table.ts) pass these checks too, so they are told apart first.
+ */
 export function isGsTable(b: Uint8Array): boolean {
-  if (b.length < 0x40) return false;
+  if (b.length < 0x40 || LanaiTable.is(b)) return false;
   const rows = u32(b, 0), size = u32(b, 4), off = u32(b, 0x10);
   return size > 0 && off >= 0x30 && off <= b.length && u32(b, 0x14) === rows * size && off + rows * size <= b.length && u32(b, 0x18) <= b.length;
 }

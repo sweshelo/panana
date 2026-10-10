@@ -22,3 +22,8 @@ if (process.env.REQUIRE_ROM && (!hasCia || !hasGolden)) {
 if (process.env.REQUIRE_ROM && (!hasOahuBase || !hasOahuUpdate)) {
   throw new Error(`REQUIRE_ROM is set but the RPG3 CIAs are missing: ${hasOahuBase ? '' : OAHU_BASE} ${hasOahuUpdate ? '' : OAHU_UPDATE}`);
 }
+
+// 電波人間のRPG FREE!: the Base and Update CIAs (decrypted), in roms/ by default (not committed).
+export const LANAI_BASE = process.env.ROM_LANAI_BASE ?? join(import.meta.dir, '..', 'roms', 'free-base.cia');
+export const LANAI_UPDATE = process.env.ROM_LANAI_UPDATE ?? join(import.meta.dir, '..', 'roms', 'free-update.cia');
+export const hasLanai = existsSync(LANAI_BASE) && existsSync(LANAI_UPDATE);

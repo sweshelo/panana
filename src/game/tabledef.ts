@@ -1,16 +1,16 @@
 // Field definitions of the GS tables: where a value is in a row, its type, what it means and how it is edited. Each
 // game has its own (src/oahu/tables.ts, kaharatables.ts); the RomFS viewer names the columns of a table with them, and
 // the books read and write rows through them.
-import { u16, u32, w16, w32 } from '../util/bytes';
+import { hex8, u16, u32, w16, w32 } from '../util/bytes';
 
-export type FieldType = 'u8' | 's8' | 'u16' | 's16' | 'u32' | 's32';
+export type FieldType = 'u8' | 's8' | 'u16' | 's16' | 'u32' | 's32' | 'f32';
 
 /** What a value names besides a number. */
 export type FieldRef =
   | { kind: 'message' }
   /** A resource hash (a model entry). */
   | { kind: 'hash' }
-  /** A row of another table of the master. */
+  /** A row of another table of the master (RPG FREE!: by its row ID, 0x80000000 | n). */
   | { kind: 'row'; table: string }
   /** One of a few values. */
   | { kind: 'enum'; values: Record<number, string> };
@@ -41,8 +41,10 @@ export interface TableDef {
   fields: FieldDef[];
 }
 
-const SIZE: Record<FieldType, number> = { u8: 1, s8: 1, u16: 2, s16: 2, u32: 4, s32: 4 };
-const SIGNED: Record<FieldType, boolean> = { u8: false, s8: true, u16: false, s16: true, u32: false, s32: true };
+const SIZE: Record<FieldType, number> = { u8: 1, s8: 1, u16: 2, s16: 2, u32: 4, s32: 4, f32: 4 };
+const SIGNED: Record<FieldType, boolean> = { u8: false, s8: true, u16: false, s16: true, u32: false, s32: true, f32: false };
+
+const f32Bits = new DataView(new ArrayBuffer(4));
 
 export const fieldSize = (f: FieldDef): number => SIZE[f.type];
 
@@ -56,6 +58,10 @@ function readRaw(row: Uint8Array, f: FieldDef): number {
 
 export function readField(row: Uint8Array, f: FieldDef): number {
   const raw = readRaw(row, f);
+  if (f.type === 'f32') {
+    f32Bits.setUint32(0, raw, true);
+    return f32Bits.getFloat32(0, true);
+  }
   const width = SIZE[f.type] * 8;
   const [shift, count] = f.bits ?? [0, width];
   let v = count >= 32 ? raw >>> 0 : (raw >>> shift) & ((1 << count) - 1);
@@ -65,12 +71,19 @@ export function readField(row: Uint8Array, f: FieldDef): number {
 }
 
 export function fieldRange(f: FieldDef): [number, number] {
+  if (f.type === 'f32') return [-3.4e38, 3.4e38];
   const count = f.bits?.[1] ?? SIZE[f.type] * 8;
   return SIGNED[f.type] ? [-(2 ** (count - 1)), 2 ** (count - 1) - 1] : [0, 2 ** count - 1];
 }
 
 export function writeField(row: Uint8Array, f: FieldDef, v: number): void {
   const [min, max] = fieldRange(f);
+  if (f.type === 'f32') {
+    if (!Number.isFinite(v) || v < min || v > max) throw new RangeError(`${f.label}: ${v} は数ではありません`);
+    f32Bits.setFloat32(0, v, true);
+    w32(row, f.offset, f32Bits.getUint32(0, true));
+    return;
+  }
   if (!Number.isInteger(v) || v < min || v > max) throw new RangeError(`${f.label}: ${v} は ${min}〜${max} の外です`);
   const width = SIZE[f.type] * 8;
   const [shift, count] = f.bits ?? [0, width];
@@ -104,22 +117,36 @@ export function fieldPlace(f: FieldDef): string {
 export interface FieldContext {
   message?(id: number): string | undefined;
   rowName?(table: string, row: number): string | undefined;
+  /** The file a resource hash names ("enemy_02.bch"). */
+  hashName?(hash: number): string | undefined;
+}
+
+/** The value itself as text: hex for flags, hashes and row IDs (0x80000000 and above), rounded for an f32. */
+export function fieldValue(f: FieldDef, v: number): string {
+  if (f.type === 'f32') return String(+v.toFixed(4));
+  if (f.hex || f.ref?.kind === 'hash' || (f.type === 'u32' && v >= 0x80000000)) return `0x${hex8(v)}`;
+  return String(v);
 }
 
 export function fieldText(f: FieldDef, v: number, ctx: FieldContext = {}): string {
   const r = f.ref;
-  if (!r) return f.hex ? `0x${(v >>> 0).toString(16).toUpperCase()}` : String(v);
+  if (!r) return f.hex ? `0x${(v >>> 0).toString(16).toUpperCase()}` : f.type === 'f32' ? String(+v.toFixed(4)) : String(v);
   switch (r.kind) {
     case 'message': {
       if (!v) return '';
       const t = ctx.message?.(v);
       return t === undefined ? `#${v}` : t;
     }
-    case 'hash': return v ? (v >>> 0).toString(16).toUpperCase().padStart(8, '0') : '';
+    case 'hash': {
+      if (!v) return '';
+      const n = ctx.hashName?.(v);
+      return n ? `${hex8(v)} ${n}` : hex8(v);
+    }
     case 'row': {
       if (!v) return '0';
       const n = ctx.rowName?.(r.table, v);
-      return n ? `#${v} ${n}` : `#${v}`;
+      const id = v >= 0x80000000 ? hex8(v) : String(v);
+      return n ? `#${id} ${n}` : `#${id}`;
     }
     case 'enum': return r.values[v] ?? String(v);
   }
