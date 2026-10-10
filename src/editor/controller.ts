@@ -1,7 +1,7 @@
 // Pointer / keyboard logic shared by the 2D and 3D views of both games. Views convert the pointer to cell
 // coordinates (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
 import { WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
-import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './state';
+import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './model';
 
 export interface Layers {
   tiles: boolean;
