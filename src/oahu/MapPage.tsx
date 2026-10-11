@@ -8,11 +8,11 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LETTER_DEFAULT, letterLabel, type Rec } from '../game/sections';
 import { editorKey } from '../editor/controller';
-import { kindName, SECTION_COLORS } from '../editor/legend';
+import { kindName } from '../editor/legend';
+import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { Palette } from '../editor/palette';
-import { IssueList, Tools } from '../editor/panes';
+import { Tools } from '../editor/panes';
 import { tileAt } from '../editor/state';
-import type { Issue } from '../editor/validate';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
 import { useEditorState, useSignal } from '../ui/useEditorState';
@@ -70,13 +70,11 @@ function useMapGroups(session: OahuSession): MapPickerGroups {
   }, [session, maps, revision]);
 }
 
-type Mode = 'split' | '2d' | '3d';
-
 function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo }): ReactNode {
   const { maps } = session;
   const st = oahuEditState(maps);
   const [view, setView] = useState<OahuMapView | null>(null);
-  const [mode, setMode] = useState<Mode>('split');
+  const [mode, setMode] = useState<MapViewMode>('split');
   const pane2d = useRef<HTMLDivElement>(null);
   const pane3d = useRef<HTMLDivElement>(null);
   useEditorState(st);
@@ -111,60 +109,37 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
   const modified = new Set(maps.maps.filter((m) => maps.isChanged(m)).map((m) => m.hash));
   const preview = useStoryPreview(session, view, info);
   return (
-    <div className="oahu-map" data-mode={mode}>
-      <header>
-        <MapPickerButton groups={groups} value={info.hash} className="map-select" modified={modified}
-          label={`${oahuDungeonLabel(session, info.dungeon)}・${oahuFloorLabel(info.floor) || '地上'}  ${info.name}`}
-          onChange={(h) => { const m = maps.map(h); if (m) location.hash = oahuMapHref(m); }} />
-        <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
-        <span className="grow" />
-        {!info.world && (
-          <span className="seg">
-            {(['2d', 'split', '3d'] as const).map((m) => <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>{m === 'split' ? '両方' : m.toUpperCase()}</button>)}
-          </span>
-        )}
-        {open && (
-          <span className="seg">
-            <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>↶ 戻す</button>
-            <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>↷ やり直し</button>
-          </span>
-        )}
-        {view && <button onClick={() => view.fit()}>全体を表示</button>}
-        {view && <button onClick={() => view.scene.topView()}>真上から</button>}
-        {open && maps.isChanged(info) && <button onClick={() => st.revert()}>このマップの変更を元に戻す</button>}
-        {preview && <div className="story-preview small">{preview}</div>}
-      </header>
-      {info.world ? (
-        <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao oahu/map.md §8) なので、まだ表示できません。</p>
-      ) : (
+    <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
+      header={
         <>
-          <aside className="left">
-            {open && (
-              <>
-                <Tools st={st} />
-                <AddPanel st={st} view={view} />
-                <TilePalette st={st} view={view} />
-                <Layers view={view} />
-              </>
-            )}
-          </aside>
-          <div className="views">
-            <div className="pane pane2d" ref={pane2d} />
-            <div className="pane pane3d" ref={pane3d} />
-          </div>
-          <aside className="right">
-            {open && (
-              <>
-                <Inspector session={session} st={st} view={view} />
-                <h3>検証</h3>
-                <Checks st={st} info={info} />
-              </>
-            )}
-          </aside>
-          <div className="status">{view ? <Status st={st} view={view} /> : null}</div>
+          <MapPickerButton groups={groups} value={info.hash} className="map-select" modified={modified}
+            label={`${oahuDungeonLabel(session, info.dungeon)}・${oahuFloorLabel(info.floor) || '地上'}  ${info.name}`}
+            onChange={(h) => { const m = maps.map(h); if (m) location.hash = oahuMapHref(m); }} />
+          <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
+          <MapHeaderControls st={st} view={view} open={!!open} mode={mode} setMode={setMode} showModes={!info.world}
+            onRevert={maps.isChanged(info) ? () => st.revert() : undefined} />
+          {preview && <div className="story-preview small">{preview}</div>}
+        </>
+      }
+      placeholder={info.world ? <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao oahu/map.md §8) なので、まだ表示できません。</p> : undefined}
+      left={open && (
+        <>
+          <Tools st={st} />
+          <AddPanel st={st} view={view} />
+          <TilePalette st={st} view={view} />
+          <MapLayers st={st} view={view} sections={OAHU_POINT_SECTIONS} layouts={OAHU_LAYOUTS}>
+            <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
+          </MapLayers>
         </>
       )}
-    </div>
+      right={open && (
+        <>
+          <Inspector session={session} st={st} view={view} />
+          <h3>検証</h3>
+          <Checks st={st} info={info} />
+        </>
+      )}
+      status={view ? <MapStatus st={st} view={view} /> : null} />
   );
 }
 
@@ -214,21 +189,6 @@ function useStoryPreview(session: OahuSession, view: OahuMapView | null, info: O
   );
 }
 
-function Status({ st, view }: { st: OahuEditState; view: OahuMapView }): ReactNode {
-  useSignal(view.signal);
-  useSignal(view.hover);
-  useEditorState(st);
-  const hv = view.ctl.hover;
-  const parts: string[] = [];
-  if (hv) parts.push(`セル (${hv[0]}, ${hv[1]})`);
-  parts.push(`ツール: ${st.tool}`);
-  if (st.clip) parts.push(`コピー ${st.clip.w}×${st.clip.h}`);
-  if (view.status) parts.push(view.status);
-  if (view.errorMsg) parts.push(`⚠ ${view.errorMsg}`);
-  if (!view.status && !view.errorMsg) parts.push('右ドラッグ: 2D は移動、3D は回転 / 中ドラッグ: 3D の移動 / ホイール: 拡大');
-  return <>{parts.join('   ')}</>;
-}
-
 /** The tileset's tile kinds (mapParts: 67 rows × 16 tilesets) with thumbnails of their models. */
 function TilePalette({ st, view }: { st: OahuEditState; view: OahuMapView }): ReactNode {
   useSignal(view.signal);
@@ -237,42 +197,10 @@ function TilePalette({ st, view }: { st: OahuEditState; view: OahuMapView }): Re
   return <Palette st={st} factory={view.factory} palette={palette} partModel={(k, l) => st.maps.partModel(k, st.tileset, l)} />;
 }
 
-/** What the views show. */
-function Layers({ view }: { view: OahuMapView }): ReactNode {
-  useSignal(view.signal);
-  const layers = view.ctl.layers;
-  const doc = view.doc;
-  const box = (label: string, checked: boolean, set: (v: boolean) => void, color?: string): ReactNode => (
-    <label key={label} className="layer">
-      <input type="checkbox" checked={checked} onChange={(e) => { set(e.target.checked); view.refresh(); }} />
-      {color && <span style={{ color }}>● </span>}
-      {label}
-    </label>
-  );
-  return (
-    <div className="layers">
-      <h3>表示</h3>
-      {box(`タイル ${doc.tiles.length}`, layers.tiles, (v) => (layers.tiles = v))}
-      {box(`区画 6 のセル ${doc.cells6.length}`, layers.room, (v) => (layers.room = v), 'rgba(80,200,255,0.8)')}
-      {OAHU_POINT_SECTIONS.map((k) => box(`${OAHU_LAYOUTS[k]!.label} ${doc.recs[k]?.length ?? 0}`, !!layers.sections[k], (v) => (layers.sections[k] = v), SECTION_COLORS[k]))}
-      {box('モデル (置物・宝箱・キャラ)', view.showModels, (v) => (view.showModels = v))}
-    </div>
-  );
-}
-
 /** The checks of the open map (only the problems the ROM's map does not already have). */
 function Checks({ st, info }: { st: OahuEditState; info: OahuMapInfo }): ReactNode {
-  const revision = useEditorState(st);
-  useMaps(st.maps);
-  const [issues, setIssues] = useState<Issue[]>([]);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      const doc = st.current;
-      if (doc?.hash === info.hash) setIssues(oahuValidate(st.maps, info, doc));
-    }, 250);
-    return () => clearTimeout(t);
-  }, [st, info, revision]);
-  return <IssueList st={st} issues={issues} />;
+  const tables = useMaps(st.maps);
+  return <MapChecks st={st} hash={info.hash} validate={(doc) => oahuValidate(st.maps, info, doc)} deps={tables} />;
 }
 
 /** Adding records: props (section 2) and copies of the dungeon's records, each with its own EventObject row. */
