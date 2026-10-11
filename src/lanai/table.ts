@@ -323,9 +323,11 @@ export class LanaiTable {
     const key = i * this.rowSize + offset;
     const cur = this.u32(i, offset);
     const was = this.originalRow(i);
+    // a string as read: its bytes at the field's offset in the bytes as read (a string read as UTF-16 may run past the
+    // pool when it is not UTF-16; the bytes are still the ones the field pointed at)
     const poolEnd = HEADER + this.basePool;
     const same = [was ? u32(was, offset) : -1, this.written.has(key) ? -1 : cur]
-      .find((p) => p >= HEADER && p + bytes.length <= poolEnd && equalBytes(this.original.subarray(p, p + bytes.length), bytes));
+      .find((p) => p >= HEADER && p < poolEnd && p + bytes.length <= this.original.length && equalBytes(this.original.subarray(p, p + bytes.length), bytes));
     if (same !== undefined) {
       if (same === cur && !this.written.has(key)) return;
       this.writable();

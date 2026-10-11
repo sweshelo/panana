@@ -119,9 +119,18 @@ describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
     const archives = [...new Set(lanaiContents(session).map((c) => c.archive))];
     const tables = [...session.tables.filter(isTalkTable)];
     for (const a of archives) tables.push(...(await session.tablesIn(a)).filter(isTalkTable));
-    for (const t of tables) sets += talkGroups(t).filter((g) => g.kind === 'set').length;
+    const per: string[] = [];
+    for (const t of tables) {
+      const n = talkGroups(t).filter((g) => g.kind === 'set').length;
+      sets += n;
+      per.push(`${t.archive}/${t.table.name}: ${n}`);
+    }
+    // the speaker kinds of all talk rows (for when the count is off)
+    const kinds = new Map<number, number>();
+    for (const t of tables) for (let r = 0; r < t.table.rows; r++) kinds.set(t.table.u32(r, 8), (kinds.get(t.table.u32(r, 8)) ?? 0) + 1);
+    const why = `talk tables ${tables.length}, sets ${sets}; kinds ${[...kinds].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k.toString(16)}:${n}`).join(' ')}; ${per.slice(0, 20).join(', ')}`;
+    expect({ sets, why }).toEqual({ sets: 727, why });
     expect(tables.length).toBeGreaterThan(10);
-    expect(sets).toBe(727);
   });
 
   test('a talk of a content is written, exported and put back', async () => {
