@@ -614,3 +614,5 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 /* RPG FREE! monster editor */
 .lanai-transform { border-left: 2px solid var(--border); padding: 2px 0 2px 8px; margin: 8px 0; }
 .lanai-stats h4 { margin: 14px 0 4px; }
+/* RPG FREE!'s talk page: the eight tones of a line side by side */
+.talk-tones { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 12px; }

@@ -1,4 +1,4 @@
-// The pages of a 電波人間のRPG FREE! (lanai) dump, read only: the stages (contents), the strings of the tables, the
+// The pages of a 電波人間のRPG FREE! (lanai) dump: the stages (contents), the maps, the talks, the strings of the tables, the
 // monsters, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
@@ -9,6 +9,7 @@ import { LanaiMessagePage } from '../lanai/MessagePage';
 import { LanaiMonsterPage } from '../lanai/MonsterPage';
 import { LanaiSession } from '../lanai/session';
 import { LanaiStagePage } from '../lanai/StagePage';
+import { LanaiTalkPage } from '../lanai/TalkPage';
 import { openUpdate, withUpdate } from '../rom/dump';
 import { lanaiRomfsProfile } from '../romfs/lanai';
 import type { RomfsProfile } from '../romfs/profile';
@@ -16,10 +17,10 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const PAGE_IDS = LANAI_PAGES.map(([id]) => id);
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', messages: 'メッセージ', monsters: 'モンスター', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -92,6 +93,7 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
           <div key={id} className={`page page-${id}`}>
             {id === 'stages' ? <LanaiStagePage session={session} arg={a} />
               : id === 'maps' ? <LanaiMapPage session={session} arg={a} />
+              : id === 'talks' ? <LanaiTalkPage session={session} arg={a} />
               : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
               : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
               : id === 'codes' ? <LanaiCodePage session={session} arg={a} />

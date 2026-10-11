@@ -52,7 +52,7 @@ test('reads the text form back into tokens', () => {
   expect(lanaiText(tokens)).toBe(text);
   const again = parseLanaiMessage(encodeLanaiMessage(tokens), 0);
   expect(lanaiText(again.tokens)).toBe(text);
-  expect(lanaiMarks(tokens)).toEqual(['{page}']);
+  expect(lanaiMarks(tokens)).toEqual(['…', '{page}', '…']);
   expect(() => encodeLanaiMessage([{ t: 'tag', code: 2, args: ['?7'] }])).toThrow();
 });
 

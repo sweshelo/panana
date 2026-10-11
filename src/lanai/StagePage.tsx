@@ -13,6 +13,8 @@ import { lanaiMapHref } from './MapPage';
 import { textColumns } from './MessagePage';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
+import { isTalkTable } from './talk';
+import { talksHref } from './TalkPage';
 
 type Filter = 'all' | 'stages' | 'none';
 
@@ -180,6 +182,7 @@ function ContentStrings({ session, t }: { session: LanaiSession; t: LanaiTableRe
   return (
     <details open={t.table.name.endsWith('_msg') || t.table.name === 'MessageContents'}>
       <summary>{`${t.table.name} (${t.table.rows} 行)`}</summary>
+      {isTalkTable(t) && <p><a href={talksHref(t.archive)}>セリフのページで編集する (性格違いの 8 口調を組にして)</a></p>}
       <table className="book-table">
         <thead><tr><th>行 ID</th>{cols.map((x) => <th key={x.offset} className="mono">{x.name}</th>)}</tr></thead>
         <tbody>

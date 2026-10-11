@@ -183,34 +183,6 @@ function ReadOnlyText({ text, preview, note, close }: { text: string; preview: R
   );
 }
 
-/**
- * A message of another game's format in MessageEditor's look, read only (RPG FREE!'s strings, whose pools are not
- * rebuilt yet): the preview; a click shows the text with its tags next to it, until 閉じる.
- */
-export function MessageView({ head, preview, text, note }: { head?: ReactNode; preview: ReactNode; text: string; note: ReactNode }): ReactNode {
-  const [open, setOpen] = useState(false);
-  const headLine = head && <div className="muted small">{head}</div>;
-  if (!open) {
-    return (
-      <div className="msg-edit">
-        {headLine}
-        <div className="msg-preview msg-preview-closed" role="button" tabIndex={0} title="クリックで本文 (タグつき) を表示"
-          onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) setOpen(true); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpen(true); }}>
-          {preview}
-          {!text && <span className="muted">(空)</span>}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="msg-edit msg-edit-open">
-      {headLine}
-      <ReadOnlyText text={text} preview={preview} note={note} close={<button className="small" onClick={() => setOpen(false)}>閉じる</button>} />
-    </div>
-  );
-}
-
 function MessageText({ src, id, apply, focus }: { src: MessageSource; id: number; apply: (f: () => void) => void; focus: boolean }): ReactNode {
   const stored = src.text(id)!;
   const [draft, setDraft] = useState(stored);
