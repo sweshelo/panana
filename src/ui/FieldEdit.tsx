@@ -77,7 +77,7 @@ export function Stat({ label, info, wide, children }: { label: string; info?: st
 export type StatSpec =
   | { label: string; k: string; unit?: string; info?: string }
   | { label: string; range: [string, string]; info?: string }
-  | { label: string; node: ReactNode; info?: string };
+  | { label: string; node: ReactNode; info?: string; wide?: boolean };
 
 /** The stats grid; warns when the low end of a range is above its high end. */
 export function StatFields({ f, edited, stats }: { f: FieldAccess; edited: () => void; stats: StatSpec[] }): ReactNode {
@@ -90,7 +90,7 @@ export function StatFields({ f, edited, stats }: { f: FieldAccess; edited: () =>
         {stats.map((s) => (
           'range' in s
             ? <div key={s.label} className="stat stat-range">{head(s)}<span><FieldNumber f={f} k={s.range[0]} edited={edited} />〜<FieldNumber f={f} k={s.range[1]} edited={edited} /></span></div>
-            : <div key={s.label} className="stat">{head(s)}{'k' in s ? <span><FieldNumber f={f} k={s.k} edited={edited} />{s.unit ?? ''}</span> : s.node}</div>
+            : <div key={s.label} className={'wide' in s && s.wide ? 'stat stat-wide' : 'stat'}>{head(s)}{'k' in s ? <span><FieldNumber f={f} k={s.k} edited={edited} />{s.unit ?? ''}</span> : s.node}</div>
         ))}
       </div>
       {stats.some((s) => 'range' in s && f.get(s.range[0]) > f.get(s.range[1])) && (

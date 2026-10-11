@@ -3,12 +3,12 @@
 // resistances and the groups it is in.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FieldContext } from '../game/tabledef';
-import { Count, EditedMark, ListFilter, useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
+import { useActiveRow, useEdits, useScrollTop, useSticky } from '../ui/book';
 import { FieldChoice, StatFields, type FieldAccess } from '../ui/FieldEdit';
 import { SlotTiles } from '../ui/GroupDetail';
 import { InfoTip } from '../ui/InfoTip';
-import { Board, EmptyBoard } from '../ui/Board';
-import { DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
+import { MonsterList } from '../ui/MonsterList';
+import { BoardSlot, DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
 import { oneIn, pct } from '../pages/monsteredit';
@@ -67,28 +67,10 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
   });
   return (
     <div className="book">
-      <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・ワザ・ドロップで検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['seen', '群れにいる'], ['changed', '変更したもの']]} />
-        <div className="book-list" ref={list}>
-          <Count shown={rows.length} total={monsters.length} />
-          <table className="book-table">
-            <thead><tr><th></th><th>#</th><th>名前</th><th>Lv</th><th>HP</th><th>群れ</th></tr></thead>
-            <tbody>
-              {rows.map((m) => (
-                <tr key={m.id} className={m.id === selected ? 'active' : ''} onClick={() => (location.hash = oahuMonsterHref(m.id))}>
-                  <td className="photo-cell">{oahuMonsterIcon(battle, m.id)}</td>
-                  <td className="num muted">{m.id}</td>
-                  <td>{m.name}{battle.monsterChanged(m.id) && <EditedMark text=" ●" />}</td>
-                  <td className="num">{m.level}</td>
-                  <td className="num">{m.hp[1]}</td>
-                  <td className="num muted">{groups.get(m.id)?.length || ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
+        options={[['all', 'すべて'], ['seen', '群れにいる'], ['changed', '変更したもの']]}
+        rows={rows.map((m) => ({ row: m.id, icon: oahuMonsterIcon(battle, m.id), name: m.name, level: m.level, hp: m.hp[1], count: groups.get(m.id)?.length ?? 0, changed: battle.monsterChanged(m.id) }))}
+        total={monsters.length} selected={selected} href={oahuMonsterHref} countHead="群れ" listRef={list} />
       <div className="book-detail" ref={detail}>
         {monsters.some((m) => m.id === selected) && <MonsterDetail key={selected} session={session} row={selected} groups={groups.get(selected) ?? []} onEdit={onEdit} />}
       </div>
@@ -272,12 +254,8 @@ function StateActions({ battle, row, onEdit }: { battle: OahuBattle; row: number
               <tr key={k}>
                 <td className="with-info">{label}<InfoTip text={info} /></td>
                 <td>
-                  <div className="slot-row">
-                    {e
-                      ? <Board icon={e.icon} name={e.name} id={v} href={e.href} edited={v !== rows.original(row, k)} title="アクションを選び直す" onClick={() => setPicking(k)} />
-                      : <EmptyBoard label="＋ アクション" onClick={() => setPicking(k)} />}
-                    <button className="small slot-remove" title="なしにする" disabled={!v} onClick={() => set(k, 0)}>×</button>
-                  </div>
+                  <BoardSlot entry={e} id={v} edited={v !== rows.original(row, k)} title="アクションを選び直す" emptyLabel="＋ アクション"
+                    onPick={() => setPicking(k)} onClear={() => set(k, 0)} />
                 </td>
               </tr>
             );
@@ -350,12 +328,8 @@ function FormChanges({ battle, row, onEdit }: { battle: OahuBattle; row: number;
           <tr>
             <td className="with-info">変身の見た目<InfoTip text={MODEL_INFO} /></td>
             <td>
-              <div className="slot-row">
-                {model
-                  ? <Board icon={oahuMonsterIcon(battle, model, true)} name={battle.monsterName(model)} id={model} href={oahuMonsterHref(model)} edited={model !== rows.original(row, 'formModel')} title="モンスターを選び直す" onClick={() => setPicking(true)} />
-                  : <EmptyBoard label="＋ モンスター" onClick={() => setPicking(true)} />}
-                <button className="small slot-remove" title="なしにする" disabled={!model} onClick={() => set(0)}>×</button>
-              </div>
+              <BoardSlot entry={model ? { icon: oahuMonsterIcon(battle, model, true), name: battle.monsterName(model), href: oahuMonsterHref(model) } : null} id={model}
+                edited={model !== rows.original(row, 'formModel')} title="モンスターを選び直す" emptyLabel="＋ モンスター" onPick={() => setPicking(true)} onClear={() => set(0)} />
             </td>
           </tr>
           {into.map(({ monster, change }) => (

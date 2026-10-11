@@ -1,5 +1,6 @@
-// The parts of a monster's page shared by RPG2 and RPG3: the drop slots and the skill slots as name boards (picked
-// from a dialog, skills reordered by dragging) and the resistance charts. Each game passes its entries and pickers.
+// The parts of a monster's page shared by RPG2, RPG3 and RPG FREE!: the drop slots and the skill slots as name boards
+// (picked from a dialog, skills reordered by dragging), a slot of one entry, and the resistance charts. Each game
+// passes its entries and pickers.
 import { useRef, useState, type ReactNode } from 'react';
 import { Board, EmptyBoard } from './Board';
 import { InfoTip } from './InfoTip';
@@ -19,7 +20,35 @@ export function ActionBadge({ element, label }: { element: number; label: string
 export interface BoardEntry {
   icon: ReactNode;
   name: string;
-  href: string;
+  /** The entry's page; none when the game has no book of it (the number is shown unlinked). */
+  href?: string;
+}
+
+/**
+ * One slot holding a single entry (an action of a state, the next form, a model): its board, or an empty board when
+ * there is none, and × to empty it. The board opens the picker.
+ */
+export function BoardSlot({ entry, id, sub, edited, title, emptyLabel, clearTitle = 'なしにする', onPick, onClear }: {
+  /** null when the slot is empty. */
+  entry: BoardEntry | null;
+  id?: number;
+  sub?: string;
+  edited: boolean;
+  title: string;
+  emptyLabel: string;
+  clearTitle?: string;
+  onPick: () => void;
+  /** Empties the slot; no × when the slot cannot be empty. */
+  onClear?: () => void;
+}): ReactNode {
+  return (
+    <div className="slot-row">
+      {entry
+        ? <Board icon={entry.icon} name={entry.name} sub={sub} id={id} href={entry.href} edited={edited} title={title} onClick={onPick} />
+        : <EmptyBoard label={emptyLabel} onClick={onPick} />}
+      {onClear && <button className="small slot-remove" title={clearTitle} disabled={!entry} onClick={onClear}>×</button>}
+    </div>
+  );
 }
 
 /** A picker dialog opened by a slot: what is there now and what to do with the pick. */
@@ -170,6 +199,8 @@ export interface ResistChart {
   axes: ResistAxis[];
   /** Heading of the effect column of the table ("ダメージ", "係数"); no column when undefined. */
   effectHead?: string;
+  /** The highest value of this chart's axes when it is below the charts' `max` (e.g. states stop at +9). */
+  max?: number;
 }
 
 const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`;
@@ -202,7 +233,7 @@ export function ResistCharts({ charts, min, max, rings, effect, cell = effect, o
               max={max}
               rings={rings}
               format={(v, j) => `${fmt(v)} ${effect(ci, j, v)}`.trimEnd()}
-              onChange={(j, v) => onChange(ci, j, v)}
+              onChange={(j, v) => onChange(ci, j, Math.min(v, c.max ?? max))}
             />
             <figcaption>{`${c.label} (ドラッグで変更。点線 = 元の値)`}</figcaption>
           </figure>
@@ -222,7 +253,7 @@ export function ResistCharts({ charts, min, max, rings, effect, cell = effect, o
                     <td>
                       <select className={a.value !== a.original ? 'edited' : ''} title={a.value !== a.original ? `元の値 ${fmt(a.original)}` : a.title}
                         value={a.value} onChange={(e) => onChange(ci, j, Number(e.target.value))}>
-                        {[...new Set([...values, a.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
+                        {[...new Set([...values.filter((v) => v <= (c.max ?? max)), a.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
                       </select>
                     </td>
                     {c.effectHead && <td className={`num ${cls}`}>{cell(ci, j, a.value)}</td>}
