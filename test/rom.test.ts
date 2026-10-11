@@ -20,7 +20,7 @@ import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../sr
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes, u16, u32 } from '../src/util/bytes';
-import { CIA, ELPULSE, GOLDEN, hasCia, hasGolden } from './env';
+import { BASE_MOD, CIA, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
@@ -306,7 +306,7 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect([...missing]).toEqual([]);
   });
 
-  const MODOUT = `${ELPULSE}/mod/out`;
+  const MODOUT = BASE_MOD;
   test.skipIf(!existsSync(`${MODOUT}/code.ips`))('base MOD (elpulse mod/out): switch patch, switch + gate, package', async () => {
     const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({ name: n, bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)) }));
     files.push({ name: 'code.ips', bytes: new Uint8Array(readFileSync(`${MODOUT}/code.ips`)) });

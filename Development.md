@@ -18,14 +18,24 @@ bun run deploy     # build のあと wrangler deploy
 ## テスト
 
 ```bash
-python test/golden/export_golden.py   # ../elpulse の展開済みデータから test/golden/golden.json を作る
+python test/golden/export_golden.py   # ../elpulse の展開済みデータから roms/golden.json を作る
 bun test
 ```
 
 - `test/unit.test.ts`: ROM なしで動く単体テスト
 - `test/ui.test.tsx`: React のページを文字列に描画して確かめるテスト (ROM なし)
-- `test/rom.test.ts`: Python の参照実装との照合とラウンドトリップ。`ROM_CIA` (既定 `../elpulse/00040000000A7900.cia`) と `golden.json` がないときはスキップします。
-- `test/oahu.test.tsx` (RPG3): `ROM_OAHU_BASE` / `ROM_OAHU_UPDATE` (既定 `../elpulse/0004000E000EF000-v0.1.0.cia` / `-v4.7.0.cia`) がないときはスキップします。
+- `test/rom.test.ts`: Python の参照実装との照合とラウンドトリップ。
+- `test/oahu*.test.ts(x)` (RPG3)、`test/lanai*.test.ts(x)` (RPG FREE!)。
+
+ROM のテストは、リポジトリ直下の `roms/` (git には入れない) にあるファイルを読みます (`test/env.ts`)。ないファイルを使うテストはスキップします。
+
+| ファイル | 中身 |
+|---|---|
+| `roms/00040000000A7900.cia` | RPG2 の復号済み CIA |
+| `roms/golden.json` | 参照実装の照合データ (`export_golden.py` で作る) |
+| `roms/mod/out/` | 土台の MOD (elpulse の mod/out。任意) |
+| `roms/oahu-base.cia` / `roms/oahu-update.cia` | RPG3 の Base / Update (復号済み) |
+| `roms/lanai-base.cia` / `roms/lanai-update.cia` | RPG FREE! の Base / Update (復号済み) |
 
 ROM のテストで確かめていること:
 
@@ -43,8 +53,8 @@ ROM のテストで確かめていること:
 
 ### ROM バンドルの準備 (一度だけ)
 
-1. `golden.json` を作ってから、PowerShell で暗号化したバンドルを作ります: `.\scripts\pack-rom-bundle.ps1 -Elpulse ..\elpulse` (パスフレーズを聞かれます)。`rom-bundle.tar.gpg` ができます (CIA・`golden.json`・あれば `mod/out`)。gpg (Gpg4win など) が要ります。
-2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードします (300 MB を超えるときは `aws s3 cp` など S3 API で)。RPG3 の復号済み CIA は、同じバケットに `oahu-base.cia` (Base) と `oahu-update.cia` (Update) として置きます (キーはリポジトリ変数 `OAHU_BASE_KEY` / `OAHU_UPDATE_KEY` で変えられます)。
+1. `roms/` に RPG2 の CIA と `golden.json` (あれば `mod/out`) を置いてから、PowerShell で暗号化したバンドルを作ります: `.\scripts\pack-rom-bundle.ps1` (パスフレーズを聞かれます)。`rom-bundle.tar.gpg` ができます。gpg (Gpg4win など) が要ります。
+2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードします (300 MB を超えるときは `aws s3 cp` など S3 API で)。RPG3 と RPG FREE! の復号済み CIA は、同じバケットに `oahu-base.cia` / `oahu-update.cia`、`lanai-base.cia` / `lanai-update.cia` として置きます (キーはリポジトリ変数 `OAHU_BASE_KEY` などで変えられます)。CI はバンドルの中身とこれらを `roms/` に置いてテストします。
 3. R2 の API トークンを「Object Read only・このバケットだけ」で作ります。
 4. リポジトリの Settings → Secrets and variables → Actions に登録します: `ROM_BUNDLE_PASSPHRASE`、`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。バケット名・キーを変えるときは Variables の `ROM_BUNDLE_BUCKET`・`ROM_BUNDLE_KEY`。
 

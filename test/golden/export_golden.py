@@ -1,6 +1,6 @@
 """Export golden data from the Python reference implementation (elpulse/tools) for the TypeScript tests.
 
-    python test/golden/export_golden.py [ELPULSE_ROOT]      -> test/golden/golden.json
+    python test/golden/export_golden.py [ELPULSE_ROOT]      -> roms/golden.json
 
 Needs the extracted dump of the elpulse repository (extracted/exefs/code.bin, extracted/romfs,
 extracted/romfs_unpacked). The JSON is derived from ROM data, so it is git-ignored.
@@ -54,5 +54,7 @@ out = {
                  'tileset0': [[struct.unpack_from('<I', mp.row(k + 1), 8 + l * 4)[0] for l in range(8)] for k in range(15)]},
     'code_sha1': hashlib.sha1(open(os.path.join('extracted', 'exefs', 'code.bin'), 'rb').read()).hexdigest(),
 }
-json.dump(out, open(os.path.join(HERE, 'golden.json'), 'w'), indent=1)
-print('wrote', os.path.join(HERE, 'golden.json'))
+dest = os.path.join(HERE, '..', '..', 'roms', 'golden.json')  # where the tests read it (test/env.ts)
+os.makedirs(os.path.dirname(dest), exist_ok=True)
+json.dump(out, open(dest, 'w'), indent=1)
+print('wrote', os.path.normpath(dest))
