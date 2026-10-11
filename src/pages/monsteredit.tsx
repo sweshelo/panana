@@ -11,13 +11,12 @@ import { ActionPicker } from '../ui/ActionPicker';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
 import { BattleMessagePicker } from '../ui/BattleMessagePicker';
 import { Dialog } from '../ui/Dialog';
-import { Board, EmptyBoard } from '../ui/Board';
 import { FieldCheck as SharedFieldCheck, FieldChoice, FieldNumber, StatFields, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import { performancePhase, TransformPreview } from '../ui/PerformanceEditor';
 import { ItemPicker } from '../ui/ItemPicker';
 import { MonsterPicker } from '../ui/MonsterPicker';
-import { ActionBadge, DropSlots, Heading, moveTo, SkillSlots, type BoardEntry } from '../ui/MonsterSlots';
+import { ActionBadge, BoardSlot, DropSlots, Heading, moveTo, SkillSlots, type BoardEntry } from '../ui/MonsterSlots';
 import { Photo } from '../ui/Photo';
 import { useAsync } from '../ui/useAsync';
 import { itemRef } from './items';
@@ -378,21 +377,17 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
           <tr>
             <td>次の形態</td>
             <td>
-              <div className="slot-row">
-                {m.nextForm
-                  ? <Board
-                      icon={<Photo model={next ? monsterRef(session.game, book, next) : null} />}
-                      name={next?.name ?? '?'}
-                      sub={next ? `Lv${next.level}` : undefined}
-                      id={m.nextForm}
-                      href={`#/monsters/${m.nextForm}`}
-                      edited={m.nextForm !== book.original(m.row, 'nextForm')}
-                      title="次の形態を選び直す"
-                      onClick={() => setPicking(true)}
-                    />
-                  : <EmptyBoard label="＋ 次の形態" onClick={() => setPicking(true)} />}
-                <button className="small slot-remove" title="次の形態をなくす" disabled={!m.nextForm} onClick={() => { book.set(m.row, 'nextForm', 0); edited(); }}>×</button>
-              </div>
+              <BoardSlot
+                entry={m.nextForm ? { icon: <Photo model={next ? monsterRef(session.game, book, next) : null} />, name: next?.name ?? '?', href: `#/monsters/${m.nextForm}` } : null}
+                id={m.nextForm}
+                sub={next ? `Lv${next.level}` : undefined}
+                edited={m.nextForm !== book.original(m.row, 'nextForm')}
+                title="次の形態を選び直す"
+                emptyLabel="＋ 次の形態"
+                clearTitle="次の形態をなくす"
+                onPick={() => setPicking(true)}
+                onClear={() => { book.set(m.row, 'nextForm', 0); edited(); }}
+              />
             </td>
           </tr>
           <tr>

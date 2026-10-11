@@ -11,7 +11,8 @@ import { hex8 } from '../util/bytes';
 import { mapTitle } from '../game/names';
 import type { MapDoc } from '../game/sections';
 import type { Session } from '../session';
-import { Count, ListFilter, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
+import { useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
+import { MonsterList } from '../ui/MonsterList';
 import { GroupDetail } from '../ui/GroupDetail';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
@@ -89,31 +90,10 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
   const m = book.monster(selected);
   return (
     <div className="book">
-      <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・ワザ・ドロップで検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['seen', 'マップに出る'], ['boss', 'ボス・変身'], ...dungeons.map((d): [string, string] => [`d${d}`, game.master.dungeonName(d) || `ダンジョン ${d}`])]} />
-        <div className="book-list" ref={list}>
-          <Count shown={rows.length} total={book.monsters.length} />
-          <table className="book-table">
-            <thead><tr><th></th><th>#</th><th>名前</th><th>Lv</th><th>HP</th><th>出現</th></tr></thead>
-            <tbody>
-              {rows.map((m) => {
-                const n = where.get(m.row)?.length ?? 0;
-                return (
-                  <tr key={m.row} className={m.row === selected ? 'active' : ''} onClick={() => (location.hash = `#/monsters/${m.row}`)}>
-                    <td className="photo-cell"><Photo model={monsterRef(game, book, m)} /></td>
-                    <td className="num muted">{m.row}</td>
-                    <td>{m.name}</td>
-                    <td className="num">{m.level}</td>
-                    <td className="num">{m.hp.max}</td>
-                    <td className="num muted">{n || ''}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
+        options={[['all', 'すべて'], ['seen', 'マップに出る'], ['boss', 'ボス・変身'], ...dungeons.map((d): [string, string] => [`d${d}`, game.master.dungeonName(d) || `ダンジョン ${d}`])]}
+        rows={rows.map((m) => ({ row: m.row, icon: <Photo model={monsterRef(game, book, m)} />, name: m.name, level: m.level, hp: m.hp.max, count: where.get(m.row)?.length ?? 0 }))}
+        total={book.monsters.length} selected={selected} href={(r) => `#/monsters/${r}`} countHead="出現" listRef={list} />
       <div className="book-detail">
         {m && <MonsterDetail session={session} book={book} m={m} where={where.get(m.row) ?? []} edited={() => { session.scheduleSave(); edited(); }} />}
       </div>

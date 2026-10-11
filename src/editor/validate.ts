@@ -8,14 +8,9 @@ import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
 import { GRID, tileAt, type Selection } from './state';
+import type { Issue } from './model';
 
-export interface Issue {
-  level: 'error' | 'warn';
-  msg: string;
-  target?: Selection;
-  /** Index-independent identity, used to hide problems the unedited ROM already has. */
-  key: string;
-}
+export type { Issue } from './model';
 
 const DOOR_KINDS = new Set([11, 12, 13, 14, 15, 16, 17]);
 

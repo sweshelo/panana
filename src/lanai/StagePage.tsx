@@ -1,12 +1,15 @@
-// The contents (stages) of 電波人間のRPG FREE! (#/stages/<content>): the stages of MapStageIntegration with their names,
-// missions and stamina, and what the content's archive holds: ContentsDef, the CRO of its event scripts (classes and
-// the Script API it calls), its tables and its talks (naauao lanai/contents.md).
+// The contents (stages) of 電波人間のRPG FREE! (#/stages/<content>), laid out like RPG3's event list (oahu/EventPage.tsx):
+// the list with the stage, stamina and mission; the detail with the content's maps (links to the map page), the stages
+// of MapStageIntegration, the CRO of its event scripts (classes and the Script API it calls), ContentsDef, its tables
+// and its talks (naauao lanai/contents.md).
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { romfsHref } from '../romfs/RomfsPage';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { CATEGORY_NOTE, contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
+import { lanaiFloorLabel, lanaiMaps } from './maps';
+import { lanaiMapHref } from './MapPage';
 import { textColumns } from './MessagePage';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
@@ -39,13 +42,14 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
         <div className="book-list" ref={list}>
           <Count shown={shown.length} total={contents.length} />
           <table className="book-table">
-            <thead><tr><th>#</th><th>ステージ</th><th title="ステージに入るのに要るスタミナ (MapStage +0x3D)">スタミナ</th></tr></thead>
+            <thead><tr><th>#</th><th>ステージ</th><th className="nowrap" title="ステージに入るのに要るスタミナ (MapStage +0x3D)">スタミナ</th><th>ミッション</th></tr></thead>
             <tbody>
               {shown.map((x) => (
                 <tr key={x.index} className={x.index === index ? 'active' : ''} onClick={() => (location.hash = `#/stages/${x.index}`)}>
                   <td className="num muted">{x.index}</td>
-                  <td>{contentTitle(x)}</td>
-                  <td className="num muted">{staminaText(x)}</td>
+                  <td className="nowrap">{contentTitle(x)}</td>
+                  <td className="num muted nowrap">{staminaText(x)}</td>
+                  <td className="msg-cell">{x.stages.find((st) => st.mission)?.mission ?? ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -65,11 +69,13 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
   return (
     <>
       <div className="book-head">
-        <h2>{contentTitle(c)}</h2>
-        <span className="muted">{`コンテンツ ${c.index}`}</span>
+        <h2>{`${contentTitle(c)} — コンテンツ ${c.index}`}</h2>
+        <span className="muted">{`${c.stages.length ? `ステージの行 ${c.stages.length}` : 'ステージの行なし'}、`}</span>
         <a className="mono muted" href={romfsHref(c.archive)} title="RomFS ビューでアーカイブを開く">{c.archive}</a>
         <span className="muted mono" title="Contents +0x04: TableResource のエントリ">{`TableResource ${hex8(c.tableResource)}`}</span>
       </div>
+      <h3>マップ</h3>
+      <ContentMaps session={session} c={c} />
       <h3>ステージ (MapStageIntegration)</h3>
       {!c.stages.length ? <p className="muted">このコンテンツを指す行はありません。</p> : (
         <table className="book-table">
@@ -116,9 +122,6 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
   const talks = a.tables.filter((t) => textColumns(t).length);
   return (
     <>
-      <h3>ContentsDef</h3>
-      <p className="mono">{a.def.map((v) => `0x${v.toString(16).toUpperCase()}`).join(', ') || <span className="muted">なし</span>}</p>
-      <p className="muted small">行 0・1 = コンテンツ番号、行 2 = CRO のエントリのハッシュ、行 3 = 1 (意味は未確認)。4 行目以降は未解析。</p>
       <h3>イベントのスクリプト (CRO)</h3>
       {!a.cro ? <p className="muted">CRO がありません。</p> : (
         <>
@@ -134,6 +137,9 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
           </details>
         </>
       )}
+      <h3>ContentsDef</h3>
+      <p className="mono">{a.def.map((v) => `0x${v.toString(16).toUpperCase()}`).join(', ') || <span className="muted">なし</span>}</p>
+      <p className="muted small">行 0・1 = コンテンツ番号、行 2 = CRO のエントリのハッシュ、行 3 = 1 (意味は未確認)。4 行目以降は未解析。</p>
       <h3>表</h3>
       <table className="book-table">
         <thead><tr><th>エントリ</th><th>表</th><th>行 × 大きさ</th></tr></thead>
@@ -149,6 +155,23 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
       </table>
       {talks.map((t) => <ContentStrings key={t.entry} session={session} t={t} />)}
     </>
+  );
+}
+
+/** The content's maps (its map table) with links, listed like the places of the event page (oahu/EventPage.tsx). */
+function ContentMaps({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+  const maps = useAsync(() => lanaiMaps(session, c), [session, c]);
+  if (!maps) return <div className="muted">マップ表を読み込み中…</div>;
+  if (maps instanceof Error) return <div className="muted">マップ表がありません</div>;
+  return (
+    <ul>
+      {maps.maps.map((m) => (
+        <li key={m.index}>
+          <a className="mono" href={lanaiMapHref(c.index, m.name)}>{m.name}</a>
+          <span className="muted">{` ${lanaiFloorLabel(m.floor) || '地上'}・${maps.groupName(m.dungeon) || 'MapGroup'} (MapGroup ${m.dungeon})・${m.world ? 'ワールドマップ (W01)' : `${maps.doc(m).tiles.length} マス`}・マップ表の行 ${m.index}`}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
