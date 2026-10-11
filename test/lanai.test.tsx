@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
 import { croInfo, demangleName, lanaiContents, readContent } from '../src/lanai/contents';
-import { lanaiText, parseLanaiMessage } from '../src/lanai/message';
+import { encodeLanaiMessage, lanaiMarks, lanaiText, parseLanaiMessage, parseLanaiText } from '../src/lanai/message';
 import { LanaiMessagePage } from '../src/lanai/MessagePage';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiStagePage } from '../src/lanai/StagePage';
@@ -37,6 +37,23 @@ test('reads a string with ruby and an insertion tag', () => {
   const { tokens, end } = parseLanaiMessage(b, 0);
   expect(lanaiText(tokens)).toBe('{ruby:大|だい}{ins:ItemData:0x800000C7:name}A');
   expect(end).toBe(b.length);
+  // written back: the same bytes, from the tokens and from the text form
+  expect([...encodeLanaiMessage(tokens)]).toEqual([...b]);
+  expect([...encodeLanaiMessage(parseLanaiText(lanaiText(tokens)))]).toEqual([...b]);
+});
+
+test('reads the text form back into tokens', () => {
+  const text = 'あ{page}い\n{tag:105}{tag:02,ABC,0x10}{x}{ruby:漢|かん}';
+  const tokens = parseLanaiText(text);
+  expect(tokens).toEqual([
+    { t: 'text', s: 'あ' }, { t: 'tag', code: 0x22, args: [] }, { t: 'text', s: 'い' }, { t: 'br' },
+    { t: 'tag', code: 0x105, args: [] }, { t: 'tag', code: 2, args: ['ABC', 0x10] }, { t: 'text', s: '{x}' }, { t: 'ruby', base: '漢', reading: 'かん' },
+  ]);
+  expect(lanaiText(tokens)).toBe(text);
+  const again = parseLanaiMessage(encodeLanaiMessage(tokens), 0);
+  expect(lanaiText(again.tokens)).toBe(text);
+  expect(lanaiMarks(tokens)).toEqual(['{page}']);
+  expect(() => encodeLanaiMessage([{ t: 'tag', code: 2, args: ['?7'] }])).toThrow();
 });
 
 describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {

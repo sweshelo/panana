@@ -12,6 +12,7 @@ import { moveTo } from '../src/ui/MonsterSlots';
 import { isTransform, lanaiAction, lanaiActionMonsters, lanaiCopyActionInto, lanaiCopyStats, lanaiRevertMonster, lanaiSetTransformTarget, lanaiStatsOf, lanaiStatsSharers } from '../src/lanai/monsterStats';
 import { LanaiSession, lanaiTableKey } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
+import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiMessage } from '../src/lanai/message';
 import { openImages, type Dump } from '../src/rom/dump';
 import { equalBytes, u32, w32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -186,6 +187,70 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
   test('every table of the master and the language archives lays out again byte for byte', () => {
     expect(s.tables.length).toBeGreaterThan(100);
     expect(s.tables.filter((t) => !equalBytes(t.table.relaidOut(), t.table.data)).map((t) => t.table.name)).toEqual([]);
+  });
+
+  test('every string field of every table: written to another string and back gives the bytes as read', () => {
+    const tried: string[] = [];
+    for (const { table: t } of s.tables) {
+      const at = t.stringOffsets();
+      if (!at.length || !t.rows) continue;
+      const read = t.data.slice();
+      const strings = (x: LanaiTable): string[] => Array.from({ length: x.rows }, (_, r) => at.map((o) => (x.isString(r, o) ? s.field(x, r, o)!.text : ''))).flat();
+      const before = strings(t);
+      const [r, o] = [t.rows - 1, at[at.length - 1]!];
+      if (!t.isString(r, o)) continue;
+      const was = lanaiMessageBytes(t.data, t.u32(r, o)).slice();
+      s.setText(t, r, o, 'テスト{page}です');
+      const again = new LanaiTable(t.data);
+      expect(s.field(again, r, o)!.text).toBe('テスト{page}です');
+      const after = strings(again);
+      after[r * at.length + at.length - 1] = before[r * at.length + at.length - 1]!;
+      expect(after).toEqual(before);
+      expect(t.changedRows()).toEqual([r]);
+      t.setString(r, o, was);
+      expect(equalBytes(t.data, read)).toBe(true);
+      tried.push(t.name);
+    }
+    expect(tried.length).toBeGreaterThan(10);
+    expect(s.changedTables()).toEqual([]);
+  });
+
+  test('every message string written from its tokens is the bytes as read', () => {
+    const bad: string[] = [];
+    for (const { table: t } of s.tables) {
+      for (const o of t.stringOffsets()) {
+        if (t.fieldName(o) === 'voice') continue;
+        for (let r = 0; r < t.rows; r++) {
+          if (!t.isString(r, o)) continue;
+          const b = lanaiMessageBytes(t.data, t.u32(r, o));
+          if (!equalBytes(encodeLanaiMessage(parseLanaiMessage(t.data, t.u32(r, o)).tokens), b)) bad.push(`${t.name} ${r} +${o}`);
+        }
+      }
+    }
+    expect(bad.slice(0, 20)).toEqual([]);
+  });
+
+  test('a written string is exported, saved and put back, and undone', async () => {
+    const t = s.need('MonsterParameter');
+    const before = s.field(t, 1, 4)!.text;
+    s.setText(t, 1, 4, 'あたらしいなまえ');
+    s.edited();
+    const files = s.modFiles();
+    expect([...files.keys()]).toEqual(['2135000A']);
+    const arc = parseArchive(files.get('2135000A')!);
+    const ref = s.refOf(t)!;
+    const back = new LanaiTable(unpackEntry(arc, arc.entries[ref.index]!).body);
+    expect(s.field(back, 1, 4)!.text).toBe('あたらしいなまえ');
+    expect(s.field(back, 2, 4)!.text).toBe(s.field(t, 2, 4)!.text);
+    const saved = s.saved();
+    expect(saved.strings?.map(([k, r, o]) => [k, r, o])).toEqual([[lanaiTableKey(ref), 1, 4]]);
+    const other = await LanaiSession.open(dump, { fresh: true });
+    await other.restore(saved);
+    expect(other.field(other.need('MonsterParameter'), 1, 4)!.text).toBe('あたらしいなまえ');
+    expect(s.originalField(t, 1, 4)!.text).toBe(before);
+    s.setText(t, 1, 4, before);
+    expect(t.changed).toBe(false);
+    expect(s.modFiles().size).toBe(0);
   });
 
   test('the master rebuilt with nothing changed is the same bytes', async () => {
