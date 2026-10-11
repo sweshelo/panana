@@ -114,14 +114,29 @@ describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
     session = await LanaiSession.open(dump, { fresh: true });
   });
 
+  test('which tables are talk tables (row size 12 with a message field)', () => {
+    // the names of the 12-byte tables with strings, for when none is taken as a talk table
+    const twelve = session.tables.filter((t) => t.table.rowSize === 12 && t.table.stringOffsets().length).map((t) => `${t.table.name} [${t.table.fields.map((f) => `${f.name}@${f.offset}`).join(' ')}]`);
+    expect({ talk: session.tables.filter(isTalkTable).length, twelve }).toEqual({ talk: session.tables.filter(isTalkTable).length, twelve });
+  });
+
   test('the sets of 8 tones in every talk table (naauao lanai/messages.md: 727)', async () => {
     let sets = 0;
     const archives = [...new Set(lanaiContents(session).map((c) => c.archive))];
     const tables = [...session.tables.filter(isTalkTable)];
     for (const a of archives) tables.push(...(await session.tablesIn(a)).filter(isTalkTable));
-    for (const t of tables) sets += talkGroups(t).filter((g) => g.kind === 'set').length;
+    const per: string[] = [];
+    for (const t of tables) {
+      const n = talkGroups(t).filter((g) => g.kind === 'set').length;
+      sets += n;
+      per.push(`${t.archive}/${t.table.name}: ${n}`);
+    }
+    // the speaker kinds of all talk rows (for when the count is off)
+    const kinds = new Map<number, number>();
+    for (const t of tables) for (let r = 0; r < t.table.rows; r++) kinds.set(t.table.u32(r, 8), (kinds.get(t.table.u32(r, 8)) ?? 0) + 1);
+    const why = `talk tables ${tables.length}, sets ${sets}; kinds ${[...kinds].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k.toString(16)}:${n}`).join(' ')}; ${per.slice(0, 20).join(', ')}`;
+    expect({ sets, why }).toEqual({ sets: 727, why });
     expect(tables.length).toBeGreaterThan(10);
-    expect(sets).toBe(727);
   });
 
   test('a talk of a content is written, exported and put back', async () => {
