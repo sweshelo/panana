@@ -1,34 +1,35 @@
-// The views of a lanai map (read only for now): the top-down grid and the 3D scene shared with the other map pages
-// (editor/gridcanvas.ts, editor/mapscene.ts). The tile models are the GSCs of the map's tileset (mapModels.ts); records
-// are markers. Clicking picks a tile or a record (the page shows it); the editing state (LanaiEditState) comes later.
+// The views of a lanai map: the top-down grid and the 3D scene shared with the other map pages (editor/gridcanvas.ts,
+// editor/mapscene.ts), driven by the editor's Controller (tools, selection, dragging) on the page's LanaiEditState.
+// The tile models are the GSCs of the map's tileset (mapModels.ts): the map's own and every one of the palette, read
+// again when an edit changes the map's MapData (indoor tiles; map.md §6.1). Records are markers.
 import * as THREE from 'three';
 import { ModelFactory } from '../cgfx/three';
+import { Controller, norm } from '../editor/controller';
 import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
 import { MapScene, TileFallback, TileLayer } from '../editor/mapscene';
-import { GRID, tileAt } from '../editor/state';
+import { GRID, type EditEvent } from '../editor/model';
 import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
-import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, lanaiExitKind, type LanaiMapInfo, type LanaiMaps, type LanaiPartRef, type LanaiTileSource } from './maps';
+import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
+import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiTileModels } from './mapModels';
-
-export type LanaiSelection = { type: 'none' } | { type: 'tile'; x: number; y: number } | { type: 'rec'; section: number; index: number };
-
-/** The kind of the tiles the game leaves empty (map.md §6.3). */
-const EMPTY_KIND = 33;
 
 export class LanaiMapView {
   readonly grid: GridCanvas;
   readonly scene: MapScene;
-  /** Emitted when what the panes show changes (layers, models, selection, hover). */
+  readonly ctl: Controller;
+  /** Emitted when what the panes show besides the edit state changes (models, status). */
   readonly signal = new Signal();
-  readonly doc: MapDoc;
-  readonly source: LanaiTileSource;
-  selection: LanaiSelection = { type: 'none' };
-  hover: [number, number] | null = null;
+  /** Emitted when the hovered cell changes (the status bar). */
+  readonly hover = new Signal();
   status = '';
-  readonly layers = { tiles: true, room: true, sections: Object.fromEntries(LANAI_POINT_SECTIONS.map((k) => [k, true])) as Record<number, boolean> };
+  /** The last edit's error, shown in the status bar until the mouse moves. */
+  errorMsg = '';
+  /** Tile models of the map's tileset (the palette's thumbnails too). */
   factory: ModelFactory | null = null;
+  /** The tile source the models were read for. */
+  private loadedFor: LanaiTileSource | null = null;
   private readonly tileLayer = new TileLayer();
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
@@ -39,27 +40,47 @@ export class LanaiMapView {
   private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
   private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
   private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+  private readonly unsubscribe: () => void;
   private disposed = false;
 
-  constructor(readonly maps: LanaiMaps, readonly info: LanaiMapInfo) {
-    this.doc = maps.doc(info);
-    this.source = maps.tileSource(info, this.doc);
+  constructor(readonly st: LanaiEditState, readonly info: LanaiMapInfo) {
+    this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d');
     this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay);
     const pointer = {
-      down: (cx: number, cy: number) => this.pick(cx, cy),
-      move: (cx: number, cy: number) => this.setHover([Math.floor(cx), Math.floor(cy)]),
-      up: () => {},
-      leave: () => this.setHover(null),
+      down: (cx: number, cy: number, e: { shiftKey: boolean; button: number }) => this.ctl.down(cx, cy, e),
+      move: (cx: number, cy: number) => this.ctl.move(cx, cy),
+      up: () => this.ctl.up(),
+      leave: () => this.ctl.leave(),
     };
     this.grid.pointer = pointer;
     this.scene.pointer = pointer;
+    this.ctl.onHover = () => {
+      this.grid.draw();
+      this.errorMsg = '';
+      this.hover.emit();
+    };
+    this.unsubscribe = st.on((what) => this.changed(what));
     void this.loadTiles();
+  }
+
+  get doc(): MapDoc {
+    return this.st.current!;
+  }
+
+  get maps() {
+    return this.st.maps;
+  }
+
+  /** The open map's tile source (MapData, tileset). */
+  get source(): LanaiTileSource {
+    return this.st.source ?? this.maps.tileSource(this.info, this.doc);
   }
 
   dispose(): void {
     this.disposed = true;
+    this.unsubscribe();
     this.factory?.dispose();
     this.scene.dispose();
   }
@@ -76,44 +97,31 @@ export class LanaiMapView {
     this.signal.emit();
   }
 
-  select(s: LanaiSelection): void {
-    this.selection = s;
-    this.refresh();
-  }
-
-  private setHover(c: [number, number] | null): void {
-    if (c?.[0] === this.hover?.[0] && c?.[1] === this.hover?.[1]) return;
-    this.hover = c;
+  private changed(what: EditEvent): void {
+    if (this.st.current?.hash !== this.info.hash || this.disposed) return;
+    // an edit that switched the MapData (indoor tiles) needs the other tileset's models
+    const src = this.source;
+    if (this.loadedFor && (src.mapData !== this.loadedFor.mapData || src.tileset !== this.loadedFor.tileset)) void this.loadTiles();
+    if (what === 'doc' || what === 'selection' || what === 'map') this.sync3d();
     this.grid.draw();
-    this.signal.emit();
+    if (this.st.error) {
+      this.errorMsg = this.st.error;
+      this.st.error = '';
+      this.signal.emit();
+    }
   }
 
-  /** The nearest visible record within half a cell of (cx, cy), else the tile there. */
-  private pick(cx: number, cy: number): void {
-    let best: LanaiSelection = { type: 'none' };
-    let d = 0.5;
-    for (const k of LANAI_POINT_SECTIONS) {
-      if (!this.layers.sections[k]) continue;
-      (this.doc.recs[k] ?? []).forEach((r, i) => {
-        const [px, py] = recCellPos(r, LANAI_LAYOUTS[k]!);
-        const dist = Math.hypot(px - cx, py - cy);
-        if (dist < d) {
-          d = dist;
-          best = { type: 'rec', section: k, index: i };
-        }
-      });
-    }
-    if (best.type === 'none') {
-      const x = Math.floor(cx), y = Math.floor(cy);
-      if (tileAt(this.doc, x, y)) best = { type: 'tile', x, y };
-    }
-    this.select(best);
+  /** The model of a tile (null: none; the entry hash keys it in the factory). */
+  modelOf(kind: number, letter: number): LanaiPartRef | null {
+    return this.maps.partRef(this.source, kind, letterIndex(letter));
   }
 
   // ---- 2D
 
   private paint(g: CanvasRenderingContext2D, s: number): void {
-    const doc = this.doc, layers = this.layers, sel = this.selection;
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash) return;
+    const st = this.st, layers = this.ctl.layers, sel = st.selection;
     if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), t.rot, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[t.rot]);
     if (layers.room) {
       g.fillStyle = ROOM_COLOR;
@@ -147,42 +155,61 @@ export class LanaiMapView {
     }
     g.strokeStyle = '#ffeb3b';
     g.lineWidth = 2;
-    if (sel.type === 'tile') strokeCell(g, s, sel.x, sel.y);
-    if (this.hover) {
+    if (sel.type === 'tiles') for (const [x, y] of sel.cells) g.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
+    if (sel.type === 'rect') {
+      const r = norm(sel);
+      g.setLineDash([6, 4]);
+      g.strokeRect(r.x0 * s, r.y0 * s, (r.x1 - r.x0 + 1) * s, (r.y1 - r.y0 + 1) * s);
+      g.setLineDash([]);
+    }
+    const hv = this.ctl.hover;
+    if (hv) {
+      const [x, y] = hv;
+      if (st.tool === 'paint') {
+        g.globalAlpha = 0.6;
+        drawTileGlyph(g, s, x, y, kindColor(st.brush.kind), st.brush.rot, `${st.brush.kind}${letterLabel(st.brush.letter)}`, ROT_ARROW[st.brush.rot]);
+        g.globalAlpha = 1;
+      }
       g.strokeStyle = '#fff';
       g.lineWidth = 1.5;
-      strokeCell(g, s, this.hover[0], this.hover[1]);
+      if (st.clip && st.tool === 'rect') {
+        g.setLineDash([4, 3]);
+        g.strokeRect(x * s, y * s, st.clip.w * s, st.clip.h * s);
+        g.setLineDash([]);
+      }
+      strokeCell(g, s, x, y);
     }
   }
 
   // ---- 3D
 
-  /** The models of every tile of the map. */
-  private refs(): LanaiPartRef[] {
+  /** The models of the map's tiles and of every tile of the tileset's palette (painting finds its model). */
+  private refs(src: LanaiTileSource): LanaiPartRef[] {
     const out: LanaiPartRef[] = [];
-    for (const t of this.doc.tiles) {
-      const r = this.maps.partRef(this.source, t.kind, letterIndex(t.letter));
+    const add = (kind: number, letter: number): void => {
+      const r = this.maps.partRef(src, kind, letter);
       if (r) out.push(r);
-    }
+    };
+    for (const t of this.doc.tiles) add(t.kind, letterIndex(t.letter));
+    for (const [kind, letters] of this.maps.palette(src.tileset)) for (const l of letters) add(kind, l);
     return out;
   }
 
-  /** The model of a tile (null: none; the entry hash keys it in the factory). */
-  modelOf(kind: number, letter: number): LanaiPartRef | null {
-    return this.maps.partRef(this.source, kind, letterIndex(letter));
-  }
-
   private async loadTiles(): Promise<void> {
+    const src = this.source;
+    this.loadedFor = src;
     this.status = 'タイルのモデルを読み込み中…';
     this.signal.emit();
     try {
-      const set = await lanaiTileModels(this.maps.session, this.source, this.refs());
-      if (this.disposed) return;
+      const set = await lanaiTileModels(this.maps.session, src, this.refs(src));
+      if (this.disposed || this.loadedFor !== src) return;
+      this.factory?.dispose();
       this.factory = new ModelFactory(set);
       this.factory.setCeilingVisible(false);
       this.tileLayer.clear();
       this.status = set.errors.length ? `モデルの一部を読めませんでした: ${set.errors.slice(0, 3).join(' / ')}` : '';
     } catch (err) {
+      if (this.loadedFor !== src) return;
       this.status = `モデルを読み込めませんでした (記号で表示します): ${(err as Error).message}`;
     }
     this.refresh();
@@ -199,17 +226,19 @@ export class LanaiMapView {
   }
 
   private sync3d(): void {
-    if (this.disposed) return;
-    const doc = this.doc, f = this.factory, layers = this.layers, sel = this.selection;
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash || this.disposed) return;
+    const f = this.factory, layers = this.ctl.layers, sel = this.st.selection;
+    const ts = this.loadedFor?.tileset ?? -1;
     this.tileLayer.sync(
       (layers.tiles ? doc.tiles : []).map((t) => ({
         x: t.x,
         y: t.y,
-        sig: `${t.kind}/${t.rot}/${t.letter}/${f ? 1 : 0}`,
+        sig: `${t.kind}/${t.rot}/${t.letter}/${f ? 1 : 0}/${ts}`,
         make: () => {
           const ref = f ? this.modelOf(t.kind, t.letter) : null;
           const m = ref ? f!.instance(ref.entry) : null;
-          if (!m) return t.kind === EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
+          if (!m) return t.kind === LANAI_EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
           m.rotation.y = (-t.rot * Math.PI) / 2;
           return m;
         },
@@ -234,9 +263,14 @@ export class LanaiMapView {
         m.position.set((c.x + 0.5) * CELL, 8, (c.y + 0.5) * CELL);
         this.overlay.add(m);
       }
-    if (sel.type === 'tile') {
+    const cells: [number, number][] = sel.type === 'tiles' ? [...sel.cells] : [];
+    if (sel.type === 'rect') {
+      const r = norm(sel);
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) cells.push([x, y]);
+    }
+    for (const [x, y] of cells) {
       const box = new THREE.LineSegments(this.selGeo, this.selMat);
-      box.position.set((sel.x + 0.5) * CELL, 20, (sel.y + 0.5) * CELL);
+      box.position.set((x + 0.5) * CELL, 20, (y + 0.5) * CELL);
       this.overlay.add(box);
     }
     this.scene.draw();
