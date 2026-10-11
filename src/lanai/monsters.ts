@@ -6,7 +6,7 @@
 // another numbering (only 40 rows agree with MonsterDesign's row IDs); it is not the look. The BCHs are `enemy_NN[_MM].bch`, `enemy_NN_MM_tex.bch` and
 // `enemy_NN_battle.bch` of the root archives 28480000 (Base) and 719F0000 (Update). Monsters of one species share a
 // model and differ by the texture entry (おおくちばし and アイスバード are both enemy_02).
-// The stats (MonsterParameterMain / Extra / RegularEvent / SpecialEvent, 0x9C) are not linked to these rows yet.
+// The abilities (MonsterParameterMain / Extra / RegularEvent / SpecialEvent, 0x9C) are read and edited in monsterStats.ts.
 import { entryBlob, unpackEntry, type ArcEntry, type Archive } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { u32 } from '../util/bytes';
@@ -23,7 +23,7 @@ export interface LanaiMonster {
   id: number;
   name: string;
   group: string;
-  /** +0x10: a 0x8000xxxx value of another numbering (not the look; meaning not known). */
+  /** +0x10: the row ID of the book's description in MessageFlavor (4177000A; not the look). */
   design: number;
   /** Row number of MonsterDesign: +0x00 bits 20-29 (-1 when the table has no such row). */
   designRow: number;

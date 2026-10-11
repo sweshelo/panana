@@ -607,3 +607,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .msg-preview-closed:hover, .msg-preview-closed:focus-visible { border-color: var(--accent); outline: none; }
 .msg-preview-closed.edited { border-left: 3px solid var(--warn); }
 .msg-edit-open .row { margin-top: 4px; }
+
+/* RPG FREE! monster editor */
+.lanai-transform { border-left: 2px solid var(--border); padding: 2px 0 2px 8px; margin: 8px 0; }
+.lanai-stats h4 { margin: 14px 0 4px; }

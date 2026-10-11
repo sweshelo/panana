@@ -1,11 +1,16 @@
-// One opened 電波人間のRPG FREE! (lanai) dump (read only): the tables of the master (2135000A) and of the language
-// archives (xxxx000A: UI text, codes; naauao lanai/analysis.md §1.1), the strings they hold, and the other root archives
-// (the contents, the models) read when first asked for.
-import { entryBlob, parseArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
+// One opened 電波人間のRPG FREE! (lanai) dump: the tables of the master (2135000A) and of the language archives
+// (xxxx000A: UI text, codes; naauao lanai/analysis.md §1.1), the strings they hold, and the other root archives (the
+// contents, the models) read when first asked for. The numbers of the tables' rows can be edited (table.ts; strings
+// are not): the edits are saved to IndexedDB like RPG3's (oahu/session.ts) and put back when the dump is opened again
+// (with or without the Update), and the archives holding changed tables are rebuilt into a LayeredFS MOD (the Update's
+// archives under them, so it needs the Update like RPG3's).
+import { entryBlob, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
+import { buildModZip } from '../export/pack';
 import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
-import { hex8 } from '../util/bytes';
+import { equalBytes, hex8 } from '../util/bytes';
+import { idbGet, idbSet } from '../util/idb';
 import { lanaiPlain, lanaiText, parseLanaiMessage, type LanaiToken } from './message';
 import { LanaiRows } from './rows';
 import { LANAI_TABLES } from './tables';
@@ -16,6 +21,8 @@ export interface LanaiTableRef {
   archive: string;
   /** Hash of its entry. */
   entry: number;
+  /** Index of its entry in the archive. */
+  index: number;
   /** File name in the entry's ZIP (null for the LZ entries, e.g. the master's message tables). */
   file: string | null;
   table: LanaiTable;
@@ -47,32 +54,175 @@ export function archiveTables(name: string, arc: Archive): LanaiTableRef[] {
     } catch {
       continue;
     }
-    if (LanaiTable.is(u.body)) out.push({ archive: name, entry: e.hash, file: u.name, table: new LanaiTable(u.body) });
+    if (LanaiTable.is(u.body)) out.push({ archive: name, entry: e.hash, index: e.index, file: u.name, table: new LanaiTable(u.body) });
   }
   return out;
 }
+
+/** IndexedDB key of the edits (apart from RPG3's oahu/edits/v1). */
+export const LANAI_EDITS_KEY = 'lanai/edits/v1';
+
+/**
+ * A row edit kept across loads: the table (tableKey), the row, the row as it was (null for a row an edit added) and as
+ * it is. Only the bytes that differ are put back, so a row the Update changed elsewhere keeps the Update's bytes.
+ */
+export type LanaiSavedRow = [table: string, row: number, before: Uint8Array | null, after: Uint8Array];
+
+export interface LanaiSaved {
+  rows: LanaiSavedRow[];
+}
+
+/** `bytes` for row `r` with the string fields the table has there (strings are not edited; their offsets may differ). */
+function mergeStrings(t: LanaiTable, r: number, bytes: Uint8Array): Uint8Array {
+  const out = bytes.slice();
+  const cur = t.row(r);
+  for (let o = 0; o + 4 <= t.rowSize; o += 4) if (t.isString(r, o)) out.set(cur.subarray(o, o + 4), o);
+  return out;
+}
+
+/** "archive/entry hash": names a table across loads. */
+export const lanaiTableKey = (t: Pick<LanaiTableRef, 'archive' | 'entry'>): string => `${t.archive}/${hex8(t.entry)}`;
 
 export class LanaiSession {
   private readonly archives = new Map<string, Promise<Archive>>();
   private readonly tablesOf = new Map<string, Promise<LanaiTableRef[]>>();
   /** The master's tables by name (the first of a name). */
   private readonly byName = new Map<string, LanaiTable>();
+  private readonly refs = new Map<LanaiTable, LanaiTableRef>();
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly listeners = new Set<() => void>();
+  /** Bumped by every edit (the pages redraw on it). */
+  revision = 0;
 
   private constructor(
     readonly dump: Dump,
     /** Tables of the master and the language archives. */
     readonly tables: LanaiTableRef[],
+    /** The master and the language archives as read (the MOD rebuilds them). */
+    private readonly sources: Map<string, Archive>,
   ) {
-    for (const t of tables) if (!this.byName.has(t.table.name)) this.byName.set(t.table.name, t.table);
+    for (const t of tables) {
+      if (!this.byName.has(t.table.name)) this.byName.set(t.table.name, t.table);
+      this.refs.set(t.table, t);
+    }
   }
 
-  static async open(dump: Dump): Promise<LanaiSession> {
+  /** Opens a dump and puts back the edits saved in IndexedDB (none with `fresh`). */
+  static async open(dump: Dump, { fresh = false }: { fresh?: boolean } = {}): Promise<LanaiSession> {
     if (dump.title !== LANAI) throw new Error(`『${LANAI.name}』のダンプではありません`);
     const names = dump.names().filter((n) => /^[0-9A-F]{4}000A$/i.test(n)).sort((a, b) => (a === LANAI.master ? -1 : b === LANAI.master ? 1 : a.localeCompare(b)));
     if (!names.includes(LANAI.master)) throw new Error(`RomFS に master (${LANAI.master}) がありません`);
     const tables: LanaiTableRef[] = [];
-    for (const n of names) tables.push(...archiveTables(n, parseArchive(await dump.readRomfs(n))));
-    return new LanaiSession(dump, tables);
+    const sources = new Map<string, Archive>();
+    for (const n of names) {
+      const arc = parseArchive(await dump.readRomfs(n));
+      sources.set(n.toUpperCase(), arc);
+      tables.push(...archiveTables(n.toUpperCase(), arc));
+    }
+    const s = new LanaiSession(dump, tables, sources);
+    if (!fresh) {
+      const saved = await idbGet<LanaiSaved>(LANAI_EDITS_KEY).catch(() => undefined);
+      if (saved?.rows) s.restore(saved);
+    }
+    return s;
+  }
+
+  // ---- edits
+
+  /** The table's place (archive, entry) — only the master's and the language archives' tables can be edited. */
+  refOf(t: LanaiTable): LanaiTableRef | undefined {
+    return this.refs.get(t);
+  }
+
+  /** Call after an edit: the pages redraw and the edits are saved. */
+  edited(): void {
+    this.revision++;
+    for (const f of this.listeners) f();
+    this.scheduleSave();
+  }
+
+  onEdit(f: () => void): () => void {
+    this.listeners.add(f);
+    return () => this.listeners.delete(f);
+  }
+
+  /** The tables that differ from the archives. */
+  changedTables(): LanaiTableRef[] {
+    return this.tables.filter((t) => t.table.changed);
+  }
+
+  /** Puts every table back as it was read. */
+  revertAll(): void {
+    for (const t of this.tables) t.table.revert();
+    this.edited();
+  }
+
+  saved(): LanaiSaved {
+    const rows: LanaiSavedRow[] = [];
+    for (const ref of this.changedTables()) {
+      const key = lanaiTableKey(ref);
+      for (const r of ref.table.changedRows()) rows.push([key, r, ref.table.originalRow(r)?.slice() ?? null, ref.table.row(r).slice()]);
+    }
+    return { rows };
+  }
+
+  /**
+   * Puts saved rows back. Only the bytes the edit changed are written (a row the Update changed elsewhere keeps the
+   * Update's bytes); a row an edit added is added again (rows saved in order). Rows of tables that are not there, or
+   * whose size differs, are left out.
+   */
+  restore(saved: LanaiSaved): void {
+    const byKey = new Map(this.tables.map((t) => [lanaiTableKey(t), t.table]));
+    for (const [key, r, before, after] of saved.rows) {
+      const t = byKey.get(key);
+      if (!t || after.length !== t.rowSize) continue;
+      try {
+        if (!before) {
+          while (t.rows <= r) t.addRow();
+          t.setRow(r, mergeStrings(t, r, after));
+          continue;
+        }
+        if (r >= t.rows) continue;
+        const row = t.row(r).slice();
+        for (let i = 0; i < row.length; i++) if (after[i] !== before[i]) row[i] = after[i]!;
+        if (!equalBytes(row, t.row(r))) t.setRow(r, mergeStrings(t, r, row));
+      } catch {
+        // a row that no longer fits (a string field moved by the Update): left out
+      }
+    }
+    this.revision++;
+  }
+
+  readonly scheduleSave = (): void => {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.saveNow(), 500);
+  };
+
+  saveNow(): void {
+    clearTimeout(this.saveTimer);
+    idbSet(LANAI_EDITS_KEY, this.saved()).catch(() => {});
+  }
+
+  /** Whether a MOD can be exported: the edits must go on the Update's archives (else its fixes would be lost). */
+  get canExport(): boolean {
+    return !!this.dump.update;
+  }
+
+  /** RomFS files of the MOD (root name -> bytes): the archives with changed tables, the other entries copied as they are. */
+  modFiles(): Map<string, Uint8Array> {
+    if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
+    const repl = new Map<string, Map<number, Uint8Array>>();
+    for (const t of this.changedTables()) {
+      const m = repl.get(t.archive) ?? new Map<number, Uint8Array>();
+      m.set(t.index, t.table.data);
+      repl.set(t.archive, m);
+    }
+    return new Map([...repl].map(([name, m]) => [name, rebuildArchive(this.sources.get(name)!, m)]));
+  }
+
+  /** The LayeredFS zip: 0004000000125D00/romfs/<archive>. */
+  modZip(): Uint8Array {
+    return buildModZip(new Map([...this.modFiles()].map(([name, b]) => [`romfs/${name}`, b])), LANAI.titleId);
   }
 
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */
