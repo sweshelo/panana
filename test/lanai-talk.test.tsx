@@ -114,12 +114,6 @@ describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
     session = await LanaiSession.open(dump, { fresh: true });
   });
 
-  test('which tables are talk tables (row size 12 with a message field)', () => {
-    // the names of the 12-byte tables with strings, for when none is taken as a talk table
-    const twelve = session.tables.filter((t) => t.table.rowSize === 12 && t.table.stringOffsets().length).map((t) => `${t.table.name} [${t.table.fields.map((f) => `${f.name}@${f.offset}`).join(' ')}]`);
-    expect({ talk: session.tables.filter(isTalkTable).length, twelve }).toEqual({ talk: session.tables.filter(isTalkTable).length, twelve });
-  });
-
   test('the sets of 8 tones in every talk table (naauao lanai/messages.md: 727)', async () => {
     let sets = 0;
     const archives = [...new Set(lanaiContents(session).map((c) => c.archive))];
