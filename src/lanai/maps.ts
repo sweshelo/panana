@@ -107,7 +107,22 @@ export interface LanaiMapGroup {
   eventEntry: number;
 }
 
-const tableNamed = (tables: { table: LanaiTable }[], name: string): LanaiTable | undefined => tables.find((t) => t.table.name === name)?.table;
+const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
+
+/** The maps of a content, read once per session (the pages share the documents). */
+export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise<LanaiMaps> {
+  const m = loaded.get(session) ?? new Map<number, Promise<LanaiMaps>>();
+  loaded.set(session, m);
+  let p = m.get(content.index);
+  if (!p) {
+    p = LanaiMaps.load(session, content);
+    p.catch(() => m.delete(content.index));
+    m.set(content.index, p);
+  }
+  return p;
+}
+
+const tableNamed =(tables: { table: LanaiTable }[], name: string): LanaiTable | undefined => tables.find((t) => t.table.name === name)?.table;
 
 export class LanaiMaps {
   readonly maps: LanaiMapInfo[];
