@@ -34,6 +34,13 @@ export const LANAI_LAYOUTS: Record<number, RecordLayout> = {
 export const LANAI_MAP_FORMAT: MapFormat = { tile: { size: 20, rot: 0x10, letter: 0x11, pad: 0x12, rotCodec: LANAI_ROT_CODEC }, layouts: LANAI_LAYOUTS };
 
 /** Sections that have positioned records, drawn last first. */
+/**
+ * Where a tile's turn 0..3 faces on the 2D grid, as an index of ROT_ARROW (↑ → ↓ ←): the facing bytes are 4 / 2 / 1 / 8 =
+ * S / W / N / E (map.md 3.2), a clockwise turn from the south like the 3D view's rotation.y = -turn·π/2 (kahara's and
+ * oahu's turn 0 is north). The record facings (FACING_LABELS) already read this way.
+ */
+export const LANAI_ROT_DIR = [2, 3, 0, 1] as const;
+
 export const LANAI_POINT_SECTIONS = [3, 4, 5, 8, 2, 1, 9] as const;
 
 /** Where a section's record keeps its facing byte (§3.2: 2 +0x10, 3 +0x14, 4 +0x14, 5 +0x1C, 8 +0x1C), if it has one. */

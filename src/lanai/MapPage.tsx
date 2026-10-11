@@ -8,7 +8,7 @@
 // Every edit goes to the content's map database and is saved with the session's edits (session.ts).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { editorKey } from '../editor/controller';
-import { kindName } from '../editor/legend';
+import { kindName, ROT_ARROW } from '../editor/legend';
 import { MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
@@ -23,7 +23,7 @@ import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiStampLabel, lanaiValidate, type LanaiEditState, type LanaiStamp } from './mapedit';
-import { LANAI_FACING_OFFSET, LANAI_LAYOUTS, LANAI_POINT_SECTIONS, lanaiFloorLabel, lanaiMaps, loadedLanaiMaps, type LanaiMapInfo, type LanaiMaps } from './maps';
+import { LANAI_FACING_OFFSET, LANAI_LAYOUTS, LANAI_ROT_DIR, LANAI_POINT_SECTIONS, lanaiFloorLabel, lanaiMaps, loadedLanaiMaps, type LanaiMapInfo, type LanaiMaps } from './maps';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
 
@@ -246,10 +246,56 @@ function TilePalette({ st, view }: { st: LanaiEditState; view: LanaiMapView }): 
   useSignal(view.signal);
   useEditorState(st);
   const palette = useMemo(() => st.maps.palette(st.tileset), [st.maps, st.tileset]);
-  return <Palette st={st} factory={view.factory} palette={palette} partModel={(k, l) => st.maps.partModel(st.tileset, k, l)} />;
+  return <Palette st={st} factory={view.factory} palette={palette} partModel={(k, l) => st.maps.partModel(st.tileset, k, l)} rotDir={LANAI_ROT_DIR} />;
 }
 
 const NO_SIGNAL = new Signal();
+
+/** One map with the same name in another content. */
+interface SameNameHit {
+  content: LanaiContent;
+  info: LanaiMapInfo;
+}
+
+/**
+ * The maps of the other contents with this map's name (a map's name is only unique within its content, and a stage
+ * can reuse another's). Reading every content's maps takes a while, so it waits for the button.
+ */
+function SameName({ maps, info }: { maps: LanaiMaps; info: LanaiMapInfo }): ReactNode {
+  const { session, content } = maps;
+  const [hits, setHits] = useState<SameNameHit[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setHits(null), [content.index, info.name]);
+  const search = async (): Promise<void> => {
+    setBusy(true);
+    const found: SameNameHit[] = [];
+    for (const c of lanaiContents(session)) {
+      if (c.index === content.index) continue;
+      const other = await lanaiMaps(session, c).catch(() => null);
+      const m = other?.mapByName(info.name);
+      if (m) found.push({ content: c, info: m });
+    }
+    setHits(found);
+    setBusy(false);
+  };
+  return (
+    <>
+      <h4>同じマップ名の別ステージ</h4>
+      {hits === null ? (
+        <button disabled={busy} onClick={() => void search()}>{busy ? '探しています…' : `「${info.name}」を他のコンテンツから探す`}</button>
+      ) : !hits.length ? <p className="muted small">ほかのコンテンツに同じ名前のマップはありません。</p> : (
+        <ul className="small">
+          {hits.map((h) => (
+            <li key={h.content.index}>
+              <a href={lanaiMapHref(h.content.index, h.info.name)}>{`${h.content.index}: ${contentTitle(h.content)}`}</a>
+              <span className="muted">{` ${lanaiFloorLabel(h.info.floor) || '地上'}・MapGroup ${h.info.dungeon}`}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
 
 /** The map's facts: group, floor, MapData and tileset (they follow the edits: indoor tiles switch the MapData). */
 function Facts({ maps, info, view }: { maps: LanaiMaps; info: LanaiMapInfo; view: LanaiMapView | null }): ReactNode {
@@ -267,6 +313,7 @@ function Facts({ maps, info, view }: { maps: LanaiMaps; info: LanaiMapInfo; view
         {group && <><br />{`最初のマップ ${hex8(group.firstMap).toUpperCase()}`}</>}
         <br />{events ? `EventObject: ${events.name} (${events.rows} 行)` : 'EventObject の表なし'}
       </p>
+      <SameName maps={maps} info={info} />
     </>
   );
 }
@@ -386,7 +433,7 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
       <p className="muted small">{kindName(t.kind)}</p>
       <label className="field"><span>向き</span>
         <select value={t.rot} onChange={(e) => st.edit(() => { t.rot = Number(e.target.value); t.rotHi = 0; })}>
-          {[0, 1, 2, 3].map((r) => <option key={r} value={r}>{`${['↑', '→', '↓', '←'][r]} ${r} (バイト ${LANAI_ROT_CODEC.encode(r)})`}</option>)}
+          {[0, 1, 2, 3].map((r) => <option key={r} value={r}>{`${ROT_ARROW[LANAI_ROT_DIR[r]!]} ${r} (バイト ${LANAI_ROT_CODEC.encode(r)})`}</option>)}
         </select>
       </label>
       <label className="field"><span>文字 (部品の差分)</span>

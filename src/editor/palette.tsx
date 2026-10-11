@@ -8,13 +8,15 @@ import { kindColor, kindName, ROT_ARROW } from './legend';
 import type { MapEditState } from './state';
 import { renderThumb } from './thumbs';
 
-export function Palette({ st, factory, palette, partModel }: {
+export function Palette({ st, factory, palette, partModel, rotDir }: {
   st: MapEditState;
   factory: ModelFactory | null;
   /** Tile kind -> letter indices of the open map's tileset. */
   palette: Map<number, number[]>;
   /** Model hash of a (kind, letter index) in the open map's tileset. */
   partModel: (kind: number, letter: number) => number;
+  /** Where each turn 0..3 faces, as an index of ROT_ARROW (default: north, east, south, west). */
+  rotDir?: readonly number[];
 }): ReactNode {
   useEditorState(st);
   /** Thumbnails by tileset / model hash (rendered once per factory). */
@@ -39,7 +41,7 @@ export function Palette({ st, factory, palette, partModel }: {
       <div className="brush-info">
         <span>{`ブラシ: 種類 ${b.kind}${letterIndex(b.letter) ? String.fromCharCode(b.letter) : ''} `}</span>
         <button title="左に回す (Shift+R)" onClick={() => rot(-1)}>⟲</button>
-        <span className="rot">{` ${ROT_ARROW[b.rot]} ${b.rot * 90}° `}</span>
+        <span className="rot">{` ${ROT_ARROW[rotDir?.[b.rot] ?? b.rot]} ${b.rot * 90}° `}</span>
         <button title="右に回す (R)" onClick={() => rot(1)}>⟳</button>
       </div>
       <div className="palette-list">
