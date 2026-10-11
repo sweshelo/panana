@@ -108,6 +108,7 @@ export interface LanaiMapGroup {
 }
 
 const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
+const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
 
 /** The maps of a content, read once per session (the pages share the documents). */
 export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise<LanaiMaps> {
@@ -116,10 +117,19 @@ export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise
   let p = m.get(content.index);
   if (!p) {
     p = LanaiMaps.load(session, content);
-    p.catch(() => m.delete(content.index));
+    p.then((maps) => {
+      const r = ready.get(session) ?? new Map<number, LanaiMaps>();
+      ready.set(session, r);
+      r.set(content.index, maps);
+    }, () => m.delete(content.index));
     m.set(content.index, p);
   }
   return p;
+}
+
+/** The maps of a content if they have been read already (the map picker lists them without reading every content). */
+export function loadedLanaiMaps(session: LanaiSession, content: number): LanaiMaps | undefined {
+  return ready.get(session)?.get(content);
 }
 
 const tableNamed =(tables: { table: LanaiTable }[], name: string): LanaiTable | undefined => tables.find((t) => t.table.name === name)?.table;
