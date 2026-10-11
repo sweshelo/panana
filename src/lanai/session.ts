@@ -109,6 +109,9 @@ export class LanaiSession {
   /** The master's tables by name (the first of a name). */
   private readonly byName = new Map<string, LanaiTable>();
   private readonly refs = new Map<LanaiTable, LanaiTableRef>();
+  /** Tables of the other root archives (the contents' talks …), once read by tablesIn: edited and exported like the master's. */
+  private readonly others: LanaiTableRef[] = [];
+  private readonly otherSources = new Map<string, Archive>();
   /** The contents' map databases (read when first asked for), by root archive. */
   private readonly mapDbs = new Map<string, Promise<LanaiMapDb | null>>();
   private readonly mapDbsRead = new Map<string, LanaiMapDb>();
@@ -189,7 +192,7 @@ export class LanaiSession {
 
   // ---- edits
 
-  /** The table's place (archive, entry) — only the master's and the language archives' tables can be edited. */
+  /** The table's place (archive, entry): the master's and the language archives' tables, and those tablesIn read. */
   refOf(t: LanaiTable): LanaiTableRef | undefined {
     return this.refs.get(t);
   }
@@ -208,7 +211,7 @@ export class LanaiSession {
 
   /** The tables that differ from the archives. */
   changedTables(): LanaiTableRef[] {
-    return this.tables.filter((t) => t.table.changed);
+    return [...this.tables, ...this.others].filter((t) => t.table.changed);
   }
 
   /** Whether anything differs from the ROM (tables or maps). */
@@ -218,7 +221,7 @@ export class LanaiSession {
 
   /** Puts every table and every map back as it was read. */
   revertAll(): void {
-    for (const t of this.tables) t.table.revert();
+    for (const t of [...this.tables, ...this.others]) t.table.revert();
     for (const r of this.mapDbsRead.values()) {
       const hashes = r.db.changedHashes();
       if (!hashes.length) continue;
@@ -245,11 +248,16 @@ export class LanaiSession {
    * Puts saved rows back. Only the bytes the edit changed are written (a row the Update changed elsewhere keeps the
    * Update's bytes); a row an edit added is added again (rows saved in order). Rows of tables that are not there, or
    * whose size differs, are left out. The written strings follow the rows (fields that are no longer strings are left
-   * out). The rows are put back before the promise (the map sections, whose archives are
-   * read first, after it).
+   * out). The rows of the master and the language archives are put back before the promise (those of the other
+   * archives and the map sections, whose archives are read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
     this.restoreRows(saved);
+    const known = new Set([...this.sources.keys(), ...this.otherSources.keys()]);
+    const later = new Set([...saved.rows, ...(saved.strings ?? [])].map(([key]) => key.split('/')[0]!).filter((a) => !known.has(a)));
+    const read = new Set<string>();
+    for (const a of later) if (await this.tablesIn(a).then(() => true, () => false)) read.add(a);
+    if (read.size) this.restoreRows(saved, read);
     const touched = new Set<string>();
     for (const [archive, h, bytes] of saved.maps ?? []) {
       const r = await this.mapDb(archive).catch(() => null);
@@ -262,8 +270,9 @@ export class LanaiSession {
     if (touched.size) this.revision++;
   }
 
-  private restoreRows(saved: LanaiSaved): void {
-    const byKey = new Map(this.tables.map((t) => [lanaiTableKey(t), t.table]));
+  /** Puts the saved rows and strings back (only those of the archives `only` when given). */
+  private restoreRows(saved: LanaiSaved, only?: Set<string>): void {
+    const byKey = new Map([...this.tables, ...this.others].filter((t) => !only || only.has(t.archive)).map((t) => [lanaiTableKey(t), t.table]));
     for (const [key, r, before, after] of saved.rows) {
       const t = byKey.get(key);
       if (!t || after.length !== t.rowSize) continue;
@@ -320,7 +329,7 @@ export class LanaiSession {
       x.m.set(index, bytes);
       repl.set(name, x);
     };
-    for (const t of this.changedTables()) put(t.archive, this.sources.get(t.archive)!, t.index, t.table.data);
+    for (const t of this.changedTables()) put(t.archive, (this.sources.get(t.archive) ?? this.otherSources.get(t.archive))!, t.index, t.table.data);
     for (const r of this.mapDbsRead.values()) if (r.db.changedHashes().length) put(r.archive, r.arc, r.entry.index, r.db.build());
     return new Map([...repl].map(([name, { arc, m }]) => [name, rebuildArchive(arc, m)]));
   }
@@ -368,13 +377,20 @@ export class LanaiSession {
     return p;
   }
 
-  /** The GS tables of a root archive (read once). */
+  /** The GS tables of a root archive (read once; they can be edited like the master's). */
   tablesIn(name: string): Promise<LanaiTableRef[]> {
     const key = name.toUpperCase();
     let p = this.tablesOf.get(key);
     if (!p) {
       const known = this.tables.filter((t) => t.archive === key);
-      p = known.length ? Promise.resolve(known) : this.archive(key).then((a) => archiveTables(key, a));
+      p = known.length ? Promise.resolve(known) : this.archive(key).then((a) => {
+        const ts = archiveTables(key, a);
+        this.otherSources.set(key, a);
+        this.others.push(...ts);
+        for (const t of ts) this.refs.set(t.table, t);
+        return ts;
+      });
+      p.catch(() => this.tablesOf.delete(key));
       this.tablesOf.set(key, p);
     }
     return p;
