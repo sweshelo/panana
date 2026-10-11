@@ -114,23 +114,15 @@ describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
     session = await LanaiSession.open(dump, { fresh: true });
   });
 
-  test('the sets of 8 tones in every talk table (naauao lanai/messages.md: 727)', async () => {
-    let sets = 0;
-    const archives = [...new Set(lanaiContents(session).map((c) => c.archive))];
-    const tables = [...session.tables.filter(isTalkTable)];
-    for (const a of archives) tables.push(...(await session.tablesIn(a)).filter(isTalkTable));
-    const per: string[] = [];
-    for (const t of tables) {
-      const n = talkGroups(t).filter((g) => g.kind === 'set').length;
-      sets += n;
-      per.push(`${t.archive}/${t.table.name}: ${n}`);
-    }
-    // the speaker kinds of all talk rows (for when the count is off)
-    const kinds = new Map<number, number>();
-    for (const t of tables) for (let r = 0; r < t.table.rows; r++) kinds.set(t.table.u8(r, 8), (kinds.get(t.table.u8(r, 8)) ?? 0) + 1);
-    const why = `talk tables ${tables.length}, sets ${sets}; kinds ${[...kinds].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k.toString(16)}:${n}`).join(' ')}; ${per.slice(0, 20).join(', ')}`;
-    expect({ sets, why }).toEqual({ sets: 727, why });
-    expect(tables.length).toBeGreaterThan(10);
+  test('the sets of 8 tones: 727 in the contents\' talk tables (naauao lanai/messages.md), 73 in MessageNagomiFriend', async () => {
+    const sets = (ts: LanaiTableRef[]): number => ts.reduce((n, t) => n + talkGroups(t).filter((g) => g.kind === 'set').length, 0);
+    const contents: LanaiTableRef[] = [];
+    for (const a of new Set(lanaiContents(session).map((c) => c.archive))) contents.push(...(await session.tablesIn(a)).filter(isTalkTable));
+    const others = session.tables.filter(isTalkTable);
+    expect(contents.length).toBeGreaterThan(100);
+    expect(sets(contents)).toBe(727);
+    // the master's and the language archives' talk tables: only the two MessageNagomiFriend of FE74000A have sets
+    expect(others.filter((t) => sets([t])).map((t) => `${t.archive}/${t.table.name}: ${sets([t])}`)).toEqual(['FE74000A/MessageNagomiFriend: 50', 'FE74000A/MessageNagomiFriend: 23']);
   });
 
   test('a talk of a content is written, exported and put back', async () => {
