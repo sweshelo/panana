@@ -7,6 +7,8 @@ import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { CATEGORY_NOTE, contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
+import { lanaiFloorLabel, lanaiMaps } from './maps';
+import { lanaiMapHref } from './MapPage';
 import { textColumns } from './MessagePage';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
@@ -134,6 +136,8 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
           </details>
         </>
       )}
+      <h3>マップ</h3>
+      <ContentMaps session={session} c={c} />
       <h3>表</h3>
       <table className="book-table">
         <thead><tr><th>エントリ</th><th>表</th><th>行 × 大きさ</th></tr></thead>
@@ -149,6 +153,29 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
       </table>
       {talks.map((t) => <ContentStrings key={t.entry} session={session} t={t} />)}
     </>
+  );
+}
+
+/** The content's map table (名前・階・MapGroup) with a link to each map. */
+function ContentMaps({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+  const maps = useAsync(() => lanaiMaps(session, c), [session, c]);
+  if (!maps) return <p className="muted">マップ表を読み込み中…</p>;
+  if (maps instanceof Error) return <p className="muted">マップ表がありません。</p>;
+  return (
+    <table className="book-table">
+      <thead><tr><th>行</th><th>マップ</th><th>階</th><th>MapGroup</th><th>タイル</th></tr></thead>
+      <tbody>
+        {maps.maps.map((m) => (
+          <tr key={m.index} onClick={() => (location.hash = lanaiMapHref(c.index, m.name))}>
+            <td className="num muted">{m.index}</td>
+            <td><a className="mono" href={lanaiMapHref(c.index, m.name)}>{m.name}</a></td>
+            <td className="muted">{lanaiFloorLabel(m.floor) || '地上'}</td>
+            <td className="muted">{`${m.dungeon} ${maps.groupName(m.dungeon)}`}</td>
+            <td className="num muted">{m.world ? '(W01)' : maps.doc(m).tiles.length}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

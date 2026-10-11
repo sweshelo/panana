@@ -23,7 +23,23 @@ export interface TileLayout {
   rot: number;
   letter: number;
   pad: number;
+  /** How the facing byte holds the quarter turn (default: the low 2 bits, the rest kept in rotHi). */
+  rotCodec?: RotCodec;
 }
+
+/** A game's coding of a facing (0..3, a turn of -r x 90 degrees about Y) in a byte. */
+export interface RotCodec {
+  /** The turn a byte stands for, or -1 when the byte is none of the codec's values. */
+  decode(byte: number): number;
+  encode(rot: number): number;
+}
+
+/** RPG FREE!'s facings: 1 / 2 / 4 / 8 (bits N / W / S / E); turn 0 = 4, 1 = 2, 2 = 1, 3 = 8 (naauao lanai/map.md 3.2). */
+const LANAI_ROT_BYTES = [4, 2, 1, 8] as const;
+export const LANAI_ROT_CODEC: RotCodec = {
+  decode: (b) => LANAI_ROT_BYTES.indexOf(b as 4 | 2 | 1 | 8),
+  encode: (r) => LANAI_ROT_BYTES[r & 3]!,
+};
 export const KAHARA_TILE: TileLayout = { size: 12, rot: 8, letter: 9, pad: 10 };
 
 /** Letter byte -> model column (FUN_001c97f8): 'z' / 0 -> 0, 'a'..'g' -> 1..7. */
@@ -162,12 +178,14 @@ export function parseTiles(b: Uint8Array, L: TileLayout = KAHARA_TILE): Tile[] {
   const out: Tile[] = [];
   for (let o = 0; o + L.size <= b.length; o += L.size) {
     const r = u8(b, o + L.rot);
+    // a codec's byte that is none of its values is kept whole in rotHi (rot 0), so it writes back unchanged
+    const coded = L.rotCodec ? L.rotCodec.decode(r) : -1;
     const t: Tile = {
       kind: u32(b, o),
       x: s16(b, o + 4),
       y: s16(b, o + 6),
-      rot: r & 3,
-      rotHi: r & ~3,
+      rot: L.rotCodec ? Math.max(0, coded) : r & 3,
+      rotHi: L.rotCodec ? (coded < 0 ? r : 0) : r & ~3,
       letter: u8(b, o + L.letter),
       pad: b[o + L.pad]! | (b[o + L.pad + 1]! << 8),
     };
@@ -185,7 +203,7 @@ export function buildTiles(tiles: Tile[], L: TileLayout = KAHARA_TILE): Uint8Arr
     w32(out, o, t.kind);
     w16(out, o + 4, t.x);
     w16(out, o + 6, t.y);
-    out[o + L.rot] = (t.rotHi & ~3) | (t.rot & 3);
+    out[o + L.rot] = L.rotCodec ? (t.rotHi && !t.rot ? t.rotHi : L.rotCodec.encode(t.rot)) : (t.rotHi & ~3) | (t.rot & 3);
     out[o + L.letter] = t.letter;
     w16(out, o + L.pad, t.pad);
   });

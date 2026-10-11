@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { contentTitle, lanaiContents } from '../lanai/contents';
+import { LanaiMapPage } from '../lanai/MapPage';
 import { LanaiMessagePage } from '../lanai/MessagePage';
 import { LanaiMonsterPage } from '../lanai/MonsterPage';
 import { LanaiSession } from '../lanai/session';
@@ -14,10 +15,10 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const PAGE_IDS = LANAI_PAGES.map(([id]) => id);
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', messages: 'メッセージ', monsters: 'モンスター', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', messages: 'メッセージ', monsters: 'モンスター', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -85,6 +86,7 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
         return (
           <div key={id} className={`page page-${id}`}>
             {id === 'stages' ? <LanaiStagePage session={session} arg={a} />
+              : id === 'maps' ? <LanaiMapPage session={session} arg={a} />
               : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
               : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
               : id === 'codes' ? <LanaiCodePage session={session} arg={a} />
