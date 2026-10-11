@@ -158,7 +158,7 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const b1 = game.doc(game.code.byName('D01B01001')!);
     b1.recs[3] = [];
     expect(validate(game, b1, 0, docs).some((i) => i.level === 'error' && i.msg.includes('D01B02001 の出入口'))).toBe(true);
-  });
+  }, 30_000); // every map of the dump: about 2 s alone, slower when the whole suite (all the dumps) runs in one process
   test('names: dungeons (mapGroup +0x14 is u16) and maps', () => {
     const m = game.master;
     expect(m.dungeonName(1)).toBe('山のどうくつ');

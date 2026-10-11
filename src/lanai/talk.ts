@@ -1,5 +1,6 @@
 // The talks of 電波人間のRPG FREE! (the contents' `*_msg` tables, MessageContents; naauao lanai/messages.md): rows of 12
-// bytes, +0x00 message, +0x04 voice (a reading for speech synthesis that repeats the text), +0x08 the speaker kind.
+// bytes, +0x00 message, +0x04 voice (a reading for speech synthesis that repeats the text), +0x08 the speaker kind
+// (its low byte; the other bytes are the 0xD0 padding of the packed words).
 // Eight rows in a row with kinds 1〜8 are the eight tones of one line (the player's own line spoken in each
 // personality); tone = personality + 2 is assumed (1 is the hero's only). How the game picks a row of the set, which
 // personality value goes with which tone and what kinds 0x09〜0x16 mean are not known yet (assumed: other speakers, NPC).
@@ -37,8 +38,8 @@ export function talkColumns(ref: LanaiTableRef): { message: number; voice: numbe
 
 export const isTalkTable = (ref: LanaiTableRef): boolean => !!talkColumns(ref);
 
-/** The speaker kind of a row (+0x08). */
-export const talkSpeaker = (ref: LanaiTableRef, row: number): number => ref.table.u32(row, TALK_SPEAKER);
+/** The speaker kind of a row (+0x08, the low byte: the word is 0xD0D0D0xx). */
+export const talkSpeaker = (ref: LanaiTableRef, row: number): number => ref.table.u8(row, TALK_SPEAKER);
 
 const kindOf = (speaker: number): TalkKind => (speaker === 0 ? 'none' : speaker <= TALK_TONES ? 'single' : 'npc');
 

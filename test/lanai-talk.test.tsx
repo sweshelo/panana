@@ -40,7 +40,7 @@ function talkTable(rows: [text: string, speaker: number][]): Uint8Array {
   rows.forEach(([, speaker], r) => {
     w32(b, data + r * 12, strings[r]![0]);
     w32(b, data + r * 12 + 4, strings[r]![1]);
-    w32(b, data + r * 12 + 8, speaker);
+    w32(b, data + r * 12 + 8, (0xd0d0d000 | speaker) >>> 0); // the speaker in the low byte, the padding above
     w32(b, ids + r * 4, (0x80000000 | r) >>> 0);
   });
   w32(b, names, fMessage);
@@ -127,7 +127,7 @@ describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
     }
     // the speaker kinds of all talk rows (for when the count is off)
     const kinds = new Map<number, number>();
-    for (const t of tables) for (let r = 0; r < t.table.rows; r++) kinds.set(t.table.u32(r, 8), (kinds.get(t.table.u32(r, 8)) ?? 0) + 1);
+    for (const t of tables) for (let r = 0; r < t.table.rows; r++) kinds.set(t.table.u8(r, 8), (kinds.get(t.table.u8(r, 8)) ?? 0) + 1);
     const why = `talk tables ${tables.length}, sets ${sets}; kinds ${[...kinds].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k.toString(16)}:${n}`).join(' ')}; ${per.slice(0, 20).join(', ')}`;
     expect({ sets, why }).toEqual({ sets: 727, why });
     expect(tables.length).toBeGreaterThan(10);
