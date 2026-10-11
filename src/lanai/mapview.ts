@@ -12,7 +12,7 @@ import { GRID, type EditEvent } from '../editor/model';
 import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
-import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
+import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiTileModels } from './mapModels';
 
 export class LanaiMapView {
@@ -122,7 +122,7 @@ export class LanaiMapView {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash) return;
     const st = this.st, layers = this.ctl.layers, sel = st.selection;
-    if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), t.rot, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[t.rot]);
+    if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), LANAI_ROT_DIR[t.rot]!, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[LANAI_ROT_DIR[t.rot]!]);
     if (layers.room) {
       g.fillStyle = ROOM_COLOR;
       for (const c of doc.cells6) g.fillRect(c.x * s + 2, c.y * s + 2, s - 4, s - 4);
@@ -167,7 +167,7 @@ export class LanaiMapView {
       const [x, y] = hv;
       if (st.tool === 'paint') {
         g.globalAlpha = 0.6;
-        drawTileGlyph(g, s, x, y, kindColor(st.brush.kind), st.brush.rot, `${st.brush.kind}${letterLabel(st.brush.letter)}`, ROT_ARROW[st.brush.rot]);
+        drawTileGlyph(g, s, x, y, kindColor(st.brush.kind), LANAI_ROT_DIR[st.brush.rot]!, `${st.brush.kind}${letterLabel(st.brush.letter)}`, ROT_ARROW[LANAI_ROT_DIR[st.brush.rot]!]);
         g.globalAlpha = 1;
       }
       g.strokeStyle = '#fff';
