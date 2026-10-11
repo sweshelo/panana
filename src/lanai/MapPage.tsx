@@ -28,6 +28,9 @@ import type { LanaiSession } from './session';
 /** The link to a map of a content (the stage page's list uses it too). */
 export const lanaiMapHref = (content: number, name?: string): string => `#/maps/${content}${name ? `.${encodeURIComponent(name)}` : ''}`;
 
+/** The link to a content's stages (the stage page lists its maps: this is the way back). */
+export const lanaiStageHref = (content: number): string => `#/stages/${content}`;
+
 type Mode = 'split' | '2d' | '3d';
 
 /** The tools of RPG FREE!'s map page: section 6 holds MonsterGroup row IDs here, so its cells are not toggled. */
@@ -162,7 +165,10 @@ function MapDetail({ session, contents, content, maps, name }: {
         {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}
       </header>
       {info.world ? (
-        <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao lanai/map.md §13) なので、まだ表示・編集できません。</p>
+        <>
+          <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao lanai/map.md §13) なので、まだ表示・編集できません。</p>
+          <div style={{ padding: '0 16px' }}><Stages content={content} /></div>
+        </>
       ) : (
         <>
           <aside className="left">
@@ -188,11 +194,38 @@ function MapDetail({ session, contents, content, maps, name }: {
                 <Checks st={st} info={info} />
               </>
             )}
+            <Stages content={content} />
           </aside>
           <div className="status">{view ? <Status st={st} view={view} /> : null}</div>
         </>
       )}
     </div>
+  );
+}
+
+/** The stages (MapStageIntegration rows) of the map's content, with links back to the stage page. */
+function Stages({ content }: { content: LanaiContent }): ReactNode {
+  return (
+    <>
+      <h3>このマップを使うステージ</h3>
+      {!content.stages.length ? (
+        <p className="muted small">
+          {'このコンテンツを指すステージの行はありません ('}
+          <a href={lanaiStageHref(content.index)}>{`コンテンツ ${content.index}: ${contentTitle(content)}`}</a>
+          {')。'}
+        </p>
+      ) : (
+        <ul className="small">
+          {content.stages.map((s) => (
+            <li key={s.row}>
+              <a href={lanaiStageHref(content.index)}>{s.name || `ステージの行 ${s.row}`}</a>
+              {s.mission && <span className="muted">{` ${s.mission}`}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="muted small">{`マップはコンテンツ ${content.index} (${content.archive}) のマップ表にあり、そのステージで使われます。`}</p>
+    </>
   );
 }
 
