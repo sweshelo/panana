@@ -1,7 +1,7 @@
 // Editing RPG FREE! (lanai) tables and the MOD export: writing the numbers of a row (bits kept, padding kept), adding
 // rows (the regions after the rows move), the saved edits, and rebuilding the archives. The round trips on the real
 // tables need the decrypted CIAs (test/env.ts LANAI_BASE / LANAI_UPDATE) and are skipped without them.
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
 import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
 import { createElement } from 'react';
@@ -183,6 +183,8 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
     dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
     s = await LanaiSession.open(dump, { fresh: true });
   });
+  // a failed test leaves no edits for the next ones
+  afterEach(() => s.revertAll());
 
   test('every table of the master and the language archives lays out again byte for byte', () => {
     expect(s.tables.length).toBeGreaterThan(100);
@@ -191,28 +193,37 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
 
   test('every string field of every table: written to another string and back gives the bytes as read', () => {
     const tried: string[] = [];
-    for (const { table: t } of s.tables) {
-      const at = t.stringOffsets();
-      if (!at.length || !t.rows) continue;
-      const read = t.data.slice();
-      const strings = (x: LanaiTable): string[] => Array.from({ length: x.rows }, (_, r) => at.map((o) => (x.isString(r, o) ? s.field(x, r, o)!.text : ''))).flat();
-      const before = strings(t);
-      const [r, o] = [t.rows - 1, at[at.length - 1]!];
-      if (!t.isString(r, o)) continue;
-      const was = lanaiMessageBytes(t.data, t.u32(r, o)).slice();
-      s.setText(t, r, o, 'テスト{page}です');
-      const again = new LanaiTable(t.data);
-      expect(s.field(again, r, o)!.text).toBe('テスト{page}です');
-      const after = strings(again);
-      after[r * at.length + at.length - 1] = before[r * at.length + at.length - 1]!;
-      expect(after).toEqual(before);
-      expect(t.changedRows()).toEqual([r]);
-      t.setString(r, o, was);
-      expect(equalBytes(t.data, read)).toBe(true);
-      tried.push(t.name);
+    try {
+      for (const { table: t } of s.tables) {
+        const at = t.stringOffsets();
+        if (!at.length || !t.rows) continue;
+        const [r, o] = [t.rows - 1, at[at.length - 1]!];
+        if (!t.isString(r, o)) continue;
+        const read = t.data.slice();
+        const pool = 0x40 + u32(read, 0x0c);
+        // every other string field keeps its offset (into the pool as read, which stays as it is)
+        const pointers = (x: LanaiTable): number[] => Array.from({ length: x.rows }, (_, i) => at.map((f) => (x.isString(i, f) ? x.u32(i, f) : -1))).flat();
+        const before = pointers(t);
+        const was = lanaiMessageBytes(t.data, t.u32(r, o)).slice();
+        s.setText(t, r, o, 'テスト{page}です');
+        const again = new LanaiTable(t.data);
+        expect(s.field(again, r, o)!.text).toBe('テスト{page}です');
+        const after = pointers(again);
+        after[r * at.length + at.length - 1] = before[r * at.length + at.length - 1]!;
+        expect(after).toEqual(before);
+        expect(equalBytes(again.data.subarray(0x40, pool), read.subarray(0x40, pool))).toBe(true);
+        expect(again.rowIds).toEqual(new LanaiTable(read).rowIds);
+        expect(again.fields).toEqual(new LanaiTable(read).fields);
+        expect(t.changedRows()).toEqual([r]);
+        t.setString(r, o, was);
+        if (!equalBytes(t.data, read)) throw new Error(`${t.name}: 書き戻しても元のバイトになりません`);
+        tried.push(t.name);
+      }
+      expect(tried.length).toBeGreaterThan(10);
+      expect(s.changedTables()).toEqual([]);
+    } finally {
+      s.revertAll();
     }
-    expect(tried.length).toBeGreaterThan(10);
-    expect(s.changedTables()).toEqual([]);
   });
 
   test('every message string written from its tokens is the bytes as read', () => {
