@@ -46,64 +46,127 @@ export function MessagePreview({ texts, units, depth = 0 }: { texts: MessageStor
 }
 
 /**
+ * What MessageEditor edits, by ID: GMSG messages (gmsgSource) or another game's strings (RPG FREE!'s table strings,
+ * lanai/MessageSource.tsx). The text is the form with the tags in braces that the box shows.
+ */
+export interface MessageSource {
+  /** The text with its tags, or undefined when there is no message `id`. */
+  text(id: number): string | undefined;
+  /** The ID line of the editor. */
+  label(id: number): string;
+  /** Why the message cannot be edited, or undefined when it can. */
+  readOnly(id: number): string | undefined;
+  isEdited(id: number): boolean;
+  revert(id: number): void;
+  /** Writes the text (one that preview accepted). */
+  setText(id: number, text: string): void;
+  /** The message as a reader sees it with `text` (the stored text or a draft); throws when the text cannot be written. */
+  preview(id: number, text: string): ReactNode;
+  /** A kind code in front of the text (GMSG's first unit): its value, the choices, and how to set it. */
+  kind?: { get(id: number): number; options(id: number): [value: number, label: string][]; set(id: number, kind: number): void };
+  /** The line for an ID that is not there. */
+  missing?(id: number): string;
+}
+
+const gmsgSources = new WeakMap<MessageStore, MessageSource>();
+
+/** The GMSG messages of a MessageStore as a MessageSource. */
+export function gmsgSource(texts: MessageStore): MessageSource {
+  let s = gmsgSources.get(texts);
+  if (s) return s;
+  s = {
+    text: (id) => (texts.file(id) ? texts.text(id)?.text : undefined),
+    label: (id) => `${hexId(id)} (${id}) · ${texts.file(id)?.name ?? ''}`,
+    readOnly: (id) => (texts.file(id)?.editable ? undefined : 'このファイルは作り直すと元と同じにならないため、書き換えられません。'),
+    isEdited: (id) => texts.isEdited(id),
+    revert: (id) => texts.revert(id),
+    setText: (id, text) => texts.setText(id, text),
+    preview: (id, text) => {
+      const stored = texts.text(id)!;
+      return <MessagePreview texts={texts} units={text === stored.text ? texts.units(id)! : textToUnits({ ...stored, text }, texts.syntax)} />;
+    },
+    kind: {
+      get: (id) => texts.text(id)!.kind,
+      options: (id) => [...new Set([...Object.keys(MESSAGE_KINDS).map(Number), texts.text(id)!.kind])].sort((a, b) => a - b).map((k) => [k, `${hexId(k)} ${MESSAGE_KINDS[k] ?? ''}`]),
+      set: (id, k) => texts.setKind(id, k),
+    },
+    missing: (id) => (id ? `${hexId(id)}: 見つからない ID` : '(なし)'),
+  };
+  gmsgSources.set(texts, s);
+  return s;
+}
+
+/**
  * A message shown as its preview (ruby drawn); a click opens the editor: the text box (with the kind) next to the
  * preview, until 閉じる. Edits are applied when the box loses focus, through `apply` (so the caller can record an undo
  * point and save); a bad {XXXX} code is reported and not applied. `compact` leaves out the ID line and the kind (the
- * books' message fields).
+ * books' message fields). `texts` is a MessageStore (GMSG) or any MessageSource.
  */
-export function MessageEditor({ texts, id, apply, compact = false }: { texts: MessageStore; id: number; apply: (f: () => void) => void; compact?: boolean }): ReactNode {
+export function MessageEditor({ texts, id, apply, compact = false, title }: {
+  texts: MessageStore | MessageSource;
+  id: number;
+  apply: (f: () => void) => void;
+  compact?: boolean;
+  /** A line above the ID line (e.g. which version of a message this is). */
+  title?: ReactNode;
+}): ReactNode {
+  const src = 'syntax' in texts ? gmsgSource(texts) : texts;
   const [open, setOpen] = useState(false);
   /** Focus the box once, when it is opened (not when it is remade after an edit). */
   const opening = useRef(false);
   useEffect(() => { opening.current = false; });
-  const file = texts.file(id);
-  const t = texts.text(id);
-  if (!file || !t) return <div className="msg-edit"><div className="muted">{id ? `${hexId(id)}: 見つからない ID` : '(なし)'}</div></div>;
+  const text = src.text(id);
+  if (text === undefined) return <div className="msg-edit">{title}<div className="muted">{src.missing?.(id) ?? '(なし)'}</div></div>;
+  const edited = src.isEdited(id);
+  const readOnly = src.readOnly(id);
   const head = !compact && (
     <div className="muted small">
-      {`${hexId(id)} (${id}) · ${file.name}`}
-      {texts.isEdited(id) && <b className="edited"> · 変更あり</b>}
+      {src.label(id)}
+      {edited && <b className="edited"> · 変更あり</b>}
     </div>
   );
-  const revert = texts.isEdited(id) && <button className="small" onClick={() => apply(() => texts.revert(id))}>元の文に戻す</button>;
+  const revert = edited && <button className="small" onClick={() => apply(() => src.revert(id))}>元の文に戻す</button>;
   if (!open) {
     return (
       <div className="msg-edit">
+        {title}
         {head}
-        <div className={`msg-preview msg-preview-closed${compact && texts.isEdited(id) ? ' edited' : ''}`} role="button" tabIndex={0}
-          title={file.editable ? 'クリックで編集' : 'クリックで本文 (タグつき) を表示'}
+        <div className={`msg-preview msg-preview-closed${compact && edited ? ' edited' : ''}`} role="button" tabIndex={0}
+          title={readOnly ? 'クリックで本文 (タグつき) を表示' : 'クリックで編集'}
           onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) { opening.current = true; setOpen(true); } }}
           onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) { opening.current = true; setOpen(true); } }}>
-          <MessagePreview texts={texts} units={texts.units(id)!} />
-          {!t.text && <span className="muted">(空)</span>}
+          {src.preview(id, text)}
+          {!text && <span className="muted">(空)</span>}
         </div>
         {revert}
       </div>
     );
   }
   const close = <button className="small" onClick={() => setOpen(false)}>閉じる</button>;
-  if (!file.editable) {
+  if (readOnly) {
     return (
       <div className="msg-edit msg-edit-open">
+        {title}
         {head}
-        <ReadOnlyText text={t.text} preview={<MessagePreview texts={texts} units={texts.units(id)!} />} note="このファイルは作り直すと元と同じにならないため、書き換えられません。" close={close} />
+        <ReadOnlyText text={text} preview={src.preview(id, text)} note={readOnly} close={close} />
       </div>
     );
   }
-  const kinds = [...new Set([...Object.keys(MESSAGE_KINDS).map(Number), t.kind])].sort((a, b) => a - b);
+  const kind = !compact && src.kind;
   return (
     <div className="msg-edit msg-edit-open">
+      {title}
       {head}
-      {!compact && (
+      {kind && (
         <label className="field">
           <span>種別 (先頭の 1 文字、表示されない)</span>
-          <select title="先頭の種別コード。ゲームは表示するときにこの 1 文字を読み飛ばします" value={t.kind} onChange={(e) => apply(() => texts.setKind(id, Number(e.target.value)))}>
-            {kinds.map((k) => <option key={k} value={k}>{`${hexId(k)} ${MESSAGE_KINDS[k] ?? ''}`}</option>)}
+          <select title="先頭の種別コード。ゲームは表示するときにこの 1 文字を読み飛ばします" value={kind.get(id)} onChange={(e) => apply(() => kind.set(id, Number(e.target.value)))}>
+            {kind.options(id).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
         </label>
       )}
       {/* keyed by the stored text: an edit elsewhere (undo, revert) starts the box over */}
-      <MessageText key={`${id}\n${t.text}`} texts={texts} id={id} apply={apply} focus={opening.current} />
+      <MessageText key={`${id}\n${text}`} src={src} id={id} apply={apply} focus={opening.current} />
       <div className="row">{close}{revert}</div>
     </div>
   );
@@ -148,33 +211,33 @@ export function MessageView({ head, preview, text, note }: { head?: ReactNode; p
   );
 }
 
-function MessageText({ texts, id, apply, focus }: { texts: MessageStore; id: number; apply: (f: () => void) => void; focus: boolean }): ReactNode {
-  const stored = texts.text(id)!;
-  const [draft, setDraft] = useState(stored.text);
-  let units: Uint16Array = texts.units(id)!;
+function MessageText({ src, id, apply, focus }: { src: MessageSource; id: number; apply: (f: () => void) => void; focus: boolean }): ReactNode {
+  const stored = src.text(id)!;
+  const [draft, setDraft] = useState(stored);
+  let preview: ReactNode;
   let error = '';
   try {
-    if (draft !== stored.text) units = textToUnits({ ...stored, text: draft }, texts.syntax);
+    preview = src.preview(id, draft);
   } catch (e) {
     error = (e as Error).message;
+    preview = src.preview(id, stored);
   }
   const commit = (): void => {
-    const cur = texts.text(id)!;
-    if (draft === cur.text || error) return;
-    apply(() => texts.setText(id, draft));
+    if (draft === src.text(id) || error) return;
+    apply(() => src.setText(id, draft));
   };
   return (
     <>
       <textarea
         className="msg-text"
         autoFocus={focus}
-        rows={Math.min(8, stored.text.split('\n').length + 1)}
+        rows={Math.min(8, stored.split('\n').length + 1)}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
       />
       {error && <div className="error small">{error}</div>}
-      <div className="msg-preview"><MessagePreview texts={texts} units={units} /></div>
+      <div className="msg-preview">{preview}</div>
     </>
   );
 }
