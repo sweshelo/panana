@@ -114,3 +114,83 @@ export function lanaiPlain(tokens: LanaiToken[], insert?: (t: Extract<LanaiToken
     }
   }).join('');
 }
+
+/** The bytes of the string at `o` of `b`, with its terminator. */
+export function lanaiMessageBytes(b: Uint8Array, o: number): Uint8Array {
+  return b.subarray(o, parseLanaiMessage(b, o).end);
+}
+
+/**
+ * Tokens as the game reads them: UTF-16LE, the tags as 0x0001 code n args, ruby as its three tags, the terminator. A
+ * string argument is a u16 length in units and the ASCII padded with NULs to at least one NUL (assumed: that is how
+ * the strings of the files end, naauao lanai/analysis.md §2.2).
+ */
+export function encodeLanaiMessage(tokens: LanaiToken[]): Uint8Array {
+  const units: number[] = [];
+  const tag = (code: number, args: LanaiArg[]): void => {
+    units.push(1, code, args.length);
+    for (const a of args) {
+      if (typeof a === 'number') {
+        if (!Number.isInteger(a) || a < 0 || a > 0xffffffff) throw new RangeError(`タグ ${tagCode(code)} の引数 ${a} は u32 ではありません`);
+        units.push(2, a & 0xffff, a >>> 16);
+        continue;
+      }
+      if (/^\?\d+$/.test(a) || /[^\x20-\x7e]/.test(a)) throw new Error(`タグ ${tagCode(code)} の引数 "${a}" は書き込めません`);
+      const n = (a.length >> 1) + 1;
+      units.push(3, n);
+      for (let i = 0; i < n * 2; i += 2) units.push((a.charCodeAt(i) || 0) | ((a.charCodeAt(i + 1) || 0) << 8));
+    }
+  };
+  const text = (s: string): void => {
+    for (let i = 0; i < s.length; i++) units.push(s.charCodeAt(i));
+  };
+  for (const t of tokens) {
+    switch (t.t) {
+      case 'text': text(t.s); break;
+      case 'br': units.push(0x0a); break;
+      case 'ruby': tag(TAG_RUBY[0], []); text(t.base); tag(TAG_RUBY[1], []); text(t.reading); tag(TAG_RUBY[2], []); break;
+      case 'ins': tag(TAG_INSERT, [t.table, t.id, t.field]); break;
+      case 'tag': tag(t.code, t.args); break;
+    }
+  }
+  units.push(0);
+  const out = new Uint8Array(units.length * 2);
+  units.forEach((u, i) => {
+    out[i * 2] = u & 0xff;
+    out[i * 2 + 1] = u >>> 8;
+  });
+  return out;
+}
+
+const textArg = (s: string): LanaiArg => (/^0x[0-9a-f]+$/i.test(s) ? parseInt(s.slice(2), 16) >>> 0 : s);
+
+/** The text form (lanaiText) read back into tokens: {ruby:親字|よみ}, {page}, {ins:表:行 ID:欄}, {tag:XX,…}; other braces are text. */
+export function parseLanaiText(s: string): LanaiToken[] {
+  const out: LanaiToken[] = [];
+  const text = (x: string): void => {
+    for (const [k, line] of x.split('\n').entries()) {
+      if (k) out.push({ t: 'br' });
+      if (!line) continue;
+      const last = out[out.length - 1];
+      if (last?.t === 'text') last.s += line;
+      else out.push({ t: 'text', s: line });
+    }
+  };
+  const re = /\{(page|ruby:([^|{}]*)\|([^{}]*)|ins:([^:{}]+):(0x[0-9a-f]+):([^:{}]+)|tag:([0-9a-f]{1,4})((?:,[^,{}]*)*))\}/gi;
+  let at = 0;
+  for (const m of s.matchAll(re)) {
+    text(s.slice(at, m.index));
+    at = m.index + m[0].length;
+    if (m[1] === 'page') out.push({ t: 'tag', code: TAG_PAGE, args: [] });
+    else if (m[2] !== undefined) out.push({ t: 'ruby', base: m[2], reading: m[3]! });
+    else if (m[4] !== undefined) out.push({ t: 'ins', table: m[4], id: parseInt(m[5]!.slice(2), 16) >>> 0, field: m[6]! });
+    else out.push({ t: 'tag', code: parseInt(m[7]!, 16), args: m[8] ? m[8].slice(1).split(',').map(textArg) : [] });
+  }
+  text(s.slice(at));
+  return out;
+}
+
+/** `{ins:…}` and `{page}` in order (for checking that versions of a message keep them). */
+export function lanaiMarks(tokens: LanaiToken[]): string[] {
+  return tokens.flatMap((t) => (t.t === 'ins' ? [`{ins:${t.table}:${hexArg(t.id)}:${t.field}}`] : t.t === 'tag' && t.code === TAG_PAGE && !t.args.length ? ['{page}'] : []));
+}

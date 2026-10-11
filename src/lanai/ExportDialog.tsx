@@ -25,7 +25,9 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
             {changed.map((t) => {
               const rows = t.table.changedRows();
               const added = t.table.rows - t.table.originalRows;
-              return <li key={`${t.archive}/${t.entry}`}>{`${t.archive} の ${t.table.name}: ${rows.length} 行${added > 0 ? ` (うち追加 ${added} 行)` : ''}`}</li>;
+              const strings = t.table.changedStrings().length;
+              const more = [added > 0 ? `うち追加 ${added} 行` : '', strings > 0 ? `文字列 ${strings} 欄` : ''].filter(Boolean).join('、');
+              return <li key={`${t.archive}/${t.entry}`}>{`${t.archive} の ${t.table.name}: ${rows.length} 行${more ? ` (${more})` : ''}`}</li>;
             })}
             {maps.map((m) => <li key={`map/${m.archive}`}>{`${m.archive} のマップ DB (C9F79000): ${m.sections} 区画`}</li>)}
           </ul>

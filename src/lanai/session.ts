@@ -1,7 +1,7 @@
 // One opened 電波人間のRPG FREE! (lanai) dump: the tables of the master (2135000A) and of the language archives
 // (xxxx000A: UI text, codes; naauao lanai/analysis.md §1.1), the strings they hold, and the other root archives (the
-// contents, the models) read when first asked for. The numbers of the tables' rows can be edited (table.ts; strings
-// are not): the edits are saved to IndexedDB like RPG3's (oahu/session.ts) and put back when the dump is opened again
+// contents, the models) read when first asked for. The numbers of the tables' rows and their strings can be edited
+// (table.ts; the pool is laid out again for a written string): the edits are saved to IndexedDB like RPG3's (oahu/session.ts) and put back when the dump is opened again
 // (with or without the Update), and the archives holding changed tables are rebuilt into a LayeredFS MOD (the Update's
 // archives under them, so it needs the Update like RPG3's).
 import { entryBlob, findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
@@ -10,10 +10,10 @@ import { buildModZip } from '../export/pack';
 import { MapDb } from '../game/mapdb';
 import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
-import { equalBytes, hex8 } from '../util/bytes';
+import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
 import { LANAI_MAPDB_ENTRY } from './maps';
-import { lanaiPlain, lanaiText, parseLanaiMessage, type LanaiToken } from './message';
+import { encodeLanaiMessage, lanaiPlain, lanaiText, parseLanaiMessage, parseLanaiText, type LanaiToken } from './message';
 import { LanaiRows } from './rows';
 import { LANAI_TABLES } from './tables';
 import { LanaiTable } from './table';
@@ -73,8 +73,13 @@ export type LanaiSavedRow = [table: string, row: number, before: Uint8Array | nu
 /** A section of a content's map database kept across loads: the content's root archive, the section hash, its bytes. */
 export type LanaiSavedSection = [archive: string, hash: number, bytes: Uint8Array];
 
+/** A written string kept across loads: the table (tableKey), the row, the offset of the field, the string's bytes. */
+export type LanaiSavedString = [table: string, row: number, offset: number, bytes: Uint8Array];
+
 export interface LanaiSaved {
   rows: LanaiSavedRow[];
+  /** Written strings (absent in edits saved before strings could be written, and when none were). */
+  strings?: LanaiSavedString[];
   /** Edited map sections (absent in edits saved before the map editor). */
   maps?: LanaiSavedSection[];
 }
@@ -87,7 +92,7 @@ export interface LanaiMapDb {
   db: MapDb;
 }
 
-/** `bytes` for row `r` with the string fields the table has there (strings are not edited; their offsets may differ). */
+/** `bytes` for row `r` with the string fields the table has there (the strings are put back on their own; their offsets may differ). */
 function mergeStrings(t: LanaiTable, r: number, bytes: Uint8Array): Uint8Array {
   const out = bytes.slice();
   const cur = t.row(r);
@@ -225,19 +230,22 @@ export class LanaiSession {
 
   saved(): LanaiSaved {
     const rows: LanaiSavedRow[] = [];
+    const strings: LanaiSavedString[] = [];
     for (const ref of this.changedTables()) {
       const key = lanaiTableKey(ref);
       for (const r of ref.table.changedRows()) rows.push([key, r, ref.table.originalRow(r)?.slice() ?? null, ref.table.row(r).slice()]);
+      for (const [r, o, b] of ref.table.changedStrings()) strings.push([key, r, o, b.slice()]);
     }
     const maps: LanaiSavedSection[] = [];
     for (const r of this.mapDbsRead.values()) for (const h of r.db.changedHashes()) maps.push([r.archive, h, r.db.get(h).slice()]);
-    return maps.length ? { rows, maps } : { rows };
+    return { rows, ...(strings.length ? { strings } : {}), ...(maps.length ? { maps } : {}) };
   }
 
   /**
    * Puts saved rows back. Only the bytes the edit changed are written (a row the Update changed elsewhere keeps the
    * Update's bytes); a row an edit added is added again (rows saved in order). Rows of tables that are not there, or
-   * whose size differs, are left out. The rows are put back before the promise (the map sections, whose archives are
+   * whose size differs, are left out. The written strings follow the rows (fields that are no longer strings are left
+   * out). The rows are put back before the promise (the map sections, whose archives are
    * read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
@@ -271,6 +279,15 @@ export class LanaiSession {
         if (!equalBytes(row, t.row(r))) t.setRow(r, mergeStrings(t, r, row));
       } catch {
         // a row that no longer fits (a string field moved by the Update): left out
+      }
+    }
+    for (const [key, r, o, bytes] of saved.strings ?? []) {
+      const t = byKey.get(key);
+      if (!t || r >= t.rows) continue;
+      try {
+        t.setString(r, o, bytes);
+      } catch {
+        // not a string field there any more: left out
       }
     }
     this.revision++;
@@ -366,6 +383,22 @@ export class LanaiSession {
   /** The string at a file offset of a table. */
   stringAt(t: LanaiTable, offset: number): LanaiString {
     const tokens = parseLanaiMessage(t.data, offset).tokens;
+    return { tokens, text: lanaiText(tokens) };
+  }
+
+  /**
+   * Writes the string field at `offset` of row `row` from its text form (lanaiText: {ruby:…}, {page}, {ins:…}, {tag:…}).
+   * Text equal to the string as read puts the string as read back. Call edited() after.
+   */
+  setText(t: LanaiTable, row: number, offset: number, text: string): void {
+    t.setString(row, offset, encodeLanaiMessage(parseLanaiText(text)));
+  }
+
+  /** The string field at `offset` of row `row` as read (undefined when it is not a string or the row was added). */
+  originalField(t: LanaiTable, row: number, offset: number): LanaiString | undefined {
+    const o = t.originalRow(row);
+    if (!o || !t.isString(row, offset)) return undefined;
+    const tokens = parseLanaiMessage(t.original, u32(o, offset)).tokens;
     return { tokens, text: lanaiText(tokens) };
   }
 
