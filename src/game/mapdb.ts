@@ -1,6 +1,6 @@
 // Map database: RomFS archive A90C8038, entry A2C14C00 (LZ10). docs/map.md §1.
 //   u32 count, count x {u32 hash, u32 offset, u32 size} (hash ascending), then data (offsets from data start)
-import { u32, w32 } from '../util/bytes';
+import { equalBytes, u32, w32 } from '../util/bytes';
 
 export const MAPDB_ARCHIVE = 'A90C8038';
 export const MAPDB_ENTRY = 0xa2c14c00;
@@ -52,6 +52,19 @@ export class MapDb {
   set(hash: number, bytes: Uint8Array): void {
     if (!this.has(hash)) throw new Error(`マップ DB に ${hash.toString(16)} がありません`);
     this.changes.set(hash, bytes);
+  }
+
+  /**
+   * Drop the change of an original entry: it is the ROM's bytes again (and shares its block again in {@link build},
+   * which `set` with the same bytes would not). Not for entries {@link add} added (they would become empty).
+   */
+  revert(hash: number): void {
+    this.changes.delete(hash);
+  }
+
+  /** Hashes whose bytes differ from the original ones (added entries included). */
+  changedHashes(): number[] {
+    return [...this.changes].filter(([h, b]) => !equalBytes(b, this.original(h))).map(([h]) => h);
   }
 
   /** Add an entry (a section of a new map). The game finds it once the index is sorted again by {@link build}. */

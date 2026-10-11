@@ -3,7 +3,7 @@
 // model (game/sections.ts MapDoc, with RPG FREE!'s record layouts and 1 / 2 / 4 / 8 facings), and the tile models:
 // MapData -> MapPartsType (tileset) -> MapParts<name> -> a GSC of the root archive that the pair names.
 import { findEntry, unpackEntry, type Archive } from '../archive/gsarc';
-import { MapDb } from '../game/mapdb';
+import type { MapDb } from '../game/mapdb';
 import { LANAI_ROT_CODEC, loadDoc, sectionBytes, type MapDoc, type MapFormat, type RecordLayout } from '../game/sections';
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
@@ -137,16 +137,19 @@ export class LanaiMaps {
     readonly session: LanaiSession,
     readonly content: LanaiContent,
     readonly archive: Archive,
+    /** The content's map database, shared with the session (it saves and exports it). */
+    db: MapDb,
     private readonly mapData: LanaiTable | undefined,
     private readonly mapGroup: LanaiTable | undefined,
     private readonly partsType: LanaiTable | undefined,
     private readonly mapResource: LanaiTable | undefined,
     parts: { entry: number; table: LanaiTable }[],
+    /** The content's tables (the EventObject tables of the groups among them). */
+    private readonly tables: { entry: number; table: LanaiTable }[],
   ) {
-    const dbEntry = findEntry(archive, LANAI_MAPDB_ENTRY);
     const tableEntry = findEntry(archive, LANAI_MAP_TABLE_ENTRY);
-    if (!dbEntry || !tableEntry) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ DB / マップ表がありません`);
-    this.db = new MapDb(unpackEntry(archive, dbEntry).body);
+    if (!tableEntry) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ表がありません`);
+    this.db = db;
     const t = unpackEntry(archive, tableEntry).body;
     this.maps = [];
     for (let i = 0; i + MAP_ROW <= t.length; i += MAP_ROW) {
@@ -171,15 +174,39 @@ export class LanaiMaps {
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
       this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c) });
     for (const p of parts) this.partsByEntry.set(p.entry, p.table);
+    // sections put back or reverted by the session: read the documents again
+    session.onMapReset((a) => {
+      if (a !== content.archive.toUpperCase()) return;
+      this.docs.clear();
+      this.changed();
+    });
   }
 
   /** The maps of a content (reads its archive when first asked for). */
   static async load(session: LanaiSession, content: LanaiContent): Promise<LanaiMaps> {
     const archive = await session.archive(content.archive);
+    const mapDb = await session.mapDb(content.archive);
+    if (!mapDb) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ DB がありません`);
     const tables = await session.tablesIn(content.archive);
     // MapParts<name>: the type 11 tables of the content, by entry
     const parts = tables.filter((t) => t.table.name.startsWith('MapParts') && t.table.name !== 'MapPartsType').map((t) => ({ entry: t.entry, table: t.table }));
-    return new LanaiMaps(session, content, archive, tableNamed(tables, 'MapData'), tableNamed(tables, 'MapGroup'), tableNamed(tables, 'MapPartsType'), tableNamed(tables, 'MapResource'), parts);
+    return new LanaiMaps(session, content, archive, mapDb.db, tableNamed(tables, 'MapData'), tableNamed(tables, 'MapGroup'), tableNamed(tables, 'MapPartsType'), tableNamed(tables, 'MapResource'), parts, tables.map((t) => ({ entry: t.entry, table: t.table })));
+  }
+
+  // ---- change notices (the map page redraws on them)
+
+  private readonly listeners = new Set<() => void>();
+  /** Bumped by every change of the maps (edits, reverts). */
+  revision = 0;
+
+  on(f: () => void): () => void {
+    this.listeners.add(f);
+    return () => this.listeners.delete(f);
+  }
+
+  changed(): void {
+    this.revision++;
+    for (const f of [...this.listeners]) f();
   }
 
   map(hash: number): LanaiMapInfo | undefined {
@@ -212,6 +239,42 @@ export class LanaiMaps {
   /** Section k of a document as bytes (what the database holds after saving). */
   sectionBytes(doc: MapDoc, k: number): Uint8Array {
     return sectionBytes(doc, k, LANAI_MAP_FORMAT);
+  }
+
+  /**
+   * Write a document's sections back to the map database (call after editing it). A section that is the ROM's bytes
+   * again drops its change, so the database is built byte for byte as the ROM's. The world maps are not edited.
+   */
+  commit(info: LanaiMapInfo): void {
+    const d = this.docs.get(info.hash);
+    if (!d || info.world) return;
+    for (let k = 0; k < 10; k++) {
+      const h = info.sections[k]!;
+      if (k === 7 || !h || !this.db.has(h)) continue;
+      const b = sectionBytes(d, k, LANAI_MAP_FORMAT);
+      if (equalBytes(b, this.db.original(h))) this.db.revert(h);
+      else if (!equalBytes(b, this.db.get(h))) this.db.set(h, b);
+    }
+    this.changed();
+  }
+
+  /** Put an edited copy of a document in place (undo / redo of the map page) and write it to the map database. */
+  setDoc(info: LanaiMapInfo, doc: MapDoc): void {
+    this.docs.set(info.hash, doc);
+    this.commit(info);
+  }
+
+  /** Put a map back as it is in the ROM. */
+  revert(info: LanaiMapInfo): void {
+    for (const h of info.sections) if (h && this.db.has(h)) this.db.revert(h);
+    this.docs.delete(info.hash);
+    this.changed();
+  }
+
+  /** The EventObject table of a MapGroup (MapGroup +0x1C names its entry in the content's archive), if it is there. */
+  eventTable(group: number): LanaiTable | undefined {
+    const g = this.groups[group];
+    return g?.eventEntry ? this.tables.find((t) => t.entry === g.eventEntry)?.table : undefined;
   }
 
   group(info: LanaiMapInfo): LanaiMapGroup | undefined {
@@ -269,11 +332,39 @@ export class LanaiMaps {
   }
 
   /** The model a tile kind and letter index (0..7) name in the map's tileset; null = none (kind 33 and the like). */
-  partRef(src: LanaiTileSource, kind: number, letter: number): LanaiPartRef | null {
+  partRef(src: Pick<LanaiTileSource, 'tileset'>, kind: number, letter: number): LanaiPartRef | null {
     const parts = this.partsTable(src.tileset);
     const r = kind + 1;
     if (!parts || r >= parts.rows || letter < 0 || letter > 7) return null;
     const archive = parts.u32(r, letter * 8), entry = parts.u32(r, letter * 8 + 4);
     return archive && entry ? { archive, entry } : null;
+  }
+
+  /** The GSC entry of a tile kind and letter index in a tileset (0 = none): the palette keys its models by it. */
+  partModel(tileset: number, kind: number, letter: number): number {
+    return this.partRef({ tileset }, kind, letter)?.entry ?? 0;
+  }
+
+  /**
+   * Tile kinds with a model in a tileset: kind -> letter indices worth offering (letters that repeat a model already
+   * listed are left out), as RPG3's palette.
+   */
+  palette(tileset: number): Map<number, number[]> {
+    const out = new Map<number, number[]>();
+    const parts = this.partsTable(tileset);
+    for (let kind = 0; parts && kind + 1 < parts.rows; kind++) {
+      const base = this.partModel(tileset, kind, 0);
+      const letters: number[] = base ? [0] : [];
+      const seen = new Set(base ? [base] : []);
+      for (let l = 1; l < 8; l++) {
+        const h = this.partModel(tileset, kind, l);
+        if (h && !seen.has(h)) {
+          seen.add(h);
+          letters.push(l);
+        }
+      }
+      if (letters.length) out.set(kind, letters);
+    }
+    return out;
   }
 }
