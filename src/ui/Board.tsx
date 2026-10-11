@@ -6,7 +6,7 @@ export function Board({ icon, name, sub, id, href, edited = false, title, onClic
   icon: ReactNode;
   name: ReactNode;
   sub?: ReactNode;
-  /** Shown as "#id" and linked to `href`. */
+  /** Shown as "#id", linked to `href` when the entry has a book. */
   id?: number;
   href?: string;
   edited?: boolean;
@@ -22,7 +22,9 @@ export function Board({ icon, name, sub, id, href, edited = false, title, onClic
           {sub && <span className="board-sub">{sub}</span>}
         </span>
       </button>
-      {id !== undefined && href && <a className="board-id" href={href} draggable={false} title="図鑑で開く">{`#${id}`}</a>}
+      {id !== undefined && (href
+        ? <a className="board-id" href={href} draggable={false} title="図鑑で開く">{`#${id}`}</a>
+        : <span className="board-id muted">{`#${id}`}</span>)}
     </div>
   );
 }

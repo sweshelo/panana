@@ -7,6 +7,8 @@ import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc'
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
+import { lanaiSetSkillSlots, lanaiSkillSlots } from '../src/lanai/monsterBook';
+import { moveTo } from '../src/ui/MonsterSlots';
 import { isTransform, lanaiAction, lanaiActionMonsters, lanaiCopyActionInto, lanaiCopyStats, lanaiRevertMonster, lanaiSetTransformTarget, lanaiStatsOf, lanaiStatsSharers } from '../src/lanai/monsterStats';
 import { LanaiSession, lanaiTableKey } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
@@ -208,10 +210,29 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
     expect(m.changedTables()).toEqual([]);
   });
 
+  test('skill slots move with their target and level, and the fallback slot follows its skill', async () => {
+    const m = await LanaiSession.open(dump, { fresh: true });
+    const ref = lanaiStatsOf(m, 41)!;
+    const f = m.rows(ref.table).access(ref.row);
+    const before = lanaiSkillSlots(m, f);
+    expect(before.length).toBe(3);
+    const fb = f.get('fallback');
+    lanaiSetSkillSlots(f, moveTo(before, 0, before.length));
+    const after = lanaiSkillSlots(m, f);
+    expect(after.map((s) => [s.id, s.target, s.lv])).toEqual([...before.slice(1), before[0]!].map((s) => [s.id, s.target, s.lv]));
+    expect(after[f.get('fallback')]!.id).toBe(before[fb]!.id);
+    lanaiSetSkillSlots(f, after.slice(0, 1));
+    expect(lanaiSkillSlots(m, f).length).toBe(1);
+    expect([f.get('skill2'), f.get('target2'), f.get('slotLv2')]).toEqual([0, 1, 0]);
+    lanaiRevertMonster(m, 41);
+    expect(m.changedTables()).toEqual([]);
+  });
+
   test('the monster page has the editor', async () => {
     const m = await LanaiSession.open(dump, { fresh: true });
     const html = renderToString(createElement(LanaiMonsterPage, { session: m, arg: '41' }));
-    for (const t of ['能力 (Main', '経験値', 'たいせい', 'ドロップ', '変身', '箱に隠れてしまった', 'MOD を書き出す', 'アクションを複製してこの枠に付け替え'])
+    // the sections of RPG2's / RPG3's monster pages, in the same parts
+    for (const t of ['能力 Main', '経験値', 'たいせい', 'ドロップ', 'ワザと行動', 'ほかのアクション', '変身', '箱に隠れてしまった', 'アクションを複製してこの枠に付け替え', 'この形態になる', '出現する場所', 'radar'])
       expect(html).toContain(t);
     const p = m.need('MonsterParameter');
     const shared = Array.from({ length: p.rows }, (_, r) => r).find((r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1)!;

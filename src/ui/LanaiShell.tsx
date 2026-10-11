@@ -2,8 +2,8 @@
 // monsters, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
-import { contentTitle, lanaiContents } from '../lanai/contents';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
+import { contentTitle, lanaiContents } from '../lanai/contents';
 import { LanaiMapPage } from '../lanai/MapPage';
 import { LanaiMessagePage } from '../lanai/MessagePage';
 import { LanaiMonsterPage } from '../lanai/MonsterPage';
