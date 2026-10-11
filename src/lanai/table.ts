@@ -10,8 +10,11 @@
 // In every table of the dumps the rows come right after the pool and the other regions after the rows, each on 16
 // bytes (data > [row IDs] > [field names | extra] > relocations). Editing keeps to that: the numbers of a row can be
 // written (the bits of a packed word are written into the word, so the bits around them and the 0xD0 padding stay),
-// and rows can be added at the end (the regions after the rows move; the pool, which the string fields point into,
-// does not). Strings are not edited: the pool would have to be rebuilt.
+// rows can be added at the end (the regions after the rows move), and the string fields can be written. The pool is
+// laid out again for that: the pool as read stays as it is (every field that was not written keeps its offset, so the
+// rows that were not edited keep their bytes), and the written strings follow it, each on 4 bytes, in the order of
+// their fields; the pool is padded to 16 bytes and everything after it moves. A field written back to the string it
+// had points at the string as read again, so a table whose edits were all undone is the bytes it was read from.
 import { align, cstr, equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 
 export interface LanaiField {
@@ -21,8 +24,10 @@ export interface LanaiField {
 }
 
 const HEADER = 0x40;
-/** Alignment of the regions after the rows. */
+/** Alignment of the regions after the rows (and of the end of a pool with written strings). */
 const REGION_ALIGN = 0x10;
+/** Alignment of a written string in the pool. */
+const STRING_ALIGN = 4;
 
 /** Row IDs at or above this are looked up in the row ID table; smaller ones are row numbers (FUN_0031C038). */
 export const ROW_ID = 0x80000000;
@@ -47,6 +52,11 @@ export class LanaiTable {
   /** The bytes as read, once the table was edited. */
   private orig: Uint8Array | null = null;
   private origRows = 0;
+  /** Pool size and data offset as read (the pool as read is never moved or written). */
+  private basePool = 0;
+  private baseData = 0;
+  /** Strings written by edits (bytes up to and with the terminator), by place: row × row size + offset in the row. */
+  private written = new Map<number, Uint8Array>();
   /** Bumped by every edit (for views that cache what they read). */
   revision = 0;
 
@@ -55,6 +65,8 @@ export class LanaiTable {
     this.data = data;
     this.parse();
     this.origRows = this.rows;
+    this.basePool = u32(data, 0x0c);
+    this.baseData = this.dataOffset;
   }
 
   private parse(): void {
@@ -187,7 +199,7 @@ export class LanaiTable {
   /** Row `i` as it was read, or null for a row an edit added. */
   originalRow(i: number): Uint8Array | null {
     if (i < 0 || i >= this.origRows) return null;
-    const o = this.dataOffset + i * this.rowSize;
+    const o = this.baseData + i * this.rowSize;
     return this.original.subarray(o, o + this.rowSize);
   }
 
@@ -257,23 +269,92 @@ export class LanaiTable {
     w32(this.data, at, ((u32(this.data, at) & ~mask) | ((v << shift) & mask)) >>> 0);
   }
 
-  /** Writes a whole row (same size; its string fields must keep their values). */
+  /**
+   * Writes a whole row (same size). Its string fields must keep their values, or (undoing a string edit) have the
+   * values they had when read.
+   */
   setRow(i: number, bytes: Uint8Array): void {
     if (bytes.length !== this.rowSize) throw new RangeError(`${this.name}: 行の大きさが違います`);
-    const base = this.at(i, 0);
-    for (const r of this.relocs) if (r >= base && r < base + this.rowSize && u32(bytes, r - base) !== u32(this.data, r)) throw new Error(`${this.name}: 行 ${i} の文字列の欄は書き換えられません`);
     this.row(i);
+    const base = this.at(i, 0);
+    const was = this.originalRow(i);
+    const undone: number[] = [];
+    for (const o of this.stringOffsetsOf(i)) {
+      const v = u32(bytes, o);
+      if (v === u32(this.data, base + o)) continue;
+      if (!was || v !== u32(was, o)) throw new Error(`${this.name}: 行 ${i} の文字列の欄は setString で書き換えます`);
+      undone.push(o);
+    }
     this.writable();
     this.data.set(bytes, base);
+    for (const o of undone) this.written.delete(i * this.rowSize + o);
+    if (undone.length) this.relayout();
   }
 
-  /** Puts row `i` back as it was read (an added row cannot be: remove it with removeLastRow). */
+  /** Puts row `i` back as it was read, strings included (an added row cannot be: remove it with removeLastRow). */
   revertRow(i: number): void {
     const o = this.originalRow(i);
     if (!o) throw new Error(`${this.name}: 行 ${i} は追加した行です`);
-    if (equalBytes(o, this.row(i))) return;
+    const keys = this.writtenIn(i);
+    if (!keys.length && equalBytes(o, this.row(i))) return;
     this.writable();
+    for (const k of keys) this.written.delete(k);
     this.data.set(o, this.at(i, 0));
+    if (keys.length) this.relayout();
+  }
+
+  // ---- strings
+
+  /** Places (row × row size + offset) of the strings written in row `i`. */
+  private writtenIn(i: number): number[] {
+    const from = i * this.rowSize;
+    return [...this.written.keys()].filter((k) => k >= from && k < from + this.rowSize);
+  }
+
+  /**
+   * Writes the string of the field at `offset` of row `i`: `bytes` is the whole string with its terminator (as the
+   * game reads it: UTF-16LE with tags for the messages, lanai/message.ts encodeLanaiMessage). The same bytes as the
+   * string the field had when read (or points at now, in the pool as read) point the field back at that string.
+   */
+  setString(i: number, offset: number, bytes: Uint8Array): void {
+    this.row(i);
+    if (offset < 0 || offset + 4 > this.rowSize || !this.isString(i, offset)) throw new Error(`${this.name}: 行 ${i} +0x${offset.toString(16)} は文字列の欄ではありません`);
+    if (!bytes.length) throw new Error(`${this.name}: 文字列が空です (終端も入れます)`);
+    const key = i * this.rowSize + offset;
+    const cur = this.u32(i, offset);
+    const was = this.originalRow(i);
+    const poolEnd = HEADER + this.basePool;
+    const same = [was ? u32(was, offset) : -1, this.written.has(key) ? -1 : cur]
+      .find((p) => p >= HEADER && p + bytes.length <= poolEnd && equalBytes(this.original.subarray(p, p + bytes.length), bytes));
+    if (same !== undefined) {
+      if (same === cur && !this.written.has(key)) return;
+      this.writable();
+      this.written.delete(key);
+      w32(this.data, this.at(i, offset), same);
+    } else {
+      const now = this.written.get(key);
+      if (now && equalBytes(now, bytes)) return;
+      this.writable();
+      this.written.set(key, bytes.slice());
+    }
+    this.relayout();
+  }
+
+  /** The string written into the field at `offset` of row `i` (with its terminator), or null when it was not written. */
+  writtenString(i: number, offset: number): Uint8Array | null {
+    return this.written.get(i * this.rowSize + offset) ?? null;
+  }
+
+  /** Whether the string field at `offset` of row `i` was written (an added row's fields count when they were written). */
+  stringChanged(i: number, offset: number): boolean {
+    if (this.written.has(i * this.rowSize + offset)) return true;
+    const was = this.originalRow(i);
+    return !!was && this.isString(i, offset) && u32(was, offset) !== this.u32(i, offset);
+  }
+
+  /** The written strings: row, offset in the row, bytes (with the terminator), in the order of the rows. */
+  changedStrings(): [row: number, offset: number, bytes: Uint8Array][] {
+    return [...this.written].sort((a, b) => a[0] - b[0]).map(([k, b]) => [Math.floor(k / this.rowSize), k % this.rowSize, b]);
   }
 
   /** Puts the whole table back as it was read (added rows are dropped). */
@@ -281,19 +362,22 @@ export class LanaiTable {
     if (!this.orig) return;
     this.data = this.orig;
     this.orig = null;
+    this.written.clear();
     this.revision++;
     this.parse();
   }
 
   /**
    * Appends a row: a copy of row `from`, or zeros. In a table with row IDs it gets the largest ID + 1 (the IDs stay in
-   * order); the copy's string fields point at the same strings and are relocated like them. Returns the row's index.
+   * order); the copy's string fields point at the same strings (or get a copy of the strings written there) and are
+   * relocated like them. Returns the row's index.
    */
   addRow(from?: number): number {
     const src = from === undefined ? new Uint8Array(this.rowSize) : this.row(from).slice();
     const strings = from === undefined ? [] : this.stringOffsetsOf(from);
     const ids = this.rowIds.length ? [...this.rowIds, (Math.max(...this.rowIds.map((x) => x & 0x7fffffff)) + 1 | ROW_ID) >>> 0] : [];
     this.writable();
+    if (from !== undefined) for (const k of this.writtenIn(from)) this.written.set(k - from * this.rowSize + this.rows * this.rowSize, this.written.get(k)!);
     this.rebuild([src], ids, strings);
     return this.rows - 1;
   }
@@ -311,17 +395,40 @@ export class LanaiTable {
     return [...this.relocs].filter((r) => r >= base && r < base + this.rowSize).map((r) => r - base);
   }
 
+  /** Lays the table out again with the rows it has (after a string was written or put back). */
+  private relayout(): void {
+    this.rebuild([], this.rowIds.slice(), []);
+  }
+
   /**
-   * Lays the table out again with `add` rows appended (or `drop` rows removed from the end): the header, the pool and
-   * the rows stay where they are, the row IDs, field names and extra pairs follow on 16 bytes in the order they had, and
-   * the relocations come last (those inside a moved region move with it; those of the new rows' string fields are added).
+   * Lays the table out again with `add` rows appended (or `drop` rows removed from the end): the header and the pool as
+   * read stay where they are, the written strings follow (each on 4 bytes, in the order of their fields; with none the
+   * rows start where they did when read, else on 16 bytes after them), then the rows, then the row IDs, field names and
+   * extra pairs on 16 bytes in the order they had, and the relocations last (those inside a moved region move with it;
+   * those of the new rows' string fields are added). Relocated values that point past the pool move with what they
+   * point at; the written strings' fields point at their new places.
    */
   private rebuild(add: Uint8Array[], ids: number[], strings: number[], drop = 0): void {
     const d = this.data;
     const rows = this.rows + add.length - drop;
-    const dataEnd = this.dataOffset + rows * this.rowSize;
-    const oldEnd = this.dataOffset + this.rows * this.rowSize;
+    const keep = Math.min(this.rows, rows);
+    const oldData = this.dataOffset;
+    const oldEnd = oldData + this.rows * this.rowSize;
+    const oldPoolEnd = HEADER + u32(d, 0x0c);
     const relocAt = u32(d, 0x28);
+    // the pool: as read, then the written strings
+    for (const k of [...this.written.keys()]) if (k >= rows * this.rowSize) this.written.delete(k);
+    const placed = new Map<number, number>(); // place -> file offset of its string
+    let poolEnd = HEADER + this.basePool;
+    for (const k of [...this.written.keys()].sort((x, y) => x - y)) {
+      poolEnd = align(poolEnd, STRING_ALIGN);
+      placed.set(k, poolEnd);
+      poolEnd += this.written.get(k)!.length;
+    }
+    const data = placed.size ? align(poolEnd, REGION_ALIGN) : this.baseData;
+    // the files' pool sizes run up to the rows (padding included) when the rows follow the pool
+    const poolSize = !placed.size ? this.basePool : this.baseData === HEADER + this.basePool ? data - HEADER : poolEnd - HEADER;
+    const dataEnd = data + rows * this.rowSize;
     const regions = ([[0x18, 0x1c], [0x20, 0x24], [0x30, -1]] as const)
       .filter(([at]) => u32(d, at))
       .map(([at, len]) => {
@@ -331,7 +438,7 @@ export class LanaiTable {
         return { at, len, start, end };
       })
       .sort((a, b) => a.start - b.start);
-    if (regions.some((r) => r.start < oldEnd) || relocAt < oldEnd) throw new Error(`${this.name}: 行の後ろにない領域があるので、行を足せません`);
+    if (regions.some((r) => r.start < oldEnd) || relocAt < oldEnd) throw new Error(`${this.name}: 行の後ろにない領域があるので、組み直せません`);
     const parts: { at: number; bytes: Uint8Array }[] = [];
     let pos = dataEnd;
     const moved = new Map<number, number>(); // old start -> new start
@@ -343,24 +450,36 @@ export class LanaiTable {
       parts.push({ at: pos, bytes });
       pos += bytes.length;
     }
-    // relocations: shift those inside a moved region, drop those of dropped rows, add those of the new rows
+    // old file offset -> new (rows and regions move; the header and the pool as read stay)
     const shift = (p: number): number => {
+      if (p >= oldData && p < oldEnd) return p - oldData + data;
       for (const r of regions) if (p >= r.start && p < r.end) return p - r.start + moved.get(r.start)!;
       return p;
     };
+    // relocations: shift those inside a moved region, drop those of dropped rows, add those of the new rows
     const before = Array.from({ length: u32(d, 0x2c) }, (_, i) => u32(d, relocAt + i * 4));
     const sorted = before.every((p, i) => i === 0 || before[i - 1]! < p);
-    const list = before.filter((p) => !(p >= dataEnd && p < oldEnd)).map(shift);
-    for (let k = 0; k < add.length; k++) for (const s of strings) list.push(this.dataOffset + (this.rows + k) * this.rowSize + s);
+    const list = before.filter((p) => !(p >= oldData + keep * this.rowSize && p < oldEnd)).map(shift);
+    for (let k = 0; k < add.length; k++) for (const s of strings) list.push(data + (this.rows + k) * this.rowSize + s);
     if (sorted) list.sort((a, b) => a - b);
     pos = align(pos, REGION_ALIGN);
     const reloc = pos;
     const out = new Uint8Array(reloc + list.length * 4);
-    out.set(d.subarray(0, Math.min(oldEnd, dataEnd)));
-    add.forEach((row, k) => out.set(row, oldEnd + k * this.rowSize));
+    out.set(this.original.subarray(0, placed.size ? HEADER + this.basePool : this.baseData));
+    for (const [k, at] of placed) out.set(this.written.get(k)!, at);
+    out.set(d.subarray(oldData, oldData + keep * this.rowSize), data);
+    add.forEach((row, k) => out.set(row, data + (this.rows + k) * this.rowSize));
     for (const p of parts) out.set(p.bytes, p.at);
     list.forEach((p, i) => w32(out, reloc + i * 4, p));
+    // relocated values past the pool (none in the files) move with what they point at; written strings to their places
+    for (const p of list) {
+      const v = u32(out, p);
+      if (v >= oldPoolEnd && v < d.length) w32(out, p, shift(v));
+    }
+    for (const [k, at] of placed) w32(out, data + k, at);
     w32(out, 0, rows);
+    w32(out, 0x0c, poolSize);
+    w32(out, 0x10, data);
     w32(out, 0x14, rows * this.rowSize);
     for (const r of regions) {
       w32(out, r.at, moved.get(r.start)!);

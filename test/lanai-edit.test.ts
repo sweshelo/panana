@@ -86,6 +86,95 @@ describe('LanaiTable edits', () => {
   });
 });
 
+describe('LanaiTable strings', () => {
+  const enc = (s: string): Uint8Array => new TextEncoder().encode(`${s}\0`);
+  const str = (t: LanaiTable, i: number): string => new TextDecoder().decode(t.data.subarray(t.u32(i, 0), t.data.indexOf(0, t.u32(i, 0))));
+
+  test('writes a string after the pool as read; the other rows keep their bytes; the regions move', () => {
+    const b = smallTable();
+    const t = new LanaiTable(b);
+    t.setString(1, 0, enc('hello'));
+    const again = new LanaiTable(t.data);
+    expect(again.dataOffset).toBe(0x60); // pool 0x10 + "hello\0" on 4 -> 0x56, rows on 16
+    expect(u32(t.data, 0x0c)).toBe(0x20);
+    expect(equalBytes(t.data.subarray(0x40, 0x50), b.subarray(0x40, 0x50))).toBe(true);
+    expect(str(again, 1)).toBe('hello');
+    expect(str(again, 0)).toBe('abc');
+    expect(str(again, 2)).toBe('abc');
+    expect(again.isString(1, 0)).toBe(true);
+    expect(again.fields).toEqual([{ name: 'name', offset: 0 }]);
+    expect(again.rowIds).toEqual([0x80000000, 0x80000002, 0x80000004]);
+    expect(t.changedRows()).toEqual([1]);
+    expect(t.stringChanged(1, 0)).toBe(true);
+    expect(t.stringChanged(0, 0)).toBe(false);
+    expect(t.changedStrings().map(([r, o]) => [r, o])).toEqual([[1, 0]]);
+    // a number of the same row is still written
+    t.setBits(1, 4, 0, 10, 5);
+    expect(str(t, 1)).toBe('hello');
+    // a longer string, then a second one
+    t.setString(1, 0, enc('a longer string'));
+    t.setString(0, 0, enc('x'));
+    expect(str(t, 0)).toBe('x');
+    expect(str(t, 1)).toBe('a longer string');
+    expect(str(t, 2)).toBe('abc');
+    expect(t.u32(0, 0)).toBeLessThan(t.u32(1, 0)); // in the order of the fields
+    expect(t.u32(0, 0) % 4).toBe(0);
+    expect(t.u32(1, 0) % 4).toBe(0);
+  });
+
+  test('the string as read points the field back; undone edits give the bytes as read', () => {
+    const b = smallTable();
+    const t = new LanaiTable(b);
+    t.setString(1, 0, enc('hello'));
+    t.setString(1, 0, enc('abc'));
+    expect(equalBytes(t.data, b)).toBe(true);
+    expect(t.changed).toBe(false);
+    t.setString(2, 0, enc('zz'));
+    t.revertRow(2);
+    expect(equalBytes(t.data, b)).toBe(true);
+    t.setString(0, 0, enc('zz'));
+    t.setBits(0, 4, 0, 10, 9);
+    // setRow with the row as read undoes the string too
+    t.setRow(0, new LanaiTable(b).row(0).slice());
+    expect(equalBytes(t.data, b)).toBe(true);
+    expect(() => t.setRow(0, (() => { const r = t.row(0).slice(); w32(r, 0, 0x44); return r; })())).toThrow();
+    expect(() => t.setString(0, 4, enc('no'))).toThrow(); // not a string field
+    t.setString(0, 0, enc('zz'));
+    t.revert();
+    expect(equalBytes(t.data, b)).toBe(true);
+    expect(t.changedStrings()).toEqual([]);
+  });
+
+  test('added rows copy the written string and drop it when removed', () => {
+    const b = smallTable();
+    const t = new LanaiTable(b);
+    t.setString(2, 0, enc('copy me'));
+    const i = t.addRow(2);
+    expect(str(t, i)).toBe('copy me');
+    expect(t.u32(i, 0)).not.toBe(t.u32(2, 0));
+    t.setString(i, 0, enc('mine'));
+    expect(str(t, 2)).toBe('copy me');
+    expect(str(t, i)).toBe('mine');
+    t.removeLastRow();
+    expect(t.changedStrings().map(([r]) => r)).toEqual([2]);
+    t.revertRow(2);
+    expect(equalBytes(t.data, b)).toBe(true);
+  });
+
+  test('a table whose rows do not follow the pool keeps its pool size without the padding', () => {
+    // the same table with the pool size 13 ("Tbl\0name\0abc\0"): the rows still on 0x50
+    const b = smallTable();
+    w32(b, 0x0c, 13);
+    const t = new LanaiTable(b);
+    expect(equalBytes(t.relaidOut(), b)).toBe(true);
+    t.setString(0, 0, enc('hey'));
+    expect(u32(t.data, 0x0c)).toBe(20); // 13, on 4 (16), + "hey\0"
+    expect(t.dataOffset).toBe(0x60);
+    t.revertRow(0);
+    expect(equalBytes(t.data, b)).toBe(true);
+  });
+});
+
 describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
   let dump: Dump;
   let s: LanaiSession;
