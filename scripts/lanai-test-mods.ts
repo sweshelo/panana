@@ -1,4 +1,4 @@
-// Builds small test MODs for verifying the RPG FREE! (lanai) export in the game (docs/lanai-mod-verification.md, #109).
+// Builds small test MODs for verifying the RPG FREE! (lanai) export in the game (scripts/lanai-mod-verification.md, #109).
 // Usage: bun scripts/lanai-test-mods.ts <base.cia> <update.cia> [outDir]   (decrypted CIAs, as test/env.ts)
 // One zip per check, each with a single edit, so a failure points at one mechanism. Load a zip as a LayeredFS MOD.
 import { mkdirSync, writeFileSync } from 'node:fs';
