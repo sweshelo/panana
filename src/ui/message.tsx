@@ -86,9 +86,7 @@ export function MessageEditor({ texts, id, apply, compact = false }: { texts: Me
     return (
       <div className="msg-edit msg-edit-open">
         {head}
-        <textarea className="msg-text" rows={Math.min(8, t.text.split('\n').length + 1)} value={t.text} readOnly />
-        <div className="msg-preview"><MessagePreview texts={texts} units={texts.units(id)!} /></div>
-        <div className="muted small">このファイルは作り直すと元と同じにならないため、書き換えられません。 {close}</div>
+        <ReadOnlyText text={t.text} preview={<MessagePreview texts={texts} units={texts.units(id)!} />} note="このファイルは作り直すと元と同じにならないため、書き換えられません。" close={close} />
       </div>
     );
   }
@@ -107,6 +105,45 @@ export function MessageEditor({ texts, id, apply, compact = false }: { texts: Me
       {/* keyed by the stored text: an edit elsewhere (undo, revert) starts the box over */}
       <MessageText key={`${id}\n${t.text}`} texts={texts} id={id} apply={apply} focus={opening.current} />
       <div className="row">{close}{revert}</div>
+    </div>
+  );
+}
+
+/** The open box of a message that is not edited here: its text with the tags (read only), the preview and why. */
+function ReadOnlyText({ text, preview, note, close }: { text: string; preview: ReactNode; note: ReactNode; close: ReactNode }): ReactNode {
+  return (
+    <>
+      <textarea className="msg-text" rows={Math.min(8, text.split('\n').length + 1)} value={text} readOnly />
+      <div className="msg-preview">{preview}</div>
+      <div className="muted small">{note} {close}</div>
+    </>
+  );
+}
+
+/**
+ * A message of another game's format in MessageEditor's look, read only (RPG FREE!'s strings, whose pools are not
+ * rebuilt yet): the preview; a click shows the text with its tags next to it, until 閉じる.
+ */
+export function MessageView({ head, preview, text, note }: { head?: ReactNode; preview: ReactNode; text: string; note: ReactNode }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const headLine = head && <div className="muted small">{head}</div>;
+  if (!open) {
+    return (
+      <div className="msg-edit">
+        {headLine}
+        <div className="msg-preview msg-preview-closed" role="button" tabIndex={0} title="クリックで本文 (タグつき) を表示"
+          onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) setOpen(true); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) setOpen(true); }}>
+          {preview}
+          {!text && <span className="muted">(空)</span>}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="msg-edit msg-edit-open">
+      {headLine}
+      <ReadOnlyText text={text} preview={preview} note={note} close={<button className="small" onClick={() => setOpen(false)}>閉じる</button>} />
     </div>
   );
 }
