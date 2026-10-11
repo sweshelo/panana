@@ -1,22 +1,18 @@
 // One GS table of RPG FREE! read through its field definitions (tables.ts), shaped like RPG3's OahuRows: a field of a
-// row, the value in the archive, and whether a row was changed. The rows are the session's table (an edit writes into
-// them); nothing is saved or exported yet.
+// row, the value in the archive, and whether a row was changed. An edit goes through the table (table.ts), which keeps
+// the rows as read; the session saves and exports it (session.ts).
 import { field, fieldRange, readField, writeField, type FieldContext, type FieldDef, type TableDef } from '../game/tabledef';
-import { equalBytes, u32 } from '../util/bytes';
+import { u32 } from '../util/bytes';
 import type { FieldAccess } from '../ui/FieldEdit';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
 export class LanaiRows {
-  /** The rows as read from the archive. */
-  private readonly archive: Uint8Array;
-
   constructor(
     readonly table: LanaiTable,
     readonly def: TableDef,
   ) {
     if (table.rowSize !== def.rowSize) throw new Error(`${def.file}: 行の大きさが ${table.rowSize} です (定義は ${def.rowSize})`);
-    this.archive = table.data.slice();
   }
 
   get rows(): number {
@@ -31,30 +27,40 @@ export class LanaiRows {
     return this.table.row(row);
   }
 
-  originalRow(row: number): Uint8Array {
-    const o = this.table.dataOffset + row * this.table.rowSize;
-    return this.archive.subarray(o, o + this.table.rowSize);
+  /** The row as read (undefined for a row an edit added). */
+  originalRow(row: number): Uint8Array | undefined {
+    return this.table.originalRow(row) ?? undefined;
   }
 
   get(row: number, key: string): number {
     return readField(this.row(row), this.field(key));
   }
 
+  /** The value as read (the current one for an added row). */
   original(row: number, key: string): number {
-    return readField(this.originalRow(row), this.field(key));
+    const o = this.originalRow(row);
+    return o ? readField(o, this.field(key)) : this.get(row, key);
   }
 
   set(row: number, key: string, v: number): void {
-    writeField(this.row(row), this.field(key), v);
+    const bytes = this.row(row).slice();
+    writeField(bytes, this.field(key), v);
+    this.table.setRow(row, bytes);
   }
 
   changed(row: number): boolean {
-    return !equalBytes(this.row(row), this.originalRow(row));
+    return this.table.rowChanged(row);
   }
 
   /** The fields of a row for the shared inputs (ui/FieldEdit). */
-  access(row: number): FieldAccess {
-    return { get: (k) => this.get(row, k), original: (k) => this.original(row, k), set: (k, v) => this.set(row, k, v), range: (k) => fieldRange(this.field(k)) };
+  access(row: number, after: () => void = () => {}): FieldAccess {
+    return {
+      get: (k) => this.get(row, k),
+      original: (k) => this.original(row, k),
+      set: (k, v) => { this.set(row, k, v); after(); },
+      range: (k) => fieldRange(this.field(k)),
+      added: !this.originalRow(row),
+    };
   }
 
   /**

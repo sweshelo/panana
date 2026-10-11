@@ -28,6 +28,7 @@ function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): voi
     const f = input.files?.[0];
     if (!f) return;
     try {
+      session.saveNow(); // the edits are put back on the dump with the Update
       done(await LanaiSession.open(withUpdate(session.dump, await openUpdate(f, f.name))));
     } catch (err) {
       alert(`Update を読めませんでした: ${(err as Error).message}`);

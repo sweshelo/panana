@@ -1,0 +1,154 @@
+// Editing RPG FREE! (lanai) tables and the MOD export: writing the numbers of a row (bits kept, padding kept), adding
+// rows (the regions after the rows move), the saved edits, and rebuilding the archives. The round trips on the real
+// tables need the decrypted CIAs (test/env.ts LANAI_BASE / LANAI_UPDATE) and are skipped without them.
+import { beforeAll, describe, expect, test } from 'bun:test';
+import { unzipSync } from 'fflate';
+import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
+import { LanaiSession, lanaiTableKey } from '../src/lanai/session';
+import { LanaiTable } from '../src/lanai/table';
+import { openImages, type Dump } from '../src/rom/dump';
+import { equalBytes, u32, w32 } from '../src/util/bytes';
+import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
+
+/** A small table: 3 rows of 8 bytes (+0 a string, +4 packed), row IDs, a field-name table, relocations. */
+function smallTable(): Uint8Array {
+  const pool = new TextEncoder().encode('Tbl\0name\0abc\0\0\0\0'); // 16 bytes
+  const rows = 3, size = 8;
+  const data = 0x40 + pool.length; // 0x50
+  const ids = 0x70; // the rows end at 0x68; each region on 16 bytes
+  const namesAt = 0x80; // on 16 bytes, up to 0x88
+  const relocAt = 0x90;
+  const relocs = [data, data + 8, data + 16, namesAt];
+  const b = new Uint8Array(relocAt + relocs.length * 4);
+  const h = [rows, size, 0x40, pool.length, data, rows * size, ids, rows * 4, namesAt, 8, relocAt, relocs.length, 0, 0, 4];
+  h.forEach((v, i) => w32(b, i * 4, v));
+  b.set(pool, 0x40);
+  for (let r = 0; r < rows; r++) {
+    w32(b, data + r * size, 0x40 + 9); // "abc"
+    w32(b, data + r * size + 4, (0xd0 << 22) | (r + 1));
+    w32(b, ids + r * 4, (0x80000000 | (r * 2)) >>> 0);
+  }
+  w32(b, namesAt, 0x40 + 4); // "name"
+  w32(b, namesAt + 4, 0);
+  relocs.forEach((p, i) => w32(b, relocAt + i * 4, p));
+  return b;
+}
+
+describe('LanaiTable edits', () => {
+  test('lays a table out again byte for byte', () => {
+    const b = smallTable();
+    const t = new LanaiTable(b);
+    expect(t.name).toBe('Tbl');
+    expect(t.fields).toEqual([{ name: 'name', offset: 0 }]);
+    expect(equalBytes(t.relaidOut(), b)).toBe(true);
+  });
+
+  test('writes bits and keeps the padding and the other rows; reverts', () => {
+    const b = smallTable();
+    const t = new LanaiTable(b);
+    t.setBits(1, 4, 0, 10, 999);
+    expect(t.u32(1, 4)).toBe(((0xd0 << 22) | 999) >>> 0);
+    t.setBits(1, 4, 10, 5, -3, true);
+    expect(t.bits(1, 4, 10, 5, true)).toBe(-3);
+    expect(t.bits(1, 4, 0, 10)).toBe(999);
+    expect(t.u32(1, 4) >>> 22).toBe(0xd0);
+    expect(t.changedRows()).toEqual([1]);
+    expect(equalBytes(t.row(0), new LanaiTable(b).row(0))).toBe(true);
+    // the bytes read are not written
+    expect(equalBytes(t.original, smallTable())).toBe(true);
+    expect(() => t.setU32(0, 0, 5)).toThrow(); // a string field
+    expect(() => t.setBits(0, 4, 0, 10, 1024)).toThrow();
+    t.revertRow(1);
+    expect(t.changedRows()).toEqual([]);
+    expect(t.changed).toBe(false);
+  });
+
+  test('adds a row (copy with its string and a new row ID) and removes it', () => {
+    const t = new LanaiTable(smallTable());
+    const i = t.addRow(2);
+    expect(i).toBe(3);
+    const again = new LanaiTable(t.data);
+    expect(again.rows).toBe(4);
+    expect(again.rowIds).toEqual([0x80000000, 0x80000002, 0x80000004, 0x80000005]);
+    expect(again.isString(3, 0)).toBe(true);
+    expect(again.fields).toEqual([{ name: 'name', offset: 0 }]);
+    expect(again.bits(3, 4, 0, 10)).toBe(3);
+    expect(t.changedRows()).toEqual([3]);
+    t.removeLastRow();
+    expect(equalBytes(t.data, smallTable())).toBe(true);
+    expect(() => t.removeLastRow()).toThrow();
+  });
+});
+
+describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
+  let dump: Dump;
+  let s: LanaiSession;
+  beforeAll(async () => {
+    dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    s = await LanaiSession.open(dump, { fresh: true });
+  });
+
+  test('every table of the master and the language archives lays out again byte for byte', () => {
+    expect(s.tables.length).toBeGreaterThan(100);
+    expect(s.tables.filter((t) => !equalBytes(t.table.relaidOut(), t.table.data)).map((t) => t.table.name)).toEqual([]);
+  });
+
+  test('the master rebuilt with nothing changed is the same bytes', async () => {
+    const raw = await dump.readRomfs('2135000A');
+    expect(equalBytes(rebuildArchive(parseArchive(raw), new Map()), raw)).toBe(true);
+    expect(s.modFiles().size).toBe(0);
+  });
+
+  test('one field changed: only that word differs in the rebuilt archive', async () => {
+    const t = s.need('MonsterParameterMain');
+    const before = t.bits(1, 0, 12, 10);
+    t.setBits(1, 0, 12, 10, 777);
+    s.edited();
+    const files = s.modFiles();
+    expect([...files.keys()]).toEqual(['2135000A']);
+    const arc = parseArchive(files.get('2135000A')!);
+    const orig = parseArchive(await dump.readRomfs('2135000A'));
+    expect(arc.version).toBe(10);
+    expect(equalBytes(arc.data.subarray(8, 0x10), orig.data.subarray(8, 0x10))).toBe(true);
+    const ref = s.changedTables()[0]!;
+    expect(ref.table.name).toBe('MonsterParameterMain');
+    for (const e of orig.entries) {
+      const a = unpackEntry(arc, arc.entries[e.index]!).body;
+      const o = unpackEntry(orig, e).body;
+      if (e.index !== ref.index) {
+        expect(equalBytes(a, o)).toBe(true);
+        continue;
+      }
+      const diff = [...a.keys()].filter((i) => a[i] !== o[i]);
+      expect(diff.every((i) => i >= t.at(1, 0) && i < t.at(1, 4))).toBe(true);
+      expect(new LanaiTable(a).bits(1, 0, 12, 10)).toBe(777);
+      expect(new LanaiTable(a).u32(1, 0) >>> 22).toBe(0xd0);
+    }
+    // the zip holds the archive under the title's romfs
+    expect(Object.keys(unzipSync(s.modZip()))).toEqual(['0004000000125D00/romfs/2135000A']);
+    // saved and put back on a fresh session
+    const saved = s.saved();
+    expect(saved.rows.map(([k, r]) => [k, r])).toEqual([[lanaiTableKey(ref), 1]]);
+    const other = await LanaiSession.open(dump, { fresh: true });
+    other.restore(saved);
+    expect(other.need('MonsterParameterMain').bits(1, 0, 12, 10)).toBe(777);
+    t.setBits(1, 0, 12, 10, before);
+    expect(t.changed).toBe(false);
+    expect(s.modFiles().size).toBe(0);
+  });
+
+  test('an added ability row is saved and put back', async () => {
+    const t = s.need('MonsterParameterExtra');
+    const n = t.rows;
+    const i = t.addRow(3);
+    t.setU16(i, 0x76, 1234);
+    const other = await LanaiSession.open(dump, { fresh: true });
+    other.restore(s.saved());
+    const o = other.need('MonsterParameterExtra');
+    expect(o.rows).toBe(n + 1);
+    expect(o.u16(i, 0x76)).toBe(1234);
+    expect(u32(o.data, 0)).toBe(n + 1);
+    t.revert();
+    expect(t.rows).toBe(n);
+  });
+});
