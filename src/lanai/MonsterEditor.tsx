@@ -87,7 +87,7 @@ export function MonsterStatsEditor({ session, monster }: { session: LanaiSession
         { label: 'きょうふのオーラ', node: <span><FieldNumber f={f} k="auraFear" edited={edited} max={100} />%</span>, info: '毎ターン相手にきょうふを付ける率 (推定)' },
       ]} />
       <h4>種族タイプ</h4>
-      <div className="row wrap">{LANAI_RACES.map(([k, l]) => <FieldCheck key={k} f={f} k={`race_${k}`} edited={edited} label={l} />)}</div>
+      <div className="row">{LANAI_RACES.map(([k, l]) => <FieldCheck key={k} f={f} k={`race_${k}`} edited={edited} label={l} />)}</div>
       <h4 className="with-info">たいせい<InfoTip text={'−9〜+9 (正が強い)。属性だけ +10 = 無効。状態は 9 で効かない (naauao lanai/monsters.md §4)'} /></h4>
       <div className="stats stat-edit">
         {LANAI_ELEMENTS.map(([k, l]) => <div key={k} className="stat"><span className="muted">{l}</span><FieldNumber f={f} k={k} edited={edited} min={-9} max={10} /></div>)}
