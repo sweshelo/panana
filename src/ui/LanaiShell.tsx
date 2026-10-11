@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { contentTitle, lanaiContents } from '../lanai/contents';
+import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { LanaiMapPage } from '../lanai/MapPage';
 import { LanaiMessagePage } from '../lanai/MessagePage';
 import { LanaiMonsterPage } from '../lanai/MonsterPage';
@@ -47,6 +48,7 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
   const { dump } = session;
   const { page, arg, hash } = useHashRoute<LanaiPage>(PAGE_IDS, 'stages');
   const [menu, setMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
   useEffect(() => setMenu(false), [hash]);
   useEffect(() => {
     document.title = `Panana — ${TITLES[page]} (RPG FREE!)`;
@@ -75,9 +77,11 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
           <span className="muted small dump-label">{dump.label}</span>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.length} 個`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="ゲームが実際に読むのは Update のアーカイブです (資料のアドレスや行も Update が基準)" onClick={() => pickUpdate(session, onSession)}>Update を追加…</button>}
+          <button className="primary" title="変更した表・マップを LayeredFS 用の MOD として書き出します" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
           <button onClick={onChangeDump}>ダンプを変える</button>
         </div>
       </nav>
+      {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}
       {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
       {detail && <a className="back-bar" href={`#/${page}`}>{`← ${TITLES[page]}の一覧`}</a>}
       <InfoTooltip />
