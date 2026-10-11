@@ -27,3 +27,7 @@ if (process.env.REQUIRE_ROM && (!hasOahuBase || !hasOahuUpdate)) {
 export const LANAI_BASE = process.env.ROM_LANAI_BASE ?? join(import.meta.dir, '..', 'roms', 'free-base.cia');
 export const LANAI_UPDATE = process.env.ROM_LANAI_UPDATE ?? join(import.meta.dir, '..', 'roms', 'free-update.cia');
 export const hasLanai = existsSync(LANAI_BASE) && existsSync(LANAI_UPDATE);
+
+if (process.env.REQUIRE_ROM && !hasLanai) {
+  throw new Error(`REQUIRE_ROM is set but the RPG FREE! CIAs are missing: ${LANAI_BASE} ${LANAI_UPDATE}`);
+}
