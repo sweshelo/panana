@@ -4,6 +4,10 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
 import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
+import { createElement } from 'react';
+import { renderToString } from 'react-dom/server';
+import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
+import { isTransform, lanaiAction, lanaiActionMonsters, lanaiCopyActionInto, lanaiCopyStats, lanaiRevertMonster, lanaiSetTransformTarget, lanaiStatsOf, lanaiStatsSharers } from '../src/lanai/monsterStats';
 import { LanaiSession, lanaiTableKey } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages, type Dump } from '../src/rom/dump';
@@ -135,6 +139,85 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
     t.setBits(1, 0, 12, 10, before);
     expect(t.changed).toBe(false);
     expect(s.modFiles().size).toBe(0);
+  });
+
+  test('ability rows: the fields of monsters.md, sharing', async () => {
+    const m = await LanaiSession.open(dump, { fresh: true });
+    const ichigo = lanaiStatsOf(m, 1)!;
+    const rows = m.rows(ichigo.table);
+    expect(rows.get(ichigo.row, 'level')).toBeGreaterThan(0);
+    expect(rows.get(ichigo.row, 'hpHi')).toBeGreaterThanOrEqual(rows.get(ichigo.row, 'hpLo'));
+    // 1231 monsters name 1188 rows; 34 rows are shared
+    const p = m.need('MonsterParameter');
+    const uses = new Map<string, number>();
+    for (let r = 0; r < p.rows; r++) {
+      const s = lanaiStatsOf(m, r);
+      if (s) uses.set(`${s.kind}:${s.row}`, (uses.get(`${s.kind}:${s.row}`) ?? 0) + 1);
+    }
+    expect(uses.size).toBe(1188);
+    expect([...uses.values()].filter((n) => n > 1).length).toBe(34);
+    // the padding of w0 stays when the level is written
+    rows.set(ichigo.row, 'level', 99);
+    expect(m.need(ichigo.table).u32(ichigo.row, 0) >>> 22).toBe(0xd0);
+    rows.set(ichigo.row, 'fire', -9);
+    expect(rows.get(ichigo.row, 'fire')).toBe(-9);
+    expect(m.need(ichigo.table).changedRows()).toEqual([ichigo.row]);
+  });
+
+  test('copying a shared ability row links only that monster', async () => {
+    const m = await LanaiSession.open(dump, { fresh: true });
+    const p = m.need('MonsterParameter');
+    const shared = Array.from({ length: p.rows }, (_, r) => r).find((r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1)!;
+    const ref = lanaiStatsOf(m, shared)!;
+    const others = lanaiStatsSharers(m, ref).filter((x) => x !== shared);
+    const t = m.need(ref.table);
+    const n = t.rows;
+    const row = lanaiCopyStats(m, shared);
+    expect(row).toBe(n);
+    expect(lanaiStatsOf(m, shared)).toEqual({ ...ref, row: n });
+    expect(lanaiStatsSharers(m, ref)).toEqual(others);
+    expect(equalBytes(t.row(n), t.row(ref.row))).toBe(true);
+    m.rows(ref.table).set(n, 'hpHi', 4321);
+    expect(m.rows(ref.table).get(ref.row, 'hpHi')).not.toBe(4321);
+    // the MOD carries both tables in the master
+    const arc = parseArchive(m.modFiles().get('2135000A')!);
+    const ent = m.tables.find((x) => x.table === t)!;
+    expect(new LanaiTable(unpackEntry(arc, arc.entries[ent.index]!).body).rows).toBe(n + 1);
+    // undo removes the added row
+    lanaiRevertMonster(m, shared);
+    expect(t.rows).toBe(n);
+    expect(m.changedTables()).toEqual([]);
+  });
+
+  test('transformations: たからばこぞう hides in its box (action 1112 → row 42); copying the action', async () => {
+    const m = await LanaiSession.open(dump, { fresh: true });
+    const ref = lanaiStatsOf(m, 41)!;
+    const id = m.rows(ref.table).get(ref.row, 'skill2');
+    const a = lanaiAction(m, id)!;
+    expect(a.row).toBe(1112);
+    expect(isTransform(a)).toBe(true);
+    expect(m.need('MonsterParameter').find(a.target)).toBe(42);
+    expect(a.message).toContain('箱に隠れてしまった');
+    expect(lanaiActionMonsters(m, id)).toEqual(expect.arrayContaining([41, 188]));
+    const nid = lanaiCopyActionInto(m, id, ref, 0x58);
+    expect(nid).not.toBe(id);
+    lanaiSetTransformTarget(m, nid, 45, ref);
+    expect(m.need('MonsterParameter').find(lanaiAction(m, nid)!.target)).toBe(45);
+    expect(m.need('MonsterParameter').find(lanaiAction(m, id)!.target)).toBe(42);
+    lanaiRevertMonster(m, 41);
+    expect(m.changedTables()).toEqual([]);
+  });
+
+  test('the monster page has the editor', async () => {
+    const m = await LanaiSession.open(dump, { fresh: true });
+    const html = renderToString(createElement(LanaiMonsterPage, { session: m, arg: '41' }));
+    for (const t of ['能力 (Main', '経験値', 'たいせい', 'ドロップ', '変身', '箱に隠れてしまった', 'MOD を書き出す', 'アクションを複製してこの枠に付け替え'])
+      expect(html).toContain(t);
+    const p = m.need('MonsterParameter');
+    const shared = Array.from({ length: p.rows }, (_, r) => r).find((r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1)!;
+    const html2 = renderToString(createElement(LanaiMonsterPage, { session: m, arg: String(shared) }));
+    expect(html2).toContain('体が共有しています');
+    expect(html2).toContain('複製して付け替え');
   });
 
   test('an added ability row is saved and put back', async () => {

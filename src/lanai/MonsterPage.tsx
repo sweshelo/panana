@@ -1,9 +1,9 @@
 // RPG FREE!'s monster book (#/monsters/<row>), built like RPG2's and RPG3's from the shared parts: the list with the
 // photos, the name, the model with its textures (ui/ModelView, ui/ModelTextures), the look (MonsterDesign) and every
-// field of the rows (ui/RowFields through the field definitions of tables.ts, so the fields that become known can be
-// given the shared inputs of ui/FieldEdit). Read only for now (naauao lanai/monsters.md).
+// field of the rows (ui/RowFields through the field definitions of tables.ts), and the editor of the abilities
+// (MonsterEditor.tsx; naauao lanai/monsters.md) with the MOD export.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
@@ -11,7 +11,10 @@ import { Photo } from '../ui/Photo';
 import { RowFields } from '../ui/RowFields';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
+import { LanaiExportDialog } from './ExportDialog';
+import { MonsterStatsEditor, useLanaiRevision } from './MonsterEditor';
 import { lanaiMonsterModel, lanaiMonsterSet } from './monsterModels';
+import { lanaiStatsOf } from './monsterStats';
 import { lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex, type LanaiMonster } from './monsters';
 import type { LanaiRows } from './rows';
 import type { LanaiSession } from './session';
@@ -32,7 +35,16 @@ function modelName(session: LanaiSession, index: LanaiModelIndex | undefined, m:
   return (index.name(session.rows('MonsterDesign').get(m.designRow, 'model')) ?? '').replace(/\.bch$/, '');
 }
 
+/** Whether a monster's MonsterParameter row or its ability row was changed. */
+function monsterChanged(session: LanaiSession, row: number): boolean {
+  if (session.need('MonsterParameter').rowChanged(row)) return true;
+  const s = lanaiStatsOf(session, row);
+  return !!s && session.need(s.table).rowChanged(s.row);
+}
+
 export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+  useLanaiRevision(session);
+  const [exporting, setExporting] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const list = useRef<HTMLDivElement>(null);
@@ -58,6 +70,11 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
       <div className="book-side">
         <ListFilter query={query} setQuery={setQuery} placeholder="名前・群れの名前・モデルで検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ['model', 'モデルあり'], ['none', 'モデルなし']]} />
+        <div className="row">
+          <span className="muted small">{`変更: ${session.changedTables().reduce((n, t) => n + t.table.changedRows().length, 0)} 行`}</span>
+          <button onClick={() => setExporting(true)}>MOD を書き出す…</button>
+        </div>
+        {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={monsters.length} />
           <table className="book-table">
@@ -67,7 +84,7 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
                 <tr key={m.row} className={m.row === selected ? 'active' : ''} onClick={() => (location.hash = lanaiMonsterHref(m.row))}>
                   <td className="photo-cell">{monsterIcon(session, m)}</td>
                   <td className="num muted">{m.row}</td>
-                  <td>{m.name || <span className="muted">(名前なし)</span>}</td>
+                  <td>{m.name || <span className="muted">(名前なし)</span>}{monsterChanged(session, m.row) && <EditedMark />}</td>
                   <td className="muted">{m.group}</td>
                 </tr>
               ))}
@@ -84,8 +101,8 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
 
 const PARAM_INFO = [
   'master (2135000A) の MonsterParameter (1231 行 × 0x24)。名前・群れの名前は表の文字列、+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
-  '能力の表 (MonsterParameterMain / Extra / RegularEvent / SpecialEvent、0x9C) とのつながりはまだわかっていません。',
-  '今は読むだけです。わかった欄は、RPG2・RPG3 と同じ入力で編集できるようにします。',
+  '能力は +0x16 bit0-2 の表 (MonsterParameterMain / Extra / RegularEvent / SpecialEvent、0x9C) の +0x14 の行にあります (naauao lanai/monsters.md)。',
+  '数値の欄は編集でき、変更はブラウザに保存されます。名前などの文字列はまだ編集できません。',
 ].join('\n');
 
 const VOICE_INFO = 'voice の欄は、ほかの文字列 (UTF-16) と違い 1 バイトずつの文字列です。半角カナと記号 (\' / | など) で書かれた読みで、音声合成用と推定しています。ほとんどのモンスターは空です。';
@@ -123,10 +140,10 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
               </tr>
             </tbody>
           </table>
-          <p className="muted small">能力・ワザ・ドロップ・たいせいの表はまだつながっていません。</p>
         </div>
         <MonsterModel session={session} monster={m} />
       </div>
+      <MonsterStatsEditor session={session} monster={m.row} />
       {indexError && <div className="error">{`モデルのアーカイブを読めませんでした: ${indexError.message}`}</div>}
       {m.designRow >= 0 && (
         <>
