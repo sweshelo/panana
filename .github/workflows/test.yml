@@ -51,7 +51,11 @@ jobs:
       # 電波人間のRPG3 の復号済み CIA (Base / Update)。束とは別に、同じバケットにそのまま置いてある
       OAHU_BASE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.OAHU_BASE_KEY || 'oahu-base.cia' }}
       OAHU_UPDATE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.OAHU_UPDATE_KEY || 'oahu-update.cia' }}
-      ROM_DIR: ${{ github.workspace }}/../rom
+      # 電波人間のRPG Free! の復号済み CIA (Base / Update)。束とは別に、同じバケットにそのまま置いてある
+      LANAI_BASE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.LANAI_BASE_KEY || 'lanai-base.cia' }}
+      LANAI_UPDATE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.LANAI_UPDATE_KEY || 'lanai-update.cia' }}
+      # テストはリポジトリ直下の roms/ を見る (test/env.ts。.gitignore 済み)
+      ROM_DIR: ${{ github.workspace }}/roms
     steps:
       - name: Check secrets
         id: secrets
@@ -72,7 +76,6 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         run: bun install --frozen-lockfile
 
-      # 復号したダンプはワークスペースの外に置く
       - name: Fetch and decrypt the dump
         if: steps.secrets.outputs.ok == 'true'
         run: |
@@ -85,17 +88,15 @@ jobs:
           endpoint="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
           aws s3 cp "$OAHU_BASE_OBJECT" "$ROM_DIR/oahu-base.cia" --endpoint-url "$endpoint" --no-progress
           aws s3 cp "$OAHU_UPDATE_OBJECT" "$ROM_DIR/oahu-update.cia" --endpoint-url "$endpoint" --no-progress
+          aws s3 cp "$LANAI_BASE_OBJECT" "$ROM_DIR/lanai-base.cia" --endpoint-url "$endpoint" --no-progress
+          aws s3 cp "$LANAI_UPDATE_OBJECT" "$ROM_DIR/lanai-update.cia" --endpoint-url "$endpoint" --no-progress
           ls -l "$ROM_DIR"
 
       - name: Test (ROM)
         if: steps.secrets.outputs.ok == 'true'
         env:
-          ELPULSE_ROOT: ${{ env.ROM_DIR }}
-          ROM_GOLDEN: ${{ env.ROM_DIR }}/golden.json
-          ROM_OAHU_BASE: ${{ env.ROM_DIR }}/oahu-base.cia
-          ROM_OAHU_UPDATE: ${{ env.ROM_DIR }}/oahu-update.cia
           REQUIRE_ROM: '1'
-        run: bun test test/rom.test.ts test/boss.test.ts test/oahu.test.tsx test/oahu-sound.test.tsx test/oahu-story.test.tsx test/oahu-maps.test.ts test/oahu-denpa.test.ts test/bch.test.ts
+        run: bun test
 
       - name: Remove the dump
         if: always()

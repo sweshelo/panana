@@ -190,7 +190,15 @@ export function parseLanaiText(s: string): LanaiToken[] {
   return out;
 }
 
-/** `{ins:…}` and `{page}` in order (for checking that versions of a message keep them). */
+/**
+ * Where a message puts {ins:…} and {page}: those marks in order, with "…" for the text between them (so a mark moved
+ * to the end, or before the text, shows). For checking that the versions of one line keep them in the same places.
+ */
 export function lanaiMarks(tokens: LanaiToken[]): string[] {
-  return tokens.flatMap((t) => (t.t === 'ins' ? [`{ins:${t.table}:${hexArg(t.id)}:${t.field}}`] : t.t === 'tag' && t.code === TAG_PAGE && !t.args.length ? ['{page}'] : []));
+  const out: string[] = [];
+  for (const t of tokens) {
+    const mark = t.t === 'ins' ? `{ins:${t.table}:${hexArg(t.id)}:${t.field}}` : t.t === 'tag' && t.code === TAG_PAGE && !t.args.length ? '{page}' : '…';
+    if (mark !== '…' || out[out.length - 1] !== '…') out.push(mark);
+  }
+  return out;
 }

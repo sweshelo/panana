@@ -1,14 +1,15 @@
 // The strings of 電波人間のRPG FREE! (#/messages/<archive>:<entry>:<row>), laid out like RPG2's and RPG3's message
 // pages (pages/messages.tsx, oahu/MessagePage.tsx): every row of the master's and the language archives' tables that
 // holds text, searchable by text or row ID and narrowed by table, and the selected row's strings in the message
-// box of the other games (ui/message.tsx MessageView; read only, the string pools are not rebuilt yet). The strings of
-// a content (its talks) are on the stage page.
+// editor of the other games (ui/message.tsx MessageEditor through MessageSource.tsx; writing a string rebuilds the
+// table's pool). The talks of the contents are on the talk page (TalkPage.tsx), by line.
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { romfsHref } from '../romfs/RomfsPage';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
-import { MessageView } from '../ui/message';
+import { MessageEditor } from '../ui/message';
 import { hex8 } from '../util/bytes';
-import { LanaiMessage } from './MessageView';
+import { useLanaiRevision } from './MonsterEditor';
+import { lanaiMessageSource } from './MessageSource';
 import type { LanaiSession, LanaiTableRef } from './session';
 import type { LanaiTable } from './table';
 
@@ -68,6 +69,7 @@ function tableLabels(tables: LanaiTableRef[]): Map<string, string> {
 }
 
 export function LanaiMessagePage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+  const revision = useLanaiRevision(session);
   // the message tables (Message*) first, then the other tables with strings (names of items, monsters …)
   const tables = useMemo(() => {
     const ts = session.tables.filter((t) => textColumns(t).length);
@@ -99,7 +101,7 @@ export function LanaiMessagePage({ session, arg }: { session: LanaiSession; arg:
   });
   const q = query.trim();
   // the plain strings of every row (made when first searched)
-  const haystack = useMemo(() => (q ? new Map(all.map((e) => [e.key, plain(e).join('\n')])) : null), [all, !q]); // eslint-disable-line react-hooks/exhaustive-deps -- made once a search starts
+  const haystack = useMemo(() => (q ? new Map(all.map((e) => [e.key, plain(e).join('\n')])) : null), [all, !q, revision]); // eslint-disable-line react-hooks/exhaustive-deps -- made once a search starts (again after an edit)
   const qid = /^(0x)?[0-9a-f]{1,8}$/i.test(q) ? parseInt(q.replace(/^0x/i, ''), 16) : NaN;
   const shown = all.filter((e) => {
     if (filter !== 'all' && tableKey(e.ref) !== filter) return false;
@@ -135,12 +137,17 @@ export function LanaiMessagePage({ session, arg }: { session: LanaiSession; arg:
   );
 }
 
-const HELP = 'ルビは {ruby:親字|よみ}、改ページは {page}、ほかの表の文字列の差し込みは {ins:表:行 ID:欄}、ほかのタグは {tag:XX,引数…} で表しています。文字列は表の文字列領域にあり、作り直しにまだ対応していないので、ここでは表示だけです。';
+const HELP = 'ルビは {ruby:親字|よみ}、改ページは {page}、ほかの表の文字列の差し込みは {ins:表:行 ID:欄}、ほかのタグは {tag:XX,引数…} で表しています。書き換えた文字列は表の文字列領域の後ろに足され、MOD の書き出しに入ります。';
 
 /** The strings of a row, each in the message box (the RPG2 / RPG3 message page's detail). */
 function RowStrings({ session, e, label }: { session: LanaiSession; e: Entry; label: string }): ReactNode {
+  useLanaiRevision(session);
   const t = e.ref.table;
   const id = t.rowId(e.row);
+  const apply = (f: () => void): void => {
+    f();
+    session.edited();
+  };
   return (
     <>
       <div className="book-head">
@@ -149,12 +156,10 @@ function RowStrings({ session, e, label }: { session: LanaiSession; e: Entry; la
         <a className="muted mono" href={romfsHref(e.ref.archive, e.ref.entry)} title="RomFS ビューで表のすべての欄を見る">{`${e.ref.archive} / ${hex8(e.ref.entry)}${e.ref.file ? ` ${e.ref.file}` : ''}`}</a>
       </div>
       {textColumns(e.ref).map((c) => {
-        const s = session.field(t, e.row, c.offset);
         return (
           <div key={c.offset} className="msg-slot">
             <div className="msg-slot-head mono">{c.name}</div>
-            {s ? <MessageView head={`${hex8(id)} · ${t.name}.${c.name}`} preview={<LanaiMessage session={session} tokens={s.tokens} />} text={s.text} note="RPG FREE! の文字列はまだ書き換えられません。" />
-              : <div className="msg-edit"><div className="muted">(なし)</div></div>}
+            <MessageEditor texts={lanaiMessageSource(session, t, c.offset, c.name)} id={e.row} apply={apply} />
           </div>
         );
       })}

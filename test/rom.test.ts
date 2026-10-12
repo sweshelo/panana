@@ -20,7 +20,7 @@ import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../sr
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
 import { equalBytes, u16, u32 } from '../src/util/bytes';
-import { CIA, ELPULSE, GOLDEN, hasCia, hasGolden } from './env';
+import { BASE_MOD, CIA, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
@@ -158,7 +158,7 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const b1 = game.doc(game.code.byName('D01B01001')!);
     b1.recs[3] = [];
     expect(validate(game, b1, 0, docs).some((i) => i.level === 'error' && i.msg.includes('D01B02001 の出入口'))).toBe(true);
-  });
+  }, 30_000); // every map of the dump: about 2 s alone, slower when the whole suite (all the dumps) runs in one process
   test('names: dungeons (mapGroup +0x14 is u16) and maps', () => {
     const m = game.master;
     expect(m.dungeonName(1)).toBe('山のどうくつ');
@@ -306,7 +306,7 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect([...missing]).toEqual([]);
   });
 
-  const MODOUT = `${ELPULSE}/mod/out`;
+  const MODOUT = BASE_MOD;
   test.skipIf(!existsSync(`${MODOUT}/code.ips`))('base MOD (elpulse mod/out): switch patch, switch + gate, package', async () => {
     const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({ name: n, bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)) }));
     files.push({ name: 'code.ips', bytes: new Uint8Array(readFileSync(`${MODOUT}/code.ips`)) });

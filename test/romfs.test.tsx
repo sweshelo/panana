@@ -10,6 +10,7 @@ import { entryTypeLabel } from '../src/romfs/profile';
 import { parseRomfsArg, RomfsPage, romfsHref } from '../src/romfs/RomfsPage';
 import { asArchive, formatName, isGsTable } from '../src/romfs/sniff';
 import { OAHU_PAGES } from '../src/ui/OahuShell';
+import { LANAI_PAGES } from '../src/ui/LanaiShell';
 import { w16, w32 } from '../src/util/bytes';
 import type { Dump } from '../src/rom/dump';
 import { readFileSync } from 'node:fs';
@@ -141,5 +142,10 @@ describe('RomFS viewer', () => {
   test('the RPG3 shell pages have a CSS rule that shows them', () => {
     const css = readFileSync(join(import.meta.dir, '..', 'src', 'style.css'), 'utf8');
     for (const [id] of OAHU_PAGES) expect(css).toContain(`.shell[data-page='${id}'] .page-${id}`);
+  });
+
+  test('the RPG FREE! shell pages have a CSS rule that shows them', () => {
+    const css = readFileSync(join(import.meta.dir, '..', 'src', 'style.css'), 'utf8');
+    for (const [id] of LANAI_PAGES) expect(css).toContain(`.shell[data-page='${id}'] .page-${id}`);
   });
 });

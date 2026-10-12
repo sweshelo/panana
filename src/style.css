@@ -65,7 +65,7 @@ h3 { margin: 12px 0 6px; font-size: 12px; color: var(--muted); text-transform: u
 .shell[data-page='shops'] .page-shops, .shell[data-page='world'] .page-world, .shell[data-page='sounds'] .page-sounds,
 .shell[data-page='romfs'] .page-romfs, .shell[data-page='code'] .page-code, .shell[data-page='maps'] .page-maps,
 .shell[data-page='story'] .page-story, .shell[data-page='flags'] .page-flags,
-.shell[data-page='stages'] .page-stages, .shell[data-page='codes'] .page-codes { display: block; }
+.shell[data-page='stages'] .page-stages, .shell[data-page='talks'] .page-talks, .shell[data-page='codes'] .page-codes { display: block; }
 .page-code { overflow: auto; }
 .code-page { max-width: 960px; }
 .code-page h3 { margin: 18px 0 6px; }
@@ -614,3 +614,5 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 /* RPG FREE! monster editor */
 .lanai-transform { border-left: 2px solid var(--border); padding: 2px 0 2px 8px; margin: 8px 0; }
 .lanai-stats h4 { margin: 14px 0 4px; }
+/* RPG FREE!'s talk page: the eight tones of a line side by side */
+.talk-tones { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 12px; }

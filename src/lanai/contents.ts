@@ -5,7 +5,6 @@ import { entryBlob, unpackEntry, type Archive } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { ascii, hex8, u32 } from '../util/bytes';
 import type { LanaiSession, LanaiTableRef } from './session';
-import { archiveTables } from './session';
 
 /** A stage: a row of MapStageIntegration (MapStage +0x00..+0x33, then the content, its archive, its TableResource). */
 export interface LanaiStage {
@@ -124,7 +123,7 @@ export interface ContentArchive {
 
 export async function readContent(s: LanaiSession, c: LanaiContent): Promise<ContentArchive> {
   const archive = await s.archive(c.archive);
-  const tables = archiveTables(c.archive, archive);
+  const tables = await s.tablesIn(c.archive);
   let cro: ContentArchive['cro'] = null;
   for (const e of archive.entries) {
     if (e.comp !== 1) continue;
