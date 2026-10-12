@@ -20,6 +20,8 @@ import { Dom } from './mount';
 import { useAsync } from './useAsync';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
+import { RomButton } from './RomDialog';
+import { openedKeys, useWorkspace } from './workspace';
 
 export const PAGES = [
   ['map', 'マップ編集'],
@@ -99,13 +101,13 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
   }
 }
 
-export function Shell({ session, editor, onPickBaseMod, onChangeDump }: {
+export function Shell({ session, editor, onPickBaseMod }: {
   session: Session;
   editor: MapEditor;
   onPickBaseMod: () => void;
-  onChangeDump: () => void;
 }): ReactNode {
   const { game } = session;
+  const ws = useWorkspace();
   const { page, arg, hash } = useRoute();
   const [exporting, setExporting] = useState(false);
   // The page menu of narrow screens (the top bar's tabs and buttons in a drawer); closed by any navigation.
@@ -141,12 +143,11 @@ export function Shell({ session, editor, onPickBaseMod, onChangeDump }: {
             <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
           ))}
           <span className="grow" />
-          <span className="muted small dump-label">{game.dump.label}</span>
           <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
           <button className="base-btn" title="既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります" onClick={onPickBaseMod}>
             {`土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`}
           </button>
-          <button onClick={onChangeDump}>ダンプを変える</button>
+          {ws && <RomButton label={game.dump.label} count={openedKeys(ws.opened).length} onClick={() => { setMenu(false); ws.showRoms(); }} />}
         </div>
       </nav>
       {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}

@@ -16,6 +16,8 @@ import type { RomfsProfile } from '../romfs/profile';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
+import { RomButton } from './RomDialog';
+import { openedKeys, useWorkspace } from './workspace';
 
 export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
@@ -40,13 +42,13 @@ function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): voi
   input.click();
 }
 
-export function LanaiShell({ session, onSession, onChangeDump }: {
+export function LanaiShell({ session, onSession }: {
   session: LanaiSession;
   /** The session reopened with the Update. */
   onSession: (s: LanaiSession) => void;
-  onChangeDump: () => void;
 }): ReactNode {
   const { dump } = session;
+  const ws = useWorkspace();
   const { page, arg, hash } = useHashRoute<LanaiPage>(PAGE_IDS, 'stages');
   const [menu, setMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -75,11 +77,10 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
             <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
           ))}
           <span className="grow" />
-          <span className="muted small dump-label">{dump.label}</span>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.length} 個`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="ゲームが実際に読むのは Update のアーカイブです (資料のアドレスや行も Update が基準)" onClick={() => pickUpdate(session, onSession)}>Update を追加…</button>}
           <button className="primary" title="変更した表・マップを LayeredFS 用の MOD として書き出します" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
-          <button onClick={onChangeDump}>ダンプを変える</button>
+          {ws && <RomButton label={dump.label} count={openedKeys(ws.opened).length} onClick={() => { setMenu(false); ws.showRoms(); }} />}
         </div>
       </nav>
       {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}

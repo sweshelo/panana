@@ -20,6 +20,8 @@ import { oahuRomfsProfile } from '../romfs/oahu';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
+import { RomButton } from './RomDialog';
+import { openedKeys, useWorkspace } from './workspace';
 
 export const OAHU_PAGES = [['maps', 'マップ'], ['events', 'イベント'], ['story', 'ストーリー'], ['flags', 'セーブの値'], ['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
 type OahuPage = (typeof OAHU_PAGES)[number][0];
@@ -43,13 +45,13 @@ function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void 
   input.click();
 }
 
-export function OahuShell({ session, onSession, onChangeDump }: {
+export function OahuShell({ session, onSession }: {
   session: OahuSession;
   /** The session with the Update added (same edits). */
   onSession: (s: OahuSession) => void;
-  onChangeDump: () => void;
 }): ReactNode {
   const { dump } = session;
+  const ws = useWorkspace();
   const { page, arg, hash } = useHashRoute<OahuPage>(PAGE_IDS, 'messages');
   const [menu, setMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -76,11 +78,10 @@ export function OahuShell({ session, onSession, onChangeDump }: {
             <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
           ))}
           <span className="grow" />
-          <span className="muted small dump-label">{dump.label}</span>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.join(', ')}`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="書き出しと、code.bin を使う機能には Update が要ります" onClick={addUpdate}>Update を追加…</button>}
           <button className="primary" title="変更したメッセージ・表・コードのパッチを LayeredFS 用の MOD として書き出します (Update が必要)" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
-          <button onClick={onChangeDump}>ダンプを変える</button>
+          {ws && <RomButton label={dump.label} count={openedKeys(ws.opened).length} onClick={() => { setMenu(false); ws.showRoms(); }} />}
         </div>
       </nav>
       {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
