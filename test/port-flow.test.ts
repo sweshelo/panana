@@ -1,7 +1,7 @@
 // Porting looks and item models between the opened games (#100): a monster of each game gets another game's look (the
 // converted files in the target's model archive, a new design row pointing at them), the target's own readers show the
 // ported model, and the MOD export carries the archives. Needs the three games' dumps (roms/, test/env.ts).
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { parseBch, unwrapBch } from '../src/bch/bch';
 import { parseCgfx } from '../src/cgfx/cgfx';
@@ -45,6 +45,11 @@ describe.skipIf(!ready)('porting between the games', () => {
     const [lanai] = await openDumps([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], () => 'lanai');
     o.lanai = await LanaiSession.open(lanai!, { fresh: true });
   }, 120_000);
+
+  // the stores are shared by every test of the process: the other tests read the games as they are
+  afterAll(async () => {
+    for (const t of ['kahara', 'oahu', 'lanai'] as const) (await PortStore.of(t)).clear();
+  });
 
   const looks = new Map<TitleKey, MonsterLook[]>();
   const look = async (t: TitleKey, name: string): Promise<MonsterLook> => {

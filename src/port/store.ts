@@ -117,6 +117,13 @@ export class PortStore {
     if (this.entries.length !== before) this.changed(new Set([archive]));
   }
 
+  /** Drops every ported entry of the game. */
+  clear(): void {
+    const archives = new Set(this.entries.map((e) => e.archive));
+    this.entries = [];
+    this.changed(archives);
+  }
+
   private changed(archives: Set<string>): void {
     for (const a of archives) this.built.delete(a);
     idbSet(KEY(this.title), this.entries).catch(() => {});
