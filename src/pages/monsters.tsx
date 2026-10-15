@@ -16,6 +16,7 @@ import { MonsterList } from '../ui/MonsterList';
 import { GroupDetail } from '../ui/GroupDetail';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
+import { PortLookButton } from '../ui/PortLook';
 import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
 import { ResistCharts } from '../ui/MonsterSlots';
@@ -113,6 +114,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}${book.added(m.row) ? '  (追加した行)' : ''}`}</span>
         <CopyButtons book={book} m={m} edited={edited} />
         {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
+        <PortLookButton target="kahara" row={m.row} onDone={edited} />
       </div>
       <div className="book-top">
         <div>

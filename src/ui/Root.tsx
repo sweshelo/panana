@@ -7,6 +7,8 @@ import { saveDumpCache } from '../rom/cache';
 import { baseModFromFiles, openDumps, type BaseMod, type Dump } from '../rom/dump';
 import type { TitleKey } from '../rom/titles';
 import { Session } from '../session';
+import { PortStore } from '../port/store';
+import { forgetArchives } from '../cgfx/loader';
 import { idbGet, idbSet } from '../util/idb';
 import { LanaiSession } from '../lanai/session';
 import { LanaiShell } from './LanaiShell';
@@ -39,6 +41,8 @@ type State =
 
 /** The session and the map editor of a game (the edits saved last time are restored). */
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
+  forgetArchives();
+  await PortStore.install(game.dump);
   const session = await Session.open(game, autoRestore);
   return { session, editor: await MapEditor.create(session) };
 }

@@ -15,6 +15,7 @@ import type { ItemData, Session } from '../session';
 import { InfoTip } from '../ui/InfoTip';
 import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
+import { PortItemButton } from '../ui/PortLook';
 import { Photo } from '../ui/Photo';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { itemModelArchive } from '../game/items';
@@ -168,6 +169,7 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
         <span className="muted small">変更はマスター (56562135) の itemData.bin として書き出されます。</span>
         {changed && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
         <CopyButtons items={items} it={it} used={[...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)]} onEdit={onEdit} />
+        {it.model !== 0 && <PortItemButton target="kahara" id={it.id} onDone={onEdit} />}
       </div>
       <div className="book-cols">
         <section>

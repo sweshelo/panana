@@ -11,6 +11,7 @@ import { MonsterList } from '../ui/MonsterList';
 import { BoardSlot, DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
+import { PortLookButton } from '../ui/PortLook';
 import { oneIn, pct } from '../pages/monsteredit';
 import { RowFields } from '../ui/RowFields';
 import { OAHU_MONSTER_TEXTS, type OahuBattle, type OahuFormChange } from './battle';
@@ -109,7 +110,7 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
             { label: 'ゴースト', k: 'ghost', info: 'ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。' },
           ]} />
         </div>
-        <MonsterModel battle={battle} row={row} />
+        <MonsterModel battle={battle} row={row} onEdit={onEdit} />
       </div>
       <div className="book-cols monster-cols">
         <DropEditor battle={battle} row={row} f={f} onEdit={onEdit} />
@@ -370,7 +371,7 @@ function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number
 }
 
 /** The 3D view of the monster's model and its textures, made once the page is in the browser (the viewer needs the DOM). */
-function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): ReactNode {
+function MonsterModel({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
   if (!shown) return <div className="model-placeholder" />;
@@ -379,6 +380,7 @@ function MonsterModel({ battle, row }: { battle: OahuBattle; row: number }): Rea
     <div>
       <ModelView model={model} name={battle.monsterName(row)} />
       <ModelTextures model={model} />
+      <div className="row"><PortLookButton target="oahu" row={row} onDone={onEdit} /></div>
     </div>
   );
 }

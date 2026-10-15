@@ -141,6 +141,11 @@ export class Game {
     return this.renderer;
   }
 
+  /** Reads a root archive again next time (a port added entries to it). */
+  forgetArchive(name: string): void {
+    this.archives.delete(name);
+  }
+
   archive(name: string): Promise<Archive> {
     let a = this.archives.get(name);
     if (!a) {

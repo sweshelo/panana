@@ -2,6 +2,8 @@
 import { useState, type ReactNode } from 'react';
 import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
+import { PortStore } from '../port/store';
+import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
@@ -58,12 +60,16 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     if (session.book?.designChanged()) changes.push(`モンスターのデザイン (${MONSTER_DESIGN_ARCHIVE} の monsterDesign.bin)`);
     return { docs, events, issues, changes, shops, worlds: session.worldSections(), extra };
   });
-  const { issues, changes } = what;
+  const { issues } = what;
+  // models ported from other games (#100): the archives that hold them
+  const ported = useAsync(() => PortStore.of('kahara').then((p) => p.summary()), []);
+  const changes = [...what.changes, ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
-  const build = (): Map<string, Uint8Array> | null => {
+  const build = async (): Promise<Map<string, Uint8Array> | null> => {
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
+      for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
       if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, what.extra);
@@ -75,7 +81,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     }
   };
   const writeToFolder = async (): Promise<void> => {
-    const pkg = build();
+    const pkg = await build();
     if (!pkg?.size) return;
     try {
       const picker = (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
@@ -108,7 +114,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
           ? <div className="muted">{`土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</div>
           : <div className="warn-box">{`アイテム MOD など、ほかの MOD と一緒に使う場合は、ヘッダーの「土台の MOD」でその MOD のフォルダ (elpulse の mod/out など) を読み込んでから書き出してください。同じファイル (${MASTER_ARCHIVE} や code.ips) を置き換える MOD は同時に置けません。`}</div>}
         <div className="row">
-          <button className="primary" onClick={() => { const f = build(); if (f?.size) download(buildModZip(f), 'denpa2-map-mod.zip'); }}>MOD の zip をダウンロード</button>
+          <button className="primary" onClick={async () => { const f = await build(); if (f?.size) download(buildModZip(f), 'denpa2-map-mod.zip'); }}>MOD の zip をダウンロード</button>
           {canFs && <button onClick={writeToFolder}>MOD フォルダに直接書き込む</button>}
           <button onClick={onClose}>閉じる</button>
         </div>

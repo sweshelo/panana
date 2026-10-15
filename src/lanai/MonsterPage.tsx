@@ -8,6 +8,7 @@ import { useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
+import { PortLookButton } from '../ui/PortLook';
 import { MonsterList } from '../ui/MonsterList';
 import { RowFields } from '../ui/RowFields';
 import { useAsync } from '../ui/useAsync';
@@ -51,8 +52,9 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
   const [filter, setFilter] = useState<Filter>('all');
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
-  const monsters = useMemo(() => lanaiMonsters(session), [session]);
-  const loaded = useAsync(() => lanaiModelIndex(session), [session]);
+  // read again after a monster got another look (a port forgets them, #100)
+  const monsters = useMemo(() => lanaiMonsters(session), [session, revision]);
+  const loaded = useAsync(() => lanaiModelIndex(session), [session, revision]);
   const index = loaded instanceof Error ? undefined : loaded;
   const asRow = arg !== undefined && /^\d+$/.test(arg) ? Number(arg) : undefined;
   const selected = useSticky(asRow, (r) => r >= 0 && r < monsters.length, () => Math.max(0, monsters.findIndex((m) => m.name)));
@@ -141,7 +143,7 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
             ? <LanaiStatFields f={f} edited={edited} />
             : <div className="warn-box">{`能力の行がありません (MonsterParameter +0x16 = 0x${params.table.u16(m.row, 0x16).toString(16)}, +0x14 = ${params.table.u16(m.row, 0x14)})`}</div>}
         </div>
-        <MonsterModel session={session} monster={m} indexError={indexError} />
+        <MonsterModel session={session} monster={m} indexError={indexError} edited={edited} />
       </div>
       {p && ref && (
         <>
@@ -207,7 +209,7 @@ function SameModel({ session, monster: m }: { session: LanaiSession; monster: La
 }
 
 /** The 3D view and its textures (made once the page is in the browser: the viewer needs the DOM), with why the model could not be read. */
-function MonsterModel({ session, monster: m, indexError }: { session: LanaiSession; monster: LanaiMonster; indexError: Error | null }): ReactNode {
+function MonsterModel({ session, monster: m, indexError, edited }: { session: LanaiSession; monster: LanaiMonster; indexError: Error | null; edited: () => void }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
   const design = m.designRow < 0 ? null : lanaiMonsterDesign(session, m.designRow);
@@ -219,6 +221,7 @@ function MonsterModel({ session, monster: m, indexError }: { session: LanaiSessi
     <div>
       <ModelView model={model} name={m.name || 'monster'} />
       <ModelTextures model={model} />
+      <div className="row"><PortLookButton target="lanai" row={m.row} onDone={edited} /></div>
       {indexError && <div className="error">{`モデルのアーカイブを読めませんでした: ${indexError.message}`}</div>}
       {set instanceof Error && <div className="muted small">{`モデルを読めませんでした: ${set.message}`}</div>}
       {set && !(set instanceof Error) && set.errors.length > 0 && <div className="muted small">{set.errors.join('\n')}</div>}

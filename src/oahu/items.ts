@@ -172,6 +172,13 @@ export class OahuItems {
     this.refresh(id);
   }
 
+  /** Give an item another model (+0x28: an entry of the archive its kind is read from; a ported one, #100). */
+  setModel(id: number, hash: number): void {
+    if (!this.byId.has(id)) return;
+    writeField(this.row(id), F('model'), hash);
+    this.refresh(id);
+  }
+
   /** The message ID of a message field ('name', 'menu', 'shop0'…). */
   messageId(id: number, key: string): number {
     return this.get(id, key);

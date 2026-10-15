@@ -129,6 +129,16 @@ export class LanaiModelIndex {
 
 const indexes = new WeakMap<LanaiSession, Promise<LanaiModelIndex>>();
 
+/** The model archives are read again (a port added entries). */
+export function forgetLanaiModelIndex(session: LanaiSession): void {
+  indexes.delete(session);
+}
+
+/** The monsters' looks are read again (a monster got another design row). */
+export function forgetLanaiMonsters(session: LanaiSession): void {
+  lists.delete(session);
+}
+
 /** The model index of a session (read once). */
 export function lanaiModelIndex(session: LanaiSession): Promise<LanaiModelIndex> {
   let p = indexes.get(session);

@@ -7,6 +7,7 @@ import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, use
 import { InfoTip } from '../ui/InfoTip';
 import { MessageEditor } from '../ui/message';
 import { ModelView } from '../ui/ModelView';
+import { PortItemButton } from '../ui/PortLook';
 import { useAsync } from '../ui/useAsync';
 import { RowFields } from '../ui/RowFields';
 import { hex8 } from '../util/bytes';
@@ -154,6 +155,7 @@ function ItemDetail({ session, it, onEdit }: { session: OahuSession; it: OahuIte
         <span className="muted small">変更はマスター (21350000) の itemData.bin とメッセージとして書き出されます。</span>
         {items.changed(it.id) && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
         <CopyButtons items={items} it={it} onEdit={onEdit} />
+        {it.model !== 0 && <PortItemButton target="oahu" id={it.id} onDone={onEdit} />}
       </div>
       <details className="row-fields-box">
         <summary>{`itemData の行 ${it.id} のすべての欄`}</summary>
