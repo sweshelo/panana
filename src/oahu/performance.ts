@@ -246,3 +246,30 @@ function newHash(t: GsTable): number {
   while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
   return hash;
 }
+
+/**
+ * The progression of an action's performance in battle (FUN_0021B838; naauao oahu/actions.md §5): RPG3 has no field
+ * for it (RPG2's actionData +0x1C), the battle picks it from the category (+0x2C) and the kind (w0 & 7). The case of
+ * the battle's +0x412 == 5 (progression 5) is left out.
+ */
+export function oahuProgression(category: number, kind: number): number {
+  if (category === 0) return 1;
+  if (category === 1 || category === 0x12) return kind === 2 ? 3 : 2;
+  if (category === 0x14) return 15;
+  if (category === 0x17) return kind === 4 ? 4 : kind === 2 ? 3 : 6;
+  return kind === 4 ? 4 : 3;
+}
+
+/** What each progression does, in order (§5.2). */
+export const OAHU_PROGRESSIONS: Record<number, string> = {
+  1: '1: カメラ (使う側) → 使う側の演出',
+  2: '2: 使う側・対象・場の演出を同時に流す → カメラ (使う側)、0xF フレーム待つ → 結果 (進行 12)',
+  3: '3: 使う側の演出 → カメラ (使う側)・メッセージ、0x14 フレーム待つ → 対象と場の演出があれば進行 12 (カメラ (対象) → 結果)。カテゴリ 2 では、続けて付き添いが演じる',
+  4: '4: 道具。3 と同じ流れで、使う側のカメラはない',
+  6: '6: メッセージ、0x1E フレーム待つ → 使う側の演出 → カメラ (使う側)',
+  15: '15: 0x1E フレーム待つ → actionCamera の行 0x11 のカメラ、最後に 0x3C フレーム待つ',
+};
+
+export function oahuProgressionLabel(p: number): string {
+  return OAHU_PROGRESSIONS[p] ?? String(p);
+}

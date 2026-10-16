@@ -20,6 +20,7 @@ import {
   oahuActionEntry, oahuActionHref, OahuActionPicker, oahuGroupHref, oahuGroupMonster, oahuItemEntry, OahuItemPicker, oahuMonsterHref, oahuMonsterIcon, OahuMonsterPicker,
 } from './pickers';
 import type { OahuSession } from './session';
+import { OAHU_CAMERA_SIZES } from './monsterModels';
 import { OAHU_AI_MODE, OAHU_MONSTER_PARAMETER, OAHU_MONSTER_RESISTS, OAHU_SKILL_CONDITION, OAHU_SKILL_CONDITION_NOTE, OAHU_SKILLS, oahuTriggerLabel } from './tables';
 
 export { oahuActionHref, oahuGroupHref, oahuMonsterHref } from './pickers';
@@ -109,6 +110,7 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
             { label: 'こうげき倍増', k: 'attacks', info: '1 ターンにこうげきする回数を増やす状態 (効果 9、conditionData 52) の値。' },
             { label: 'ゴースト', k: 'ghost', info: 'ゴースト化の状態 (効果 0x10、conditionData 60) を持つ。' },
           ]} />
+          <CameraSize battle={battle} row={row} onEdit={onEdit} />
         </div>
         <MonsterModel battle={battle} row={row} onEdit={onEdit} />
       </div>
@@ -306,6 +308,11 @@ function FormChanges({ battle, row, onEdit }: { battle: OahuBattle; row: number;
     if (!model) return '変身の見た目 (+0x62) がないので見た目は変わりません';
     return model === c.to ? '' : `見た目は ${battle.monsterName(model)} (#${model}) になります`;
   };
+  // The camera goes by the size class of the new form from the next camera on (§5.6).
+  const sizeNote = (to: number): string => {
+    const a = battle.cameraSize(row), b = battle.cameraSize(to);
+    return a !== null && b !== null && a !== b ? `カメラの大きさ ${a} → ${b}` : '';
+  };
   const line = (c: OahuFormChange): ReactNode => (
     <>
       <a href={oahuActionHref(c.action)}>{battle.actionLabel(c.action)}</a>
@@ -323,6 +330,7 @@ function FormChanges({ battle, row, onEdit }: { battle: OahuBattle; row: number;
               <td>
                 {line(c)}{' → '}<a href={oahuMonsterHref(c.to)}>{`${battle.monsterName(c.to)} (#${c.to})`}</a>
                 {looks(c) && <span className="muted small">{` ${looks(c)}`}</span>}
+                {sizeNote(c.to) && <span className="muted small">{` ${sizeNote(c.to)}`}</span>}
               </td>
             </tr>
           ))}
@@ -371,6 +379,30 @@ function ResistEditor({ battle, row, onEdit }: { battle: OahuBattle; row: number
 }
 
 /** The 3D view of the monster's model and its textures, made once the page is in the browser (the viewer needs the DOM). */
+const CAMERA_INFO = [
+  'monsterDesign (402F0000) +0x77。戦闘のカメラ (actionCamera.bin の行) のどの列を使うかを決める、モンスターの大きさの種類です (FUN_004CB2E4、naauao oahu/actions.md §5.5)。',
+  '1・2 → 列 0、4 → 列 1、6 → 列 2、ほか → 列 3。仲間 (つかまえたモンスター) では 10 → 列 4、16 → 列 5。',
+  '変身すると、次にカメラを置くときから新しい形態の大きさで選び直されます。変身先の大きさが大きく違うと、変身の行動の残りでは前の大きさのカメラのままになり、見切れることがあります。',
+  'デザインの行は同じ種類のモンスター (色違いなど) で共有しています。変えると全部に効きます。',
+].join('\n');
+
+/** monsterDesign +0x77 of the monster's design row: the size class the battle's camera goes by. */
+function CameraSize({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const v = battle.cameraSize(row);
+  if (v === null) return null;
+  const others = battle.sameDesign(row);
+  const options = OAHU_CAMERA_SIZES.some(([n]) => n === v) ? OAHU_CAMERA_SIZES : [...OAHU_CAMERA_SIZES, [v, `${v}: (列 3)`] as [number, string]];
+  return (
+    <div className="row small">
+      <span className="with-info">{'カメラの大きさ'}<InfoTip text={CAMERA_INFO} /></span>
+      <select value={v} className={v !== battle.originalCameraSize(row) ? 'edited' : ''} onChange={(e) => { battle.setCameraSize(row, Number(e.target.value)); onEdit(); }}>
+        {options.map(([n, label]) => <option key={n} value={n}>{label}</option>)}
+      </select>
+      {others.length > 0 && <span className="muted" title={others.map((m) => `${battle.monsterName(m)} (#${m})`).join('\n')}>{`同じデザイン: ほか ${others.length} 体`}</span>}
+    </div>
+  );
+}
+
 function MonsterModel({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
   const [shown, setShown] = useState(false);
   useEffect(() => setShown(true), []);
