@@ -117,6 +117,41 @@ describe.skipIf(!hasCia)('explore eyes', () => {
           }
           const ra = model.animations.filter((a) => a.kind === 'material');
           for (const a of ra) for (const t of a.material) if (t.material === name) L(`  renderer ${a.name} c${t.coordinator} ${t.target} ${JSON.stringify(t.channels.map((c) => (c === null || typeof c === 'number' ? c : { i: c.interp, q: c.quant, f: [c.start, c.end], k: Array.from(c.keys).map(r3) })))}`);
+          L(`  depth write ${mat.depthWrite} test ${JSON.stringify(mat.depthTest)} offset ${mat.polygonOffset} cull ${mat.cull}`);
+          for (const me of meshes) {
+            const c = me.colors;
+            let amin = Infinity, amax = -Infinity;
+            if (c) for (let k = 3; k < c.length; k += 4) { amin = Math.min(amin, c[k]!); amax = Math.max(amax, c[k]!); }
+            const bones = new Set<number>();
+            if (me.skinIndices && me.skinWeights) for (let k = 0; k < me.skinIndices.length; k++) if (me.skinWeights[k]! > 0) bones.add(me.skinIndices[k]!);
+            L(`  mesh colors ${c ? `alpha [${r3(amin)},${r3(amax)}]` : 'none'} bones ${[...bones].map((b) => model.bones[b]?.name).join(',')}`);
+          }
+          for (const other of model.meshes) {
+            const om = model.materials[other.material];
+            L(`  all mesh ${other.name} mat ${om?.name} prio ${other.priority} layer ${om?.layer} dw ${om?.depthWrite} dt ${JSON.stringify(om?.depthTest)} blend ${om?.blendFunc?.blend} visible ${other.visible}`);
+          }
+          // Positions during 001 (skeleton) vs rest
+          const { ModelFactory } = await import('../src/cgfx/three');
+          const { AnimatedModel } = await import('../src/cgfx/player');
+          const am = new AnimatedModel(new ModelFactory(set), x.model);
+          const motion = am.motions.find((a) => a.name.startsWith('001_'));
+          const box = (f: number | null): string => {
+            am.select(f === null ? null : motion?.name ?? null);
+            am.update(f ?? 0);
+            const parts: string[] = [];
+            am.group.traverse((o) => {
+              const mesh = o as THREE.Mesh;
+              if (!mesh.isMesh) return;
+              const pos = mesh.geometry.getAttribute('position');
+              const b = new THREE.Box3().setFromBufferAttribute(pos as THREE.BufferAttribute);
+              const sz = b.getSize(new THREE.Vector3());
+              const ce = b.getCenter(new THREE.Vector3());
+              parts.push(`${mesh.name || (mesh.material as THREE.Material).name}: c(${r3(ce.x)},${r3(ce.y)},${r3(ce.z)}) s(${r3(sz.x)},${r3(sz.y)},${r3(sz.z)})`);
+            });
+            return parts.join(' | ');
+          };
+          L(`  rest: ${box(null)}`);
+          for (const f of [0, 20, 40]) L(`  001 f${f}: ${box(f)}`);
           L(`  out-of-range frames: ${outFrames.slice(0, 20).join(' ')}`);
         }
       }
