@@ -1,8 +1,10 @@
 // The views of a lanai map: the top-down grid and the 3D scene shared with the other map pages (editor/gridcanvas.ts,
 // editor/mapscene.ts), driven by the editor's Controller (tools, selection, dragging) on the page's LanaiEditState.
 // The tile models are the GSCs of the map's tileset (mapModels.ts): the map's own and every one of the palette, read
-// again when an edit changes the map's MapData (indoor tiles; map.md §6.1). Records are markers.
+// again when an edit changes the map's MapData (indoor tiles; map.md §6.1). The 3D view draws the models the game
+// places for records (mapObjects.ts) as RPG3's map page does, and markers for the others.
 import * as THREE from 'three';
+import { AnimatedModel, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import { Controller, norm } from '../editor/controller';
 import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
@@ -13,7 +15,25 @@ import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
-import { lanaiTileModels } from './mapModels';
+import { lanaiObjectModels, lanaiTileModels } from './mapModels';
+import { lanaiObjectRef, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+
+interface LoadedModel {
+  factory: ModelFactory;
+  hash: number;
+  name: string;
+  pose: THREE.Object3D | null;
+}
+
+/** The model at the first frame of its "001_" motion (an NPC's wait, a closed chest); null = it has none. */
+function posed(f: ModelFactory, hash: number): THREE.Object3D | null {
+  const motions = f.set.models.get(hash)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
+  const first = motions.find((a) => animationKey(a.name) === '001_');
+  if (!first) return null;
+  const m = new AnimatedModel(f, hash);
+  m.select(first.name);
+  return new THREE.Group().add(m.group);
+}
 
 export class LanaiMapView {
   readonly grid: GridCanvas;
@@ -24,6 +44,8 @@ export class LanaiMapView {
   /** Emitted when the hovered cell changes (the status bar). */
   readonly hover = new Signal();
   status = '';
+  /** Draw the models of props and the other records (else markers only). */
+  showModels = true;
   /** The last edit's error, shown in the status bar until the mouse moves. */
   errorMsg = '';
   /** Tile models of the map's tileset (the palette's thumbnails too). */
@@ -34,6 +56,8 @@ export class LanaiMapView {
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
   private readonly overlay = new THREE.Group();
+  /** Loaded models of records ("o<MapObject row>"); null while loading or when there is none. */
+  private readonly objects = new Map<string, LoadedModel | null>();
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
   private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
@@ -82,6 +106,7 @@ export class LanaiMapView {
     this.disposed = true;
     this.unsubscribe();
     this.factory?.dispose();
+    for (const f of this.objects.values()) f?.factory.dispose();
     this.scene.dispose();
   }
 
@@ -215,6 +240,48 @@ export class LanaiMapView {
     this.refresh();
   }
 
+  /** What the game places for a record (null = no model in this section). */
+  look(section: number, index: number): LanaiRecordLook | null {
+    const rec = this.doc.recs[section]?.[index];
+    return rec ? lanaiRecordLook(section, rec.raw, { mapObject: this.maps.session.table('MapObject') }) : null;
+  }
+
+  /** The name of a loaded model ("obj_box_01"), '' while it is loading or when there is none. */
+  modelName(m: LanaiRecordModel | null): string {
+    return (m && this.objects.get(this.modelKey(m))?.name) || '';
+  }
+
+  private modelKey(m: LanaiRecordModel): string {
+    return `o${m.row}`;
+  }
+
+  /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
+  private recordModel(m: LanaiRecordModel): THREE.Object3D | null {
+    const key = this.modelKey(m);
+    if (!this.objects.has(key)) {
+      this.objects.set(key, null);
+      void this.loadModel(m).then((loaded) => {
+        if (this.disposed || !loaded) return loaded?.factory.dispose();
+        this.objects.set(key, loaded);
+        this.sync3d();
+        this.signal.emit();
+      }, () => {});
+      return null;
+    }
+    const o = this.objects.get(key);
+    if (!o) return null;
+    return o.pose ? o.pose.clone() : o.factory.instance(o.hash);
+  }
+
+  private async loadModel(m: LanaiRecordModel): Promise<LoadedModel | null> {
+    const ref = lanaiObjectRef(this.maps.session.table('MapObject'), m.row);
+    if (!ref) return null;
+    const set = await lanaiObjectModels(this.maps.session, ref);
+    if (!set.models.size) return null;
+    const factory = new ModelFactory(set);
+    return { factory, hash: ref.entry, name: set.paths.get(ref.entry) ?? '', pose: posed(factory, ref.entry) };
+  }
+
   private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
     const key = color + selected;
     let m = this.markerMats.get(key);
@@ -250,8 +317,16 @@ export class LanaiMapView {
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, LANAI_LAYOUTS[k]!);
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        const look = this.showModels ? this.look(k, i) : null;
+        const model = look?.model ? this.recordModel(look.model) : null;
+        if (model) {
+          model.position.set(px * CELL, 0, py * CELL);
+          model.rotation.y = look!.angle;
+          this.markers.add(model);
+          if (!selected) return;
+        }
         const m = new THREE.Mesh(this.markerGeo, this.markerMat(SECTION_COLORS[k]!, selected));
-        m.position.set(px * CELL, 100, py * CELL);
+        m.position.set(px * CELL, model ? 260 : 100, py * CELL);
         if (selected) m.scale.setScalar(1.4);
         this.markers.add(m);
       });

@@ -44,3 +44,8 @@ export async function lanaiTileModels(session: LanaiSession, src: LanaiTileSourc
   }
   return set;
 }
+
+/** The model of a map object (a GSC or BCH entry of a root archive; MapObject +0x00 / +0x04), keyed by the entry's hash. */
+export function lanaiObjectModels(session: LanaiSession, ref: LanaiPartRef): Promise<TilesetModels> {
+  return lanaiTileModels(session, { mapData: -1, tileset: 0, partsName: '', resource: 0, textureArchive: 0, textureEntry: 0 }, [ref]);
+}
