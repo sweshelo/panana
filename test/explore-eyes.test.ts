@@ -152,6 +152,23 @@ describe.skipIf(!hasCia)('explore eyes', () => {
           };
           L(`  rest: ${box(null)}`);
           for (const f of [0, 20, 40]) L(`  001 f${f}: ${box(f)}`);
+          // The same model ported to RPG3 (shown fine): what its eye material and meshes look like there
+          try {
+            const { convertMonster } = await import('../src/port/convert');
+            const { parseBch, bchOffset } = await import('../src/bch/bch');
+            const tex = x.texture && findEntry(arc, x.texture) ? unpackEntry(arc, findEntry(arc, x.texture)!).body : null;
+            const out = convertMonster({ model: body, texture: tex, motion: null }, 'kahara', 'oahu', { name: 'enemy_k0' });
+            const bm = parseBch(out.model.subarray(bchOffset(out.model))).models[0]!;
+            for (const me of bm.meshes) {
+              const om = bm.materials[me.material];
+              L(`  ported mesh mat ${om?.name} prio ${me.priority} layer ${om?.layer} dw ${om?.depthWrite} dt ${JSON.stringify(om?.depthTest)} blend ${JSON.stringify(om?.blendFunc)} at ${JSON.stringify(om?.alphaFunc)}`);
+            }
+            const pe = bm.materials.find((m) => /eye/.test(m.name));
+            if (pe) L(`  ported eye units ${JSON.stringify(pe.units)} tev0 ${JSON.stringify(pe.tev?.[0])}`);
+            L(`  cgfx  eye units ${JSON.stringify(mat.units)} tev0 ${JSON.stringify(mat.tev?.[0])} blend ${JSON.stringify(mat.blendFunc)}`);
+          } catch (e) {
+            L(`  port failed ${(e as Error).message}`);
+          }
           L(`  out-of-range frames: ${outFrames.slice(0, 20).join(' ')}`);
         }
       }
