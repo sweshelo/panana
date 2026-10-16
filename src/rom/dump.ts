@@ -72,7 +72,10 @@ const readFile = (img: Image, path: string): Promise<Uint8Array> => {
 };
 
 export async function openImage(file: Blob, label: string): Promise<Dump> {
-  const img = await readImage(file);
+  return imageDump(await readImage(file), label);
+}
+
+function imageDump(img: Image, label: string): Dump {
   const title = identifyTitle(img.titleId);
   const { files } = img;
   return {
@@ -115,7 +118,10 @@ export function parsePatchList(b: Uint8Array): string[] {
 
 /** A decrypted Update CIA (0004000E…) of a game Panana reads. */
 export async function openUpdate(file: Blob, label: string): Promise<UpdateImage> {
-  const img = await readImage(file);
+  return imageUpdate(await readImage(file), label);
+}
+
+async function imageUpdate(img: Image, label: string): Promise<UpdateImage> {
   const title = titleByUpdateId(img.titleId);
   if (!title) {
     const base = titleById(img.titleId);
@@ -157,6 +163,29 @@ export async function openImages(files: Blob[], label: (f: Blob) => string): Pro
   if (u < 0) throw new Error('2 つ選ぶときは、Base と Update の CIA にしてください');
   const b = 1 - u;
   return withUpdate(await openImage(files[b]!, label(files[b]!)), await openUpdate(files[u]!, label(files[u]!)));
+}
+
+/**
+ * Opens the dumps among `files`, which may be of several games: each Base, with its Update when one of the files is
+ * (the order does not matter). One dump per game, in the order of the games' Bases among the files.
+ */
+export async function openDumps(files: Blob[], label: (f: Blob) => string): Promise<Dump[]> {
+  const images = await Promise.all(files.map(async (f) => ({ img: await readImage(f), label: label(f) })));
+  const updates = images.filter(({ img }) => titleByUpdateId(img.titleId));
+  const bases = images.filter((x) => !updates.includes(x));
+  const out: Dump[] = [];
+  for (const { img, label } of bases) {
+    const dump = imageDump(img, label);
+    if (out.some((d) => d.title === dump.title)) throw new Error(`『${dump.title.name}』の Base が 2 つあります`);
+    const u = updates.filter((x) => titleByUpdateId(x.img.titleId) === dump.title);
+    if (u.length > 1) throw new Error(`『${dump.title.name}』の Update が 2 つあります`);
+    out.push(u[0] ? withUpdate(dump, await imageUpdate(u[0].img, u[0].label)) : dump);
+  }
+  for (const { img } of updates) {
+    const t = titleByUpdateId(img.titleId)!;
+    if (!out.some((d) => d.title === t)) throw new Error(`『${t.name}』の Update だけがあります。Base (${t.titleId}) の CIA も選んでください。`);
+  }
+  return out;
 }
 
 /** Folder input: any file named code.bin (or .code) plus files whose name is an 8-digit hex hash. */

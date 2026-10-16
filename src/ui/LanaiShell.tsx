@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
+import { LanaiItemPage } from '../lanai/ItemPage';
 import { LanaiMapPage } from '../lanai/MapPage';
 import { LanaiMessagePage } from '../lanai/MessagePage';
 import { LanaiMonsterPage } from '../lanai/MonsterPage';
@@ -16,11 +17,13 @@ import type { RomfsProfile } from '../romfs/profile';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { InfoTooltip } from './InfoTip';
 import { useHashRoute } from './route';
+import { RomButton } from './RomDialog';
+import { openedKeys, useWorkspace } from './workspace';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['items', 'アイテム'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const PAGE_IDS = LANAI_PAGES.map(([id]) => id);
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', items: 'アイテム', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -40,13 +43,13 @@ function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): voi
   input.click();
 }
 
-export function LanaiShell({ session, onSession, onChangeDump }: {
+export function LanaiShell({ session, onSession }: {
   session: LanaiSession;
   /** The session reopened with the Update. */
   onSession: (s: LanaiSession) => void;
-  onChangeDump: () => void;
 }): ReactNode {
   const { dump } = session;
+  const ws = useWorkspace();
   const { page, arg, hash } = useHashRoute<LanaiPage>(PAGE_IDS, 'stages');
   const [menu, setMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -75,11 +78,10 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
             <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
           ))}
           <span className="grow" />
-          <span className="muted small dump-label">{dump.label}</span>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.length} 個`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="ゲームが実際に読むのは Update のアーカイブです (資料のアドレスや行も Update が基準)" onClick={() => pickUpdate(session, onSession)}>Update を追加…</button>}
           <button className="primary" title="変更した表・マップを LayeredFS 用の MOD として書き出します" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
-          <button onClick={onChangeDump}>ダンプを変える</button>
+          {ws && <RomButton label={dump.label} count={openedKeys(ws.opened).length} onClick={() => { setMenu(false); ws.showRoms(); }} />}
         </div>
       </nav>
       {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}
@@ -96,6 +98,7 @@ export function LanaiShell({ session, onSession, onChangeDump }: {
               : id === 'talks' ? <LanaiTalkPage session={session} arg={a} />
               : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
               : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
+              : id === 'items' ? <LanaiItemPage session={session} arg={a} />
               : id === 'codes' ? <LanaiCodePage session={session} arg={a} />
               : <RomfsPage dump={dump} profile={profile} arg={a} />}
           </div>

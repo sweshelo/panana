@@ -222,7 +222,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
     }
     const cmd = out.entries.find((e) => unpackEntry(out, e).name === 'MessageCommand_JP.gsmb')!;
     expect(unitsToText(new Gmsg(unpackEntry(out, cmd).body).units(80000)!, OAHU_SYNTAX).text).toBe('ＭＯＤ');
-    const zip = unzipSync(u.modZip());
+    const zip = unzipSync(await u.modZip());
     expect(Object.keys(zip).sort()).toEqual(['00040000000EF000/romfs/3B630000', '00040000000EF000/romfs/58190000', '00040000000EF000/romfs/619D0000', '00040000000EF000/romfs/838B0000']);
   });
 });
@@ -507,7 +507,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(renderToString(<OahuCodePage session={s} onAddUpdate={() => {}} />)).toContain('mov r1, r0');
   });
 
-  test('a patch is assembled on the Update\'s addresses and exported as exefs/code.ips', () => {
+  test('a patch is assembled on the Update\'s addresses and exported as exefs/code.ips', async () => {
     s.codePatches = [{
       id: 'p',
       title: 'kind 0x30 -> row 0x4C',
@@ -517,7 +517,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     const built = s.buildPatches().get('p')!;
     expect(built.errors).toEqual([]);
     expect(built.cave![1]).toBe(OAHU_LAYOUT.caveEnd);
-    const zip = unzipSync(s.modZip());
+    const zip = unzipSync(await s.modZip());
     const ips = zip['00040000000EF000/exefs/code.ips']!;
     expect(ips).toBeDefined();
     const patched = OahuCode.check(applyIps(s.code!.code, ips));

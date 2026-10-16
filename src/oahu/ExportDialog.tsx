@@ -2,7 +2,9 @@
 // edits go on its files, so the official fixes stay (#61).
 import { useState, type ReactNode } from 'react';
 import { OAHU } from '../rom/titles';
+import { PortStore } from '../port/store';
 import { Dialog } from '../ui/Dialog';
+import { useAsync } from '../ui/useAsync';
 import { download } from '../ui/download';
 import type { OahuSession } from './session';
 import { storyRecords } from './story';
@@ -20,7 +22,10 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
   const shops = session.shops?.changedShops() ?? [];
   const story = session.code ? storyRecords(session.code.code, session.storyEdits) : null;
   const storyEdits = story?.records.length ?? 0;
-  const nothing = !edited.length && !added.length && !tables.length && !patches.length && !shops.length && !storyEdits;
+  const loaded = useAsync(() => PortStore.of('oahu').then((s) => s.summary()), []);
+  const ported = Array.isArray(loaded) ? loaded : [];
+  const designs = !!session.monsterModels.saved();
+  const nothing = !edited.length && !added.length && !tables.length && !patches.length && !shops.length && !storyEdits && !ported.length && !designs;
   const ips = patches.length > 0 || storyEdits > 0;
   return (
     <Dialog title="MOD の書き出し (RPG3)" onClose={onClose}>
@@ -38,13 +43,14 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
           {shops.length > 0 && <p>{`店の品揃え ${shops.map((s) => `店 ${s}`).join('・')} (${session.shops!.archiveNames().join(' と ')} の ShopItem)`}</p>}
           {patches.length > 0 && <p>{`コードのパッチ ${patches.length} 個 (exefs/code.ips)${broken ? `。うち ${broken} 個は誤りがあるので書き出しません` : ''}`}</p>}
           {storyEdits > 0 && <p>{`段階・物語の値の書き込みとスクリプトのメッセージの変更 ${storyEdits} か所 (exefs/code.ips)${story!.errors.length ? `。うち ${story!.errors.length} か所は作れないので書き出しません` : ''}`}</p>}
+          {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行)'] : [])].join('、')}`}</p>}
           {tables.length > 0 && <p className="muted small">{`変更した表: ${[...new Set(tables)].join('、')}`}</p>}
           <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。`}</p>
           {error && <div className="error">{error}</div>}
           <div className="row">
-            <button className="primary" onClick={() => {
+            <button className="primary" onClick={async () => {
               try {
-                download(session.modZip(), 'denpa3-mod.zip');
+                download(await session.modZip(), 'denpa3-mod.zip');
               } catch (e) {
                 setError((e as Error).message);
               }

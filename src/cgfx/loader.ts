@@ -130,6 +130,12 @@ export { objKey };
 const compositeKey = (name: string, model: number, tex: number): string => `composite/${name}/${hex8(model)}/${hex8(tex)}/v${CACHE_VERSION}`;
 /** Archives the worker already keeps. */
 const sentArchives = new Set<string>();
+
+/** The worker reads an archive again next time (after a port added entries to it, or another dump was opened). */
+export function forgetArchives(name?: string): void {
+  if (name) sentArchives.delete(name);
+  else sentArchives.clear();
+}
 const queues = new Map<string, Map<string, { model: number; tex: number; resolve: (t: TilesetModels) => void; reject: (e: Error) => void }>>();
 
 /** A model of an archive with the textures of another entry (0 = its own); batched per archive. */

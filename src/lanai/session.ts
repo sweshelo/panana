@@ -7,6 +7,7 @@
 import { entryBlob, findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive, type ArcEntry } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { buildModZip } from '../export/pack';
+import { PortStore } from '../port/store';
 import { MapDb } from '../game/mapdb';
 import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
@@ -137,6 +138,7 @@ export class LanaiSession {
 
   /** Opens a dump and puts back the edits saved in IndexedDB (none with `fresh`). */
   static async open(dump: Dump, { fresh = false }: { fresh?: boolean } = {}): Promise<LanaiSession> {
+    await PortStore.install(dump);
     if (dump.title !== LANAI) throw new Error(`『${LANAI.name}』のダンプではありません`);
     const names = dump.names().filter((n) => /^[0-9A-F]{4}000A$/i.test(n)).sort((a, b) => (a === LANAI.master ? -1 : b === LANAI.master ? 1 : a.localeCompare(b)));
     if (!names.includes(LANAI.master)) throw new Error(`RomFS に master (${LANAI.master}) がありません`);
@@ -334,9 +336,16 @@ export class LanaiSession {
     return new Map([...repl].map(([name, { arc, m }]) => [name, rebuildArchive(arc, m)]));
   }
 
+  /** The RomFS files of the MOD with the archives holding ported models (#100). */
+  async allModFiles(): Promise<Map<string, Uint8Array>> {
+    const files = this.modFiles();
+    for (const [name, b] of await (await PortStore.of('lanai')).archives()) if (!files.has(name)) files.set(name, b);
+    return files;
+  }
+
   /** The LayeredFS zip: 0004000000125D00/romfs/<archive>. */
-  modZip(): Uint8Array {
-    return buildModZip(new Map([...this.modFiles()].map(([name, b]) => [`romfs/${name}`, b])), LANAI.titleId);
+  async modZip(): Promise<Uint8Array> {
+    return buildModZip(new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b])), LANAI.titleId);
   }
 
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */
@@ -363,6 +372,11 @@ export class LanaiSession {
     const t = this.table(name);
     if (!t) throw new Error(`表 ${name} がありません`);
     return t;
+  }
+
+  /** Reads a root archive again next time (a port added entries to it). */
+  forgetArchive(name: string): void {
+    this.archives.delete(name.toUpperCase());
   }
 
   /** A root archive (read once). */

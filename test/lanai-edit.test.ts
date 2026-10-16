@@ -296,7 +296,7 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
       expect(new LanaiTable(a).u32(1, 0) >>> 22).toBe(0xd0);
     }
     // the zip holds the archive under the title's romfs
-    expect(Object.keys(unzipSync(s.modZip()))).toEqual(['0004000000125D00/romfs/2135000A']);
+    expect(Object.keys(unzipSync(await s.modZip()))).toEqual(['0004000000125D00/romfs/2135000A']);
     // saved and put back on a fresh session
     const saved = s.saved();
     expect(saved.rows.map(([k, r]) => [k, r])).toEqual([[lanaiTableKey(ref), 1]]);

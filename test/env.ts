@@ -8,7 +8,8 @@ export const ROMS = join(import.meta.dir, '..', 'roms');
 
 // 電波人間のRPG2 (kahara): the decrypted CIA, the golden data of the Python reference (test/golden/export_golden.py)
 // and, when there, the base MOD (elpulse mod/out)
-export const CIA = join(ROMS, '00040000000A7900.cia');
+// (kahara-base.cia, named like the other titles' dumps, is read when the title ID name is not there)
+export const CIA = existsSync(join(ROMS, '00040000000A7900.cia')) || !existsSync(join(ROMS, 'kahara-base.cia')) ? join(ROMS, '00040000000A7900.cia') : join(ROMS, 'kahara-base.cia');
 export const GOLDEN = join(ROMS, 'golden.json');
 export const BASE_MOD = join(ROMS, 'mod', 'out');
 export const hasCia = existsSync(CIA);

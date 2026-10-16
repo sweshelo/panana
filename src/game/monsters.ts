@@ -664,6 +664,38 @@ export class MonsterBook {
     this.reload();
   }
 
+  /** A monster's MonsterParameter row (the table's bytes: writes go to the export; call reload() after). */
+  paramRow(row: number): Uint8Array {
+    return this.params.row(row);
+  }
+
+  /** Number of MonsterDesign rows, and a row's bytes (a copy). */
+  get designRows(): number {
+    return this.design.rows;
+  }
+  designBytes(design: number): Uint8Array {
+    return this.design.row(design).slice();
+  }
+
+  /** Whether a monster can get a look of its own (a new MonsterDesign row; +0x4C keeps it in a byte). */
+  canNewLook(): boolean {
+    return this.design.rows < 0x100;
+  }
+
+  /**
+   * Give a monster a new MonsterDesign row: a copy of its current one changed by `edit` (the name message stays shared,
+   * so only the look differs). Returns the new design row.
+   */
+  newLook(row: number, edit: (design: Uint8Array) => void): number {
+    if (!this.canNewLook()) throw new Error('モンスターのデザインはこれ以上増やせません');
+    const r = this.params.row(row);
+    const src = this.design.row(r[0x4c]!).slice();
+    edit(src);
+    r[0x4c] = this.design.append(src, freeHash(this.design, 0x6d440000));
+    this.reload();
+    return r[0x4c]!;
+  }
+
   /** Whether the MonsterDesign table differs from the archive (it is then exported in MONSTER_DESIGN_ARCHIVE). */
   designChanged(): boolean {
     return !equalBytes(this.design.data, this.designOriginal);

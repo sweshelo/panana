@@ -109,7 +109,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     expect(gone.length).toBeGreaterThan(0);
   });
 
-  test('a write\'s immediate (and its guard) and a script\'s message are changed in exefs/code.ips', () => {
+  test('a write\'s immediate (and its guard) and a script\'s message are changed in exefs/code.ips', async () => {
     const code = s.code!.code;
     const site = steps.find((w) => w.at === 0x1d19b8)!;
     const mov = site.value.imms[0]!.at, cmp = site.guard!.at;
@@ -121,10 +121,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     ];
     // a message literal of the first script class with one
     const lit = (async () => (await s.eventEntries()).flatMap((e) => e.scripts).find((sc) => sc.cls.messageAt.length)!.cls.messageAt[0]!)();
-    return lit.then(([at]) => {
+    return lit.then(async ([at]) => {
       s.storyEdits.push({ at, kind: 'word', value: 42359, before: codeWordAt(code, at) });
       expect(storyRecords(code, s.storyEdits).errors).toEqual([]);
-      const zip = unzipSync(s.modZip());
+      const zip = unzipSync(await s.modZip());
       const patched = applyIps(code, zip['00040000000EF000/exefs/code.ips']!);
       expect(codeWordAt(patched, mov)).toBe(0xe3a0002c); // mov r0, #0x2c
       expect(codeWordAt(patched, cmp)).toBe(0xe350002c); // cmp r0, #0x2c

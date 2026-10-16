@@ -15,7 +15,8 @@ import { OahuItems } from './items';
 import { OahuMaps, type OahuMapSaved } from './maps';
 import { OahuMaster, OAHU_MASTER, type SavedRow } from './master';
 import { OahuMessages } from './messages';
-import { OahuMonsterModels } from './monsterModels';
+import { OAHU_DESIGN_ARCHIVE, OahuMonsterModels } from './monsterModels';
+import { PortStore } from '../port/store';
 import { OahuShops, type SavedShop } from './shops';
 import { oahuEventEntries, type OahuEventEntry } from './events';
 import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
@@ -42,6 +43,8 @@ interface Saved {
   storyEdits?: StoryCodeEdit[];
   storyNames?: Record<string, string>;
   storyState?: StoryState | null;
+  /** monsterDesign.bin (402F0000) with the rows ports added (#100). */
+  designs?: Uint8Array | null;
 }
 
 export class OahuSession {
@@ -50,6 +53,8 @@ export class OahuSession {
   readonly items: OahuItems;
   readonly battle: OahuBattle;
   readonly itemModels: OahuItemModels;
+  /** The monsters' designs (402F0000): their models, and the rows ports add. */
+  readonly monsterModels: OahuMonsterModels;
   /** The performances of the actions (402F0000) and the names of the effects, read when first used. */
   readonly performances: OahuPerformances;
   /** The Update's code.bin; null without the Update (or when the Update is another version, see {@link codeError}). */
@@ -91,7 +96,8 @@ export class OahuSession {
     this.items = new OahuItems(master, messages.texts);
     this.itemModels = new OahuItemModels(dump);
     this.performances = new OahuPerformances(dump);
-    this.battle = new OahuBattle(master, this.items, new OahuMonsterModels(dump), this.itemModels);
+    this.monsterModels = new OahuMonsterModels(dump);
+    this.battle = new OahuBattle(master, this.items, this.monsterModels, this.itemModels);
     try {
       this.code = OahuCode.of(dump);
     } catch (e) {
@@ -100,8 +106,11 @@ export class OahuSession {
   }
 
   private static async load(dump: Dump): Promise<OahuSession> {
+    await PortStore.install(dump);
     const master = await OahuMaster.load(dump);
-    return new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master), await OahuShops.load(dump));
+    const s = new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master), await OahuShops.load(dump));
+    await s.monsterModels.rows(); // the design rows are read before the pages ask for the monsters' models
+    return s;
   }
 
   static async open(dump: Dump): Promise<OahuSession> {
@@ -122,7 +131,7 @@ export class OahuSession {
   private saved(): Saved {
     return {
       messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
-      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState,
+      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(),
     };
   }
 
@@ -135,6 +144,7 @@ export class OahuSession {
     if (saved.storyEdits) this.storyEdits = saved.storyEdits.map((e) => ({ ...e }));
     if (saved.storyNames) this.storyNames = { ...saved.storyNames };
     if (saved.storyState) this.storyState = saved.storyState;
+    if (saved.designs) await this.monsterModels.restore(saved.designs);
     this.items.reload();
     if (saved.maps) await this.maps.restore(saved.maps);
   }
@@ -226,9 +236,18 @@ export class OahuSession {
     return files;
   }
 
+  /** The RomFS files of the MOD with the archives of ported models and their design rows (#100). */
+  async allModFiles(): Promise<Map<string, Uint8Array>> {
+    const files = this.modFiles();
+    const designs = await this.monsterModels.archive();
+    if (designs) files.set(OAHU_DESIGN_ARCHIVE, designs);
+    for (const [name, b] of await (await PortStore.of('oahu')).archives()) if (!files.has(name)) files.set(name, b);
+    return files;
+  }
+
   /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
-  modZip(): Uint8Array {
-    const pkg = new Map([...this.modFiles()].map(([name, b]) => [`romfs/${name}`, b]));
+  async modZip(): Promise<Uint8Array> {
+    const pkg = new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b]));
     const ips = this.codeIps();
     if (ips) pkg.set('exefs/code.ips', ips);
     return buildModZip(pkg, OAHU.titleId);

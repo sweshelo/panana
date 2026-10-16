@@ -257,7 +257,9 @@ function readTexture(r: Reader, o: number): CgfxTexture | null {
 function readMaterial(r: Reader, o: number): CgfxMaterial {
   const name = r.str(o + 0x0c);
   const layer = r.u32(o + 0x20);
-  const cull = r.u32(o + 0x104);
+  // Rasterization at +0x104: polygon offset enabled, GfxFaceCulling (front, back, always, never) as the PICA mode
+  // (never 0 / front 1 / back 2, SPICA ToPICAFaceCulling), offset unit.
+  const cull = [1, 2, 1, 0][r.u32(o + 0x108)] ?? 0;
   const depthFlags = r.u32(o + 0x118);
   const blendMode = r.u32(o + 0x12c);
   const coord = o + 0x16c; // 3 coordinators of 0x58 bytes
@@ -374,7 +376,7 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
   }
   const depth = picaRegs(r.b, o + 0x11c, 2).get(0x107);
   const depthTest = depth === undefined ? { enabled: true, func: 5 } : { enabled: (depth & 1) === 1, func: (depth >> 4) & 7 };
-  const polygonOffset = r.u32(o + 0x100) & 1 ? r.f32(o + 0x108) || 1 : 0;
+  const polygonOffset = r.u32(o + 0x104) & 1 ? r.f32(o + 0x10c) || 1 : 0;
 
   return {
     units,

@@ -286,6 +286,13 @@ export class ItemBook {
     this.refresh(id);
   }
 
+  /** Give an item another model (+0x20: an entry of the archive its kind is read from; a ported one, #100). */
+  setModel(id: number, hash: number): void {
+    if (!this.byId.has(id)) return;
+    w32(this.master.itemData.row(id), 0x20, hash);
+    this.refresh(id);
+  }
+
   /** Fields of an item as they are in the archive. */
   original(id: number): ItemFields {
     if (this.added(id)) return readItemFields(this.master.itemData.row(id));

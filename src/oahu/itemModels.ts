@@ -84,6 +84,31 @@ export class OahuItemModels {
     return out;
   }
 
+  /**
+   * The files of an item's model for a port (#100): its entry's body, the archive holding it, and the bodies of the
+   * entries holding the textures it names but does not have. Null when no archive holds a model of that hash.
+   */
+  async sourceFiles(hash: number): Promise<{ archive: string; body: Uint8Array; extra: Uint8Array[] } | null> {
+    const at = hash ? await this.locate(hash) : null;
+    if (!at || bchOffset(at.body) < 0) return null;
+    const f = parseBch(unwrapBch(at.body));
+    if (!f.models.length) return null;
+    const have = new Set(f.textures.map((t) => t.name));
+    const missing = [...new Set(f.models.flatMap((m) => m.materials.flatMap((x) => x.textures)))].filter((t): t is string => !!t && !have.has(t));
+    return { archive: at.name, body: at.body, extra: await this.extraTextures(at.name, missing) };
+  }
+
+  /** The archive holding an entry (the item models' archives), or null. */
+  async archiveOf(hash: number): Promise<string | null> {
+    return (await this.locate(hash))?.name ?? null;
+  }
+
+  /** Reads the archives again (a port added entries). */
+  forget(): void {
+    this.archives.clear();
+    this.textureIndex.clear();
+  }
+
   /** The model (or the texture) of an item's model hash; null when no archive holds it. */
   model(hash: number): Promise<OahuItemModel | null> {
     let p = this.models.get(hash);
