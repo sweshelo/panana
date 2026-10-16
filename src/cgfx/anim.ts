@@ -8,8 +8,6 @@ export interface AnimCurve {
   end: number;
   /** 0 step, 1 linear, 2 hermite. */
   interp: number;
-  /** Key quantization (0 Hermite128 … 7 StepLinear32). */
-  quant?: number;
   keys: Float32Array;
 }
 
@@ -117,7 +115,7 @@ function readCurve(b: Uint8Array, c: number): AnimChannel {
     keys[i * 4 + 2] = si;
     keys[i * 4 + 3] = so;
   }
-  return { start: f32(b, s), end: f32(b, s + 4), interp, quant, keys };
+  return { start: f32(b, s), end: f32(b, s + 4), interp, keys };
 }
 
 /** Slots of an element: bit (constBase + i) = constant (value in the slot), bit (absentBase + i) = absent. */
