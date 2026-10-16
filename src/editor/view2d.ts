@@ -1,10 +1,9 @@
 // Top-down 2D view on a canvas: tiles, section 6 cells, points; pan (right / middle drag), zoom (wheel).
 import { LAYOUTS, P3, P7, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import { norm, type Controller } from './controller';
-import { eventLinks } from './events';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from './legend';
 import { drawTileGlyph, GridCanvas, strokeCell } from './gridcanvas';
-import { GRID, tileAt, type EditorState } from './state';
+import { GRID, tileAt, type EventLink, type MapEditState } from './model';
 
 export type Style2D = 'symbols' | 'minimap';
 
@@ -17,8 +16,10 @@ export class View2D {
   style: Style2D = 'symbols';
 
   constructor(
-    private readonly st: EditorState,
+    private readonly st: MapEditState,
     private readonly ctl: Controller,
+    /** Switch -> target lines of the open map (none by default). */
+    private readonly links: () => EventLink[] = () => [],
   ) {
     this.gc = new GridCanvas('view2d', (g, s) => this.render(g, s), GRID);
     this.canvas = this.gc.canvas;
@@ -173,7 +174,7 @@ export class View2D {
 
   /** Switch -> target lines (generic switches solid, hard-coded script pairs dashed). */
   private drawLinks(g: CanvasRenderingContext2D, s: number): void {
-    for (const l of eventLinks(this.st)) {
+    for (const l of this.links()) {
       g.strokeStyle = l.generic ? (l.selected ? '#7ff5ff' : 'rgba(80, 220, 255, 0.75)') : l.selected ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
       g.lineWidth = l.selected ? 3 : 2;
       g.setLineDash(l.generic ? [] : [5, 4]);

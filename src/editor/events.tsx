@@ -9,6 +9,7 @@ import { Dialog } from '../ui/Dialog';
 import { MessageEditor } from '../ui/message';
 import { u16, u32, w32 } from '../util/bytes';
 import { Field, Num, RawBytes } from './fields';
+import type { EventLink } from './model';
 import type { EditorState } from './state';
 import { MESSAGE_HELP } from './message';
 
@@ -41,11 +42,11 @@ export function switchTargets(st: EditorState, row: number): { rows: number[]; g
 }
 
 /** Lines to draw: from a switch record to each target record of the current map (cell coordinates). */
-export function eventLinks(st: EditorState): { from: [number, number]; to: [number, number]; generic: boolean; selected: boolean }[] {
+export function eventLinks(st: EditorState): EventLink[] {
   const doc = st.current;
   if (!doc) return [];
   const sel = st.selection;
-  const out: ReturnType<typeof eventLinks> = [];
+  const out: EventLink[] = [];
   for (const section of [5, 8, 3]) {
     (doc.recs[section] ?? []).forEach((rec, index) => {
       const row = eventRowOf(section, rec);

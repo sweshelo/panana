@@ -11,7 +11,7 @@ import { editorKey } from '../editor/controller';
 import { kindName } from '../editor/legend';
 import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { Palette } from '../editor/palette';
-import { Tools } from '../editor/panes';
+import { Tools } from '../editor/tools';
 import { tileAt } from '../editor/state';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
