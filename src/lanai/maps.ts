@@ -294,6 +294,11 @@ export class LanaiMaps {
     return g?.eventEntry ? this.tables.find((t) => t.entry === g.eventEntry)?.table : undefined;
   }
 
+  /** A table of the content's archive by its name ("MapChara"). */
+  contentTable(name: string): LanaiTable | undefined {
+    return tableNamed(this.tables, name);
+  }
+
   group(info: LanaiMapInfo): LanaiMapGroup | undefined {
     return this.groups[info.dungeon];
   }

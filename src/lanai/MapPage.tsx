@@ -24,7 +24,7 @@ import { hex8, u32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiStampLabel, lanaiValidate, type LanaiEditState, type LanaiStamp } from './mapedit';
 import { LANAI_FACING_OFFSET, LANAI_LAYOUTS, LANAI_ROT_DIR, LANAI_POINT_SECTIONS, lanaiFloorLabel, lanaiMaps, loadedLanaiMaps, type LanaiMapInfo, type LanaiMaps } from './maps';
-import type { LanaiRecordLook } from './mapObjects';
+import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
 
@@ -456,13 +456,20 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
   );
 }
 
-/** "MapObject #120 obj_box_01" for the model line of the inspector. */
+/** "MapObject #64 gimk_05_trebox_1" (and the MapChara row of a character) for the model line of the inspector. */
 function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook | null }): ReactNode {
   useSignal(view.signal);
   if (!look) return null;
   const m = look.model;
   const name = view.modelName(m);
-  return <p className="muted small">{`モデル: ${!m ? 'モデルなし' : `MapObject #${m.row}${name ? ` ${name}` : ''}`}`}</p>;
+  const chara = look.chara !== undefined ? view.maps.contentTable('MapChara') : undefined;
+  const kind = chara && look.chara! > 0 && look.chara! < chara.rows ? LANAI_CHARA_KIND[chara.u32(look.chara!, 0) & 7] : undefined;
+  return (
+    <p className="muted small">
+      {look.chara !== undefined && `MapChara #${look.chara}${kind ? ` (${kind})` : ''}・`}
+      {`モデル: ${!m ? 'モデルなし' : `MapObject #${m.row}${name ? ` ${name}` : ''}`}`}
+    </p>
+  );
 }
 
 function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view: LanaiMapView; section: number; rec: Rec; index: number }): ReactNode {

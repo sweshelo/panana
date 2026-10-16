@@ -11,12 +11,13 @@ import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
 import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
 import { MapScene, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/model';
+import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiObjectModels, lanaiTileModels } from './mapModels';
-import { lanaiObjectRef, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+import { lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
 
 interface LoadedModel {
   factory: ModelFactory;
@@ -25,10 +26,13 @@ interface LoadedModel {
   pose: THREE.Object3D | null;
 }
 
-/** The model at the first frame of its "001_" motion (an NPC's wait, a closed chest); null = it has none. */
+/**
+ * The model at the first frame of its first motion: "001_" (a closed chest or door), else "000_" (an NPC's wait);
+ * null = it has none.
+ */
 function posed(f: ModelFactory, hash: number): THREE.Object3D | null {
   const motions = f.set.models.get(hash)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
-  const first = motions.find((a) => animationKey(a.name) === '001_');
+  const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions.find((a) => animationKey(a.name) === '000_');
   if (!first) return null;
   const m = new AnimatedModel(f, hash);
   m.select(first.name);
@@ -243,7 +247,14 @@ export class LanaiMapView {
   /** What the game places for a record (null = no model in this section). */
   look(section: number, index: number): LanaiRecordLook | null {
     const rec = this.doc.recs[section]?.[index];
-    return rec ? lanaiRecordLook(section, rec.raw, { mapObject: this.maps.session.table('MapObject') }) : null;
+    if (!rec) return null;
+    const maps = this.maps;
+    return lanaiRecordLook(section, rec.raw, {
+      mapObject: maps.session.table('MapObject'),
+      mapChara: maps.contentTable('MapChara'),
+      events: maps.eventTable(this.info.dungeon),
+      indoor: isIndoor(this.doc),
+    });
   }
 
   /** The name of a loaded model ("obj_box_01"), '' while it is loading or when there is none. */
@@ -320,8 +331,10 @@ export class LanaiMapView {
         const look = this.showModels ? this.look(k, i) : null;
         const model = look?.model ? this.recordModel(look.model) : null;
         if (model) {
-          model.position.set(px * CELL, 0, py * CELL);
+          const [ox, oz] = look!.offset ?? [0, 0];
+          model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = look!.angle;
+          model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
           this.markers.add(model);
           if (!selected) return;
         }
