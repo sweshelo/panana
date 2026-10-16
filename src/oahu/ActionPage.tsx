@@ -11,7 +11,7 @@ import { Board, EmptyBoard } from '../ui/Board';
 import { ActionButtons, ActionHead, ActionListPane, ActionTexts, ActionUsers } from '../ui/ActionParts';
 import { FieldCheck } from '../ui/FieldEdit';
 import { enumOptions, FieldNumber, FieldSelect, rowAccess, Stat } from './FieldInput';
-import { OahuActionPreview } from './ActionPreview';
+import { OahuActionPreview, OahuPerformanceSlots } from './ActionPreview';
 import { battleContext, oahuActionHref, oahuMonsterHref } from './MonsterPage';
 import { oahuActionEntry, OahuActionPicker, oahuGroupHref, oahuMonsterIcon, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
@@ -122,12 +122,14 @@ function ActionDetail({ session, row, onEdit }: { session: OahuSession; row: num
         <FieldCheck f={access} k="noFloat" edited={onEdit} label="浮遊の相手に当たらない" />
       </div>
       <ActionValues battle={battle} row={row} onEdit={onEdit} />
-      <ActionButtons note="変更はマスター (21350000) の actionData.bin とメッセージとして書き出されます。" copyInfo={COPY_INFO}
+      <ActionButtons note="変更はマスター (21350000) の actionData.bin とメッセージ、演出は 402F0000 の directData.bin として書き出されます。" copyInfo={COPY_INFO}
         canCopy={battle.canCopyAction(row)} cannotCopy="メッセージの空きがありません"
         onCopy={() => { const n = battle.copyAction(row); onEdit(); location.hash = oahuActionHref(n); }}
         onRemove={battle.canRemoveAction(row) ? () => { battle.removeAction(row); onEdit(); location.hash = oahuActionHref(row - 1); } : undefined}
         onRevert={battle.actionChanged(row) && !rows.added(row) ? () => { battle.revertAction(row); onEdit(); } : undefined} />
-      <OahuActionPreview session={session} row={row} users={users.monsters} />
+      <h3 className="with-info">{'演出'}<InfoTip text="使う側・対象・場に出す演出 (402F0000 の directData の行) です。変えた演出は、402F0000 の directData.bin として書き出されます。" /></h3>
+      <OahuPerformanceSlots session={session} row={row} onEdit={onEdit} />
+      <OahuActionPreview session={session} row={row} users={users.monsters} onEdit={onEdit} />
       <ActionUsers
         monsters={users.monsters.map((m) => ({
           key: `m${m}`, name: battle.monsterName(m), href: oahuMonsterHref(m),

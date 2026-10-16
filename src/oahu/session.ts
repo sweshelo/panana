@@ -45,6 +45,8 @@ interface Saved {
   storyState?: StoryState | null;
   /** monsterDesign.bin (402F0000) with the rows ports added (#100). */
   designs?: Uint8Array | null;
+  /** directData.bin (402F0000) with the performances' edits (#93). */
+  direct?: Uint8Array | null;
 }
 
 export class OahuSession {
@@ -131,7 +133,7 @@ export class OahuSession {
   private saved(): Saved {
     return {
       messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
-      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(),
+      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(), direct: this.performances.saved(),
     };
   }
 
@@ -145,6 +147,7 @@ export class OahuSession {
     if (saved.storyNames) this.storyNames = { ...saved.storyNames };
     if (saved.storyState) this.storyState = saved.storyState;
     if (saved.designs) await this.monsterModels.restore(saved.designs);
+    if (saved.direct) await this.performances.restore(saved.direct);
     this.items.reload();
     if (saved.maps) await this.maps.restore(saved.maps);
   }
@@ -236,10 +239,11 @@ export class OahuSession {
     return files;
   }
 
-  /** The RomFS files of the MOD with the archives of ported models and their design rows (#100). */
+  /** The RomFS files of the MOD with the archives of ported models and their design rows (#100), and 402F0000 with the performances (#93). */
   async allModFiles(): Promise<Map<string, Uint8Array>> {
     const files = this.modFiles();
-    const designs = await this.monsterModels.archive();
+    const direct = await this.performances.replacement();
+    const designs = await this.monsterModels.archive(new Map(direct ? [direct] : []));
     if (designs) files.set(OAHU_DESIGN_ARCHIVE, designs);
     for (const [name, b] of await (await PortStore.of('oahu')).archives()) if (!files.has(name)) files.set(name, b);
     return files;
