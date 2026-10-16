@@ -1,24 +1,43 @@
 // 3D view: tile models placed like the game (cell centre ((x + 0.5) * 500, 0, (y + 0.5) * 500), rotation =
 // -rot * 90° about Y; docs/map-editor-design.md §6), markers for points, editing on the ground plane.
 import * as THREE from 'three';
-import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc } from '../game/sections';
+import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc, type Rec } from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
-import { loadComposite, loadObjectModels, objKey } from '../cgfx/loader';
-import { charaMonsterDesign } from '../game/boss';
-import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
+import { objKey } from '../cgfx/loader';
+import type { TilesetModels } from '../cgfx/tileset';
 import type { EventTable } from '../game/events';
 import { renderObjectThumb } from './thumbs';
-import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, type ObjectContext } from '../game/objects';
+import { OBJ_INVISIBLE, recordObjectRow, type ObjectContext, type Placement } from '../game/objects';
 import { norm, type Controller } from './controller';
-import { eventLinks } from './events';
 import { kindColor, SECTION_COLORS } from './legend';
-import { MapScene, TileFallback, TileLayer } from './mapscene';
-import { GRID, tileAt, type EditorState } from './state';
+import { MapScene, MarkerMaterials, TileFallback, TileLayer } from './mapscene';
+import { GRID, type EventLink, type MapEditState } from './model';
 
 const MARKER_Y = 40;
 /** Height of a monster shown on the map (a boss's character; a cell is 500). */
 const BOSS_HEIGHT = 420;
+
+/** A mapObject row's model: an entry of an archive. */
+type ObjectModelRef = { archive: number; entry: number };
+
+/** What the 3D view takes from the game's tables (RPG2: MapEditor.view3dSource). */
+export interface View3DSource {
+  /** Model hash of a tile (kind, letter index) in the open map's tileset (0 = none). */
+  partModel(kind: number, letter: number): number;
+  /** Model of a mapObject row. */
+  objectModel(row: number): ObjectModelRef | null;
+  /** The model sets of mapObject models, by objKey. */
+  loadObjectModels(refs: ObjectModelRef[]): Promise<Map<string, TilesetModels>>;
+  /** Where a record's model stands and how it is turned. */
+  placement(section: number, rec: Rec, doc: MapDoc, events: EventTable | null): Placement;
+  /** MonsterDesign row of a character's mapChara model row, or null when it is not a monster. */
+  charaMonster(model: number): number | null;
+  /** Model set and model entry of a MonsterDesign row, or null. */
+  monsterModel(design: number): Promise<{ set: TilesetModels; model: number } | null>;
+  /** Switch -> target lines of the open map. */
+  links(): EventLink[];
+}
 
 export class View3D {
   readonly canvas: HTMLCanvasElement;
@@ -39,11 +58,12 @@ export class View3D {
     cyl: new THREE.CylinderGeometry(50, 50, 90, 12),
     ring: new THREE.RingGeometry(70, 95, 24),
   };
-  private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
+  private readonly markerMats = new MarkerMaterials();
 
   constructor(
-    private readonly st: EditorState,
+    private readonly st: MapEditState,
     private readonly ctl: Controller,
+    private readonly src: View3DSource,
   ) {
     this.view = new MapScene('view3d', GRID);
     this.renderer = this.view.renderer;
@@ -105,7 +125,7 @@ export class View3D {
 
   private tileObject(kind: number, rot: number, letter: number): THREE.Object3D {
     const f = this.factory;
-    const hash = f ? this.st.game.master.partModel(kind, this.st.tileset, letterIndex(letter)) : 0;
+    const hash = f ? this.src.partModel(kind, letterIndex(letter)) : 0;
     const model = f && hash ? f.instance(hash) : null;
     if (model) {
       model.rotation.y = (-rot * Math.PI) / 2;
@@ -123,16 +143,6 @@ export class View3D {
     );
   }
 
-  private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
-    const key = color + selected;
-    let m = this.markerMats.get(key);
-    if (!m) {
-      m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color), emissive: selected ? new THREE.Color(0x777777) : new THREE.Color(0) });
-      this.markerMats.set(key, m);
-    }
-    return m;
-  }
-
   /** Object models by mapObject row (loaded on demand). */
   private readonly objects = new Map<number, ModelFactory | null>();
   private objectRequest = new Set<number>();
@@ -144,7 +154,7 @@ export class View3D {
   /** Model name of a mapObject row ('' until loaded). */
   objectName(row: number): string {
     const f = this.objects.get(row);
-    const ref = this.st.game.master.objectModel(row);
+    const ref = this.src.objectModel(row);
     return f && ref ? f.modelName(ref.entry) : '';
   }
 
@@ -155,7 +165,7 @@ export class View3D {
       return null;
     }
     if (!f) return null;
-    const ref = this.st.game.master.objectModel(row);
+    const ref = this.src.objectModel(row);
     if (!ref) return null;
     const posed = this.doorModel(row, f, ref.entry);
     if (posed) return posed;
@@ -221,13 +231,13 @@ export class View3D {
   loadObjects(rows: number[]): Promise<void> {
     const todo = rows.filter((r) => !this.objects.has(r));
     if (todo.length) {
-      const master = this.st.game.master;
+      const src = this.src;
       for (const r of todo) this.objects.set(r, null);
-      const refs = todo.map((r) => master.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
-      const job = loadObjectModels(this.st.game, refs)
+      const refs = todo.map((r) => src.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
+      const job = src.loadObjectModels(refs)
         .then((sets) => {
           for (const r of todo) {
-            const ref = master.objectModel(r);
+            const ref = src.objectModel(r);
             const set = ref ? sets.get(objKey(ref.archive, ref.entry)) : undefined;
             if (!set || !set.models.size) continue;
             const f = new ModelFactory(set);
@@ -268,7 +278,7 @@ export class View3D {
     if (section !== 5 || raw[8] !== 0 || !events) return -1;
     const row = raw[0]! | (raw[1]! << 8) | (raw[2]! << 16) | (raw[3]! << 24);
     if (!events.has(row)) return -1;
-    return charaMonsterDesign(this.st.game.master, events.model(row)) ?? -1;
+    return this.src.charaMonster(events.model(row)) ?? -1;
   }
 
   private bossModel(monster: number): THREE.Object3D | null {
@@ -288,26 +298,22 @@ export class View3D {
     this.bossRequest.clear();
     if (!todo.length) return;
     for (const m of todo) this.bossModels.set(m, null);
-    const game = this.st.game;
-    game.monsters().then((book) =>
-      Promise.all(todo.map(async (design) => {
-        const mon = book.monsters.find((m) => m.design === design);
-        const ref = mon ? book.modelOf(mon) : null;
-        if (!ref) return;
-        const set = await loadComposite(game, MONSTER_MODEL_ARCHIVE, ref.model, ref.texture);
-        const f = new ModelFactory(set);
-        if (!set.models.has(ref.model)) return;
-        const m = new AnimatedModel(f, ref.model);
-        const idle = m.motions.find((a) => animationKey(a.name) === '001_');
-        if (idle) m.select(idle.name);
-        const box = new THREE.Box3().setFromObject(m.group);
-        const size = box.getSize(new THREE.Vector3());
-        const scale = size.y > 0 ? BOSS_HEIGHT / Math.max(size.y, size.x * 0.6, size.z * 0.6) : 1;
-        m.group.scale.setScalar(scale);
-        m.group.position.y = -box.min.y * scale;
-        this.bossModels.set(design, new THREE.Group().add(m.group));
-      })),
-    ).then(() => this.syncSelection(), (err) => console.warn('boss models', err));
+    Promise.all(todo.map(async (design) => {
+      const found = await this.src.monsterModel(design);
+      if (!found) return;
+      const { set, model } = found;
+      const f = new ModelFactory(set);
+      if (!set.models.has(model)) return;
+      const m = new AnimatedModel(f, model);
+      const idle = m.motions.find((a) => animationKey(a.name) === '001_');
+      if (idle) m.select(idle.name);
+      const box = new THREE.Box3().setFromObject(m.group);
+      const size = box.getSize(new THREE.Vector3());
+      const scale = size.y > 0 ? BOSS_HEIGHT / Math.max(size.y, size.x * 0.6, size.z * 0.6) : 1;
+      m.group.scale.setScalar(scale);
+      m.group.position.y = -box.min.y * scale;
+      this.bossModels.set(design, new THREE.Group().add(m.group));
+    })).then(() => this.syncSelection(), (err) => console.warn('boss models', err));
   }
 
   private syncMarkers(doc: MapDoc): void {
@@ -325,14 +331,14 @@ export class View3D {
         const row = ctx ? recordObjectRow(k, r, ctx) : 0;
         const boss = ctx ? this.charaMonster(events, k, r.raw) : -1;
         const model = boss >= 0 ? this.bossModel(boss) : row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
-        const place = recordPlacement(k, r, doc, this.st.game.master, events);
+        const place = this.src.placement(k, r, doc, events);
         const rotY = place.angle;
         const ox = place.ox, oz = place.oz;
         if (model) {
           model.position.set(px * CELL + ox, place.oy, py * CELL + oz);
           model.rotation.y = rotY;
           this.markerGroup.add(model);
-          const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMat(SECTION_COLORS[k]!, selected));
+          const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMats.get(SECTION_COLORS[k]!, selected));
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(px * CELL, 4, py * CELL);
           if (selected) ring.scale.setScalar(1.4);
@@ -359,7 +365,7 @@ export class View3D {
           geo = this.markerGeo.cyl;
           y = 45;
         }
-        const m = new THREE.Mesh(geo, this.markerMat(SECTION_COLORS[k]!, selected));
+        const m = new THREE.Mesh(geo, this.markerMats.get(SECTION_COLORS[k]!, selected));
         m.position.set(px * CELL, y, py * CELL);
         m.rotation.y = rotY;
         if (selected) m.scale.setScalar(1.25);
@@ -396,7 +402,7 @@ export class View3D {
       this.overlay.add(obj);
     };
     if (this.ctl.layers.room) for (const c of doc.cells6) addRect(c.x, c.y, c.x, c.y, 0x50c8ff, true);
-    for (const l of eventLinks(this.st)) {
+    for (const l of this.src.links()) {
       const geo = new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(l.from[0] * CELL, 120, l.from[1] * CELL),
         new THREE.Vector3(l.to[0] * CELL, 120, l.to[1] * CELL),

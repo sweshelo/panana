@@ -4,8 +4,10 @@
 // Cells are CELL (500) units wide; cell (x, y) is centred on ((x + 0.5) * CELL, 0, (y + 0.5) * CELL).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CELL } from '../game/sections';
+import { CELL, type MapDoc } from '../game/sections';
+import { norm } from './controller';
 import type { GridPointer } from './gridcanvas';
+import type { Selection } from './model';
 
 export class MapScene {
   readonly renderer: THREE.WebGLRenderer;
@@ -179,5 +181,49 @@ export class TileFallback {
     g.add(arrow);
     g.rotation.y = (-rot * Math.PI) / 2;
     return g;
+  }
+}
+
+/** Lambert materials of the record markers, by colour and whether the record is selected (lit up). */
+export class MarkerMaterials {
+  private readonly mats = new Map<string, THREE.MeshLambertMaterial>();
+
+  get(color: string, selected: boolean): THREE.MeshLambertMaterial {
+    const key = color + selected;
+    let m = this.mats.get(key);
+    if (!m) {
+      m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color), emissive: new THREE.Color(selected ? 0x777777 : 0) });
+      this.mats.set(key, m);
+    }
+    return m;
+  }
+}
+
+/** Section 6's cells (see-through squares) and the selected cells or range (boxes) over the ground. */
+export class CellOverlay {
+  readonly group = new THREE.Group();
+  private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
+  private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
+  private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
+  private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+
+  sync(doc: MapDoc, sel: Selection, room: boolean): void {
+    this.group.clear();
+    if (room)
+      for (const c of doc.cells6) {
+        const m = new THREE.Mesh(this.roomGeo, this.roomMat);
+        m.position.set((c.x + 0.5) * CELL, 8, (c.y + 0.5) * CELL);
+        this.group.add(m);
+      }
+    const cells: [number, number][] = sel.type === 'tiles' ? [...sel.cells] : [];
+    if (sel.type === 'rect') {
+      const r = norm(sel);
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) cells.push([x, y]);
+    }
+    for (const [x, y] of cells) {
+      const box = new THREE.LineSegments(this.selGeo, this.selMat);
+      box.position.set((x + 0.5) * CELL, 20, (y + 0.5) * CELL);
+      this.group.add(box);
+    }
   }
 }

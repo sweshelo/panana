@@ -10,7 +10,7 @@ import type { GridCanvas } from './gridcanvas';
 import { SECTION_COLORS } from './legend';
 import type { MapScene } from './mapscene';
 import type { Issue, MapEditState } from './model';
-import { IssueList } from './panes';
+import { IssueList } from './tools';
 
 export type MapViewMode = 'split' | '2d' | '3d';
 
