@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { editorKey } from '../editor/controller';
 import { kindName, ROT_ARROW } from '../editor/legend';
-import { MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
+import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
 import { Tools, TOOLS } from '../editor/panes';
@@ -24,6 +24,7 @@ import { hex8, u32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiStampLabel, lanaiValidate, type LanaiEditState, type LanaiStamp } from './mapedit';
 import { LANAI_FACING_OFFSET, LANAI_LAYOUTS, LANAI_ROT_DIR, LANAI_POINT_SECTIONS, lanaiFloorLabel, lanaiMaps, loadedLanaiMaps, type LanaiMapInfo, type LanaiMaps } from './maps';
+import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
 
@@ -197,7 +198,9 @@ function MapDetail({ session, contents, content, maps, name }: {
           <Tools st={st} tools={LANAI_TOOLS} />
           <AddPanel st={st} view={view} />
           <TilePalette st={st} view={view} />
-          <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS} />
+          <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
+            <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
+          </MapLayers>
         </>
       )}
       right={open && (
@@ -405,7 +408,7 @@ function Inspector({ st, view, content }: { st: LanaiEditState; view: LanaiMapVi
   const sel = st.selection;
   const doc = view.doc;
   if (sel.type === 'rec' && doc.recs[sel.section]?.[sel.index])
-    return <RecFields st={st} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
+    return <RecFields st={st} view={view} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
   if (sel.type === 'tiles' && sel.cells.length === 1) {
     const [x, y] = sel.cells[0]!;
     if (tileAt(doc, x, y)) return <TileFields st={st} view={view} x={x} y={y} />;
@@ -453,7 +456,23 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
   );
 }
 
-function RecFields({ st, section, rec, index }: { st: LanaiEditState; section: number; rec: Rec; index: number }): ReactNode {
+/** "MapObject #64 gimk_05_trebox_1" (and the MapChara row of a character) for the model line of the inspector. */
+function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook | null }): ReactNode {
+  useSignal(view.signal);
+  if (!look) return null;
+  const m = look.model;
+  const name = view.modelName(m);
+  const chara = look.chara !== undefined ? view.maps.contentTable('MapChara') : undefined;
+  const kind = chara && look.chara! > 0 && look.chara! < chara.rows ? LANAI_CHARA_KIND[chara.u32(look.chara!, 0) & 7] : undefined;
+  return (
+    <p className="muted small">
+      {look.chara !== undefined && `MapChara #${look.chara}${kind ? ` (${kind})` : ''}・`}
+      {`モデル: ${!m ? 'モデルなし' : `MapObject #${m.row}${name ? ` ${name}` : ''}`}`}
+    </p>
+  );
+}
+
+function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view: LanaiMapView; section: number; rec: Rec; index: number }): ReactNode {
   const L = LANAI_LAYOUTS[section]!;
   const [cx, cy] = recCellPos(rec, L);
   const max = L.unit === 'cell' ? 29 : 299;
@@ -464,6 +483,7 @@ function RecFields({ st, section, rec, index }: { st: LanaiEditState; section: n
     <>
       <h3>{`${L.label} #${index}`}</h3>
       <p className="muted small">{lanaiRecLabel(section, rec.raw)}</p>
+      <ModelLine view={view} look={view.look(section, index)} />
       <div className="row">
         <label className="field"><span>{`x (${L.unit === 'cell' ? 'マス' : '1/5 マス'})`}</span><NumberInput value={rec.x} min={0} max={max} onCommit={(v) => st.edit(() => { rec.x = v; })} /></label>
         <label className="field"><span>y</span><NumberInput value={rec.y} min={0} max={max} onCommit={(v) => st.edit(() => { rec.y = v; })} /></label>
