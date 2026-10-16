@@ -32,7 +32,51 @@ describe.skipIf(!hasLanai)('explore', () => {
     }
   }, 300000);
 
-  test('explore', async () => {
+  test('explore2', async () => {
+    const mo = s.table('MapObject')!;
+    const nameOf = async (arcH: number, entry: number): Promise<string> => {
+      try {
+        const arc = await s.archive(hex8(arcH));
+        const e = findEntry(arc, entry);
+        if (!e) return '(none)';
+        const f = parseBch(unwrapBch(unpackEntry(arc, e).body));
+        const m = f.models[0];
+        return `${m?.name ?? '-'}${m && m.animations.length ? `[${m.animations.map((a) => a.name).slice(0, 4).join('|')}]` : ''}`;
+      } catch (err) {
+        return `(err ${(err as Error).message})`;
+      }
+    };
+    const moName = new Map<number, string>();
+    const lines: string[] = [];
+    for (let r = 1; r < mo.rows; r++) {
+      const n = await nameOf(mo.u32(r, 0), mo.u32(r, 4));
+      moName.set(r, n);
+      const f = (o: number): number => Math.round(new DataView(mo.data.buffer, mo.data.byteOffset + mo.dataOffset + r * mo.rowSize).getFloat32(o, true) * 100) / 100;
+      lines.push(`${r}/${(mo.rowIds[r]! & 0xfff).toString(16)} ${n} r=${f(0x10)} ${f(0x14)} ${f(0x18)} s=${f(0x1c)} ${f(0x20)} w24=${mo.u32(r, 0x24).toString(16)} ${mo.u32(r, 0x28).toString(16)} ${mo.u32(r, 0x2c).toString(16)}`);
+    }
+    for (let i = 0; i < lines.length; i += 8) log('MO', lines.slice(i, i + 8).join(' ; '));
+    const md = s.table('MonsterDesign')!;
+    const mp = s.table('MonsterParameter')!;
+    const seen = new Map<string, number>();
+    for (const maps of all) {
+      const ctabs = await s.tablesIn(maps.content.archive);
+      const chara = ctabs.find((t) => t.table.name === 'MapChara')?.table;
+      if (!chara) continue;
+      for (let r = 0; r < chara.rows; r++) {
+        const w = Array.from({ length: 12 }, (_, i) => chara.u32(r, i * 4));
+        const k = w.map((x) => x.toString(16)).join(' ');
+        if (seen.has(k)) { seen.set(k, seen.get(k)! + 1); continue; }
+        seen.set(k, 1);
+        const ids = [w[1]!, w[2]!, w[5]!, w[6]!, w[8]!, w[9]!].map((id) => {
+          const o = mo.find(id), d = md.find(id), p = mp.find(id);
+          return `${hex8(id)}:mo${o}${o >= 0 ? '=' + moName.get(o) : ''}/md${d}/mp${p}${p >= 0 ? '=' + s.plain(mp, p, 'name') : ''}`;
+        });
+        log('CHARA', `c${maps.content.index} r${r} ids=${chara.rowIds.length ? hex8(chara.rowIds[r]!) : '-'} ${k} | ${ids.join(' ')} | w11 mo=${moName.get(w[11]!) ?? '-'}`);
+      }
+    }
+  }, 600000);
+
+  test.skip('explore', async () => {
     const mo = s.table('MapObject')!;
     dumpTable('MapObject', mo, [0, 1, 2, 53, 118, 119, 120, 200, 300, 400, 500, 600, 700, 734, 735, 778, 783]);
     // names of a few MapObject models
