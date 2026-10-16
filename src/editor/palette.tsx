@@ -5,7 +5,7 @@ import type { ModelFactory } from '../cgfx/three';
 import { letterByte, letterIndex } from '../game/sections';
 import { useEditorState } from '../ui/useEditorState';
 import { kindColor, kindName, ROT_ARROW } from './legend';
-import type { MapEditState } from './state';
+import type { MapEditState } from './model';
 import { renderThumb } from './thumbs';
 
 export function Palette({ st, factory, palette, partModel, rotDir }: {
