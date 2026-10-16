@@ -13,6 +13,8 @@ import type { TitleKey } from '../rom/titles';
 import type { Opened } from '../ui/workspace';
 import { f32, hex8, s16, u16, u32, w32 } from '../util/bytes';
 import { convertMonster, type MonsterFiles } from './convert';
+import { readGfx } from './gfx';
+import { readH3D } from './h3d';
 import { entryHash, PortStore, type PortedEntry } from './store';
 
 /** Where a game's design row keeps what a port changes (naauao research; each game's model builder). */
@@ -169,7 +171,7 @@ export async function monsterLooks(o: Opened, title: TitleKey): Promise<MonsterL
 export const portName = (look: Pick<MonsterLook, 'title' | 'design'>): string => `enemy_${look.title[0]}${look.design}`;
 
 /** The converted files of a look for another game, and the entries they become in that game's model archive. */
-export async function portedEntries(look: MonsterLook, target: TitleKey, template: Uint8Array, taken: (archive: string, hash: number) => boolean): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number } }> {
+export async function portedEntries(look: MonsterLook, target: TitleKey, template: Uint8Array, taken: (archive: string, hash: number) => boolean): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number }; altIdle: boolean }> {
   const files = convertMonster(await look.files(), look.title, target, { name: portName(look) });
   const l = DESIGN_LAYOUT[target];
   const archive = target === 'kahara' ? MONSTER_MODEL_ARCHIVE : target === 'oahu' ? OAHU_MONSTER_MODEL_ARCHIVE : LANAI_PORT_ARCHIVE;
@@ -185,7 +187,7 @@ export async function portedEntries(look: MonsterLook, target: TitleKey, templat
   const model = add(files.model, `${name}.${ext}`, l.model);
   const texture = add(files.texture, `${name}_tex.${ext}`, l.texture);
   const motion = add(files.motion, `${name}_battle.${ext}`, l.motion);
-  return { entries, hashes: { model, texture, motion } };
+  return { entries, hashes: { model, texture, motion }, altIdle: hasAltIdle(files, target) };
 }
 
 /** A new design row for `target`: the template row (the monster's current look) with the ported files and the look's sizes. */
@@ -229,4 +231,15 @@ export function lanaiTemplate(row: (i: number) => Uint8Array, rows: number, curr
   if (current >= 0 && current < rows && clean(current)) return current;
   for (let i = 0; i < rows; i++) if (clean(i)) return i;
   return current;
+}
+
+/**
+ * Whether the files have a looping `002_` skeletal animation: the battle's other idle, which a monster plays instead
+ * of `001_` when its switch is on (RPG2 MonsterParameter +0x4A bit3, RPG3 +0x48 bit9, FREE! +0x18 bit0).
+ */
+export function hasAltIdle(files: MonsterFiles, title: TitleKey): boolean {
+  const names: string[] = [];
+  if (title === 'kahara') names.push(...readGfx(files.model).skeletalAnimations.map((a) => a.name));
+  else for (const b of [files.model, files.motion]) if (b) names.push(...readH3D(b).skeletalAnimations.map((a) => a.name));
+  return names.some((n) => n.startsWith('002_'));
 }

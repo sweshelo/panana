@@ -11,7 +11,8 @@ import { lanaiMonsterSet } from '../src/lanai/monsterModels';
 import { lanaiMonsterDesign, lanaiMonsters } from '../src/lanai/monsters';
 import { LanaiSession } from '../src/lanai/session';
 import { OahuSession } from '../src/oahu/session';
-import { giveMonsterLook } from '../src/port/apply';
+import { altIdle, giveMonsterLook, setAltIdle } from '../src/port/apply';
+import { lanaiItemModel, lanaiItems } from '../src/lanai/items';
 import { giveItemModel, itemLooks } from '../src/port/items';
 import { monsterLooks, type MonsterLook } from '../src/port/looks';
 import { PortStore } from '../src/port/store';
@@ -143,5 +144,48 @@ describe.skipIf(!ready)('porting between the games', () => {
     // the converted BCH is RPG3's version
     const src = await s.itemModels.sourceFiles(h2);
     expect(parseBch(unwrapBch(src!.body)).models.length).toBeGreaterThan(0);
+  }, 300_000);
+  test('RPG FREE! items are listed and get models of the other games, in 719F0000', async () => {
+    const s = o.lanai!;
+    const items = lanaiItems(s);
+    expect(items.length).toBeGreaterThan(2000);
+    const kizu = items.find((it) => it.name === 'キズぐすり')!;
+    expect(kizu.kind).toBe(0x11);
+    const fromLanai = await itemLooks(o, 'lanai');
+    expect(fromLanai.length).toBeGreaterThan(1000);
+    const target = items.find((it) => it.model && it.kind === 0x11)!;
+    const look = (await itemLooks(o, 'oahu'))[0]!;
+    const h = await giveItemModel(o, 'lanai', target.row, look);
+    const after = lanaiItems(s).find((it) => it.row === target.row)!;
+    expect(after.archive).toBe(0x719f0000);
+    expect(after.model).toBe(h);
+    const m = await lanaiItemModel(s, after);
+    expect(m?.kind).toBe('model');
+    // and the other way: an RPG3 item gets an RPG FREE! model
+    const it3 = o.oahu!.items.items.filter((x) => x.model && x.name)[1]!;
+    await giveItemModel(o, 'oahu', it3.id, fromLanai[0]!);
+    expect((await o.oahu!.itemModels.model(o.oahu!.items.item(it3.id)!.model))?.kind).toBe('model');
+  }, 300_000);
+
+  test('the other idle switch goes off when the new look has no 002_', async () => {
+    const s = o.lanai!;
+    const row = lanaiMonsters(s).find((m) => m.name && m.designRow >= 0 && !(s.need('MonsterParameter').u32(m.row, 0x18) & 1))!.row;
+    setAltIdle(o, 'lanai', row, true);
+    expect(altIdle(o, 'lanai', row)).toBe(true);
+    // RPG2's looks have no 002_ (except a few): pick one without it
+    const plain = (await monsterLooks(o, 'kahara')).find((l) => l.names.some((n) => n.includes('スライム'))) ?? (await monsterLooks(o, 'kahara'))[0]!;
+    await giveMonsterLook(o, 'lanai', row, plain);
+    const hasIt = lanaiMonsters(s).find((m) => m.row === row)!;
+    expect(hasIt.designRow).toBeGreaterThan(0);
+    // off unless the converted look has a 002_ animation
+    const set = await lanaiMonsterSet(s, lanaiMonsterDesign(s, hasIt.designRow)!);
+    const has002 = [...set.models.values()].some((m) => m.animations.some((a) => a.name.startsWith('002_')));
+    expect(altIdle(o, 'lanai', row)).toBe(has002);
+    for (const t of ['kahara', 'oahu'] as const) {
+      setAltIdle(o, t, 2, true);
+      expect(altIdle(o, t, 2)).toBe(true);
+      setAltIdle(o, t, 2, false);
+      expect(altIdle(o, t, 2)).toBe(false);
+    }
   }, 300_000);
 });

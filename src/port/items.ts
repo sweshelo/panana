@@ -12,6 +12,11 @@ import { bchOffset } from '../bch/bch';
 import { convertItem } from './convert';
 import { readH3D, writeH3D } from './h3d';
 import { entryHash, PortStore } from './store';
+import { lanaiItemBody, lanaiItemRef, lanaiItems, lanaiSetItemModel, textureOnlyKind } from '../lanai/items';
+
+/** RPG FREE!: the archive ported item models go into (in the Update's patchList), and an entry of it to pack like. */
+const LANAI_ITEM_ARCHIVE = '719F0000';
+const LANAI_ITEM_LIKE = 0;
 
 export interface ItemLook {
   title: TitleKey;
@@ -59,7 +64,16 @@ export async function itemLooks(o: Opened, title: TitleKey): Promise<ItemLook[]>
     }
     return out;
   }
-  return [];
+  const s = o.lanai;
+  if (!s) return [];
+  return lanaiItems(s).filter((it) => it.model && it.name && !textureOnlyKind(it.kind)).map((it) => ({
+    title, id: it.row, name: it.name, model: lanaiItemRef(s, it),
+    files: async () => {
+      const body = await lanaiItemBody(s, it);
+      if (!body) throw new Error('モデルのエントリがありません');
+      return { body, extra: [] };
+    },
+  }));
 }
 
 /** A BCH with the textures of `extra` it does not have put in (RPG3's items share some textures in other entries). */
@@ -115,5 +129,13 @@ export async function giveItemModel(o: Opened, target: TitleKey, id: number, loo
     s.saveNow();
     return hash;
   }
-  throw new Error('電波人間のRPG FREE! のアイテムはまだ移植先にできません');
+  const s = o.lanai;
+  if (!s) throw new Error('電波人間のRPG FREE! を開いていません');
+  const it = lanaiItems(s).find((x) => x.row === id);
+  if (!it?.model || textureOnlyKind(it.kind)) throw new Error('このアイテムはモデルを差し替えられません');
+  // the game reads any archive ItemDataCore +0x18 names: the ported ones go into the Update's monster archive
+  const hash = await add(LANAI_ITEM_ARCHIVE, LANAI_ITEM_LIKE, (n) => s.dump.readRomfs(n));
+  s.forgetArchive(LANAI_ITEM_ARCHIVE);
+  lanaiSetItemModel(s, it, LANAI_ITEM_ARCHIVE, hash);
+  return hash;
 }

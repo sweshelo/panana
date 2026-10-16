@@ -664,6 +664,11 @@ export class MonsterBook {
     this.reload();
   }
 
+  /** A monster's MonsterParameter row (the table's bytes: writes go to the export; call reload() after). */
+  paramRow(row: number): Uint8Array {
+    return this.params.row(row);
+  }
+
   /** Number of MonsterDesign rows, and a row's bytes (a copy). */
   get designRows(): number {
     return this.design.rows;
