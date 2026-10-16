@@ -2,11 +2,12 @@
 // the rows laid out a little differently. actionData +0x1E〜+0x28 are rows of directData.bin (985 × 0x16, read by
 // FUN_0032AFB0); a row names a motion (animData row), an effect (effectData row, CGFX in A4070000), a sound effect and
 // their timing. The monsters' skill motions are in a BCH of their own (monsterDesign +0x14; monsterModels.ts).
-import { findByName, parseArchive } from '../archive/gsarc';
+import { findByName, parseArchive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
-import { EffectTable, effectModelNames, type EffectLayout, type EffectModel, type Performance } from '../game/performance';
+import { EffectTable, effectModelNames, writePerfField, type EffectLayout, type EffectModel, type PerfField, type PerfLayout, type Performance } from '../game/performance';
 import type { Dump } from '../rom/dump';
-import { s16, u16 } from '../util/bytes';
+import { equalBytes, s16, u16 } from '../util/bytes';
+import type { OahuRows } from './rows';
 
 export const OAHU_PERF_ARCHIVE = '402F0000';
 /** The effects of almost all effectData rows (a few name 1AD40000 or F9270000). */
@@ -42,6 +43,9 @@ export interface OahuPerformance extends Performance {
   next: number;
 }
 
+/** Where RPG3's directData row holds the fields the editor changes (RPG2's are in game/performance.ts PERF). */
+export const OAHU_PERF: PerfLayout = { length: 0x04, effect: 0x06, se: 0x08, anim: 0x0c, motionStart: 0x0f, addEffect: 0x10, shakeDelay: 0x14, seDelay: 0x15 };
+
 /** The first animData row of the monsters' motions (92 = 001_ wait); the rows before are the 電波人間's. */
 export const OAHU_MONSTER_ANIMS = 92;
 
@@ -66,22 +70,39 @@ export function decodeOahuPerformance(r: Uint8Array, row: number): OahuPerforman
   };
 }
 
+/** The tables of 402F0000 the performances use: directData (editable) and the effects (read only). */
+export interface OahuPerfTables {
+  direct: GsTable;
+  effects: EffectTable;
+  /** directData's entry in 402F0000, and the table as it is there. */
+  entry: ArcEntry;
+  original: Uint8Array;
+}
+
 /** directData, effectData and directDataAddEffect of 402F0000, and the names of the effects; read when first used. */
 export class OahuPerformances {
-  private loaded: Promise<{ direct: GsTable; effects: EffectTable } | null> | null = null;
+  private loaded: Promise<OahuPerfTables | null> | null = null;
   private names: Promise<Map<number, EffectModel>> | null = null;
+  /** The tables once read (the edits need them at hand). */
+  current: OahuPerfTables | null = null;
+  /** A saved directData to put back once the tables are read. */
+  private pending: Uint8Array | null = null;
 
   constructor(private readonly dump: Dump) {}
 
-  tables(): Promise<{ direct: GsTable; effects: EffectTable } | null> {
+  tables(): Promise<OahuPerfTables | null> {
     this.loaded ??= this.dump.readRomfs(OAHU_PERF_ARCHIVE).then((b) => {
       const arc = parseArchive(b);
       const table = (name: string): GsTable | null => {
         const f = findByName(arc, name);
         return f ? new GsTable(f.body) : null;
       };
-      const direct = table('directData.bin');
-      return direct ? { direct, effects: new EffectTable(table('effectData.bin'), table('directDataAddEffect.bin'), OAHU_EFFECT_LAYOUT) } : null;
+      const d = findByName(arc, 'directData.bin');
+      if (!d) return null;
+      const direct = new GsTable(d.body.slice());
+      if (this.pending) direct.data = this.pending.slice();
+      this.current = { direct, effects: new EffectTable(table('effectData.bin'), table('directDataAddEffect.bin'), OAHU_EFFECT_LAYOUT), entry: d.entry, original: d.body };
+      return this.current;
     }, () => null);
     return this.loaded;
   }
@@ -90,6 +111,35 @@ export class OahuPerformances {
   effectNames(): Promise<Map<number, EffectModel>> {
     this.names ??= this.dump.readRomfs(OAHU_EFFECT_ARCHIVE).then(effectModelNames, () => new Map());
     return this.names;
+  }
+
+  /** Rows of directData in the archive (rows past them were added by edits). */
+  get originalRows(): number {
+    return this.current ? new GsTable(this.current.original).rows : 0;
+  }
+
+  /** Whether directData was edited. */
+  get changed(): boolean {
+    const t = this.current;
+    return t ? !equalBytes(t.direct.data, t.original) : !!this.pending;
+  }
+
+  /** The edited directData (null when unchanged), for saving; and putting a saved one back. */
+  saved(): Uint8Array | null {
+    const t = this.current;
+    if (!t) return this.pending;
+    return this.changed ? t.direct.data.slice() : null;
+  }
+  async restore(bytes: Uint8Array): Promise<void> {
+    this.pending = bytes;
+    const t = await this.tables();
+    if (t) t.direct.data = bytes.slice();
+  }
+
+  /** directData's entry of 402F0000 and its bytes, when edited (the export puts it in the archive). */
+  async replacement(): Promise<[number, Uint8Array] | null> {
+    const t = await this.tables();
+    return t && this.changed ? [t.entry.index, t.direct.data] : null;
   }
 
   /**
@@ -104,4 +154,95 @@ export class OahuPerformances {
     const c = decodeOahuPerformance(direct.row(p.counterpart), p.counterpart);
     return { ...p, anim: c.anim, face: c.face, next: c.next };
   }
+}
+
+/** Where a directData row is used: a slot of an action. */
+export interface OahuPerfUse {
+  action: number;
+  key: string;
+}
+
+/** The slots of every action that name each directData row. */
+export function oahuPerformanceUses(actions: OahuRows): Map<number, OahuPerfUse[]> {
+  const out = new Map<number, OahuPerfUse[]>();
+  for (let a = 1; a < actions.rows; a++)
+    for (const s of OAHU_PERF_SLOTS) {
+      const p = actions.get(a, s.key);
+      if (!p) continue;
+      let l = out.get(p);
+      if (!l) out.set(p, (l = []));
+      l.push({ action: a, key: s.key });
+    }
+  return out;
+}
+
+/**
+ * Edits of the performances of RPG3's actions (#93), as RPG2's ActionEdits: a slot is pointed at another directData
+ * row, or a field of its row is changed. Rows of the archive are never changed in place (others may share them, and
+ * code.bin may name some): the slot is pointed at a row with the wanted bytes, an existing one when there is one, the
+ * slot's own added row when only it uses that, else a copy appended to directData.
+ */
+export class OahuPerfEdits {
+  constructor(
+    private readonly actions: OahuRows,
+    private readonly perf: OahuPerformances,
+  ) {}
+
+  private get direct(): GsTable | null {
+    return this.perf.current?.direct ?? null;
+  }
+
+  /** Point a slot (OAHU_PERF_SLOTS key) at a directData row (0 = none). */
+  setSlot(row: number, key: string, p: number): void {
+    const t = this.direct;
+    if (p && (!t || p >= t.rows)) throw new Error(`演出の行 ${p} はありません`);
+    this.actions.set(row, key, p);
+  }
+
+  /** Copy every slot of another action. */
+  copyPerformance(row: number, from: number): void {
+    for (const s of OAHU_PERF_SLOTS) this.actions.set(row, s.key, this.actions.get(from, s.key));
+  }
+
+  /** Whether a slot has a row whose fields can be changed. */
+  canEditSlot(row: number, key: string): boolean {
+    const t = this.direct;
+    const p = this.actions.get(row, key);
+    return !!t && p > 0 && p < t.rows;
+  }
+
+  /** Change a field of the row of a slot. Returns the row the slot then uses. */
+  setSlotField(row: number, key: string, field: PerfField, v: number): number {
+    const t = this.direct;
+    if (!t || !this.canEditSlot(row, key)) throw new Error(`アクション #${row} のこの枠には演出の行がありません`);
+    const p = this.actions.get(row, key);
+    const want = t.row(p).slice();
+    writePerfField(want, field, v, OAHU_PERF);
+    if (equalBytes(want, t.row(p))) return p;
+    for (let i = 1; i < t.rows; i++) {
+      if (equalBytes(t.row(i), want)) {
+        this.actions.set(row, key, i);
+        return i;
+      }
+    }
+    if (p >= this.perf.originalRows) {
+      const uses = oahuPerformanceUses(this.actions).get(p) ?? [];
+      if (uses.every((u) => u.action === row && u.key === key)) {
+        t.row(p).set(want);
+        return p;
+      }
+    }
+    const n = t.append(want, t.indexOffset ? newHash(t) : 0);
+    if (n > 0xffff) throw new Error('演出の表がいっぱいです');
+    this.actions.set(row, key, n);
+    return n;
+  }
+}
+
+/** A hash for an added row of a table with a hash index. */
+function newHash(t: GsTable): number {
+  const used = t.hashes();
+  let hash = (0x7e720000 + t.rows) >>> 0;
+  while (used.has(hash)) hash = (hash + 0x10001) >>> 0;
+  return hash;
 }

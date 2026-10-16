@@ -131,6 +131,8 @@ export interface Performance {
 /** Offsets of the fields of a performance that the editor changes. */
 export const PERF = { length: 0x02, effect: 0x04, se: 0x06, anim: 0x0a, motionStart: 0x0d, addEffect: 0x0e, shakeDelay: 0x12, seDelay: 0x13 } as const;
 export type PerfField = keyof typeof PERF;
+/** Where the fields of a directData row are (RPG2's {@link PERF}, RPG3's OAHU_PERF). */
+export type PerfLayout = Record<PerfField, number>;
 /** Fields held in one byte (the others are u16); s8 ones are written as their low byte. */
 const PERF_BYTE: Record<PerfField, boolean> = { length: false, effect: false, se: false, anim: true, motionStart: true, addEffect: true, shakeDelay: true, seDelay: true };
 /** Range of each field. */
@@ -158,8 +160,8 @@ export function decodePerformance(r: Uint8Array, row: number): Performance {
 }
 
 /** Write a field of a directData row (in place). */
-export function writePerfField(r: Uint8Array, field: PerfField, v: number): void {
-  const o = PERF[field];
+export function writePerfField(r: Uint8Array, field: PerfField, v: number, layout: PerfLayout = PERF): void {
+  const o = layout[field];
   if (PERF_BYTE[field]) r[o] = v & 0xff;
   else {
     r[o] = v & 0xff;

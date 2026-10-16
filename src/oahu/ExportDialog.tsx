@@ -25,7 +25,8 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
   const loaded = useAsync(() => PortStore.of('oahu').then((s) => s.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
   const designs = !!session.monsterModels.saved();
-  const nothing = !edited.length && !added.length && !tables.length && !patches.length && !shops.length && !storyEdits && !ported.length && !designs;
+  const direct = session.performances.changed;
+  const nothing = !edited.length && !added.length && !tables.length && !patches.length && !shops.length && !storyEdits && !ported.length && !designs && !direct;
   const ips = patches.length > 0 || storyEdits > 0;
   return (
     <Dialog title="MOD の書き出し (RPG3)" onClose={onClose}>
@@ -44,6 +45,7 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
           {patches.length > 0 && <p>{`コードのパッチ ${patches.length} 個 (exefs/code.ips)${broken ? `。うち ${broken} 個は誤りがあるので書き出しません` : ''}`}</p>}
           {storyEdits > 0 && <p>{`段階・物語の値の書き込みとスクリプトのメッセージの変更 ${storyEdits} か所 (exefs/code.ips)${story!.errors.length ? `。うち ${story!.errors.length} か所は作れないので書き出しません` : ''}`}</p>}
           {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行)'] : [])].join('、')}`}</p>}
+          {direct && <p>{'アクションの演出 (402F0000 の directData.bin)'}</p>}
           {tables.length > 0 && <p className="muted small">{`変更した表: ${[...new Set(tables)].join('、')}`}</p>}
           <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。`}</p>
           {error && <div className="error">{error}</div>}

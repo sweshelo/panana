@@ -80,11 +80,16 @@ export class OahuMonsterModels {
     if (t) t.table.data = bytes.slice();
   }
 
-  /** 402F0000 with the edited monsterDesign.bin, or null when it is unchanged. */
-  async archive(): Promise<Uint8Array | null> {
+  /**
+   * 402F0000 with the edited monsterDesign.bin and the other entries given (directData of the performances), or null
+   * when nothing changed.
+   */
+  async archive(more: Map<number, Uint8Array> = new Map()): Promise<Uint8Array | null> {
     const t = await this.load();
-    if (!t || equalBytes(t.table.data, t.original)) return null;
-    return rebuildArchive(t.arc, new Map([[t.entry.index, t.table.data]]));
+    if (!t) return null;
+    const entries = new Map(more);
+    if (!equalBytes(t.table.data, t.original)) entries.set(t.entry.index, t.table.data);
+    return entries.size ? rebuildArchive(t.arc, entries) : null;
   }
 
   async design(row: number): Promise<OahuMonsterDesign | null> {
