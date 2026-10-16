@@ -11,8 +11,8 @@ import { renderObjectThumb } from './thumbs';
 import { OBJ_INVISIBLE, recordObjectRow, type ObjectContext, type Placement } from '../game/objects';
 import { norm, type Controller } from './controller';
 import { kindColor, SECTION_COLORS } from './legend';
-import { MapScene, TileFallback, TileLayer } from './mapscene';
-import { GRID, tileAt, type EventLink, type MapEditState } from './model';
+import { MapScene, MarkerMaterials, TileFallback, TileLayer } from './mapscene';
+import { GRID, type EventLink, type MapEditState } from './model';
 
 const MARKER_Y = 40;
 /** Height of a monster shown on the map (a boss's character; a cell is 500). */
@@ -58,7 +58,7 @@ export class View3D {
     cyl: new THREE.CylinderGeometry(50, 50, 90, 12),
     ring: new THREE.RingGeometry(70, 95, 24),
   };
-  private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
+  private readonly markerMats = new MarkerMaterials();
 
   constructor(
     private readonly st: MapEditState,
@@ -141,16 +141,6 @@ export class View3D {
         ? doc.tiles.map((t) => ({ x: t.x, y: t.y, sig: `${t.kind}/${t.rot}/${t.letter}/${ts}`, make: () => this.tileObject(t.kind, t.rot, t.letter) }))
         : [],
     );
-  }
-
-  private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
-    const key = color + selected;
-    let m = this.markerMats.get(key);
-    if (!m) {
-      m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color), emissive: selected ? new THREE.Color(0x777777) : new THREE.Color(0) });
-      this.markerMats.set(key, m);
-    }
-    return m;
   }
 
   /** Object models by mapObject row (loaded on demand). */
@@ -348,7 +338,7 @@ export class View3D {
           model.position.set(px * CELL + ox, place.oy, py * CELL + oz);
           model.rotation.y = rotY;
           this.markerGroup.add(model);
-          const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMat(SECTION_COLORS[k]!, selected));
+          const ring = new THREE.Mesh(this.markerGeo.ring, this.markerMats.get(SECTION_COLORS[k]!, selected));
           ring.rotation.x = -Math.PI / 2;
           ring.position.set(px * CELL, 4, py * CELL);
           if (selected) ring.scale.setScalar(1.4);
@@ -375,7 +365,7 @@ export class View3D {
           geo = this.markerGeo.cyl;
           y = 45;
         }
-        const m = new THREE.Mesh(geo, this.markerMat(SECTION_COLORS[k]!, selected));
+        const m = new THREE.Mesh(geo, this.markerMats.get(SECTION_COLORS[k]!, selected));
         m.position.set(px * CELL, y, py * CELL);
         m.rotation.y = rotY;
         if (selected) m.scale.setScalar(1.25);
