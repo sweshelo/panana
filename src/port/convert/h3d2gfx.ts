@@ -101,7 +101,7 @@ function materialToGfx(m: H3DMaterial, layer: number): GfxMaterial {
   const textureEnvironments: GfxTexEnv[] = p.texEnvStages.map((s, i) => ({
     constant: (p.constantColors >>> (i * 4)) & 15,
     stage: {
-      // Through the PICA words: the operand word has the alpha operands at bits 12, 16, 20 (see gfxhash.ts alphaOperands).
+      // through the PICA words, as the file stores them
       ...texEnvStageFrom(
         (s.source.color[0] | (s.source.color[1] << 4) | (s.source.color[2] << 8) | (s.source.alpha[0] << 16) | (s.source.alpha[1] << 20) | (s.source.alpha[2] << 24)) >>> 0,
         (s.operand.color[0] | (s.operand.color[1] << 4) | (s.operand.color[2] << 8) | (s.operand.alpha[0] << 12) | (s.operand.alpha[1] << 16) | (s.operand.alpha[2] << 20)) >>> 0,

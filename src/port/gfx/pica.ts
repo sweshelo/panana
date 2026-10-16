@@ -147,7 +147,7 @@ export const alphaTestFrom = (v: number): PICAAlphaTest => ({ enabled: (v & 1) !
 export const alphaTestTo = (t: PICAAlphaTest): number => (t.enabled ? 1 : 0) | ((t.function & 7) << 4) | ((t.reference & 0xff) << 8);
 
 const SRC_MASK = 0x0fff0fff;
-const OPR_MASK = 0x001fffff;
+const OPR_MASK = 0x00777fff;
 const CMB_MASK = 0x000f000f;
 const SCL_MASK = 0x00030003;
 
@@ -155,7 +155,7 @@ const SCL_MASK = 0x00030003;
 export function texEnvStageFrom(src: number, opr: number, cmb: number, col: number, scl: number): PICATexEnvStage {
   return {
     source: { color: [src & 15, (src >>> 4) & 15, (src >>> 8) & 15], alpha: [(src >>> 16) & 15, (src >>> 20) & 15, (src >>> 24) & 15] },
-    operand: { color: [opr & 15, (opr >>> 4) & 15, (opr >>> 8) & 15], alpha: [(opr >>> 12) & 7, (opr >>> 15) & 7, (opr >>> 18) & 7] },
+    operand: { color: [opr & 15, (opr >>> 4) & 15, (opr >>> 8) & 15], alpha: [(opr >>> 12) & 7, (opr >>> 16) & 7, (opr >>> 20) & 7] },
     combiner: { color: cmb & 15, alpha: (cmb >>> 16) & 15 },
     color: rgbaFromU32(col),
     scale: { color: scl & 3, alpha: (scl >>> 16) & 3 },
@@ -170,7 +170,7 @@ export function texEnvStageTo(s: PICATexEnvStage): [number, number, number, numb
   const [c, a] = [s.source.color, s.source.alpha];
   const src = (c[0] & 15) | ((c[1] & 15) << 4) | ((c[2] & 15) << 8) | ((a[0] & 15) << 16) | ((a[1] & 15) << 20) | ((a[2] & 15) << 24);
   const [oc, oa] = [s.operand.color, s.operand.alpha];
-  const opr = (oc[0] & 15) | ((oc[1] & 15) << 4) | ((oc[2] & 15) << 8) | ((oa[0] & 7) << 12) | ((oa[1] & 7) << 15) | ((oa[2] & 7) << 18);
+  const opr = (oc[0] & 15) | ((oc[1] & 15) << 4) | ((oc[2] & 15) << 8) | ((oa[0] & 7) << 12) | ((oa[1] & 7) << 16) | ((oa[2] & 7) << 20);
   const cmb = (s.combiner.color & 15) | ((s.combiner.alpha & 15) << 16);
   const scl = (s.scale.color & 3) | ((s.scale.alpha & 3) << 16);
   const o = s.otherBits;

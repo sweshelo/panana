@@ -50,13 +50,9 @@ const GL_SRC: Record<number, number> = { 3: 0x84c0, 4: 0x84c1, 5: 0x84c2, 6: 0x8
 const GL_COLOR_OP: Record<number, number> = { 0: 0x300, 1: 0x301, 2: 0x302, 3: 0x303, 4: 0x8580, 8: 0x8581, 12: 0x8582, 5: 0x8583, 9: 0x8584, 13: 0x8585 };
 const GL_ALPHA_OP: Record<number, number> = { 0: 0x302, 1: 0x303, 2: 0x8580, 3: 0x8583, 4: 0x8581, 5: 0x8584, 6: 0x8582, 7: 0x8585 };
 
-/**
- * The alpha operands of a stage as the PICA reads them (bits 12, 16, 20 of the operand word; gfx/pica.ts splits the
- * word at bits 12, 15, 18, which keeps the bytes but not the meaning).
- */
+/** The alpha operands of a stage (bits 12, 16, 20 of the PICA operand word). */
 export function alphaOperands(s: GfxTexEnv['stage']): [number, number, number] {
-  const w = texEnvStageTo(s)[1];
-  return [(w >>> 12) & 7, (w >>> 16) & 7, (w >>> 20) & 7];
+  return [...s.operand.alpha];
 }
 
 function blendWords(b: Bytes, mode: number, f: PICABlendFunction): void {
