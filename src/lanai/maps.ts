@@ -143,9 +143,19 @@ export interface LanaiMapGroup {
 export interface LanaiMonsterGroupRow {
   row: number;
   id: number;
-  /** The MonsterParameter row IDs of the group (+0x00〜+0x14, 0 left out). */
+  /** +0x00: a small row ID (0x80000000, 0x80000001, …); not a monster, meaning not known yet (#130). */
+  kind: number;
+  /** +0x04〜+0x64: 25 MonsterParameter row IDs as written (0 = none; 0x80000000 = row 0, the empty monster). */
+  slots: number[];
+  /** The MonsterParameter row IDs of the group (the slots, empty ones left out). */
   monsters: number[];
+  /** The bytes after the slots (+0x68 on: weights, count codes or flags; not known yet). */
+  tail: Uint8Array;
 }
+
+/** MonsterGroup rows: +0x00 kind, then 25 u32 monster slots from +0x04 (0x9C bytes a row; #130, map.md §5.7). */
+const MG_SLOTS = 25;
+const MG_SLOT0 = 0x04;
 
 const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
 const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
@@ -382,7 +392,6 @@ export class LanaiMaps {
     this.changed();
   }
 
-  /** The content's MonsterGroup rows (section 6 cells and header name them by row ID). */
   /** The content's MonsterGroup (section 6 names its rows by row ID). */
   get monsterGroup(): LanaiTable | undefined {
     return this.contentTable('MonsterGroup');
@@ -391,11 +400,19 @@ export class LanaiMaps {
   monsterGroups(): LanaiMonsterGroupRow[] {
     const t = this.monsterGroup;
     if (!t) return [];
-    return Array.from({ length: t.rows }, (_, row) => ({
-      row,
-      id: t.rowId(row),
-      monsters: Array.from({ length: 6 }, (_, i) => t.u32(row, i * 4)).filter((v) => v && v !== 0x80000000),
-    }));
+    const n = Math.max(0, Math.min(MG_SLOTS, (t.rowSize - MG_SLOT0) >> 2));
+    const end = MG_SLOT0 + MG_SLOTS * 4;
+    return Array.from({ length: t.rows }, (_, row) => {
+      const slots = Array.from({ length: n }, (_, i) => t.u32(row, MG_SLOT0 + i * 4));
+      return {
+        row,
+        id: t.rowId(row),
+        kind: t.u32(row, 0),
+        slots,
+        monsters: slots.filter((v) => v && v !== 0x80000000),
+        tail: t.row(row).slice(end),
+      };
+    });
   }
 
   /**

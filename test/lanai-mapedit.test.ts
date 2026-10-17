@@ -340,6 +340,30 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(maps.isChanged(info)).toBe(false);
   });
 
+  test('every content: MonsterGroup rows name MonsterParameter rows from +0x04 (the +0x00 value is not a monster)', async () => {
+    const mp = s.table('MonsterParameter')!;
+    let rows = 0;
+    for (const c of lanaiContents(s)) {
+      const m = await lanaiMaps(s, c).catch(() => null);
+      const t = m?.monsterGroup;
+      if (!m || !t) continue;
+      expect(t.rowSize).toBe(0x9c);
+      for (const g of m.monsterGroups()) {
+        rows++;
+        expect(g.slots.length).toBe(25);
+        expect(g.kind >>> 0).toBeLessThan(0x80000100); // a small row ID (0x80000000, 0x80000001, …), not a monster's
+        for (const id of g.monsters) expect(mp.find(id)).toBeGreaterThanOrEqual(0);
+        expect(g.tail.length).toBe(0x9c - 0x68);
+      }
+    }
+    expect(rows).toBeGreaterThan(0);
+    // content 38, row 1: +0x00 = 0x80000009 is not listed; its monster (レイクタートル) is
+    const g = maps.monsterGroups()[1]!;
+    expect(g.kind).toBe(0x80000009);
+    expect(g.monsters[0]).toBe(maps.monsterGroup!.u32(1, 4));
+    expect(g.monsters).not.toContain(0x80000009);
+  }, 300000);
+
   test('indoor tiles switch the MapData of a group that has an indoor row, and the checks say so', async () => {
     let found = false;
     for (const c of lanaiContents(s)) {
