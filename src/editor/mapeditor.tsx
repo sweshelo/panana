@@ -1,20 +1,23 @@
 // The map editor: map list, 2D / 3D views, tools, palette, inspector, validation. The views are canvases owned
 // here; the header and the panes around them are React (src/editor/panes.tsx), rendered into this element, which
 // the shell places in the map page.
-import { loadTilesetModels } from '../cgfx/loader';
+import { loadComposite, loadObjectModels, loadTilesetModels } from '../cgfx/loader';
 import { ModelFactory } from '../cgfx/three';
+import { charaMonsterDesign } from '../game/boss';
 import type { Game } from '../game/game';
-import { isIndoor } from '../game/objects';
+import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
+import { isIndoor, recordPlacement } from '../game/objects';
 import type { Session } from '../session';
 import { mountReact } from '../ui/mount';
 import { Signal } from '../ui/useEditorState';
 import { Controller, editorKey } from './controller';
 import { h } from './dom';
+import { eventLinks } from './events';
 import { MapEditorUi } from './panes';
 import type { EditorState } from './state';
 import { validate, type Issue } from './validate';
 import { View2D } from './view2d';
-import { View3D } from './view3d';
+import { View3D, type View3DSource } from './view3d';
 
 export type ViewMode = '2d' | '3d' | 'split';
 
@@ -51,9 +54,39 @@ export class MapEditor {
     this.game = session.game;
     this.st = session.st;
     this.ctl = new Controller(this.st);
-    this.v2 = new View2D(this.st, this.ctl);
-    this.v3 = new View3D(this.st, this.ctl);
+    this.v2 = new View2D(this.st, this.ctl, () => eventLinks(this.st));
+    this.v3 = new View3D(this.st, this.ctl, this.view3dSource());
     this.views = h('div', { class: 'views' }, h('div', { class: 'pane pane2d' }, this.v2.canvas), h('div', { class: 'pane pane3d' }, this.v3.canvas));
+  }
+
+  /** RPG2's tables as the 3D view sees them (tile and object models, placements, bosses, switch lines). */
+  private view3dSource(): View3DSource {
+    const { game, st } = this;
+    return {
+      partModel: (kind, letter) => this.partModel(kind, letter),
+      objectModel: (row) => game.master.objectModel(row),
+      loadObjectModels: (refs) => loadObjectModels(game, refs),
+      placement: (section, rec, doc, events) => recordPlacement(section, rec, doc, game.master, events),
+      charaMonster: (model) => charaMonsterDesign(game.master, model),
+      monsterModel: async (design) => {
+        const book = await game.monsters();
+        const mon = book.monsters.find((m) => m.design === design);
+        const ref = mon ? book.modelOf(mon) : null;
+        if (!ref) return null;
+        return { set: await loadComposite(game, MONSTER_MODEL_ARCHIVE, ref.model, ref.texture), model: ref.model };
+      },
+      links: () => eventLinks(st),
+    };
+  }
+
+  /** Tile kind -> letter indices of the open map's tileset (the palette). */
+  palette(): Map<number, number[]> {
+    return this.game.master.palette(this.st.tileset);
+  }
+
+  /** Model hash of a tile (kind, letter index) in the open map's tileset. */
+  partModel(kind: number, letter: number): number {
+    return this.game.master.partModel(kind, this.st.tileset, letter);
   }
 
   static async create(session: Session): Promise<MapEditor> {
@@ -245,6 +278,6 @@ export class MapEditor {
   private readonly onKey = (e: KeyboardEvent): void => {
     const st = this.st;
     if (!this.active || document.querySelector('dialog[open]')) return;
-    if (editorKey(e, this.ctl, () => st.game.master.palette(st.tileset).get(st.brush.kind) ?? [0])) e.preventDefault();
+    if (editorKey(e, this.ctl, () => this.palette().get(st.brush.kind) ?? [0])) e.preventDefault();
   };
 }

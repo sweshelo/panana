@@ -34,6 +34,16 @@ export interface Issue {
   key: string;
 }
 
+/** A line the views draw from one record to another (a switch and what it opens), in cell coordinates. */
+export interface EventLink {
+  from: [number, number];
+  to: [number, number];
+  /** A generic switch (solid) rather than a hard-coded script pair (dashed). */
+  generic: boolean;
+  /** One of its ends is selected. */
+  selected: boolean;
+}
+
 export type EditEvent = 'doc' | 'selection' | 'tool' | 'map';
 type Listener = (what: EditEvent) => void;
 

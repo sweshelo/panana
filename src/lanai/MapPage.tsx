@@ -14,7 +14,7 @@ import { kindName, ROT_ARROW } from '../editor/legend';
 import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
-import { Tools, TOOLS } from '../editor/panes';
+import { Tools, TOOLS } from '../editor/tools';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';

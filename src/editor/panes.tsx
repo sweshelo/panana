@@ -12,8 +12,7 @@ import { SECTION_COLORS } from './legend';
 import type { MapEditor, ViewMode } from './mapeditor';
 import { NewMapDialog } from './newmapdialog';
 import { Palette } from './palette';
-import type { MapEditState, Tool } from './state';
-import type { Issue } from './validate';
+import { IssueList, Tools } from './tools';
 
 export function MapEditorUi({ editor }: { editor: MapEditor }): ReactNode {
   return (
@@ -61,14 +60,6 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
   );
 }
 
-export const TOOLS: [Tool, string, string][] = [
-  ['select', '選択・移動', 'V'],
-  ['paint', 'タイルを置く', 'B'],
-  ['erase', 'タイルを消す', 'E'],
-  ['rect', '範囲選択', 'M'],
-  ['room', '敵が出ないセル (区画 6)', 'G'],
-];
-
 function LeftPane({ editor }: { editor: MapEditor }): ReactNode {
   return (
     <aside className="left">
@@ -80,26 +71,11 @@ function LeftPane({ editor }: { editor: MapEditor }): ReactNode {
   );
 }
 
-/** The tool buttons (both games). */
-export function Tools({ st, tools = TOOLS }: { st: MapEditState; tools?: [Tool, string, string][] }): ReactNode {
-  useEditorState(st);
-  return (
-    <div className="tools">
-      {tools.map(([t, label, key]) => (
-        <button key={t} className={st.tool === t ? 'active' : ''} title={`${label} (${key})`} onClick={() => st.setTool(t)}>
-          {`${label} `}<kbd>{key}</kbd>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function FactoryPalette({ editor }: { editor: MapEditor }): ReactNode {
   useSignal(editor.ui);
   const st = editor.st;
   useEditorState(st);
-  const master = st.game.master;
-  return <Palette st={st} factory={editor.factory} palette={master.palette(st.tileset)} partModel={(k, l) => master.partModel(k, st.tileset, l)} />;
+  return <Palette st={st} factory={editor.factory} palette={editor.palette()} partModel={(k, l) => editor.partModel(k, l)} />;
 }
 
 /** What the views show: layers, the 2D style, the 3D ceiling, clipping and object models. */
@@ -158,18 +134,6 @@ function RightPane({ editor }: { editor: MapEditor }): ReactNode {
 function Issues({ editor }: { editor: MapEditor }): ReactNode {
   useSignal(editor.ui);
   return <IssueList st={editor.st} issues={editor.issues} />;
-}
-
-/** Validation results; clicking one selects what it is about (both games). */
-export function IssueList({ st, issues }: { st: MapEditState; issues: Issue[] }): ReactNode {
-  return (
-    <div className="issues">
-      {!issues.length && <div className="ok">問題なし</div>}
-      {issues.map((i, n) => (
-        <div key={n} className={`issue ${i.level}`} onClick={() => i.target && st.select(i.target)}>{`${i.level === 'error' ? '✖' : '⚠'} ${i.msg}`}</div>
-      ))}
-    </div>
-  );
 }
 
 function StatusBar({ editor }: { editor: MapEditor }): ReactNode {

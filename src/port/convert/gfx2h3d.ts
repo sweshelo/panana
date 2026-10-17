@@ -226,7 +226,8 @@ function meshesToH3D(m: GfxModel, nodes: boolean): H3DMesh[] {
     const center: Vector3 = bb ? [...bb.center] : [0, 0, 0];
     return {
       materialIndex: mesh.materialIndex, type: 0, skinning: 0, flagsRest: 0, nodeIndex: nodes ? mi : 0,
-      priority: mesh.renderPriority, layer: (m.materials[mesh.materialIndex]?.translucencyKind ?? 0) & 3, keyRest: 0,
+      // RPG2 draws a higher priority first, the H3D games a lower one (cgfx.ts CgfxMesh.drawOrder): keep the order.
+      priority: 255 - mesh.renderPriority, layer: (m.materials[mesh.materialIndex]?.translucencyKind ?? 0) & 3, keyRest: 0,
       subMeshes, meshCenter: center, userDefinedAddress: 0,
       metaData: bb ? [{ name: 'OBBox', type: 4, values: [{ center: [...bb.center], orientation: [...bb.orientation], size: [...bb.size] }] }] : null,
       rawBuffer, vertexStride, attributes, fixedAttributes, positionOffset: [...shape.positionOffset, 0] as Vector4,

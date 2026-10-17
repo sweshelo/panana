@@ -7,8 +7,7 @@ import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
-import { GRID, tileAt, type Selection } from './state';
-import type { Issue } from './model';
+import { GRID, tileAt, type Issue, type Selection } from './model';
 
 export type { Issue } from './model';
 

@@ -157,7 +157,7 @@ export class ModelFactory {
       }
       const mesh = new THREE.Mesh(geo, mat);
       mesh.name = me.name;
-      mesh.renderOrder = me.priority;
+      mesh.renderOrder = me.drawOrder;
       g.add(mesh);
       parts?.push({ mesh, src: me });
     }

@@ -88,7 +88,11 @@ export interface BlendFunc {
 export interface CgfxMesh {
   name: string;
   material: number;
-  priority: number;
+  /**
+   * Draw order within a translucency layer (smaller first). RPG2 (CGFX) draws a higher render priority first: the
+   * eyes (priority 1, no depth writes) go over the bodies (110). RPG3 / FREE! (H3D) draw a lower priority first.
+   */
+  drawOrder: number;
   visible: boolean;
   positions: Float32Array; // xyz
   normals: Float32Array | null;
@@ -471,7 +475,7 @@ function readModel(r: Reader, o: number): CgfxModel {
       ...shape,
       name: node?.name ?? r.str(m + 0x0c),
       material,
-      priority,
+      drawOrder: 255 - priority,
       visible: node ? node.visible : visibleFlag === 1,
     });
   }
@@ -479,7 +483,7 @@ function readModel(r: Reader, o: number): CgfxModel {
   return { name, meshes, materials, bones: skeleton, animations: [] };
 }
 
-type Shape = Omit<CgfxMesh, 'name' | 'material' | 'priority' | 'visible'>;
+type Shape = Omit<CgfxMesh, 'name' | 'material' | 'drawOrder' | 'visible'>;
 
 function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
   const posOffset = [r.f32(s + 0x20), r.f32(s + 0x24), r.f32(s + 0x28)];

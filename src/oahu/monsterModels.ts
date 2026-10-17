@@ -11,6 +11,22 @@ import { equalBytes, u32 } from '../util/bytes';
 
 export const OAHU_MONSTER_MODEL_ARCHIVE = '28480000';
 export const OAHU_DESIGN_ARCHIVE = '402F0000';
+/** monsterDesign +0x77: the size class of the camera (RPG2's MonsterDesign +0x6E). */
+export const OAHU_CAMERA_SIZE = 0x77;
+
+/**
+ * The size classes of monsterDesign +0x77 and the column of actionCamera they pick (FUN_004CB2E4, FUN_0029CB98): an
+ * enemy's 10 / 16 / 20 all take column 3, a caught monster (a 仲間) takes 4 for 10 and 5 for 16.
+ */
+export const OAHU_CAMERA_SIZES: [number, string][] = [
+  [1, '1: 小さい (列 0)'],
+  [2, '2: 小さい (列 0)'],
+  [4, '4: 中くらい (列 1)'],
+  [6, '6: 大きい (列 2)'],
+  [10, '10: とても大きい (敵は列 3、仲間は列 4)'],
+  [16, '16: 巨大 (敵は列 3、仲間は列 5)'],
+  [20, '20: 巨大 (列 3)'],
+];
 
 export interface OahuMonsterDesign {
   model: number;
@@ -80,11 +96,36 @@ export class OahuMonsterModels {
     if (t) t.table.data = bytes.slice();
   }
 
-  /** 402F0000 with the edited monsterDesign.bin, or null when it is unchanged. */
-  async archive(): Promise<Uint8Array | null> {
+  /**
+   * 402F0000 with the edited monsterDesign.bin and the other entries given (directData of the performances), or null
+   * when nothing changed.
+   */
+  async archive(more: Map<number, Uint8Array> = new Map()): Promise<Uint8Array | null> {
     const t = await this.load();
-    if (!t || equalBytes(t.table.data, t.original)) return null;
-    return rebuildArchive(t.arc, new Map([[t.entry.index, t.table.data]]));
+    if (!t) return null;
+    const entries = new Map(more);
+    if (!equalBytes(t.table.data, t.original)) entries.set(t.entry.index, t.table.data);
+    return entries.size ? rebuildArchive(t.arc, entries) : null;
+  }
+
+  /**
+   * monsterDesign +0x77: the size class the battle's camera picks its column of actionCamera by (FUN_004CB2E4; naauao
+   * oahu/actions.md §5.5). null while the table is not read or the row is past it.
+   */
+  cameraSize(row: number): number | null {
+    const t = this.loaded?.table;
+    return t && row >= 0 && row < t.rows && t.rowSize > OAHU_CAMERA_SIZE ? t.row(row)[OAHU_CAMERA_SIZE]! : null;
+  }
+  originalCameraSize(row: number): number | null {
+    const t = this.loaded;
+    if (!t) return null;
+    const o = new GsTable(t.original);
+    return row >= 0 && row < o.rows && o.rowSize > OAHU_CAMERA_SIZE ? o.row(row)[OAHU_CAMERA_SIZE]! : null;
+  }
+  setCameraSize(row: number, v: number): void {
+    const t = this.loaded?.table;
+    if (!t || row < 0 || row >= t.rows) throw new Error(`monsterDesign の行 ${row} はありません`);
+    t.row(row)[OAHU_CAMERA_SIZE] = v & 0xff;
   }
 
   async design(row: number): Promise<OahuMonsterDesign | null> {

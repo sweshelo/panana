@@ -347,8 +347,9 @@ export function modelToGfx(h: H3DModel, monster = true): GfxModel {
   const layerOf = (i: number): number => h.meshes.find((m) => m.materialIndex === i)?.layer ?? 1;
   const materials = h.materials.map((m, i) => materialToGfx(m, layerOf(i)));
   const visible = (m: H3DMesh): number => (h.meshNodesCount && h.meshNodesVisibility[m.nodeIndex] === false ? 0 : 1);
+  // Render priority inverted to keep the draw order (gfx2h3d.ts).
   const meshes: GfxMesh[] = h.meshes.map((m, i) => ({
-    name: '', revision: 0, metaData: [], shapeIndex: i, materialIndex: m.materialIndex, isVisible: visible(m), renderPriority: m.priority,
+    name: '', revision: 0, metaData: [], shapeIndex: i, materialIndex: m.materialIndex, isVisible: visible(m), renderPriority: 255 - m.priority,
     meshNodeIndex: -1, primitiveIndex: 0, flags: 0, attrScaleCommands: new Array<number>(12).fill(0), enableCommandsPtr: 0, enableCommandsLength: 0,
     disableCommandsPtr: 0, disableCommandsLength: 0, meshNodeName: h.skeleton[m.subMeshes[0]?.boneIndices[0] ?? 0]?.name ?? null,
     renderKeyCache: [0, 0], commandAlloc: 0, reserved: 0,

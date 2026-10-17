@@ -6,13 +6,14 @@
 import * as THREE from 'three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
-import { Controller, norm } from '../editor/controller';
-import { drawTileGlyph, GridCanvas, strokeCell } from '../editor/gridcanvas';
-import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from '../editor/legend';
-import { MapScene, TileFallback, TileLayer } from '../editor/mapscene';
+import { Controller } from '../editor/controller';
+import { drawHover, drawRoomCells, drawSelection, drawTiles } from '../editor/draw2d';
+import { GridCanvas } from '../editor/gridcanvas';
+import { kindColor, SECTION_COLORS } from '../editor/legend';
+import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
-import { CELL, letterIndex, letterLabel, recCellPos, type MapDoc } from '../game/sections';
+import { CELL, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
@@ -59,15 +60,11 @@ export class LanaiMapView {
   private readonly tileLayer = new TileLayer();
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
-  private readonly overlay = new THREE.Group();
+  private readonly overlay = new CellOverlay();
   /** Loaded models of records ("o<MapObject row>"); null while loading or when there is none. */
   private readonly objects = new Map<string, LoadedModel | null>();
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
-  private readonly markerMats = new Map<string, THREE.MeshLambertMaterial>();
-  private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
-  private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
-  private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
-  private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+  private readonly markerMats = new MarkerMaterials();
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -75,7 +72,7 @@ export class LanaiMapView {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d');
-    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay);
+    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group);
     const pointer = {
       down: (cx: number, cy: number, e: { shiftKey: boolean; button: number }) => this.ctl.down(cx, cy, e),
       move: (cx: number, cy: number) => this.ctl.move(cx, cy),
@@ -151,11 +148,8 @@ export class LanaiMapView {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash) return;
     const st = this.st, layers = this.ctl.layers, sel = st.selection;
-    if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, kindColor(t.kind), LANAI_ROT_DIR[t.rot]!, `${t.kind}${letterLabel(t.letter)}`, ROT_ARROW[LANAI_ROT_DIR[t.rot]!]);
-    if (layers.room) {
-      g.fillStyle = ROOM_COLOR;
-      for (const c of doc.cells6) g.fillRect(c.x * s + 2, c.y * s + 2, s - 4, s - 4);
-    }
+    if (layers.tiles) drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
+    if (layers.room) drawRoomCells(g, s, doc);
     for (const k of [...LANAI_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
@@ -182,32 +176,8 @@ export class LanaiMapView {
         g.stroke();
       });
     }
-    g.strokeStyle = '#ffeb3b';
-    g.lineWidth = 2;
-    if (sel.type === 'tiles') for (const [x, y] of sel.cells) g.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
-    if (sel.type === 'rect') {
-      const r = norm(sel);
-      g.setLineDash([6, 4]);
-      g.strokeRect(r.x0 * s, r.y0 * s, (r.x1 - r.x0 + 1) * s, (r.y1 - r.y0 + 1) * s);
-      g.setLineDash([]);
-    }
-    const hv = this.ctl.hover;
-    if (hv) {
-      const [x, y] = hv;
-      if (st.tool === 'paint') {
-        g.globalAlpha = 0.6;
-        drawTileGlyph(g, s, x, y, kindColor(st.brush.kind), LANAI_ROT_DIR[st.brush.rot]!, `${st.brush.kind}${letterLabel(st.brush.letter)}`, ROT_ARROW[LANAI_ROT_DIR[st.brush.rot]!]);
-        g.globalAlpha = 1;
-      }
-      g.strokeStyle = '#fff';
-      g.lineWidth = 1.5;
-      if (st.clip && st.tool === 'rect') {
-        g.setLineDash([4, 3]);
-        g.strokeRect(x * s, y * s, st.clip.w * s, st.clip.h * s);
-        g.setLineDash([]);
-      }
-      strokeCell(g, s, x, y);
-    }
+    drawSelection(g, s, st);
+    drawHover(g, s, st, this.ctl.hover, LANAI_ROT_DIR);
   }
 
   // ---- 3D
@@ -293,16 +263,6 @@ export class LanaiMapView {
     return { factory, hash: ref.entry, name: set.paths.get(ref.entry) ?? '', pose: posed(factory, ref.entry) };
   }
 
-  private markerMat(color: string, selected: boolean): THREE.MeshLambertMaterial {
-    const key = color + selected;
-    let m = this.markerMats.get(key);
-    if (!m) {
-      m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color), emissive: new THREE.Color(selected ? 0x777777 : 0) });
-      this.markerMats.set(key, m);
-    }
-    return m;
-  }
-
   private sync3d(): void {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash || this.disposed) return;
@@ -338,29 +298,13 @@ export class LanaiMapView {
           this.markers.add(model);
           if (!selected) return;
         }
-        const m = new THREE.Mesh(this.markerGeo, this.markerMat(SECTION_COLORS[k]!, selected));
+        const m = new THREE.Mesh(this.markerGeo, this.markerMats.get(SECTION_COLORS[k]!, selected));
         m.position.set(px * CELL, model ? 260 : 100, py * CELL);
         if (selected) m.scale.setScalar(1.4);
         this.markers.add(m);
       });
     }
-    this.overlay.clear();
-    if (layers.room)
-      for (const c of doc.cells6) {
-        const m = new THREE.Mesh(this.roomGeo, this.roomMat);
-        m.position.set((c.x + 0.5) * CELL, 8, (c.y + 0.5) * CELL);
-        this.overlay.add(m);
-      }
-    const cells: [number, number][] = sel.type === 'tiles' ? [...sel.cells] : [];
-    if (sel.type === 'rect') {
-      const r = norm(sel);
-      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) cells.push([x, y]);
-    }
-    for (const [x, y] of cells) {
-      const box = new THREE.LineSegments(this.selGeo, this.selMat);
-      box.position.set((x + 0.5) * CELL, 20, (y + 0.5) * CELL);
-      this.overlay.add(box);
-    }
+    this.overlay.sync(doc, sel, layers.room);
     this.scene.draw();
   }
 }

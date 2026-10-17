@@ -19,7 +19,7 @@ import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuMaster } from '../src/oahu/master';
 import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
-import { OahuPerformances } from '../src/oahu/performance';
+import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression } from '../src/oahu/performance';
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { OahuShopPage } from '../src/oahu/ShopPage';
@@ -410,6 +410,63 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const phases = oahuPreviewPhases(s, { ...t, names, sounds: null }, 526, 150, 0);
     expect(phases.map((p) => [p.anim, p.effects.length > 0, !!p.model])).toEqual([['006_', true, true], ['012_', true, false], ['', true, false]]);
     expect(renderToString(<OahuActionPage session={s} arg="526" />)).toContain('プレビュー');
+  });
+
+  test('editing a performance (#93): a shared directData row is copied, an added one changed in place, and 402F0000 is exported', async () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const t = (await s.performances.tables())!;
+    const before = t.direct.data.slice();
+    const rows = t.direct.rows;
+    const edits = new OahuPerfEdits(a, s.performances);
+    expect(oahuPerformanceUses(a).get(458)?.some((u) => u.action === 526 && u.key === 'perfUser')).toBe(true);
+    // Rows 458 and its bytes stay; 526 gets a copy with the new sound delay.
+    const n = edits.setSlotField(526, 'perfUser', 'seDelay', 7);
+    expect(n).toBe(rows);
+    expect(a.get(526, 'perfUser')).toBe(n);
+    expect(equalBytes(t.direct.row(458), new GsTable(before).row(458))).toBe(true);
+    expect(OahuPerformances.forUnit(t.direct, n, true)!.timing[1]).toBe(7);
+    // The added row is the slot's own: changed in place.
+    expect(edits.setSlotField(526, 'perfUser', 'motionStart', 3)).toBe(n);
+    expect([t.direct.rows, decodeOahuPerformance(t.direct.row(n), n).motionStart]).toEqual([rows + 1, 3]);
+    // Back to the bytes of 458: the slot points at it again.
+    edits.setSlotField(526, 'perfUser', 'motionStart', decodeOahuPerformance(t.direct.row(458), 458).motionStart);
+    const back = edits.setSlotField(526, 'perfUser', 'seDelay', decodeOahuPerformance(t.direct.row(458), 458).timing[1]);
+    expect(back < rows && equalBytes(t.direct.row(back), t.direct.row(458))).toBe(true);
+    edits.setSlotField(526, 'perfUser', 'seDelay', 7);
+    expect(s.performances.changed).toBe(true);
+    const arc = parseArchive((await s.allModFiles()).get('402F0000')!);
+    const exported = new GsTable(findByName(arc, 'directData.bin')!.body);
+    expect(exported.rows).toBe(rows + 1);
+    expect(findByName(arc, 'monsterDesign.bin')).toBeTruthy();
+    // Saved and put back.
+    const saved = s.performances.saved()!;
+    t.direct.data = before.slice();
+    await s.performances.restore(saved);
+    expect(t.direct.rows).toBe(rows + 1);
+    edits.copyPerformance(526, 995);
+    expect(OAHU_PERF_SLOTS.map((x) => a.get(526, x.key))).toEqual([872, 0, 873, 0, 0, 0]);
+    battle.revertAction(526);
+    t.direct.data = before;
+    expect(s.performances.changed).toBe(false);
+  });
+
+  test('the progression and the camera (#94): picked by category and kind, the size class of monsterDesign +0x77', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const prog = (r: number): number => oahuProgression(a.get(r, 'category'), a.get(r, 'kind'));
+    expect(oahuProgression(0, 0)).toBe(1);
+    expect([oahuProgression(1, 0), oahuProgression(1, 2), oahuProgression(0x12, 0)]).toEqual([2, 3, 2]);
+    expect([oahuProgression(0x17, 4), oahuProgression(0x17, 2), oahuProgression(0x17, 0), oahuProgression(5, 4), oahuProgression(5, 0)]).toEqual([4, 3, 6, 4, 3]);
+    expect([526, 995].map(prog).every((p) => p > 0)).toBe(true);
+    // ドローンＺ: 10 → 16 when it changes form.
+    expect([battle.cameraSize(160), battle.cameraSize(161)]).toEqual([10, 16]);
+    const html = renderToString(<OahuMonsterPage session={s} arg="160" />);
+    for (const t of ['カメラの大きさ', 'カメラの大きさ 10 → 16']) expect(html).toContain(t);
+    battle.setCameraSize(160, 16);
+    expect(s.monsterModels.saved()).not.toBeNull();
+    battle.setCameraSize(160, 10);
+    expect(s.monsterModels.saved()).toBeNull();
   });
 
   test('the look of a form change: category 22 swaps in the model of monsterParameter +0x62 (ドローンＺ 160 → 161)', () => {

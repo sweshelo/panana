@@ -1,10 +1,10 @@
 // Top-down 2D view on a canvas: tiles, section 6 cells, points; pan (right / middle drag), zoom (wheel).
-import { LAYOUTS, P3, P7, POINT_SECTIONS, letterLabel, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
-import { norm, type Controller } from './controller';
-import { eventLinks } from './events';
-import { kindColor, ROOM_COLOR, ROT_ARROW, SECTION_COLORS } from './legend';
-import { drawTileGlyph, GridCanvas, strokeCell } from './gridcanvas';
-import { GRID, tileAt, type EditorState } from './state';
+import { LAYOUTS, P3, P7, POINT_SECTIONS, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
+import type { Controller } from './controller';
+import { drawHover, drawRoomCells, drawSelection, drawTiles } from './draw2d';
+import { SECTION_COLORS } from './legend';
+import { GridCanvas } from './gridcanvas';
+import { GRID, tileAt, type EventLink, type MapEditState } from './model';
 
 export type Style2D = 'symbols' | 'minimap';
 
@@ -17,8 +17,10 @@ export class View2D {
   style: Style2D = 'symbols';
 
   constructor(
-    private readonly st: EditorState,
+    private readonly st: MapEditState,
     private readonly ctl: Controller,
+    /** Switch -> target lines of the open map (none by default). */
+    private readonly links: () => EventLink[] = () => [],
   ) {
     this.gc = new GridCanvas('view2d', (g, s) => this.render(g, s), GRID);
     this.canvas = this.gc.canvas;
@@ -44,42 +46,13 @@ export class View2D {
     const doc = this.st.current;
     if (!doc) return;
     if (this.style === 'minimap') this.drawMinimap(doc, g, s);
-    else if (this.ctl.layers.tiles) this.drawTiles(doc, g, s);
+    else if (this.ctl.layers.tiles) drawTiles(g, s, doc.tiles);
 
-    if (this.ctl.layers.room) {
-      g.fillStyle = ROOM_COLOR;
-      for (const cell of doc.cells6) g.fillRect(cell.x * s + 2, cell.y * s + 2, s - 4, s - 4);
-    }
+    if (this.ctl.layers.room) drawRoomCells(g, s, doc);
     this.drawLinks(g, s);
     this.drawPoints(doc, g, s);
-    this.drawSelection(doc, g, s);
-
-    // hover / brush preview
-    const hv = this.ctl.hover;
-    if (hv) {
-      const [x, y] = hv;
-      g.strokeStyle = '#fff';
-      g.lineWidth = 1.5;
-      if (this.st.tool === 'paint') {
-        g.globalAlpha = 0.6;
-        this.drawTile(g, s, x, y, this.st.brush.kind, this.st.brush.rot, this.st.brush.letter);
-        g.globalAlpha = 1;
-      }
-      if (this.st.clip && this.st.tool === 'rect') {
-        g.setLineDash([4, 3]);
-        g.strokeRect(x * s, y * s, this.st.clip.w * s, this.st.clip.h * s);
-        g.setLineDash([]);
-      }
-      strokeCell(g, s, x, y);
-    }
-  }
-
-  private drawTile(g: CanvasRenderingContext2D, s: number, x: number, y: number, kind: number, rot: number, letter: number): void {
-    drawTileGlyph(g, s, x, y, kindColor(kind), rot, `${kind}${letterLabel(letter)}`, ROT_ARROW[rot]);
-  }
-
-  private drawTiles(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {
-    for (const t of doc.tiles) this.drawTile(g, s, t.x, t.y, t.kind, t.rot, t.letter);
+    drawSelection(g, s, this.st);
+    drawHover(g, s, this.st, this.ctl.hover);
   }
 
   /** In-game minimap style: floor cells, room outlines, corridors. */
@@ -173,7 +146,7 @@ export class View2D {
 
   /** Switch -> target lines (generic switches solid, hard-coded script pairs dashed). */
   private drawLinks(g: CanvasRenderingContext2D, s: number): void {
-    for (const l of eventLinks(this.st)) {
+    for (const l of this.links()) {
       g.strokeStyle = l.generic ? (l.selected ? '#7ff5ff' : 'rgba(80, 220, 255, 0.75)') : l.selected ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
       g.lineWidth = l.selected ? 3 : 2;
       g.setLineDash(l.generic ? [] : [5, 4]);
@@ -193,19 +166,5 @@ export class View2D {
       g.stroke();
     }
     g.setLineDash([]);
-  }
-
-  private drawSelection(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {
-    const sel = this.st.selection;
-    g.strokeStyle = '#ffeb3b';
-    g.lineWidth = 2;
-    if (sel.type === 'tiles') for (const [x, y] of sel.cells) g.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
-    if (sel.type === 'rect') {
-      const r = norm(sel);
-      g.setLineDash([6, 4]);
-      g.strokeRect(r.x0 * s, r.y0 * s, (r.x1 - r.x0 + 1) * s, (r.y1 - r.y0 + 1) * s);
-      g.setLineDash([]);
-    }
-    void doc;
   }
 }
