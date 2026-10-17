@@ -141,7 +141,7 @@ export interface LanaiMapGroup {
 export interface LanaiMonsterGroupRow {
   row: number;
   id: number;
-  /** +0x00: a small row ID (0x80000000〜0x80000009); not a monster, meaning not known yet (#130). */
+  /** +0x00: a small row ID (0x80000000, 0x80000001, …); not a monster, meaning not known yet (#130). */
   kind: number;
   /** +0x04〜+0x64: 25 MonsterParameter row IDs as written (0 = none; 0x80000000 = row 0, the empty monster). */
   slots: number[];

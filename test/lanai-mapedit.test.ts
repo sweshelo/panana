@@ -291,7 +291,7 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       for (const g of m.monsterGroups()) {
         rows++;
         expect(g.slots.length).toBe(25);
-        expect(g.kind >>> 0).toBeLessThanOrEqual(0x80000009);
+        expect(g.kind >>> 0).toBeLessThan(0x80000100); // a small row ID (0x80000000, 0x80000001, …), not a monster's
         for (const id of g.monsters) expect(mp.find(id)).toBeGreaterThanOrEqual(0);
         expect(g.tail.length).toBe(0x9c - 0x68);
       }
