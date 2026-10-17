@@ -3,6 +3,7 @@
 import { beforeAll, describe, test } from 'bun:test';
 import { disassemble, type Insn } from '../src/game/disasm';
 import { openImages } from '../src/rom/dump';
+import { LanaiSession } from '../src/lanai/session';
 import { u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 import { SPEC } from './lanai-explore-spec';
@@ -16,6 +17,7 @@ const log = (s: string): void => {
 const h = (v: number): string => '0x' + (v >>> 0).toString(16).toUpperCase();
 
 let code: Uint8Array;
+let session: LanaiSession;
 const w = (a: number): number => u32(code, a - BASE);
 const inCode = (a: number): boolean => a >= BASE && a < BASE + code.length - 4;
 const isPush = (i: Insn): boolean => /^push(\s|\b)/.test(i.text) && /lr/.test(i.text) || /^stmdb sp!, .*lr/.test(i.text);
@@ -84,9 +86,10 @@ describe.skipIf(!hasLanai)('explore checkin', () => {
   beforeAll(async () => {
     const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
     code = dump.code;
+    session = await LanaiSession.open(dump);
   }, 300000);
 
-  test('explore', () => {
+  test('explore', async () => {
     log(`code.bin ${h(code.length)}`);
     // strings
     if (SPEC.strings.length) {
@@ -153,6 +156,17 @@ describe.skipIf(!hasLanai)('explore checkin', () => {
         if (v >= lo && v < hi) sites.push(`${h(a)}=${h(v)}@${h(funcStart(a))}`);
       }
       log(`REFS ${h(lo)}..${h(hi)} (${sites.length}): ${sites.slice(0, 80).join(' ')}`);
+    }
+    for (const arc of SPEC.archives) {
+      const ts = await session.tablesIn(arc).catch(() => []);
+      for (const t of ts) {
+        const sites: string[] = [];
+        for (let a = BASE; a < TEXT_END; a += 4) if (w(a) === t.entry) sites.push(`${h(a)}@${h(funcStart(a))}`);
+        log(`TABLE ${arc} #${t.index} ${h(t.entry)} ${t.file ?? '-'} name=${t.table.name} ${t.table.rows}x${h(t.table.rowSize)} refs=${sites.slice(0, 12).join(' ') || '-'}`);
+        if (SPEC.rowsOf.includes(t.table.name)) {
+          for (let r = 0; r < Math.min(t.table.rows, 6); r++) log(`  ROW ${r}: ${[...t.table.row(r)].map((x) => x.toString(16).padStart(2, '0')).join(' ')}`);
+        }
+      }
     }
     for (const f of SPEC.funcs) dumpFunc(f, SPEC.max);
     for (const [a, b] of SPEC.ranges) dumpFunc(a, (b - a) / 4, true);

@@ -1,10 +1,12 @@
 // TEMPORARY: what test/lanai-explore-checkin.test.ts prints.
 export const SPEC = {
-  max: 600,
-  strings: ['boss', 'nsd', 'NsData', 'patch:', 'contents', '.cro', '.crr', 'crs'],
-  callers: [0x40c93c, 0x2af360, 0x2af494, 0x2ff488, 0x164630, 0x27d87c, 0x43bf44, 0x3101f8],
-  refsTo: [[0x3eb4b0, 0x3eb4b4], [0x437d80, 0x437d84]] as [number, number][],
+  max: 500,
+  strings: [] as string[],
+  callers: [0x2ff28c, 0x473b08, 0x40cbac, 0x3eaedc, 0x306ff0],
+  refsTo: [] as [number, number][],
   hex: [] as [number, number][],
-  funcs: [0x2af494, 0x2af360, 0x437d80, 0x2af42c, 0x2af458, 0x2af464, 0x2af470, 0x40c93c, 0x3eb4b0, 0x43bf44, 0x304374, 0x470ffc, 0x40df40, 0x27d87c, 0x2ff488, 0x3022ec, 0x15ff88, 0x27ddf8],
+  archives: ['A9DF0000', '25D60000', '307C0000', '7BF7000A', '2135000A'],
+  rowsOf: ['raregetParameter', 'boostParameter', 'CheckinOffsetTime', 'Checkin', 'lotRareDenpa_Delivery', 'CampaignCodeNetwork'],
+  funcs: [0x2ff28c, 0x473b08, 0x31c028, 0x40cbac, 0x40c9dc, 0x278504, 0x386f94, 0x43beb8, 0x43c5a0, 0x3eaedc, 0x306ff0, 0x2fe668, 0x473af8],
   ranges: [] as [number, number][],
 };
