@@ -10,6 +10,7 @@ import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
 import { LANAI_EVENT_SLOT, LANAI_LAYOUTS, LANAI_MAPDB_ENTRY, LANAI_MAP_FORMAT, lanaiEventSlot, lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
+import { lanaiChestField, lanaiChestUsers, lanaiTreasureRowBytes, lanaiTreasureSlots, lanaiWriteTreasure, type LanaiChestUser } from '../src/lanai/treasure';
 import { openImages, type Dump } from '../src/rom/dump';
 import { equalBytes, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -249,6 +250,65 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       expect(equalBytes(ot.row(rows), t.row(rows))).toBe(true);
       expect(u32(om.doc(om.mapByName(info.name)!).recs[4]!.at(-1)!.raw, 4)).toBe(rows);
       s.revertAll();
+      expect(s.modFiles().size).toBe(0);
+      done = true;
+      break;
+    }
+    expect(done).toBe(true);
+  }, 300000);
+
+  test('chest contents: TreasureGroup entries edited, a row of its own, undo, export and saving', async () => {
+    let done = false;
+    for (const c of lanaiContents(s)) {
+      const m = await lanaiMaps(s, c).catch(() => null);
+      const tg = m?.treasureGroup;
+      if (!m || !tg) continue;
+      const users = lanaiChestUsers(m);
+      // a chest whose row another chest shares, so "a row of its own" is offered
+      const shared = [...users].find(([row, us]) => row < tg.rows && us.length > 1 && lanaiTreasureSlots(tg, row).length);
+      if (!shared) continue;
+      const [row, [user]] = shared as [number, LanaiChestUser[]];
+      const info = m.mapByName(user!.map)!;
+      const st = lanaiEditState(m);
+      st.open(info);
+      const ev = m.eventTable(info.dungeon)!;
+      const field = lanaiChestField(ev, user!.event)!;
+      expect(ev.u32(user!.event, field)).toBe(row);
+      const before = lanaiTreasureSlots(tg, row);
+      const bytes = tg.row(row).slice();
+      // the row as read builds from its entries byte for byte (empty entries are {0x80000000, 1, 1, 0xD0})
+      expect(equalBytes(lanaiTreasureRowBytes(tg, row, before), bytes)).toBe(true);
+      // an entry of 500 G added: the table goes to the MOD; undo puts the row back
+      st.editTreasure((t) => lanaiWriteTreasure(t, row, [...before, { value: 500, weight: 3, kind: 2 }]));
+      expect(lanaiTreasureSlots(tg, row)).toEqual([...before, { value: 500, weight: 3, kind: 2 }].slice(0, 10));
+      expect(tg.rowChanged(row)).toBe(true);
+      expect(s.modFiles().has(c.archive)).toBe(true);
+      st.undo();
+      expect(equalBytes(tg.row(row), bytes)).toBe(true);
+      expect(tg.rowChanged(row)).toBe(false);
+      expect(s.modFiles().size).toBe(0);
+      // a row of its own: the chest names a new row with the same entries, the other chests keep the old one
+      const rows = tg.rows;
+      st.editTables(() => ev.setU32(user!.event, field, tg.addRow(row)));
+      expect(tg.rows).toBe(rows + 1);
+      expect(ev.u32(user!.event, field)).toBe(rows);
+      expect(lanaiTreasureSlots(tg, rows)).toEqual(before);
+      expect(lanaiChestUsers(m).get(rows)?.length).toBe(users.get(row)!.filter((u) => u.event === user!.event).length);
+      st.editTreasure((t) => lanaiWriteTreasure(t, rows, [{ value: before[0]!.value, weight: 1, kind: before[0]!.kind }]));
+      expect(lanaiTreasureSlots(tg, row)).toEqual(before);
+      expect(lanaiValidate(m, info, st.current!).filter((i) => i.level === 'error')).toEqual([]);
+      // saved and put back on a fresh session
+      const other = await LanaiSession.open(dump, { fresh: true });
+      await other.restore(s.saved());
+      const om = await lanaiMaps(other, lanaiContents(other)[c.index]!);
+      expect(om.treasureGroup!.rows).toBe(rows + 1);
+      expect(equalBytes(om.treasureGroup!.row(rows), tg.row(rows))).toBe(true);
+      expect(om.eventTable(info.dungeon)!.u32(user!.event, field)).toBe(rows);
+      // undo both: the table is as read again
+      st.undo();
+      st.undo();
+      expect(tg.rows).toBe(rows);
+      expect(ev.u32(user!.event, field)).toBe(row);
       expect(s.modFiles().size).toBe(0);
       done = true;
       break;

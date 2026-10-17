@@ -72,6 +72,8 @@ export const LANAI_EVENT_SLOT = 0x58;
 export const LANAI_SLOT_IS_ROW = 0xffff;
 export const LANAI_EVENT_APPEAR = 0x5f;
 export const LANAI_EVENT_DISAPPEAR = 0x60;
+/** The content's table of chests' contents (treasure.ts). */
+export const LANAI_TREASURE_TABLE = 'TreasureGroup';
 
 /** The state slot of an EventObject row (its row number when +0x58 is 0xFFFF). */
 export const lanaiEventSlot = (t: LanaiTable, row: number): number => {
@@ -350,21 +352,33 @@ export class LanaiMaps {
   /** The rows of a group's EventObject table (an undo point of the map page). */
   eventRows(group: number): Uint8Array[] | null {
     const t = this.eventTable(group);
-    return t ? Array.from({ length: t.rows }, (_, r) => t.row(r).slice()) : null;
+    return t ? tableRows(t) : null;
   }
 
   /** Put a group's EventObject table back to rows saved by eventRows (rows added since are removed). */
   restoreEventRows(group: number, rows: Uint8Array[]): void {
     const t = this.eventTable(group);
     if (!t) return;
-    while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
-    while (t.rows < rows.length) t.addRow();
-    rows.forEach((b, r) => {
-      if (r >= t.rows || equalBytes(b, t.row(r))) return;
-      const was = t.originalRow(r);
-      if (was && equalBytes(was, b)) t.revertRow(r);
-      else t.setRow(r, b);
-    });
+    restoreTableRows(t, rows);
+    this.changed();
+  }
+
+  /** The content's TreasureGroup (chests' contents: treasure.ts), named by row number from a chest's EventObject row. */
+  get treasureGroup(): LanaiTable | undefined {
+    return this.contentTable(LANAI_TREASURE_TABLE);
+  }
+
+  /** The rows of the TreasureGroup (an undo point of the map page). */
+  treasureRows(): Uint8Array[] | null {
+    const t = this.treasureGroup;
+    return t ? tableRows(t) : null;
+  }
+
+  /** Put the TreasureGroup back to rows saved by treasureRows. */
+  restoreTreasureRows(rows: Uint8Array[]): void {
+    const t = this.treasureGroup;
+    if (!t) return;
+    restoreTableRows(t, rows);
     this.changed();
   }
 
@@ -482,4 +496,21 @@ export class LanaiMaps {
     }
     return out;
   }
+}
+
+/** A copy of a table's rows (an undo point). */
+function tableRows(t: LanaiTable): Uint8Array[] {
+  return Array.from({ length: t.rows }, (_, r) => t.row(r).slice());
+}
+
+/** Put a table back to rows saved by tableRows (rows added since are removed; rows as read are reverted, not written). */
+function restoreTableRows(t: LanaiTable, rows: Uint8Array[]): void {
+  while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
+  while (t.rows < rows.length) t.addRow();
+  rows.forEach((b, r) => {
+    if (r >= t.rows || equalBytes(b, t.row(r))) return;
+    const was = t.originalRow(r);
+    if (was && equalBytes(was, b)) t.revertRow(r);
+    else t.setRow(r, b);
+  });
 }
