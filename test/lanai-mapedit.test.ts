@@ -1,6 +1,6 @@
 // The RPG FREE! (lanai) map editor: the edit state (facings, copies, checks), saving the map database with the
 // session's edits and the MOD export (an unedited database builds byte for byte; one tile changed changes only its
-// record in the content's archive).
+// record in the content's archive), copies of records with their own EventObject rows, and section 6.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { entryBlob, parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
 import { Controller } from '../src/editor/controller';
@@ -8,7 +8,7 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, LANAI_ROT_CODEC, type Rec } from '../src/game/sections';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
-import { LANAI_LAYOUTS, LANAI_MAPDB_ENTRY, LANAI_MAP_FORMAT, lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
+import { LANAI_EVENT_SLOT, LANAI_LAYOUTS, LANAI_MAPDB_ENTRY, LANAI_MAP_FORMAT, lanaiEventSlot, lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages, type Dump } from '../src/rom/dump';
 import { equalBytes, u32 } from '../src/util/bytes';
@@ -163,33 +163,121 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(equalBytes(buildTiles(st.current!.tiles, LANAI_MAP_FORMAT.tile), maps.db.original(info.sections[0]!))).toBe(true);
   });
 
-  test('records: moving, turning, copying an exit (new point ID, the same EventObject row) and deleting', () => {
+  test('records: moving, turning, copying an exit (new point ID, its own EventObject row) and deleting', () => {
     const info = maps.mapByName('D01001B01')!;
     const st = lanaiEditState(maps);
     st.open(info);
     const ctl = new Controller(st);
+    const table = maps.eventTable(info.dungeon)!;
+    const rows = table.rows;
     const exits = st.current!.recs[3]!;
-    expect(exits.length).toBeGreaterThan(0);
+    const e = exits.findIndex((r) => u32(r.raw, 4) > 0);
+    expect(e).toBeGreaterThanOrEqual(0);
     const n = exits.length;
-    st.select({ type: 'rec', section: 3, index: 0 });
-    const facing = exits[0]!.raw[0x14]!;
+    st.select({ type: 'rec', section: 3, index: e });
+    const facing = exits[e]!.raw[0x14]!;
     ctl.rotate(1);
-    expect(st.current!.recs[3]![0]!.raw[0x14]).toBe(LANAI_ROT_CODEC.encode((LANAI_ROT_CODEC.decode(facing) + 1) & 3));
+    expect(st.current!.recs[3]![e]!.raw[0x14]).toBe(LANAI_ROT_CODEC.encode((LANAI_ROT_CODEC.decode(facing) + 1) & 3));
     ctl.duplicateRec();
     const list = st.current!.recs[3]!;
     expect(list.length).toBe(n + 1);
-    const [a, b] = [list[0]!, list[n]!];
+    const [a, b] = [list[e]!, list[n]!];
     expect(u32(b.raw, 0)).not.toBe(u32(a.raw, 0));
-    expect(u32(b.raw, 4)).toBe(u32(a.raw, 4));
-    expect(lanaiValidate(maps, info, st.current!).some((x) => x.key.startsWith('evshare/'))).toBe(true);
+    // the copy names a new row of the group's table: the row's bytes, but a state slot of its own
+    expect(table.rows).toBe(rows + 1);
+    expect(u32(b.raw, 4)).toBe(rows);
+    expect(table.row(rows).subarray(0, LANAI_EVENT_SLOT)).toEqual(table.row(u32(a.raw, 4)).subarray(0, LANAI_EVENT_SLOT));
+    expect(lanaiEventSlot(table, rows)).not.toBe(lanaiEventSlot(table, u32(a.raw, 4)));
+    expect(lanaiValidate(maps, info, st.current!).filter((x) => x.key.startsWith('ev'))).toEqual([]);
+    expect([...s.modFiles().keys()]).toEqual([content.archive]);
     const y = b.y;
     ctl.shiftSelection(0, 1);
     expect(st.current!.recs[3]![n]!.y).toBe(y + 1);
     ctl.deleteSelection();
     expect(st.current!.recs[3]!.length).toBe(n);
+    // undo the delete, the move and the copy: the added row goes with the copy
+    st.undo();
+    st.undo();
+    expect(table.rows).toBe(rows + 1);
+    st.undo();
+    expect(st.current!.recs[3]!.length).toBe(n);
+    expect(table.rows).toBe(rows);
+    st.undo();
+    expect(maps.isChanged(info)).toBe(false);
+    expect(table.changed).toBe(false);
+    expect(s.modFiles().size).toBe(0);
+    expect(lanaiValidate(maps, info, st.current!)).toEqual([]);
+  });
+
+  test('a copied chest has its own EventObject row (contents and state): exported, saved and put back', async () => {
+    let done = false;
+    for (const c of lanaiContents(s)) {
+      const m = await lanaiMaps(s, c).catch(() => null);
+      const info = m?.maps.find((x) => !x.world && (m.doc(x).recs[4] ?? []).some((r) => u32(r.raw, 4) > 0));
+      if (!m || !info) continue;
+      const st = lanaiEditState(m);
+      st.open(info);
+      const t = m.eventTable(info.dungeon)!;
+      const g = m.group(info)!;
+      const i = st.current!.recs[4]!.findIndex((r) => u32(r.raw, 4) > 0);
+      const ev = u32(st.current!.recs[4]![i]!.raw, 4);
+      const rows = t.rows;
+      st.select({ type: 'rec', section: 4, index: i });
+      new Controller(st).duplicateRec();
+      const copy = st.current!.recs[4]!.at(-1)!;
+      expect(u32(copy.raw, 4)).toBe(rows);
+      // the treasure (+0x14) is the original's; the slot is a free one of the group's
+      expect(t.u32(rows, 0x14)).toBe(t.u32(ev, 0x14));
+      const slot = lanaiEventSlot(t, rows);
+      expect(slot).toBeLessThan(g.stateCount);
+      for (let r = 0; r < rows; r++) expect(lanaiEventSlot(t, r)).not.toBe(slot);
+      // a field of the copy edited: the original row keeps its own
+      const treasure = t.u32(ev, 0x14);
+      st.setEventField(rows, (x) => x.setU32(rows, 0x14, treasure + 1));
+      expect(t.u32(rows, 0x14)).toBe(treasure + 1);
+      expect(t.u32(ev, 0x14)).toBe(treasure);
+      // the content's archive of the MOD has the edited table (and the map database)
+      const arc = parseArchive(s.modFiles().get(c.archive)!);
+      const e = arc.entries.find((x) => x.hash === g.eventEntry)!;
+      expect(equalBytes(unpackEntry(arc, e).body, t.data)).toBe(true);
+      // saved and put back on a fresh session
+      const other = await LanaiSession.open(dump, { fresh: true });
+      await other.restore(s.saved());
+      const om = await lanaiMaps(other, lanaiContents(other)[c.index]!);
+      const ot = om.eventTable(info.dungeon)!;
+      expect(ot.rows).toBe(rows + 1);
+      expect(equalBytes(ot.row(rows), t.row(rows))).toBe(true);
+      expect(u32(om.doc(om.mapByName(info.name)!).recs[4]!.at(-1)!.raw, 4)).toBe(rows);
+      s.revertAll();
+      expect(s.modFiles().size).toBe(0);
+      done = true;
+      break;
+    }
+    expect(done).toBe(true);
+  }, 300000);
+
+  test('section 6: the tool adds cells of the picked MonsterGroup; a value the table does not have is an error', () => {
+    const info = maps.maps.find((x) => !x.world && maps.doc(x).sec6Header.length)!;
+    expect(info).toBeDefined();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const groups = maps.monsterGroups();
+    expect(groups[0]!.id).toBe(0x80000000);
+    const doc = st.current!;
+    const free = doc.tiles.find((t) => !doc.cells6.some((c) => c.x === t.x && c.y === t.y))!;
+    const n = doc.cells6.length;
+    st.cell6Value = groups.at(-1)!.id;
+    st.setTool('room');
+    const ctl = new Controller(st);
+    ctl.down(free.x + 0.5, free.y + 0.5, { shiftKey: false, button: 0 });
+    ctl.up();
+    expect(st.current!.cells6.length).toBe(n + 1);
+    expect(st.current!.cells6.at(-1)).toEqual({ value: groups.at(-1)!.id, x: free.x, y: free.y });
+    expect(lanaiValidate(maps, info, st.current!)).toEqual([]);
+    st.edit((d) => { d.cells6.at(-1)!.value = 0x8000ffff; });
+    expect(lanaiValidate(maps, info, st.current!).some((x) => x.key.startsWith('s6id/'))).toBe(true);
     st.revert();
     expect(maps.isChanged(info)).toBe(false);
-    expect(lanaiValidate(maps, info, st.current!)).toEqual([]);
   });
 
   test('indoor tiles switch the MapData of a group that has an indoor row, and the checks say so', async () => {

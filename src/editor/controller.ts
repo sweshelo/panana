@@ -106,7 +106,7 @@ export class Controller {
         if (!inGrid(x, y)) return;
         const on = !doc.cells6.some((c) => c.x === x && c.y === y);
         st.checkpoint();
-        st.touch((d) => toggleRoom(d, x, y, on));
+        st.touch((d) => toggleRoom(d, x, y, on, st.cell6Value));
         this.drag = { kind: 'room', on, last: `${x},${y}` };
         return;
       }
@@ -149,7 +149,7 @@ export class Controller {
       case 'room':
         if (key === d.last || !inGrid(x, y)) return;
         d.last = key;
-        st.touch((doc) => toggleRoom(doc, x, y, d.on));
+        st.touch((doc) => toggleRoom(doc, x, y, d.on, st.cell6Value));
         return;
     }
   }
@@ -335,11 +335,11 @@ export function norm(s: Extract<Selection, { type: 'rect' }>): { x0: number; y0:
   return { x0: Math.min(s.x0, s.x1), y0: Math.min(s.y0, s.y1), x1: Math.max(s.x0, s.x1), y1: Math.max(s.y0, s.y1) };
 }
 
-function toggleRoom(doc: MapDoc, x: number, y: number, on: boolean): void {
+function toggleRoom(doc: MapDoc, x: number, y: number, on: boolean, value: number): void {
   const i = doc.cells6.findIndex((c) => c.x === x && c.y === y);
   if (on && i < 0) {
     if (!doc.sec6Header.length) return; // the map has no section 6 header to extend
-    doc.cells6.push({ value: 0, x, y });
+    doc.cells6.push({ value, x, y });
   } else if (!on && i >= 0) doc.cells6.splice(i, 1);
 }
 
