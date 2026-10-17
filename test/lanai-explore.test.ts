@@ -1,6 +1,8 @@
 // TEMPORARY: prints code.bin facts for the remaining unknown fields of RPG FREE! (#129). Removed before the PR.
 import { beforeAll, describe, test } from 'bun:test';
 import { disassemble, type Insn } from '../src/game/disasm';
+import { lanaiActionName, lanaiMonsterName } from '../src/lanai/monsterBook';
+import { lanaiStatsOf } from '../src/lanai/monsterStats';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
@@ -43,7 +45,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     log('code size', h(code.length));
   }, 300000);
 
-  test('round 1', () => {
+  test.skip('round 1', () => {
     // unit +0x00 test used by the conditions 0xA8-0xAC
     dis('FUN_0045CBAC', 0x45cbac, 24);
     for (const c of callers(0x45cbac).slice(0, 40)) log('caller 45cbac', h(c), 'fn', h(funcStart(c)));
@@ -81,5 +83,72 @@ describe.skipIf(!hasLanai)('explore', () => {
       if (x.literal !== undefined && x.literal - BASE < code.length && word(x.literal) === 0x16fc) { log('16fc lit at', h(x.addr), 'fn', h(funcStart(x.addr))); n++; }
     }
     dis('@44F0FC', 0x44f0fc - 0x60, 40);
+  });
+  // after `bl 31c038` with r0 = master + a + b (two adds), the reads of the row in the next instructions
+  const holderReads = (tag: string, a: number, b: number, n = 10): void => {
+    const re1 = new RegExp(`^add (\\w+), \\w+, #${'0x' + a.toString(16)}$`);
+    let k = 0;
+    for (let i = 0; i < insns.length - 8; i++) {
+      const m = re1.exec(insns[i]!.text);
+      if (!m) continue;
+      let ok = false;
+      for (let j = 1; j <= 3; j++) if (new RegExp(`^add \\w+, ${m[1]}, #${'0x' + b.toString(16)}$`).test(insns[i + j]?.text ?? '')) ok = true;
+      if (!ok) continue;
+      let c = -1;
+      for (let j = 1; j <= 8; j++) if (insns[i + j]?.call && insns[i + j]!.target === 0x31c038) { c = i + j; break; }
+      if (c < 0) continue;
+      const after = insns.slice(c + 1, c + 1 + n).map((x) => x.text).filter((t) => /\[r0(, #[^\]]+)?\]/.test(t) || /, r0\b/.test(t)).slice(0, 4);
+      log(`HOLD ${tag} ${h(insns[c]!.addr)} fn ${h(funcStart(insns[c]!.addr))} | ${after.join(' ; ')}`);
+      if (++k > 120) break;
+    }
+  };
+
+  test('round 2', () => {
+    dis('FUN_00301BA8', 0x301ba8, 16);
+    dis('FUN_002F82B8', 0x2f82b8, 12);
+    dis('ctx 45cbac @16d074', 0x16d074 - 0x40, 32);
+    dis('ctx 45cbac @175068', 0x175068 - 0x40, 32);
+    dis('0x4B rest', 0x173ac0, 40);
+    dis('+0x90 loop', 0x195910, 50);
+    dis('fn 1f538c', 0x1f538c, 72);
+    dis('fn 21b37c', 0x21b37c, 72);
+    for (const n of [0x197, 0x1a4, 0x1a5, 0x3c5]) log('ACTION', h(n), lanaiActionName(s, n), '/', lanaiActionName(s, (0x80000000 | n) >>> 0));
+    holderReads('MapData', 0x1400, 0x2fc);
+    holderReads('MapGroup', 0x1400, 0x374);
+    // section 3 kind: ldrb #0x15 then cmp #0x64 close by
+    let k = 0;
+    for (let i = 0; i < insns.length - 12 && k < 40; i++) {
+      if (!/^ldrb \w+, \[\w+, #0x15\]$/.test(insns[i]!.text)) continue;
+      if (insns.slice(i + 1, i + 14).some((x) => /^cmp \w+, #0x64$/.test(x.text))) { log('SEC3KIND', h(insns[i]!.addr), 'fn', h(funcStart(insns[i]!.addr))); k++; }
+    }
+    // stride 0x4C (map table rows)
+    k = 0;
+    for (let i = 0; i < insns.length && k < 40; i++) {
+      if (/^mov \w+, #0x4c$/.test(insns[i]!.text) && insns.slice(i + 1, i + 6).some((x) => /^(mla|mul)/.test(x.text))) { log('STRIDE4C', h(insns[i]!.addr), 'fn', h(funcStart(insns[i]!.addr))); k++; }
+    }
+    // monster data
+    const p = s.need('MonsterParameter');
+    const groups = new Map<string, string[]>();
+    const add = (key: string, m: number): void => { const l = groups.get(key) ?? []; l.push(`${m}:${lanaiMonsterName(s, m)}`); groups.set(key, l); };
+    for (let m = 1; m < p.rows; m++) {
+      const ref = lanaiStatsOf(s, m);
+      if (!ref) continue;
+      const t = s.need(ref.table);
+      const w0 = t.u32(ref.row, 0), w2 = t.u32(ref.row, 8);
+      const b = (o: number): number => t.row(ref.row)[o]!;
+      add(`w0b10-11=${(w0 >>> 10) & 3}`, m);
+      if ((w2 >>> 22) & 1) add('w2b22', m);
+      if (!(b(0x90) & 8)) add('90b3=0', m);
+      if (b(0x92) & 0x10) add('92b4', m);
+      if (b(0x74) & 1) add('74b0', m);
+      add(`86=${b(0x86)}`, m);
+      if (b(0x91) !== 100 || b(0x92) & 15) add(`91=${b(0x91)}/92lo=${b(0x92) & 15}`, m);
+      if (b(0x93)) add(`93=${b(0x93)}`, m);
+      if (b(0x9a) >> 6) add(`9a hi=${b(0x9a) >> 6}`, m);
+      const f16 = p.u16(m, 0x16), f18 = p.row(m)[0x18]!;
+      if (f16 & 8) add('p16b3', m);
+      add(`p18=${h(f18)}`, m);
+    }
+    for (const [key, l] of [...groups].sort()) log(`MON ${key} (${l.length}) ${l.slice(0, 60).join(' ')}`);
   });
 });
