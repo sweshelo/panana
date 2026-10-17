@@ -22,6 +22,8 @@ import {
   type LanaiMaps,
   type LanaiTileSource,
 } from './maps';
+import type { LanaiTable } from './table';
+import { lanaiChestTreasureRow } from './treasure';
 
 /** The kind of the tiles the game leaves empty (map.md §6.3): no model, and not a problem. */
 export const LANAI_EMPTY_KIND = 33;
@@ -68,8 +70,8 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
 /** The turn (0..3) of a facing byte; a byte that is none of the masks reads as 0. */
 const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 
-/** An undo point's tables: the rows of the open map's group's EventObject table. */
-type LanaiTables = { group: number; rows: Uint8Array[] } | null;
+/** An undo point's tables: the rows of the open map's group's EventObject table and of the content's TreasureGroup. */
+type LanaiTables = { group: number | null; rows: Uint8Array[] | null; treasure: Uint8Array[] | null };
 
 export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   info: LanaiMapInfo | null = null;
@@ -123,12 +125,12 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   }
 
   protected saveTables(): LanaiTables {
-    const group = this.info?.dungeon;
-    const rows = group === undefined ? null : this.maps.eventRows(group);
-    return rows && group !== undefined ? { group, rows } : null;
+    const group = this.info?.dungeon ?? null;
+    return { group, rows: group === null ? null : this.maps.eventRows(group), treasure: this.maps.treasureRows() };
   }
   protected restoreTables(t: LanaiTables): void {
-    if (t) this.maps.restoreEventRows(t.group, t.rows);
+    if (t.group !== null && t.rows) this.maps.restoreEventRows(t.group, t.rows);
+    if (t.treasure) this.maps.restoreTreasureRows(t.treasure);
   }
   protected override docReplaced(doc: MapDoc): void {
     const info = this.maps.map(doc.hash);
@@ -197,6 +199,12 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     const t = this.info ? this.maps.eventTable(this.info.dungeon) : undefined;
     if (!t || row <= 0 || row >= t.rows) return;
     this.editTables(() => write(t));
+  }
+
+  /** Change the content's TreasureGroup (chests' contents; with an undo point). */
+  editTreasure(write: (t: LanaiTable) => void): void {
+    const t = this.maps.treasureGroup;
+    if (t) this.editTables(() => write(t));
   }
 
   /** Give the selected record a copy of its EventObject row (so it stops sharing the row with other records). */
@@ -333,6 +341,16 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
         out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`, target: rec(k, i), key: `evrow/${k}/${row}` });
     });
   }
+  // chests: their TreasureGroup row is in the content's table
+  const treasure = maps.treasureGroup;
+  if (table && treasure)
+    for (const k of LANAI_EVENT_SECTIONS)
+      (doc.recs[k] ?? []).forEach((r, i) => {
+        const ev = lanaiRecEventRow(k, r.raw);
+        const row = ev && ev < table.rows ? lanaiChestTreasureRow(table, ev) : null;
+        if (row !== null && row >= treasure.rows)
+          out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`, target: rec(k, i), key: `treasure/${k}/${row}` });
+      });
   for (const [row, n] of users)
     if (n > 1) out.push({ level: 'warn', msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`, key: `evshare/${row}/${n}` });
 
