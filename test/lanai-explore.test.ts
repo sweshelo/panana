@@ -152,7 +152,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     }
     for (const [key, l] of [...groups].sort()) log(`MON ${key} (${l.length}) ${l.slice(0, 60).join(' ')}`);
   });
-  test('round 3', async () => {
+  test.skip('round 3', async () => {
     dis('FUN_002029AC', 0x2029ac, 170);
     for (const c of callers(0x2029ac).slice(0, 12)) log('caller 2029ac', h(c), 'fn', h(funcStart(c)));
     dis('MapData +6 @1dad58', 0x1dad58 - 0x40, 40);
@@ -192,4 +192,28 @@ describe.skipIf(!hasLanai)('explore', () => {
     const ad = s.need('ActionData');
     for (const r of [0x197, 0x1a3, 0x1a4, 0x1a5, 0x1a6, 0x3c5]) log('ACTROW', h(r), h(ad.rowId(r)), [...Array(8)].map((_, i) => h(ad.u32(r, i * 4))).join(' '), lanaiActionName(s, r));
   }, 600000);
+  test('round 4', () => {
+    dis('FUN_002F2004', 0x2f2004, 440);
+    dis('FUN_0031E98C (+6)', 0x31e98c, 30);
+    dis('FUN_001A0AC4 (+8)', 0x1a0ac4, 40);
+    dis('FUN_00459228 (world map state)', 0x459228, 40);
+    dis('FUN_0044E464 (+C)', 0x44e464, 30);
+    dis('FUN_001325DC', 0x1325dc, 24);
+    dis('fn 17109c head', 0x17109c, 60);
+    dis('ctx 171944', 0x1718c0, 40);
+    for (const c of callers(0x11f464).slice(0, 10)) dis('caller 11f464', c - 0x28, 18);
+    // all MapData lookups: 14 instructions after the call
+    for (let i = 0; i < insns.length - 20; i++) {
+      if (insns[i]!.text !== 'add r0, r0, #0x2fc' || !/#0x1400$/.test(insns[i - 1]?.text ?? '')) continue;
+      for (let j = 1; j <= 3; j++) if (insns[i + j]?.call && insns[i + j]!.target === 0x31c038) { dis('MAPDATA use', insns[i + j]!.addr, 14); break; }
+    }
+    const ad = s.need('ActionData');
+    const t = s.table('MessageAction');
+    if (t) log('MessageAction fields', t.fields.map((f) => f.name).join(','));
+    for (const r of [0x197, 0x1a4, 0x1a5, 0x3c5]) {
+      const id = ad.u32(r, 0x0c);
+      const texts = (t?.fields ?? []).map((f) => `${f.name}=${s.insert('MessageAction', id, f.name) ?? ''}`).join(' | ');
+      log('ACTMSG', h(r), h(id), texts);
+    }
+  });
 });
