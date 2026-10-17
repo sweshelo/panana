@@ -19,7 +19,7 @@ import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuMaster } from '../src/oahu/master';
 import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
-import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses } from '../src/oahu/performance';
+import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression } from '../src/oahu/performance';
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { OahuShopPage } from '../src/oahu/ShopPage';
@@ -449,6 +449,24 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     battle.revertAction(526);
     t.direct.data = before;
     expect(s.performances.changed).toBe(false);
+  });
+
+  test('the progression and the camera (#94): picked by category and kind, the size class of monsterDesign +0x77', () => {
+    const { battle } = s;
+    const a = battle.actions;
+    const prog = (r: number): number => oahuProgression(a.get(r, 'category'), a.get(r, 'kind'));
+    expect(oahuProgression(0, 0)).toBe(1);
+    expect([oahuProgression(1, 0), oahuProgression(1, 2), oahuProgression(0x12, 0)]).toEqual([2, 3, 2]);
+    expect([oahuProgression(0x17, 4), oahuProgression(0x17, 2), oahuProgression(0x17, 0), oahuProgression(5, 4), oahuProgression(5, 0)]).toEqual([4, 3, 6, 4, 3]);
+    expect([526, 995].map(prog).every((p) => p > 0)).toBe(true);
+    // ドローンＺ: 10 → 16 when it changes form.
+    expect([battle.cameraSize(160), battle.cameraSize(161)]).toEqual([10, 16]);
+    const html = renderToString(<OahuMonsterPage session={s} arg="160" />);
+    for (const t of ['カメラの大きさ', 'カメラの大きさ 10 → 16']) expect(html).toContain(t);
+    battle.setCameraSize(160, 16);
+    expect(s.monsterModels.saved()).not.toBeNull();
+    battle.setCameraSize(160, 10);
+    expect(s.monsterModels.saved()).toBeNull();
   });
 
   test('the look of a form change: category 22 swaps in the model of monsterParameter +0x62 (ドローンＺ 160 → 161)', () => {

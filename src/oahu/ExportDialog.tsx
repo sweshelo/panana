@@ -44,7 +44,7 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
           {shops.length > 0 && <p>{`店の品揃え ${shops.map((s) => `店 ${s}`).join('・')} (${session.shops!.archiveNames().join(' と ')} の ShopItem)`}</p>}
           {patches.length > 0 && <p>{`コードのパッチ ${patches.length} 個 (exefs/code.ips)${broken ? `。うち ${broken} 個は誤りがあるので書き出しません` : ''}`}</p>}
           {storyEdits > 0 && <p>{`段階・物語の値の書き込みとスクリプトのメッセージの変更 ${storyEdits} か所 (exefs/code.ips)${story!.errors.length ? `。うち ${story!.errors.length} か所は作れないので書き出しません` : ''}`}</p>}
-          {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行)'] : [])].join('、')}`}</p>}
+          {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行・カメラの大きさ)'] : [])].join('、')}`}</p>}
           {direct && <p>{'アクションの演出 (402F0000 の directData.bin)'}</p>}
           {tables.length > 0 && <p className="muted small">{`変更した表: ${[...new Set(tables)].join('、')}`}</p>}
           <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。`}</p>

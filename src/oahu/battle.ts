@@ -105,6 +105,32 @@ export class OahuBattle {
     readonly itemModels?: OahuItemModels,
   ) {}
 
+  /** monsterDesign +0x77 of a monster's design row (the size class of the camera), null when it is not read. */
+  cameraSize(row: number): number | null {
+    if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
+    return this.models.cameraSize(this.monsters.get(row, 'design'));
+  }
+
+  /** The original +0x77 of a monster's design row. */
+  originalCameraSize(row: number): number | null {
+    if (!this.models || row <= 0 || row >= this.monsters.rows) return null;
+    return this.models.originalCameraSize(this.monsters.get(row, 'design'));
+  }
+
+  /** Change monsterDesign +0x77 of a monster's design row (every monster with that design follows). */
+  setCameraSize(row: number, v: number): void {
+    if (!this.models) throw new Error('モンスターのデザインを読めません');
+    this.models.setCameraSize(this.monsters.get(row, 'design'), v);
+  }
+
+  /** The other monsters with the same design row. */
+  sameDesign(row: number): number[] {
+    const d = this.monsters.get(row, 'design');
+    const out: number[] = [];
+    for (let m = 1; m < this.monsters.rows; m++) if (m !== row && this.monsters.get(m, 'name') && this.monsters.get(m, 'design') === d) out.push(m);
+    return out;
+  }
+
   /** A monster's model (by its design row); null without the dump's models. `motions`: with its skill motions (viewers). */
   monsterModel(row: number, motions = false): ModelRef | null {
     if (!this.models || row <= 0 || row >= this.monsters.rows) return null;

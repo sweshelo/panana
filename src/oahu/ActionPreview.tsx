@@ -15,7 +15,7 @@ import { Dom } from '../ui/mount';
 import { Photo } from '../ui/Photo';
 import { AddEffectSelect, EffectButton, MotionSelect, PerformancePicker, perfEffects, SlotTimelines, type PerfSource, type TimelineSlot } from '../ui/PerformanceEditor';
 import { SoundButton } from '../ui/SoundPicker';
-import { decodeOahuPerformance, OAHU_MONSTER_ANIMS, OAHU_PERF, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, type OahuPerfUse } from './performance';
+import { decodeOahuPerformance, OAHU_MONSTER_ANIMS, OAHU_PERF, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression, oahuProgressionLabel, type OahuPerfUse } from './performance';
 import { OahuActionPicker, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
 
@@ -116,6 +116,12 @@ const SLOT_INFO = [
   'モーションは、行が電波人間のものかモンスターのものかで、反対側のユニットには +0x00 の行のモーションが使われます。',
 ].join('\n');
 
+const PROGRESSION_INFO = [
+  '戦闘で演出をどの順に流し、カメラをいつ動かすか (演出の進行) です。RPG2 の actionData +0x1C にあたる欄は RPG3 にはなく、種別 (+0x2C) とカテゴリ (w0 bit0-2) から決まります (FUN_0021B838)。',
+  '種別 0 → 1、種別 1・18 → 2 (カテゴリ 2 なら 3)、種別 20 → 15、種別 23 → 6 (道具なら 4、カテゴリ 2 なら 3)、ほかは 3 (道具なら 4)。',
+  'カメラは actionCamera.bin の行のカメラのファイルで、モンスターの大きさ (monsterDesign +0x77、モンスターのページの「カメラの大きさ」) で列を選びます。',
+].join('\n');
+
 /** The performance slots of an action: the directData row of each, its motion, effect, sound effect and added effects. */
 export function OahuPerformanceSlots({ session, row, onEdit }: { session: OahuSession; row: number; onEdit: () => void }): ReactNode {
   const { battle } = session;
@@ -194,6 +200,7 @@ export function OahuPerformanceSlots({ session, row, onEdit }: { session: OahuSe
       </table>
       <div className="row small">
         {hidden > 0 && <label><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />{`空の枠も出す (${hidden})`}</label>}
+        <span className="with-info">{`演出の進行 ${oahuProgressionLabel(oahuProgression(a.get(row, 'category'), a.get(row, 'kind')))}`}<InfoTip text={PROGRESSION_INFO} /></span>
         <button title="ほかのアクションの演出 (すべての枠) をこのアクションに写します" onClick={() => setCopying(true)}>演出を写す…</button>
       </div>
       {picking !== null && (
@@ -288,6 +295,9 @@ export function OahuActionPreview({ session, row, users, onEdit }: { session: Oa
       )}
       {viewer && <Dom node={viewer.el} />}
       {loaded && <div className="muted small">{phases.map((p) => p.title).join(' → ')}</div>}
+      {loaded && oahuProgression(a.get(row, 'category'), a.get(row, 'kind')) === 2 && phases.length > 1 && (
+        <div className="muted small">ゲームでは、この進行 (2) の演出は使う側・対象・場を同時に流します。プレビューでは順に流します。</div>
+      )}
       {loaded && (
         <SlotTimelines slots={previewTracks(session, loaded, row, timings, user, target)} effects={loaded.effects} layout={OAHU_PERF} at={at}
           onSeek={(p, f) => viewer?.showAt(p, f)}
