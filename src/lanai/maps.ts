@@ -132,7 +132,7 @@ export interface LanaiMapGroup {
   firstPoint: number;
   /** Entry of the EventObject table (+0x1C). */
   eventEntry: number;
-  /** Entry of the group's talk table (`*_msg`, +0x24): the rows the talking actions of its EventObject rows name. */
+  /** Entry of the group's talk table (`*_msg`, +0x24; 0: the content's MessageContents): the lines of its NPCs. */
   talkEntry: number;
   /** The group's state slots (+0x28 u16 first, +0x2A u8 count; map.md §7): EventObject slots from the count on are not saved. */
   stateFirst: number;
@@ -327,10 +327,16 @@ export class LanaiMaps {
     return g?.eventEntry ? this.tables.find((t) => t.entry === g.eventEntry)?.table : undefined;
   }
 
-  /** The talk table of a MapGroup (`*_msg`: MapGroup +0x24 names its entry in the content's archive), if it is there. */
+  /**
+   * The talk table of a MapGroup: the rows the talking actions of its EventObject rows name (actions.ts). MapGroup +0x24
+   * names its `*_msg` entry in the content's archive; a group with 0 there (the towns and the story contents, about half
+   * of the groups) uses the content's MessageContents (ROM: every talking NPC of such groups names a row of it, and the
+   * rows are their lines).
+   */
   talkTable(group: number): LanaiTable | undefined {
     const g = this.groups[group];
-    return g?.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : undefined;
+    if (!g) return undefined;
+    return g.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : this.contentTable('MessageContents');
   }
 
   /** A table of the content's archive by its name ("MapChara"). */

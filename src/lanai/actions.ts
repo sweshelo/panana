@@ -1,7 +1,8 @@
 // What the action types of RPG FREE!'s EventObject rows do (the three actions of a row, +0x10 / +0x28 / +0x40, with
 // five arguments each; naauao lanai/map.md §5.1.1, §7.1, §7.3), as RPG2's EVENT_KINDS (game/eventkinds.ts): a name,
-// which arguments are rows of the MapGroup's talk table (`*_msg`, MapGroup +0x24) and what is not known. The talking
-// types were matched against the ROM's NPCs (section 5): their first argument is the row of the line the NPC says.
+// which arguments are rows of the MapGroup's talk table (`*_msg` of MapGroup +0x24, else the content's MessageContents:
+// maps.ts talkTable) and what is not known. The talking types were matched against the ROM's NPCs (section 5): their
+// first argument is the row of the line the NPC says.
 import { talkColumns } from './talk';
 import type { LanaiTable } from './table';
 

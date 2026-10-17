@@ -630,6 +630,7 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
   const type = t.u32(row, offset);
   const action = LANAI_ACTIONS[type];
   const talk = st.maps.talkTable(info.dungeon);
+  const group = st.maps.group(info);
   const message = talk ? talkMessageOffset(talk) : undefined;
   const arg = (a: number): number => t.u32(row, offset + 4 + a * 4);
   const setArg = (a: number, v: number): void => st.setEventField(row, (x) => x.setU32(row, offset + 4 + a * 4, v >>> 0));
@@ -642,7 +643,7 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
   const lines = talkArgs.map((a, k): ReactNode => {
     const v = arg(a);
     const head = `${talkArgs.length > 1 ? `台詞 ${k + 1}` : '台詞'} (引数 ${a + 1})`;
-    if (!talk || message === undefined) return <p key={a} className="muted small">{`${head}: 行 ${v}。このマップの群れの台詞の表 (MapGroup +0x24) が見つからないため表示できません。`}</p>;
+    if (!talk || message === undefined) return <p key={a} className="muted small">{`${head}: 行 ${v}。このマップの群れの台詞の表 (MapGroup +0x24 / MessageContents) が見つからないため表示できません。`}</p>;
     const none = action!.zeroIsNone && v === 0;
     const inside = v < talk.rows;
     return (
@@ -674,7 +675,7 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
           {'台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞の行を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'}
         </p>
       )}
-      {talk && talkArgs.length > 0 && <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、MapGroup +0x24 と推定)。台詞の文はこの表の行で、同じ行を使うほかの NPC にも効く。`}</p>}
+      {talk && talkArgs.length > 0 && <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ行を使うほかの NPC の台詞も変わる。`}</p>}
       {lines}
       {known.map(([a, label]) => (
         <label key={a} className="field"><span>{`引数 ${Number(a) + 1}: ${label}`}</span><HexInput value={arg(Number(a))} onChange={(v) => setArg(Number(a), v)} /></label>

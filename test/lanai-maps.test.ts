@@ -1,6 +1,7 @@
 // 電波人間のRPG FREE! (lanai) maps (naauao lanai/map.md): the facing codec of tiles, and (with the dumps) the map table,
 // the map database, the documents and the tile models.
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { LANAI_ACTIONS, lanaiActionName } from '../src/lanai/actions';
 import { lanaiContents } from '../src/lanai/contents';
 import { LanaiMaps } from '../src/lanai/maps';
 import { lanaiTileModels } from '../src/lanai/mapModels';
@@ -75,6 +76,45 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
     expect(src.partsName).toBe('MapPartsCaveB');
     expect(src.textureArchive).toBe(0x3dc60000);
     expect(m.partRef(src, 5, 0)).toEqual({ archive: 0xa6d70000, entry: 0xd922a800 });
+  });
+
+  test('NPC lines: the talking actions name rows of the group talk table (MapGroup +0x24, else MessageContents)', () => {
+    const line = (content: number, map: string, row: number): { table: string; type: number; text: string } => {
+      const m = all.find((x) => x.content.index === content)!;
+      const info = m.mapByName(map)!;
+      const ev = m.eventTable(info.dungeon)!;
+      const talk = m.talkTable(info.dungeon)!;
+      const type = ev.u32(row, 0x10);
+      return { table: talk.name, type, text: s.plain(talk, ev.u32(row, 0x14), 'message') };
+    };
+    const b01 = line(1, 'D01001B01', 13);
+    expect(b01.type).toBe(0x80000001);
+    expect(LANAI_ACTIONS[b01.type]!.talk).toEqual([0]);
+    expect(b01.table).toMatch(/_msg$/);
+    expect(b01.text).toStartWith('むふふふ、むふふふ！');
+    const sign = line(6, 'D01001B01', 7);
+    expect(lanaiActionName(sign.type)).toBe('看板');
+    expect(sign.text).toContain('シールドナイトへの道');
+    // a group with 0 at +0x24 (a town)
+    const m12 = all.find((x) => x.content.index === 12)!;
+    expect(m12.groups[6]!.talkEntry).toBe(0);
+    expect(m12.talkTable(6)!.name).toBe('MessageContents');
+    expect(s.plain(m12.talkTable(6)!, 146, 'message')).toStartWith('電波人間よ、よく来ました。');
+    // every talking action of every group names a row of its talk table
+    let n = 0;
+    for (const m of all) for (const g of m.groups) {
+      const ev = m.eventTable(g.row);
+      const talk = m.talkTable(g.row);
+      for (let r = 1; ev && r < ev.rows; r++) for (const o of [0x10, 0x28, 0x40]) {
+        const a = LANAI_ACTIONS[ev.u32(r, o)];
+        for (const i of a?.talk ?? []) {
+          n++;
+          expect(talk).toBeDefined();
+          expect(ev.u32(r, o + 4 + i * 4)).toBeLessThan(talk!.rows);
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(500);
   });
 
   test('every map but the world maps writes back byte for byte; tile facings are the four masks', () => {
