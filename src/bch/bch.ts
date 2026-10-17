@@ -523,7 +523,7 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
   return {
     material,
     node,
-    priority: key & 0xff,
+    drawOrder: key & 0xff,
     layer: (key >> 8) & 3,
     positions: new Float32Array(pos),
     normals: has(ATTR.normal) ? new Float32Array(nrm) : null,

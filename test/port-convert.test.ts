@@ -326,6 +326,8 @@ function lookDiff(a: View, b: View, poses: boolean): string | null {
     if (d) return d;
     if (skinOf(x).join('|') !== skinOf(y).join('|')) return `mesh ${i} skin`;
     if (x.visible !== y.visible) return `mesh ${i} visibility`;
+    // RPG2 and the H3D games order the render priority oppositely; the port keeps the draw order (#78)
+    if (x.drawOrder !== y.drawOrder) return `mesh ${i} draw order ${x.drawOrder} != ${y.drawOrder}`;
   }
   if (ma.materials.length !== mb.materials.length) return 'material count';
   for (let i = 0; i < ma.materials.length; i++) {
