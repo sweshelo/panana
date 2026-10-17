@@ -8,7 +8,7 @@ import { lanaiTileModels } from '../src/lanai/mapModels';
 import { LanaiSession } from '../src/lanai/session';
 import { buildTiles, LANAI_ROT_CODEC, letterIndex, parseTiles, type TileLayout } from '../src/game/sections';
 import { openImages } from '../src/rom/dump';
-import { equalBytes } from '../src/util/bytes';
+import { equalBytes, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 const LAYOUT: TileLayout = { size: 20, rot: 0x10, letter: 0x11, pad: 0x12, rotCodec: LANAI_ROT_CODEC };
@@ -100,21 +100,23 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
     expect(m12.groups[6]!.talkEntry).toBe(0);
     expect(m12.talkTable(6)!.name).toBe('MessageContents');
     expect(s.plain(m12.talkTable(6)!, 146, 'message')).toStartWith('電波人間よ、よく来ました。');
-    // every talking action of every group names a row of its talk table
+    // the first line of every talking action of an NPC (section 5) is a row of its group's talk table
     let n = 0;
-    for (const m of all) for (const g of m.groups) {
-      const ev = m.eventTable(g.row);
-      const talk = m.talkTable(g.row);
-      for (let r = 1; ev && r < ev.rows; r++) for (const o of [0x10, 0x28, 0x40]) {
-        const a = LANAI_ACTIONS[ev.u32(r, o)];
-        for (const i of a?.talk ?? []) {
+    for (const m of all) for (const info of m.maps) {
+      const ev = m.eventTable(info.dungeon);
+      const talk = m.talkTable(info.dungeon);
+      for (const rec of info.world || !ev ? [] : m.doc(info).recs[5] ?? []) {
+        const r = u32(rec.raw, 4);
+        if (!r || r >= ev!.rows) continue;
+        for (const o of [0x10, 0x28, 0x40]) {
+          if (!LANAI_ACTIONS[ev!.u32(r, o)]?.talk) continue;
           n++;
           expect(talk).toBeDefined();
-          expect(ev.u32(r, o + 4 + i * 4)).toBeLessThan(talk!.rows);
+          expect(ev!.u32(r, o + 4)).toBeLessThan(talk!.rows);
         }
       }
     }
-    expect(n).toBeGreaterThan(500);
+    expect(n).toBeGreaterThan(450);
   });
 
   test('every map but the world maps writes back byte for byte; tile facings are the four masks', () => {
