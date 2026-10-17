@@ -3,7 +3,7 @@ import { beforeAll, describe, test } from 'bun:test';
 import { disassemble, type Insn } from '../src/game/disasm';
 import { lanaiContents } from '../src/lanai/contents';
 import { lanaiActionName, lanaiMonsterName } from '../src/lanai/monsterBook';
-import { lanaiStatsOf } from '../src/lanai/monsterStats';
+import { lanaiAction, lanaiStatsOf } from '../src/lanai/monsterStats';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
@@ -216,7 +216,7 @@ describe.skipIf(!hasLanai)('explore', () => {
       log('ACTMSG', h(r), h(id), texts);
     }
   });
-  test('round 5', () => {
+  test.skip('round 5', () => {
     let k = 0;
     for (const x of insns) {
       if (!/^strh \w+, \[\w+, #0x9c\]$/.test(x.text)) continue;
@@ -226,5 +226,20 @@ describe.skipIf(!hasLanai)('explore', () => {
     for (const c of callers(0x202aec).slice(0, 8)) dis(`caller 202aec fn ${h(funcStart(c))}`, c - 0x40, 40);
     dis('FUN_002F4CA4', 0x2f4ca4, 30);
     dis('FUN_002F5660', 0x2f5660, 40);
+  });
+  test('round 6', () => {
+    dis('FUN_00301B84', 0x301b84, 10);
+    dis('case 21', 0x2f243c, 30);
+    const ad = s.need('ActionData');
+    const bySys = new Map<number, string[]>();
+    for (let r = 1; r < ad.rows; r++) {
+      const a = lanaiAction(s, r);
+      if (!a) continue;
+      if (/つかま|捕|なかま|連れ|ほかく/.test(a.message)) log('CATCH', r, h(a.id), 'sys', a.system, 'kind', a.kind, a.message, h(ad.u32(r, 0)), h(ad.u32(r, 0x10)), h(ad.u32(r, 0x18)));
+      const l = bySys.get(a.system) ?? [];
+      if (l.length < 6) l.push(`${r}:${a.message.slice(0, 20)}`);
+      bySys.set(a.system, l);
+    }
+    for (const [k, l] of [...bySys].sort((a, b) => a[0] - b[0])) log('SYS', k, l.join(' / '));
   });
 });
