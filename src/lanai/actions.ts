@@ -29,7 +29,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   0x80000001: { name: '一言', talk: [0], talking: true, note: '引数 1 の台詞を言う。0x02 / 0x03 との違い (振り向くか) は未確認' },
   0x80000002: { name: '一言 (0x02)', talk: [0], talking: true, note: '0x01 と同じく引数 1 の台詞。違いは未確認 (RPG2 では振り向く)' },
   0x80000003: { name: '一言 (0x03)', talk: [0], talking: true, note: '0x01 と同じく引数 1 の台詞。違いは未確認 (RPG2 では振り向かない)' },
-  0x8000000e: { name: '宝箱', args: { 0: 'TreasureGroup の行' } },
+  0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の行' } },
   0x80000010: { name: '宝箱 (見た目 1)', args: { 0: 'TreasureGroup の行' } },
   0x80000011: { name: '出入口 (行き先あり)', args: { 0: '行き先のマップ (ハッシュ)', 1: '行き先の地点 ID' } },
   0x80000013: { name: '階段 (行き先あり)', args: { 0: '行き先のマップ (ハッシュ)', 1: '行き先の地点 ID' } },

@@ -46,9 +46,9 @@ import {
   type LanaiMaps,
 } from './maps';
 import { LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
+import { MonsterGroupSelect, TreasureEditor } from './MapParts';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
-import { lanaiMonsters } from './monsters';
 import type { LanaiTable } from './table';
 import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
@@ -533,6 +533,7 @@ function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view
           <NumberInput value={readField(rec.raw, f)} min={0} max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff} onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))} />
         </label>
       ))}
+      {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
       {ev > 0 && (events && ev < events.rows ? <EventFields st={st} section={section} index={index} row={ev} /> : (
         <p className="muted small">{events ? `EventObject の行 ${ev} は表 (${events.rows} 行) の外です` : `EventObject の行 ${ev} (表なし)`}</p>
       ))}
@@ -541,28 +542,6 @@ function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view
         <code className="small mono" style={{ wordBreak: 'break-all' }}>{[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</code>
       </details>
     </>
-  );
-}
-
-/** "#1 80000040: いちごおばけ・おおくちばし" for a MonsterGroup row. */
-function monsterGroupLabel(maps: LanaiMaps, row: number): string {
-  const g = maps.monsterGroups()[row];
-  if (!g) return `行 ${row}`;
-  const mp = maps.session.table('MonsterParameter');
-  const list = lanaiMonsters(maps.session);
-  const names = [...new Set(g.monsters.map((id) => (mp ? list[mp.find(id)]?.name : undefined) ?? hex8(id).toUpperCase()))];
-  return `#${row} ${hex8(g.id).toUpperCase()}: ${row === 0 ? '既定 (行 0)' : names.join('・') || '(モンスターなし)'}`;
-}
-
-/** A MonsterGroup row ID of the content (section 6 values); a value the table does not have is shown as such. */
-function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
-  const groups = maps.monsterGroups();
-  const known = groups.some((g) => g.id === value);
-  return (
-    <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
-      {!known && <option value={value}>{`${hex8(value).toUpperCase()} (${maps.monsterGroupRow(value) >= 0 ? `行番号 ${value}` : '表にない: 行 0 になる'})`}</option>}
-      {groups.map((g) => <option key={g.row} value={g.id}>{monsterGroupLabel(maps, g.row)}</option>)}
-    </select>
   );
 }
 

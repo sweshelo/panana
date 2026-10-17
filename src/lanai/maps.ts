@@ -72,6 +72,8 @@ export const LANAI_EVENT_SLOT = 0x58;
 export const LANAI_SLOT_IS_ROW = 0xffff;
 export const LANAI_EVENT_APPEAR = 0x5f;
 export const LANAI_EVENT_DISAPPEAR = 0x60;
+/** The content's table of chests' contents (treasure.ts). */
+export const LANAI_TREASURE_TABLE = 'TreasureGroup';
 
 /** The state slot of an EventObject row (its row number when +0x58 is 0xFFFF). */
 export const lanaiEventSlot = (t: LanaiTable, row: number): number => {
@@ -143,9 +145,19 @@ export interface LanaiMapGroup {
 export interface LanaiMonsterGroupRow {
   row: number;
   id: number;
-  /** The MonsterParameter row IDs of the group (+0x00〜+0x14, 0 left out). */
+  /** +0x00: a small row ID (0x80000000, 0x80000001, …); not a monster, meaning not known yet (#130). */
+  kind: number;
+  /** +0x04〜+0x64: 25 MonsterParameter row IDs as written (0 = none; 0x80000000 = row 0, the empty monster). */
+  slots: number[];
+  /** The MonsterParameter row IDs of the group (the slots, empty ones left out). */
   monsters: number[];
+  /** The bytes after the slots (+0x68 on: weights, count codes or flags; not known yet). */
+  tail: Uint8Array;
 }
+
+/** MonsterGroup rows: +0x00 kind, then 25 u32 monster slots from +0x04 (0x9C bytes a row; #130, map.md §5.7). */
+const MG_SLOTS = 25;
+const MG_SLOT0 = 0x04;
 
 const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
 const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
@@ -364,25 +376,36 @@ export class LanaiMaps {
   /** The rows of a group's EventObject table (an undo point of the map page). */
   eventRows(group: number): Uint8Array[] | null {
     const t = this.eventTable(group);
-    return t ? Array.from({ length: t.rows }, (_, r) => t.row(r).slice()) : null;
+    return t ? tableRows(t) : null;
   }
 
   /** Put a group's EventObject table back to rows saved by eventRows (rows added since are removed). */
   restoreEventRows(group: number, rows: Uint8Array[]): void {
     const t = this.eventTable(group);
     if (!t) return;
-    while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
-    while (t.rows < rows.length) t.addRow();
-    rows.forEach((b, r) => {
-      if (r >= t.rows || equalBytes(b, t.row(r))) return;
-      const was = t.originalRow(r);
-      if (was && equalBytes(was, b)) t.revertRow(r);
-      else t.setRow(r, b);
-    });
+    restoreTableRows(t, rows);
     this.changed();
   }
 
-  /** The content's MonsterGroup rows (section 6 cells and header name them by row ID). */
+  /** The content's TreasureGroup (chests' contents: treasure.ts), named by row number from a chest's EventObject row. */
+  get treasureGroup(): LanaiTable | undefined {
+    return this.contentTable(LANAI_TREASURE_TABLE);
+  }
+
+  /** The rows of the TreasureGroup (an undo point of the map page). */
+  treasureRows(): Uint8Array[] | null {
+    const t = this.treasureGroup;
+    return t ? tableRows(t) : null;
+  }
+
+  /** Put the TreasureGroup back to rows saved by treasureRows. */
+  restoreTreasureRows(rows: Uint8Array[]): void {
+    const t = this.treasureGroup;
+    if (!t) return;
+    restoreTableRows(t, rows);
+    this.changed();
+  }
+
   /** The content's MonsterGroup (section 6 names its rows by row ID). */
   get monsterGroup(): LanaiTable | undefined {
     return this.contentTable('MonsterGroup');
@@ -391,11 +414,19 @@ export class LanaiMaps {
   monsterGroups(): LanaiMonsterGroupRow[] {
     const t = this.monsterGroup;
     if (!t) return [];
-    return Array.from({ length: t.rows }, (_, row) => ({
-      row,
-      id: t.rowId(row),
-      monsters: Array.from({ length: 6 }, (_, i) => t.u32(row, i * 4)).filter((v) => v && v !== 0x80000000),
-    }));
+    const n = Math.max(0, Math.min(MG_SLOTS, (t.rowSize - MG_SLOT0) >> 2));
+    const end = MG_SLOT0 + MG_SLOTS * 4;
+    return Array.from({ length: t.rows }, (_, row) => {
+      const slots = Array.from({ length: n }, (_, i) => t.u32(row, MG_SLOT0 + i * 4));
+      return {
+        row,
+        id: t.rowId(row),
+        kind: t.u32(row, 0),
+        slots,
+        monsters: slots.filter((v) => v && v !== 0x80000000),
+        tail: t.row(row).slice(end),
+      };
+    });
   }
 
   /**
@@ -496,4 +527,21 @@ export class LanaiMaps {
     }
     return out;
   }
+}
+
+/** A copy of a table's rows (an undo point). */
+function tableRows(t: LanaiTable): Uint8Array[] {
+  return Array.from({ length: t.rows }, (_, r) => t.row(r).slice());
+}
+
+/** Put a table back to rows saved by tableRows (rows added since are removed; rows as read are reverted, not written). */
+function restoreTableRows(t: LanaiTable, rows: Uint8Array[]): void {
+  while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
+  while (t.rows < rows.length) t.addRow();
+  rows.forEach((b, r) => {
+    if (r >= t.rows || equalBytes(b, t.row(r))) return;
+    const was = t.originalRow(r);
+    if (was && equalBytes(was, b)) t.revertRow(r);
+    else t.setRow(r, b);
+  });
 }

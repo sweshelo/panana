@@ -7,6 +7,7 @@ import { GridPicker, type PickerChoice } from '../ui/GridPicker';
 import { ActionBadge, type BoardEntry } from '../ui/MonsterSlots';
 import { Photo } from '../ui/Photo';
 import { lanaiActionName, lanaiActionUsers, lanaiItemName, lanaiMonsterIndex, lanaiMonsterName, lanaiMonsterStats } from './monsterBook';
+import { lanaiItemRef } from './items';
 import { lanaiMonsterModel } from './monsterModels';
 import { isTransform, lanaiAction } from './monsterStats';
 import { lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters } from './monsters';
@@ -23,14 +24,20 @@ export function lanaiMonsterEntry(session: LanaiSession, row: number): BoardEntr
   return { icon: lanaiMonsterIcon(session, row, true), name: lanaiMonsterName(session, row), href: lanaiMonsterHref(row) };
 }
 
-/** An item's badge: the first letter of its name. */
-function itemIcon(name: string, large = false): ReactNode {
-  return <span className={`photo${large ? ' photo-lg' : ''} item-badge item-kind-0`}>{name.slice(0, 1) || '?'}</span>;
+/** An item's picture: the photo of its model (ItemDataCore +0x18 / +0x1C), or a badge with the first letter of its name. */
+export function lanaiItemIcon(session: LanaiSession, row: number, name: string, large = false): ReactNode {
+  const data = session.need('ItemData');
+  const core = session.need('ItemDataCore');
+  const c = row > 0 && row < data.rows ? data.u16(row, 0x0c) : 0;
+  const model = c && c < core.rows ? lanaiItemRef(session, { archive: core.u32(c, 0x18), model: core.u32(c, 0x1c) }) : null;
+  const className = `photo${large ? ' photo-lg' : ''}`;
+  if (model) return <Photo model={model} className={className} title={name} />;
+  return <span className={`${className} item-badge item-kind-0`}>{name.slice(0, 1) || '?'}</span>;
 }
 
 export function lanaiItemEntry(session: LanaiSession, id: number): BoardEntry {
   const name = lanaiItemName(session, id);
-  return { icon: itemIcon(name), name };
+  return { icon: lanaiItemIcon(session, session.need('ItemData').find(id), name), name };
 }
 
 /** An action's badge: "変" for a transformation, else its system number. */
@@ -63,20 +70,20 @@ export function LanaiMonsterPicker({ session, current, title = 'モンスター�
   return <GridPicker title={title} entries={entries} current={current} choices={choices} placeholder="名前か番号で絞り込み" onPick={onPick} onClose={onClose} />;
 }
 
-/** Picks an item (ItemData row; the pick is the row number). */
-export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', onPick, onClose }: {
-  session: LanaiSession; current: number; title?: string; onPick: (row: number) => void; onClose: () => void;
+/** Picks an item (ItemData row; the pick is the row number), or one of `choices` before them. */
+export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', choices = [], onPick, onClose }: {
+  session: LanaiSession; current: number; title?: string; choices?: PickerChoice[]; onPick: (row: number) => void; onClose: () => void;
 }): ReactNode {
   const entries = useMemo(() => {
     const t = session.need('ItemData');
     const out = [];
     for (let r = 1; r < t.rows; r++) {
       const name = session.plain(t, r, 'name');
-      if (name) out.push({ id: r, name, sub: `#${r}`, icon: itemIcon(name, true) });
+      if (name) out.push({ id: r, name, sub: `#${r}`, icon: lanaiItemIcon(session, r, name, true) });
     }
     return out;
   }, [session]);
-  return <GridPicker title={title} entries={entries} current={current} placeholder="名前か番号で絞り込み" onPick={onPick} onClose={onClose} />;
+  return <GridPicker title={title} entries={entries} current={current} choices={choices} placeholder="名前か番号で絞り込み" onPick={onPick} onClose={onClose} />;
 }
 
 /** Picks an action (ActionData row; the pick is the row number) from the table of their texts and users. */
