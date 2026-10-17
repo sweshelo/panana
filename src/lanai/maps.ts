@@ -132,6 +132,8 @@ export interface LanaiMapGroup {
   firstPoint: number;
   /** Entry of the EventObject table (+0x1C). */
   eventEntry: number;
+  /** Entry of the group's talk table (`*_msg`, +0x24): the rows the talking actions of its EventObject rows name. */
+  talkEntry: number;
   /** The group's state slots (+0x28 u16 first, +0x2A u8 count; map.md §7): EventObject slots from the count on are not saved. */
   stateFirst: number;
   stateCount: number;
@@ -220,7 +222,7 @@ export class LanaiMaps {
     }
     this.groups = [];
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
-      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
+      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), talkEntry: mapGroup.u32(r, 0x24), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
     for (const p of parts) this.partsByEntry.set(p.entry, p.table);
     // sections put back or reverted by the session: read the documents again
     session.onMapReset((a) => {
@@ -323,6 +325,12 @@ export class LanaiMaps {
   eventTable(group: number): LanaiTable | undefined {
     const g = this.groups[group];
     return g?.eventEntry ? this.tables.find((t) => t.entry === g.eventEntry)?.table : undefined;
+  }
+
+  /** The talk table of a MapGroup (`*_msg`: MapGroup +0x24 names its entry in the content's archive), if it is there. */
+  talkTable(group: number): LanaiTable | undefined {
+    const g = this.groups[group];
+    return g?.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : undefined;
   }
 
   /** A table of the content's archive by its name ("MapChara"). */

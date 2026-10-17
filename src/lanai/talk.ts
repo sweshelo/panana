@@ -27,7 +27,7 @@ export interface TalkGroup {
 }
 
 /** Offsets of the message and voice columns of a talk table, or null when the table is not one. */
-export function talkColumns(ref: LanaiTableRef): { message: number; voice: number } | null {
+export function talkColumns(ref: Pick<LanaiTableRef, 'table'>): { message: number; voice: number } | null {
   const t = ref.table;
   if (t.rowSize !== TALK_ROW) return null;
   const message = t.fields.find((f) => f.name === 'message')?.offset;

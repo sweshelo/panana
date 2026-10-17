@@ -19,6 +19,8 @@ test.skipIf(!hasLanai)('explore133', async () => {
   const stat = new Map<string, number>();
   const bump = (k: string): void => void stat.set(k, (stat.get(k) ?? 0) + 1);
   let miss = 0;
+  const talkMaster = s.tables.filter((t) => t.table.rowSize === 12);
+  L('MASTER12', talkMaster.map((t) => `${t.archive}:${t.table.name}x${t.table.rows}`).join(','));
   const groupsSeen = new Set<string>();
   for (const c of lanaiContents(s)) {
     let maps;
@@ -36,6 +38,7 @@ test.skipIf(!hasLanai)('explore133', async () => {
       const gk = `${c.index}:${m.dungeon}`;
       if (!groupsSeen.has(gk)) {
         groupsSeen.add(gk);
+        if (!msg && (c.index === 12 || c.index === 17)) L('TABLES', c.index, tables.map((t) => `${t.table.name}/${t.table.rowSize}x${t.table.rows}`).join(','));
         const inArc = msgEntry ? !!findEntry(maps.archive, msgEntry) : false;
         L('GROUP', gk, 'msgEntry', h(msgEntry), 'table', msg?.name ?? '-', msg?.rows ?? '-', 'inArchive', inArc, '+20', h(mgT.u32(m.dungeon, 0x20)), 'msgs', msgs.map((t) => `${t.table.name}@${h(t.entry)}x${t.table.rows}`).join(','));
       }
@@ -56,7 +59,11 @@ test.skipIf(!hasLanai)('explore133', async () => {
             const other = msgs.filter((t) => a1 < t.table.rows).map((t) => t.table.name).join(',');
             L('MISS', c.index, m.name, gk, 'sec', k, 'row', row, h(type), 'a', [0, 1, 2, 3, 4].map((i) => h(ev.u32(row, o + 4 + i * 4))).join(' '), 'msg', msg.name, msg.rows, 'fits', other);
           }
-          if (!msg && miss++ < 40) L('NOTAB', c.index, m.name, gk, 'sec', k, h(type), 'a1', h(a1), 'msgEntry', h(msgEntry));
+          if (!msg && miss++ < 60) {
+            const cand = [...talkMaster, ...tables.filter((t) => t.table.rowSize === 12)].filter((t) => a1 < t.table.rows).slice(0, 6)
+              .map((t) => `${t.table.name}=${JSON.stringify(t.table.isString(a1, 0) ? s.plainAt(t.table, t.table.u32(a1, 0)).slice(0, 24) : '?')}`);
+            L('NOTAB', c.index, m.name, gk, 'sec', k, h(type), 'a1', h(a1), 'cand', cand.join(' | '));
+          }
         }
       }
     }
