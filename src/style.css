@@ -187,6 +187,9 @@ table.sections td, table.sections th { padding: 2px 4px; border-bottom: 1px soli
 .loot-item { display: flex; align-items: center; gap: 4px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .loot-item .photo, .loot-item .photo img { width: 24px; height: 24px; flex: none; }
 .loot-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.loot-item > .loot-item { flex: 1 1 auto; min-width: 0; }
+.loot-item > .loot-kind { flex: none; }
+.loot-item > select, .loot-row .loot-item > input[type='number'] { flex: 1 1 0; min-width: 0; width: auto; }
 .loot-add { border-style: dashed; color: var(--muted); }
 
 /* <dialog> pickers */

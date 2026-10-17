@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NumberInput } from '../ui/book';
 import { Dialog } from '../ui/Dialog';
+import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
 import type { LanaiEditState } from './mapedit';
 import type { LanaiMaps } from './maps';
@@ -56,6 +57,15 @@ export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps;
 }
 
 // ---- chests
+
+/** The kinds besides items, offered before the items in the picker (as -kind). */
+const KIND_CHOICES: PickerChoice[] = [
+  { value: -LANAI_TREASURE_GOLD, label: 'G', sub: '額は後で入力' },
+  { value: -3, label: '種類 3', sub: 'ジュエル? (推定)' },
+  { value: -LANAI_TREASURE_BATTLE, label: '戦闘 (群れ)', sub: '推定' },
+];
+/** The badge of an entry that is not an item. */
+const KIND_BADGE: Record<number, string> = { [LANAI_TREASURE_GOLD]: 'G', 3: '3', [LANAI_TREASURE_BATTLE]: '戦' };
 
 const userLabel = (u: LanaiChestUser): string => `${u.map} ${u.section === 4 ? '宝箱' : `区画 ${u.section}`} #${u.index}`;
 
@@ -159,7 +169,18 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
       events.setU32(event, field, r);
     });
   };
-  const pickItem = (current: number | undefined, onPick: (id: number) => void): void => setPicking({ current: current === undefined ? undefined : items.find(current), onPick });
+  /** Pick what an entry gives (an item, or a kind from the choices before the items); `s` is the entry, null for a new one. */
+  const pick = (s: LanaiTreasureSlot | null, onPick: (next: LanaiTreasureSlot) => void): void => setPicking({
+    current: !s ? undefined : s.kind === LANAI_TREASURE_ITEM ? items.find(s.value) : -s.kind,
+    onPick: (id) => {
+      if (id > 0) return onPick({ kind: LANAI_TREASURE_ITEM, value: items.rowId(id), weight: 1 });
+      const kind = -id;
+      const value = s?.kind === kind ? s.value
+        : kind === LANAI_TREASURE_BATTLE ? maps.monsterGroups()[1]?.id ?? maps.monsterGroups()[0]?.id ?? 0
+        : kind === LANAI_TREASURE_GOLD ? 100 : 1;
+      onPick({ kind, value, weight: 1 });
+    },
+  });
   return (
     <div className="treasure">
       <h3>{`宝箱の中身 (${LANAI_CHEST_ACTIONS[events.u32(event, field - 4)]})`}</h3>
@@ -182,24 +203,13 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
             {slots.map((s, i) => (
               <div key={i} className="loot-row">
                 <span className="loot-item">
-                  <select value={s.kind} title="出るものの種類 (+0x06)" onChange={(e) => {
-                    const kind = Number(e.target.value);
-                    const value = kind === LANAI_TREASURE_ITEM ? (items.find(s.value) > 0 ? s.value : items.rowId(1))
-                      : kind === LANAI_TREASURE_BATTLE ? (maps.monsterGroupRow(s.value) > 0 ? s.value : maps.monsterGroups()[1]?.id ?? s.value)
-                      : s.kind === LANAI_TREASURE_ITEM || s.kind === LANAI_TREASURE_BATTLE ? 1 : s.value;
-                    update(i, { ...s, kind, value });
-                  }}>
-                    {Object.entries(LANAI_TREASURE_KIND).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                    {!LANAI_TREASURE_KIND[s.kind] && <option value={s.kind}>{`種類 ${s.kind}`}</option>}
-                  </select>
-                  {s.kind === LANAI_TREASURE_ITEM
-                    ? <button className="loot-item" title="クリックでアイテムを変える" onClick={() => pickItem(s.value, (id) => update(i, { ...s, value: id }))}>
-                        {lanaiItemEntry(session, s.value).icon}
-                        <span className="muted">{`${hex8(s.value).toUpperCase()} `}</span>{itemLabel(maps, s.value)}
-                      </button>
-                    : s.kind === LANAI_TREASURE_BATTLE
+                  <button className={s.kind === LANAI_TREASURE_ITEM ? 'loot-item' : 'loot-item loot-kind'} title="クリックで出るもの (アイテム・G・種類 3・戦闘) を変える" onClick={() => pick(s, (next) => update(i, { ...next, weight: s.weight }))}>
+                    {s.kind === LANAI_TREASURE_ITEM ? lanaiItemEntry(session, s.value).icon : <span className="photo item-badge item-kind-0">{KIND_BADGE[s.kind] ?? '?'}</span>}
+                    {s.kind === LANAI_TREASURE_ITEM ? itemLabel(maps, s.value) : !s.kind || s.kind === LANAI_TREASURE_BATTLE ? '' : LANAI_TREASURE_KIND[s.kind] ?? `種類 ${s.kind}`}
+                  </button>
+                  {s.kind === LANAI_TREASURE_BATTLE
                     ? <MonsterGroupSelect maps={maps} value={s.value} onChange={(v) => update(i, { ...s, value: v })} />
-                    : <NumberInput value={s.value} min={0} max={0x7fffffff} title={s.kind === LANAI_TREASURE_GOLD ? 'G' : '値'} onCommit={(v) => update(i, { ...s, value: v })} />}
+                    : s.kind !== LANAI_TREASURE_ITEM && <NumberInput value={s.value} min={0} max={0x7fffffff} title={s.kind === LANAI_TREASURE_GOLD ? 'G' : '値'} onCommit={(v) => update(i, { ...s, value: v })} />}
                 </span>
                 <NumberInput value={s.weight} min={1} max={0xffff} className="" title="重み (出やすさ)" onCommit={(v) => update(i, { ...s, weight: v })} />
                 <span className="loot-pct">{total ? `${Math.round((s.weight / total) * 100)}%` : ''}</span>
@@ -208,7 +218,7 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
             ))}
             {!slots.length && <div className="muted">空です (開けても何も出ません)。</div>}
             {slots.length < LANAI_TREASURE_SLOTS && (
-              <button className="loot-add" onClick={() => pickItem(undefined, (id) => write([...slots, { value: id, weight: 1, kind: LANAI_TREASURE_ITEM }]))}>＋ 追加</button>
+              <button className="loot-add" onClick={() => pick(null, (next) => write([...slots, next]))}>＋ 追加</button>
             )}
           </div>
           <div className="muted small">
@@ -217,8 +227,8 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
         </>
       )}
       {picking && (
-        <LanaiItemPicker session={session} current={picking.current ?? 0} title="宝箱に入れるアイテムを選ぶ"
-          onClose={() => setPicking(null)} onPick={(r) => { setPicking(null); picking.onPick(items.rowId(r)); }} />
+        <LanaiItemPicker session={session} current={picking.current ?? 0} title="宝箱に入れるものを選ぶ" choices={KIND_CHOICES}
+          onClose={() => setPicking(null)} onPick={(r) => { setPicking(null); picking.onPick(r); }} />
       )}
       {pickingRow && (
         <TreasureRowPicker st={st} current={row} onClose={() => setPickingRow(false)}
