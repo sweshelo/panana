@@ -61,6 +61,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
   stamp: S | null = null;
+  /** The value the section 6 tool ('room') gives the cells it adds (0 = no enemies in RPG2; RPG FREE!: a MonsterGroup row ID). */
+  cell6Value = 0;
   /** Last error of an edit (shown in the status bar). */
   error = '';
   /** Bumped on every emit (React components subscribe to it: src/ui/useEditorState.ts). */

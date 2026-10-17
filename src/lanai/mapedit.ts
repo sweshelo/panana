@@ -3,8 +3,10 @@
 // sections 2〜5 are the 1 / 2 / 4 / 8 masks), and the checks shown under the inspector. Every edit goes to the
 // content's map database right away (the session saves it and exports it).
 //
-// Nothing besides the map is edited: the EventObject tables of the content are not editable yet, so a copied record
-// names the same EventObject row as the one it was copied from (the checks say so).
+// The group's EventObject table (map.md §7.1) is edited with the map: a copied record gets a copy of its EventObject
+// row (appended to the table, with a state slot of its own), so copies do not share a chest's contents or its
+// "opened" state; the rows' fields are edited from the inspector. The table goes into undo points and the export
+// like the map (it is one of the content's tables of the session).
 import { MapEditState, GRID, tileAt, type Issue, type Selection } from '../editor/model';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
@@ -13,6 +15,7 @@ import {
   LANAI_FACING_OFFSET,
   LANAI_LAYOUTS,
   LANAI_POINT_SECTIONS,
+  lanaiEventSlot,
   lanaiExitKind,
   lanaiExitLabel,
   type LanaiMapInfo,
@@ -65,7 +68,10 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
 /** The turn (0..3) of a facing byte; a byte that is none of the masks reads as 0. */
 const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 
-export class LanaiEditState extends MapEditState<LanaiStamp, null> {
+/** An undo point's tables: the rows of the open map's group's EventObject table. */
+type LanaiTables = { group: number; rows: Uint8Array[] } | null;
+
+export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   info: LanaiMapInfo | null = null;
   /** The open map's tile models (MapData row, tileset). Indoor tiles can change it (map.md §6.1): it is read again after every edit. */
   source: LanaiTileSource | null = null;
@@ -116,10 +122,14 @@ export class LanaiEditState extends MapEditState<LanaiStamp, null> {
     return changed;
   }
 
-  protected saveTables(): null {
-    return null;
+  protected saveTables(): LanaiTables {
+    const group = this.info?.dungeon;
+    const rows = group === undefined ? null : this.maps.eventRows(group);
+    return rows && group !== undefined ? { group, rows } : null;
   }
-  protected restoreTables(): void {}
+  protected restoreTables(t: LanaiTables): void {
+    if (t) this.maps.restoreEventRows(t.group, t.rows);
+  }
   protected override docReplaced(doc: MapDoc): void {
     const info = this.maps.map(doc.hash);
     if (info) this.maps.setDoc(info, doc);
@@ -157,6 +167,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, null> {
       section = stamp.t.section;
       raw = stamp.t.raw.slice();
       if (section === 3 && lanaiExitKind(raw) !== WALL_DOOR) w32(raw, 0, this.newPointId());
+      this.copyEventRow(section, raw);
     }
     const rec: Rec = { raw, x: 0, y: 0 };
     setRecCellPos(rec, LANAI_LAYOUTS[section]!, cx, cy);
@@ -165,11 +176,34 @@ export class LanaiEditState extends MapEditState<LanaiStamp, null> {
     return [section, list.length - 1];
   }
 
-  /** A copy of a record: an exit gets a new point ID; the EventObject row stays the same (the table is not edited). */
+  /** Give a record (a copy) a copy of its EventObject row; row 0 (the empty row: no event) stays. */
+  private copyEventRow(section: number, raw: Uint8Array): void {
+    const ev = lanaiRecEventRow(section, raw);
+    const table = this.info ? this.maps.eventTable(this.info.dungeon) : undefined;
+    if (!ev || !table || ev >= table.rows) return;
+    w32(raw, EVENT_FIELD, this.maps.addEventRow(this.info!.dungeon, ev));
+  }
+
+  /** A copy of a record: an exit gets a new point ID, a record with an EventObject row a copy of the row. */
   duplicateRecord(_doc: MapDoc, section: number, rec: Rec): Rec {
     const copy: Rec = { raw: rec.raw.slice(), x: rec.x, y: rec.y };
     if (section === 3 && lanaiExitKind(rec.raw) !== WALL_DOOR) w32(copy.raw, 0, this.newPointId());
+    this.copyEventRow(section, copy.raw);
     return copy;
+  }
+
+  /** Write a field of an EventObject row of the open map's group (with an undo point). */
+  setEventField(row: number, write: (t: NonNullable<ReturnType<LanaiMaps['eventTable']>>) => void): void {
+    const t = this.info ? this.maps.eventTable(this.info.dungeon) : undefined;
+    if (!t || row <= 0 || row >= t.rows) return;
+    this.editTables(() => write(t));
+  }
+
+  /** Give the selected record a copy of its EventObject row (so it stops sharing the row with other records). */
+  separateEventRow(section: number, index: number): void {
+    const rec = this.current?.recs[section]?.[index];
+    if (!rec) return;
+    this.edit(() => this.copyEventRow(section, rec.raw));
   }
 
   /** Put the open map back as it is in the ROM (with an undo point). */
@@ -302,6 +336,28 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
   for (const [row, n] of users)
     if (n > 1) out.push({ level: 'warn', msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`, key: `evshare/${row}/${n}` });
 
+  // EventObject state slots (+0x58): below the group's count, one row each (map.md §7.2)
+  const group = maps.group(info);
+  if (table && group) {
+    const slots = new Map<number, number[]>();
+    for (const row of users.keys()) {
+      if (row >= table.rows) continue;
+      const slot = lanaiEventSlot(table, row);
+      if (slot >= group.stateCount) {
+        out.push({ level: 'warn', msg: `EventObject の行 ${row}: 状態の枠 ${slot} が MapGroup の枠の数 ${group.stateCount} 以上なので、状態 (開けた、など) が保存されません`, key: `evslot/${row}/${slot}` });
+        continue;
+      }
+      slots.set(slot, [...(slots.get(slot) ?? []), row]);
+    }
+    for (const t of Array.from({ length: table.rows }, (_, r) => r)) {
+      if (users.has(t) || !t) continue;
+      const slot = lanaiEventSlot(table, t);
+      if (slots.has(slot)) slots.get(slot)!.push(t);
+    }
+    for (const [slot, rows] of slots)
+      if (rows.length > 1) out.push({ level: 'warn', msg: `EventObject の行 ${rows.join(', ')} が同じ状態の枠 ${slot} を使っています (状態を共有します)`, key: `evslotshare/${slot}/${rows.join(',')}` });
+  }
+
   // section 3: point IDs are what the exits of other maps lead to (EventObject +0x18)
   const ids = new Map<number, number>();
   for (const r of doc.recs[3] ?? []) ids.set(u32(r.raw, 0), (ids.get(u32(r.raw, 0)) ?? 0) + 1);
@@ -315,9 +371,13 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     if (!ids.has(id)) out.push({ level: 'warn', msg: `元の出入口 (地点 ${hex8(id).toUpperCase()}) が消えています。ここへ来る出入口の行き先がなくなります`, key: `gone/${hex8(id)}` });
   }
 
-  // section 6: cells on tiles
+  // section 6: cells on tiles, values that name a MonsterGroup row (others become row 0: map.md §5.7)
   doc.cells6.forEach((c) => {
     if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
+    if (maps.monsterGroup && maps.monsterGroupRow(c.value) < 0)
+      out.push({ level: 'error', msg: `区画 6 のセル (${c.x}, ${c.y}): ${hex8(c.value).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`, target: cell(c.x, c.y), key: `s6id/${c.x},${c.y}/${hex8(c.value)}` });
   });
+  if (doc.sec6Header.length >= 4 && maps.monsterGroup && maps.monsterGroupRow(u32(doc.sec6Header, 0)) < 0)
+    out.push({ level: 'error', msg: `区画 6 のヘッダーの群れ ${hex8(u32(doc.sec6Header, 0)).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`, key: `s6head/${hex8(u32(doc.sec6Header, 0))}` });
   return out;
 }

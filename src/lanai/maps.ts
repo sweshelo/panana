@@ -59,6 +59,26 @@ export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
+/**
+ * EventObject rows (100 bytes; map.md §7.1): the appear / disappear conditions (kind +0x5F / +0x60, values +0x00 /
+ * +0x04 and +0x08 / +0x0C), three actions (type, then 5 arguments) chosen by the row's state, the state slot (+0x58).
+ */
+export const LANAI_EVENT_ROW = 100;
+/** The type of the actions for the states 0 / 1 / 2〜3 (0 or 0x80000000 = none: the one before is used). */
+export const LANAI_EVENT_ACTIONS = [0x10, 0x28, 0x40] as const;
+export const LANAI_EVENT_ARGS = 5;
+/** +0x58: the state slot in the MapGroup's slots; 0xFFFF = the row number is the slot (@0x191C68). */
+export const LANAI_EVENT_SLOT = 0x58;
+export const LANAI_SLOT_IS_ROW = 0xffff;
+export const LANAI_EVENT_APPEAR = 0x5f;
+export const LANAI_EVENT_DISAPPEAR = 0x60;
+
+/** The state slot of an EventObject row (its row number when +0x58 is 0xFFFF). */
+export const lanaiEventSlot = (t: LanaiTable, row: number): number => {
+  const v = t.u16(row, LANAI_EVENT_SLOT);
+  return v === LANAI_SLOT_IS_ROW ? row : v;
+};
+
 /** A row of a content's map table (§2). */
 export interface LanaiMapInfo {
   /** Row in the map table. */
@@ -112,6 +132,17 @@ export interface LanaiMapGroup {
   firstPoint: number;
   /** Entry of the EventObject table (+0x1C). */
   eventEntry: number;
+  /** The group's state slots (+0x28 u16 first, +0x2A u8 count; map.md §7): EventObject slots from the count on are not saved. */
+  stateFirst: number;
+  stateCount: number;
+}
+
+/** A row of the content's MonsterGroup (what section 6 names by row ID). */
+export interface LanaiMonsterGroupRow {
+  row: number;
+  id: number;
+  /** The MonsterParameter row IDs of the group (+0x00〜+0x14, 0 left out). */
+  monsters: number[];
 }
 
 const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
@@ -189,7 +220,7 @@ export class LanaiMaps {
     }
     this.groups = [];
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
-      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c) });
+      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
     for (const p of parts) this.partsByEntry.set(p.entry, p.table);
     // sections put back or reverted by the session: read the documents again
     session.onMapReset((a) => {
@@ -297,6 +328,68 @@ export class LanaiMaps {
   /** A table of the content's archive by its name ("MapChara"). */
   contentTable(name: string): LanaiTable | undefined {
     return tableNamed(this.tables, name);
+  }
+
+  /**
+   * Append a copy of EventObject row `from` to a group's table, with a state slot of its own: the first slot of the
+   * group (below its count) that no row uses, or 0xFFFF (the row number) when none is free. Returns the new row.
+   */
+  addEventRow(group: number, from: number): number {
+    const t = this.eventTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
+    if (from <= 0 || from >= t.rows) throw new RangeError(`EventObject の行 ${from} は写せません (表は ${t.rows} 行)`);
+    const row = t.addRow(from);
+    const used = new Set(Array.from({ length: row }, (_, r) => lanaiEventSlot(t, r)));
+    const count = this.groups[group]?.stateCount ?? 0;
+    let slot = 0;
+    while (slot < count && used.has(slot)) slot++;
+    t.setU16(row, LANAI_EVENT_SLOT, slot < count ? slot : LANAI_SLOT_IS_ROW);
+    return row;
+  }
+
+  /** The rows of a group's EventObject table (an undo point of the map page). */
+  eventRows(group: number): Uint8Array[] | null {
+    const t = this.eventTable(group);
+    return t ? Array.from({ length: t.rows }, (_, r) => t.row(r).slice()) : null;
+  }
+
+  /** Put a group's EventObject table back to rows saved by eventRows (rows added since are removed). */
+  restoreEventRows(group: number, rows: Uint8Array[]): void {
+    const t = this.eventTable(group);
+    if (!t) return;
+    while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
+    while (t.rows < rows.length) t.addRow();
+    rows.forEach((b, r) => {
+      if (r >= t.rows || equalBytes(b, t.row(r))) return;
+      const was = t.originalRow(r);
+      if (was && equalBytes(was, b)) t.revertRow(r);
+      else t.setRow(r, b);
+    });
+    this.changed();
+  }
+
+  /** The content's MonsterGroup rows (section 6 cells and header name them by row ID). */
+  /** The content's MonsterGroup (section 6 names its rows by row ID). */
+  get monsterGroup(): LanaiTable | undefined {
+    return this.contentTable('MonsterGroup');
+  }
+
+  monsterGroups(): LanaiMonsterGroupRow[] {
+    const t = this.monsterGroup;
+    if (!t) return [];
+    return Array.from({ length: t.rows }, (_, row) => ({
+      row,
+      id: t.rowId(row),
+      monsters: Array.from({ length: 6 }, (_, i) => t.u32(row, i * 4)).filter((v) => v && v !== 0x80000000),
+    }));
+  }
+
+  /**
+   * Whether section 6 can name `value`: a row ID of the MonsterGroup (the game also takes a row number below the row
+   * count; anything else becomes row 0: FUN_0031C038, map.md §5.7).
+   */
+  monsterGroupRow(value: number): number {
+    return this.monsterGroup ? this.monsterGroup.find(value) : -1;
   }
 
   group(info: LanaiMapInfo): LanaiMapGroup | undefined {

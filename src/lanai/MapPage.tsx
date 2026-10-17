@@ -4,10 +4,12 @@
 // LanaiEditState), the views (mapview.ts), the tool buttons and palette (editor/panes.tsx, editor/palette.tsx) and the
 // map picker (ui/MapPicker.tsx; the maps of every stage, grouped by stage and MapGroup).
 // Header: the map, view mode and undo. Left: tools, adding records, the tileset's palette and the layers; right: the
-// selected tile or record (the map's facts and the stages that use it when nothing is selected), and the checks.
-// Every edit goes to the content's map database and is saved with the session's edits (session.ts).
+// selected tile or record (the map's facts and the stages that use it when nothing is selected; a record's
+// EventObject row, editable), and the checks. Every edit goes to the content's map database (and the group's
+// EventObject table) and is saved with the session's edits (session.ts).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { editorKey } from '../editor/controller';
+import { HexInput, RawBytes } from '../editor/fields';
 import { kindName, ROT_ARROW } from '../editor/legend';
 import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
@@ -20,10 +22,29 @@ import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
 import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
-import { hex8, u32 } from '../util/bytes';
+import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiStampLabel, lanaiValidate, type LanaiEditState, type LanaiStamp } from './mapedit';
-import { LANAI_FACING_OFFSET, LANAI_LAYOUTS, LANAI_ROT_DIR, LANAI_POINT_SECTIONS, lanaiFloorLabel, lanaiMaps, loadedLanaiMaps, type LanaiMapInfo, type LanaiMaps } from './maps';
+import {
+  LANAI_EVENT_ACTIONS,
+  LANAI_EVENT_APPEAR,
+  LANAI_EVENT_ARGS,
+  LANAI_EVENT_DISAPPEAR,
+  LANAI_EVENT_SECTIONS,
+  LANAI_EVENT_SLOT,
+  LANAI_FACING_OFFSET,
+  LANAI_LAYOUTS,
+  LANAI_POINT_SECTIONS,
+  LANAI_ROT_DIR,
+  LANAI_SLOT_IS_ROW,
+  lanaiEventSlot,
+  lanaiFloorLabel,
+  lanaiMaps,
+  loadedLanaiMaps,
+  type LanaiMapInfo,
+  type LanaiMaps,
+} from './maps';
+import { lanaiMonsters } from './monsters';
 import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
@@ -34,8 +55,8 @@ export const lanaiMapHref = (content: number, name?: string): string => `#/maps/
 /** The link to a content's stages (the stage page lists its maps: this is the way back). */
 export const lanaiStageHref = (content: number): string => `#/stages/${content}`;
 
-/** The tools of RPG FREE!'s map page: section 6 holds MonsterGroup row IDs here, so its cells are not toggled. */
-const LANAI_TOOLS = TOOLS.filter(([t]) => t !== 'room');
+/** The tools of RPG FREE!'s map page: the section 6 tool adds cells of the MonsterGroup picked in its panel. */
+const LANAI_TOOLS = TOOLS.map((t): (typeof TOOLS)[number] => (t[0] === 'room' ? ['room', '敵の群れのセル (区画 6)', t[2]] : t));
 
 const noop = (): void => {};
 
@@ -160,7 +181,6 @@ function MapDetail({ session, contents, content, maps, name }: {
     requestAnimationFrame(() => v.fit());
     const onKey = (e: KeyboardEvent): void => {
       if (!location.hash.startsWith('#/maps') || document.querySelector('dialog[open], .modal')) return;
-      if (e.key === 'g' && !e.ctrlKey && !e.metaKey) return; // no section 6 tool here
       if (editorKey(e, v.ctl, () => maps.palette(st.tileset).get(st.brush.kind) ?? [0])) e.preventDefault();
     };
     window.addEventListener('keydown', onKey);
@@ -197,6 +217,7 @@ function MapDetail({ session, contents, content, maps, name }: {
         <>
           <Tools st={st} tools={LANAI_TOOLS} />
           <AddPanel st={st} view={view} />
+          <EnemyPanel st={st} />
           <TilePalette st={st} view={view} />
           <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
             <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
@@ -386,7 +407,7 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
         </div>
       )}
       <p className="muted small">
-        写したレコードは元と同じ EventObject の行を指します (コンテンツの EventObject の表はまだ編集できません。宝箱の中身や「開けた」状態を共有します)。出入口には新しい地点 ID を付けます。
+        写したレコードには EventObject の行の写し (表の末尾に足し、空いている状態の枠を付ける) を付けるので、宝箱の中身や「開けた」状態は元と別になります。出入口には新しい地点 ID を付けます。
       </p>
     </div>
   );
@@ -451,7 +472,11 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
         {letterIndex(t.letter) > 0 && !ref && ' (この文字のモデルがない)'}
       </p>
       {t.kind + 1 >= 0x10 && t.kind + 1 <= 0x1c && <p className="muted small">屋内の部品 (種類 15〜27): このマップは MapGroup の屋内用の MapData を使います。</p>}
-      {cell6 && <p className="muted small">{`区画 6 のセル: MonsterGroup ${cell6.value === 0x80000000 ? '(マップの既定)' : hex8(cell6.value).toUpperCase()}`}</p>}
+      {cell6 && (
+        <label className="field"><span>区画 6 のセル (MonsterGroup)</span>
+          <MonsterGroupSelect maps={st.maps} value={cell6.value} onChange={(v) => st.edit(() => { cell6.value = v; })} />
+        </label>
+      )}
     </>
   );
 }
@@ -503,15 +528,151 @@ function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view
           <NumberInput value={readField(rec.raw, f)} min={0} max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff} onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))} />
         </label>
       ))}
-      {ev > 0 && (
-        <p className="muted small">
-          {events ? (ev < events.rows ? `EventObject ${events.name} の行 ${ev} (動作の型 ${hex8(events.u32(ev, 0x10)).toUpperCase()})` : `EventObject の行 ${ev} は表 (${events.rows} 行) の外です`) : `EventObject の行 ${ev}`}
-          {'。欄の細かい意味は未解析です (naauao lanai/map.md §13)。'}
-        </p>
-      )}
+      {ev > 0 && (events && ev < events.rows ? <EventFields st={st} section={section} index={index} row={ev} /> : (
+        <p className="muted small">{events ? `EventObject の行 ${ev} は表 (${events.rows} 行) の外です` : `EventObject の行 ${ev} (表なし)`}</p>
+      ))}
       <details>
         <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
         <code className="small mono" style={{ wordBreak: 'break-all' }}>{[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</code>
+      </details>
+    </>
+  );
+}
+
+/** "#1 80000040: いちごおばけ・おおくちばし" for a MonsterGroup row. */
+function monsterGroupLabel(maps: LanaiMaps, row: number): string {
+  const g = maps.monsterGroups()[row];
+  if (!g) return `行 ${row}`;
+  const mp = maps.session.table('MonsterParameter');
+  const list = lanaiMonsters(maps.session);
+  const names = [...new Set(g.monsters.map((id) => (mp ? list[mp.find(id)]?.name : undefined) ?? hex8(id).toUpperCase()))];
+  return `#${row} ${hex8(g.id).toUpperCase()}: ${row === 0 ? '既定 (行 0)' : names.join('・') || '(モンスターなし)'}`;
+}
+
+/** A MonsterGroup row ID of the content (section 6 values); a value the table does not have is shown as such. */
+function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+  const groups = maps.monsterGroups();
+  const known = groups.some((g) => g.id === value);
+  return (
+    <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+      {!known && <option value={value}>{`${hex8(value).toUpperCase()} (${maps.monsterGroupRow(value) >= 0 ? `行番号 ${value}` : '表にない: 行 0 になる'})`}</option>}
+      {groups.map((g) => <option key={g.row} value={g.id}>{monsterGroupLabel(maps, g.row)}</option>)}
+    </select>
+  );
+}
+
+/**
+ * Section 6 (map.md §5.7): the map's group (the header) and the cells where another group comes, by MonsterGroup row
+ * ID of the content. The section 6 tool (G) adds cells of the group picked here, or removes them.
+ */
+function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
+  useEditorState(st);
+  const doc = st.current;
+  const maps = st.maps;
+  if (!doc || !maps.monsterGroup) return null;
+  const groups = maps.monsterGroups();
+  if (!groups.some((g) => g.id === st.cell6Value)) st.cell6Value = groups[1]?.id ?? groups[0]?.id ?? 0;
+  const header = doc.sec6Header.length >= 8 ? u32(doc.sec6Header, 0) : null;
+  const counts = new Map<number, number>();
+  for (const c of doc.cells6) counts.set(c.value, (counts.get(c.value) ?? 0) + 1);
+  return (
+    <div className="add-panel">
+      <h3>敵 (区画 6)</h3>
+      {header === null ? <p className="muted small">このマップには区画 6 がありません (セルを足せません)。</p> : (
+        <>
+          <label className="field"><span>マップの群れ (ヘッダー)</span>
+            <MonsterGroupSelect maps={maps} value={header} onChange={(v) => st.edit((d) => {
+              const h = d.sec6Header.slice();
+              w32(h, 0, v);
+              d.sec6Header = h;
+            })} />
+          </label>
+          <label className="field"><span>足すセルの群れ</span>
+            <MonsterGroupSelect maps={maps} value={st.cell6Value} onChange={(v) => {
+              st.cell6Value = v;
+              st.setTool('room');
+            }} />
+          </label>
+          <p className="muted small">
+            {`G (敵の群れのセル) でマスをクリックすると、その群れのセルを足す / 消す。セル ${doc.cells6.length} 個`}
+            {[...counts].map(([v, n]) => ` ・ ${hex8(v).toUpperCase()} × ${n}`).join('')}
+            {'。群れはこのコンテンツの MonsterGroup の行 ID から選ぶ (表にない値はゲームで行 0 の群れになる)。'}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Labels of an action's arguments where their meaning is known (map.md §5.1, §5.2). */
+const ACTION_ARGS: Record<number, string[]> = {
+  0x8000000e: ['TreasureGroup の行'],
+  0x80000010: ['TreasureGroup の行'],
+  0x80000011: ['行き先のマップ (ハッシュ)', '行き先の地点 ID'],
+  0x80000013: ['行き先のマップ (ハッシュ)', '行き先の地点 ID'],
+};
+const ACTION_STATES = ['状態 0', '状態 1', '状態 2〜3'];
+
+/** How many records of a group's maps name an EventObject row. */
+function eventUsers(maps: LanaiMaps, info: LanaiMapInfo, row: number): number {
+  let n = 0;
+  for (const m of maps.maps)
+    if (m.dungeon === info.dungeon && !m.world)
+      for (const k of LANAI_EVENT_SECTIONS) for (const r of maps.doc(m).recs[k] ?? []) if (lanaiRecEventRow(k, r.raw) === row) n++;
+  return n;
+}
+
+/** The EventObject row of a record (map.md §7.1): conditions, the three actions, the state slot; edited in the group's table. */
+function EventFields({ st, section, index, row }: { st: LanaiEditState; section: number; index: number; row: number }): ReactNode {
+  const info = st.info!;
+  const t = st.maps.eventTable(info.dungeon)!;
+  const group = st.maps.group(info);
+  const users = eventUsers(st.maps, info, row);
+  const slot = lanaiEventSlot(t, row);
+  const u32f = (o: number, label: string): ReactNode => (
+    <label key={o} className="field"><span>{label}</span><HexInput value={t.u32(row, o)} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, o, v >>> 0))} /></label>
+  );
+  const u8f = (o: number, label: string): ReactNode => (
+    <label key={o} className="field"><span>{label}</span><NumberInput value={t.u8(row, o)} min={0} max={255} onCommit={(v) => st.setEventField(row, (x) => x.setU8(row, o, v))} /></label>
+  );
+  const u16f = (o: number, label: string): ReactNode => (
+    <label key={o} className="field"><span>{label}</span><NumberInput value={t.u16(row, o)} min={0} max={0xffff} onCommit={(v) => st.setEventField(row, (x) => x.setU16(row, o, v))} /></label>
+  );
+  return (
+    <>
+      <h4>{`EventObject ${t.name} の行 ${row}${row >= t.originalRows ? ' (追加した行)' : ''}`}</h4>
+      {users > 1 && (
+        <div className="row">
+          <span className="muted small">{`この行は ${users} 個のレコードが使っています (状態と動作を共有)。`}</span>
+          <button onClick={() => st.separateEventRow(section, index)}>このレコード専用の行にする</button>
+        </div>
+      )}
+      <p className="small">出る条件 (+0x5F の種類、0 = なし)</p>
+      {u8f(LANAI_EVENT_APPEAR, '種類')}{u32f(0x00, '値 1 (+0x00)')}{u32f(0x04, '値 2 (+0x04)')}
+      <p className="small">消える条件 (+0x60 の種類、0 = なし)</p>
+      {u8f(LANAI_EVENT_DISAPPEAR, '種類')}{u32f(0x08, '値 1 (+0x08)')}{u32f(0x0c, '値 2 (+0x0C)')}
+      {LANAI_EVENT_ACTIONS.map((o, i) => {
+        const type = t.u32(row, o);
+        const labels = ACTION_ARGS[type] ?? [];
+        return (
+          <details key={o} open={i === 0 || (type !== 0 && type !== 0x80000000)}>
+            <summary className="small">{`動作 ${i + 1} (${ACTION_STATES[i]}): 型 ${hex8(type).toUpperCase()}`}</summary>
+            {u32f(o, `型 (+0x${o.toString(16).toUpperCase()}、0x80000000 = なし)`)}
+            {Array.from({ length: LANAI_EVENT_ARGS }, (_, a) => u32f(o + 4 + a * 4, `引数 ${a + 1}${labels[a] ? ` ${labels[a]}` : ''}`))}
+          </details>
+        );
+      })}
+      {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = 行番号)`)}
+      <p className="muted small">
+        {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
+        {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
+      </p>
+      {u16f(0x5a, '+0x5A (範囲の半径・モデルと推定)')}
+      {u16f(0x5c, '+0x5C (未解析)')}
+      {u8f(0x5e, '+0x5E (未解析)')}
+      <details>
+        <summary className="small">{`行のバイト (${t.rowSize})`}</summary>
+        <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />
       </details>
     </>
   );
