@@ -164,6 +164,9 @@ describe.skipIf(!hasLanai)('explore checkin', () => {
         for (let a = BASE; a < TEXT_END; a += 4) if (w(a) === t.entry) sites.push(`${h(a)}@${h(funcStart(a))}`);
         log(`TABLE ${arc} #${t.index} ${h(t.entry)} ${t.file ?? '-'} name=${t.table.name} ${t.table.rows}x${h(t.table.rowSize)} refs=${sites.slice(0, 12).join(' ') || '-'}`);
         if (SPEC.rowsOf.includes(t.table.name)) {
+          const d = t.table.data;
+          const sl = u32(d, 0x0c);
+          log(`  STRS ${[...d.subarray(0x40, 0x40 + Math.min(sl, 1200))].map((x) => (x >= 0x20 && x < 0x7f ? String.fromCharCode(x) : x ? '~' : '|')).join('')}`);
           for (let r = 0; r < Math.min(t.table.rows, 6); r++) log(`  ROW ${r}: ${[...t.table.row(r)].map((x) => x.toString(16).padStart(2, '0')).join(' ')}`);
         }
       }
