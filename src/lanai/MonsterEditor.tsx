@@ -175,7 +175,7 @@ const CONDITIONS: [number, string][] = Array.from({ length: 0xc4 }, (_, v) => [v
 /** The slots of the other actions: key, label, the condition's key, and the explanation. */
 const OTHER_ACTIONS: { key: string; label: string; cond?: string; info: string }[] = [
   { key: 'actBattle', label: '戦闘開始時', info: '+0x38 (能力 0x40)。戦闘の始めに使うアクション。状態を付けるもの (系統 9 / 10) が多い。' },
-  { key: 'actDefault', label: '既定の行動', info: '+0x3C。このモンスターがプレイヤー側にいるとき (『つかまえる』で捕まえたモンスターと推定) の既定の行動。敵として出るときは使わず、「使えるワザがないときの枠」を使います (naauao lanai/monsters.md §3.2)。' },
+  { key: 'actDefault', label: '既定の行動', info: '+0x3C。『つかまえる』で捕まえたこのモンスターを連れたユニットの既定の行動 (同じ種族の行のものを使います)。敵として出るときは使わず、「使えるワザがないときの枠」を使います (naauao lanai/monsters.md §3.2)。' },
   ...LANAI_AUTO_SLOTS.filter((s) => s.cond).map((s) => ({
     key: s.key, label: s.label, cond: s.cond,
     info: s.key.startsWith('actHit')
