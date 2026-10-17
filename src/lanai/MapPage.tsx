@@ -20,6 +20,7 @@ import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, 
 import { romfsHref } from '../romfs/RomfsPage';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
+import { MessageEditor } from '../ui/message';
 import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
@@ -44,7 +45,11 @@ import {
   type LanaiMapInfo,
   type LanaiMaps,
 } from './maps';
+import { LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
 import { MonsterGroupSelect, TreasureEditor } from './MapParts';
+import { lanaiMessageSource } from './MessageSource';
+import { useLanaiRevision } from './MonsterEditor';
+import type { LanaiTable } from './table';
 import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
@@ -583,14 +588,87 @@ function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
   );
 }
 
-/** Labels of an action's arguments where their meaning is known (map.md §5.1, §5.2). */
-const ACTION_ARGS: Record<number, string[]> = {
-  0x8000000e: ['TreasureGroup の行'],
-  0x80000010: ['TreasureGroup の行'],
-  0x80000011: ['行き先のマップ (ハッシュ)', '行き先の地点 ID'],
-  0x80000013: ['行き先のマップ (ハッシュ)', '行き先の地点 ID'],
-};
 const ACTION_STATES = ['状態 0', '状態 1', '状態 2〜3'];
+
+/** "13: むふふふ、むふふふ！笑いが止…" for a row of a talk table. */
+function talkRowLabel(session: LanaiSession, t: LanaiTable, offset: number, row: number): string {
+  const text = t.isString(row, offset) ? session.plainAt(t, t.u32(row, offset)).replace(/\s+/g, ' ').trim() : '';
+  return `${row}: ${text.length > 32 ? `${text.slice(0, 32)}…` : text || '(空)'}`;
+}
+
+/**
+ * One action of an EventObject row (map.md §7.1, §7.3): its type by name (actions.ts LANAI_ACTIONS), the lines it says
+ * (rows of the group's talk table, MapGroup +0x24: picked from the table and edited in the message editor), the
+ * arguments whose meaning is known and the raw ones.
+ */
+function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: number; offset: number; index: number }): ReactNode {
+  const info = st.info!;
+  const session = st.maps.session;
+  useLanaiRevision(session);
+  const t = st.maps.eventTable(info.dungeon)!;
+  const type = t.u32(row, offset);
+  const action = LANAI_ACTIONS[type];
+  const talk = st.maps.talkTable(info.dungeon);
+  const group = st.maps.group(info);
+  const message = talk ? talkMessageOffset(talk) : undefined;
+  const arg = (a: number): number => t.u32(row, offset + 4 + a * 4);
+  const setArg = (a: number, v: number): void => st.setEventField(row, (x) => x.setU32(row, offset + 4 + a * 4, v >>> 0));
+  const apply = (f: () => void): void => {
+    f();
+    session.edited();
+  };
+  const types = LANAI_ACTION_TYPES.includes(type) ? LANAI_ACTION_TYPES : [type, ...LANAI_ACTION_TYPES];
+  const talkArgs = action?.talk ?? [];
+  const lines = talkArgs.map((a, k): ReactNode => {
+    const v = arg(a);
+    const head = `${talkArgs.length > 1 ? `台詞 ${k + 1}` : '台詞'} (引数 ${a + 1})`;
+    if (!talk || message === undefined) return <p key={a} className="muted small">{`${head}: 行 ${v}。このマップの群れの台詞の表 (MapGroup +0x24 / MessageContents) が見つからないため表示できません。`}</p>;
+    const none = action!.zeroIsNone && v === 0;
+    const inside = v < talk.rows;
+    return (
+      <div key={a}>
+        <label className="field"><span>{head}</span>
+          <select value={inside ? v : -1} onChange={(e) => setArg(a, Number(e.target.value))}>
+            {!inside && <option value={-1}>{`行 ${v} (表は ${talk.rows} 行: 表の外)`}</option>}
+            {Array.from({ length: talk.rows }, (_, r) => (
+              <option key={r} value={r}>{action!.zeroIsNone && r === 0 ? '0: なし' : talkRowLabel(session, talk, message, r)}</option>
+            ))}
+          </select>
+        </label>
+        {inside && !none && <MessageEditor texts={lanaiMessageSource(session, talk, message)} id={v} apply={apply} />}
+      </div>
+    );
+  });
+  const known = Object.entries(action?.args ?? {});
+  return (
+    <details open={index === 0 || (type !== 0 && type !== LANAI_ACTION_NONE)}>
+      <summary className="small">{`動作 ${index + 1} (${ACTION_STATES[index]}): ${lanaiActionName(type)}`}</summary>
+      <label className="field"><span>動作の型</span>
+        <select value={type} onChange={(e) => st.setEventField(row, (x) => x.setU32(row, offset, Number(e.target.value) >>> 0))}>
+          {types.map((v) => <option key={v} value={v}>{`${hex8(v).toUpperCase().slice(6)}: ${lanaiActionName(v)}`}</option>)}
+        </select>
+      </label>
+      {action?.note && <p className="muted small">{action.note}</p>}
+      {type === LANAI_ACTION_SCRIPT && talk && (
+        <p className="muted small">
+          {'台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞の行を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'}
+        </p>
+      )}
+      {talk && talkArgs.length > 0 && <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ行を使うほかの NPC の台詞も変わる。`}</p>}
+      {lines}
+      {known.map(([a, label]) => (
+        <label key={a} className="field"><span>{`引数 ${Number(a) + 1}: ${label}`}</span><HexInput value={arg(Number(a))} onChange={(v) => setArg(Number(a), v)} /></label>
+      ))}
+      <details>
+        <summary className="small">型と引数 (16 進)</summary>
+        <label className="field"><span>{`型 (+0x${offset.toString(16).toUpperCase()}、0x80000000 = なし)`}</span><HexInput value={type} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, offset, v >>> 0))} /></label>
+        {Array.from({ length: LANAI_EVENT_ARGS }, (_, a) => (
+          <label key={a} className="field"><span>{`引数 ${a + 1} (+0x${(offset + 4 + a * 4).toString(16).toUpperCase()})`}</span><HexInput value={arg(a)} onChange={(v) => setArg(a, v)} /></label>
+        ))}
+      </details>
+    </details>
+  );
+}
 
 /** How many records of a group's maps name an EventObject row. */
 function eventUsers(maps: LanaiMaps, info: LanaiMapInfo, row: number): number {
@@ -630,17 +708,7 @@ function EventFields({ st, section, index, row }: { st: LanaiEditState; section:
       {u8f(LANAI_EVENT_APPEAR, '種類')}{u32f(0x00, '値 1 (+0x00)')}{u32f(0x04, '値 2 (+0x04)')}
       <p className="small">消える条件 (+0x60 の種類、0 = なし)</p>
       {u8f(LANAI_EVENT_DISAPPEAR, '種類')}{u32f(0x08, '値 1 (+0x08)')}{u32f(0x0c, '値 2 (+0x0C)')}
-      {LANAI_EVENT_ACTIONS.map((o, i) => {
-        const type = t.u32(row, o);
-        const labels = ACTION_ARGS[type] ?? [];
-        return (
-          <details key={o} open={i === 0 || (type !== 0 && type !== 0x80000000)}>
-            <summary className="small">{`動作 ${i + 1} (${ACTION_STATES[i]}): 型 ${hex8(type).toUpperCase()}`}</summary>
-            {u32f(o, `型 (+0x${o.toString(16).toUpperCase()}、0x80000000 = なし)`)}
-            {Array.from({ length: LANAI_EVENT_ARGS }, (_, a) => u32f(o + 4 + a * 4, `引数 ${a + 1}${labels[a] ? ` ${labels[a]}` : ''}`))}
-          </details>
-        );
-      })}
+      {LANAI_EVENT_ACTIONS.map((o, i) => <ActionFields key={o} st={st} row={row} offset={o} index={i} />)}
       {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = 行番号)`)}
       <p className="muted small">
         {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}

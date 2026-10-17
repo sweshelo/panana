@@ -134,6 +134,8 @@ export interface LanaiMapGroup {
   firstPoint: number;
   /** Entry of the EventObject table (+0x1C). */
   eventEntry: number;
+  /** Entry of the group's talk table (`*_msg`, +0x24; 0: the content's MessageContents): the lines of its NPCs. */
+  talkEntry: number;
   /** The group's state slots (+0x28 u16 first, +0x2A u8 count; map.md §7): EventObject slots from the count on are not saved. */
   stateFirst: number;
   stateCount: number;
@@ -232,7 +234,7 @@ export class LanaiMaps {
     }
     this.groups = [];
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
-      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
+      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), talkEntry: mapGroup.u32(r, 0x24), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
     for (const p of parts) this.partsByEntry.set(p.entry, p.table);
     // sections put back or reverted by the session: read the documents again
     session.onMapReset((a) => {
@@ -335,6 +337,18 @@ export class LanaiMaps {
   eventTable(group: number): LanaiTable | undefined {
     const g = this.groups[group];
     return g?.eventEntry ? this.tables.find((t) => t.entry === g.eventEntry)?.table : undefined;
+  }
+
+  /**
+   * The talk table of a MapGroup: the rows the talking actions of its EventObject rows name (actions.ts). MapGroup +0x24
+   * names its `*_msg` entry in the content's archive; a group with 0 there (the towns and the story contents, about half
+   * of the groups) uses the content's MessageContents (ROM: every talking NPC of such groups names a row of it, and the
+   * rows are their lines).
+   */
+  talkTable(group: number): LanaiTable | undefined {
+    const g = this.groups[group];
+    if (!g) return undefined;
+    return g.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : this.contentTable('MessageContents');
   }
 
   /** A table of the content's archive by its name ("MapChara"). */
