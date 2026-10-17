@@ -71,7 +71,7 @@ const statsFields: FieldDef[] = [
   ...LANAI_ELEMENTS.map(([k, l], i) => (i < 5 ? RES(k, 0x24, 5 + i * 5, `${l}たいせい`) : RES(k, 0x28, (i - 5) * 5, `${l}たいせい`))),
   ...LANAI_STATES.map(([k, l], i) => RES(k, 0x2c + Math.floor(i / 6) * 4, (i % 6) * 5, `${l}たいせい`)),
   f('actBattle', 0x38, 'u32', '戦闘開始時の行動', { ref: action }),
-  f('actDefault', 0x3c, 'u32', '+0x3C の行動', { ref: action, unsure: true, note: '全行にある。通常攻撃・既定の行動と推定' }),
+  f('actDefault', 0x3c, 'u32', '+0x3C の行動', { ref: action, unsure: true, note: 'プレイヤー側のユニットが連れているときの既定の行動 (FUN_002F4900)。敵のときは使わない' }),
   f('actTurnStart', 0x40, 'u32', 'ターン開始時の行動', { ref: action }),
   f('actHit1', 0x44, 'u32', '被弾時の行動 1', { ref: action }),
   f('actHit2', 0x48, 'u32', '被弾時の行動 2', { ref: action }),
