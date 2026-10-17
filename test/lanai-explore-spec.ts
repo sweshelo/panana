@@ -1,8 +1,10 @@
 // TEMPORARY: what test/lanai-explore-checkin.test.ts prints.
 export const SPEC = {
-  max: 700,
-  strings: ['checkinserver', 'bonus_tbl', 'la1.denpamen', 'https://', 'http://', 'SUCCESS', 'ERROR', 'rom:', 'sdmc', 'data:', 'extdata', 'auth_token', 'Checkin', 'gameserver', 'campaigncodeserver', 'ctr_state', 'ctr_ec'],
-  callers: [0x2ea8dc, 0x43a698, 0x2af0dc, 0x3e9840, 0x167800, 0x4359ec, 0x27cd9c, 0x27cc6c],
-  hex: [[0x4a2000, 0x400]] as [number, number][],
-  funcs: [0x3e9840, 0x435bcc, 0x27d9ec, 0x43a0a0, 0x43a698, 0x43a264, 0x43a7f4, 0x2ea8dc, 0x167800, 0x4359ec, 0x34c624, 0x27cc6c, 0x27cbfc, 0x27cd9c, 0x1aa954],
+  max: 900,
+  strings: ['http:C', 'ssl:C', 'act:u', 'ac:u', 'frd:u', 'SetRootCa', 'checkin', 'bdat', 'total_assets', 'Wi-Fi'],
+  callers: [0x43aa0c, 0x3008bc, 0x3023e0, 0x438c5c, 0x279468, 0x27d8b0, 0x2c1950, 0x26ea98, 0x43a43c, 0x2fcd38, 0x1aa954, 0x3166c4],
+  refsTo: [[0x4a2c00, 0x4a3100], [0x4eb498, 0x4eb4a0]] as [number, number][],
+  hex: [[0x4a2c00, 0x500]] as [number, number][],
+  funcs: [0x43a43c, 0x26ea98, 0x3008bc, 0x27d8b0, 0x279468, 0x42aba4, 0x27c9f8, 0x27c9b8, 0x438c5c, 0x2eaaf8, 0x3e961c, 0x3e9350, 0x3e8dc8, 0x15ff88, 0x27ddf8],
+  ranges: [[0x3ea32c, 0x3eaf00]] as [number, number][],
 };

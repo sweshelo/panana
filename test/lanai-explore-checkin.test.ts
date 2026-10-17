@@ -54,7 +54,7 @@ function funcStart(a: number): number {
 }
 
 let lastPools = new Set<number>();
-function dumpFunc(start: number, max = 900): void {
+function dumpFunc(start: number, max = 900, linear = false): void {
   log(`== FUN_${h(start).slice(2).padStart(8, '0')}`);
   const pools = new Set<number>();
   let returned = false;
@@ -65,7 +65,8 @@ function dumpFunc(start: number, max = 900): void {
       continue;
     }
     const i = disassemble(w(a), a);
-    if (k > 0 && returned && isPush(i)) break;
+    if (!linear && k > 0 && returned && isPush(i)) break;
+    if (i.text === 'nop') continue;
     let note = '';
     if (i.literal !== undefined) {
       pools.add(i.literal);
@@ -144,7 +145,17 @@ describe.skipIf(!hasLanai)('explore checkin', () => {
         log(`HEX ${h(a + o)}: ${b.map((x) => x.toString(16).padStart(2, '0')).join(' ')}  ${b.map((x) => (x >= 0x20 && x < 0x7f ? String.fromCharCode(x) : '.')).join('')}`);
       }
     }
-    for (const f of SPEC.funcs) dumpFunc(funcStart(f) === f ? f : f, SPEC.max);
+    // words in .text that hold a value in [lo, hi) (pointers into a data block)
+    for (const [lo, hi] of SPEC.refsTo) {
+      const sites: string[] = [];
+      for (let a = BASE; a < TEXT_END; a += 4) {
+        const v = w(a);
+        if (v >= lo && v < hi) sites.push(`${h(a)}=${h(v)}@${h(funcStart(a))}`);
+      }
+      log(`REFS ${h(lo)}..${h(hi)} (${sites.length}): ${sites.slice(0, 80).join(' ')}`);
+    }
+    for (const f of SPEC.funcs) dumpFunc(f, SPEC.max);
+    for (const [a, b] of SPEC.ranges) dumpFunc(a, (b - a) / 4, true);
     void lastPools;
     // one line per console.log is slow in CI logs; print in blocks
     for (let k = 0; k < out.length; k += 200) console.log(out.slice(k, k + 200).map((l) => 'EXPLORE ' + l).join('\n'));
