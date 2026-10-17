@@ -192,7 +192,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     const ad = s.need('ActionData');
     for (const r of [0x197, 0x1a3, 0x1a4, 0x1a5, 0x1a6, 0x3c5]) log('ACTROW', h(r), h(ad.rowId(r)), [...Array(8)].map((_, i) => h(ad.u32(r, i * 4))).join(' '), lanaiActionName(s, r));
   }, 600000);
-  test('round 4', () => {
+  test.skip('round 4', () => {
     dis('FUN_002F2004', 0x2f2004, 440);
     dis('FUN_0031E98C (+6)', 0x31e98c, 30);
     dis('FUN_001A0AC4 (+8)', 0x1a0ac4, 40);
@@ -215,5 +215,16 @@ describe.skipIf(!hasLanai)('explore', () => {
       const texts = (t?.fields ?? []).map((f) => `${f.name}=${s.insert('MessageAction', id, f.name) ?? ''}`).join(' | ');
       log('ACTMSG', h(r), h(id), texts);
     }
+  });
+  test('round 5', () => {
+    let k = 0;
+    for (const x of insns) {
+      if (!/^strh \w+, \[\w+, #0x9c\]$/.test(x.text)) continue;
+      dis(`strh 9c fn ${h(funcStart(x.addr))}`, x.addr - 0x30, 16);
+      if (++k >= 30) break;
+    }
+    for (const c of callers(0x202aec).slice(0, 8)) dis(`caller 202aec fn ${h(funcStart(c))}`, c - 0x40, 40);
+    dis('FUN_002F4CA4', 0x2f4ca4, 30);
+    dis('FUN_002F5660', 0x2f5660, 40);
   });
 });
