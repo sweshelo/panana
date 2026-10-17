@@ -1,6 +1,7 @@
 // TEMPORARY: prints code.bin facts for the remaining unknown fields of RPG FREE! (#129). Removed before the PR.
 import { beforeAll, describe, test } from 'bun:test';
 import { disassemble, type Insn } from '../src/game/disasm';
+import { lanaiContents } from '../src/lanai/contents';
 import { lanaiActionName, lanaiMonsterName } from '../src/lanai/monsterBook';
 import { lanaiStatsOf } from '../src/lanai/monsterStats';
 import { LanaiSession } from '../src/lanai/session';
@@ -103,7 +104,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     }
   };
 
-  test('round 2', () => {
+  test.skip('round 2', () => {
     dis('FUN_00301BA8', 0x301ba8, 16);
     dis('FUN_002F82B8', 0x2f82b8, 12);
     dis('ctx 45cbac @16d074', 0x16d074 - 0x40, 32);
@@ -151,4 +152,44 @@ describe.skipIf(!hasLanai)('explore', () => {
     }
     for (const [key, l] of [...groups].sort()) log(`MON ${key} (${l.length}) ${l.slice(0, 60).join(' ')}`);
   });
+  test('round 3', async () => {
+    dis('FUN_002029AC', 0x2029ac, 170);
+    for (const c of callers(0x2029ac).slice(0, 12)) log('caller 2029ac', h(c), 'fn', h(funcStart(c)));
+    dis('MapData +6 @1dad58', 0x1dad58 - 0x40, 40);
+    dis('MapData +0 bits1-4 @277d14', 0x277d14 - 0x40, 40);
+    dis('MapData +C @2ffc10', 0x2ffc10 - 0x30, 36);
+    dis('MapData +C @30470c', 0x30470c - 0x30, 36);
+    dis('MapData +C @3e6718', 0x3e6718 - 0x10, 50);
+    dis('FUN_002E3230', 0x2e3230, 40);
+    dis('sec3 kind @21bbe0', 0x21bbe0 - 0x20, 70);
+    dis('sec3 kind @21d7a8', 0x21d7a8 - 0x40, 70);
+    for (const a of [0x11f474, 0x3b4b4c, 0x46a060]) dis('stride 4c', a - 0x30, 36);
+    // the holder: names in sorted order (master + one content's tables)
+    const names = new Set(s.tables.map((t) => t.table.name));
+    const c38 = lanaiContents(s)[38]!;
+    const ct = await s.tablesIn(c38.archive);
+    for (const t of ct) names.add(t.table.name);
+    const sorted = [...names].sort();
+    const md = sorted.indexOf('MapData');
+    log('HOLDER count', sorted.length, 'MapData at', md);
+    for (const off of [0x2a8, 0x16a8, 0x1748, 0x1770, 0x179c - 4, 0x17c4 - 4, 0x730, 0x1310, 0x1358, 0x1428, 0x16f8]) log('HOLDER', h(off), sorted[md + (off - 0x16f8) / 0x28]);
+    log('HOLDER list', sorted.map((n, i) => `${h(0x16f8 + (i - md) * 0x28)}=${n}`).join(' '));
+    // MapData rows of every content
+    const seen = new Map<string, number>();
+    for (const c of lanaiContents(s)) {
+      let tabs;
+      try { tabs = await s.tablesIn(c.archive); } catch { continue; }
+      const t = tabs.find((x) => x.table.name === 'MapData')?.table;
+      if (!t) continue;
+      for (let r = 0; r < t.rows; r++) {
+        const b = [...t.row(r)].map((x) => x.toString(16).padStart(2, '0')).join(' ');
+        seen.set(b, (seen.get(b) ?? 0) + 1);
+        if (c.index === 38 || r >= 5 && r <= 7) log('MAPDATA', `c${c.index} r${r} id=${h(t.rowIds[r] ?? 0)} ${b}`);
+      }
+    }
+    log('MAPDATA unique', seen.size);
+    for (const [b, n] of [...seen].sort((a, b) => b[1] - a[1]).slice(0, 80)) log('MAPDATA', n, b);
+    const ad = s.need('ActionData');
+    for (const r of [0x197, 0x1a3, 0x1a4, 0x1a5, 0x1a6, 0x3c5]) log('ACTROW', h(r), h(ad.rowId(r)), [...Array(8)].map((_, i) => h(ad.u32(r, i * 4))).join(' '), lanaiActionName(s, r));
+  }, 600000);
 });
