@@ -3,7 +3,11 @@
 // of the content's TreasureGroup. A TreasureGroup row has RPG3's shape (oahu/treasure.ts): 10 entries of
 // {u32 value, u16 weight, u8 kind, u8 0xD0}; opening the chest picks one entry with a chance by weight. Empty entries
 // are {0x80000000, 1, 1, 0xD0} (RPG3's are value 0).
+// The goal chest (look 3, type 0x8000002E; naauao lanai/key-objects.md §2) has the type in each of its 2〜3 actions
+// (the states: the first opening, then the retries), each with its own TreasureGroup row; the first one also names the
+// content it clears (argument 2).
 import { u16, u32, w16, w32 } from '../util/bytes';
+import { LANAI_ACTION_GOAL_CHEST } from './actions';
 import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, type LanaiMaps } from './maps';
 import type { LanaiTable } from './table';
 
@@ -12,7 +16,7 @@ export const LANAI_TREASURE_SLOTS = 10;
 export const LANAI_TREASURE_EMPTY = 0x80000000;
 
 /** Action types of chests (map.md §5.2): their first argument is the TreasureGroup row. */
-export const LANAI_CHEST_ACTIONS: Record<number, string> = { 0x8000000e: '宝箱 (見た目 0 / 2)', 0x80000010: '宝箱 (見た目 1)' };
+export const LANAI_CHEST_ACTIONS: Record<number, string> = { 0x8000000e: '宝箱 (見た目 0 / 2)', 0x80000010: '宝箱 (見た目 1)', [LANAI_ACTION_GOAL_CHEST]: 'ゴールの宝箱' };
 
 /**
  * What an entry gives (+0x06), as seen in the ROM's rows: 1 an item (an ItemData row ID), 2 G (the value is the
@@ -31,11 +35,26 @@ export interface LanaiTreasureSlot {
   kind: number;
 }
 
+/** A chest action of an EventObject row: which of the three (0〜2, the state) and the offset of its TreasureGroup row. */
+export interface LanaiChestStage {
+  stage: number;
+  field: number;
+}
+
+/** The chest actions of an EventObject row (one for a chest, 2〜3 for the goal chest); empty when it has none. */
+export function lanaiChestFields(t: LanaiTable, row: number): LanaiChestStage[] {
+  if (row <= 0 || row >= t.rows) return [];
+  const out: LanaiChestStage[] = [];
+  LANAI_EVENT_ACTIONS.forEach((o, stage) => {
+    if (LANAI_CHEST_ACTIONS[t.u32(row, o)]) out.push({ stage, field: o + 4 });
+  });
+  // a chest's later actions repeat the type with the same row; only the goal chest's have rows of their own
+  return out.length > 1 && t.u32(row, out[0]!.field - 4) !== LANAI_ACTION_GOAL_CHEST ? out.slice(0, 1) : out;
+}
+
 /** Offset in an EventObject row of the TreasureGroup row of its chest action (the first one), or null when it has none. */
 export function lanaiChestField(t: LanaiTable, row: number): number | null {
-  if (row <= 0 || row >= t.rows) return null;
-  for (const o of LANAI_EVENT_ACTIONS) if (LANAI_CHEST_ACTIONS[t.u32(row, o)]) return o + 4;
-  return null;
+  return lanaiChestFields(t, row)[0]?.field ?? null;
 }
 
 /** The TreasureGroup row of a chest's EventObject row, or null when the row has no chest action. */
@@ -108,8 +127,8 @@ export function lanaiChestUsers(maps: LanaiMaps): Map<number, LanaiChestUser[]> 
       (doc.recs[k] ?? []).forEach((r, index) => {
         // the EventObject row of sections 3 / 4 / 5 / 8 is at +0x04 (mapedit.ts lanaiRecEventRow)
         const event = u32(r.raw, 4);
-        const row = event ? lanaiChestTreasureRow(t, event) : null;
-        if (row !== null) out.set(row, [...(out.get(row) ?? []), { map: m.name, section: k, index, event }]);
+        const rows = new Set(event ? lanaiChestFields(t, event).map((s) => t.u32(event, s.field)) : []);
+        for (const row of rows) out.set(row, [...(out.get(row) ?? []), { map: m.name, section: k, index, event }]);
       });
   }
   return out;

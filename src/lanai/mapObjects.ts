@@ -65,6 +65,9 @@ export const LANAI_WALL_DOOR = 100;
 /** Stairs and the default wall door (RPG3's mapObject 1 / 2 / 5). */
 const STAIRS_UP_ID = 1, STAIRS_DOWN_ID = 2, WALL_DOOR_ID = 5;
 
+/** MapObject rows (row numbers) section 5 places for a kind when EventObject +0x5A is 0: 3 → 0x3F gimk_04_heal_1, 9 → 0x72, 10 → 0x75. */
+const SECTION5_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
+
 const HALF = Math.PI / 2;
 /** Props, objects and characters: direction 0..3 → 180°, 90°, 0°, −90° (RPG3's FUN_00364B80 / FUN_00366F30). */
 const QUARTER = [Math.PI, HALF, 0, -HALF];
@@ -176,7 +179,8 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       // the recovery points (FUN_0021C844): an effect; only the field takes EventObject +0x5A when it has one
       if (kind === LANAI_REPAIR_POINT) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_POINT }, angle };
       if (kind === LANAI_REPAIR_FIELD && !valid(evModel)) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_FIELD }, angle };
-      const row = valid(evModel);
+      // EventObject +0x5A, else the kind's default (kind 3 gimk_04_heal_1; FUN_0021C844)
+      const row = valid(evModel) || valid(SECTION5_DEFAULT_ROWS[kind] ?? 0);
       return row ? object(row, angle) : null;
     }
   }

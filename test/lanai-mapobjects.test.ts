@@ -6,12 +6,14 @@ import { findEntry, unpackEntry } from '../src/archive/gsarc';
 import { parseBch, unwrapBch } from '../src/bch/bch';
 import { isIndoor } from '../src/game/objects';
 import { lanaiContents } from '../src/lanai/contents';
-import { LanaiMaps } from '../src/lanai/maps';
+import { LANAI_ACTION_CLEAR_WARP, LANAI_ACTION_GOAL_CHEST } from '../src/lanai/actions';
+import { LANAI_EVENT_ACTIONS, LanaiMaps } from '../src/lanai/maps';
 import { LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, lanaiEffectName, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
+import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages } from '../src/rom/dump';
-import { hex8 } from '../src/util/bytes';
+import { hex8, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
@@ -89,6 +91,37 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect([...(effects.get('s3') ?? [])]).toEqual([LANAI_EFFECT_CLEAR_WARP]);
     expect(effects.get('s5')?.has(LANAI_EFFECT_REPAIR_POINT)).toBe(true);
   }, 300000);
+
+  test('goal chests and clear warps clear their own content', () => {
+    let chests = 0, warps = 0;
+    for (const maps of all)
+      for (const info of maps.maps) {
+        if (info.world) continue;
+        const ev = maps.eventTable(info.dungeon);
+        if (!ev) continue;
+        for (const k of [3, 4])
+          for (const r of maps.doc(info).recs[k] ?? []) {
+            const row = u32(r.raw, 4);
+            if (!row || row >= ev.rows) continue;
+            if (k === 4) {
+              const stages = lanaiChestFields(ev, row);
+              if (!stages.length || ev.u32(row, stages[0]!.field - 4) !== LANAI_ACTION_GOAL_CHEST) continue;
+              const clears = ev.u32(row, stages[0]!.field + 4);
+              if (!clears) continue;
+              chests++;
+              expect(clears).toBe(maps.content.index);
+              for (const x of stages.slice(1)) expect(ev.u32(row, x.field + 4)).toBe(0);
+            } else {
+              const o = LANAI_EVENT_ACTIONS.find((o) => ev.u32(row, o) === LANAI_ACTION_CLEAR_WARP);
+              if (o === undefined) continue;
+              warps++;
+              expect(ev.u32(row, o + 4)).toBe(maps.content.index);
+            }
+          }
+      }
+    expect(chests).toBeGreaterThan(50);
+    expect(warps).toBeGreaterThan(30);
+  });
 
   test('the effects of the clear warp and the recovery point', () => {
     const fx = s.table('EffectData');

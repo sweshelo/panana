@@ -23,7 +23,8 @@ import {
   type LanaiTileSource,
 } from './maps';
 import type { LanaiTable } from './table';
-import { lanaiChestTreasureRow } from './treasure';
+import { LANAI_GOAL_CHEST, LANAI_REPAIR_FIELD, LANAI_REPAIR_POINT } from './mapObjects';
+import { lanaiChestFields } from './treasure';
 
 /** The kind of the tiles the game leaves empty (map.md §6.3): no model, and not a problem. */
 export const LANAI_EMPTY_KIND = 33;
@@ -59,8 +60,8 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
     case 1: return `床のギミック ${raw[0x0d]}`;
     case 2: return `置物 #${u32(raw, 0)}`;
     case 3: return lanaiExitLabel(lanaiExitKind(raw));
-    case 4: return `宝箱 (見た目 ${u32(raw, 0)})`;
-    case 5: return `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
+    case 4: return u32(raw, 0) === LANAI_GOAL_CHEST ? 'ゴールの宝箱 (見た目 3、開けるとクリア)' : `宝箱 (見た目 ${u32(raw, 0)})`;
+    case 5: return u32(raw, 0) === LANAI_REPAIR_POINT ? '回復ポイント (種類 13)' : u32(raw, 0) === LANAI_REPAIR_FIELD ? '回復の場 (種類 12)' : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
     case 8: return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
     case 9: return `地点 ${u32(raw, 0)}`;
   }
@@ -347,9 +348,11 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     for (const k of LANAI_EVENT_SECTIONS)
       (doc.recs[k] ?? []).forEach((r, i) => {
         const ev = lanaiRecEventRow(k, r.raw);
-        const row = ev && ev < table.rows ? lanaiChestTreasureRow(table, ev) : null;
-        if (row !== null && row >= treasure.rows)
-          out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`, target: rec(k, i), key: `treasure/${k}/${row}` });
+        for (const { field } of ev && ev < table.rows ? lanaiChestFields(table, ev) : []) {
+          const row = table.u32(ev, field);
+          if (row >= treasure.rows)
+            out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`, target: rec(k, i), key: `treasure/${k}/${row}` });
+        }
       });
   for (const [row, n] of users)
     if (n > 1) out.push({ level: 'warn', msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`, key: `evshare/${row}/${n}` });
