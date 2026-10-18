@@ -8,7 +8,7 @@ import { isIndoor } from '../src/game/objects';
 import { lanaiContents } from '../src/lanai/contents';
 import { LANAI_ACTION_CLEAR_WARP, LANAI_ACTION_GOAL_CHEST } from '../src/lanai/actions';
 import { LANAI_EVENT_ACTIONS, LanaiMaps } from '../src/lanai/maps';
-import { LANAI_CLEAR_WARP, LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, LANAI_GOAL_CHEST, LANAI_REPAIR_POINT, lanaiEffectName, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
+import { LANAI_CLEAR_WARP, LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, LANAI_GOAL_CHEST, LANAI_REPAIR_POINT, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -164,12 +164,6 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
       }
     expect(chests).toBeGreaterThan(50);
     expect(warps).toBeGreaterThan(30);
-  });
-
-  test('the effects of the clear warp and the recovery point', () => {
-    const fx = s.table('EffectData');
-    expect(lanaiEffectName(fx, LANAI_EFFECT_CLEAR_WARP)).toBe('fx_bg_f_warpzone_goal.ptcl');
-    expect(lanaiEffectName(fx, LANAI_EFFECT_REPAIR_POINT)).toBe('fx_bg_repair_point.ptcl');
   });
 
   test('NPCs are scaled by MapObject +0x1C', () => {

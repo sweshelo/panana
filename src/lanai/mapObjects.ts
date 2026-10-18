@@ -15,7 +15,7 @@
 //   0x80000001 / 2 the stairs, 0x80000004 / 5 the doors), so the defaults of a record without a model are RPG3's.
 // The facings are 1 / 2 / 4 / 8 masks (§3.2) read as RPG3's directions 0..3 (maps.ts lanaiRecFacing).
 import { LANAI_ROT_CODEC } from '../game/sections';
-import { ascii, f32, u16, u32 } from '../util/bytes';
+import { f32, u16, u32 } from '../util/bytes';
 import type { LanaiPartRef } from './maps';
 import { ROW_ID, type LanaiTable } from './table';
 
@@ -104,19 +104,15 @@ export function lanaiCharaKind(mapChara: LanaiTable | undefined, chara: number):
   return mapChara && chara > 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
 }
 
-/** The name of an EffectData row's effect ("fx_bg_f_warpzone_goal.ptcl"), '' when the table or row is not there. */
-export function lanaiEffectName(effects: LanaiTable | undefined, row: number): string {
-  if (!effects || row < 0 || row >= effects.rows) return '';
-  const names: string[] = [];
-  for (const o of effects.stringOffsets()) {
-    const at = effects.stringOffset(row, o);
-    if (at < 0) continue;
-    let end = at;
-    while (end < effects.data.length && effects.data[end] !== 0 && end - at < 128) end++;
-    names.push(ascii(effects.data, at, end - at));
-  }
-  return names.find((n) => n.endsWith('.ptcl')) ?? names.find((n) => n) ?? '';
-}
+/**
+ * The effects the game puts for records (EffectData rows; the row names an entry of the archive 90ED0000, whose ZIP
+ * name is the effect's: read from the code and the ROM, key-objects.md §3).
+ */
+export const LANAI_EFFECT_NAMES: Record<number, string> = {
+  [LANAI_EFFECT_CLEAR_WARP]: 'fx_bg_f_warpzone_goal.ptcl',
+  [LANAI_EFFECT_REPAIR_FIELD]: 'fx_bg_repair_field.ptcl',
+  [LANAI_EFFECT_REPAIR_POINT]: 'fx_bg_repair_point.ptcl',
+};
 
 export interface LanaiLookContext {
   /** The master's MapObject. */

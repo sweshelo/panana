@@ -21,7 +21,7 @@ import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiObjectModels, lanaiTileModels } from './mapModels';
-import { lanaiEffectName, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+import { LANAI_EFFECT_NAMES, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
 import { lanaiMonsterModel } from './monsterModels';
 import { lanaiMonsterDesign } from './monsters';
 
@@ -239,7 +239,7 @@ export class LanaiMapView {
 
   /** The name of a loaded model ("obj_box_01") or of an effect ("fx_bg_repair_point.ptcl"), '' while it is loading or when there is none. */
   modelName(m: LanaiRecordModel | null): string {
-    if (m?.type === 'effect') return lanaiEffectName(this.maps.session.table('EffectData'), m.row);
+    if (m?.type === 'effect') return LANAI_EFFECT_NAMES[m.row] ?? '';
     return (m && this.objects.get(this.modelKey(m))?.name) || '';
   }
 
