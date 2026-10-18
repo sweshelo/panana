@@ -57,12 +57,13 @@ function Groups({ session, contents, content, maps, row, error }: {
   const groups = useMemo(() => maps?.monsterGroups() ?? [], [maps, revision]);
   // the maps' current documents (edits of the maps included)
   const uses = useMemo(() => maps?.monsterGroupUses() ?? new Map(), [maps, revision]);
-  const selected = useSticky(row, (r) => r >= 0 && r < groups.length, () => (groups.length > 1 ? 1 : 0));
+  // the URL holds the selection (#/groups/<content>.<row>): picking a stage shows its list with nothing selected
+  const selected = row !== undefined && row >= 0 && row < groups.length ? row : undefined;
   useScrollTop(detail, selected);
   const list = lanaiMonsters(session);
   const changed = (g: LanaiMonsterGroupRow): boolean => !!t && (g.row >= t.originalRows || t.rowChanged(g.row));
   const used = (g: LanaiMonsterGroupRow): boolean => (uses.get(g.row)?.length ?? 0) > 0;
-  const g = groups[selected];
+  const g = selected === undefined ? undefined : groups[selected];
   return (
     <>
       <div className="book-side">
@@ -88,6 +89,7 @@ function Groups({ session, contents, content, maps, row, error }: {
       </div>
       <div className="book-detail" ref={detail}>
         {maps && t && g && <LanaiGroupDetail key={`${content.index}.${selected}`} session={session} maps={maps} content={content} g={g} />}
+        {maps && t && !g && <p className="muted">左の一覧から群れを選んでください。</p>}
       </div>
     </>
   );
