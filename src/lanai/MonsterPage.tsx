@@ -23,6 +23,9 @@ import { lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, l
 import { lanaiMonsterIcon } from './pickers';
 import type { LanaiRows } from './rows';
 import type { LanaiSession } from './session';
+import { contentTitle, lanaiContents, type LanaiContent } from './contents';
+import { lanaiGroupHref } from './MapParts';
+import { loadedLanaiMaps } from './maps';
 
 export { lanaiMonsterHref } from './monsters';
 
@@ -158,9 +161,7 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
         </>
       )}
       <h3>出現する場所</h3>
-      <div className="book-where">
-        <div className="muted">RPG FREE! のステージ・マップの敵の出現 (群れ) はまだ読んでいません。</div>
-      </div>
+      <MonsterGroupsOf session={session} row={m.row} />
       <SameModel session={session} monster={m} />
       <details className="row-fields-box">
         <summary>{`MonsterParameter の行 ${m.row} のすべての欄`}</summary>
@@ -225,6 +226,29 @@ function MonsterModel({ session, monster: m, indexError, edited }: { session: La
       {indexError && <div className="error">{`モデルのアーカイブを読めませんでした: ${indexError.message}`}</div>}
       {set instanceof Error && <div className="muted small">{`モデルを読めませんでした: ${set.message}`}</div>}
       {set && !(set instanceof Error) && set.errors.length > 0 && <div className="muted small">{set.errors.join('\n')}</div>}
+    </div>
+  );
+}
+
+/** The groups (MonsterGroup rows) of the contents read so far that have the monster, linked to the group page. */
+function MonsterGroupsOf({ session, row }: { session: LanaiSession; row: number }): ReactNode {
+  const id = session.need('MonsterParameter').rowId(row);
+  const found: { content: LanaiContent; group: number; maps: number }[] = [];
+  for (const c of lanaiContents(session)) {
+    const maps = loadedLanaiMaps(session, c.index);
+    if (!maps?.monsterGroup) continue;
+    const uses = maps.monsterGroupUses();
+    for (const g of maps.monsterGroups()) if (g.monsters.includes(id)) found.push({ content: c, group: g.row, maps: uses.get(g.row)?.length ?? 0 });
+  }
+  return (
+    <div className="book-where">
+      {found.map((f) => (
+        <div key={`${f.content.index}.${f.group}`}>
+          <a href={lanaiGroupHref(f.content.index, f.group)}>{`${contentTitle(f.content)} の群れ #${f.group}`}</a>
+          <span className="muted">{f.maps ? ` (マップ ${f.maps} 個)` : ' (どのマップも使わない)'}</span>
+        </div>
+      ))}
+      <div className="muted small">{found.length ? '' : 'まだ開いたステージの群れにはいません。'}ステージの群れは、そのステージのマップか「群れ」のページを一度開くと読まれます。</div>
     </div>
   );
 }

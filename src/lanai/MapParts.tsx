@@ -30,8 +30,11 @@ import {
 
 // ---- MonsterGroup
 
+/** The group page of a content (#/groups/<content>.<row>). */
+export const lanaiGroupHref = (content: number, row?: number): string => `#/groups/${content}${row !== undefined ? `.${row}` : ''}`;
+
 /** Row 0 (row ID 0x80000000): the game's default group, where values the table does not have go (map.md §5.7). */
-const DEFAULT_GROUP_LABEL = '既定 (行 0: 敵なし相当)';
+export const DEFAULT_GROUP_LABEL = '既定 (行 0: 敵なし相当)';
 
 /** "いちごおばけ・おおくちばし": the monsters of a MonsterGroup row. */
 function monsterGroupNames(maps: LanaiMaps, row: number): string {
@@ -42,7 +45,7 @@ function monsterGroupNames(maps: LanaiMaps, row: number): string {
 }
 
 /** The MonsterParameter rows of a group, each once (-1 for an ID the table does not have). */
-function groupMonsterRows(maps: LanaiMaps, g: LanaiMonsterGroupRow): number[] {
+export function groupMonsterRows(maps: LanaiMaps, g: LanaiMonsterGroupRow): number[] {
   const mp = maps.session.table('MonsterParameter');
   return [...new Set(g.monsters.map((id) => (mp ? mp.find(id) : -1)))];
 }
@@ -77,7 +80,7 @@ function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps;
   const defaultUses = uses.get(0) ?? [];
   return (
     <Dialog title="群れを選ぶ" onClose={onClose}>
-      <p className="muted small">「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは行 0 の群れになります。</p>
+      <p className="muted small">「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは行 0 の群れになります。群れの中身は<a href={lanaiGroupHref(maps.content.index)}>「群れ」のページ</a>で編集できます (共有している群れを変えると、使っているマップ全部に効きます)。</p>
       <div className="group-picker">
         <GroupListView groups={groups} monsters={(g) => groupMonsterRows(maps, g)} name={(r) => list[r]?.name}
           icon={(r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>} changed={(g) => groupChanged(maps, g.row)}
@@ -109,11 +112,15 @@ function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps;
  */
 export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
   const [picking, setPicking] = useState(false);
+  const row = maps.monsterGroupRow(value);
   return (
     <>
-      <button className="group-pick" title={`群れを選び直す (行 ID ${hex8(value).toUpperCase()})`} onClick={() => setPicking(true)}>
-        <MonsterGroupLine maps={maps} value={value} />
-      </button>
+      <div className="row group-pick-row">
+        <button className="group-pick" title={`群れを選び直す (行 ID ${hex8(value).toUpperCase()})`} onClick={() => setPicking(true)}>
+          <MonsterGroupLine maps={maps} value={value} />
+        </button>
+        {row >= 0 && <a href={lanaiGroupHref(maps.content.index, row)} title={`群れ #${row} を「群れ」のページで開く (編集)`}>↗</a>}
+      </div>
       {picking && (
         <LanaiGroupPicker maps={maps} current={value} onClose={() => setPicking(false)}
           onPick={(v) => { setPicking(false); if (v !== value) onChange(v >>> 0); }} />

@@ -163,8 +163,8 @@ export interface LanaiMonsterGroupUse {
 }
 
 /** MonsterGroup rows: +0x00 kind, then 25 u32 monster slots from +0x04 (0x9C bytes a row; #130, map.md §5.7). */
-const MG_SLOTS = 25;
-const MG_SLOT0 = 0x04;
+export const LANAI_MG_SLOTS = 25;
+export const LANAI_MG_SLOT0 = 0x04;
 
 const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
 const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
@@ -421,10 +421,10 @@ export class LanaiMaps {
   monsterGroups(): LanaiMonsterGroupRow[] {
     const t = this.monsterGroup;
     if (!t) return [];
-    const n = Math.max(0, Math.min(MG_SLOTS, (t.rowSize - MG_SLOT0) >> 2));
-    const end = MG_SLOT0 + MG_SLOTS * 4;
+    const n = Math.max(0, Math.min(LANAI_MG_SLOTS, (t.rowSize - LANAI_MG_SLOT0) >> 2));
+    const end = LANAI_MG_SLOT0 + LANAI_MG_SLOTS * 4;
     return Array.from({ length: t.rows }, (_, row) => {
-      const slots = Array.from({ length: n }, (_, i) => t.u32(row, MG_SLOT0 + i * 4));
+      const slots = Array.from({ length: n }, (_, i) => t.u32(row, LANAI_MG_SLOT0 + i * 4));
       return {
         row,
         id: t.rowId(row),
