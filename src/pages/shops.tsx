@@ -5,6 +5,8 @@ import { hexId } from '../editor/message';
 import type { ItemData } from '../session';
 import type { PageProps } from '../ui/book';
 import { ItemPicker } from '../ui/ItemPicker';
+import { Photo } from '../ui/Photo';
+import { itemRef } from './items';
 import { ShopBook, type ShopBookShop } from '../ui/ShopBook';
 import { DESCRIPTION_VARIANT, shopLabel, type Shop } from '../game/shops';
 import { hex8, u32 } from '../util/bytes';
@@ -37,7 +39,7 @@ export function ShopPage({ session, arg, data, shops }: PageProps & { data: Item
       newRow={(_, item) => ({ item })}
       item={(id) => {
         const it = items.item(id);
-        return it && { name: it.name, href: `#/items/${id}`, changed: items.changed(id) };
+        return it && { name: it.name, href: `#/items/${id}`, icon: <Photo model={itemRef(game, it)} title={it.name} />, changed: items.changed(id) };
       }}
       columns={() => [
         { head: '分類', className: 'muted', cell: (r) => items.item(r.item)?.category ?? '' },

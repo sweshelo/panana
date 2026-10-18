@@ -1,8 +1,10 @@
 // The shop list shared by RPG2 (pages/shops.tsx) and RPG3 (oahu/ShopPage.tsx): every shop with what it sells, in the
-// shop's order, and the clerk's messages. The stock can be edited: rows move by drag and drop, items are added from a
-// <dialog> with their models, × takes one out. Each game gives its rows (an item ID, plus whatever the row carries),
-// the item's name and columns, and its picker.
+// shop's order, and the clerk's messages (RPG FREE!'s lanai/ShopPage.tsx too). Each item is a name board with its
+// photo (ui/Board, as the drops and the chests): the stock can be edited: rows move by drag and drop, items are added
+// from a <dialog> with their models, the board picks another item, × takes one out. Each game gives its rows (an item
+// ID, plus whatever the row carries), the item's name, photo and columns, and its picker.
 import { useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Board } from './Board';
 import { hexId } from '../editor/message';
 import type { MessageStore } from '../game/gmsg';
 import { dropRows, type ShopDrag } from '../game/shops';
@@ -12,15 +14,18 @@ import { MessagePreview } from './message';
 export interface ShopBookShop {
   id: number;
   label: string;
-  /** Clerk message IDs (0 = none); empty when the shop has no settings row. */
-  messages: number[];
+  /** Clerk message IDs (0 = none); empty when the shop has no settings row, undefined when the game's shops have none. */
+  messages?: number[];
   /** Offset of the first clerk message in the settings row (the rest follow every 4 bytes). */
   messageOffset?: number;
 }
 
 export interface ShopBookItem {
   name: string;
-  href: string;
+  /** The item's book page; none when the game has no item book. */
+  href?: string;
+  /** The photo of its model (or a badge). */
+  icon?: ReactNode;
   /** Changed in the item book. */
   changed?: boolean;
 }
@@ -36,8 +41,9 @@ export interface ShopBookProps<T extends { item: number }> {
   shops: ShopBookShop[];
   arg: string | undefined;
   href: (id: number) => string;
-  texts: MessageStore;
-  messageHref: (id: number) => string;
+  /** The clerk messages' texts (absent when the game's shops name none). */
+  texts?: MessageStore;
+  messageHref?: (id: number) => string;
   /** The current rows of a shop. */
   rows: (shop: ShopBookShop) => T[];
   /** The rows as they are in the game's data. */
@@ -49,6 +55,8 @@ export interface ShopBookProps<T extends { item: number }> {
   setRows?: (shop: ShopBookShop, rows: T[]) => void;
   /** The row for an item added to a shop. */
   newRow: (shop: ShopBookShop, item: number) => T;
+  /** A row with its item replaced (the rest of the row kept); a new row when absent. */
+  replaceItem?: (row: T, item: number) => T;
   /** Whether two rows are the same (for the edited marks). */
   same: (a: T, b: T) => boolean;
   /** The item picker (any item can be picked, also one the shop sells already). */
@@ -57,6 +65,10 @@ export interface ShopBookProps<T extends { item: number }> {
   info?: (shop: ShopBookShop) => ReactNode;
   sub?: (shop: ShopBookShop) => string;
   footer?: (shop: ShopBookShop) => ReactNode;
+  /** Where the shop is (its clerks and their maps), shown after the heading. */
+  places?: (shop: ShopBookShop) => ReactNode;
+  /** Shown above the list (e.g. which of the game's stages the shops are of). */
+  side?: ReactNode;
   /** Warnings about a shop's rows (shown under the stock while editing). */
   warnings?: (shop: ShopBookShop, rows: T[]) => string[];
   /** Where the edits are written ("ShopItem として … に書き出されます"). */
@@ -82,12 +94,14 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
   const [dragging, setDragging] = useState(-1);
   /** Gap the dragged row would drop into (0..length), or -1. */
   const [dropAt, setDropAt] = useState(-1);
+  /** The row whose item is being picked again. */
+  const [replacing, setReplacing] = useState(-1);
 
   const changed = (s: ShopBookShop): boolean => !!setRows && !sameList(rowsOf(s), original(s), same);
   /** First clerk message on one line (to tell the shops apart in the list). */
   const greeting = (s: ShopBookShop): string => {
-    const id = s.messages.find((m) => m) ?? 0;
-    return id ? texts.preview(id, true) ?? '' : '';
+    const id = s.messages?.find((m) => m) ?? 0;
+    return id && texts ? texts.preview(id, true) ?? '' : '';
   };
   const matches = (s: ShopBookShop): boolean => {
     if (filter === 'changed' && !changed(s)) return false;
@@ -142,6 +156,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
   return (
     <div className="book">
       <div className="book-side">
+        {props.side}
         <ListFilter query={query} setQuery={setQuery} placeholder="アイテム名・店員の台詞で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ['changed', '変更した']]} />
         <div className="book-list" ref={list}>
@@ -168,6 +183,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
               <span className="muted">{`${stock.length} 品`}</span>
               {props.info?.(shop)}
             </div>
+            {props.places?.(shop)}
             <h3>品揃え</h3>
             <table ref={table} className={`enc-table shop-items${setRows ? ' editable' : ''}`}>
               <thead>
@@ -199,9 +215,15 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                     >
                       {setRows && <td className="drag-handle" title="ドラッグで並べ替え">⠿</td>}
                       <td className="num muted">{i + 1}</td>
-                      <td>
-                        {it ? <a href={it.href} draggable={false}>{it.name}</a> : <span className="error">{`#${r.item} (ないアイテム)`}</span>}
-                        {it?.changed && <EditedMark title="アイテム図鑑で変更した" text=" ●" />}
+                      <td className="shop-item">
+                        <Board
+                          icon={it?.icon ?? <span className="photo item-badge item-kind-0">?</span>}
+                          name={it ? <>{it.name}{it.changed && <EditedMark title="アイテム図鑑で変更した" text=" ●" />}</> : <span className="error">ないアイテム</span>}
+                          id={r.item}
+                          href={it?.href}
+                          edited={!!setRows && !!before[i] && before[i]!.item !== r.item}
+                          title={setRows ? 'ほかのアイテムに替える' : it?.name}
+                          onClick={setRows ? () => setReplacing(i) : undefined} />
                       </td>
                       {columns(shop).map((c) => <td key={c.head} className={c.className}>{c.cell(r, i)}</td>)}
                       {setRows && (
@@ -214,10 +236,19 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                 })}
               </tbody>
             </table>
+            {setRows && replacing >= 0 && replacing < stock.length && props.picker({
+              title: '替えるアイテムを選ぶ',
+              onClose: () => setReplacing(-1),
+              onPick: (id) => {
+                const at = replacing;
+                setReplacing(-1);
+                edit(shop, stock.map((r, j) => (j === at ? props.replaceItem?.(r, id) ?? props.newRow(shop, id) : r)));
+              },
+            })}
             {setRows && <StockEditor {...props} shop={shop} stock={stock} changed={changed(shop)} edit={(next) => edit(shop, next)} />}
             {props.stockNote && <div className="muted small">{props.stockNote}</div>}
-            <h3>店員のメッセージ</h3>
-            {shop.messages.length
+            {shop.messages && texts && <h3>店員のメッセージ</h3>}
+            {!shop.messages || !texts ? null : shop.messages.length
               ? <table className="enc-table">
                   <tbody>
                     <tr><th>欄</th><th>ID</th><th>本文</th></tr>
@@ -226,7 +257,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                       return (
                         <tr key={i}>
                           <td className="mono muted">{`+0x${((shop.messageOffset ?? 0x0c) + i * 4).toString(16).toUpperCase()}`}</td>
-                          <td className="mono">{id ? <a href={props.messageHref(id)}>{hexId(id)}</a> : '0'}</td>
+                          <td className="mono">{id ? <a href={props.messageHref?.(id)}>{hexId(id)}</a> : '0'}</td>
                           <td>{units && <MessagePreview texts={texts} units={units} />}</td>
                         </tr>
                       );

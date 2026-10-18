@@ -54,8 +54,9 @@ import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
 
-/** The link to a map of a content (the stage page's list uses it too). */
-export const lanaiMapHref = (content: number, name?: string): string => `#/maps/${content}${name ? `.${encodeURIComponent(name)}` : ''}`;
+/** The link to a map of a content (the stage page's list uses it too), with a record selected (`@section.index`). */
+export const lanaiMapHref = (content: number, name?: string, rec?: { section: number; index: number }): string =>
+  `#/maps/${content}${name ? `.${encodeURIComponent(name)}` : ''}${name && rec ? `@${rec.section}.${rec.index}` : ''}`;
 
 /** The link to a content's stages (the stage page lists its maps: this is the way back). */
 export const lanaiStageHref = (content: number): string => `#/stages/${content}`;
@@ -72,7 +73,7 @@ function useMaps(maps: LanaiMaps | null): number {
 
 export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const contents = useMemo(() => lanaiContents(session), [session]);
-  const m = arg ? /^(\d+)(?:\.(.*))?$/.exec(arg) : null;
+  const m = arg ? /^(\d+)(?:\.([^@]*))?(?:@(\d+)\.(\d+))?$/.exec(arg) : null;
   const content = useSticky<number>(m ? Number(m[1]) : undefined, (i) => i < contents.length, () => (contents.length > 1 ? 1 : 0));
   const c = contents[content]!;
   const loaded = useAsync(() => lanaiMaps(session, c), [session, c]);
@@ -80,7 +81,8 @@ export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: str
     <div className="map-detail">
       {!loaded ? <p className="muted" style={{ padding: 16 }}>マップを読み込み中…</p>
         : loaded instanceof Error ? <NoMaps session={session} contents={contents} content={c} error={loaded.message} />
-        : <MapDetail key={c.index} session={session} contents={contents} content={c} maps={loaded} name={m?.[2] ? decodeURIComponent(m[2]) : undefined} />}
+        : <MapDetail key={c.index} session={session} contents={contents} content={c} maps={loaded} name={m?.[2] ? decodeURIComponent(m[2]) : undefined}
+            rec={m?.[3] ? { section: Number(m[3]), index: Number(m[4]) } : undefined} />}
     </div>
   );
 }
@@ -159,12 +161,14 @@ function NoMaps({ session, contents, content, error }: { session: LanaiSession; 
   );
 }
 
-function MapDetail({ session, contents, content, maps, name }: {
+function MapDetail({ session, contents, content, maps, name, rec }: {
   session: LanaiSession;
   contents: LanaiContent[];
   content: LanaiContent;
   maps: LanaiMaps;
   name: string | undefined;
+  /** A record to select (a link from the shop page). */
+  rec?: { section: number; index: number };
 }): ReactNode {
   const first = useMemo(() => maps.maps.find((m) => !m.world && m.hash === maps.groups[1]?.firstMap) ?? maps.maps.find((m) => !m.world) ?? maps.maps[0]!, [maps]);
   const picked = useSticky<string>(name, (n) => !!maps.mapByName(n), () => first.name);
@@ -200,6 +204,10 @@ function MapDetail({ session, contents, content, maps, name }: {
   useEffect(() => {
     requestAnimationFrame(() => view?.refresh());
   }, [view, mode]);
+  // the record a link names (after the map was opened above)
+  useEffect(() => {
+    if (view && rec && st.current?.hash === info.hash && st.current.recs[rec.section]?.[rec.index]) st.select({ type: 'rec', section: rec.section, index: rec.index });
+  }, [view, st, info, rec?.section, rec?.index]);
   const open = view && st.current?.hash === info.hash;
   return (
     <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
