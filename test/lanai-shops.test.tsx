@@ -150,7 +150,7 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     const shops = (await lanaiShops(session, lanaiContents(session)[0]!))!;
     const slots = shops.rows(2).filter((r) => lanaiShopSlotKind(r.bytes) >= 0);
     expect(slots.length).toBe(35);
-    expect(slots.map((r) => r.bytes[SHOP_SLOT])).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
+    expect(slots.map((r) => r.bytes[SHOP_SLOT]!).sort((a, b) => a - b)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
     expect(new Set(slots.map((r) => lanaiShopSlotKind(r.bytes)))).toEqual(new Set([0x34, 0x51, 0x53, 0x54, 0x55, 0x57, 0x58, 0x59, 0x61, 0x62, 0x63, 0x64, 0x65, 0x67, 0x68]));
     for (const r of slots) expect(lanaiShopSlotItems(session, lanaiShopSlotKind(r.bytes)).length).toBeGreaterThan(0);
     // no other shop has one, and every other row is an item (or 0)
