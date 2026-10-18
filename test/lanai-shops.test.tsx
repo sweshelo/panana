@@ -6,7 +6,7 @@ import { lanaiContents } from '../src/lanai/contents';
 import { lanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiShopPage } from '../src/lanai/ShopPage';
-import { LanaiContentShops, lanaiClerks, lanaiShopRowBytes, lanaiShops, SHOP_HEAD, SHOP_LIMIT } from '../src/lanai/shops';
+import { LanaiContentShops, lanaiClerks, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages } from '../src/rom/dump';
 import { u32, w32 } from '../src/util/bytes';
@@ -87,6 +87,21 @@ describe('RPG FREE! shop stock edits', () => {
     expect(s.items.changed || s.shopTable.changed).toBe(false);
   });
 
+  test('a random slot is a row with a small +0x00 and a slot number; a new row has no slot nor condition', () => {
+    const slot = lanaiShopRowBytes(undefined, 0x51);
+    expect(lanaiShopSlotKind(slot)).toBe(-1);
+    slot[SHOP_SLOT] = 3;
+    expect(lanaiShopSlotKind(slot)).toBe(0x51);
+    expect(lanaiShopSlotKind(item(id(1)))).toBe(-1);
+    const s = twoShops();
+    const t = s.items.row(1).slice();
+    t[SHOP_COND] = 1;
+    t[SHOP_SLOT] = 2;
+    s.items.setRow(1, t);
+    const n = s.newRow(0, id(4)).bytes;
+    expect([n[SHOP_COND], n[SHOP_SLOT], n[SHOP_LIMIT]]).toEqual([0, 0, 0]);
+  });
+
   test('rows added by an edit are removed again when the stock shrinks', () => {
     const s = twoShops();
     s.set(1, [...s.rows(1), s.newRow(1, id(8)), s.newRow(1, id(9))]);
@@ -131,14 +146,23 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     expect(html).toContain('店の表を読むコンテンツ');
   }, 300000);
 
-  test('content 0, shop 2: some rows name ItemData by row number (ペイント…), and every row is an item', async () => {
+  test('content 0, shop 2: 35 random slots (+0x00 a kind, +0x25 the slot), each drawing from items of its kind', async () => {
     const shops = (await lanaiShops(session, lanaiContents(session)[0]!))!;
+    const slots = shops.rows(2).filter((r) => lanaiShopSlotKind(r.bytes) >= 0);
+    expect(slots.length).toBe(35);
+    expect(slots.map((r) => r.bytes[SHOP_SLOT])).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
+    expect(new Set(slots.map((r) => lanaiShopSlotKind(r.bytes)))).toEqual(new Set([0x34, 0x51, 0x53, 0x54, 0x55, 0x57, 0x58, 0x59, 0x61, 0x62, 0x63, 0x64, 0x65, 0x67, 0x68]));
+    for (const r of slots) expect(lanaiShopSlotItems(session, lanaiShopSlotKind(r.bytes)).length).toBeGreaterThan(0);
+    // no other shop has one, and every other row is an item (or 0)
     const data = session.need('ItemData');
-    const rows = shops.rows(2);
-    const small = rows.filter((r) => r.item && r.item < 0x80000000);
-    expect(small.length).toBeGreaterThan(0);
-    expect(new Set(small.map((r) => session.plain(data, data.find(r.item), 'name')))).toContain('ペイントしろ');
-    for (const s of shops.shops) for (const r of shops.rows(s.row)) if (r.item) expect(data.find(r.item)).toBeGreaterThanOrEqual(0);
+    for (const c of lanaiContents(session)) {
+      const s = (await lanaiShops(session, c))!;
+      for (const sh of s.shops)
+        for (const r of s.rows(sh.row)) {
+          if (lanaiShopSlotKind(r.bytes) >= 0) expect([c.index, sh.row]).toEqual([0, 2]);
+          else if (r.item) expect(data.find(r.item)).toBeGreaterThanOrEqual(0);
+        }
+    }
   }, 300000);
 
   test('content 24: a longer stock keeps the other 24 shops, is saved and put back', async () => {

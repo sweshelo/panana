@@ -28,6 +28,8 @@ export interface ShopBookItem {
   icon?: ReactNode;
   /** Changed in the item book. */
   changed?: boolean;
+  /** Not one item (RPG FREE!'s random slots): listing it more than once is no duplicate. */
+  many?: boolean;
 }
 
 /** A column of the stock after the item's name. */
@@ -281,7 +283,7 @@ function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, i
   const notes = [...(warnings?.(shop, stock) ?? [])];
   if (stock.some((r) => !item(r.item))) notes.push('ないアイテムが入っています。');
   // the game lists an item as often as it is in ShopItem (RPG3's 幻影 shop sells only キズぐすり), so this is only a note
-  const twice = [...new Set(stock.map((r) => r.item).filter((id, i, all) => all.indexOf(id) !== i))];
+  const twice = [...new Set(stock.map((r) => r.item).filter((id, i, all) => all.indexOf(id) !== i && !item(id)?.many))];
   if (twice.length) notes.push(`同一アイテムが既に陳列されています (${twice.map((id) => item(id)?.name ?? `#${id}`).join('、')})。`);
   return (
     <div>

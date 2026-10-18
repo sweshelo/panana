@@ -9,6 +9,7 @@
 // new places). The table never gets fewer rows than it had: rows left over at the end become head rows of no shop.
 import { equalBytes, u32, w32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
+import { lanaiItems, type LanaiItem } from './items';
 import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, type LanaiMaps } from './maps';
 import type { LanaiSession } from './session';
 import { isRowId, type LanaiTable } from './table';
@@ -18,13 +19,34 @@ export const LANAI_SHOP_ACTION = 0x80000032;
 export const LANAI_SHOP_TABLE = 'Shop';
 export const LANAI_SHOP_ITEM_TABLE = 'ShopItem';
 
-/** ShopItem: the item ID, the head mark, the "only once" number (推定) and the most one can buy (推定). */
+/**
+ * ShopItem (naauao lanai/shops.md §2, read in FUN_002233EC and the code that buys): the item ID (or a random slot's
+ * kind), a price passed to the price code (推定: its override), the display condition (+0x10 its type, +0x08 its number,
+ * +0x0C the value compared), the head mark, the random slot's save index, the most one can buy (counted per shop and
+ * place) and the most one can buy counted by +0x28 (shared by the rows with the same +0x28; it wins over +0x26).
+ */
 export const SHOP_ITEM = 0x00;
+export const SHOP_PRICE = 0x04;
+export const SHOP_COND_NUMBER = 0x08;
+export const SHOP_COND_VALUE = 0x0c;
+export const SHOP_COND = 0x10;
 export const SHOP_HEAD = 0x24;
-export const SHOP_ONCE = 0x25;
+export const SHOP_SLOT = 0x25;
 export const SHOP_LIMIT = 0x26;
+export const SHOP_SHARED_LIMIT = 0x27;
+export const SHOP_SHARED_COUNTER = 0x28;
 /** The usual value of +0x20 (not known; the same in nearly every row). */
 const SHOP_ITEM_20 = 0x800001bf;
+
+/**
+ * The kind (ItemDataCore +0x32) a row draws an item of, or -1: a row whose +0x00 is not 0 nor a row ID and whose +0x25 is
+ * not 0 is a random slot. The game picks one of the items of that kind (ItemDataCore +0x30 bit 0 set, not in the list
+ * yet; 0x55 and 0x56 are one kind) once a day and keeps it in the save at +0x25.
+ */
+export const lanaiShopSlotKind = (b: Uint8Array): number => {
+  const v = u32(b, SHOP_ITEM);
+  return v && !isRowId(v) && b[SHOP_SLOT] ? v & 0xff : -1;
+};
 
 /** A row of a shop's stock: the item and the row's bytes (the fields not known are kept). */
 export interface LanaiShopRow {
@@ -49,10 +71,18 @@ export function lanaiShopRowBytes(template: Uint8Array | undefined, item: number
   return b;
 }
 
+/** A row of `item` from `template` with the fields of the row (not of the item) cleared: no condition, no slot, no limit. */
+export function lanaiShopItemRow(template: Uint8Array | undefined, item: number): Uint8Array {
+  const b = lanaiShopRowBytes(template, item);
+  for (const o of [SHOP_PRICE, SHOP_COND_NUMBER, SHOP_COND_VALUE]) w32(b, o, 0);
+  for (const o of [SHOP_COND, SHOP_SLOT, SHOP_LIMIT, SHOP_SHARED_LIMIT, SHOP_SHARED_COUNTER]) b[o] = 0;
+  return b;
+}
+
 /** An item row as the shops of the stages have them: 0 except +0x20, the 0xD0 padding of the packed words. */
 function defaultItemRow(): Uint8Array {
   const b = new Uint8Array(0x2c);
-  for (const o of [0x10, 0x1c, 0x24, 0x28]) b.fill(0xd0, o + 1, o + 4);
+  for (const o of [0x10, 0x1c, 0x28]) b.fill(0xd0, o + 1, o + 4);
   w32(b, 0x20, SHOP_ITEM_20);
   return b;
 }
@@ -143,13 +173,10 @@ export class LanaiContentShops {
     return Math.max(0, ...this.shops.map((s) => this.originalRows(s.row).length));
   }
 
-  /** A row for an item added to a shop: a copy of the shop's first item row (or the content's), with no limit. */
+  /** A row for an item added to a shop: a copy of the shop's first item row (or the content's), always shown, with no limit. */
   newRow(shop: number, item: number): LanaiShopRow {
     const t = this.rows(shop).find((r) => r.item) ?? this.shops.flatMap((s) => this.rows(s.row)).find((r) => r.item);
-    const b = lanaiShopRowBytes(t?.bytes, item);
-    b[SHOP_ONCE] = 0;
-    b[SHOP_LIMIT] = 0;
-    return rowOf(item, b);
+    return rowOf(item, lanaiShopItemRow(t?.bytes, item));
   }
 
   /** Writes a shop's stock (see the top of the file). */
@@ -253,3 +280,10 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
 /** The Shop row a content's clerks open: row 0 (assumed; naauao lanai/shops.md §4). */
 export const LANAI_CLERK_SHOP = 0;
 
+
+/** The items a random slot of `kind` draws from: shown in shops (ItemDataCore +0x30 bit 0) and of the kind (0x55 = 0x56). */
+export function lanaiShopSlotItems(session: LanaiSession, kind: number): LanaiItem[] {
+  const core = session.need('ItemDataCore');
+  const same = (k: number): boolean => k === kind || (kind === 0x55 && k === 0x56) || (kind === 0x56 && k === 0x55);
+  return lanaiItems(session).filter((it) => same(it.kind) && core.u8(it.core, 0x30) & 1);
+}
