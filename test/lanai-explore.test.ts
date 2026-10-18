@@ -97,7 +97,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     for (const x of insns) if (x.literal !== undefined && x.literal - BASE < code.length && word(x.literal) === 0x80000032 && n++ < 30) log('LIT32', h(x.addr), 'fn', h(funcStart(x.addr)));
   }, 600000);
 
-  test('round 2', async () => {
+  test.skip('round 2', async () => {
     const items = new Map(lanaiItems(s).map((it) => [it.id, it.name]));
     log('ITEM 800001bf', items.get(0x800001bf));
     const mts = s.need('MessageTalkShop');
@@ -122,6 +122,25 @@ describe.skipIf(!hasLanai)('explore', () => {
       const at2 = insns.filter((x) => x.literal !== undefined && x.literal - BASE < code.length && word(x.literal) === lit);
       log('LIT', h(lit), at2.length, at2.slice(0, 12).map((x) => `${h(x.addr)}(fn ${h(funcStart(x.addr))})`).join(' '));
       for (const x of at2.slice(0, 4)) dis(`lit ${h(lit)}`, funcStart(x.addr), Math.min(140, ((x.addr - funcStart(x.addr)) >> 2) + 40));
+    }
+  }, 600000);
+
+  test('round 3', () => {
+    dis('FUN_002E0690', 0x2e0690, 160);
+    dis('@2E0834', 0x2e0800, 80);
+    const hits: string[] = [];
+    for (const x of insns) {
+      if (x.addr < 0x180000 || x.addr > 0x480000) continue;
+      if (/^cmp \w+, #0x32$/.test(x.text) || /#0x80000032/.test(x.text)) hits.push(`${h(x.addr)}(fn ${h(funcStart(x.addr))})`);
+    }
+    log('CMP32', hits.length, hits.slice(0, 200).join(' '));
+    // jump tables: "addls pc, pc, rX, lsl #2" with a bound >= 0x32
+    for (let i = 1; i < insns.length; i++) {
+      const x = insns[i]!;
+      if (!/^addls pc, pc, \w+, lsl #2$/.test(x.text)) continue;
+      const m = /^cmp \w+, #(0x[0-9a-f]+|\d+)$/.exec(insns[i - 1]!.text);
+      const n = m ? Number(m[1]) : 0;
+      if (n >= 0x32 && n <= 0x60) { log('JT', h(x.addr), 'n', h(n), 'fn', h(funcStart(x.addr))); dis(`JT ${h(x.addr)} case32`, x.addr + 8 + 0x32 * 4, 2); const t = at(x.addr + 8 + 0x32 * 4); if (t?.target) dis(`case32 target`, t.target, 40); }
     }
   }, 600000);
 });
