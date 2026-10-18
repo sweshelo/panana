@@ -8,6 +8,13 @@
 // - MapObject keeps RPG3's mapObject numbering in its row IDs (0x80000034〜39 are the chests gimk_05_trebox_*,
 //   0x80000001 / 2 the stairs, 0x80000004 / 5 the doors), so the defaults of a record without a model are RPG3's.
 // The facings are 1 / 2 / 4 / 8 masks (§3.2) read as RPG3's directions 0..3 (maps.ts lanaiRecFacing).
+// The defaults below were checked in the code (Update v17408; naauao lanai/key-objects.md):
+// - chests (FUN_0044F9EC): looks 0〜2 take MapObject rows 0x40〜0x42 outside / 0x43〜0x45 inside (row IDs
+//   0x80000034〜39), look 3 the goal chest row 0x46 (ID 0x80000274, gimk_05_trebox_goal) both ways, others the look 0;
+// - the clear warp (section 3 kind 3, FUN_0021D744) is the effect EffectData row 0x22 (fx_bg_f_warpzone_goal.ptcl), not
+//   a MapObject model, and EventObject +0x5A is not read;
+// - section 5 (FUN_0021C844): kind 3 (heal) defaults to row 0x3F (gimk_04_heal_1), 9 to 0x72, 10 to 0x75; kinds 12 / 13
+//   are the effects fx_bg_repair_field / fx_bg_repair_point (EffectData rows 0x26 / 0x27): kind 13 takes no model.
 import { LANAI_ROT_CODEC } from '../game/sections';
 import { f32, u16, u32 } from '../util/bytes';
 import type { LanaiPartRef } from './maps';
@@ -39,12 +46,20 @@ export const LANAI_CHARA_KIND: Record<number, string> = { 0: 'NPC', 1: 'モン�
 /** Chest models (RPG3's mapObject numbers = MapObject row IDs) by the record's look (+0x00) outside / inside. */
 const CHEST_IDS = [0x34, 0x35, 0x36] as const;
 const CHEST_IDS_INDOOR = [0x37, 0x38, 0x39] as const;
-/** Exit kinds (+0x15; map.md §5.1): 5 up stairs, 6 down stairs (RPG3's 4 / 5), 100 the wall door. */
+/** The look of the goal chest (opening it clears the content) and its model (MapObject row ID; gimk_05_trebox_goal). */
+export const LANAI_GOAL_CHEST_LOOK = 3;
+const GOAL_CHEST_ID = 0x274;
+/** Exit kinds (+0x15; map.md §5.1): 3 the clear warp (an effect), 5 / 6 up / down stairs (RPG3's 4 / 5), 100 the wall door. */
+export const LANAI_CLEAR_WARP = 3;
 export const LANAI_UP_STAIRS = 5;
 export const LANAI_DOWN_STAIRS = 6;
 export const LANAI_WALL_DOOR = 100;
 /** Stairs and the default wall door (RPG3's mapObject 1 / 2 / 5). */
 const STAIRS_UP_ID = 1, STAIRS_DOWN_ID = 2, WALL_DOOR_ID = 5;
+/** Section 5 kinds (+0x00) whose model is an effect: 13 the recovery point (action 0x80000030), no MapObject model. */
+export const LANAI_RECOVERY_POINT = 13;
+/** MapObject rows (numbers) of section 5 kinds without EventObject +0x5A (FUN_0021C844): 3 gimk_04_heal_1, 9 / 10. */
+const OBJECT_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
 
 const HALF = Math.PI / 2;
 /** Props, objects and characters: direction 0..3 → 180°, 90°, 0°, −90° (RPG3's FUN_00364B80 / FUN_00366F30). */
@@ -104,6 +119,8 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
     }
     case 3: {
       const kind = raw[0x15]!;
+      // the clear warp shows an effect whatever +0x5A says
+      if (kind === LANAI_CLEAR_WARP) return null;
       const dir = dirOf(raw[0x14]!);
       const stairs = kind === LANAI_UP_STAIRS ? 1 : kind === LANAI_DOWN_STAIRS ? 2 : 0;
       const row = valid(evModel) || (stairs === 1 ? byId(STAIRS_UP_ID) : stairs === 2 ? byId(STAIRS_DOWN_ID) : kind === LANAI_WALL_DOOR ? byId(WALL_DOOR_ID) : 0);
@@ -122,7 +139,8 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
     case 4: {
       // EventObject +0x5A, else the look (+0x00) picks one of the chests; they are not turned
       const ids = ctx.indoor ? CHEST_IDS_INDOOR : CHEST_IDS;
-      return object(valid(evModel) || byId(ids[u32(raw, 0)] ?? ids[0]), 0);
+      const look = u32(raw, 0);
+      return object(valid(evModel) || byId(look === LANAI_GOAL_CHEST_LOOK ? GOAL_CHEST_ID : ids[look] ?? ids[0]), 0);
     }
     case 5: {
       const kind = u32(raw, 0);
@@ -131,7 +149,8 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
         if (!ev) return null;
         return { ...object(valid(lanaiCharaObject(ctx.mapChara, evModel)), angle), chara: evModel };
       }
-      const row = valid(evModel);
+      if (kind === LANAI_RECOVERY_POINT) return null;
+      const row = valid(evModel) || valid(OBJECT_DEFAULT_ROWS[kind] ?? 0);
       return row ? object(row, angle) : null;
     }
   }
