@@ -145,13 +145,13 @@ export interface LanaiMapGroup {
 export interface LanaiMonsterGroupRow {
   row: number;
   id: number;
-  /** +0x00: a small row ID (0x80000000, 0x80000001, …); not a monster, meaning not known yet (#130). */
+  /** +0x00: the battle field's row ID (monsterGroup.ts LANAI_MG_FIELD); not a monster (#130). */
   kind: number;
   /** +0x04〜+0x64: 25 MonsterParameter row IDs as written (0 = none; 0x80000000 = row 0, the empty monster). */
   slots: number[];
   /** The MonsterParameter row IDs of the group (the slots, empty ones left out). */
   monsters: number[];
-  /** The bytes after the slots (+0x68 on: weights, count codes or flags; not known yet). */
+  /** The bytes after the slots (+0x68 on: limit, flags, weights and count codes; monsterGroup.ts). */
   tail: Uint8Array;
 }
 
@@ -162,7 +162,7 @@ export interface LanaiMonsterGroupUse {
   cells: number | 'map';
 }
 
-/** MonsterGroup rows: +0x00 kind, then 25 u32 monster slots from +0x04 (0x9C bytes a row; #130, map.md §5.7). */
+/** MonsterGroup rows: +0x00 battle field, then 25 u32 monster slots from +0x04 (lists A〜E: monsterGroup.ts; 0x9C bytes a row). */
 export const LANAI_MG_SLOTS = 25;
 export const LANAI_MG_SLOT0 = 0x04;
 

@@ -638,6 +638,4 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .talk-tones { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 12px; }
 .group-pick-row { flex-wrap: nowrap; }
 .group-pick-row > .group-pick { flex: 1; min-width: 0; }
-.lanai-group-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 12px; }
-.lanai-group-slots .slot-row { grid-template-columns: 20px minmax(0, 1fr) auto; }
-.lanai-group-slots .slot-index { text-align: right; }
+.group-slots tr.edited td:first-child { box-shadow: inset 2px 0 var(--warn); }

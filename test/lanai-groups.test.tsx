@@ -9,6 +9,7 @@ import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
+import { LANAI_MG_LISTS, LANAI_MG_MATES, LANAI_MG_PATTERN, lanaiCountLabel, lanaiMgSlots } from '../src/lanai/monsterGroup';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 describe.skipIf(!hasLanai)('RPG FREE! groups', () => {
@@ -31,6 +32,22 @@ describe.skipIf(!hasLanai)('RPG FREE! groups', () => {
     expect(html).toContain('レイクタートル');
     expect(html).toContain(`#/monsters/${mp.find(g.monsters[0]!)}`);
     for (const u of maps.monsterGroupUses().get(1) ?? []) expect(html).toContain(`#/maps/38.${encodeURIComponent(u.map)}`);
+  });
+
+  test('the lists, weights and count codes of a row (content 3 row 4: leaders 91 / 8B with mates from B / C, D a formation)', async () => {
+    const m = await lanaiMaps(s, lanaiContents(s)[3]!);
+    const t = m.monsterGroup!;
+    const row = t.find(0x8000001d);
+    expect(row).toBe(4);
+    expect([0, 1, 2, 3].map((i) => t.u8(row, LANAI_MG_PATTERN + i))).toEqual([1, 3, 2, 0]);
+    const [a, , , d] = LANAI_MG_LISTS.map((l) => lanaiMgSlots(t, row, l));
+    expect(a!.slice(0, 2)).toEqual([{ id: 0x80000091, weight: 3, count: 1 }, { id: 0x8000008b, weight: 1, count: 1 }]);
+    expect([t.u8(row, LANAI_MG_MATES), t.u8(row, LANAI_MG_MATES + 1)]).toEqual([1, 2]);
+    expect(d![0]!.id).toBe(0x800000b1);
+    expect(lanaiCountLabel(d![0]!.count)).toBe('1〜2 体');
+    const html = renderToString(<LanaiGroupDetail session={s} maps={m} content={lanaiContents(s)[3]!} g={m.monsterGroups()[row]!} />);
+    expect(html).toContain('A: リーダー候補');
+    expect(html).toContain('リーダー + お供');
   });
 
   test('the monster page links the groups of the contents read', () => {

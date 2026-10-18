@@ -1,23 +1,28 @@
 // RPG FREE!'s encounter groups (#/groups/<content>.<row>), built from the same parts as RPG2's and RPG3's group pages
-// (ui/GroupDetail): the content's MonsterGroup rows with the photos of their monsters, and one row's 25 monster slots
-// (+0x04〜+0x64, MonsterParameter row IDs; naauao lanai/map.md §5.7), the maps that use it, a copy into a new row and
-// the bytes not read yet. Each content's archive has its own MonsterGroup; edits are written with the content's tables.
+// (ui/GroupDetail): the content's MonsterGroup rows with the photos of their monsters, and one row's lists (leaders,
+// mates, fixed formations: monsterGroup.ts) with their weights and count codes, the weights of the ways a battle is
+// formed, the battle settings, the maps that use it and a copy into a new row. Each content's archive has its own
+// MonsterGroup; edits are written with the content's tables.
 import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 import { HexInput, RawBytes } from '../editor/fields';
-import { useScrollTop, useSticky } from '../ui/book';
-import { Board, EmptyBoard } from '../ui/Board';
+import { NumberInput, useScrollTop, useSticky } from '../ui/book';
 import { GroupListView } from '../ui/GroupDetail';
 import { useAsync } from '../ui/useAsync';
-import { hex8, u32 } from '../util/bytes';
+import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiMapHref } from './MapPage';
 import { DEFAULT_GROUP_LABEL, groupMonsterRows, lanaiGroupHref } from './MapParts';
-import { lanaiMaps, LANAI_MG_SLOT0, LANAI_MG_SLOTS, type LanaiMaps, type LanaiMonsterGroupRow } from './maps';
+import { lanaiMaps, type LanaiMaps, type LanaiMonsterGroupRow } from './maps';
+import {
+  LANAI_MG_COUNT_CODES, LANAI_MG_FIELD, LANAI_MG_FLAG_BITS, LANAI_MG_FLAGS, LANAI_MG_LIMIT, LANAI_MG_LISTS, LANAI_MG_MATE_LISTS, LANAI_MG_MATES, LANAI_MG_PATTERN,
+  LANAI_MG_PATTERNS, lanaiCountLabel, lanaiMgOriginal, lanaiMgSlots, type LanaiMgList,
+} from './monsterGroup';
 import { useLanaiRevision } from './MonsterEditor';
-import { lanaiMonsterName, lanaiMonsterStats } from './monsterBook';
+import { lanaiMonsterName } from './monsterBook';
 import { lanaiMonsterHref, lanaiMonsters } from './monsters';
 import { lanaiMonsterIcon, LanaiMonsterPicker } from './pickers';
 import type { LanaiSession } from './session';
+import type { LanaiTable } from './table';
 
 export function LanaiGroupPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const contents = useMemo(() => lanaiContents(session), [session]);
@@ -97,7 +102,7 @@ function Groups({ session, contents, content, maps, row, error }: {
 
 export function LanaiGroupDetail({ session, maps, content, g }: { session: LanaiSession; maps: LanaiMaps; content: LanaiContent; g: LanaiMonsterGroupRow }): ReactNode {
   const t = maps.monsterGroup!;
-  const [picking, setPicking] = useState<number | null>(null);
+  const [picking, setPicking] = useState<{ offset: number; title: string } | null>(null);
   const mp = session.need('MonsterParameter');
   const added = g.row >= t.originalRows;
   const uses = maps.monsterGroupUses().get(g.row) ?? [];
@@ -105,16 +110,22 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
     maps.changed();
     session.edited();
   };
-  /** Write the u32 at `offset` of the row. */
-  const set = (offset: number, v: number): void => {
+  const set32 = (offset: number, v: number): void => {
     t.setU32(g.row, offset, v >>> 0);
     edited();
   };
-  /** An empty slot's value: what the row's other empty slots hold (0 or 0x80000000), else 0. */
-  const empty = g.slots.find((v) => !v || v === 0x80000000) ?? 0;
-  const original = t.originalRow(g.row);
-  const slotChanged = (i: number): boolean => !original || u32(original, LANAI_MG_SLOT0 + i * 4) !== g.slots[i];
-  const tailAt = LANAI_MG_SLOT0 + LANAI_MG_SLOTS * 4;
+  const set8 = (offset: number, v: number): void => {
+    t.setU8(g.row, offset, v & 0xff);
+    edited();
+  };
+  const ed = (offset: number, size: 1 | 4): boolean => {
+    const o = lanaiMgOriginal(t, g.row, offset, size);
+    return o === undefined || o !== (size === 4 ? t.u32(g.row, offset) : t.u8(g.row, offset));
+  };
+  const pattern = LANAI_MG_PATTERNS.map((_, i) => t.u8(g.row, LANAI_MG_PATTERN + i));
+  const patternTotal = pattern.reduce((a, b) => a + b, 0);
+  const flags = t.u8(g.row, LANAI_MG_FLAGS);
+  const ctx: SlotCtx = { session, t, row: g.row, set32, set8, ed, pick: (offset, title) => setPicking({ offset, title }) };
   return (
     <>
       <div className="book-head">
@@ -123,7 +134,8 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
       </div>
       <p className="muted small book-desc">
         {g.row === 0 ? `${DEFAULT_GROUP_LABEL}。区画 6 の値が表にないとき、ゲームはこの行の群れを使います。` : ''}
-        群れは +0x04 から 25 個のモンスターの枠 (MonsterParameter の行 ID) を持ちます。枠の並び・重複・+0x68 以降のバイトの意味 (重み・数など) はまだ分かっていません。
+        マップのシンボルを出すとき、まず「編成の出方」の重みで出方を選び、A から重みに比例してリーダーを 1 体選びます (D / E ならその最初のモンスター)。
+        戦闘ではリーダーが匹数のぶん出て、「リーダー + お供」なら、そのリーダーの枠が指すリスト (B か C) から重みでお供を選んで足します (リーダーと同じモンスターは除く)。D / E は並んだ全員が出ます。1 回の戦闘は 8 体まで。
         変更はこのコンテンツのアーカイブの MonsterGroup として書き出されます。
       </p>
       <div className="row">
@@ -134,23 +146,32 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
         }}>写して新しい群れを作る</button>
         {!added && t.rowChanged(g.row) && <button onClick={() => { t.revertRow(g.row); edited(); }}>この群れの変更を元に戻す</button>}
       </div>
-      <h3>{`モンスターの枠 (${g.monsters.length} / ${g.slots.length})`}</h3>
-      <div className="slot-list lanai-group-slots">
-        {g.slots.map((v, i) => {
-          const r = v && v !== 0x80000000 ? mp.find(v) : -1;
-          const label = <span className="muted small slot-index">{i + 1}</span>;
-          if (!v || v === 0x80000000) return <div key={i} className="slot-row">{label}<EmptyBoard label="＋" title={`枠 ${i + 1} (+0x${(LANAI_MG_SLOT0 + i * 4).toString(16).toUpperCase()}) にモンスターを入れる`} onClick={() => setPicking(i)} /></div>;
-          const s = r >= 0 ? lanaiMonsterStats(session, r) : null;
-          return (
-            <div key={i} className="slot-row">
-              {label}
-              <Board icon={lanaiMonsterIcon(session, r, true)} name={r >= 0 ? lanaiMonsterName(session, r) : `${hex8(v).toUpperCase()} (MonsterParameter にない)`}
-                sub={s ? `Lv${s.level}` : undefined} id={r >= 0 ? r : undefined} href={r >= 0 ? lanaiMonsterHref(r) : undefined}
-                edited={slotChanged(i)} title="モンスターを選び直す" onClick={() => setPicking(i)} />
-              <button className="small slot-remove" title="外す" onClick={() => set(LANAI_MG_SLOT0 + i * 4, empty)}>×</button>
-            </div>
-          );
-        })}
+      <h3>編成の出方 (+0x6A)</h3>
+      <table className="enc-table group-slots">
+        <tbody>
+          <tr><th>出方</th><th>重み</th><th>割合</th></tr>
+          {LANAI_MG_PATTERNS.map((label, i) => (
+            <tr key={i} className={ed(LANAI_MG_PATTERN + i, 1) ? 'edited' : ''}>
+              <td>{label}</td>
+              <td><NumberInput value={pattern[i]!} min={0} max={255} onCommit={(v) => set8(LANAI_MG_PATTERN + i, v)} /></td>
+              <td className="num">{patternTotal ? `${Math.round((pattern[i]! / patternTotal) * 100)}%` : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!patternTotal && <div className="muted small">重みがすべて 0 なので、この群れの敵は出ません。</div>}
+      <div className="book-cols group-cols">
+        {LANAI_MG_LISTS.map((list) => <ListEditor key={list.key} ctx={ctx} list={list} />)}
+      </div>
+      <h3>戦闘の設定</h3>
+      <div className="row">
+        <label className="field"><span>戦闘の背景 (+0x00、行 ID)</span><HexInput value={t.u32(g.row, LANAI_MG_FIELD)} onChange={(v) => set32(LANAI_MG_FIELD, v)} /></label>
+        <label className="field"><span>戦闘回数の上限 (+0x68、0 = 無制限・推定)</span><NumberInput value={t.u8(g.row, LANAI_MG_LIMIT)} min={0} max={255} onCommit={(v) => set8(LANAI_MG_LIMIT, v)} /></label>
+      </div>
+      <div className="row">
+        {LANAI_MG_FLAG_BITS.map(([bit, label]) => (
+          <label key={bit} className="layer"><input type="checkbox" checked={!!(flags & (1 << bit))} onChange={(e) => set8(LANAI_MG_FLAGS, e.target.checked ? flags | (1 << bit) : flags & ~(1 << bit))} /> {label}</label>
+        ))}
       </div>
       <h3>{`使うマップ (${uses.length})`}</h3>
       {uses.length
@@ -167,21 +188,87 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
           </table>
         : <div className="muted">このコンテンツのどのマップも使っていません (マップの右ペイン「敵 (区画 6)」や区画 6 のセルで選べます)。</div>}
       <details className="row-fields-box">
-        <summary>{`MonsterGroup の行 ${g.row} の未解析の欄`}</summary>
-        <label className="field"><span>+0x00 (小さな行 ID、意味は未解析)</span><HexInput value={g.kind} onChange={(v) => set(0, v)} /></label>
-        <label className="field"><span>{`+0x${tailAt.toString(16).toUpperCase()}〜 (${g.tail.length} バイト)`}</span>
-          <RawBytes bytes={g.tail} rows={4} onChange={(b) => {
-            const row = t.row(g.row).slice();
-            row.set(b, tailAt);
-            t.setRow(g.row, row);
-            edited();
-          }} />
-        </label>
+        <summary>{`MonsterGroup の行 ${g.row} のバイト`}</summary>
+        <RawBytes bytes={t.row(g.row)} rows={6} onChange={(b) => { t.setRow(g.row, b); edited(); }} />
       </details>
-      {picking !== null && (
-        <LanaiMonsterPicker session={session} current={Math.max(0, g.slots[picking] ? mp.find(g.slots[picking]!) : 0)} title={`枠 ${picking + 1} のモンスターを選ぶ`}
-          onClose={() => setPicking(null)} onPick={(r) => { const i = picking; setPicking(null); set(LANAI_MG_SLOT0 + i * 4, mp.rowId(r)); }} />
+      {picking && (
+        <LanaiMonsterPicker session={session} current={Math.max(0, mp.find(t.u32(g.row, picking.offset)))} title={picking.title}
+          onClose={() => setPicking(null)} onPick={(r) => { const o = picking.offset; setPicking(null); set32(o, mp.rowId(r)); }} />
       )}
     </>
+  );
+}
+
+interface SlotCtx {
+  session: LanaiSession;
+  t: LanaiTable;
+  row: number;
+  set32: (offset: number, v: number) => void;
+  set8: (offset: number, v: number) => void;
+  /** Whether the field differs from the ROM's. */
+  ed: (offset: number, size: 1 | 4) => boolean;
+  pick: (offset: number, title: string) => void;
+}
+
+const COUNT_OPTIONS = Array.from({ length: LANAI_MG_COUNT_CODES }, (_, c): [number, string] => [c, `${c}: ${lanaiCountLabel(c)}`]);
+
+/** One list of five slots: monster, weight (A to C) with its share, count code, and for A the mates' list. */
+function ListEditor({ ctx, list }: { ctx: SlotCtx; list: LanaiMgList }): ReactNode {
+  const { session, t, row, set32, set8, ed, pick } = ctx;
+  const mp = session.need('MonsterParameter');
+  const slots = lanaiMgSlots(t, row, list);
+  const weighted = list.weight >= 0;
+  const total = slots.reduce((a, s) => a + (s.id ? s.weight : 0), 0);
+  const isA = list.key === 'A';
+  return (
+    <section>
+      <h3>{list.label}</h3>
+      <table className="enc-table group-slots">
+        <tbody>
+          <tr><th>モンスター</th>{weighted && <><th>重み</th><th>割合</th></>}<th>数</th>{isA && <th>お供</th>}<th></th></tr>
+          {slots.map((s, i) => {
+            const at = list.ids + i * 4;
+            const r = s.id ? mp.find(s.id) : -1;
+            const title = `${list.key}[${i}] (+0x${at.toString(16).toUpperCase()}) のモンスターを選ぶ`;
+            const counts = s.count < LANAI_MG_COUNT_CODES ? COUNT_OPTIONS : [...COUNT_OPTIONS, [s.count, `${s.count}: 1 体`] as [number, string]];
+            return (
+              <tr key={i} className={ed(at, 4) ? 'edited' : ''}>
+                <td>
+                  {s.id ? (
+                    <div className="row">
+                      <button className="monster-pick" title="モンスターを選び直す" onClick={() => pick(at, title)}>
+                        {lanaiMonsterIcon(session, r)}
+                        <span>{r >= 0 ? lanaiMonsterName(session, r) : `${hex8(s.id).toUpperCase()} (表にない)`}</span>
+                      </button>
+                      {r >= 0 && <a href={lanaiMonsterHref(r)} title="モンスター図鑑で開く">↗</a>}
+                    </div>
+                  ) : <button className="small" onClick={() => pick(at, title)}>＋ 入れる</button>}
+                </td>
+                {weighted && (
+                  <>
+                    <td><NumberInput value={s.weight} min={0} max={255} onCommit={(v) => set8(list.weight + i, v)} /></td>
+                    <td className="num">{s.id && total ? `${Math.round((s.weight / total) * 100)}%` : ''}</td>
+                  </>
+                )}
+                <td>
+                  <select value={s.count} onChange={(e) => set8(list.count + i, Number(e.target.value))}>
+                    {counts.map(([c, label]) => <option key={c} value={c}>{label}</option>)}
+                  </select>
+                </td>
+                {isA && (
+                  <td>
+                    <select value={t.u8(row, LANAI_MG_MATES + i)} onChange={(e) => set8(LANAI_MG_MATES + i, Number(e.target.value))}>
+                      {LANAI_MG_MATE_LISTS.map((label, k) => <option key={k} value={k}>{label}</option>)}
+                      {t.u8(row, LANAI_MG_MATES + i) > 2 && <option value={t.u8(row, LANAI_MG_MATES + i)}>{`値 ${t.u8(row, LANAI_MG_MATES + i)}`}</option>}
+                    </select>
+                  </td>
+                )}
+                <td>{!!s.id && <button title="外す (枠を 0 にする)" onClick={() => set32(at, 0)}>×</button>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
   );
 }
