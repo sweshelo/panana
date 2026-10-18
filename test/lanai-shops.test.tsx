@@ -131,6 +131,16 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     expect(html).toContain('店の表を読むコンテンツ');
   }, 300000);
 
+  test('content 0, shop 2: some rows name ItemData by row number (ペイント…), and every row is an item', async () => {
+    const shops = (await lanaiShops(session, lanaiContents(session)[0]!))!;
+    const data = session.need('ItemData');
+    const rows = shops.rows(2);
+    const small = rows.filter((r) => r.item && r.item < 0x80000000);
+    expect(small.length).toBeGreaterThan(0);
+    expect(new Set(small.map((r) => session.plain(data, data.find(r.item), 'name')))).toContain('ペイントしろ');
+    for (const s of shops.shops) for (const r of shops.rows(s.row)) if (r.item) expect(data.find(r.item)).toBeGreaterThanOrEqual(0);
+  }, 300000);
+
   test('content 24: a longer stock keeps the other 24 shops, is saved and put back', async () => {
     const c = lanaiContents(session)[24]!;
     const shops = (await lanaiShops(session, c))!;

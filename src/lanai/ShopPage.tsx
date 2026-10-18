@@ -56,8 +56,10 @@ function ContentSelect({ contents, content }: { contents: LanaiContent[]; conten
 function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops: LanaiContentShops; side: ReactNode; arg: string | undefined }): ReactNode {
   const revision = useLanaiRevision(session);
   const { content } = shops;
-  const items = useMemo(() => new Map(lanaiItems(session).map((it) => [it.id, it])), [session, revision]);
   const data = session.need('ItemData');
+  // +0x00 is an ItemData row ID, or (some rows of content 0) a row number: the table's references (naauao lanai/shops.md §2)
+  const rowsOf = useMemo(() => new Map(lanaiItems(session).map((it) => [it.row, it])), [session, revision]);
+  const items = { get: (ref: number) => { const r = ref ? data.find(ref) : -1; return r >= 0 ? rowsOf.get(r) : undefined; } };
   const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
   const clerks = useMemo(() => (maps && !(maps instanceof Error) ? lanaiClerks(maps) : null), [maps]);
   const book: ShopBookShop[] = shops.shops.map((s) => ({ id: s.row, label: `店 ${s.row}` }));
