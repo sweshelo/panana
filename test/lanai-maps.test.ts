@@ -1,13 +1,14 @@
 // 電波人間のRPG FREE! (lanai) maps (naauao lanai/map.md): the facing codec of tiles, and (with the dumps) the map table,
 // the map database, the documents and the tile models.
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { LANAI_ACTIONS, lanaiActionName } from '../src/lanai/actions';
 import { lanaiContents } from '../src/lanai/contents';
 import { LanaiMaps } from '../src/lanai/maps';
 import { lanaiTileModels } from '../src/lanai/mapModels';
 import { LanaiSession } from '../src/lanai/session';
 import { buildTiles, LANAI_ROT_CODEC, letterIndex, parseTiles, type TileLayout } from '../src/game/sections';
 import { openImages } from '../src/rom/dump';
-import { equalBytes } from '../src/util/bytes';
+import { equalBytes, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 const LAYOUT: TileLayout = { size: 20, rot: 0x10, letter: 0x11, pad: 0x12, rotCodec: LANAI_ROT_CODEC };
@@ -75,6 +76,47 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
     expect(src.partsName).toBe('MapPartsCaveB');
     expect(src.textureArchive).toBe(0x3dc60000);
     expect(m.partRef(src, 5, 0)).toEqual({ archive: 0xa6d70000, entry: 0xd922a800 });
+  });
+
+  test('NPC lines: the talking actions name rows of the group talk table (MapGroup +0x24, else MessageContents)', () => {
+    const line = (content: number, map: string, row: number): { table: string; type: number; text: string } => {
+      const m = all.find((x) => x.content.index === content)!;
+      const info = m.mapByName(map)!;
+      const ev = m.eventTable(info.dungeon)!;
+      const talk = m.talkTable(info.dungeon)!;
+      const type = ev.u32(row, 0x10);
+      return { table: talk.name, type, text: s.plain(talk, ev.u32(row, 0x14), 'message') };
+    };
+    const b01 = line(1, 'D01001B01', 13);
+    expect(b01.type).toBe(0x80000001);
+    expect(LANAI_ACTIONS[b01.type]!.talk).toEqual([0]);
+    expect(b01.table).toMatch(/_msg$/);
+    expect(b01.text).toStartWith('むふふふ、むふふふ！');
+    const sign = line(6, 'D01001B01', 7);
+    expect(lanaiActionName(sign.type)).toBe('看板');
+    expect(sign.text).toContain('シールドナイトへの道');
+    // a group with 0 at +0x24 (a town)
+    const m12 = all.find((x) => x.content.index === 12)!;
+    expect(m12.groups[6]!.talkEntry).toBe(0);
+    expect(m12.talkTable(6)!.name).toBe('MessageContents');
+    expect(s.plain(m12.talkTable(6)!, 146, 'message')).toStartWith('電波人間よ、よく来ました。');
+    // the first line of every talking action of an NPC (section 5) is a row of its group's talk table
+    let n = 0;
+    for (const m of all) for (const info of m.maps) {
+      const ev = m.eventTable(info.dungeon);
+      const talk = m.talkTable(info.dungeon);
+      for (const rec of info.world || !ev ? [] : m.doc(info).recs[5] ?? []) {
+        const r = u32(rec.raw, 4);
+        if (!r || r >= ev!.rows) continue;
+        for (const o of [0x10, 0x28, 0x40]) {
+          if (!LANAI_ACTIONS[ev!.u32(r, o)]?.talk) continue;
+          n++;
+          expect(talk).toBeDefined();
+          expect(ev!.u32(r, o + 4)).toBeLessThan(talk!.rows);
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(450);
   });
 
   test('every map but the world maps writes back byte for byte; tile facings are the four masks', () => {
