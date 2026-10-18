@@ -47,7 +47,7 @@ describe.skipIf(!hasLanai)('explore', () => {
     contents = lanaiContents(s);
   }, 300000);
 
-  test('round 1', async () => {
+  test.skip('round 1', async () => {
     const items = new Map(lanaiItems(s).map((it) => [it.id, it.name]));
     for (const t of s.tables) if (/shop/i.test(t.table.name)) log('MASTER', t.archive, h(t.entry), t.table.name, t.table.rows, h(t.table.rowSize), t.table.fields.map((f) => `${f.name}@${h(f.offset)}`).join(','));
     for (const c of contents) {
@@ -95,5 +95,33 @@ describe.skipIf(!hasLanai)('explore', () => {
     // literal 0x80000032 / cmp #0x32 near action dispatch
     let n = 0;
     for (const x of insns) if (x.literal !== undefined && x.literal - BASE < code.length && word(x.literal) === 0x80000032 && n++ < 30) log('LIT32', h(x.addr), 'fn', h(funcStart(x.addr)));
+  }, 600000);
+
+  test('round 2', async () => {
+    const items = new Map(lanaiItems(s).map((it) => [it.id, it.name]));
+    log('ITEM 800001bf', items.get(0x800001bf));
+    const mts = s.need('MessageTalkShop');
+    for (let r = 0; r < mts.rows; r++) log('MTS', r, h(mts.rowId(r)), JSON.stringify(s.plain(mts, r, 'message').slice(0, 60)));
+    for (const t of s.tables) if (t.table.name === 'ShopIsland' || t.table.name === 'JewelShopInfo') for (let r = 0; r < t.table.rows; r++) log('MROW', t.table.name, r, h(t.table.rowId(r)), hexRow(t.table.row(r)), t.table.name === 'ShopIsland' ? JSON.stringify(s.plain(t.table, r, 'flavor_msg').slice(0, 50)) : '');
+    const stats = new Map<string, Map<string, number>>();
+    const add = (k: string, v: string): void => { const m = stats.get(k) ?? new Map<string, number>(); m.set(v, (m.get(v) ?? 0) + 1); stats.set(k, m); };
+    for (const c of contents) {
+      for (const ref of await s.tablesIn(c.archive)) {
+        const t = ref.table;
+        if (t.name === 'ShopItem') for (let r = 0; r < t.rows; r++) {
+          const head = t.u32(r, 0) === 0 && t.u32(r, 0x24) === 1 ? 'H' : 'I';
+          for (const o of [4, 8, 0xc, 0x10, 0x14, 0x18, 0x1c, 0x20, 0x28]) add(`SI${head}+${h(o)}`, h(t.u32(r, o)));
+          for (const o of [0x24, 0x25, 0x26, 0x27, 0x14, 0x15, 0x16, 0x17]) add(`SI${head}b+${h(o)}`, h(t.u8(r, o)));
+          add(`SI${head}u16+26`, String(t.u16(r, 0x26)));
+        }
+        if (t.name === 'Shop') for (let r = 0; r < t.rows; r++) for (const o of [0xc, 0x10, 0x14, 0x18, 0x19, 0x1a, 0x1b]) add(`SH+${h(o)}`, h(o >= 0x18 ? t.u8(r, o) : t.u32(r, o)));
+      }
+    }
+    for (const [k, m] of [...stats].sort()) log('STAT', k, [...m].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([v, n]) => `${v}x${n}`).join(' '));
+    for (const lit of [0xd5cef800, 0x67297400, 0x800001bf, 0xf01a6c00, 0x50beb000]) {
+      const at2 = insns.filter((x) => x.literal !== undefined && x.literal - BASE < code.length && word(x.literal) === lit);
+      log('LIT', h(lit), at2.length, at2.slice(0, 12).map((x) => `${h(x.addr)}(fn ${h(funcStart(x.addr))})`).join(' '));
+      for (const x of at2.slice(0, 4)) dis(`lit ${h(lit)}`, funcStart(x.addr), Math.min(140, ((x.addr - funcStart(x.addr)) >> 2) + 40));
+    }
   }, 600000);
 });
