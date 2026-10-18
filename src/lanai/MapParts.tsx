@@ -4,13 +4,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NumberInput } from '../ui/book';
 import { Dialog } from '../ui/Dialog';
+import { GroupIconRow, GroupListView } from '../ui/GroupDetail';
 import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
 import type { LanaiEditState } from './mapedit';
-import type { LanaiMaps } from './maps';
+import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './maps';
 import { lanaiItemName } from './monsterBook';
 import { lanaiMonsters } from './monsters';
-import { lanaiItemEntry, LanaiItemPicker } from './pickers';
+import { lanaiItemEntry, LanaiItemPicker, lanaiMonsterIcon } from './pickers';
 import {
   LANAI_CHEST_ACTIONS,
   LANAI_TREASURE_BATTLE,
@@ -29,12 +30,8 @@ import {
 
 // ---- MonsterGroup
 
-/** "#1 80000040: いちごおばけ・おおくちばし" for a MonsterGroup row. */
-export function monsterGroupLabel(maps: LanaiMaps, row: number): string {
-  const g = maps.monsterGroups()[row];
-  if (!g) return `行 ${row}`;
-  return `#${row} ${hex8(g.id).toUpperCase()}: ${row === 0 ? '既定 (行 0)' : monsterGroupNames(maps, row) || '(モンスターなし)'}`;
-}
+/** Row 0 (row ID 0x80000000): the game's default group, where values the table does not have go (map.md §5.7). */
+const DEFAULT_GROUP_LABEL = '既定 (行 0: 敵なし相当)';
 
 /** "いちごおばけ・おおくちばし": the monsters of a MonsterGroup row. */
 function monsterGroupNames(maps: LanaiMaps, row: number): string {
@@ -44,15 +41,84 @@ function monsterGroupNames(maps: LanaiMaps, row: number): string {
   return g ? [...new Set(g.monsters.map((id) => (mp ? list[mp.find(id)]?.name : undefined) ?? hex8(id).toUpperCase()))].join('・') : '';
 }
 
-/** A MonsterGroup row ID of the content (section 6 values); a value the table does not have is shown as such. */
-export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
-  const groups = maps.monsterGroups();
-  const known = groups.some((g) => g.id === value);
+/** The MonsterParameter rows of a group, each once (-1 for an ID the table does not have). */
+function groupMonsterRows(maps: LanaiMaps, g: LanaiMonsterGroupRow): number[] {
+  const mp = maps.session.table('MonsterParameter');
+  return [...new Set(g.monsters.map((id) => (mp ? mp.find(id) : -1)))];
+}
+
+const groupChanged = (maps: LanaiMaps, row: number): boolean => !!maps.monsterGroup && row < maps.monsterGroup.originalRows && maps.monsterGroup.rowChanged(row);
+
+/** A group at a glance: its row and the photos of its monsters ("既定" for row 0, a warning for a value not in the table). */
+export function MonsterGroupLine({ maps, value }: { maps: LanaiMaps; value: number }): ReactNode {
+  const row = maps.monsterGroupRow(value);
+  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 行 0 になる)`}</span>;
+  if (row === 0) return <span className="muted">{DEFAULT_GROUP_LABEL}</span>;
+  const g = maps.monsterGroups()[row]!;
   return (
-    <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
-      {!known && <option value={value}>{`${hex8(value).toUpperCase()} (${maps.monsterGroupRow(value) >= 0 ? `行番号 ${value}` : '表にない: 行 0 になる'})`}</option>}
-      {groups.map((g) => <option key={g.row} value={g.id}>{monsterGroupLabel(maps, g.row)}</option>)}
-    </select>
+    <>
+      <span className="muted">{`#${row}`}</span>
+      <GroupIconRow icons={groupMonsterRows(maps, g).map((r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>)} changed={groupChanged(maps, row)} />
+    </>
+  );
+}
+
+const useLabel = (u: LanaiMonsterGroupUse): string => `${u.map} ${u.cells === 'map' ? '(マップの群れ)' : `セル ${u.cells} 個`}`;
+
+/** Pick a MonsterGroup row of the content (the pick is its row ID), as RPG3's group picker: search, photos, the maps that use it. */
+function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps; current: number; onPick: (id: number) => void; onClose: () => void }): ReactNode {
+  const groups = useMemo(() => maps.monsterGroups().slice(1), [maps, maps.revision]);
+  // the maps' current documents (edits of the open map included); computed once per opening
+  const uses = useMemo(() => maps.monsterGroupUses(), [maps]);
+  const mp = maps.session.table('MonsterParameter');
+  const list = lanaiMonsters(maps.session);
+  const used = (g: LanaiMonsterGroupRow): boolean => (uses.get(g.row)?.length ?? 0) > 0;
+  const row = maps.monsterGroupRow(current);
+  const defaultUses = uses.get(0) ?? [];
+  return (
+    <Dialog title="群れを選ぶ" onClose={onClose}>
+      <p className="muted small">「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは行 0 の群れになります。</p>
+      <div className="group-picker">
+        <GroupListView groups={groups} monsters={(g) => groupMonsterRows(maps, g)} name={(r) => list[r]?.name}
+          icon={(r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>} changed={(g) => groupChanged(maps, g.row)}
+          filters={[['all', 'すべて', () => true], ['used', 'マップで使う', used], ['unused', 'どのマップも使わない', (g) => !used(g)]]}
+          extra={{ head: 'マップ', cell: (g) => { const u = uses.get(g.row) ?? []; return u.length ? <span title={u.map(useLabel).join('、')}>{u.length}</span> : ''; } }}
+          selected={row} onSelect={(g) => onPick(g.id)}>
+          <tr className={row === 0 ? 'active' : ''} onClick={() => onPick(maps.monsterGroups()[0]?.id ?? 0x80000000)}>
+            <td className="num muted">0</td>
+            <td className="muted">{DEFAULT_GROUP_LABEL}</td>
+            <td className="num muted">{defaultUses.length ? <span title={defaultUses.map(useLabel).join('、')}>{defaultUses.length}</span> : ''}</td>
+          </tr>
+          {row < 0 && (
+            <tr className="active">
+              <td></td>
+              <td className="muted">{`${hex8(current).toUpperCase()} (表にない: 行 0 になる)`}</td>
+              <td></td>
+            </tr>
+          )}
+        </GroupListView>
+      </div>
+      {!mp && <p className="muted small">このコンテンツには MonsterParameter の表がありません。</p>}
+    </Dialog>
+  );
+}
+
+/**
+ * A MonsterGroup row ID of the content (section 6 values, chest battles): the group's photos on a button that opens the
+ * picker. A value the table does not have is shown as such.
+ */
+export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+  const [picking, setPicking] = useState(false);
+  return (
+    <>
+      <button className="group-pick" title={`群れを選び直す (行 ID ${hex8(value).toUpperCase()})`} onClick={() => setPicking(true)}>
+        <MonsterGroupLine maps={maps} value={value} />
+      </button>
+      {picking && (
+        <LanaiGroupPicker maps={maps} current={value} onClose={() => setPicking(false)}
+          onPick={(v) => { setPicking(false); if (v !== value) onChange(v >>> 0); }} />
+      )}
+    </>
   );
 }
 

@@ -155,6 +155,13 @@ export interface LanaiMonsterGroupRow {
   tail: Uint8Array;
 }
 
+/** A map that uses a MonsterGroup row (LanaiMaps.monsterGroupUses). */
+export interface LanaiMonsterGroupUse {
+  map: string;
+  /** 'map' = the map's group (section 6 header), else the number of cells with this group. */
+  cells: number | 'map';
+}
+
 /** MonsterGroup rows: +0x00 kind, then 25 u32 monster slots from +0x04 (0x9C bytes a row; #130, map.md §5.7). */
 const MG_SLOTS = 25;
 const MG_SLOT0 = 0x04;
@@ -435,6 +442,28 @@ export class LanaiMaps {
    */
   monsterGroupRow(value: number): number {
     return this.monsterGroup ? this.monsterGroup.find(value) : -1;
+  }
+
+  /**
+   * MonsterGroup row -> the maps of the content that use it (the current documents, so edits show up): 'map' for the
+   * map's group (the section 6 header), else the number of cells. Values the table does not have are left out.
+   */
+  monsterGroupUses(): Map<number, LanaiMonsterGroupUse[]> {
+    const out = new Map<number, LanaiMonsterGroupUse[]>();
+    if (!this.monsterGroup) return out;
+    const add = (value: number, use: LanaiMonsterGroupUse): void => {
+      const row = this.monsterGroupRow(value);
+      if (row >= 0) out.set(row, [...(out.get(row) ?? []), use]);
+    };
+    for (const m of this.maps) {
+      if (m.world) continue;
+      const doc = this.doc(m);
+      if (doc.sec6Header.length >= 4) add(u32(doc.sec6Header, 0), { map: m.name, cells: 'map' });
+      const cells = new Map<number, number>();
+      for (const c of doc.cells6) cells.set(c.value, (cells.get(c.value) ?? 0) + 1);
+      for (const [value, n] of cells) add(value, { map: m.name, cells: n });
+    }
+    return out;
   }
 
   group(info: LanaiMapInfo): LanaiMapGroup | undefined {

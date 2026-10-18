@@ -340,6 +340,28 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(maps.isChanged(info)).toBe(false);
   });
 
+  test('MonsterGroup uses: the header and the cells of the maps, edits included', () => {
+    const info = maps.maps.find((x) => !x.world && maps.doc(x).sec6Header.length >= 4)!;
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const header = maps.monsterGroupRow(u32(st.current!.sec6Header, 0));
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(maps.monsterGroupUses().get(header)).toContainEqual({ map: info.name, cells: 'map' });
+    const last = maps.monsterGroups().at(-1)!;
+    const before = (maps.monsterGroupUses().get(last.row) ?? []).filter((u) => u.map === info.name && u.cells !== 'map');
+    const free = st.current!.tiles.find((t) => !st.current!.cells6.some((c) => c.x === t.x && c.y === t.y))!;
+    st.edit((d) => { d.cells6.push({ value: last.id, x: free.x, y: free.y }, { value: last.id, x: free.x, y: free.y }); });
+    const n = before.length ? (before[0]!.cells as number) : 0;
+    expect(maps.monsterGroupUses().get(last.row)).toContainEqual({ map: info.name, cells: n + 2 });
+    // a value the table does not have is not counted for any row
+    const counted = (): number => [...maps.monsterGroupUses().values()].flat().filter((u) => u.map === info.name).reduce((a, u) => a + (u.cells === 'map' ? 0 : u.cells), 0);
+    const k = counted();
+    st.edit((d) => { d.cells6.push({ value: 0x8000ffff, x: free.x, y: free.y }); });
+    expect(counted()).toBe(k);
+    st.revert();
+    expect(maps.isChanged(info)).toBe(false);
+  });
+
   test('every content: MonsterGroup rows name MonsterParameter rows from +0x04 (the +0x00 value is not a monster)', async () => {
     const mp = s.table('MonsterParameter')!;
     let rows = 0;
