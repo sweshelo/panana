@@ -173,10 +173,22 @@ export class LanaiContentShops {
     return Math.max(0, ...this.shops.map((s) => this.originalRows(s.row).length));
   }
 
-  /** A row for an item added to a shop: a copy of the shop's first item row (or the content's), always shown, with no limit. */
+  /**
+   * A row for an item added to a shop: a copy of the shop's first item row (or the content's), always shown, with no
+   * limit. A kind (`item` below 0x80000000) makes a random slot with the next unused slot number.
+   */
   newRow(shop: number, item: number): LanaiShopRow {
     const t = this.rows(shop).find((r) => r.item) ?? this.shops.flatMap((s) => this.rows(s.row)).find((r) => r.item);
-    return rowOf(item, lanaiShopItemRow(t?.bytes, item));
+    const b = lanaiShopItemRow(t?.bytes, item);
+    if (item && !isRowId(item)) b[SHOP_SLOT] = this.nextSlot();
+    return rowOf(item, b);
+  }
+
+  /** A slot number no row of the content's ShopItem uses (the save keeps one item per number). */
+  nextSlot(): number {
+    let most = 0;
+    for (let i = 0; i < this.items.rows; i++) most = Math.max(most, this.items.u8(i, SHOP_SLOT));
+    return Math.min(most + 1, 0xff);
   }
 
   /** Writes a shop's stock (see the top of the file). */
@@ -281,9 +293,26 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
 export const LANAI_CLERK_SHOP = 0;
 
 
+/** ItemDataCore +0x30 bit 0: the item can be drawn by a random slot (FUN_001BDD1C). */
+export const LANAI_SLOT_POOL_BIT = 1;
+
+/** Whether an item is in the pool of the random slots of its kind. */
+export const lanaiInSlotPool = (session: LanaiSession, it: LanaiItem): boolean => !!(session.need('ItemDataCore').u8(it.core, 0x30) & LANAI_SLOT_POOL_BIT);
+
+/** Puts an item in (or out of) the pool of the random slots of its kind (ItemDataCore +0x30 bit 0; shared by every item of the same ItemDataCore row). */
+export function lanaiSetSlotPool(session: LanaiSession, it: LanaiItem, on: boolean): void {
+  const core = session.need('ItemDataCore');
+  const v = core.u8(it.core, 0x30);
+  core.setU8(it.core, 0x30, on ? v | LANAI_SLOT_POOL_BIT : v & ~LANAI_SLOT_POOL_BIT);
+}
+
+/** The items of a kind a random slot can draw (0x55 and 0x56 are one kind); `pool` false: the others of the kind. */
+export function lanaiSlotKindItems(session: LanaiSession, kind: number): LanaiItem[] {
+  const same = (k: number): boolean => k === kind || (kind === 0x55 && k === 0x56) || (kind === 0x56 && k === 0x55);
+  return lanaiItems(session).filter((it) => same(it.kind));
+}
+
 /** The items a random slot of `kind` draws from: shown in shops (ItemDataCore +0x30 bit 0) and of the kind (0x55 = 0x56). */
 export function lanaiShopSlotItems(session: LanaiSession, kind: number): LanaiItem[] {
-  const core = session.need('ItemDataCore');
-  const same = (k: number): boolean => k === kind || (kind === 0x55 && k === 0x56) || (kind === 0x56 && k === 0x55);
-  return lanaiItems(session).filter((it) => same(it.kind) && core.u8(it.core, 0x30) & 1);
+  return lanaiSlotKindItems(session, kind).filter((it) => lanaiInSlotPool(session, it));
 }

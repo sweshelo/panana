@@ -6,7 +6,7 @@ import { lanaiContents } from '../src/lanai/contents';
 import { lanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiShopPage } from '../src/lanai/ShopPage';
-import { LanaiContentShops, lanaiClerks, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
+import { LanaiContentShops, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages } from '../src/rom/dump';
 import { u32, w32 } from '../src/util/bytes';
@@ -100,6 +100,9 @@ describe('RPG FREE! shop stock edits', () => {
     s.items.setRow(1, t);
     const n = s.newRow(0, id(4)).bytes;
     expect([n[SHOP_COND], n[SHOP_SLOT], n[SHOP_LIMIT]]).toEqual([0, 0, 0]);
+    // a kind makes a random slot with the next unused number
+    const k = s.newRow(1, 0x61).bytes;
+    expect([lanaiShopSlotKind(k), k[SHOP_SLOT]]).toEqual([0x61, 3]);
   });
 
   test('rows added by an edit are removed again when the stock shrinks', () => {
@@ -153,6 +156,15 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     expect(slots.map((r) => r.bytes[SHOP_SLOT]!).sort((a, b) => a - b)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
     expect(new Set(slots.map((r) => lanaiShopSlotKind(r.bytes)))).toEqual(new Set([0x34, 0x51, 0x53, 0x54, 0x55, 0x57, 0x58, 0x59, 0x61, 0x62, 0x63, 0x64, 0x65, 0x67, 0x68]));
     for (const r of slots) expect(lanaiShopSlotItems(session, lanaiShopSlotKind(r.bytes)).length).toBeGreaterThan(0);
+    // a pool is edited by ItemDataCore +0x30 bit 0
+    const out = lanaiSlotKindItems(session, 0x51).find((it) => !lanaiInSlotPool(session, it));
+    const before = lanaiShopSlotItems(session, 0x51).length;
+    if (out) {
+      lanaiSetSlotPool(session, out, true);
+      expect(lanaiShopSlotItems(session, 0x51).length).toBe(before + 1);
+      lanaiSetSlotPool(session, out, false);
+      expect(session.need('ItemDataCore').changed).toBe(false);
+    }
     // no other shop has one, and every other row is an item (or 0)
     const data = session.need('ItemData');
     for (const c of lanaiContents(session)) {

@@ -2,30 +2,39 @@
 // in the shop book shared with RPG2 / RPG3 (ui/ShopBook): the stock as item boards with their photos, reordered by
 // dragging, picked from the item photos, the most one can buy per row; and the clerks (EventObject rows of type 店の人)
 // with the maps that place them, linked to the map page with the record selected and to their lines.
-import { useMemo, type ReactNode } from 'react';
-import { NumberInput, useSticky } from '../ui/book';
+import { useMemo, useState, type ReactNode } from 'react';
+import { EditedMark, NumberInput, useSticky } from '../ui/book';
+import { GridPicker } from '../ui/GridPicker';
 import { InfoTip } from '../ui/InfoTip';
 import { ShopBook, type ShopBookShop, type ShopColumn } from '../ui/ShopBook';
 import { useAsync } from '../ui/useAsync';
 import { hex8, u32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { lanaiItemHref } from './ItemPage';
-import { LANAI_ITEM_KINDS, lanaiItems } from './items';
+import { LANAI_ITEM_KINDS, lanaiItems, type LanaiItem } from './items';
 import { lanaiMapHref } from './MapPage';
 import { lanaiMaps, type LanaiMaps } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiItemIcon, LanaiItemPicker } from './pickers';
 import type { LanaiSession } from './session';
 import {
-  LANAI_CLERK_SHOP, lanaiClerks, lanaiShopItemRow, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, SHOP_COND, SHOP_COND_NUMBER, SHOP_COND_VALUE, SHOP_LIMIT,
+  LANAI_CLERK_SHOP, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopItemRow, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_COND_NUMBER, SHOP_COND_VALUE, SHOP_LIMIT,
   SHOP_PRICE, SHOP_SHARED_COUNTER, SHOP_SHARED_LIMIT, SHOP_SLOT, type LanaiContentShops, type LanaiShopRow,
 } from './shops';
 
 export const lanaiShopHref = (content: number, shop?: number): string => `#/shops/${content}${shop === undefined ? '' : `.${shop}`}`;
 
 const LIMIT_HELP = '買える数の上限 (ShopItem +0x26。0 = 制限なし。買った数は店と並びの位置ごとに数えます)。+0x27 が 0 でない行は、+0x27 が上限で、買った数は +0x28 の番号ごと (同じ番号の行で共通) に数えます (naauao lanai/shops.md §2)。';
+const POOL_HELP = '枠は、その種別のアイテムのうち ItemDataCore +0x30 の bit 0 が立っているものから 1 つを、毎日選び直します (一様。同じ店に固定の品としてあるものは除く)。候補を変えると、同じ種別のすべての店の枠が変わり、アイテム図鑑の ItemDataCore の変更として書き出されます。ほかの種別のアイテムは、アイテム図鑑で種別を変えないと加えられません。';
 const SLOT_HELP = 'ランダム枠 (ShopItem +0x00 が種別、+0x25 が枠の番号)。店を開くと、その種別のアイテムから 1 つが選ばれます。選び直すのは日付が変わったとき。選ばれたアイテムはセーブに枠の番号ごとに残ります (naauao lanai/shops.md §2.1)。';
+const SHARED_HELP = '共通の上限 (ShopItem +0x27)。0 でなければ「買える数」(+0x26) より優先されます。買った数は右の番号 (+0x28) ごとに数え、同じ番号の行どうし (ほかの店も) で合算します。0 にすると上限は「買える数」に戻ります。';
+const COUNTER_HELP = '共通の上限の番号 (ShopItem +0x28)。買った数をセーブのこの番号に記録します (200 未満のときだけ)。';
 const COND_HELP = '陳列の条件 (ShopItem +0x10 が種類、+0x08 が番号、+0x0C が比べる値)。条件を満たさないと品物は並びません。';
+
+const isItem = (v: number): boolean => v >= 0x80000000;
+
+/** The kinds a new random slot can draw (the kinds of the item book; 0x56 is drawn as 0x55). */
+const SLOT_KINDS = Object.keys(LANAI_ITEM_KINDS).map(Number).filter((k) => k !== 0x56);
 
 /** A display condition (ShopItem +0x10 / +0x08 / +0x0C), as words. */
 function conditionText(b: Uint8Array): string {
@@ -80,6 +89,8 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
   const data = session.need('ItemData');
   const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
   const clerks = useMemo(() => (maps && !(maps instanceof Error) ? lanaiClerks(maps) : null), [maps]);
+  // the random slots offered in the item picker (a kind; the pick is its negative)
+  const slotChoices = useMemo(() => SLOT_KINDS.map((k) => ({ value: -k, label: `ランダム枠: ${LANAI_ITEM_KINDS[k]}`, sub: `${lanaiShopSlotItems(session, k).length} 個から` })), [session, revision]);
   const book: ShopBookShop[] = shops.shops.map((s) => ({ id: s.row, label: `店 ${s.row}` }));
   const setRow = (shop: number, i: number, f: (b: Uint8Array) => void): void => {
     const rows = shops.rows(shop).map((r, j) => {
@@ -104,10 +115,17 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
           ? <NumberInput value={r.bytes[SHOP_LIMIT]!} min={0} max={255} title={LIMIT_HELP} onCommit={(v) => setRow(s.id, i, (b) => (b[SHOP_LIMIT] = v))} />
           : r.bytes[SHOP_LIMIT] || '',
       },
-      ...(all.some((r) => r.bytes[SHOP_SHARED_LIMIT]) ? [{
-        head: '共通の上限',
-        className: 'num',
-        cell: (r: LanaiShopRow) => (r.bytes[SHOP_SHARED_LIMIT] ? <span title={LIMIT_HELP}>{`${r.bytes[SHOP_SHARED_LIMIT]} (#${r.bytes[SHOP_SHARED_COUNTER]})`}</span> : ''),
+      ...(editable || all.some((r) => r.bytes[SHOP_SHARED_LIMIT]) ? [{
+        head: '共通の上限 (番号)',
+        className: 'num nowrap',
+        cell: (r: LanaiShopRow, i: number) => editable
+          ? (
+            <span className="shared-limit">
+              <NumberInput value={r.bytes[SHOP_SHARED_LIMIT]!} min={0} max={255} title={SHARED_HELP} onCommit={(v) => setRow(s.id, i, (b) => (b[SHOP_SHARED_LIMIT] = v))} />
+              <NumberInput value={r.bytes[SHOP_SHARED_COUNTER]!} min={0} max={255} title={COUNTER_HELP} onCommit={(v) => setRow(s.id, i, (b) => (b[SHOP_SHARED_COUNTER] = v))} />
+            </span>
+          )
+          : r.bytes[SHOP_SHARED_LIMIT] ? <span title={SHARED_HELP}>{`${r.bytes[SHOP_SHARED_LIMIT]} (#${r.bytes[SHOP_SHARED_COUNTER]})`}</span> : '',
       }] : []),
       ...(all.some((r) => r.bytes[SHOP_COND]) ? [{ head: '陳列の条件', className: 'muted small', cell: (r: LanaiShopRow) => <span title={COND_HELP}>{conditionText(r.bytes)}</span> }] : []),
       ...(all.some((r) => lanaiShopSlotKind(r.bytes) >= 0) ? [{ head: '枠', className: 'num', cell: (r: LanaiShopRow) => (lanaiShopSlotKind(r.bytes) >= 0 ? <span title={SLOT_HELP}>{`#${r.bytes[SHOP_SLOT]}`}</span> : '') }] : []),
@@ -125,10 +143,13 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
       same={(a, b) => a.item === b.item && a.bytes.every((x, i) => x === b.bytes[i])}
       newRow={(s, item) => shops.newRow(s.id, item)}
       replaceItem={(r, item) => {
+        const slot = lanaiShopSlotKind(r.bytes) >= 0;
         // a random slot that becomes an item is a plain row (no slot, no condition of the template)
-        if (lanaiShopSlotKind(r.bytes) >= 0) return { item, bytes: lanaiShopItemRow(r.bytes, item) };
+        if (slot && isItem(item)) return { item, bytes: lanaiShopItemRow(r.bytes, item) };
         const b = r.bytes.slice();
         new DataView(b.buffer).setUint32(0, item >>> 0, true);
+        // an item that becomes a random slot gets a slot number of its own; a slot of another kind keeps its number
+        if (!isItem(item) && !slot) b[SHOP_SLOT] = shops.nextSlot();
         return { item, bytes: b };
       }}
       item={(id) => {
@@ -152,7 +173,7 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
         shops.set(s.id, rows);
         session.edited();
       }}
-      picker={(p) => <LanaiItemPicker session={session} current={0} title={p.title} onClose={p.onClose} onPick={(row) => p.onPick(data.rowId(row))} />}
+      picker={(p) => <LanaiItemPicker session={session} current={0} title={p.title} choices={slotChoices} onClose={p.onClose} onPick={(row) => p.onPick(row < 0 ? -row : data.rowId(row))} />}
       sub={(s) => {
         const n = s.id === LANAI_CLERK_SHOP ? clerks?.length ?? 0 : 0;
         return `${shops.rows(s.id).length} 品${n ? `・店の人 ${n}` : ''}`;
@@ -171,7 +192,11 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
       places={(s) => <Clerks session={session} maps={maps} clerks={s.id === LANAI_CLERK_SHOP ? clerks : []} content={content} multi={shops.shops.length > 1} />}
       footer={(s) => {
         const t = shops.shopTable;
-        return <div className="muted small mono">{`部屋 ${hex8(t.u32(s.id, 4)).toUpperCase()} / カメラ ${hex8(t.u32(s.id, 8)).toUpperCase()}・+0x0C ${t.u32(s.id, 0x0c)}・+0x10 ${hex8(t.u32(s.id, 0x10)).toUpperCase()}・+0x18 ${t.u8(s.id, 0x18)}・高さ ${t.u8(s.id, 0x19)} (未解析の欄は naauao lanai/shops.md §3)`}</div>;
+        const kinds = [...new Set(shops.rows(s.id).map((r) => lanaiShopSlotKind(r.bytes)).filter((k) => k >= 0))];
+        return <>
+          {kinds.length > 0 && <SlotPools session={session} kinds={kinds} rows={shops.rows(s.id)} />}
+          <div className="muted small mono">{`部屋 ${hex8(t.u32(s.id, 4)).toUpperCase()} / カメラ ${hex8(t.u32(s.id, 8)).toUpperCase()}・+0x0C ${t.u32(s.id, 0x0c)}・+0x10 ${hex8(t.u32(s.id, 0x10)).toUpperCase()}・+0x18 ${t.u8(s.id, 0x18)}・高さ ${t.u8(s.id, 0x19)} (未解析の欄は naauao lanai/shops.md §3)`}</div>
+        </>;
       }}
     />
   );
@@ -227,5 +252,65 @@ function Clerks({ session, maps, clerks, content, multi }: {
         </tbody>
       </table>
     </>
+  );
+}
+
+/**
+ * The pools of the random slots of a shop, one per kind: the items a slot draws from (each as likely), with × to take
+ * one out and ＋ to put one of the kind in (ItemDataCore +0x30 bit 0, shared by every slot of the kind in every shop).
+ */
+function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: number[]; rows: LanaiShopRow[] }): ReactNode {
+  useLanaiRevision(session);
+  const [adding, setAdding] = useState<number | null>(null);
+  const set = (it: LanaiItem, on: boolean): void => {
+    lanaiSetSlotPool(session, it, on);
+    session.edited();
+  };
+  const core = session.need('ItemDataCore');
+  return (
+    <div className="slot-pools">
+      <h3>ランダム枠の候補 <InfoTip text={POOL_HELP} /></h3>
+      {kinds.map((k) => {
+        const pool = lanaiShopSlotItems(session, k);
+        const fixed = new Set(rows.map((r) => r.item));
+        const draws = pool.filter((it) => !fixed.has(it.id));
+        const slots = rows.filter((r) => lanaiShopSlotKind(r.bytes) === k).map((r) => `#${r.bytes[SHOP_SLOT]}`);
+        return (
+          <div key={k} className="slot-pool">
+            <div className="row">
+              <strong>{LANAI_ITEM_KINDS[k] ?? `種別 0x${k.toString(16)}`}</strong>
+              <span className="muted small">{`枠 ${slots.join('・')}・この店では ${draws.length} 個から 1 つ (各 ${draws.length ? Math.round(1000 / draws.length) / 10 : 0}%)${draws.length > 300 ? '・300 個を超えた分は選ばれません' : ''}`}</span>
+            </div>
+            <div className="loot">
+              {pool.map((it) => (
+                <div key={it.row} className={`loot-row${fixed.has(it.id) ? ' muted' : ''}`}>
+                  <span className="loot-item">
+                    <a className="loot-item" href={lanaiItemHref(it.row)} title={fixed.has(it.id) ? 'この店に固定の品としてあるので、この店の枠では選ばれません' : it.name}>
+                      {lanaiItemIcon(session, it.row, it.name)}
+                      {it.name}
+                      {core.rowChanged(it.core) && <EditedMark text=" ●" title="アイテム図鑑で変更した" />}
+                    </a>
+                  </span>
+                  <button className="danger" title="候補から外す (この種別のすべての枠から)" onClick={() => set(it, false)}>×</button>
+                </div>
+              ))}
+              {!pool.length && <div className="muted">候補がありません (枠に何も出ないおそれがあります)。</div>}
+              <button className="loot-add" onClick={() => setAdding(k)}>＋ 追加</button>
+            </div>
+          </div>
+        );
+      })}
+      {adding !== null && (
+        <GridPicker
+          title={`${LANAI_ITEM_KINDS[adding] ?? ''} の候補に加えるアイテムを選ぶ`}
+          entries={lanaiSlotKindItems(session, adding).filter((it) => !lanaiInSlotPool(session, it)).map((it) => ({ id: it.row, name: it.name, sub: `#${it.row}`, icon: lanaiItemIcon(session, it.row, it.name, true) }))}
+          onClose={() => setAdding(null)}
+          onPick={(row) => {
+            const it = lanaiItems(session).find((x) => x.row === row);
+            setAdding(null);
+            if (it) set(it, true);
+          }} />
+      )}
+    </div>
   );
 }
