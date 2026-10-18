@@ -9,6 +9,8 @@
 // - The clear warp (section 3 kind 3) and the recovery points (section 5 kinds 12 / 13) place no model: the code puts an
 //   effect of EffectData (master +0x1E4) there and does not read EventObject +0x5A (key-objects.md §3.2, §3.3).
 // - The goal chest (section 4 look 3) is MapObject 0x80000274 gimk_05_trebox_goal outside and inside (FUN_0044F9EC).
+// - Section 5 kinds 3 (heal) / 9 / 10 without EventObject +0x5A take MapObject rows 0x3F (gimk_04_heal_1) / 0x72 / 0x75.
+// These defaults were checked in the code (Update v17408).
 // - MapObject keeps RPG3's mapObject numbering in its row IDs (0x80000034〜39 are the chests gimk_05_trebox_*,
 //   0x80000001 / 2 the stairs, 0x80000004 / 5 the doors), so the defaults of a record without a model are RPG3's.
 // The facings are 1 / 2 / 4 / 8 masks (§3.2) read as RPG3's directions 0..3 (maps.ts lanaiRecFacing).

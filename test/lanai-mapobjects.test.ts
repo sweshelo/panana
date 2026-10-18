@@ -8,7 +8,7 @@ import { isIndoor } from '../src/game/objects';
 import { lanaiContents } from '../src/lanai/contents';
 import { LANAI_ACTION_CLEAR_WARP, LANAI_ACTION_GOAL_CHEST } from '../src/lanai/actions';
 import { LANAI_EVENT_ACTIONS, LanaiMaps } from '../src/lanai/maps';
-import { LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, lanaiEffectName, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
+import { LANAI_CLEAR_WARP, LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, LANAI_GOAL_CHEST, LANAI_REPAIR_POINT, lanaiEffectName, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -90,6 +90,49 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     // the clear warps (section 3 kind 3) and the recovery points (section 5 kind 13) are effects
     expect([...(effects.get('s3') ?? [])]).toEqual([LANAI_EFFECT_CLEAR_WARP]);
     expect(effects.get('s5')?.has(LANAI_EFFECT_REPAIR_POINT)).toBe(true);
+  }, 300000);
+
+  // the defaults the code picks (FUN_0044F9EC, FUN_0021D744, FUN_0021C844; naauao lanai/key-objects.md)
+  test('every goal chest, clear warp and recovery point takes its model or effect; heals gimk_04_heal', async () => {
+    const mapObject = s.table('MapObject');
+    let goals = 0, warps = 0, recovery = 0;
+    const goalRows = new Set<number>(), healRows = new Set<number>();
+    for (const maps of all) {
+      const mapChara = maps.contentTable('MapChara');
+      for (const info of maps.maps) {
+        if (info.world) continue;
+        const doc = maps.doc(info);
+        const ctx = { mapObject, mapChara, events: maps.eventTable(info.dungeon), indoor: isIndoor(doc) };
+        for (const r of doc.recs[4] ?? []) {
+          if (u32(r.raw, 0) !== LANAI_GOAL_CHEST) continue;
+          goals++;
+          const m = lanaiRecordLook(4, r.raw, ctx)?.model;
+          if (m?.type === 'object') goalRows.add(m.row);
+        }
+        for (const r of doc.recs[3] ?? []) {
+          if (r.raw[0x15] !== LANAI_CLEAR_WARP) continue;
+          warps++;
+          expect(lanaiRecordLook(3, r.raw, ctx)?.model).toEqual({ type: 'effect', row: LANAI_EFFECT_CLEAR_WARP });
+        }
+        for (const r of doc.recs[5] ?? []) {
+          const kind = u32(r.raw, 0);
+          if (kind === LANAI_REPAIR_POINT) {
+            recovery++;
+            expect(lanaiRecordLook(5, r.raw, ctx)?.model).toEqual({ type: 'effect', row: LANAI_EFFECT_REPAIR_POINT });
+          }
+          if (kind === 3) {
+            const m = lanaiRecordLook(5, r.raw, ctx)?.model;
+            if (m?.type === 'object') healRows.add(m.row);
+          }
+        }
+      }
+    }
+    // 75 goal chests, 46 clear warps, 71 recovery points (key-objects.md §2〜§3)
+    expect(goals).toBeGreaterThan(50);
+    expect(warps).toBeGreaterThan(40);
+    expect(recovery).toBeGreaterThan(50);
+    expect((await Promise.all([...goalRows].map(modelName))).filter((n) => n === 'gimk_05_trebox_goal').length).toBe(1);
+    if (healRows.size) expect((await Promise.all([...healRows].map(modelName))).some((n) => n.startsWith('gimk_04_heal'))).toBe(true);
   }, 300000);
 
   test('goal chests and clear warps clear their own content', () => {
