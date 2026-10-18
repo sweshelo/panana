@@ -6,6 +6,7 @@ import { NumberInput } from '../ui/book';
 import { Dialog } from '../ui/Dialog';
 import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
+import { contentTitle, lanaiContents } from './contents';
 import type { LanaiEditState } from './mapedit';
 import type { LanaiMaps } from './maps';
 import { lanaiItemName } from './monsterBook';
@@ -53,6 +54,37 @@ export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps;
       {!known && <option value={value}>{`${hex8(value).toUpperCase()} (${maps.monsterGroupRow(value) >= 0 ? `行番号 ${value}` : '表にない: 行 0 になる'})`}</option>}
       {groups.map((g) => <option key={g.row} value={g.id}>{monsterGroupLabel(maps, g.row)}</option>)}
     </select>
+  );
+}
+
+/** A MonsterGroup row number of the content (the boss battle, action 0x8000000C, names the row, not its ID). */
+export function MonsterGroupRowSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+  const groups = maps.monsterGroups();
+  return (
+    <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+      {value >= groups.length && <option value={value}>{`行 ${value} (表は ${groups.length} 行: 表の外)`}</option>}
+      {groups.map((g) => <option key={g.row} value={g.row}>{monsterGroupLabel(maps, g.row)}</option>)}
+    </select>
+  );
+}
+
+// ---- contents
+
+/**
+ * A content number (the content a goal chest or the clear warp marks cleared: save flag group 0x53, FUN_00191130).
+ * In the ROM every one names its own content, so another one is flagged.
+ */
+export function ContentSelect({ maps, value, onChange, allowNone }: { maps: LanaiMaps; value: number; onChange: (v: number) => void; allowNone?: boolean }): ReactNode {
+  const list = useMemo(() => lanaiContents(maps.session), [maps.session]);
+  const own = maps.content.index;
+  return (
+    <>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+        {value >= list.length && <option value={value}>{`${value} (コンテンツの表にない)`}</option>}
+        {list.map((c) => <option key={c.index} value={c.index}>{c.index === 0 && allowNone ? '0: なし' : `${c.index}: ${contentTitle(c)}${c.index === own ? ' (このコンテンツ)' : ''}`}</option>)}
+      </select>
+      {value !== own && !(allowNone && value === 0) && <span className="muted small">{`このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}</span>}
+    </>
   );
 }
 
