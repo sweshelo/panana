@@ -22,23 +22,29 @@ export interface GridSection {
   ids: number[];
 }
 
-/** A choice that is not an entry (e.g. 0 = 電波人間), shown first without a picture. */
+/** A choice that is not an entry (e.g. 0 = 電波人間), shown first (without a picture unless it has one). */
 export interface PickerChoice {
   value: number;
   label: string;
   sub?: string;
+  icon?: ReactNode;
+  title?: string;
+  /** Also matched by the search (e.g. the names of the items a random slot draws). */
+  keywords?: string;
 }
 
 /**
  * Every entry as a picture with its name. `sections` come first, each under its heading, then every entry (under
  * "すべて" when there are sections or choices); `current` is highlighted and scrolled into view.
  */
-export function GridPicker({ title, entries, current, sections = [], choices = [], categories, placeholder = '名前か番号で絞り込み', onPick, onClose }: {
+export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, placeholder = '名前か番号で絞り込み', onPick, onClose }: {
   title: string;
   entries: GridEntry[];
   current?: number;
   sections?: GridSection[];
   choices?: PickerChoice[];
+  /** The heading of the choices (none by default). */
+  choicesLabel?: string;
   /** Category filter: value → label. */
   categories?: Record<number, string>;
   placeholder?: string;
@@ -65,7 +71,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
     ...sections.map((s) => ({ label: s.label, list: s.ids.map((id) => byId.get(id)).filter((e): e is GridEntry => !!e && match(e)) })),
     { label: sections.length || choices.length ? 'すべて' : '', list: entries.filter(match) },
   ].filter((s) => s.list.length);
-  const shownChoices = choices.filter((x) => !q || x.label.includes(q));
+  const shownChoices = choices.filter((x) => !q || x.label.includes(q) || !!x.keywords?.includes(q));
   return (
     <Dialog title={title} onClose={onClose}>
       <div className="row">
@@ -78,11 +84,12 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
         )}
       </div>
       <div className="picker-list" ref={grid}>
+        {shownChoices.length > 0 && choicesLabel && <h4 className="picker-heading">{choicesLabel}</h4>}
         {shownChoices.length > 0 && (
           <div className="monster-grid">
             {shownChoices.map((x) => (
-              <button key={`c${x.value}`} className={`monster-cell${x.value === current ? ' current' : ''}`} onClick={() => onPick(x.value)}>
-                <span className="photo photo-lg picker-none" />
+              <button key={`c${x.value}`} className={`monster-cell${x.value === current ? ' current' : ''}`} title={x.title} onClick={() => onPick(x.value)}>
+                {x.icon ?? <span className="photo photo-lg picker-none" />}
                 <span>{x.label}</span>
                 {x.sub && <span className="muted small">{x.sub}</span>}
               </button>

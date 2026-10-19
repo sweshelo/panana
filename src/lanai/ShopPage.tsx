@@ -90,7 +90,20 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
   const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
   const clerks = useMemo(() => (maps && !(maps instanceof Error) ? lanaiClerks(maps) : null), [maps]);
   // the random slots offered in the item picker (a kind; the pick is its negative)
-  const slotChoices = useMemo(() => SLOT_KINDS.map((k) => ({ value: -k, label: `ランダム枠: ${LANAI_ITEM_KINDS[k]}`, sub: `${lanaiShopSlotItems(session, k).length} 個から` })), [session, revision]);
+  // (kinds with no candidate are left out: a slot of one draws nothing; the search also finds a slot by its items' names)
+  const slotChoices = useMemo(() => SLOT_KINDS.flatMap((k) => {
+    const pool = lanaiShopSlotItems(session, k);
+    if (!pool.length) return [];
+    const names = pool.map((it) => it.name);
+    return [{
+      value: -k,
+      label: `ランダム枠: ${LANAI_ITEM_KINDS[k]}`,
+      sub: `${pool.length} 個から`,
+      icon: <span className="photo photo-lg item-badge item-kind-0">?</span>,
+      title: `${names.slice(0, 40).join('、')}${names.length > 40 ? ' …' : ''}`,
+      keywords: `ランダム ${names.join(' ')}`,
+    }];
+  }), [session, revision]);
   const book: ShopBookShop[] = shops.shops.map((s) => ({ id: s.row, label: `店 ${s.row}` }));
   const setRow = (shop: number, i: number, f: (b: Uint8Array) => void): void => {
     const rows = shops.rows(shop).map((r, j) => {
@@ -179,7 +192,7 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
         shops.set(s.id, rows);
         session.edited();
       }}
-      picker={(p) => <LanaiItemPicker session={session} current={0} title={p.title} choices={slotChoices} onClose={p.onClose} onPick={(row) => p.onPick(row < 0 ? -row : data.rowId(row))} />}
+      picker={(p) => <LanaiItemPicker session={session} current={0} title={p.title} choices={slotChoices} choicesLabel="ランダム枠 (店を開くと、その種別の候補から 1 つが並ぶ)" onClose={p.onClose} onPick={(row) => p.onPick(row < 0 ? -row : data.rowId(row))} />}
       sub={(s) => {
         const n = s.id === LANAI_CLERK_SHOP ? clerks?.length ?? 0 : 0;
         return `${shops.rows(s.id).length} 品${n ? `・店の人 ${n}` : ''}`;

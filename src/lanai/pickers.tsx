@@ -71,8 +71,8 @@ export function LanaiMonsterPicker({ session, current, title = 'モンスター�
 }
 
 /** Picks an item (ItemData row; the pick is the row number), or one of `choices` before them. */
-export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', choices = [], onPick, onClose }: {
-  session: LanaiSession; current: number; title?: string; choices?: PickerChoice[]; onPick: (row: number) => void; onClose: () => void;
+export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', choices = [], choicesLabel, onPick, onClose }: {
+  session: LanaiSession; current: number; title?: string; choices?: PickerChoice[]; choicesLabel?: string; onPick: (row: number) => void; onClose: () => void;
 }): ReactNode {
   const entries = useMemo(() => {
     const t = session.need('ItemData');
@@ -83,7 +83,7 @@ export function LanaiItemPicker({ session, current, title = 'アイテムを選�
     }
     return out;
   }, [session]);
-  return <GridPicker title={title} entries={entries} current={current} choices={choices} placeholder="名前か番号で絞り込み" onPick={onPick} onClose={onClose} />;
+  return <GridPicker title={title} entries={entries} current={current} choices={choices} choicesLabel={choicesLabel} placeholder="名前か番号で絞り込み" onPick={onPick} onClose={onClose} />;
 }
 
 /** Picks an action (ActionData row; the pick is the row number) from the table of their texts and users. */
