@@ -338,6 +338,8 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 .shop-items { width: auto; min-width: 420px; }
 .shop-items tr.hit { background: var(--panel2); }
 .shop-items tr.edited-row td:nth-child(3) { box-shadow: inset 2px 0 var(--warn); }
+.shop-items td.shop-item { padding: 2px 4px; }
+.shop-items td.shop-item .board { min-width: 220px; }
 .shop-ops { white-space: nowrap; }
 .shop-ops button { padding: 0 5px; }
 .shop-items.editable tr[draggable='true'] { cursor: grab; }
@@ -636,3 +638,12 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .lanai-stats h4 { margin: 14px 0 4px; }
 /* RPG FREE!'s talk page: the eight tones of a line side by side */
 .talk-tones { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 12px; }
+
+/* lanai shop: random slot pools (as the chest contents, in columns) and the shared limit's two inputs */
+.slot-pools { margin-top: 12px; }
+.slot-pool { margin: 8px 0; }
+.slot-pool .loot { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 12px; }
+.slot-pool .loot-row { grid-template-columns: 1fr 28px; }
+.slot-pool a.loot-item { color: inherit; text-decoration: none; }
+.shared-limit { display: inline-flex; gap: 4px; }
+.shared-limit input[type='number'] { width: 4.5em; }
