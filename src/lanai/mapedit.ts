@@ -22,6 +22,7 @@ import {
   type LanaiMaps,
   type LanaiTileSource,
 } from './maps';
+import { LANAI_GOAL_CHEST_LOOK, LANAI_RECOVERY_POINT } from './mapObjects';
 import type { LanaiTable } from './table';
 import { lanaiChestTreasureRow } from './treasure';
 
@@ -59,8 +60,8 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
     case 1: return `床のギミック ${raw[0x0d]}`;
     case 2: return `置物 #${u32(raw, 0)}`;
     case 3: return lanaiExitLabel(lanaiExitKind(raw));
-    case 4: return `宝箱 (見た目 ${u32(raw, 0)})`;
-    case 5: return `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
+    case 4: return u32(raw, 0) === LANAI_GOAL_CHEST_LOOK ? 'ゴールの宝箱 (見た目 3)' : `宝箱 (見た目 ${u32(raw, 0)})`;
+    case 5: return u32(raw, 0) === LANAI_RECOVERY_POINT ? '回復ポイント (種類 13)' : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
     case 8: return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
     case 9: return `地点 ${u32(raw, 0)}`;
   }
