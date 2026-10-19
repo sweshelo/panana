@@ -10,9 +10,12 @@
 // RPG3 (oahu): the party's states 33〜35 (conditionData 37〜39) add up the equipment as "% の掛け算" (combine 6, used by
 //   nothing else) at three places, each clamping to +0x2E − 1 (500 / 1000 / 5000): the effects of a member
 //   (FUN_0019FD2C), the party's state (FUN_002B7674) and its value (FUN_004CED08); FUN_004CEEF4 says whether it is full
-//   (the チャンス actions are refused then). The patch makes the maximum 0x7FFF for combine 6 at the four places (the
-//   values are s16 in the states, so 32766 % ≈ 327 倍 is the most they can hold), and saturates the member's product
-//   instead of wrapping it.
+//   (the チャンス actions are refused then). The party's state is an s16 that both the equipment (at the battle's
+//   start, FUN_0029BF64) and the actions (FUN_0029BE84) multiply into, so it cannot be recomputed from the members. The
+//   patch keeps it in the same s16 in a wider form for these rows: values below 16384 % as they are, above it
+//   16384 + (exponent − 14) × 512 + a 9-bit mantissa (up to 2^31 %, within 0.2 % per step); the product and the value
+//   (× the temporary +0x0A) are computed in 32 bits and never full. A member's own product stays an s16 (5 slots of
+//   300 % are 243 倍 at most) with its maximum made 0x7FFF and saturated instead of wrapped.
 // RPG FREE! (lanai, naauao lanai/monsters.md §6): the states 93〜95 (ConditionData 71〜73, "おたから+" 500 / "レア+" 1000 /
 //   "激レア+" 2000) are sums (combine 2, shared with the other "+" states). They are found by their +0x10 (0x8000006A〜
 //   0x8000006C). Their maximum becomes 0x7FFF in the combining of a member's effects (FUN_0016518C), the party's state
@@ -29,7 +32,7 @@ export const DROP_CAP_TITLE = 'ドロップ率の天井を撤廃';
 /** What the patch does in each title, for the export dialogs. */
 export const DROP_CAP_NOTE: Record<TitleKey, string> = {
   kahara: 'おたから・レア・激レアの倍率 (装備・ワザの「ドロップ率アップ」) を、5 倍・10 倍・50 倍で止めずにそのまま掛けます。',
-  oahu: 'おたから・レア・激レアの倍率 (装備・ワザ) を、5 倍・10 倍・50 倍で止めずにそのまま掛けます。値は 16 ビットで持つので、327 倍 (32766 %) が限界です。',
+  oahu: 'おたから・レア・激レアの倍率 (装備・ワザ) を、5 倍・10 倍・50 倍で止めずにそのまま掛けます (約 2147 万倍まで。164 倍を超えると 0.2 % ほどの誤差が出ます)。',
   lanai: 'おたから+・レア+・激レア+ (装備・ワザ) を、500 %・1000 %・2000 % で止めずにそのまま足します。値は 16 ビットで持つので、32767 % が限界です。',
 };
 
@@ -117,20 +120,21 @@ sv_loop:
   bx lr
 `;
 
-const OAHU = `; ${DROP_CAP_TITLE} (RPG3): 合わせ方 6 (% の掛け算。おたから・レア・激レア = conditionData 37〜39 だけが使う) の
-; 上限を 0x7FFF にする (メンバーの効果・パーティーの状態・その値・満タンの判定)
+const OAHU = `; ${DROP_CAP_TITLE} (RPG3): 合わせ方 6 (% の掛け算。おたから・レア・激レア = conditionData 37〜39 だけが使う) を上限で止めない。
+; パーティーの状態の値 (+0x08、s16) は 16383 % までそのまま、それより上は 16384 + 指数 × 512 + 仮数 (9 ビット) で持ち
+; (2^31 % まで、誤差 0.2 % 以内)、掛け算と値の読み出しは 32 ビットで行う
 @0x19FD4C
-  bl max_r5_r0 ; FUN_0019FD2C: ldrsh r5, [r0, #0x2e]
+  bl max_r5_r0 ; FUN_0019FD2C (メンバーの効果): ldrsh r5, [r0, #0x2e]
 @0x19FE1C
-  ssat r4, #16, r0 ; 合わせ方 6 の積: sxth (桁あふれで負になる) の代わりに飽和
+  ssat r4, #16, r0 ; 合わせ方 6 の積: sxth (桁あふれで負になる) の代わりに飽和 (装備 5 枠で 243 倍まで: s16 に収まる)
 @0x2B7690
-  bl max_r4_r2 ; FUN_002B7674: ldrsh r4, [r2, #0x2e]
+  bl dc_acc ; FUN_002B7674 (パーティーの状態に掛ける): ldrsh r4, [r2, #0x2e]
 @0x4CED28
-  bl max_r4_r2 ; FUN_004CED08: ldrsh r4, [r2, #0x2e]
+  bl dc_val ; FUN_004CED08 (状態の値): ldrsh r4, [r2, #0x2e]
 @0x4CEF08
-  bl max_r4_r0 ; FUN_004CEEF4: ldrsh r4, [r0, #0x2e]
+  bl dc_full ; FUN_004CEEF4 (満タンか): ldrsh r4, [r0, #0x2e]
 
-; rX = conditionData +0x2E (最大)、合わせ方 (+0x36 の下位 4 ビット) が 6 なら 0x7FFF。ip とフラグだけを壊す
+; メンバーの効果の最大: 合わせ方 6 なら 0x7FFF。ip とフラグだけを壊す
 @cave max_r5_r0
   ldrsh r5, [r0, #0x2e]
   ldrb ip, [r0, #0x36]
@@ -139,21 +143,97 @@ const OAHU = `; ${DROP_CAP_TITLE} (RPG3): 合わせ方 6 (% の掛け算。お�
   moveq r5, #0x7f00
   orreq r5, r5, #0xff
   bx lr
-@cave max_r4_r2
-  ldrsh r4, [r2, #0x2e]
-  ldrb ip, [r2, #0x36]
-  and ip, ip, #0xf
+
+; FUN_002B7674 の中 (push {r4-r8, lr} のあと): r5 = 状態、r0 = +0x08、r1 = 掛ける値、r2 = conditionData の行、r3 = +0x36
+@cave dc_acc
+  and ip, r3, #0xf
   cmp ip, #6
-  moveq r4, #0x7f00
-  orreq r4, r4, #0xff
-  bx lr
-@cave max_r4_r0
-  ldrsh r4, [r0, #0x2e]
+  ldrshne r4, [r2, #0x2e]
+  bxne lr
+  ldrsh r6, [r2, #0x2c] ; 最小
+  mov r4, r1
+  bl dc_decode
+  smull r2, r1, r0, r4
+  mov r0, r2
+  mov r2, #100
+  mov r3, #0
+  bl FUN_00129ae4 ; 64 ビットの符号つき割り算
+  bl dc_sat
+  cmp r0, r6
+  movlt r0, r6
+  bl dc_encode
+  strh r0, [r5, #8]
+  pop {r4, r5, r6, r7, r8, pc}
+
+; FUN_004CED08 の中 (push {r4-r6, lr} のあと): r1 = 状態、r0 = +0x08、r2 = 行、r3 = +0x36 -> r0 = +0x08 × +0x0A / 100 (32 ビット)
+@cave dc_val
+  and ip, r3, #0xf
+  cmp ip, #6
+  ldrshne r4, [r2, #0x2e]
+  bxne lr
+  ldrsh r5, [r2, #0x2c] ; 最小
+  mov r4, r1
+  bl dc_decode
+  ldrsh r1, [r4, #0xa] ; 一時的な倍率 (%)
+  smull r2, r3, r0, r1
+  mov r0, r2
+  mov r1, r3
+  mov r2, #100
+  mov r3, #0
+  bl FUN_00129ae4
+  bl dc_sat
+  cmp r0, r5
+  movlt r0, r5
+  pop {r4, r5, r6, pc}
+
+; FUN_004CEEF4 の中 (push {r4-r6, lr} のあと): r0 = 行。合わせ方 6 は満タンにならない
+@cave dc_full
   ldrb ip, [r0, #0x36]
   and ip, ip, #0xf
   cmp ip, #6
-  moveq r4, #0x7f00
-  orreq r4, r4, #0xff
+  ldrshne r4, [r0, #0x2e]
+  bxne lr
+  mov r0, #0
+  pop {r4, r5, r6, pc}
+
+; r0 = +0x08 の持ち方 (s16) -> r0 = % (ip を壊す)
+@cave dc_decode
+  cmp r0, #0x4000
+  bxlt lr
+  sub r0, r0, #0x4000
+  lsr ip, r0, #9
+  cmp ip, #16
+  movgt ip, #16
+  lsl r0, r0, #23
+  lsr r0, r0, #23
+  orr r0, r0, #0x200
+  add ip, ip, #5
+  lsl r0, r0, ip
+  bx lr
+
+; r0 = % -> r0 = +0x08 の持ち方 (ip を壊す)
+@cave dc_encode
+  cmp r0, #0x4000
+  blt dc_small
+  clz ip, r0
+  rsb ip, ip, #22 ; (最上位ビット) − 9
+  lsr r0, r0, ip
+  sub r0, r0, #0x200
+  sub ip, ip, #5
+  add r0, r0, ip, lsl #9
+  add r0, r0, #0x4000
+  bx lr
+dc_small:
+  cmn r0, #0x8000
+  movlt r0, #0
+  sublt r0, r0, #0x8000
+  bx lr
+
+; r1:r0 (64 ビット) -> r0 (32 ビットに飽和)
+@cave dc_sat
+  cmp r1, r0, asr #31
+  mvngt r0, #0x80000000
+  movlt r0, #0x80000000
   bx lr
 `;
 

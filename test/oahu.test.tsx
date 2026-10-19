@@ -23,6 +23,8 @@ import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { DROP_CAP_ID, dropCapProblem } from '../src/game/dropcap';
+import { ArmMachine } from '../src/game/arm';
+import { OAHU_TEXT_END } from '../src/oahu/scripts';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
 import { readField } from '../src/game/tabledef';
@@ -603,6 +605,15 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(u32(patched, 0x19fe1c - 0x100000)).toBe(0xe6af4010); // ssat r4, #16, r0
     for (const at of [0x19fd4c, 0x2b7690, 0x4ced28, 0x4cef08]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb); // bl to the cave
     expect(dropCapProblem(patched, 'oahu')).not.toBeNull();
+    // the party's state multiplied by five 300 % items, × 200 %: 243 倍 (vanilla stops at 5000 %), and never full
+    for (const [code, acc, value, full] of [[s.code!.code, 5000, 5000, 1], [patched, 16631, 48576, 0]] as const) {
+      const m = new ArmMachine(code, { maxDepth: 6, textEnd: OAHU_TEXT_END });
+      const row = m.alloc(0x40), st = m.alloc(0x10);
+      m.write(row + 0x28, 100, 2); m.write(row + 0x2e, 5001, 2); m.write(row + 0x36, 6, 1);
+      m.write(st, row, 4); m.write(st + 8, 100, 2); m.write(st + 0xa, 200, 2);
+      for (let i = 0; i < 5; i++) m.run(0x2b7674, [st, 300]);
+      expect([m.read(st + 8, 2), m.run(0x4ced08, [st]) | 0, m.run(0x4ceef4, [st])]).toEqual([acc, value, full]);
+    }
     s.dropCap = false;
     s.codePatches = [];
   });
