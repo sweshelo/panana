@@ -22,6 +22,9 @@ import {
   SHOP_PRICE, SHOP_SHARED_COUNTER, SHOP_SHARED_LIMIT, SHOP_SLOT, type LanaiContentShops, type LanaiShopRow,
 } from './shops';
 
+/** The page of the items a random slot of `kind` draws (the kind's pool). */
+export const lanaiShopSlotHref = (kind: number): string => `#/shops/slot.${kind.toString(16)}`;
+
 export const lanaiShopHref = (content: number, shop?: number): string => `#/shops/${content}${shop === undefined ? '' : `.${shop}`}`;
 
 const LIMIT_HELP = '買える数の上限 (ShopItem +0x26。0 = 制限なし。買った数は店と並びの位置ごとに数えます)。+0x27 が 0 でない行は、+0x27 が上限で、買った数は +0x28 の番号ごと (同じ番号の行で共通) に数えます (naauao lanai/shops.md §2)。';
@@ -32,6 +35,8 @@ const COUNTER_HELP = '共通の上限の番号 (ShopItem +0x28)。買った数�
 const COND_HELP = '陳列の条件 (ShopItem +0x10 が種類、+0x08 が番号、+0x0C が比べる値)。条件を満たさないと品物は並びません。';
 
 const isItem = (v: number): boolean => v >= 0x80000000;
+
+const slotKindName = (k: number): string => LANAI_ITEM_KINDS[k] ?? `種別 0x${k.toString(16)}`;
 
 /** The kinds a new random slot can draw (the kinds of the item book; 0x56 is drawn as 0x55). */
 const SLOT_KINDS = Object.keys(LANAI_ITEM_KINDS).map(Number).filter((k) => k !== 0x56);
@@ -54,6 +59,11 @@ function conditionText(b: Uint8Array): string {
 const CLERK_HELP = '動作の型 0x80000032 (店の人) の EventObject の行。台詞のあと店を開きます。どの店を開くかは引数になく、このコンテンツの Shop の行 0 と推定しています (店の人がいるコンテンツは、どれも店が 1 つだけ。naauao lanai/shops.md §4)。';
 
 export function LanaiShopPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+  const slot = /^slot\.([0-9a-f]+)$/i.exec(arg ?? '');
+  return slot ? <SlotKindPage session={session} kind={parseInt(slot[1]!, 16)} /> : <ShopsPage session={session} arg={arg} />;
+}
+
+function ShopsPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const contents = useMemo(() => lanaiContents(session), [session]);
   const m = /^(\d+)(?:\.(\d+))?$/.exec(arg ?? '');
   const index = useSticky<number>(m ? Number(m[1]) : undefined, (i) => i < contents.length, () => 0);
@@ -179,7 +189,8 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
           const names = pool.map((it) => it.name);
           return {
             many: true,
-            name: `ランダム枠: ${LANAI_ITEM_KINDS[kind] ?? `種別 0x${kind.toString(16)}`} (${pool.length} 個から)`,
+            href: lanaiShopSlotHref(kind),
+            name: `ランダム枠: ${slotKindName(kind)} (${pool.length} 個から)`,
             icon: <span className="photo item-badge item-kind-0" title={`${SLOT_HELP}\n${names.slice(0, 40).join('、')}${names.length > 40 ? ' …' : ''}`}>?</span>,
           };
         }
@@ -286,7 +297,7 @@ function Clerks({ session, maps, clerks, content, multi }: {
  * The pools of the random slots of a shop, one per kind: the items a slot draws from (each as likely), with × to take
  * one out and ＋ to put one of the kind in (ItemDataCore +0x30 bit 0, shared by every slot of the kind in every shop).
  */
-function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: number[]; rows: LanaiShopRow[] }): ReactNode {
+function SlotPools({ session, kinds, rows, heading = true }: { session: LanaiSession; kinds: number[]; rows: LanaiShopRow[]; heading?: boolean }): ReactNode {
   useLanaiRevision(session);
   const [adding, setAdding] = useState<number | null>(null);
   const set = (it: LanaiItem, on: boolean): void => {
@@ -296,7 +307,7 @@ function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: num
   const core = session.need('ItemDataCore');
   return (
     <div className="slot-pools">
-      <h3>ランダム枠の候補 <InfoTip text={POOL_HELP} /></h3>
+      {heading && <h3>ランダム枠の候補 <InfoTip text={POOL_HELP} /></h3>}
       {kinds.map((k) => {
         const pool = lanaiShopSlotItems(session, k);
         const fixed = new Set(rows.map((r) => r.item));
@@ -305,12 +316,12 @@ function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: num
         return (
           <div key={k} className="slot-pool">
             <div className="row">
-              <strong>{LANAI_ITEM_KINDS[k] ?? `種別 0x${k.toString(16)}`}</strong>
-              <span className="muted small">{`枠 ${slots.join('・')}・この店では ${draws.length} 個から 1 つ (各 ${draws.length ? Math.round(1000 / draws.length) / 10 : 0}%)${draws.length > 300 ? '・300 個を超えた分は選ばれません' : ''}`}</span>
+              {heading ? <a href={lanaiShopSlotHref(k)}><strong>{slotKindName(k)}</strong></a> : <strong>{slotKindName(k)}</strong>}
+              <span className="muted small">{`${slots.length ? `枠 ${slots.join('・')}・この店では ` : ''}${draws.length} 個から 1 つ (各 ${draws.length ? Math.round(1000 / draws.length) / 10 : 0}%)${draws.length > 300 ? '・300 個を超えた分は選ばれません' : ''}`}</span>
             </div>
             <div className="loot">
-              {pool.map((it) => (
-                <div key={it.row} className={`loot-row${fixed.has(it.id) ? ' muted' : ''}`}>
+              {pool.map((it, n) => (
+                <div key={it.row} className={`loot-row${fixed.has(it.id) || n >= 300 ? ' muted' : ''}`} title={n >= 300 ? '300 個を超えた分なので選ばれません' : undefined}>
                   <span className="loot-item">
                     <a className="loot-item" href={lanaiItemHref(it.row)} title={fixed.has(it.id) ? 'この店に固定の品としてあるので、この店の枠では選ばれません' : it.name}>
                       {lanaiItemIcon(session, it.row, it.name)}
@@ -324,6 +335,24 @@ function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: num
               {!pool.length && <div className="muted">候補がありません (枠に何も出ないおそれがあります)。</div>}
               <button className="loot-add" onClick={() => setAdding(k)}>＋ 追加</button>
             </div>
+            {!heading && (() => {
+              const out = lanaiSlotKindItems(session, k).filter((it) => !lanaiInSlotPool(session, it));
+              return out.length > 0 && (
+                <>
+                  <h4>{`同じ種別で候補に入っていないアイテム (${out.length} 個)`}</h4>
+                  <div className="loot">
+                    {out.map((it) => (
+                      <div key={it.row} className="loot-row">
+                        <span className="loot-item">
+                          <a className="loot-item" href={lanaiItemHref(it.row)}>{lanaiItemIcon(session, it.row, it.name)}{it.name}</a>
+                        </span>
+                        <button title="候補に入れる" onClick={() => set(it, true)}>＋</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         );
       })}
@@ -338,6 +367,73 @@ function SlotPools({ session, kinds, rows }: { session: LanaiSession; kinds: num
             if (it) set(it, true);
           }} />
       )}
+    </div>
+  );
+}
+
+/**
+ * The page of a random slot's kind (#/shops/slot.<kind>): the items its slots draw from, edited as in a shop, and the
+ * slots of the shops that draw from it. The pool is not a table of its own: it is the items of the kind with
+ * ItemDataCore +0x30 bit 0, so a new pool needs a kind the items have.
+ */
+function SlotKindPage({ session, kind }: { session: LanaiSession; kind: number }): ReactNode {
+  const revision = useLanaiRevision(session);
+  const contents = useMemo(() => lanaiContents(session), [session]);
+  const [all, setAll] = useState(false);
+  // the shops of content 0 (the ROM's slots are there), or of every content when asked
+  const users = useAsync(async () => {
+    const out: { content: number; shop: number; slot: number; index: number }[] = [];
+    for (const c of all ? contents : contents.slice(0, 1)) {
+      const s = await lanaiShops(session, c);
+      for (const sh of s?.shops ?? [])
+        s!.rows(sh.row).forEach((r, index) => {
+          if (lanaiShopSlotKind(r.bytes) === kind || (kind === 0x55 && lanaiShopSlotKind(r.bytes) === 0x56)) out.push({ content: c.index, shop: sh.row, slot: r.bytes[SHOP_SLOT]!, index });
+        });
+    }
+    return out;
+  }, [session, contents, all, revision]);
+  const kinds = useMemo(() => SLOT_KINDS.map((k) => ({ k, n: lanaiShopSlotItems(session, k).length })), [session, revision]);
+  return (
+    <div className="book">
+      <div className="book-side">
+        <div className="row"><a href={lanaiShopHref(0)}>← ショップ</a></div>
+        <div className="book-list">
+          <table className="book-table">
+            <thead><tr><th>種別</th><th>ランダム枠の候補</th><th>数</th></tr></thead>
+            <tbody>
+              {kinds.map(({ k, n }) => (
+                <tr key={k} className={k === kind ? 'active' : n ? '' : 'muted'} onClick={() => (location.hash = lanaiShopSlotHref(k))}>
+                  <td className="num muted">{`0x${k.toString(16)}`}</td>
+                  <td>{slotKindName(k)}</td>
+                  <td className="num">{n}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="book-detail">
+        <div className="book-head">
+          <h2>{`ランダム枠: ${slotKindName(kind)}`}</h2>
+          <span className="muted">{`種別 0x${kind.toString(16)} (ItemDataCore +0x32)`}</span>
+        </div>
+        <p className="muted small">{POOL_HELP}</p>
+        <SlotPools session={session} kinds={[kind]} rows={[]} heading={false} />
+        <h3>この候補から選ぶ枠</h3>
+        {users === undefined ? <p className="muted">読み込み中…</p>
+          : users instanceof Error ? <p className="error">{users.message}</p>
+          : users.length ? (
+            <ul>
+              {users.map((u) => (
+                <li key={`${u.content}.${u.shop}.${u.index}`}>
+                  <a href={lanaiShopHref(u.content, u.shop)}>{`${u.content}. ${contentTitle(contents[u.content]!)} の店 ${u.shop}`}</a>
+                  <span className="muted">{` ${u.index + 1} 番目・枠 #${u.slot}`}</span>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="muted">{all ? 'どの店にもありません。' : 'コンテンツ 0 の店にはありません。'}</p>}
+        {!all && <button onClick={() => setAll(true)}>すべてのコンテンツの店を調べる</button>}
+      </div>
     </div>
   );
 }

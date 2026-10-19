@@ -177,6 +177,13 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     }
   }, 300000);
 
+  test('the page of a random slot kind lists its pool (#/shops/slot.51)', () => {
+    const html = renderToString(<LanaiShopPage session={session} arg="slot.51" />);
+    expect(html).toContain('ランダム枠: 庭: いえ');
+    const first = lanaiShopSlotItems(session, 0x51)[0]!;
+    expect(html).toContain(first.name);
+  }, 300000);
+
   test('content 24: a longer stock keeps the other 24 shops, is saved and put back', async () => {
     const c = lanaiContents(session)[24]!;
     const shops = (await lanaiShops(session, c))!;
