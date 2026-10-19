@@ -71,6 +71,49 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     for (const key of rows.keys()) for (const n of await names(key)) expect(n).not.toBe('');
   }, 300000);
 
+  // the defaults the code picks (FUN_0044F9EC, FUN_0021D744, FUN_0021C844; naauao lanai/key-objects.md)
+  test('goal chests take gimk_05_trebox_goal; clear warps and recovery points take no model; heals gimk_04_heal', async () => {
+    const mapObject = s.table('MapObject');
+    let goals = 0, warps = 0, recovery = 0;
+    const goalRows = new Set<number>(), healRows = new Set<number>();
+    for (const maps of all) {
+      const mapChara = maps.contentTable('MapChara');
+      for (const info of maps.maps) {
+        if (info.world) continue;
+        const doc = maps.doc(info);
+        const ctx = { mapObject, mapChara, events: maps.eventTable(info.dungeon), indoor: isIndoor(doc) };
+        for (const r of doc.recs[4] ?? []) {
+          if (r.raw[0] !== 3) continue;
+          goals++;
+          const look = lanaiRecordLook(4, r.raw, ctx);
+          if (look?.model) goalRows.add(look.model.row);
+        }
+        for (const r of doc.recs[3] ?? []) {
+          if (r.raw[0x15] !== 3) continue;
+          warps++;
+          expect(lanaiRecordLook(3, r.raw, ctx)).toBeNull();
+        }
+        for (const r of doc.recs[5] ?? []) {
+          const kind = r.raw[0];
+          if (kind === 13) {
+            recovery++;
+            expect(lanaiRecordLook(5, r.raw, ctx)).toBeNull();
+          }
+          if (kind === 3) {
+            const look = lanaiRecordLook(5, r.raw, ctx);
+            if (look?.model) healRows.add(look.model.row);
+          }
+        }
+      }
+    }
+    // 75 goal chests, 46 clear warps, 71 recovery points (key-objects.md §2〜§3)
+    expect(goals).toBeGreaterThan(50);
+    expect(warps).toBeGreaterThan(40);
+    expect(recovery).toBeGreaterThan(50);
+    expect((await Promise.all([...goalRows].map(modelName))).filter((n) => n === 'gimk_05_trebox_goal').length).toBe(1);
+    if (healRows.size) expect((await Promise.all([...healRows].map(modelName))).some((n) => n.startsWith('gimk_04_heal'))).toBe(true);
+  }, 300000);
+
   test('NPCs are scaled by MapObject +0x1C', () => {
     const mo = s.table('MapObject')!;
     let npcScaled = 0;

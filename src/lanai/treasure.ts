@@ -1,6 +1,7 @@
-// RPG FREE!'s chest contents (naauao lanai/map.md §5.2, §7.1): a chest's EventObject row has an action of type
-// 0x8000000E (looks 0 / 2) or 0x80000010 (look 1) whose first argument (+0x14 for the first action) is a row number
-// of the content's TreasureGroup. A TreasureGroup row has RPG3's shape (oahu/treasure.ts): 10 entries of
+// RPG FREE!'s chest contents (naauao lanai/map.md §5.2, §7.1, key-objects.md §2): a chest's EventObject row has an
+// action of type 0x8000000E (looks 0 / 2), 0x80000010 (look 1) or 0x8000002E (look 3, the goal chest) whose first
+// argument (+0x14 for the first action) is a row number of the content's TreasureGroup. A TreasureGroup row has RPG3's
+// shape (oahu/treasure.ts): 10 entries of
 // {u32 value, u16 weight, u8 kind, u8 0xD0}; opening the chest picks one entry with a chance by weight. Empty entries
 // are {0x80000000, 1, 1, 0xD0} (RPG3's are value 0).
 import { u16, u32, w16, w32 } from '../util/bytes';
@@ -12,7 +13,11 @@ export const LANAI_TREASURE_SLOTS = 10;
 export const LANAI_TREASURE_EMPTY = 0x80000000;
 
 /** Action types of chests (map.md §5.2): their first argument is the TreasureGroup row. */
-export const LANAI_CHEST_ACTIONS: Record<number, string> = { 0x8000000e: '宝箱 (見た目 0 / 2)', 0x80000010: '宝箱 (見た目 1)' };
+export const LANAI_CHEST_ACTIONS: Record<number, string> = {
+  0x8000000e: '宝箱 (見た目 0 / 2)',
+  0x80000010: '宝箱 (見た目 1)',
+  0x8000002e: 'ゴールの宝箱 (見た目 3)',
+};
 
 /**
  * What an entry gives (+0x06), as seen in the ROM's rows: 1 an item (an ItemData row ID), 2 G (the value is the
