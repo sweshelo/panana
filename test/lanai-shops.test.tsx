@@ -100,9 +100,9 @@ describe('RPG FREE! shop stock edits', () => {
     s.items.setRow(1, t);
     const n = s.newRow(0, id(4)).bytes;
     expect([n[SHOP_COND], n[SHOP_SLOT], n[SHOP_LIMIT]]).toEqual([0, 0, 0]);
-    // a kind makes a random slot with the next unused number
+    // a kind makes a random slot with the lowest unused number (row 1 has +0x25 but is an item, not a slot)
     const k = s.newRow(1, 0x61).bytes;
-    expect([lanaiShopSlotKind(k), k[SHOP_SLOT]]).toEqual([0x61, 3]);
+    expect([lanaiShopSlotKind(k), k[SHOP_SLOT]]).toEqual([0x61, 1]);
   });
 
   test('rows added by an edit are removed again when the stock shrinks', () => {

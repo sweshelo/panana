@@ -184,11 +184,13 @@ export class LanaiContentShops {
     return rowOf(item, b);
   }
 
-  /** A slot number no row of the content's ShopItem uses (the save keeps one item per number). */
+  /** The lowest slot number no row of the content's ShopItem uses (the save keeps one item per number: 1〜99). */
   nextSlot(): number {
-    let most = 0;
-    for (let i = 0; i < this.items.rows; i++) most = Math.max(most, this.items.u8(i, SHOP_SLOT));
-    return Math.min(most + 1, 0xff);
+    const used = new Set<number>();
+    for (let i = 0; i < this.items.rows; i++) if (lanaiShopSlotKind(this.items.row(i)) >= 0) used.add(this.items.u8(i, SHOP_SLOT));
+    let n = 1;
+    while (used.has(n) && n < LANAI_SHOP_SLOTS) n++;
+    return n;
   }
 
   /** Writes a shop's stock (see the top of the file). */
@@ -292,6 +294,9 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
 /** The Shop row a content's clerks open: row 0 (assumed; naauao lanai/shops.md §4). */
 export const LANAI_CLERK_SHOP = 0;
 
+
+/** The random slots the save keeps (FlagData 0x97: 100 values; number 0 is no slot). */
+export const LANAI_SHOP_SLOTS = 99;
 
 /** ItemDataCore +0x30 bit 0: the item can be drawn by a random slot (FUN_001BDD1C). */
 export const LANAI_SLOT_POOL_BIT = 1;

@@ -18,17 +18,17 @@ import { useLanaiRevision } from './MonsterEditor';
 import { lanaiItemIcon, LanaiItemPicker } from './pickers';
 import type { LanaiSession } from './session';
 import {
-  LANAI_CLERK_SHOP, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopItemRow, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_COND_NUMBER, SHOP_COND_VALUE, SHOP_LIMIT,
+  LANAI_CLERK_SHOP, LANAI_SHOP_SLOTS, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopItemRow, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_COND_NUMBER, SHOP_COND_VALUE, SHOP_LIMIT,
   SHOP_PRICE, SHOP_SHARED_COUNTER, SHOP_SHARED_LIMIT, SHOP_SLOT, type LanaiContentShops, type LanaiShopRow,
 } from './shops';
 
 export const lanaiShopHref = (content: number, shop?: number): string => `#/shops/${content}${shop === undefined ? '' : `.${shop}`}`;
 
 const LIMIT_HELP = '買える数の上限 (ShopItem +0x26。0 = 制限なし。買った数は店と並びの位置ごとに数えます)。+0x27 が 0 でない行は、+0x27 が上限で、買った数は +0x28 の番号ごと (同じ番号の行で共通) に数えます (naauao lanai/shops.md §2)。';
-const POOL_HELP = '枠は、その種別のアイテムのうち ItemDataCore +0x30 の bit 0 が立っているものから 1 つを、毎日選び直します (一様。同じ店に固定の品としてあるものは除く)。候補を変えると、同じ種別のすべての店の枠が変わり、アイテム図鑑の ItemDataCore の変更として書き出されます。ほかの種別のアイテムは、アイテム図鑑で種別を変えないと加えられません。';
-const SLOT_HELP = 'ランダム枠 (ShopItem +0x00 が種別、+0x25 が枠の番号)。店を開くと、その種別のアイテムから 1 つが選ばれます。選び直すのは日付が変わったとき。選ばれたアイテムはセーブに枠の番号ごとに残ります (naauao lanai/shops.md §2.1)。';
-const SHARED_HELP = '共通の上限 (ShopItem +0x27)。0 でなければ「買える数」(+0x26) より優先されます。買った数は右の番号 (+0x28) ごとに数え、同じ番号の行どうし (ほかの店も) で合算します。0 にすると上限は「買える数」に戻ります。';
-const COUNTER_HELP = '共通の上限の番号 (ShopItem +0x28)。買った数をセーブのこの番号に記録します (200 未満のときだけ)。';
+const POOL_HELP = '枠は、その種別のアイテムのうち ItemDataCore +0x30 の bit 0 が立っているものから 1 つを、毎日選び直します (一様。同じ店に固定の品としてあるものは除く)。候補を変えると、同じ種別のすべての店の枠が変わり、アイテム図鑑の ItemDataCore の変更として書き出されます。ほかの種別のアイテムは、アイテム図鑑で種別を変えないと加えられません。この bit を読むのはランダム枠の候補選びだけです (ほかの処理には影響しません)。候補は ItemData の行の順に最初の 300 個までです。';
+const SLOT_HELP = 'ランダム枠 (ShopItem +0x00 が種別、+0x25 が枠の番号)。店を開くと、その種別のアイテムから 1 つが選ばれます。選び直すのは日付が変わったとき。選ばれたアイテムはセーブに枠の番号ごとに残ります。枠の番号は 1〜99 (セーブの 0x97 は 100 個)。同じ番号の枠は、ほかの店にあっても種別が違っても同じアイテムになります (naauao lanai/shops.md §2.1)。';
+const SHARED_HELP = '共通の上限 (ShopItem +0x27)。0 でなければ「買える数」(+0x26) より優先されます。買った数は右の番号 (+0x28) ごとに数え、同じ番号の行どうし (ほかの店も) で合算します。0 にすると上限は「買える数」に戻ります。買った数はセーブに 99 までしか記録されないので、100 以上の上限は 99 個買ったあとも残りが減らず、実質無制限になります。1 回に買える数は所持の上限 (ItemDataCore +0x34、ほぼ 99。所持数はコードで 99 に頭打ち) でも止まります。';
+const COUNTER_HELP = '共通の上限の番号 (ShopItem +0x28)。買った数をセーブのこの番号に記録します (0〜199)。200 以上にすると記録されず、店に入るたびに上限まで買えます。';
 const COND_HELP = '陳列の条件 (ShopItem +0x10 が種類、+0x08 が番号、+0x0C が比べる値)。条件を満たさないと品物は並びません。';
 
 const isItem = (v: number): boolean => v >= 0x80000000;
@@ -128,7 +128,13 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
           : r.bytes[SHOP_SHARED_LIMIT] ? <span title={SHARED_HELP}>{`${r.bytes[SHOP_SHARED_LIMIT]} (#${r.bytes[SHOP_SHARED_COUNTER]})`}</span> : '',
       }] : []),
       ...(all.some((r) => r.bytes[SHOP_COND]) ? [{ head: '陳列の条件', className: 'muted small', cell: (r: LanaiShopRow) => <span title={COND_HELP}>{conditionText(r.bytes)}</span> }] : []),
-      ...(all.some((r) => lanaiShopSlotKind(r.bytes) >= 0) ? [{ head: '枠', className: 'num', cell: (r: LanaiShopRow) => (lanaiShopSlotKind(r.bytes) >= 0 ? <span title={SLOT_HELP}>{`#${r.bytes[SHOP_SLOT]}`}</span> : '') }] : []),
+      ...(all.some((r) => lanaiShopSlotKind(r.bytes) >= 0) ? [{
+        head: '枠',
+        className: 'num',
+        cell: (r: LanaiShopRow, i: number) => lanaiShopSlotKind(r.bytes) < 0 ? ''
+          : editable ? <NumberInput value={r.bytes[SHOP_SLOT]!} min={1} max={255} title={SLOT_HELP} onCommit={(v) => setRow(s.id, i, (b) => (b[SHOP_SLOT] = v))} />
+          : <span title={SLOT_HELP}>{`#${r.bytes[SHOP_SLOT]}`}</span>,
+      }] : []),
       ...(all.some((r) => u32(r.bytes, SHOP_PRICE)) ? [{ head: '+0x04', className: 'num muted', cell: (r: LanaiShopRow) => <span title="値段の欄と推定 (値段を求める処理に渡される)。">{u32(r.bytes, SHOP_PRICE) || ''}</span> }] : []),
     ];
   };
@@ -184,6 +190,14 @@ function ShopList({ session, shops, side, arg }: { session: LanaiSession; shops:
         if (!rows.length) w.push('品物のない店はゲームで確かめていません (開いたときに止まるおそれがあります)。');
         if (rows.length > shops.originalMax) w.push(`このコンテンツで一番多い店は ${shops.originalMax} 品です。それを超える数はゲームで確かめていません。`);
         if (rows.some((r) => items.get(r.item)?.buy === 0)) w.push('買値 0 のアイテムがあります (タダで買えます)。');
+        const slots = rows.filter((r) => lanaiShopSlotKind(r.bytes) >= 0).map((r) => r.bytes[SHOP_SLOT]!);
+        if (slots.some((n) => n > LANAI_SHOP_SLOTS)) w.push(`枠の番号が ${LANAI_SHOP_SLOTS} を超えています (セーブに残らず、店を開くたびに選び直されます)。`);
+        const others = shops.shops.filter((x) => x.row !== s.id).flatMap((x) => shops.rows(x.row)).filter((r) => lanaiShopSlotKind(r.bytes) >= 0).map((r) => r.bytes[SHOP_SLOT]!);
+        const dup = [...new Set(slots.filter((n, i) => slots.indexOf(n) !== i || others.includes(n)))];
+        if (dup.length) w.push(`同じ番号の枠があります (${dup.map((n) => `#${n}`).join('、')})。同じ番号の枠には同じアイテムが並びます。`);
+        if (rows.some((r) => r.bytes[SHOP_SHARED_LIMIT]! > 99)) w.push('共通の上限が 99 を超えています (99 個買ったあとは残りが減らず、実質無制限です)。');
+        if (rows.some((r) => r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_SHARED_COUNTER]! >= 200)) w.push('共通の上限の番号が 200 以上の行は、買った数が記録されません (店に入るたびに上限まで買えます)。');
+        if (rows.some((r, i) => i >= 50 && !r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_LIMIT])) w.push('51 番目より後ろの品の「買える数」は数えられないので、買えなくなります (共通の上限を使ってください)。');
         return w;
       }}
       exportNote={`変更はコンテンツ ${content.index} のアーカイブ (${content.archive}) の ShopItem に書き出されます。品数を変えると、後ろの店の行がずれ、その店の Shop +0x00 も書き換わります。`}
