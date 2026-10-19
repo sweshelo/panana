@@ -39,6 +39,8 @@ export class Game {
   switchVersion = 0;
   /** Code patches (game/patch.ts), exported in code.ips when enabled. */
   codePatches: CodePatch[] = [];
+  /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to code.ips. */
+  dropCap = false;
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;

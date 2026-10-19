@@ -25,6 +25,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
+import { dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { applyIps } from '../src/rom/ips';
 import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
 import { ELEMENT_AILMENTS, PLAIN_AILMENTS } from '../src/game/monsters';
 
@@ -306,6 +308,14 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect([...missing]).toEqual([]);
   });
 
+  test('the code MOD "ドロップ率の天井を撤廃": three calls to a cave function in code.ips', () => {
+    expect(dropCapProblem(game.dump.code, 'kahara')).toBeNull();
+    const ips = modPackage(game, new Map(), [dropCapPatch('kahara')]).get('exefs/code.ips')!;
+    const patched = applyIps(game.dump.code, ips);
+    for (const at of [0x283f7c, 0x283f94, 0x283fac]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb);
+    expect(u32(patched, 0x283f7c - 0x100000)).not.toBe(u32(game.dump.code, 0x283f7c - 0x100000));
+  });
+
   const MODOUT = BASE_MOD;
   test.skipIf(!existsSync(`${MODOUT}/code.ips`))('base MOD (elpulse mod/out): switch patch, switch + gate, package', async () => {
     const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({ name: n, bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)) }));
@@ -331,6 +341,11 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(pkg.has('exefs/code.ips')).toBe(true);
     expect(pkg.has('romfs/A90C8038') && pkg.has('romfs/79B881BB') && pkg.has('romfs/56562135')).toBe(true);
     expect(equalBytes(pkg.get('romfs/56562135')!, mod.romfs.get('56562135')!)).toBe(true); // untouched base file
+    // the code MOD "ドロップ率の天井を撤廃" goes on the base MOD's code
+    expect(dropCapProblem(g.dump.code, 'kahara')).toBeNull(); // the base MOD's code.ips is applied to it
+    const capped = applyIps(game.dump.code, modPackage(g, new Map(), [dropCapPatch('kahara')]).get('exefs/code.ips')!);
+    for (const at of [0x283f7c, 0x283f94, 0x283fac]) expect(u32(capped, at - 0x100000) >>> 24).toBe(0xeb);
+    expect(dropCapProblem(capped, 'kahara')).not.toBeNull();
   });
 });
 

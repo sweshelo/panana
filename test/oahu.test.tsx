@@ -22,6 +22,7 @@ import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
 import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression } from '../src/oahu/performance';
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
+import { DROP_CAP_ID, dropCapProblem } from '../src/game/dropcap';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
 import { readField } from '../src/game/tabledef';
@@ -585,6 +586,24 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     // a broken patch is left out of code.ips
     s.codePatches = [{ id: 'q', title: 'bad', source: '@0x1A658C\n  foo r0\n', enabled: true }];
     expect(s.codeIps()).toBeNull();
+    s.codePatches = [];
+  });
+
+  test('the code MOD "ドロップ率の天井を撤廃" goes in code.ips with the other patches', () => {
+    expect(base.dropCapProblem()).toContain('Update');
+    expect(dropCapProblem(s.code!.code, 'oahu')).toBeNull();
+    expect(s.dropCapProblem()).toBeNull();
+    s.codePatches = [{ id: 'p', title: 'p', source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n', enabled: true }];
+    s.dropCap = true;
+    const built = s.buildPatches(s.exportedPatches());
+    expect([...built.values()].flatMap((b) => b.errors)).toEqual([]);
+    const [a, b] = [built.get('p')!.cave!, built.get(DROP_CAP_ID)!.cave!];
+    expect(a[1] <= b[0] || b[1] <= a[0]).toBe(true);
+    const patched = applyIps(s.code!.code, s.codeIps()!);
+    expect(u32(patched, 0x19fe1c - 0x100000)).toBe(0xe6af4010); // ssat r4, #16, r0
+    for (const at of [0x19fd4c, 0x2b7690, 0x4ced28, 0x4cef08]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb); // bl to the cave
+    expect(dropCapProblem(patched, 'oahu')).not.toBeNull();
+    s.dropCap = false;
     s.codePatches = [];
   });
 });
