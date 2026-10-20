@@ -26,6 +26,7 @@ import { GroupDetail, GroupList, GroupPicker } from '../src/ui/GroupDetail';
 import { SoundNames, soundUses } from '../src/game/sound';
 import { SoundPicker } from '../src/ui/SoundPicker';
 import { MapUses, SoundView } from '../src/pages/sounds';
+import { ItemListControls, ItemSources, rarityMatches, sortItems } from '../src/ui/ItemSources';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x3c);
@@ -364,5 +365,50 @@ describe('sounds', () => {
     expect(html).toContain('使っているマップの設定 (2)');
     expect(html).toContain('href="#/map/D01B01001"');
     expect(html).toContain('(読めるマップにはなし)');
+  });
+});
+
+describe('item book: sources and order', () => {
+  const rows = [
+    { id: 1, name: 'やくそう', price: 8, sell: 4, rarity: 1 },
+    { id: 2, name: 'あめ', price: 0, sell: 0, rarity: 3 },
+    { id: 3, name: 'ポーション', price: 20, sell: 10, rarity: 1 },
+    { id: 4, name: '', price: 5, sell: 2, rarity: 2 },
+  ];
+  const order = (sort: Parameters<typeof sortItems>[1]): number[] => sortItems(rows, sort, (r) => r).map((r) => r.id);
+
+  test('sorts by name, price (unpriced last either way) and ☆, ties in ID order', () => {
+    expect(order('id')).toEqual([1, 2, 3, 4]);
+    expect(order('name')).toEqual([2, 3, 1, 4]);
+    expect(order('price-asc')).toEqual([4, 1, 3, 2]);
+    expect(order('price-desc')).toEqual([3, 1, 4, 2]);
+    expect(order('sell-asc')).toEqual([4, 1, 3, 2]);
+    expect(order('rarity-asc')).toEqual([1, 3, 4, 2]);
+    expect(order('rarity-desc')).toEqual([2, 4, 1, 3]);
+    expect(rows.filter((r) => rarityMatches('1', r.rarity)).map((r) => r.id)).toEqual([1, 3]);
+    expect(rows.filter((r) => rarityMatches('all', r.rarity))).toHaveLength(4);
+  });
+
+  test('links the shops, the monsters and the chests', () => {
+    const html = renderToString(
+      <ItemSources
+        shops={[{ label: '店 3', href: '#/shops/3', note: '30 ジュエル' }]}
+        drops={[{ label: 'はなもぐら', href: '#/monsters/1', note: 'レア・1/64' }]}
+        chests={[{ place: 'D10B01001', href: '#/maps/D10B01001', at: '(3, 4)', table: '#12', chance: 25 }]} />,
+    );
+    expect(html).toContain('href="#/shops/3"');
+    expect(html).toContain('30 ジュエル');
+    expect(html).toContain('href="#/monsters/1"');
+    expect(html).toContain('href="#/maps/D10B01001"');
+    expect(html).toContain('25%');
+    expect(html).toContain('お店 (1)');
+    const pending = renderToString(<ItemSources shops={{ pending: <button>調べる</button> }} drops={[]} chests={[]} noChests="なし (数えた宝箱)" />);
+    expect(pending).toContain('<button>調べる</button>');
+    expect(pending).toContain('なし (数えた宝箱)');
+    expect(pending).not.toContain('お店 (');
+    const controls = renderToString(<ItemListControls sort="name" setSort={() => {}} rarity="2" setRarity={() => {}} rarities={[1, 3, 1]} />);
+    expect(controls).toContain('☆ 1');
+    expect(controls).toContain('☆ 2'); // the selected one, though no item has it
+    expect(controls).toContain('☆ 3');
   });
 });

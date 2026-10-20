@@ -27,6 +27,8 @@ import { ArmMachine } from '../src/game/arm';
 import { OAHU_TEXT_END } from '../src/oahu/scripts';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
+import { oahuChestIndex, oahuDropIndex, oahuItemShops } from '../src/oahu/itemSources';
+import { OahuItemPage } from '../src/oahu/ItemPage';
 import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -679,5 +681,32 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain('同一アイテムが既に陳列されています (キズぐすり)');
     shops.set(27, shops.originalRows(27));
     shops.set(0, shops.originalRows(0));
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 item book: where items are got', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('the monsters that drop an item, the shops that sell it, the chests that hold it', async () => {
+    const drops = oahuDropIndex(s);
+    for (const d of s.battle.drops(1).filter((x) => x.item))
+      expect(drops.get(d.item)!.some((l) => l.href === '#/monsters/1' && l.label === 'はなもぐら')).toBe(true);
+    // ジュエルショップ 27 sells item 102 for 1 ジュエル (ShopItem +0x08)
+    expect(oahuItemShops(s, 102).find((l) => l.href === '#/shops/27')?.note).toBe('1 ジュエル');
+    const chests = oahuChestIndex(s, await s.eventEntries());
+    expect(chests.size).toBeGreaterThan(0);
+    for (const links of chests.values())
+      for (const c of links) {
+        expect(c.href).toMatch(/^#\/(maps|events)\//);
+        expect(c.chance).toBeGreaterThan(0);
+        expect(c.chance).toBeLessThanOrEqual(100);
+      }
+    const [item] = [...chests.keys()];
+    const html = renderToString(<OahuItemPage session={s} arg={String(item)} />);
+    expect(html).toContain('並び');
+    expect(html).toContain('落とすモンスター');
   });
 });
