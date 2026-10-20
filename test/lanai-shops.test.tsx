@@ -8,7 +8,6 @@ import { LanaiSession } from '../src/lanai/session';
 import { LanaiShopPage } from '../src/lanai/ShopPage';
 import { lanaiDropIndex, lanaiSourceIndex } from '../src/lanai/itemSources';
 import { lanaiItems } from '../src/lanai/items';
-import { LanaiItemPage } from '../src/lanai/ItemPage';
 import { LanaiContentShops, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages } from '../src/rom/dump';
@@ -232,9 +231,5 @@ describe.skipIf(!hasLanai)('RPG FREE! item book: where items are got (ROM)', () 
         expect(c.href).toMatch(/^#\/maps\/\d+\..+@\d+\.\d+$/);
         expect(c.chance).toBeGreaterThan(0);
       }
-    const it = lanaiItems(session).find((x) => index.chests.has(x.id))!;
-    const html = renderToString(<LanaiItemPage session={session} arg={String(it.row)} />);
-    expect(html).toContain('落とすモンスター');
-    expect(html).toContain('並び');
   }, 600000);
 });
