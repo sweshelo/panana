@@ -16,6 +16,10 @@ import { viewsFor } from '../src/romfs/formats';
 import { lanaiRomfsProfile } from '../src/romfs/lanai';
 import { asArchive, formatName, isGsTable } from '../src/romfs/sniff';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
+import { unzipSync } from 'fflate';
+import { dropCapProblem } from '../src/game/dropcap';
+import { applyIps } from '../src/rom/ips';
+import { u32 } from '../src/util/bytes';
 
 test('demangles the nested names of the imports of a CRO', () => {
   expect(demangleName('_ZN11ScriptChara6MoveToEP5GSvec')).toBe('ScriptChara::MoveTo');
@@ -175,5 +179,21 @@ describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {
     expect(messages).toContain('MonsterParameter');
     const romfs = renderToString(<RomfsPage dump={dump} profile={lanaiRomfsProfile} arg="2135000A" />);
     expect(romfs).toContain('2135000A');
+  });
+
+  test('the code MOD "ドロップ率の天井を撤廃" is exported as exefs/code.ips and kept with the edits', async () => {
+    expect(session.dropCapProblem()).toBeNull();
+    expect(session.codeIps()).toBeNull();
+    session.dropCap = true;
+    expect(session.saved().dropCap).toBe(true);
+    const zip = unzipSync(await session.modZip());
+    const ips = zip['0004000000125D00/exefs/code.ips']!;
+    expect(ips).toBeDefined();
+    const patched = applyIps(dump.code, ips);
+    expect(u32(patched, 0x165240 - 0x100000)).toBe(0xe6af4010); // ssat r4, #16, r0
+    for (const at of [0x1651ac, 0x2ee8c8, 0x2dc8ec, 0x2dca34]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb); // bl to the cave
+    expect(dropCapProblem(patched, 'lanai')).not.toBeNull();
+    session.revertAll();
+    expect(session.dropCap).toBe(false);
   });
 });

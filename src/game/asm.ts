@@ -285,10 +285,25 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
   }
 
   // ---- misc
-  for (const c of splitMnemonic(mn, ['clz', 'uxtab', 'uxtah', 'sxtab', 'sxtah', 'uxtb', 'uxth', 'sxtb', 'sxth', 'ubfx', 'sbfx', 'svc', 'adr', 'rev'])) {
+  for (const c of splitMnemonic(mn, ['clz', 'uxtab', 'uxtah', 'sxtab', 'sxtah', 'uxtb', 'uxth', 'sxtb', 'sxth', 'ubfx', 'sbfx', 'svc', 'adr', 'rev', 'ssat', 'usat'])) {
     if (c.s) continue;
     const cc = c.cond << 28;
     switch (c.base) {
+      case 'ssat':
+      case 'usat': {
+        // ssat rd, #1〜32, rm [, lsl #0〜31 | asr #1〜32]; usat rd, #0〜31, rm …
+        const sat = num(ops[1]!);
+        const signed = c.base === 'ssat';
+        if (signed ? sat < 1 || sat > 32 : sat < 0 || sat > 31) fail(`飽和のビット数が範囲外です: ${ops[1]}`);
+        let sh = 0;
+        if (ops[3]) {
+          const m = /^(lsl|asr)\s+#(\d+)$/i.exec(ops[3].trim());
+          const n = m ? Number(m[2]) : -1;
+          if (!m || (m[1]!.toLowerCase() === 'lsl' ? n > 31 : n < 1 || n > 32)) fail(`シフトが読めません: ${ops[3]}`);
+          sh = m![1]!.toLowerCase() === 'lsl' ? n << 7 : ((n & 31) << 7) | 0x40;
+        }
+        return one(cc | (signed ? 0x06a00010 : 0x06e00010) | ((signed ? sat - 1 : sat) << 16) | (reg(ops[0]) << 12) | sh | reg(ops[2]));
+      }
       case 'clz': return one(cc | 0x016f0f10 | (reg(ops[0]) << 12) | reg(ops[1]));
       case 'rev': return one(cc | 0x06bf0f30 | (reg(ops[0]) << 12) | reg(ops[1]));
       case 'svc': return one(cc | 0x0f000000 | (num(ops[0]!) & 0xffffff));

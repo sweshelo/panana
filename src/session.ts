@@ -132,7 +132,7 @@ export class Session {
       .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
     const patches = this.game.codePatches;
     const direct = this.book?.directChanged() ? this.book.directData!.data : null;
-    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, direct, design: this.book?.designChanged() ? this.book.designData() : null });
+    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -146,6 +146,8 @@ export class Session {
       worlds?: Record<number, Uint8Array>;
       added?: MapInfo[];
       patches?: CodePatch[];
+      /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
+      dropCap?: boolean;
       /** monsterDesign.bin (2713402F) when monsters got a design of their own. */
       design?: Uint8Array | null;
       /** directData of 2713402F (the performances of the actions), when edited. */
@@ -165,8 +167,8 @@ export class Session {
     const worlds = Object.keys(edits.worlds ?? {}).map((h) => mapLabel(game, Number(h)));
     const nPatches = edits.patches?.length ?? 0;
     const direct = edits.direct && this.book?.directData ? edits.direct : null;
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !nPatches && !direct && !edits.design) return;
-    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !nPatches && !edits.dropCap && !direct && !edits.design) return;
+    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       game.code.removeMaps(added.map((m) => m.hash));
       await idbSet(EDITS_KEY, null);
@@ -194,6 +196,7 @@ export class Session {
       }
     }
     if (edits.patches) game.codePatches = edits.patches;
+    game.dropCap = !!edits.dropCap;
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
     if (edits.messages) game.master.texts.restore(edits.messages);

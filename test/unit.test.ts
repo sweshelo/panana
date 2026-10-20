@@ -22,6 +22,9 @@ import { assembleLine } from '../src/game/asm';
 import * as THREE from 'three';
 import { uvMatrix } from '../src/cgfx/tev';
 import { buildPatches } from '../src/game/patch';
+import { DROP_CAP_ID, dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { OAHU_LAYOUT } from '../src/oahu/code';
+import { LANAI_LAYOUT } from '../src/lanai/code';
 import { extractPatch } from '../src/ui/PatchPanel';
 import { recordPlacement, section2Offset, slotOffset } from '../src/game/objects';
 import type { MapDoc, Rec } from '../src/game/sections';
@@ -932,6 +935,7 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
       ['bl #0x31aa2c', 0xeb03089e, 0x2587ac], ['beq #0x1d19dc', 0x0a000014, 0x1d1984], ['bx lr', 0xe12fff1e], ['uxth r2, r1', 0xe6ff2071],
       ['vpush {d8}', 0xed2d8b02], ['vldr s16, [pc, #0x274]', 0xed9f8a9d], ['vmrs apsr_nzcv, fpscr', 0xeef1fa10], ['vmov.f32 s1, s17', 0xeef00a68],
       ['mov r0, #-1', 0xe3e00000], ['nop', 0xe320f000], ['vcvt.f32.s32 s0, s0', 0xeeb80ac0], ['mul r0, r1, r2', 0xe0000291],
+      ['ssat r4, #16, r0', 0xe6af4010], ['usat r1, #8, r2, lsl #3', 0xe6e81192], ['ssatlt r0, #32, r3, asr #2', 0xb6bf0153],
     ];
     for (const [t, w, at] of lines) expect([t, a(t, at).toString(16)]).toEqual([t, w.toString(16)]);
     expect(() => a('movw r0, #1')).toThrow();
@@ -950,6 +954,16 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
     expect(b.blocks[0]!.lines[0]!.word).toBe(assembleLine('bl two', 0x2587a4, () => cave.addr).words[0]!);
     const bad = buildPatches(code, [{ id: 'b', title: 'b', source: '@0x2587A4\n  ldr r0, =1\n@0x4BF100\n  nop\n  foo r0\n', enabled: true }]).get('b')!;
     expect(bad.errors.map((e) => e.line)).toEqual([2, 3, 5]);
+  });
+
+  test('the code MOD "ドロップ率の天井を撤廃" assembles for every title; a code.bin without its original words is refused', () => {
+    for (const [title, size, layout] of [['kahara', 0x3c0000, undefined], ['oahu', 5029888, OAHU_LAYOUT], ['lanai', 4182016, LANAI_LAYOUT]] as const) {
+      const code = new Uint8Array(size);
+      const b = buildPatches(code, [dropCapPatch(title)], layout).get(DROP_CAP_ID)!;
+      expect([title, b.errors]).toEqual([title, []]);
+      expect(b.blocks.length).toBeGreaterThan(3);
+      expect(dropCapProblem(code, title)).toContain('0x');
+    }
   });
 
   test('the patch block of an AI answer', () => {
