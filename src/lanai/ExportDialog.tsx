@@ -45,7 +45,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                 {ported.map((p) => <li key={`port/${p}`}>{p}</li>)}
                 {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (exefs/code.ips)</li>}
               </ul>
-              <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', session.dropCap ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
+              <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', session.dropCap ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
               {error && <div className="error">{error}</div>}
               <div className="row">
                 <button className="primary" onClick={async () => {

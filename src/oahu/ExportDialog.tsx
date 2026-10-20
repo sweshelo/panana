@@ -57,7 +57,7 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
               {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行・カメラの大きさ)'] : [])].join('、')}`}</p>}
               {direct && <p>{'アクションの演出 (402F0000 の directData.bin)'}</p>}
               {tables.length > 0 && <p className="muted small">{`変更した表: ${[...new Set(tables)].join('、')}`}</p>}
-              <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。`}</p>
+              <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${ips ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと、戦闘に入るときなどに落ちます。' : ''}`}</p>
               {error && <div className="error">{error}</div>}
               <div className="row">
                 <button className="primary" onClick={async () => {
