@@ -8,11 +8,15 @@ import { entryBlob, findEntry, parseArchive, rebuildArchive, unpackEntry, type A
 import { zipEntryName } from '../archive/zip';
 import { buildModZip } from '../export/pack';
 import { PortStore } from '../port/store';
+import { dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MapDb } from '../game/mapdb';
+import { buildPatches, patchRecords } from '../game/patch';
+import { buildIps } from '../rom/ips';
 import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
+import { LANAI_LAYOUT, lanaiCode } from './code';
 import { LANAI_MAPDB_ENTRY } from './maps';
 import { encodeLanaiMessage, lanaiPlain, lanaiText, parseLanaiMessage, parseLanaiText, type LanaiToken } from './message';
 import { LanaiRows } from './rows';
@@ -83,6 +87,8 @@ export interface LanaiSaved {
   strings?: LanaiSavedString[];
   /** Edited map sections (absent in edits saved before the map editor). */
   maps?: LanaiSavedSection[];
+  /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
+  dropCap?: boolean;
 }
 
 /** The map database of a content's root archive (entry C9F79000, maps.ts), shared by the pages and the MOD export. */
@@ -122,6 +128,8 @@ export class LanaiSession {
   private readonly listeners = new Set<() => void>();
   /** Bumped by every edit (the pages redraw on it). */
   revision = 0;
+  /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
+  dropCap = false;
 
   private constructor(
     readonly dump: Dump,
@@ -230,6 +238,7 @@ export class LanaiSession {
       for (const h of hashes) r.db.revert(h);
       this.mapsReset(r.archive);
     }
+    this.dropCap = false;
     this.edited();
   }
 
@@ -243,7 +252,7 @@ export class LanaiSession {
     }
     const maps: LanaiSavedSection[] = [];
     for (const r of this.mapDbsRead.values()) for (const h of r.db.changedHashes()) maps.push([r.archive, h, r.db.get(h).slice()]);
-    return { rows, ...(strings.length ? { strings } : {}), ...(maps.length ? { maps } : {}) };
+    return { rows, ...(strings.length ? { strings } : {}), ...(maps.length ? { maps } : {}), ...(this.dropCap ? { dropCap: true } : {}) };
   }
 
   /**
@@ -254,6 +263,7 @@ export class LanaiSession {
    * archives and the map sections, whose archives are read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
+    this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);
     const known = new Set([...this.sources.keys(), ...this.otherSources.keys()]);
     const later = new Set([...saved.rows, ...(saved.strings ?? [])].map(([key]) => key.split('/')[0]!).filter((a) => !known.has(a)));
@@ -343,9 +353,33 @@ export class LanaiSession {
     return files;
   }
 
-  /** The LayeredFS zip: 0004000000125D00/romfs/<archive>. */
+  /** Why the code MOD "ドロップ率の天井を撤廃" cannot be written (no Update, another version), or null. */
+  dropCapProblem(): string | null {
+    try {
+      return dropCapProblem(lanaiCode(this.dump), 'lanai');
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+
+  /** exefs/code.ips of Panana's code MODs that are on, or null when there is none (throws when one cannot be built). */
+  codeIps(): Uint8Array | null {
+    if (!this.dropCap) return null;
+    const problem = this.dropCapProblem();
+    if (problem) throw new Error(problem);
+    const code = lanaiCode(this.dump);
+    const built = [...buildPatches(code, [dropCapPatch('lanai')], LANAI_LAYOUT).values()];
+    const err = built.find((b) => b.errors.length)?.errors[0];
+    if (err) throw new Error(`パッチの ${err.line} 行目: ${err.message}`);
+    return buildIps(patchRecords(built), code);
+  }
+
+  /** The LayeredFS zip: 0004000000125D00/romfs/<archive> and exefs/code.ips. */
   async modZip(): Promise<Uint8Array> {
-    return buildModZip(new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b])), LANAI.titleId);
+    const pkg = new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b]));
+    const ips = this.codeIps();
+    if (ips) pkg.set('exefs/code.ips', ips);
+    return buildModZip(pkg, LANAI.titleId);
   }
 
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */

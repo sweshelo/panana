@@ -22,8 +22,13 @@ import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
 import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression } from '../src/oahu/performance';
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
+import { DROP_CAP_ID, dropCapProblem } from '../src/game/dropcap';
+import { ArmMachine } from '../src/game/arm';
+import { OAHU_TEXT_END } from '../src/oahu/scripts';
 import { OahuShopPage } from '../src/oahu/ShopPage';
 import { parseOahuShopItems } from '../src/oahu/shops';
+import { oahuChestIndex, oahuDropIndex, oahuItemShops } from '../src/oahu/itemSources';
+import { OahuItemPage } from '../src/oahu/ItemPage';
 import { readField } from '../src/game/tabledef';
 import { openImage, openImages, openUpdate, type Dump } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -587,6 +592,33 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(s.codeIps()).toBeNull();
     s.codePatches = [];
   });
+
+  test('the code MOD "ドロップ率の天井を撤廃" goes in code.ips with the other patches', () => {
+    expect(base.dropCapProblem()).toContain('Update');
+    expect(dropCapProblem(s.code!.code, 'oahu')).toBeNull();
+    expect(s.dropCapProblem()).toBeNull();
+    s.codePatches = [{ id: 'p', title: 'p', source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n', enabled: true }];
+    s.dropCap = true;
+    const built = s.buildPatches(s.exportedPatches());
+    expect([...built.values()].flatMap((b) => b.errors)).toEqual([]);
+    const [a, b] = [built.get('p')!.cave!, built.get(DROP_CAP_ID)!.cave!];
+    expect(a[1] <= b[0] || b[1] <= a[0]).toBe(true);
+    const patched = applyIps(s.code!.code, s.codeIps()!);
+    expect(u32(patched, 0x19fe1c - 0x100000)).toBe(0xe6af4010); // ssat r4, #16, r0
+    for (const at of [0x19fd4c, 0x2b7690, 0x4ced28, 0x4cef08]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb); // bl to the cave
+    expect(dropCapProblem(patched, 'oahu')).not.toBeNull();
+    // the party's state multiplied by five 300 % items, × 200 %: 243 倍 (vanilla stops at 5000 %), and never full
+    for (const [code, acc, value, full] of [[s.code!.code, 5000, 5000, 1], [patched, 16631, 48576, 0]] as const) {
+      const m = new ArmMachine(code, { maxDepth: 6, textEnd: OAHU_TEXT_END });
+      const row = m.alloc(0x40), st = m.alloc(0x10);
+      m.write(row + 0x28, 100, 2); m.write(row + 0x2e, 5001, 2); m.write(row + 0x36, 6, 1);
+      m.write(st, row, 4); m.write(st + 8, 100, 2); m.write(st + 0xa, 200, 2);
+      for (let i = 0; i < 5; i++) m.run(0x2b7674, [st, 300]);
+      expect([m.read(st + 8, 2), m.run(0x4ced08, [st]) | 0, m.run(0x4ceef4, [st])]).toEqual([acc, value, full]);
+    }
+    s.dropCap = false;
+    s.codePatches = [];
+  });
 });
 
 describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
@@ -649,5 +681,32 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain('同一アイテムが既に陳列されています (キズぐすり)');
     shops.set(27, shops.originalRows(27));
     shops.set(0, shops.originalRows(0));
+  });
+});
+
+describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 item book: where items are got', () => {
+  let s: OahuSession;
+  beforeAll(async () => {
+    s = await OahuSession.open(await openImages([Bun.file(OAHU_UPDATE), Bun.file(OAHU_BASE)], () => 'cia'));
+  });
+
+  test('the monsters that drop an item, the shops that sell it, the chests that hold it', async () => {
+    const drops = oahuDropIndex(s);
+    for (const d of s.battle.drops(1).filter((x) => x.item))
+      expect(drops.get(d.item)!.some((l) => l.href === '#/monsters/1' && l.label === 'はなもぐら')).toBe(true);
+    // ジュエルショップ 27 sells item 102 for 1 ジュエル (ShopItem +0x08)
+    expect(oahuItemShops(s, 102).find((l) => l.href === '#/shops/27')?.note).toBe('1 ジュエル');
+    const chests = oahuChestIndex(s, await s.eventEntries());
+    expect(chests.size).toBeGreaterThan(0);
+    for (const links of chests.values())
+      for (const c of links) {
+        expect(c.href).toMatch(/^#\/(maps|events)\//);
+        expect(c.chance).toBeGreaterThan(0);
+        expect(c.chance).toBeLessThanOrEqual(100);
+      }
+    const [item] = [...chests.keys()];
+    const html = renderToString(<OahuItemPage session={s} arg={String(item)} />);
+    expect(html).toContain('並び');
+    expect(html).toContain('落とすモンスター');
   });
 });

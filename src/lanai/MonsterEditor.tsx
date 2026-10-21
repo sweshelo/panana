@@ -79,8 +79,9 @@ export function LanaiStatFields({ f, edited }: Omit<LanaiEditProps, 'session'>):
   );
 }
 
-const DROP_DEN = [1, 3, 4, 8, 16, 32, 64, 128, 128, 256, 512, 1024, 512, 1024, 2048, 4096];
-const dropClass = (r: number): string => (r === 0 ? '必ず' : r <= 7 ? 'おたから' : r <= 11 ? 'レア' : '激レア');
+/** "1 in N" of a drop by its rank (BattleParameter +0x104), and the rank's class. */
+export const DROP_DEN = [1, 3, 4, 8, 16, 32, 64, 128, 128, 256, 512, 1024, 512, 1024, 2048, 4096];
+export const dropClass = (r: number): string => (r === 0 ? '必ず' : r <= 7 ? 'おたから' : r <= 11 ? 'レア' : '激レア');
 const rankLabel = (r: number): string => (r === 0 ? '0: 必ず' : `${r}: 約 1/${DROP_DEN[r]}`);
 
 const DROP_INFO = [

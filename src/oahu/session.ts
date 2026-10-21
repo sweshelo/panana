@@ -3,6 +3,7 @@
 // the Update, #59). code.bin features (code.ips) use the Update's code.bin only (#65).
 import { OahuPerformances } from './performance';
 import { buildModZip } from '../export/pack';
+import { dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { buildPatches, patchRecords, type BuiltPatch, type CodePatch } from '../game/patch';
 import { buildIps } from '../rom/ips';
 import { withUpdate, type Dump, type UpdateImage } from '../rom/dump';
@@ -35,6 +36,8 @@ interface Saved {
   rows?: SavedRow[];
   /** Code patches (kept without the Update too; they are only built and exported with it). */
   patches?: CodePatch[];
+  /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
+  dropCap?: boolean;
   /** Map sections and EventObject rows. */
   maps?: OahuMapSaved;
   /** Edited shop stocks. */
@@ -65,6 +68,8 @@ export class OahuSession {
   readonly codeError: string = '';
   /** Code patches written to code.ips. */
   codePatches: CodePatch[] = [];
+  /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
+  dropCap = false;
   /** Edits of the story's immediates and the scripts' message literals (code.ips; story.ts). */
   storyEdits: StoryCodeEdit[] = [];
   /** Names given to save values ("values.4" -> "ドローン撃破"; story.ts valueNameKey). */
@@ -134,6 +139,7 @@ export class OahuSession {
     return {
       messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
       storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(), direct: this.performances.saved(),
+      ...(this.dropCap ? { dropCap: true } : {}),
     };
   }
 
@@ -142,6 +148,7 @@ export class OahuSession {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.patches) this.codePatches = saved.patches.map((p) => ({ ...p }));
+    this.dropCap = !!saved.dropCap;
     if (saved.shops) this.shops?.restore(saved.shops);
     if (saved.storyEdits) this.storyEdits = saved.storyEdits.map((e) => ({ ...e }));
     if (saved.storyNames) this.storyNames = { ...saved.storyNames };
@@ -177,10 +184,22 @@ export class OahuSession {
     return this.codePatches.filter((p) => p.enabled);
   }
 
-  /** code.ips of the enabled patches (those with errors left out) and the story's edits, or null when there is none. */
+  /** Why the code MOD "ドロップ率の天井を撤廃" cannot be written (no Update, another version), or null. */
+  dropCapProblem(): string | null {
+    if (!this.code) return this.codeError || 'code.bin を書き換えるには Update の CIA が要ります';
+    return dropCapProblem(this.code.code, 'oahu');
+  }
+
+  /** The enabled patches and Panana's code MODs that are on, as they are exported (one build, so their caves do not overlap). */
+  exportedPatches(): CodePatch[] {
+    return [...this.enabledPatches(), ...(this.dropCap && !this.dropCapProblem() ? [dropCapPatch('oahu')] : [])];
+  }
+
+  /** code.ips of the enabled patches and code MODs (those with errors left out) and the story's edits, or null when there is none. */
   codeIps(): Uint8Array | null {
     if (!this.code) return null;
-    const records = [...(this.enabledPatches().length ? patchRecords(this.buildPatches().values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
+    const patches = this.exportedPatches();
+    const records = [...(patches.length ? patchRecords(this.buildPatches(patches).values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
     return records.length ? buildIps(records, this.code.code) : null;
   }
 
