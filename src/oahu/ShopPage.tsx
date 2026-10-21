@@ -8,7 +8,7 @@ import { ShopBook, type ShopBookShop, type ShopColumn } from '../ui/ShopBook';
 import { hex8 } from '../util/bytes';
 import { oahuItemHref } from './ItemPage';
 import { oahuMessageHref } from './MessagePage';
-import { OahuItemPicker } from './pickers';
+import { oahuItemIcon, OahuItemPicker } from './pickers';
 import type { OahuSession } from './session';
 import { OAHU_PRICE_MAX, OAHU_PRICE_UNIT, OAHU_SHOP_ALIASES, OAHU_SHOP_PAYMENT, oahuShopLabel, type OahuShop, type OahuShopRow, type OahuShops } from './shops';
 
@@ -66,9 +66,10 @@ function ShopList({ session, shops, arg }: { session: OahuSession; shops: OahuSh
       original={(s) => shops.originalRows(s.id)}
       same={(a, b) => a.item === b.item && a.price === b.price && a.once === b.once}
       newRow={(_, item) => ({ item, price: 0, once: 0 })}
+      replaceItem={(r, item) => ({ ...r, item })}
       item={(id) => {
         const it = items.item(id);
-        return it && { name: it.name, href: oahuItemHref(id), changed: items.changed(id) };
+        return it && { name: it.name, href: oahuItemHref(id), icon: oahuItemIcon(session.battle, it), changed: items.changed(id) };
       }}
       columns={(s) => [
         { head: '分類', className: 'muted', cell: (r) => items.item(r.item)?.category ?? '' },
@@ -79,7 +80,7 @@ function ShopList({ session, shops, arg }: { session: OahuSession; shops: OahuSh
       picker={(p) => <OahuItemPicker battle={session.battle} current={0} title={p.title} onClose={p.onClose} onPick={p.onPick} />}
       sub={(s) => {
         const pay = payment(s);
-        const first = s.messages.find((m) => m);
+        const first = s.messages?.find((m) => m);
         const greeting = first ? session.messages.texts.preview(first, true) ?? '' : '';
         return pay ? `${OAHU_SHOP_PAYMENT[pay]} ・ ${greeting}` : greeting;
       }}

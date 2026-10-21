@@ -54,7 +54,7 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
-export const LANAI_EXIT_KIND: Record<number, string> = { 5: '上り階段', 6: '下り階段', 100: '壁の扉' };
+export const LANAI_EXIT_KIND: Record<number, string> = { 3: 'クリアのワープ', 5: '上り階段', 6: '下り階段', 100: '壁の扉' };
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');

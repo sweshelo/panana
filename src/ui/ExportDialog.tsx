@@ -6,6 +6,7 @@ import { PortStore } from '../port/store';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { buildPatches } from '../game/patch';
@@ -13,6 +14,7 @@ import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
 import { tableLabel, type Session } from '../session';
+import { CodeModOption } from './CodeModOption';
 import { download } from './download';
 
 
@@ -61,9 +63,15 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     return { docs, events, issues, changes, shops, worlds: session.worldSections(), extra };
   });
   const { issues } = what;
+  // Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts), switched here and built with the other patches
+  const [dropCap, setDropCap] = useState(game.dropCap);
+  // game.dump.code has the base MOD's code.ips applied, so a base MOD that rewrote the same code is caught too
+  const capProblem = useState(() => dropCapProblem(game.dump.code, 'kahara'))[0];
+  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : [])];
+  const capError = dropCap && !capProblem ? buildPatches(game.dump.code, exportedPatches(game, extra)).get(DROP_CAP_ID)?.errors[0] : undefined;
   // models ported from other games (#100): the archives that hold them
   const ported = useAsync(() => PortStore.of('kahara').then((p) => p.summary()), []);
-  const changes = [...what.changes, ...(Array.isArray(ported) ? ported : [])];
+  const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = async (): Promise<Map<string, Uint8Array> | null> => {
@@ -72,7 +80,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
       if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
-      const pkg = modPackage(game, files, what.extra);
+      const pkg = modPackage(game, files, extra);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
       return pkg;
     } catch (err) {
@@ -109,6 +117,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
         {issues.length
           ? <div className="issues">{issues.map(({ map, issue }, i) => <div key={i} className={`issue ${issue.level}`}>{`${issue.level === 'error' ? '✖' : '⚠'} ${map}: ${issue.msg}`}</div>)}</div>
           : <div className="ok">検証: 問題なし</div>}
+        <CodeModOption title="kahara" on={dropCap} problem={capProblem ?? (capError ? `${capError.line} 行目: ${capError.message} (書き出しません)` : null)} onChange={(on) => {
+          game.dropCap = on;
+          setDropCap(on);
+          session.scheduleSave();
+        }} />
         {errors > 0 && <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>}
         {game.baseMod
           ? <div className="muted">{`土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</div>
