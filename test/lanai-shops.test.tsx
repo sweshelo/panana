@@ -6,6 +6,8 @@ import { lanaiContents } from '../src/lanai/contents';
 import { lanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiShopPage } from '../src/lanai/ShopPage';
+import { lanaiDropIndex, lanaiSourceIndex } from '../src/lanai/itemSources';
+import { lanaiItems } from '../src/lanai/items';
 import { LanaiContentShops, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages } from '../src/rom/dump';
@@ -201,4 +203,33 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     expect(shops.items.changed || shops.shopTable.changed).toBe(false);
     expect(u32(shops.shopTable.row(1), 0)).toBe(u32(shops.shopTable.originalRow(1)!, 0));
   }, 300000);
+});
+
+describe.skipIf(!hasLanai)('RPG FREE! item book: where items are got (ROM)', () => {
+  let session: LanaiSession;
+  beforeAll(async () => {
+    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    session = await LanaiSession.open(dump, { fresh: true });
+  }, 300000);
+
+  test('the monsters that drop an item; the shops and chests of every content', async () => {
+    const ids = new Set(lanaiItems(session).map((it) => it.id));
+    const drops = lanaiDropIndex(session);
+    expect(drops.size).toBeGreaterThan(0);
+    for (const [item, links] of drops) {
+      expect(ids.has(item)).toBe(true);
+      for (const l of links) expect(l.href).toMatch(/^#\/monsters\/\d+$/);
+    }
+    let reported = 0;
+    const index = await lanaiSourceIndex(session, (done) => (reported = done));
+    expect(reported).toBe(lanaiContents(session).length);
+    expect(index.shops.size).toBeGreaterThan(0);
+    expect(index.chests.size).toBeGreaterThan(0);
+    for (const links of index.shops.values()) for (const l of links) expect(l.href).toMatch(/^#\/shops\/\d+\.\d+$/);
+    for (const links of index.chests.values())
+      for (const c of links) {
+        expect(c.href).toMatch(/^#\/maps\/\d+\..+@\d+\.\d+$/);
+        expect(c.chance).toBeGreaterThan(0);
+      }
+  }, 600000);
 });

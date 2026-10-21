@@ -14,6 +14,10 @@ import { hex8 } from '../util/bytes';
 import { textureUrl, type OahuItemModels } from './itemModels';
 import { OAHU_ITEM_FILE, type OahuItem, type OahuItemNumber, type OahuItems } from './items';
 import type { OahuSession } from './session';
+import { oahuChestIndex, oahuDropIndex, oahuItemShops } from './itemSources';
+import { useMaps } from './MapPage';
+import type { OahuEventEntry } from './events';
+import { ItemListControls, ItemSources, rarityMatches, sortItems, type ChestLink, type ItemSort, type RarityFilter, type SourceLink } from '../ui/ItemSources';
 import { OAHU_EFFECT_KINDS, OAHU_EFFECT_SUBS, OAHU_EQUIP_EFFECTS, OAHU_ITEM_DATA, OAHU_ITEM_KIND, OAHU_ITEM_TEXTS } from './tables';
 
 export const oahuItemHref = (id: number): string => `#/items/${id}`;
@@ -81,11 +85,30 @@ function ItemModel({ models, it }: { models: OahuItemModels; it: OahuItem }): Re
 
 const PAGE = 300;
 
+/** The chests of every dungeon (null while the EventObject tables are read), again after the maps change. */
+function useEventEntries(session: OahuSession): OahuEventEntry[] | null {
+  const revision = useMaps(session.maps);
+  const [entries, setEntries] = useState<OahuEventEntry[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    session.eventEntries().then((e) => live && setEntries(e), () => live && setEntries([]));
+    return () => {
+      live = false;
+    };
+  }, [session, revision]);
+  return entries;
+}
+
 export function OahuItemPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { items } = session;
   const [edits, edited] = useEdits();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [sort, setSort] = useState<ItemSort>('id');
+  const [rarity, setRarity] = useState<RarityFilter>('all');
+  const entries = useEventEntries(session);
+  const drops = useMemo(() => oahuDropIndex(session), [session, edits]);
+  const chests = useMemo(() => (entries ? oahuChestIndex(session, entries) : null), [session, entries, edits]);
   const [limit, setLimit] = useState(PAGE);
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
@@ -97,22 +120,28 @@ export function OahuItemPage({ session, arg }: { session: OahuSession; arg: stri
     session.scheduleSave();
   };
   const q = query.trim();
-  const rows = useMemo(() => items.items.filter((it) => {
+  const rows = useMemo(() => sortItems(items.items.filter((it) => {
     if (q && !it.text.includes(q) && String(it.id) !== q) return false;
+    if (!rarityMatches(rarity, it.rarity)) return false;
     if (filter.startsWith('k')) return it.kind === Number(filter.slice(1));
+    if (filter === 'shop') return !!session.shops?.sellers(it.id).length;
+    if (filter === 'chest') return !!chests?.has(it.id);
+    if (filter === 'drop') return drops.has(it.id);
     if (filter === 'changed') return items.changed(it.id);
     return true;
-  }), [items, q, filter, edits]);
+  }), sort, (x) => x), [items, q, filter, rarity, sort, drops, chests, session, edits]);
   const it = items.item(selected);
   return (
     <div className="book">
       <div className="book-side">
         <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・説明・ID で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
-          options={[['all', 'すべて'], ...Object.entries(OAHU_ITEM_KIND).map(([k, v]): [string, string] => [`k${k}`, v]), ['changed', '変更したもの']]} />
+          options={[['all', 'すべて'], ...Object.entries(OAHU_ITEM_KIND).map(([k, v]): [string, string] => [`k${k}`, v]),
+            ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更したもの']]} />
+        <ItemListControls sort={sort} setSort={(v) => { setSort(v); setLimit(PAGE); }} rarity={rarity} setRarity={(v) => { setRarity(v); setLimit(PAGE); }} rarities={items.items.map((x) => x.rarity)} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={items.items.length} />
           <table className="book-table">
-            <thead><tr><th></th><th>ID</th><th>名前</th><th>分類</th><th>買値</th></tr></thead>
+            <thead><tr><th></th><th>ID</th><th>名前</th><th>分類</th><th>☆</th><th>買値</th></tr></thead>
             <tbody>
               {rows.slice(0, limit).map((x) => (
                 <tr key={x.id} className={x.id === selected ? 'active' : ''} onClick={() => (location.hash = oahuItemHref(x.id))}>
@@ -120,6 +149,7 @@ export function OahuItemPage({ session, arg }: { session: OahuSession; arg: stri
                   <td className="num muted">{x.id}</td>
                   <td>{x.name}{items.changed(x.id) && <EditedMark text=" ●" />}</td>
                   <td className="muted nowrap">{x.category}</td>
+                  <td className="num">{x.rarity}</td>
                   <td className="num">{x.price || ''}</td>
                 </tr>
               ))}
@@ -129,13 +159,15 @@ export function OahuItemPage({ session, arg }: { session: OahuSession; arg: stri
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {it && <ItemDetail key={it.id} session={session} it={it} onEdit={onEdit} />}
+        {it && <ItemDetail key={it.id} session={session} it={it} onEdit={onEdit} drops={drops.get(it.id) ?? []} chests={chests ? chests.get(it.id) ?? [] : null} />}
       </div>
     </div>
   );
 }
 
-function ItemDetail({ session, it, onEdit }: { session: OahuSession; it: OahuItem; onEdit: () => void }): ReactNode {
+function ItemDetail({ session, it, onEdit, drops, chests }: {
+  session: OahuSession; it: OahuItem; onEdit: () => void; drops: SourceLink[]; chests: ChestLink[] | null;
+}): ReactNode {
   const { items } = session;
   const context: FieldContext = { message: (id) => items.message(id), rowName: (table, row) => (table === 'actionData.bin' ? items.actionName(row).replace(/^#\d+ /, '') : undefined) };
   return (
@@ -157,6 +189,11 @@ function ItemDetail({ session, it, onEdit }: { session: OahuSession; it: OahuIte
         <CopyButtons items={items} it={it} onEdit={onEdit} />
         {it.model !== 0 && <PortItemButton target="oahu" id={it.id} onDone={onEdit} />}
       </div>
+      <ItemSources
+        shops={oahuItemShops(session, it.id)}
+        drops={drops}
+        chests={chests ?? { pending: <div className="muted">ダンジョンの宝箱を読み込み中…</div> }}
+        noChests="なし (ダンジョンの宝箱のみ数えます)" />
       <details className="row-fields-box">
         <summary>{`itemData の行 ${it.id} のすべての欄`}</summary>
         <RowFields def={OAHU_ITEM_DATA} row={items.table.row(it.id)} original={items.added(it.id) ? undefined : session.master.originalRow(OAHU_ITEM_FILE, it.id)} context={context} />

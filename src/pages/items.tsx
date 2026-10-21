@@ -1,6 +1,6 @@
 // Item book: every item with its category, prices, use effect, and where to get it (shops, chests,
 // monster drops).
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
@@ -21,6 +21,7 @@ import { loadObjectModels, objKey } from '../cgfx/loader';
 import { itemModelArchive } from '../game/items';
 import { shopLabel } from '../game/shops';
 import { shopHref } from './shops';
+import { ItemListControls, ItemSources, rarityMatches, sortItems, type ItemSort, type RarityFilter } from '../ui/ItemSources';
 
 const CHEST_KINDS = new Set([0x0c, 0x0d, 0x0e]);
 
@@ -83,6 +84,8 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
   const [, edited] = useEdits();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<ItemSort>('id');
+  const [rarity, setRarity] = useState<RarityFilter>('all');
   const [chests, setChests] = useState(new Map<number, ChestSource[]>());
   // Recomputed on every visit: the maps and the chests may have been edited.
   useEffect(() => {
@@ -107,6 +110,7 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
   const matches = (it: Item): boolean => {
     const q = query.trim();
     if (q && !it.name.includes(q) && !it.description.includes(q) && !it.effect.includes(q)) return false;
+    if (!rarityMatches(rarity, it.rarity)) return false;
     if (filter.startsWith('c')) return (it.categoryByte & 0xf) === Number(filter.slice(1));
     if (filter === 'shop') return it.shops.length > 0;
     if (filter === 'chest') return chests.has(it.id);
@@ -114,7 +118,7 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
     if (filter === 'changed') return items.changed(it.id);
     return true;
   };
-  const rows = items.items.filter(matches);
+  const rows = sortItems(items.items.filter(matches), sort, (x) => x);
   const it = items.item(selected);
   return (
     <div className="book">
@@ -122,10 +126,11 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
         <ListFilter query={query} setQuery={setQuery} placeholder="名前・説明・効果で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ...Object.entries(ITEM_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, v]),
             ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更した']]} />
+        <ItemListControls sort={sort} setSort={setSort} rarity={rarity} setRarity={setRarity} rarities={items.items.map((x) => x.rarity)} />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={items.items.length} />
           <table className="book-table">
-            <thead><tr><th></th><th>ID</th><th>名前</th><th>分類</th><th>買値</th></tr></thead>
+            <thead><tr><th></th><th>ID</th><th>名前</th><th>分類</th><th>☆</th><th>買値</th></tr></thead>
             <tbody>
               {rows.map((it) => (
                 <tr key={it.id} className={it.id === selected ? 'active' : ''} onClick={() => (location.hash = `#/items/${it.id}`)}>
@@ -133,6 +138,7 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
                   <td className="num muted">{it.id}</td>
                   <td>{it.name}{items.changed(it.id) && <EditedMark text=" ●" />}</td>
                   <td className="muted">{it.category}</td>
+                  <td className="num">{it.rarity}</td>
                   <td className="num">{it.price || ''}</td>
                 </tr>
               ))}
@@ -171,45 +177,15 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
         <CopyButtons items={items} it={it} used={[...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)]} onEdit={onEdit} />
         {it.model !== 0 && <PortItemButton target="kahara" id={it.id} onDone={onEdit} />}
       </div>
-      <div className="book-cols">
-        <section>
-          <h3>{`お店 (${it.shops.length})`}</h3>
-          {it.shops.length
-            ? <div>{it.shops.map((s, i) => <Fragment key={s}>{i ? '、' : ''}<a href={shopHref(s)}>{shopLabel(s)}</a></Fragment>)}</div>
-            : <div className="muted">なし</div>}
-        </section>
-        <section>
-          <h3>{`落とすモンスター (${drops.length})`}</h3>
-          {drops.length
-            ? <ul>{drops.map((d, i) => {
-                const label = dropClass(d.rate)[1];
-                const odds = session.book?.battle.dropOdds(d.rate);
-                return (
-                  <li key={i}>
-                    <a href={`#/monsters/${d.row}`}>{d.name}</a>{' '}
-                    <span className="muted" title={`率の値 ${d.rate}`}>{odds === undefined ? `(${label})` : `(${label}・${pct(odds)} = ${oneIn(odds)})`}</span>
-                  </li>
-                );
-              })}</ul>
-            : <div className="muted">なし</div>}
-        </section>
-      </div>
-      <h3>{`宝箱 (${chests.length})`}</h3>
-      {chests.length
-        ? <table className="enc-table book-chests">
-            <tbody>
-              <tr><th>マップ</th><th>セル</th><th>中身の表</th><th>確率</th></tr>
-              {chests.map((c, i) => (
-                <tr key={i}>
-                  <td><a href={`#/map/${c.map.name}`}>{mapTitle(c.map, game.code.maps, game.master)}</a></td>
-                  <td className="muted">{`(${c.x}, ${c.y})`}</td>
-                  <td className="num muted">{`#${c.row}`}</td>
-                  <td className="num">{`${c.chance.toFixed(c.chance < 10 ? 1 : 0)}%`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        : <div className="muted">なし (ダンジョンの宝箱のみ数えます)</div>}
+      <ItemSources
+        shops={it.shops.map((s) => ({ label: shopLabel(s), href: shopHref(s) }))}
+        drops={drops.map((d) => {
+          const label = dropClass(d.rate)[1];
+          const odds = session.book?.battle.dropOdds(d.rate);
+          return { label: d.name, href: `#/monsters/${d.row}`, note: odds === undefined ? label : `${label}・${pct(odds)} = ${oneIn(odds)}`, title: `率の値 ${d.rate}` };
+        })}
+        chests={chests.map((c) => ({ place: mapTitle(c.map, game.code.maps, game.master), href: `#/map/${c.map.name}`, at: `(${c.x}, ${c.y})`, table: `#${c.row}`, chance: c.chance }))}
+        noChests="なし (ダンジョンの宝箱のみ数えます)" />
     </>
   );
 }
