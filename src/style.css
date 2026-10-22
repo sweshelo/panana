@@ -638,6 +638,9 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .lanai-stats h4 { margin: 14px 0 4px; }
 /* RPG FREE!'s talk page: the eight tones of a line side by side */
 .talk-tones { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 12px; }
+.group-pick-row { flex-wrap: nowrap; }
+.group-pick-row > .group-pick { flex: 1; min-width: 0; }
+.group-slots tr.edited td:first-child { box-shadow: inset 2px 0 var(--warn); }
 
 /* lanai shop: random slot pools (as the chest contents, in columns) and the shared limit's two inputs */
 .slot-pools { margin-top: 12px; }

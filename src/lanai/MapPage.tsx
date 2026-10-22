@@ -46,7 +46,7 @@ import {
   type LanaiMaps,
 } from './maps';
 import { LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
-import { MonsterGroupSelect, TreasureEditor } from './MapParts';
+import { MonsterGroupLine, MonsterGroupSelect, TreasureEditor } from './MapParts';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
@@ -586,10 +586,12 @@ function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
             }} />
           </label>
           <p className="muted small">
-            {`G (敵の群れのセル) でマスをクリックすると、その群れのセルを足す / 消す。セル ${doc.cells6.length} 個`}
-            {[...counts].map(([v, n]) => ` ・ ${hex8(v).toUpperCase()} × ${n}`).join('')}
-            {'。群れはこのコンテンツの MonsterGroup の行 ID から選ぶ (表にない値はゲームで行 0 の群れになる)。'}
+            {`G (敵の群れのセル) でマスをクリックすると、その群れのセルを足す / 消す。セル ${doc.cells6.length} 個。`}
+            {'群れはこのコンテンツの MonsterGroup の行 ID から選ぶ (表にない値はゲームで行 0 の群れになる)。'}
           </p>
+          {[...counts].map(([v, n]) => (
+            <div key={v} className="row small"><span className="muted">{`セル ${n} 個:`}</span><MonsterGroupLine maps={maps} value={v} /></div>
+          ))}
         </>
       )}
     </div>

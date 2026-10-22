@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
+import { LanaiGroupPage } from '../lanai/GroupPage';
 import { LanaiItemPage } from '../lanai/ItemPage';
 import { LanaiMapPage } from '../lanai/MapPage';
 import { LanaiMessagePage } from '../lanai/MessagePage';
@@ -21,10 +22,10 @@ import { useHashRoute } from './route';
 import { RomButton } from './RomDialog';
 import { openedKeys, useWorkspace } from './workspace';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['items', 'アイテム'], ['shops', 'ショップ'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const PAGE_IDS = LANAI_PAGES.map(([id]) => id);
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', items: 'アイテム', shops: 'ショップ', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', groups: '群れ', items: 'アイテム', shops: 'ショップ', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -99,6 +100,7 @@ export function LanaiShell({ session, onSession }: {
               : id === 'talks' ? <LanaiTalkPage session={session} arg={a} />
               : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
               : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
+              : id === 'groups' ? <LanaiGroupPage session={session} arg={a} />
               : id === 'items' ? <LanaiItemPage session={session} arg={a} />
               : id === 'shops' ? <LanaiShopPage session={session} arg={a} />
               : id === 'codes' ? <LanaiCodePage session={session} arg={a} />
