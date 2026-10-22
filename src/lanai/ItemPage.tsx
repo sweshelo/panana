@@ -1,5 +1,5 @@
 // RPG FREE!'s item book (#/items/<row>): every valid item of ItemData with its kind, rarity, prices, description and
-// model (ItemDataCore, items.ts), and giving an item the model of another game's item (#100).
+// model (ItemDataCore, items.ts), an equipment's effects (EquipInfo, equipment.ts), and giving an item the model of another game's item (#100).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Count, EditedMark, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
@@ -7,6 +7,8 @@ import { Photo } from '../ui/Photo';
 import { PortItemButton } from '../ui/PortLook';
 import { hex8 } from '../util/bytes';
 import { LANAI_ITEM_KINDS, lanaiItemDescription, lanaiItemRef, lanaiItems, textureOnlyKind, type LanaiItem } from './items';
+import { lanaiEquipRow, lanaiItemEffects } from './equipment';
+import { LanaiEquipEffects } from './EquipEffects';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiDropIndex, lanaiSlotSource, lanaiSourceIndex, lanaiSourcesScanned, type LanaiSourceIndex } from './itemSources';
 import { ItemListControls, ItemSources, rarityMatches, sortItems, type ItemSort, type RarityFilter, type SourceLink } from '../ui/ItemSources';
@@ -53,24 +55,31 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   const core = session.need('ItemDataCore');
   const drops = useMemo(() => lanaiDropIndex(session), [session, revision]);
   const sources = useSourceIndex(session, revision);
+  const effects = useMemo(() => new Map(items.map((it) => [it.row, lanaiItemEffects(session, it).join(' ')])), [items, session, revision]);
+  const changed = (x: LanaiItem): boolean => {
+    if (core.rowChanged(x.core)) return true;
+    const e = lanaiEquipRow(session, x);
+    return !!e && e.table.rowChanged(e.row);
+  };
   const q = query.trim();
   const groups = [...new Set(items.map((it) => it.kind & 0xf0))].sort((a, b) => a - b);
   const rows = useMemo(() => sortItems(items.filter((it) => {
-    if (q && !it.name.includes(q) && String(it.row) !== q && hex8(it.id) !== q.toUpperCase()) return false;
+    if (q && !it.name.includes(q) && !effects.get(it.row)?.includes(q) && String(it.row) !== q && hex8(it.id) !== q.toUpperCase()) return false;
     if (!rarityMatches(rarity, it.rarity)) return false;
     if (filter.startsWith('g')) return (it.kind & 0xf0) === Number(filter.slice(1));
     if (filter === 'shop') return !!sources.index?.shops.has(it.id) || !!lanaiSlotSource(session, it);
     if (filter === 'chest') return !!sources.index?.chests.has(it.id);
     if (filter === 'drop') return drops.has(it.id);
-    if (filter === 'changed') return core.rowChanged(it.core);
+    if (filter === 'changed') return changed(it);
     return true;
-  }), sort, (x) => ({ id: x.row, name: x.name, price: x.buy, sell: x.sell, rarity: x.rarity })), [items, q, filter, rarity, sort, drops, sources.index, session, core, revision]);
+  }), sort, (x) => ({ id: x.row, name: x.name, price: x.buy, sell: x.sell, rarity: x.rarity })), [items, q, filter, rarity, sort, drops, sources.index, session, core, revision, effects]);
   const scanned = !!sources.index;
   const it = byRow.get(selected);
+  const equip = it ? lanaiEquipRow(session, it) : null;
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・行・ID で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
+        <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・効果・行・ID で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
           options={[['all', 'すべて'], ...groups.map((g): [string, string] => [`g${g}`, kindName(items.find((x) => (x.kind & 0xf0) === g)!.kind).split(':')[0]!]),
             ...(scanned ? [['shop', 'お店で買える'], ['chest', '宝箱から出る']] as [string, string][] : []), ['drop', 'モンスターが落とす'], ['changed', '変更したもの']]} />
         <ItemListControls sort={sort} setSort={(v) => { setSort(v); setLimit(PAGE); }} rarity={rarity} setRarity={(v) => { setRarity(v); setLimit(PAGE); }} rarities={items.map((x) => x.rarity)} />
@@ -83,7 +92,7 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
                 <tr key={x.row} className={x.row === selected ? 'active' : ''} onClick={() => (location.hash = lanaiItemHref(x.row))}>
                   <td className="photo-cell"><Photo model={lanaiItemRef(session, x)} /></td>
                   <td className="num muted">{x.row}</td>
-                  <td>{x.name}{core.rowChanged(x.core) && <EditedMark text=" ●" />}</td>
+                  <td>{x.name}{changed(x) && <EditedMark text=" ●" />}</td>
                   <td className="muted nowrap">{kindName(x.kind)}</td>
                   <td className="num">{x.rarity}</td>
                   <td className="num">{x.buy || ''}</td>
@@ -113,8 +122,13 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
               </table>
               <ModelView model={lanaiItemRef(session, it)} name={it.name} />
             </div>
+            {equip && <LanaiEquipEffects session={session} equip={equip} kind={it.kind} onEdit={() => session.edited()} />}
             <div className="row">
-              {core.rowChanged(it.core) && <button onClick={() => { core.setRow(it.core, core.originalRow(it.core)!); session.edited(); }}>このアイテムの変更を元に戻す</button>}
+              {changed(it) && <button onClick={() => {
+                if (core.rowChanged(it.core)) core.setRow(it.core, core.originalRow(it.core)!);
+                if (equip?.table.rowChanged(equip.row)) equip.table.setRow(equip.row, equip.table.originalRow(equip.row)!);
+                session.edited();
+              }}>このアイテムの変更を元に戻す</button>}
               {it.model !== 0 && !textureOnlyKind(it.kind) && <PortItemButton target="lanai" id={it.row} onDone={() => session.edited()} />}
               {textureOnlyKind(it.kind) && <span className="muted small">ふく・床・壁はテクスチャだけの品なので、ほかの作品のモデルにはできません。</span>}
             </div>
