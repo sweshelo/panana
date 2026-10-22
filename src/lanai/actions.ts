@@ -10,6 +10,10 @@ import type { LanaiTable } from './table';
 export const LANAI_ACTION_NONE = 0x80000000;
 /** The action type of a script: the content's CRO (native code) does what the NPC does; its arguments are 0. */
 export const LANAI_ACTION_SCRIPT = 0x8000002d;
+/** The goal chest: opening it clears a content (key-objects.md §2). */
+export const LANAI_ACTION_GOAL_CHEST = 0x8000002e;
+/** The clear warp (key-objects.md §3). */
+export const LANAI_ACTION_CLEAR_WARP = 0x80000031;
 
 export interface LanaiActionInfo {
   name: string;
@@ -20,6 +24,8 @@ export interface LanaiActionInfo {
   /** Labels of the other arguments, by index (map.md §5.1, §5.2). */
   args?: Record<number, string>;
   note?: string;
+  /** Arguments picked from a list instead of typed: a MonsterGroup row number of the content, or a content number. */
+  pick?: Record<number, 'monsterGroupRow' | 'content'>;
   /** Whether a record can be given this type to say lines from data (no script needed). */
   talking?: boolean;
 }
@@ -29,6 +35,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   0x80000001: { name: '一言', talk: [0], talking: true, note: '引数 1 の台詞を言う。0x02 / 0x03 との違い (振り向くか) は未確認' },
   0x80000002: { name: '一言 (0x02)', talk: [0], talking: true, note: '0x01 と同じく引数 1 の台詞。違いは未確認 (RPG2 では振り向く)' },
   0x80000003: { name: '一言 (0x03)', talk: [0], talking: true, note: '0x01 と同じく引数 1 の台詞。違いは未確認 (RPG2 では振り向かない)' },
+  0x8000000c: { name: 'ボス戦 (範囲に入ると戦う)', args: { 0: 'MonsterGroup の行番号', 1: '勝つと立つフラグ', 2: '未解析' }, pick: { 0: 'monsterGroupRow' }, note: '区画 8 の範囲。入ると引数 1 の群れと戦い、勝つと引数 2 のフラグが立つ (naauao lanai/key-objects.md §1)' },
   0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の行' } },
   0x80000010: { name: '宝箱 (見た目 1)', args: { 0: 'TreasureGroup の行' } },
   0x80000011: { name: '出入口 (行き先あり)', args: { 0: '行き先のマップ (ハッシュ)', 1: '行き先の地点 ID' } },
@@ -36,24 +43,13 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   0x80000017: { name: '扉 (推定)' },
   0x80000025: { name: '本・調べるもの', talk: [0], talking: true, args: { 2: '未解析 (40 が多い)' }, note: '引数 1 の文を出す。引数 3 の意味は未解析' },
   0x8000002d: { name: 'スクリプト (CRO)', note: 'コンテンツの CRO (contentsNNNN.cro) のネイティブコードが動きを決める。データでは書けない (引数はすべて 0)。台詞を変えるには、データで書ける型 (一言など) に付け替える' },
-  0x8000002e: {
-    name: 'ゴールの宝箱 (開けるとクリア)',
-    talk: [2],
-    zeroIsNone: true,
-    args: { 0: 'TreasureGroup の行', 1: 'クリアにするコンテンツ (0 = なし)', 3: 'モーション (推定)', 4: '未解析 (1 / 0x0E)' },
-    note: '区画 4 の見た目 3。開けると引数 2 のコンテンツ番号をクリア済みにする (セーブのグループ 0x53、FUN_002C1D90)。段 1 (初回) だけが引数 2 を持ち、段 2 / 3 (再挑戦) は 0。引数 3 は開けた後の台詞',
-  },
+  0x8000002e: { name: 'ゴールの宝箱 (開けるとクリア)', talk: [2], zeroIsNone: true, args: { 0: 'TreasureGroup の行', 1: 'クリアにするコンテンツ (0 = なし)', 3: 'モーション (推定)', 4: '未解析 (1 / 0x0E)' }, pick: { 1: 'content' }, note: '区画 4 の見た目 3。開けると引数 1 の中身を出し、引数 2 のコンテンツをクリア済みにする (セーブのグループ 0x53、FUN_002C1D90)。段 1 (初回) だけが引数 2 を持ち、段 2 / 3 (再挑戦) は 0。引数 3 は開けた後の台詞' },
   0x8000002f: { name: '看板', talk: [0], talking: true, note: '引数 1 の文を出す (区画 5 の種類 11)' },
   0x80000030: { name: '回復ポイント', note: '区画 5 の種類 13 (エフェクト fx_bg_repair_point)。調べると、全員の HP / MP が満タンで状態異常もなければそう言い、そうでなければ確かめてから全員を回復する (SafeAreaCommon、FUN_0020053C)。ステージのクリアとは関係ない。引数はすべて 0' },
-  0x80000031: {
-    name: 'クリアのワープ',
-    talk: [1],
-    zeroIsNone: true,
-    args: { 0: 'クリアにするコンテンツ', 2: 'モーション (推定。0x15)', 3: '未解析 (1)', 4: '1 = 使う前に確かめる' },
-    note: '区画 3 の種類 3 (エフェクト fx_bg_f_warpzone_goal)。使うと引数 1 のコンテンツ番号をクリア済みにする (セーブのグループ 0x53、FUN_00203AE0)。引数 5 が 1 なら確かめの台詞に「はい」と答えたときだけ。引数 2 は台詞と推定',
-  },
+  0x80000031: { name: 'クリアのワープ', talk: [1], zeroIsNone: true, args: { 0: 'クリアにするコンテンツ', 2: 'モーション (推定。0x15)', 3: '未解析 (1)', 4: '確認してからクリア (1 = 確認の「はい」のあと)' }, pick: { 0: 'content' }, note: '区画 3 の種類 3 (エフェクト fx_bg_f_warpzone_goal)。使うと引数 1 のコンテンツをクリア済みにする (セーブのグループ 0x53、FUN_00203AE0)。引数 5 が 1 なら確かめの台詞に「はい」と答えたときだけ。台詞 (引数 2) は推定' },
   0x80000032: { name: '店の人', talk: [0], note: '引数 1 の台詞のあと店を開く。どの店かは引数になく、コンテンツの Shop の行 0 と推定 (店の人がいるコンテンツは店が 1 つだけ。ショップのページ)' },
   0x80000037: { name: '会話 (台詞 4 つ)', talk: [0, 1, 2, 3], zeroIsNone: true, talking: true, note: '4 つの台詞 (0 = なし) から 1 つを出す。どれを出すかの条件 (仲間になる前後・依頼の前後など) は未解析' },
+  0x80000039: { name: 'ワープ (行き先あり)', args: { 0: '行き先のマップ (ハッシュ)', 1: '行き先の地点 ID' } },
 };
 
 /** "一言" or "型 8000001D" for an action type. */

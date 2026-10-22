@@ -2,10 +2,13 @@
 // editor/mapscene.ts), driven by the editor's Controller (tools, selection, dragging) on the page's LanaiEditState.
 // The tile models are the GSCs of the map's tileset (mapModels.ts): the map's own and every one of the palette, read
 // again when an edit changes the map's MapData (indoor tiles; map.md §6.1). The 3D view draws the models the game
-// places for records (mapObjects.ts) as RPG3's map page does, and markers for the others.
+// places for records (mapObjects.ts) as RPG3's map page does (MapObject rows, and the monsters of MonsterDesign for the
+// bosses' figures), a mark for the effects the game puts instead of a model (the clear warp, the recovery points) and
+// markers for the others.
 import * as THREE from 'three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
+import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
 import { drawHover, drawRoomCells, drawSelection, drawTiles } from '../editor/draw2d';
 import { GridCanvas } from '../editor/gridcanvas';
@@ -18,7 +21,9 @@ import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiObjectModels, lanaiTileModels } from './mapModels';
-import { lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+import { LANAI_EFFECT_NAMES, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+import { lanaiMonsterModel } from './monsterModels';
+import { lanaiMonsterDesign } from './monsters';
 
 interface LoadedModel {
   factory: ModelFactory;
@@ -61,10 +66,13 @@ export class LanaiMapView {
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
   private readonly overlay = new CellOverlay();
-  /** Loaded models of records ("o<MapObject row>"); null while loading or when there is none. */
+  /** Loaded models of records ("o<MapObject row>" / "m<MonsterDesign row>"); null while loading or when there is none. */
   private readonly objects = new Map<string, LoadedModel | null>();
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new MarkerMaterials();
+  /** The mark of an effect (a glowing column standing on the cell). */
+  private readonly effectGeo = new THREE.CylinderGeometry(70, 70, 160, 24, 1, true).translate(0, 80, 0);
+  private readonly effectMat = new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -108,6 +116,8 @@ export class LanaiMapView {
     this.unsubscribe();
     this.factory?.dispose();
     for (const f of this.objects.values()) f?.factory.dispose();
+    this.effectGeo.dispose();
+    this.effectMat.dispose();
     this.scene.dispose();
   }
 
@@ -227,17 +237,19 @@ export class LanaiMapView {
     });
   }
 
-  /** The name of a loaded model ("obj_box_01"), '' while it is loading or when there is none. */
+  /** The name of a loaded model ("obj_box_01") or of an effect ("fx_bg_repair_point.ptcl"), '' while it is loading or when there is none. */
   modelName(m: LanaiRecordModel | null): string {
+    if (m?.type === 'effect') return LANAI_EFFECT_NAMES[m.row] ?? '';
     return (m && this.objects.get(this.modelKey(m))?.name) || '';
   }
 
   private modelKey(m: LanaiRecordModel): string {
-    return `o${m.row}`;
+    return m.type === 'monster' ? `m${m.design}` : `o${m.row}`;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
   private recordModel(m: LanaiRecordModel): THREE.Object3D | null {
+    if (m.type === 'effect') return new THREE.Mesh(this.effectGeo, this.effectMat);
     const key = this.modelKey(m);
     if (!this.objects.has(key)) {
       this.objects.set(key, null);
@@ -255,12 +267,21 @@ export class LanaiMapView {
   }
 
   private async loadModel(m: LanaiRecordModel): Promise<LoadedModel | null> {
-    const ref = lanaiObjectRef(this.maps.session.table('MapObject'), m.row);
-    if (!ref) return null;
-    const set = await lanaiObjectModels(this.maps.session, ref);
-    if (!set.models.size) return null;
-    const factory = new ModelFactory(set);
-    return { factory, hash: ref.entry, name: set.paths.get(ref.entry) ?? '', pose: posed(factory, ref.entry) };
+    const session = this.maps.session;
+    let got: { set: TilesetModels; hash: number } | null = null;
+    if (m.type === 'object') {
+      const ref = lanaiObjectRef(session.table('MapObject'), m.row);
+      if (!ref) return null;
+      const set = await lanaiObjectModels(session, ref);
+      got = set.models.size ? { set, hash: ref.entry } : null;
+    } else if (m.type === 'monster') {
+      const d = lanaiMonsterDesign(session, m.design);
+      const ref = d && lanaiMonsterModel(session, d);
+      if (ref) got = await ref.load();
+    }
+    if (!got) return null;
+    const factory = new ModelFactory(got.set);
+    return { factory, hash: got.hash, name: got.set.paths.get(got.hash) ?? '', pose: posed(factory, got.hash) };
   }
 
   private sync3d(): void {
@@ -294,7 +315,8 @@ export class LanaiMapView {
           const [ox, oz] = look!.offset ?? [0, 0];
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = look!.angle;
-          model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
+          // monsters keep their own size (not checked against the game yet)
+          if (look!.model!.type === 'object') model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
           this.markers.add(model);
           if (!selected) return;
         }

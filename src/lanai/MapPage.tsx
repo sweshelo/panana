@@ -45,12 +45,13 @@ import {
   type LanaiMapInfo,
   type LanaiMaps,
 } from './maps';
-import { LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
-import { MonsterGroupLine, MonsterGroupSelect, TreasureEditor } from './MapParts';
+import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
+import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSelect, TreasureEditor } from './MapParts';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
-import { LANAI_CHARA_KIND, type LanaiRecordLook } from './mapObjects';
+import { LANAI_CHARA_KIND, lanaiCharaKind, type LanaiRecordLook } from './mapObjects';
+import { lanaiMonsters } from './monsters';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
 
@@ -494,20 +495,29 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
   );
 }
 
-/** "MapObject #64 gimk_05_trebox_1" (and the MapChara row of a character) for the model line of the inspector. */
+/** "MapObject #64 gimk_05_trebox_1" / "MonsterDesign #193 (まおう)" / "エフェクト …" (and the MapChara row of a character) for the model line of the inspector. */
 function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook | null }): ReactNode {
   useSignal(view.signal);
   if (!look) return null;
   const m = look.model;
   const name = view.modelName(m);
-  const chara = look.chara !== undefined ? view.maps.contentTable('MapChara') : undefined;
-  const kind = chara && look.chara! > 0 && look.chara! < chara.rows ? LANAI_CHARA_KIND[chara.u32(look.chara!, 0) & 7] : undefined;
+  const kind = look.chara !== undefined ? LANAI_CHARA_KIND[lanaiCharaKind(view.maps.contentTable('MapChara'), look.chara)] : undefined;
+  const what = !m ? 'モデルなし'
+    : m.type === 'object' ? `MapObject #${m.row}${name ? ` ${name}` : ''}`
+    : m.type === 'monster' ? `MonsterDesign #${m.design}${designNames(view.maps.session, m.design)}${name ? ` ${name}` : ''}`
+    : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
   return (
     <p className="muted small">
       {look.chara !== undefined && `MapChara #${look.chara}${kind ? ` (${kind})` : ''}・`}
-      {`モデル: ${!m ? 'モデルなし' : `MapObject #${m.row}${name ? ` ${name}` : ''}`}`}
+      {`モデル: ${what}`}
     </p>
   );
+}
+
+/** " (まおう・…)": the monsters that look like a MonsterDesign row, '' when none does. */
+function designNames(session: LanaiSession, design: number): string {
+  const names = [...new Set(lanaiMonsters(session).filter((x) => x.designRow === design && x.name).map((x) => x.name))];
+  return names.length ? ` (${names.slice(0, 3).join('・')}${names.length > 3 ? ' …' : ''})` : '';
 }
 
 function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view: LanaiMapView; section: number; rec: Rec; index: number }): ReactNode {
@@ -666,9 +676,16 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
       )}
       {talk && talkArgs.length > 0 && <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ行を使うほかの NPC の台詞も変わる。`}</p>}
       {lines}
-      {known.map(([a, label]) => (
-        <label key={a} className="field"><span>{`引数 ${Number(a) + 1}: ${label}`}</span><HexInput value={arg(Number(a))} onChange={(v) => setArg(Number(a), v)} /></label>
-      ))}
+      {known.map(([a, label]) => {
+        const i = Number(a), pick = action?.pick?.[i];
+        return (
+          <label key={a} className="field"><span>{`引数 ${i + 1}: ${label}`}</span>
+            {pick === 'monsterGroupRow' && st.maps.monsterGroup ? <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
+              : pick === 'content' ? <ContentSelect maps={st.maps} value={arg(i)} allowNone={type === LANAI_ACTION_GOAL_CHEST} onChange={(v) => setArg(i, v)} />
+              : <HexInput value={arg(i)} onChange={(v) => setArg(i, v)} />}
+          </label>
+        );
+      })}
       <details>
         <summary className="small">型と引数 (16 進)</summary>
         <label className="field"><span>{`型 (+0x${offset.toString(16).toUpperCase()}、0x80000000 = なし)`}</span><HexInput value={type} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, offset, v >>> 0))} /></label>

@@ -7,6 +7,8 @@ import { Dialog } from '../ui/Dialog';
 import { GroupIconRow, GroupListView } from '../ui/GroupDetail';
 import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
+import { LANAI_ACTION_GOAL_CHEST } from './actions';
+import { contentTitle, lanaiContents } from './contents';
 import type { LanaiEditState } from './mapedit';
 import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './maps';
 import { lanaiItemName } from './monsterBook';
@@ -19,7 +21,7 @@ import {
   LANAI_TREASURE_ITEM,
   LANAI_TREASURE_KIND,
   LANAI_TREASURE_SLOTS,
-  lanaiChestField,
+  lanaiChestFields,
   lanaiChestUsers,
   lanaiTreasureLabel,
   lanaiTreasureSlots,
@@ -129,6 +131,46 @@ export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps;
   );
 }
 
+/** A MonsterGroup row number of the content (the boss battle, action 0x8000000C, names the row, not its ID), with the group picker. */
+export function MonsterGroupRowSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+  const [picking, setPicking] = useState(false);
+  const g = maps.monsterGroups()[value];
+  return (
+    <>
+      <div className="row group-pick-row">
+        <button className="group-pick" title={`群れを選び直す (行 ${value})`} onClick={() => setPicking(true)}>
+          {g ? <MonsterGroupLine maps={maps} value={g.id} /> : <span className="muted">{`行 ${value} (表は ${maps.monsterGroups().length} 行: 表の外)`}</span>}
+        </button>
+        {g && <a href={lanaiGroupHref(maps.content.index, value)} title={`群れ #${value} を「群れ」のページで開く (編集)`}>↗</a>}
+      </div>
+      {picking && (
+        <LanaiGroupPicker maps={maps} current={g?.id ?? 0} onClose={() => setPicking(false)}
+          onPick={(id) => { setPicking(false); const row = maps.monsterGroupRow(id); if (row >= 0 && row !== value) onChange(row); }} />
+      )}
+    </>
+  );
+}
+
+// ---- contents
+
+/**
+ * A content number (the content a goal chest or the clear warp marks cleared: save flag group 0x53, FUN_00191130).
+ * In the ROM every one names its own content, so another one is flagged.
+ */
+export function ContentSelect({ maps, value, onChange, allowNone }: { maps: LanaiMaps; value: number; onChange: (v: number) => void; allowNone?: boolean }): ReactNode {
+  const list = useMemo(() => lanaiContents(maps.session), [maps.session]);
+  const own = maps.content.index;
+  return (
+    <>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+        {value >= list.length && <option value={value}>{`${value} (コンテンツの表にない)`}</option>}
+        {list.map((c) => <option key={c.index} value={c.index}>{c.index === 0 && allowNone ? '0: なし' : `${c.index}: ${contentTitle(c)}${c.index === own ? ' (このコンテンツ)' : ''}`}</option>)}
+      </select>
+      {value !== own && !(allowNone && value === 0) && <span className="muted small">{`このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}</span>}
+    </>
+  );
+}
+
 // ---- chests
 
 /** The kinds besides items, offered before the items in the picker (as -kind). */
@@ -203,19 +245,49 @@ function TreasureRowPicker({ st, current, onPick, onNew, onClose }: {
   );
 }
 
+/** The headings of a goal chest's contents by its state (the action: map.md §7.3). */
+const STAGE_HEADINGS = ['初めて開けたとき (状態 0)', '2 回目以降 (状態 1)', '2 回目以降 (状態 2〜3)'];
+
 /**
  * Contents of a chest: the TreasureGroup row its EventObject row's chest action names (the first argument) with its
- * entries (item, G, kinds 3 and 4, and the weight). Edits are undo points of the map page.
+ * entries (item, G, kinds 3 and 4, and the weight); for the goal chest one per state, and the content it clears.
+ * Edits are undo points of the map page.
  */
 export function TreasureEditor({ st, event }: { st: LanaiEditState; event: number }): ReactNode {
   const maps = st.maps;
+  const events = st.info ? maps.eventTable(st.info.dungeon) : undefined;
+  const stages = events ? lanaiChestFields(events, event) : [];
+  if (!events || !stages.length) return null;
+  const goal = events.u32(event, stages[0]!.field - 4) === LANAI_ACTION_GOAL_CHEST;
+  if (!goal) return <TreasureStage st={st} event={event} field={stages[0]!.field} />;
+  // the content it clears: argument 2 of the first state's action (the others have 0)
+  const clearField = stages[0]!.field + 4;
+  const clears = events.u32(event, clearField);
+  return (
+    <>
+      <div className="treasure">
+        <h3>ゴールの宝箱: クリア判定</h3>
+        <label className="field"><span>{`開けるとクリア済みにするコンテンツ (動作 ${stages[0]!.stage + 1} の引数 2)`}</span>
+          <ContentSelect maps={maps} value={clears} allowNone onChange={(v) => st.setEventField(event, (x) => x.setU32(event, clearField, v))} />
+        </label>
+        <p className="muted small">
+          {clears ? `開けると中身を渡し、コンテンツ ${clears} をクリア済みにします (セーブのフラグ群 0x53)。` : '0 なので、開けてもクリアにはなりません。'}
+          {'開けた後の台詞は下の動作の「台詞 (引数 3)」で選びます。'}
+        </p>
+      </div>
+      {stages.map((x) => <TreasureStage key={x.field} st={st} event={event} field={x.field} heading={STAGE_HEADINGS[x.stage]} />)}
+    </>
+  );
+}
+
+/** The contents of one chest action (the TreasureGroup row at `field` of the EventObject row). */
+function TreasureStage({ st, event, field, heading }: { st: LanaiEditState; event: number; field: number; heading?: string }): ReactNode {
+  const maps = st.maps;
   const { session } = maps;
   const t = maps.treasureGroup;
-  const events = st.info ? maps.eventTable(st.info.dungeon) : undefined;
+  const events = maps.eventTable(st.info!.dungeon)!;
   const [picking, setPicking] = useState<{ current?: number; onPick: (id: number) => void } | null>(null);
   const [pickingRow, setPickingRow] = useState(false);
-  const field = events ? lanaiChestField(events, event) : null;
-  if (!events || field === null) return null;
   const row = events.u32(event, field);
   const users = lanaiChestUsers(maps).get(row) ?? [];
   if (!t) return <p className="muted small">このコンテンツには TreasureGroup の表がありません。</p>;
@@ -256,7 +328,7 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
   });
   return (
     <div className="treasure">
-      <h3>{`宝箱の中身 (${LANAI_CHEST_ACTIONS[events.u32(event, field - 4)]})`}</h3>
+      <h3>{`宝箱の中身 (${LANAI_CHEST_ACTIONS[events.u32(event, field - 4)]}${heading ? `、${heading}` : ''})`}</h3>
       <div className="row">
         <span className="grow">
           {`中身の表 TreasureGroup #${row}${added ? ' (追加した行)' : ''}`}

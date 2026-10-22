@@ -4,27 +4,28 @@
 // Read from the data of every map (naauao lanai/map.md §5, §7.1), not from the code:
 // - EventObject +0x5A is the model of a record (RPG3's +0x4E): a MapObject row number for exits, chests and objects,
 //   a MapChara row of the content for the characters of section 5 (kinds 0 / 1 / 2).
-// - MapChara (0x30 bytes a row) +0x2C (u16) is the MapObject row of the character's model (npc_NN, …).
+// - MapChara (0x30 bytes a row) +0x2C (u16) is the MapObject row of the character's model (npc_NN, …), but a MonsterDesign
+//   row for a monster (kind 1, +0x00 & 7): the figures of the bosses that fight after a talk (lanai/key-objects.md §1).
+// - The clear warp (section 3 kind 3) and the recovery points (section 5 kinds 12 / 13) place no model: the code puts an
+//   effect of EffectData (master +0x1E4) there and does not read EventObject +0x5A (key-objects.md §3.2, §3.3).
+// - The goal chest (section 4 look 3) is MapObject 0x80000274 gimk_05_trebox_goal outside and inside (FUN_0044F9EC).
+// - Section 5 kinds 3 (heal) / 9 / 10 without EventObject +0x5A take MapObject rows 0x3F (gimk_04_heal_1) / 0x72 / 0x75.
+// These defaults were checked in the code (Update v17408).
 // - MapObject keeps RPG3's mapObject numbering in its row IDs (0x80000034〜39 are the chests gimk_05_trebox_*,
 //   0x80000001 / 2 the stairs, 0x80000004 / 5 the doors), so the defaults of a record without a model are RPG3's.
 // The facings are 1 / 2 / 4 / 8 masks (§3.2) read as RPG3's directions 0..3 (maps.ts lanaiRecFacing).
-// The defaults below were checked in the code (Update v17408; naauao lanai/key-objects.md):
-// - chests (FUN_0044F9EC): looks 0〜2 take MapObject rows 0x40〜0x42 outside / 0x43〜0x45 inside (row IDs
-//   0x80000034〜39), look 3 the goal chest row 0x46 (ID 0x80000274, gimk_05_trebox_goal) both ways, others the look 0;
-// - the clear warp (section 3 kind 3, FUN_0021D744) is the effect EffectData row 0x22 (fx_bg_f_warpzone_goal.ptcl), not
-//   a MapObject model, and EventObject +0x5A is not read;
-// - section 5 (FUN_0021C844): kind 3 (heal) defaults to row 0x3F (gimk_04_heal_1), 9 to 0x72, 10 to 0x75; kinds 12 / 13
-//   are the effects fx_bg_repair_field / fx_bg_repair_point (EffectData rows 0x26 / 0x27): kind 13 takes no model.
 import { LANAI_ROT_CODEC } from '../game/sections';
 import { f32, u16, u32 } from '../util/bytes';
 import type { LanaiPartRef } from './maps';
 import { ROW_ID, type LanaiTable } from './table';
 
-/** What a record's model is: a MapObject row (number) of the master. */
-export interface LanaiRecordModel {
-  type: 'object';
-  row: number;
-}
+/** What a record's model is: a MapObject row (number) of the master, a MonsterDesign row, or an effect (EffectData row). */
+export type LanaiRecordModel =
+  | { type: 'object'; row: number }
+  /** A monster's model: a MonsterDesign row (monsterModels.ts). */
+  | { type: 'monster'; design: number }
+  /** An effect the game puts there instead of a model (EffectData row; the viewer draws a marker). */
+  | { type: 'effect'; row: number };
 
 export interface LanaiRecordLook {
   model: LanaiRecordModel | null;
@@ -38,28 +39,36 @@ export interface LanaiRecordLook {
 
 /** EventObject +0x5A: the record's model (RPG3's +0x4E). */
 export const LANAI_EO_MODEL = 0x5a;
-/** MapChara +0x2C: the MapObject row of the character's model. */
+/** MapChara +0x2C: the MapObject row of the character's model (a MonsterDesign row for a monster). */
 export const LANAI_CHARA_OBJECT = 0x2c;
 /** MapChara +0x00 (low 3 bits; RPG3's mapChara kinds): 0 NPC, 1 monster, 2 / 3 Denpa person (assumed, as RPG3's). */
 export const LANAI_CHARA_KIND: Record<number, string> = { 0: 'NPC', 1: 'モンスター', 2: '電波人間', 3: '電波人間' };
+/** The MapChara kind of a monster: +0x2C is a MonsterDesign row. */
+export const LANAI_CHARA_MONSTER = 1;
 
-/** Chest models (RPG3's mapObject numbers = MapObject row IDs) by the record's look (+0x00) outside / inside. */
-const CHEST_IDS = [0x34, 0x35, 0x36] as const;
-const CHEST_IDS_INDOOR = [0x37, 0x38, 0x39] as const;
-/** The look of the goal chest (opening it clears the content) and its model (MapObject row ID; gimk_05_trebox_goal). */
-export const LANAI_GOAL_CHEST_LOOK = 3;
-const GOAL_CHEST_ID = 0x274;
-/** Exit kinds (+0x15; map.md §5.1): 3 the clear warp (an effect), 5 / 6 up / down stairs (RPG3's 4 / 5), 100 the wall door. */
+/** Chest models (RPG3's mapObject numbers = MapObject row IDs) by the record's look (+0x00) outside / inside; look 3 is the goal chest. */
+const CHEST_IDS = [0x34, 0x35, 0x36, 0x274] as const;
+const CHEST_IDS_INDOOR = [0x37, 0x38, 0x39, 0x274] as const;
+/** The look (+0x00) of the goal chest (opening it clears the content; action 0x8000002E). */
+export const LANAI_GOAL_CHEST = 3;
+/** The exit kind (+0x15) of the clear warp (action 0x80000031). */
 export const LANAI_CLEAR_WARP = 3;
+/** Section 5 kinds of the recovery points: 13 the point (action 0x80000030), 12 the field. */
+export const LANAI_REPAIR_POINT = 13;
+export const LANAI_REPAIR_FIELD = 12;
+/** EffectData rows the game puts for them: fx_bg_f_warpzone_goal, fx_bg_repair_field, fx_bg_repair_point. */
+export const LANAI_EFFECT_CLEAR_WARP = 0x22;
+export const LANAI_EFFECT_REPAIR_FIELD = 0x26;
+export const LANAI_EFFECT_REPAIR_POINT = 0x27;
+/** Exit kinds (+0x15; map.md §5.1): 5 up stairs, 6 down stairs (RPG3's 4 / 5), 100 the wall door. */
 export const LANAI_UP_STAIRS = 5;
 export const LANAI_DOWN_STAIRS = 6;
 export const LANAI_WALL_DOOR = 100;
 /** Stairs and the default wall door (RPG3's mapObject 1 / 2 / 5). */
 const STAIRS_UP_ID = 1, STAIRS_DOWN_ID = 2, WALL_DOOR_ID = 5;
-/** Section 5 kinds (+0x00) whose model is an effect: 13 the recovery point (action 0x80000030), no MapObject model. */
-export const LANAI_RECOVERY_POINT = 13;
-/** MapObject rows (numbers) of section 5 kinds without EventObject +0x5A (FUN_0021C844): 3 gimk_04_heal_1, 9 / 10. */
-const OBJECT_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
+
+/** MapObject rows (row numbers) section 5 places for a kind when EventObject +0x5A is 0: 3 → 0x3F gimk_04_heal_1, 9 → 0x72, 10 → 0x75. */
+const SECTION5_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
 
 const HALF = Math.PI / 2;
 /** Props, objects and characters: direction 0..3 → 180°, 90°, 0°, −90° (RPG3's FUN_00364B80 / FUN_00366F30). */
@@ -85,10 +94,25 @@ export function lanaiObjectScale(mapObject: LanaiTable | undefined, row: number)
   return f32(mapObject.row(row), 0x1c) || 1;
 }
 
-/** The MapObject row of a character (MapChara row; 0 = none). */
+/** The MapObject row of a character (MapChara row; 0 = none), or its MonsterDesign row for a monster. */
 export function lanaiCharaObject(mapChara: LanaiTable | undefined, chara: number): number {
   return mapChara && chara > 0 && chara < mapChara.rows ? u16(mapChara.row(chara), LANAI_CHARA_OBJECT) : 0;
 }
+
+/** The kind of a character (MapChara +0x00 & 7; LANAI_CHARA_KIND), -1 when the row is not there. */
+export function lanaiCharaKind(mapChara: LanaiTable | undefined, chara: number): number {
+  return mapChara && chara > 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
+}
+
+/**
+ * The effects the game puts for records (EffectData rows; the row names an entry of the archive 90ED0000, whose ZIP
+ * name is the effect's: read from the code and the ROM, key-objects.md §3).
+ */
+export const LANAI_EFFECT_NAMES: Record<number, string> = {
+  [LANAI_EFFECT_CLEAR_WARP]: 'fx_bg_f_warpzone_goal.ptcl',
+  [LANAI_EFFECT_REPAIR_FIELD]: 'fx_bg_repair_field.ptcl',
+  [LANAI_EFFECT_REPAIR_POINT]: 'fx_bg_repair_point.ptcl',
+};
 
 export interface LanaiLookContext {
   /** The master's MapObject. */
@@ -119,8 +143,8 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
     }
     case 3: {
       const kind = raw[0x15]!;
-      // the clear warp shows an effect whatever +0x5A says
-      if (kind === LANAI_CLEAR_WARP) return null;
+      // the clear warp: an effect in the cell, not turned (FUN_0021D744 places no MapObject for it)
+      if (kind === LANAI_CLEAR_WARP) return { model: { type: 'effect', row: LANAI_EFFECT_CLEAR_WARP }, angle: 0 };
       const dir = dirOf(raw[0x14]!);
       const stairs = kind === LANAI_UP_STAIRS ? 1 : kind === LANAI_DOWN_STAIRS ? 2 : 0;
       const row = valid(evModel) || (stairs === 1 ? byId(STAIRS_UP_ID) : stairs === 2 ? byId(STAIRS_DOWN_ID) : kind === LANAI_WALL_DOOR ? byId(WALL_DOOR_ID) : 0);
@@ -137,20 +161,24 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       return { ...object(row, exitAngle(dir)), offset: [x * 100, z * 100] };
     }
     case 4: {
-      // EventObject +0x5A, else the look (+0x00) picks one of the chests; they are not turned
+      // EventObject +0x5A, else the look (+0x00) picks one of the chests (looks past 3 take look 0); they are not turned
       const ids = ctx.indoor ? CHEST_IDS_INDOOR : CHEST_IDS;
-      const look = u32(raw, 0);
-      return object(valid(evModel) || byId(look === LANAI_GOAL_CHEST_LOOK ? GOAL_CHEST_ID : ids[look] ?? ids[0]), 0);
+      return object(valid(evModel) || byId(ids[u32(raw, 0)] ?? ids[0]), 0);
     }
     case 5: {
       const kind = u32(raw, 0);
       const angle = QUARTER[dirOf(raw[0x1c]!)]!;
       if (kind <= 2) {
         if (!ev) return null;
-        return { ...object(valid(lanaiCharaObject(ctx.mapChara, evModel)), angle), chara: evModel };
+        const design = lanaiCharaObject(ctx.mapChara, evModel);
+        if (lanaiCharaKind(ctx.mapChara, evModel) === LANAI_CHARA_MONSTER) return { model: design ? { type: 'monster', design } : null, angle, chara: evModel };
+        return { ...object(valid(design), angle), chara: evModel };
       }
-      if (kind === LANAI_RECOVERY_POINT) return null;
-      const row = valid(evModel) || valid(OBJECT_DEFAULT_ROWS[kind] ?? 0);
+      // the recovery points (FUN_0021C844): an effect; only the field takes EventObject +0x5A when it has one
+      if (kind === LANAI_REPAIR_POINT) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_POINT }, angle };
+      if (kind === LANAI_REPAIR_FIELD && !valid(evModel)) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_FIELD }, angle };
+      // EventObject +0x5A, else the kind's default (kind 3 gimk_04_heal_1; FUN_0021C844)
+      const row = valid(evModel) || valid(SECTION5_DEFAULT_ROWS[kind] ?? 0);
       return row ? object(row, angle) : null;
     }
   }
