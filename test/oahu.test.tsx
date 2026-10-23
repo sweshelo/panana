@@ -379,6 +379,35 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect([a.rows, battle.texts.addedIds().length]).toEqual([rows, added]);
   });
 
+  test('a copied monster is a new row with a name of its own; it renders, is exported and removed; groups too', () => {
+    const { battle } = s;
+    const m = battle.monsters;
+    const rows = m.rows;
+    const added = battle.texts.addedIds().length;
+    const from = battle.monsterList()[0]!.id;
+    expect(battle.canCopyMonster(from)).toBe(true);
+    const n = battle.copyMonster(from);
+    expect([n, m.rows, m.added(n)]).toEqual([rows, rows + 1, true]);
+    expect(battle.monsterName(n)).toBe(battle.monsterName(from));
+    expect(m.get(n, 'name')).not.toBe(m.get(from, 'name'));
+    expect(m.get(n, 'design')).toBe(m.get(from, 'design'));
+    expect(battle.monsterUsers(n)).toEqual([]);
+    const html = renderToString(<OahuMonsterPage session={s} arg={String(n)} />);
+    for (const t of ['写して新しいモンスターを作る', 'このモンスターを消す', '＋ 新しいモンスター']) expect(html).toContain(t);
+    const t = new GsTable(findByName(parseArchive(s.modFiles().get('21350000')!), 'monsterParameter.bin')!.body);
+    expect(t.rows).toBe(rows + 1);
+    battle.removeMonster(n);
+    expect([m.rows, battle.texts.addedIds().length]).toEqual([rows, added]);
+
+    const g = battle.groups;
+    const groups = g.rows;
+    const ng = battle.copyGroup(1);
+    expect([ng, g.rows, battle.group(ng).leads]).toEqual([groups, groups + 1, battle.group(1).leads]);
+    expect(renderToString(<OahuGroupPage session={s} arg={String(ng)} />)).toContain('この群れを消す');
+    battle.removeGroup(ng);
+    expect(g.rows).toBe(groups);
+  });
+
   test('a message shared by several actions can be made one action\'s own', () => {
     const { battle } = s;
     const a = battle.actions;

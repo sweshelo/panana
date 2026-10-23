@@ -12,17 +12,22 @@ import { openedKeys, useWorkspace, type Opened } from './workspace';
 
 const titleName = (k: TitleKey): string => TITLES.find((t) => t.key === k)!.name;
 
+/** The games to pick a look from: the shown one first ("この作品"), then the other opened ones. */
+const lookSources = (opened: Opened, target: TitleKey): TitleKey[] => [target, ...openedKeys(opened).filter((k) => k !== target)];
+const sourceLabel = (k: TitleKey, target: TitleKey): string => (k === target ? `この作品 (${titleName(k)})` : titleName(k));
+
 function LookPicker({ opened, target, onPick, onClose }: { opened: Opened; target: TitleKey; onPick: (look: MonsterLook) => void; onClose: () => void }): ReactNode {
-  const sources = openedKeys(opened).filter((k) => k !== target);
-  const [from, setFrom] = useState<TitleKey>(sources[0]!);
+  const sources = lookSources(opened, target);
+  const [from, setFrom] = useState<TitleKey>(target);
   const [query, setQuery] = useState('');
   const looks = useAsync(() => monsterLooks(opened, from), [opened, from]);
   const q = query.trim();
   const shown = Array.isArray(looks) ? looks.filter((l) => !q || l.names.some((n) => n.includes(q)) || String(l.design) === q) : [];
   return (
-    <Dialog title="ほかの作品のモンスターの見た目を選ぶ" onClose={onClose}>
+    <Dialog title="モンスターの見た目を選ぶ" onClose={onClose}>
+      <p className="muted small">この作品のモンスターはそのデザインの行を使い、ほかの作品のモンスターはモデル・テクスチャ・ボーン・モーションを変換して足します。</p>
       <div className="row">
-        {sources.map((k) => <button key={k} className={k === from ? 'primary' : undefined} onClick={() => setFrom(k)}>{titleName(k)}</button>)}
+        {sources.map((k) => <button key={k} className={k === from ? 'primary' : undefined} onClick={() => setFrom(k)}>{sourceLabel(k, target)}</button>)}
         <input type="search" placeholder="名前で絞り込み" className="picker-search" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="picker-list">
@@ -46,32 +51,32 @@ function LookPicker({ opened, target, onPick, onClose }: { opened: Opened; targe
 }
 
 /**
- * "ほかの作品の見た目にする…" for monster `row` of the shown game `target` (only the other idle switch when no other game is open).
- * `onDone` gets the new design row once the look is given.
+ * "見た目を選ぶ…" for monster `row` of the shown game `target`: a look of another monster of this game, or of another
+ * opened game's (ported). `onDone` gets the design row once the look is given.
  */
 export function PortLookButton({ target, row, onDone }: { target: TitleKey; row: number; onDone: (design: number) => void }): ReactNode {
   const ws = useWorkspace();
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  if (!ws || openedKeys(ws.opened).length < 2) return <AltIdleToggle target={target} row={row} onDone={() => onDone(-1)} />;
+  if (!ws?.opened[target]) return null;
   const pick = async (look: MonsterLook): Promise<void> => {
     setPicking(false);
     setError('');
-    setBusy(`${titleName(look.title)} の「${look.names[0]}」を変換しています…`);
+    setBusy(look.title === target ? `「${look.names[0]}」の見た目にしています…` : `${titleName(look.title)} の「${look.names[0]}」を変換しています…`);
     try {
       onDone(await giveMonsterLook(ws.opened, target, row, look));
     } catch (err) {
       console.error(err);
-      setError(`移植できませんでした: ${(err as Error).message}`);
+      setError(`見た目を変えられませんでした: ${(err as Error).message}`);
     } finally {
       setBusy('');
     }
   };
   return (
     <>
-      <button className="small" disabled={!!busy} title="開いているほかの作品のモンスターのモデル・テクスチャ・ボーン・モーションを変換して、このモンスターの見た目にします (新しいデザインの行を足します)"
-        onClick={() => setPicking(true)}>ほかの作品の見た目にする…</button>
+      <button className="small" disabled={!!busy} title="この作品のほかのモンスターの見た目 (デザインの行) を使うか、開いているほかの作品のモンスターのモデル・テクスチャ・ボーン・モーションを変換して、このモンスターの見た目にします"
+        onClick={() => setPicking(true)}>見た目を選ぶ…</button>
       <AltIdleToggle target={target} row={row} onDone={() => onDone(-1)} />
       {busy && <span className="muted small">{busy}</span>}
       {error && <div className="error">{error}</div>}
@@ -81,21 +86,21 @@ export function PortLookButton({ target, row, onDone }: { target: TitleKey; row:
 }
 
 function ItemModelPicker({ opened, target, onPick, onClose }: { opened: Opened; target: TitleKey; onPick: (look: ItemLook) => void; onClose: () => void }): ReactNode {
-  const sources = openedKeys(opened).filter((k) => k !== target);
-  const [from, setFrom] = useState<TitleKey | undefined>(sources[0]);
+  const sources = lookSources(opened, target);
+  const [from, setFrom] = useState<TitleKey>(target);
   const [query, setQuery] = useState('');
-  const looks = useAsync(() => (from ? itemLooks(opened, from) : Promise.resolve([])), [opened, from]);
+  const looks = useAsync(() => itemLooks(opened, from), [opened, from]);
   const q = query.trim();
   const shown = Array.isArray(looks) ? looks.filter((l) => !q || l.name.includes(q) || String(l.id) === q) : [];
   return (
-    <Dialog title="ほかの作品のアイテムのモデルを選ぶ" onClose={onClose}>
+    <Dialog title="アイテムのモデルを選ぶ" onClose={onClose}>
+      <p className="muted small">この作品のアイテムのモデルはそのまま、ほかの作品のものは変換して使います。</p>
       <div className="row">
-        {sources.map((k) => <button key={k} className={k === from ? 'primary' : undefined} onClick={() => setFrom(k)}>{titleName(k)}</button>)}
+        {sources.map((k) => <button key={k} className={k === from ? 'primary' : undefined} onClick={() => setFrom(k)}>{sourceLabel(k, target)}</button>)}
         <input type="search" placeholder="名前で絞り込み" className="picker-search" value={query} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="picker-list">
-        {!from ? <div className="muted">ほかの作品を開いていません。</div>
-          : looks === undefined ? <div className="muted">読み込み中…</div>
+        {looks === undefined ? <div className="muted">読み込み中…</div>
           : looks instanceof Error ? <div className="error">{looks.message}</div>
           : (
             <div className="monster-grid">
@@ -114,31 +119,31 @@ function ItemModelPicker({ opened, target, onPick, onClose }: { opened: Opened; 
   );
 }
 
-/** "ほかの作品のモデルにする…" for item `id` of the shown game (nothing when no other game is open). */
+/** "モデルを選ぶ…" for item `id` of the shown game: another item's model of this game, or of another opened game's (converted). */
 export function PortItemButton({ target, id, onDone }: { target: TitleKey; id: number; onDone: () => void }): ReactNode {
   const ws = useWorkspace();
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  if (!ws || openedKeys(ws.opened).length < 2) return null;
+  if (!ws?.opened[target]) return null;
   const pick = async (look: ItemLook): Promise<void> => {
     setPicking(false);
     setError('');
-    setBusy(`${titleName(look.title)} の「${look.name}」を変換しています…`);
+    setBusy(look.title === target ? `「${look.name}」のモデルにしています…` : `${titleName(look.title)} の「${look.name}」を変換しています…`);
     try {
       await giveItemModel(ws.opened, target, id, look);
       onDone();
     } catch (err) {
       console.error(err);
-      setError(`移植できませんでした: ${(err as Error).message}`);
+      setError(`モデルを変えられませんでした: ${(err as Error).message}`);
     } finally {
       setBusy('');
     }
   };
   return (
     <>
-      <button className="small" disabled={!!busy} title="開いているほかの作品のアイテムのモデル (テクスチャ・ボーン・アニメを含む) を変換して、このアイテムのモデルにします"
-        onClick={() => setPicking(true)}>ほかの作品のモデルにする…</button>
+      <button className="small" disabled={!!busy} title="この作品のほかのアイテムのモデルを使うか、開いているほかの作品のアイテムのモデル (テクスチャ・ボーン・アニメを含む) を変換して、このアイテムのモデルにします"
+        onClick={() => setPicking(true)}>モデルを選ぶ…</button>
       {busy && <span className="muted small">{busy}</span>}
       {error && <div className="error">{error}</div>}
       {picking && <ItemModelPicker opened={ws.opened} target={target} onPick={pick} onClose={() => setPicking(false)} />}

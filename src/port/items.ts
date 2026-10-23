@@ -12,6 +12,7 @@ import { bchOffset } from '../bch/bch';
 import { convertItem } from './convert';
 import { readH3D, writeH3D } from './h3d';
 import { entryHash, PortStore } from './store';
+import { hex8 } from '../util/bytes';
 import { lanaiItemBody, lanaiItemRef, lanaiItems, lanaiSetItemModel, textureOnlyKind } from '../lanai/items';
 
 /** RPG FREE!: the archive ported item models go into (in the Update's patchList), and an entry of it to pack like. */
@@ -23,6 +24,8 @@ export interface ItemLook {
   id: number;
   name: string;
   model: ModelRef | null;
+  /** The model's entry hash in its game. */
+  hash: number;
   /** The model's entry body, and (RPG3) the bodies holding textures it names but does not have. */
   files(): Promise<{ body: Uint8Array; extra: Uint8Array[] }>;
 }
@@ -35,7 +38,7 @@ export async function itemLooks(o: Opened, title: TitleKey): Promise<ItemLook[]>
     const game = s.game;
     const { items } = await s.items();
     return items.items.filter((it) => it.model && it.name).map((it) => ({
-      title, id: it.id, name: it.name, model: itemRef(game, it),
+      title, id: it.id, name: it.name, model: itemRef(game, it), hash: it.model,
       files: async () => {
         const name = await itemModelArchive(game, it.model);
         const arc = name ? await game.archive(name) : null;
@@ -54,7 +57,7 @@ export async function itemLooks(o: Opened, title: TitleKey): Promise<ItemLook[]>
       const m = await s.itemModels.model(it.model);
       if (m?.kind !== 'model') continue; // floors, walls and clothes patterns are a texture only
       out.push({
-        title, id: it.id, name: it.name, model: m.ref,
+        title, id: it.id, name: it.name, model: m.ref, hash: it.model,
         files: async () => {
           const f = await s.itemModels.sourceFiles(it.model);
           if (!f) throw new Error('モデルのエントリがありません');
@@ -67,7 +70,7 @@ export async function itemLooks(o: Opened, title: TitleKey): Promise<ItemLook[]>
   const s = o.lanai;
   if (!s) return [];
   return lanaiItems(s).filter((it) => it.model && it.name && !textureOnlyKind(it.kind)).map((it) => ({
-    title, id: it.row, name: it.name, model: lanaiItemRef(s, it),
+    title, id: it.row, name: it.name, model: lanaiItemRef(s, it), hash: it.model,
     files: async () => {
       const body = await lanaiItemBody(s, it);
       if (!body) throw new Error('モデルのエントリがありません');
@@ -93,12 +96,26 @@ function withTextures(body: Uint8Array, extra: Uint8Array[]): Uint8Array {
 
 /** Gives item `id` of `target` the model of `look`. */
 export async function giveItemModel(o: Opened, target: TitleKey, id: number, look: ItemLook): Promise<number> {
-  if (look.title === target) throw new Error('同じ作品のモデルです');
+  if (look.title === target && target === 'lanai') {
+    // the game reads any archive ItemDataCore +0x18 names: point the item at the other item's entry
+    const s = o.lanai!;
+    const all = lanaiItems(s);
+    const it = all.find((x) => x.row === id);
+    const src = all.find((x) => x.row === look.id);
+    if (!it || !src?.model) throw new Error('モデルのあるアイテムを選んでください');
+    lanaiSetItemModel(s, it, hex8(src.archive), src.model);
+    return src.model;
+  }
   const src = await look.files();
-  const body = convertItem(look.title === 'kahara' ? src.body : withTextures(src.body, src.extra), look.title, target, { name: `item_${look.title[0]}${look.id}` });
+  // the same game's model goes in as it is (into the archive the item is read from), another game's is converted
+  const whole = look.title === 'kahara' ? src.body : withTextures(src.body, src.extra);
+  const body = look.title === target ? whole : convertItem(whole, look.title, target, { name: `item_${look.title[0]}${look.id}` });
   const store = await PortStore.of(target);
   const add = async (archive: string, current: number, read: (n: string) => Promise<Uint8Array>): Promise<number> => {
     const arc = parseArchive(await read(archive));
+    // an entry with the same bytes (the same game's model in the same archive) is named as it is
+    const same = arc.entries.find((e) => e.hash === look.hash);
+    if (same && look.title === target) return same.hash;
     const hash = entryHash(body, (h) => !!findEntry(arc, h) || store.has(archive, h));
     store.add([{ archive, hash, name: `item_${look.title[0]}${look.id}.${target === 'kahara' ? 'bcres' : 'bch'}`, body, like: current }]);
     return hash;

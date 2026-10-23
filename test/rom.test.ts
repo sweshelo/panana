@@ -406,6 +406,10 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(b2.group(copy.hash)!.leads).toEqual([{ monster: 15, weight: 3, count: 0 }]);
     book.revertGroup(6);
     expect(book.groupChanged(6)).toBe(false);
+    // the added group can be removed again (the last row), its hash leaving the index
+    expect([book.canRemoveGroup(n), book.canRemoveGroup(6)]).toEqual([true, false]);
+    book.removeGroup(n);
+    expect([book.groups.length, book.group(copy.hash)]).toEqual([144, undefined]);
   });
 
   test('monster edits: fields, drops and skills; export and read back', async () => {
@@ -513,6 +517,18 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const skillAnims = [0x45, 0x46, 0x47, 0x48].reduce((a, n) => a + (motions.get(n) ?? 0), 0);
     const total = [...motions.values()].reduce((a, c) => a + c, 0);
     expect(skillAnims / total).toBeGreaterThan(0.5);
+  });
+
+  test('an added action is removed again with its name message', async () => {
+    const { ActionEdits } = await import('../src/game/actions');
+    const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const book = await g2.monsters();
+    const edits = new ActionEdits(g2.master, book.directData, book.directOriginalRows);
+    const rows = g2.master.table('actionData.bin').rows;
+    const n = edits.copy(509);
+    expect([n, edits.canRemove(n), edits.canRemove(509), g2.master.texts.addedIds().length]).toEqual([rows, true, false, 1]);
+    edits.remove(n);
+    expect([g2.master.table('actionData.bin').rows, g2.master.texts.addedIds().length]).toEqual([rows, 0]);
   });
 
   test('action edits: a copy with its own name and motion (まおう\'s デスブロー as skill D), export and read back', async () => {

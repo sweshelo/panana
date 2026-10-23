@@ -6,12 +6,12 @@ import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
 import { forgetLanaiMonsters, forgetLanaiModelIndex } from '../lanai/monsters';
 import type { TitleKey } from '../rom/titles';
 import type { Opened } from '../ui/workspace';
-import { lanaiTemplate, portedDesign, portedEntries, takenIn, type MonsterLook } from './looks';
+import { hasAltIdle, lanaiTemplate, portedDesign, portedEntries, takenIn, type MonsterLook } from './looks';
 import { PortStore } from './store';
 
 /** Gives monster `row` of `target` the look; returns the new design row. */
 export async function giveMonsterLook(o: Opened, target: TitleKey, row: number, look: MonsterLook): Promise<number> {
-  if (look.title === target) throw new Error('同じ作品の見た目は、デザインの行を選び直してください');
+  if (look.title === target) return giveOwnLook(o, target, row, look);
   const store = await PortStore.of(target);
   if (target === 'kahara') {
     const s = o.kahara?.session;
@@ -68,6 +68,39 @@ export async function giveMonsterLook(o: Opened, target: TitleKey, row: number, 
   forgetLanaiMonsters(s);
   s.edited();
   return d;
+}
+
+/**
+ * Gives monster `row` the look of another monster of the same game: RPG3 and FREE! point the monster at that design
+ * row (the name is in the monster's row); RPG2 keeps the name and description in the design row (+0x00 / +0x04), so
+ * the monster gets a new design row with its own name and the rest of the look's. Returns the design row.
+ */
+async function giveOwnLook(o: Opened, target: TitleKey, row: number, look: MonsterLook): Promise<number> {
+  // the other idle needs a 002_ animation the look may not have
+  const alt = hasAltIdle(await look.files(), target);
+  if (!alt && altIdle(o, target, row)) setAltIdle(o, target, row, false);
+  if (target === 'kahara') {
+    const s = o.kahara?.session;
+    const book = s?.book;
+    if (!s || !book) throw new Error('電波人間のRPG2 のモンスターを読めていません');
+    if (!book.canNewLook()) throw new Error('モンスターのデザインはこれ以上増やせません (256 行まで)');
+    const d = book.newLook(row, (r) => r.set(look.row.subarray(8), 8));
+    s.saveNow();
+    return d;
+  }
+  if (target === 'oahu') {
+    const s = o.oahu;
+    if (!s) throw new Error('電波人間のRPG3 を開いていません');
+    s.battle.monsters.set(row, 'design', look.design);
+    s.saveNow();
+    return look.design;
+  }
+  const s = o.lanai;
+  if (!s) throw new Error('電波人間のRPG FREE! を開いていません');
+  s.need('MonsterParameter').setBits(row, 0x00, 20, 10, look.design);
+  forgetLanaiMonsters(s);
+  s.edited();
+  return look.design;
 }
 
 /**
