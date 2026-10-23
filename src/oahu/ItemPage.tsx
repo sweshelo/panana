@@ -8,6 +8,8 @@ import { InfoTip } from '../ui/InfoTip';
 import { MessageEditor } from '../ui/message';
 import { ModelView } from '../ui/ModelView';
 import { PortItemButton } from '../ui/PortLook';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
+import { OahuItemPicker } from './pickers';
 import { useAsync } from '../ui/useAsync';
 import { RowFields } from '../ui/RowFields';
 import { hex8 } from '../util/bytes';
@@ -134,6 +136,8 @@ export function OahuItemPage({ session, arg }: { session: OahuSession; arg: stri
   return (
     <div className="book">
       <div className="book-side">
+        <NewRecordButton copy={oahuItemCopy(items)} current={selected} onEdit={onEdit}
+          picker={(p) => <OahuItemPicker battle={session.battle} {...p} unavailable={(x) => p.unavailable(x.id)} />} />
         <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・説明・ID で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
           options={[['all', 'すべて'], ...Object.entries(OAHU_ITEM_KIND).map(([k, v]): [string, string] => [`k${k}`, v]),
             ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更したもの']]} />
@@ -186,7 +190,11 @@ function ItemDetail({ session, it, onEdit, drops, chests }: {
       <div className="row">
         <span className="muted small">変更はマスター (21350000) の itemData.bin とメッセージとして書き出されます。</span>
         {items.changed(it.id) && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
-        <CopyButtons items={items} it={it} onEdit={onEdit} />
+        <CopyRemoveButtons copy={oahuItemCopy(items)} from={it.id} onEdit={onEdit} remove={items.added(it.id) ? {
+          // chests still being read: not removable until they are
+          used: [...oahuItemShops(session, it.id).map((x) => x.label), ...drops.map((d) => d.label), ...(chests ?? [{ place: '宝箱 (読み込み中)' }]).map((c) => c.place)],
+          remove: () => items.removeItem(it.id), next: '#/items',
+        } : undefined} />
         {it.model !== 0 && <PortItemButton target="oahu" id={it.id} onDone={onEdit} />}
       </div>
       <ItemSources
@@ -209,27 +217,12 @@ const COPY_INFO = [
   'RPG3 で、道具を使ったときに減るアイテムがどう決まるかはまだ確かめていません (RPG2 はアクションの +0x14)。写した道具は元と同じアクションを使います。',
 ].join('\n');
 
-function CopyButtons({ items, it, onEdit }: { items: OahuItems; it: OahuItem; onEdit: () => void }): ReactNode {
-  const can = items.canCopy(it.id);
-  return (
-    <>
-      <span className="with-info">
-        <button disabled={!can} title={can ? '' : '空きの行か、メッセージの空きがありません'} onClick={() => {
-          const n = items.copyItem(it.id);
-          onEdit();
-          location.hash = oahuItemHref(n);
-        }}>写して新しいアイテムを作る</button>
-        <InfoTip text={COPY_INFO} />
-      </span>
-      {items.added(it.id) && (
-        <button title="追加したアイテムを消して、空きの行に戻します" onClick={() => {
-          items.removeItem(it.id);
-          onEdit();
-          location.hash = '#/items';
-        }}>このアイテムを消す</button>
-      )}
-    </>
-  );
+/** Copying an item into an empty row (the buttons of an item and the list's "＋ 新しいアイテム"). */
+function oahuItemCopy(items: OahuItems): CopySpec {
+  return {
+    noun: 'アイテム', can: true, info: COPY_INFO, href: oahuItemHref, copy: (id) => items.copyItem(id),
+    cannot: (id) => (items.canCopy(id) ? null : '空きの行か、メッセージの空きがありません'),
+  };
 }
 
 /** The name and the description messages: their previews, edited in the editors' text form ({ruby:…} and tags) on a click. */

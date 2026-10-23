@@ -269,6 +269,96 @@ export class OahuBattle {
     }
   }
 
+  /** The name and description messages of a monster row (each once). */
+  private monsterMessages(row: number): number[] {
+    return [...new Set(OAHU_MONSTER_TEXTS.map(([k]) => this.monsters.get(row, k)).filter(Boolean))];
+  }
+
+  /**
+   * Whether a monster can be copied: a row with a name, room in the table (a summon names the row in a byte and the
+   * other tables in at most 16 bits, so rows stay under 0x100) and for the messages of its texts.
+   */
+  canCopyMonster(row: number): boolean {
+    return row > 0 && row < this.monsters.rows && this.monsters.rows < 0x100 && !!this.monsters.get(row, 'name') && this.texts.canAdd(this.monsterMessages(row).length);
+  }
+
+  /**
+   * Copy a monster to a new row at the end of monsterParameter: the same values, look (design row) and species, with
+   * a name and description of its own (same texts) so they can change alone. Returns the new row.
+   */
+  copyMonster(row: number): number {
+    if (!this.canCopyMonster(row)) throw new Error('モンスターの表かメッセージに空きがないので、写せません');
+    const copied = new Map<number, number>();
+    for (const m of this.monsterMessages(row)) copied.set(m, this.texts.add(this.texts.units(m)!));
+    const n = this.monsters.addRow(this.monsters.row(row));
+    for (const [k] of OAHU_MONSTER_TEXTS) {
+      const m = this.monsters.get(n, k);
+      if (m) this.monsters.set(n, k, copied.get(m)!);
+    }
+    return n;
+  }
+
+  /** What refers to a monster row: groups, the forms changing into it and the actions calling it. */
+  monsterUsers(row: number): string[] {
+    const summons: number[] = [];
+    for (let a = 1; a < this.actions.rows; a++) {
+      const t = this.summonTarget(a);
+      if (t && 'monster' in t && t.monster === row) summons.push(a);
+    }
+    return [
+      ...this.groupsOf(row).map((g) => `群れ #${g}`),
+      ...[...new Set(this.formSources(row).map((f) => f.monster))].map((m) => `${this.monsterName(m)} の変身`),
+      ...summons.map((a) => `アクション #${a} (呼ぶ)`),
+    ];
+  }
+
+  /** Whether the monster is the last row and was added by an edit (only that one can be removed: the rows stay in order). */
+  canRemoveMonster(row: number): boolean {
+    return row === this.monsters.rows - 1 && this.monsters.added(row);
+  }
+
+  /** Remove an added monster (the last row), dropping its messages when they are the last added and unused. */
+  removeMonster(row: number): void {
+    if (!this.canRemoveMonster(row)) throw new Error('消せるのは最後に追加したモンスターだけです');
+    const mine = this.monsterMessages(row).filter((m) => this.texts.isAdded(m));
+    this.monsters.removeLastRow();
+    this.dropUnusedMessages(mine);
+  }
+
+  /** Drop added messages that are the last added ones and no monster, action or item names any more (newest first). */
+  private dropUnusedMessages(ids: number[]): void {
+    const used = new Set<number>();
+    for (let r = 1; r < this.monsters.rows; r++) for (const [k] of OAHU_MONSTER_TEXTS) used.add(this.monsters.get(r, k));
+    for (let r = 1; r < this.actions.rows; r++) for (const [k] of OAHU_ACTION_TEXTS) used.add(this.actions.get(r, k));
+    for (const it of this.items.items) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.items.messageId(it.id, k));
+    for (const m of ids.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
+  }
+
+  /** Copy a group to a new row at the end of monsterGroup. Returns the new row. */
+  copyGroup(row: number): number {
+    return this.groups.addRow(this.groups.row(row));
+  }
+
+  /** Whether the group is the last row and was added by an edit. */
+  canRemoveGroup(row: number): boolean {
+    return row === this.groups.rows - 1 && this.groups.added(row);
+  }
+
+  removeGroup(row: number): void {
+    if (!this.canRemoveGroup(row)) throw new Error('消せるのは最後に追加した群れだけです');
+    this.groups.removeLastRow();
+  }
+
+  /** What refers to a group row: the actions calling it. */
+  groupUsers(row: number): string[] {
+    const out: string[] = [];
+    for (let a = 1; a < this.actions.rows; a++) {
+      const t = this.summonTarget(a);
+      if (t && 'group' in t && t.group === row) out.push(`アクション #${a} (呼ぶ)`);
+    }
+    return out;
+  }
+
   /** The name an action shows in battle ("たいあたり"), or the items whose action it is. */
   actionName(row: number): string {
     if (row <= 0 || row >= this.actions.rows) return row ? `#${row}` : '';
@@ -343,10 +433,7 @@ export class OahuBattle {
     if (!this.canRemoveAction(row)) throw new Error('消せるのは最後に追加したアクションだけです');
     const mine = this.actionMessages(row).filter((m) => this.texts.isAdded(m));
     this.actions.removeLastRow();
-    const used = new Set<number>();
-    for (let r = 1; r < this.actions.rows; r++) for (const [k] of OAHU_ACTION_TEXTS) used.add(this.actions.get(r, k));
-    for (const it of this.items.items) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.items.messageId(it.id, k));
-    for (const m of mine.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
+    this.dropUnusedMessages(mine);
   }
 
   /** The other action rows using the same message as this row's field (a shared text changes for all of them). */
