@@ -21,6 +21,8 @@ import {
   type LanaiMapInfo,
   type LanaiMaps,
   type LanaiTileSource,
+  restoreTableRows,
+  tableRows,
 } from './maps';
 import type { LanaiTable } from './table';
 import { LANAI_GOAL_CHEST, LANAI_REPAIR_FIELD, LANAI_REPAIR_POINT } from './mapObjects';
@@ -72,7 +74,10 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
 const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 
 /** An undo point's tables: the rows of the open map's group's EventObject table and of the content's TreasureGroup. */
-type LanaiTables = { group: number | null; rows: Uint8Array[] | null; treasure: Uint8Array[] | null };
+/** Content tables an undo point copies whole: the map's sounds and battle field (BattleParts.tsx). */
+const UNDO_CONTENT_TABLES = ['MapData', 'MapResource'];
+
+type LanaiTables = { group: number | null; rows: Uint8Array[] | null; treasure: Uint8Array[] | null; content: [name: string, rows: Uint8Array[]][] };
 
 export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   info: LanaiMapInfo | null = null;
@@ -127,11 +132,19 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
 
   protected saveTables(): LanaiTables {
     const group = this.info?.dungeon ?? null;
-    return { group, rows: group === null ? null : this.maps.eventRows(group), treasure: this.maps.treasureRows() };
+    const content = UNDO_CONTENT_TABLES.flatMap((n): [string, Uint8Array[]][] => {
+      const t = this.maps.contentTable(n);
+      return t ? [[n, tableRows(t)]] : [];
+    });
+    return { group, rows: group === null ? null : this.maps.eventRows(group), treasure: this.maps.treasureRows(), content };
   }
   protected restoreTables(t: LanaiTables): void {
     if (t.group !== null && t.rows) this.maps.restoreEventRows(t.group, t.rows);
     if (t.treasure) this.maps.restoreTreasureRows(t.treasure);
+    for (const [n, rows] of t.content) {
+      const table = this.maps.contentTable(n);
+      if (table) restoreTableRows(table, rows);
+    }
   }
   protected override docReplaced(doc: MapDoc): void {
     const info = this.maps.map(doc.hash);

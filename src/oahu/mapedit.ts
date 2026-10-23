@@ -67,7 +67,11 @@ interface Tables {
   events: [archive: string, bytes: Uint8Array][];
   treasure: Uint8Array | null;
   mapTable: Uint8Array;
+  /** mapData and mapResource (the map's sounds, its battles' BGM and background). */
+  masterTables: [name: string, bytes: Uint8Array][];
 }
+
+const UNDO_MASTER_TABLES = ['mapData.bin', 'mapResource.bin'];
 
 export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   info: OahuMapInfo | null = null;
@@ -100,13 +104,14 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
 
   protected saveTables(): Tables {
     const treasure = this.treasureTable();
-    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null, mapTable: this.maps.mapTableBytes() };
+    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null, mapTable: this.maps.mapTableBytes(), masterTables: UNDO_MASTER_TABLES.map((n) => [n, this.maps.master.table(n).data.slice()]) };
   }
   protected restoreTables(t: Tables): void {
     const treasure = this.treasureTable();
     if (treasure && t.treasure) treasure.data = t.treasure.slice();
     this.maps.restoreEventTableBytes(t.events);
     this.maps.restoreMapTableBytes(t.mapTable);
+    for (const [n, b] of t.masterTables) this.maps.master.table(n).data = b.slice();
   }
   private treasureTable(): GsTable | null {
     return this.maps.objectRows ? oahuTreasureTable(this.maps.master) : null;

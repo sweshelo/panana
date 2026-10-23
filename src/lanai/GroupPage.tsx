@@ -4,7 +4,7 @@
 // formed, the battle settings, the maps that use it and a copy into a new row. Each content's archive has its own
 // MonsterGroup; edits are written with the content's tables.
 import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
-import { HexInput, RawBytes } from '../editor/fields';
+import { RawBytes } from '../editor/fields';
 import { NumberInput, useScrollTop, useSticky } from '../ui/book';
 import { GroupListView } from '../ui/GroupDetail';
 import { useAsync } from '../ui/useAsync';
@@ -14,9 +14,10 @@ import { lanaiMapHref } from './MapPage';
 import { DEFAULT_GROUP_LABEL, groupMonsterRows, lanaiGroupHref } from './MapParts';
 import { lanaiMaps, type LanaiMaps, type LanaiMonsterGroupRow } from './maps';
 import {
-  LANAI_MG_COUNT_CODES, LANAI_MG_FIELD, LANAI_MG_FLAG_BITS, LANAI_MG_FLAGS, LANAI_MG_LIMIT, LANAI_MG_LISTS, LANAI_MG_MATE_LISTS, LANAI_MG_MATES, LANAI_MG_PATTERN,
+  LANAI_MG_COUNT_CODES, LANAI_MG_FLAG_BITS, LANAI_MG_FLAGS, LANAI_MG_LIMIT, LANAI_MG_LISTS, LANAI_MG_MATE_LISTS, LANAI_MG_MATES, LANAI_MG_PATTERN,
   LANAI_MG_PATTERNS, lanaiCountLabel, lanaiMgOriginal, lanaiMgSlots, type LanaiMgList,
 } from './monsterGroup';
+import { LanaiGroupBattleField } from './BattleParts';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiMonsterName } from './monsterBook';
 import { lanaiMonsterHref, lanaiMonsters } from './monsters';
@@ -163,13 +164,14 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
       <div className="book-cols group-cols">
         {LANAI_MG_LISTS.map((list) => <ListEditor key={list.key} ctx={ctx} list={list} />)}
       </div>
+      <h3>戦闘の背景と BGM</h3>
+      <LanaiGroupBattleField session={session} maps={maps} row={g.row} edited={edited} />
       <h3>戦闘の設定</h3>
       <div className="row">
-        <label className="field"><span>戦闘の背景 (+0x00、行 ID)</span><HexInput value={t.u32(g.row, LANAI_MG_FIELD)} onChange={(v) => set32(LANAI_MG_FIELD, v)} /></label>
         <label className="field"><span>戦闘回数の上限 (+0x68、0 = 無制限・推定)</span><NumberInput value={t.u8(g.row, LANAI_MG_LIMIT)} min={0} max={255} onCommit={(v) => set8(LANAI_MG_LIMIT, v)} /></label>
       </div>
       <div className="row">
-        {LANAI_MG_FLAG_BITS.map(([bit, label]) => (
+        {LANAI_MG_FLAG_BITS.filter(([bit]) => bit !== 3).map(([bit, label]) => (
           <label key={bit} className="layer"><input type="checkbox" checked={!!(flags & (1 << bit))} onChange={(e) => set8(LANAI_MG_FLAGS, e.target.checked ? flags | (1 << bit) : flags & ~(1 << bit))} /> {label}</label>
         ))}
       </div>

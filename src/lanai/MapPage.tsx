@@ -46,6 +46,7 @@ import {
   type LanaiMaps,
 } from './maps';
 import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
+import { LanaiMapBattlePanel } from './BattleParts';
 import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSelect, TreasureEditor } from './MapParts';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
@@ -232,6 +233,7 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
           <Tools st={st} tools={LANAI_TOOLS} />
           <AddPanel st={st} view={view} />
           <EnemyPanel st={st} />
+          <BattlePanel st={st} />
           <TilePalette st={st} view={view} />
           <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
             <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
@@ -605,6 +607,22 @@ function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
         </>
       )}
     </div>
+  );
+}
+
+/** The map's sounds and battle field (BattleParts.tsx), edited with undo points of the map. */
+function BattlePanel({ st }: { st: LanaiEditState }): ReactNode {
+  useEditorState(st);
+  const src = st.source;
+  if (!st.current || !src) return null;
+  const maps = st.maps;
+  return (
+    <LanaiMapBattlePanel session={maps.session} maps={maps} mapData={src.mapData} resource={src.resource}
+      edit={(f) => st.editTables(() => {
+        f();
+        maps.changed();
+        maps.session.edited();
+      })} />
   );
 }
 

@@ -22,6 +22,7 @@ import { OAHU_LAYOUTS, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo, type O
 import { OAHU_POINT_SECTIONS, oahuEditState, oahuRecLabel, oahuStampLabel, oahuValidate, type OahuEditState, type OahuStamp } from './mapedit';
 import { OahuMapView, type Placement } from './mapview';
 import { CharaInfo, EncounterPanel, ModelLine, TreasureEditor } from './MapParts';
+import { OahuMapBattlePanel } from './BattleParts';
 import { OahuConditions } from './story';
 import type { OahuSession } from './session';
 
@@ -314,6 +315,7 @@ function Inspector({ session, st, view }: { session: OahuSession; st: OahuEditSt
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
       {st.info && <EncounterPanel session={session} st={st} info={st.info} />}
+      {st.info && <OahuMapBattlePanel session={session} st={st} info={st.info} />}
     </>
   );
 }

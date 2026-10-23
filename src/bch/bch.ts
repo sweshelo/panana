@@ -30,6 +30,12 @@ export interface BchHeader {
 export function bchOffset(b: Uint8Array): number {
   if (b.length >= 0x44 && ascii(b, 0, 4) === 'BCH\0') return 0;
   if (b.length >= 0x1c4 && ascii(b, 0x180, 4) === 'BCH\0') return 0x180;
+  // The header of a map part / battle background (type 8) gives the BCH's offset at +0x38 (and its size at +0x3C):
+  // 0x100 when the path ends early enough (RPG3's btmp_08_iceA, btmp_12_flat …), else 0x180 (naauao oahu/sound.md §3.5 「52120000」).
+  if (b.length >= 0x40) {
+    const o = u32(b, 0x38);
+    if (o > 0 && o + 0x44 <= b.length && ascii(b, o, 4) === 'BCH\0') return o;
+  }
   return -1;
 }
 
