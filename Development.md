@@ -117,6 +117,7 @@ src/
 - ボス戦の行 (種類 0x31) はゲームにない動きなので、あると書き出しの code.ips にパッチ「ボス戦」を自動で加えます。
 - コードの MOD「ドロップ率の天井を撤廃」 (`src/game/dropcap.ts`) は作品ごとにパッチの元を持ち、書き出しの画面で選ぶと code.ips に入ります。元のゲームの命令 (`EXPECT`) と違う code.bin には入れません。状態の値は s16 です。RPG3 の掛け算の状態は 16384 % 以上を指数と仮数で持ち、32 ビットで計算します。RPG FREE! (足し算) は上限を 0x7FFF にするだけです。
 - 新しいメッセージ番号は作れません。MessageSystemCommon 0〜6106、MessageBattle 6107〜7134、MessageField 7135〜8623 が隙間なく続き、ゲームは範囲に番号を含む最初のファイルを使います (FUN_00310438)。新しいメッセージは `MessageMod_JP.gsmb` (ID 0x2C00〜、elpulse の MOD と同じ) に入ります。
+- 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
 - 群れのエントリ (monsterGroup) は +0x28〜が未解析です。
 

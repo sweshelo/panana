@@ -559,12 +559,12 @@ export class LanaiMaps {
 }
 
 /** A copy of a table's rows (an undo point). */
-function tableRows(t: LanaiTable): Uint8Array[] {
+export function tableRows(t: LanaiTable): Uint8Array[] {
   return Array.from({ length: t.rows }, (_, r) => t.row(r).slice());
 }
 
 /** Put a table back to rows saved by tableRows (rows added since are removed; rows as read are reverted, not written). */
-function restoreTableRows(t: LanaiTable, rows: Uint8Array[]): void {
+export function restoreTableRows(t: LanaiTable, rows: Uint8Array[]): void {
   while (t.rows > rows.length && t.rows > t.originalRows) t.removeLastRow();
   while (t.rows < rows.length) t.addRow();
   rows.forEach((b, r) => {
