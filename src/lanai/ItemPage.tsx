@@ -1,10 +1,13 @@
 // RPG FREE!'s item book (#/items/<row>): every valid item of ItemData with its kind, rarity, prices, description and
 // model (ItemDataCore, items.ts), an equipment's effects (EquipInfo, equipment.ts), and giving an item the model of another game's item (#100).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Count, EditedMark, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, TextBox, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
 import { Photo } from '../ui/Photo';
 import { PortItemButton } from '../ui/PortLook';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
+import { lanaiCopyItem, lanaiFreeItemRow, lanaiItemAdded, lanaiRemoveItem } from './itemCopy';
+import { LanaiItemPicker } from './pickers';
 import { hex8 } from '../util/bytes';
 import { LANAI_ITEM_KINDS, lanaiItemDescription, lanaiItemRef, lanaiItems, textureOnlyKind, type LanaiItem } from './items';
 import { lanaiEquipRow, lanaiItemEffects } from './equipment';
@@ -56,8 +59,9 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   const drops = useMemo(() => lanaiDropIndex(session), [session, revision]);
   const sources = useSourceIndex(session, revision);
   const effects = useMemo(() => new Map(items.map((it) => [it.row, lanaiItemEffects(session, it).join(' ')])), [items, session, revision]);
+  const data = session.need('ItemData');
   const changed = (x: LanaiItem): boolean => {
-    if (core.rowChanged(x.core)) return true;
+    if (core.rowChanged(x.core) || data.rowChanged(x.row)) return true;
     const e = lanaiEquipRow(session, x);
     return !!e && e.table.rowChanged(e.row);
   };
@@ -79,6 +83,8 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   return (
     <div className="book">
       <div className="book-side">
+        <NewRecordButton copy={lanaiItemCopy(session, byRow)} current={selected} onEdit={() => session.edited()}
+          picker={(p) => <LanaiItemPicker session={session} {...p} />} />
         <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder="名前・効果・行・ID で検索" filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
           options={[['all', 'すべて'], ...groups.map((g): [string, string] => [`g${g}`, kindName(items.find((x) => (x.kind & 0xf0) === g)!.kind).split(':')[0]!]),
             ...(scanned ? [['shop', 'お店で買える'], ['chest', '宝箱から出る']] as [string, string][] : []), ['drop', 'モンスターが落とす'], ['changed', '変更したもの']]} />
@@ -113,6 +119,7 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
             <div className="book-top">
               <table className="book-stats">
                 <tbody>
+                  <tr><th title="ItemData +0x00">名前</th><td><ItemName session={session} row={it.row} /></td></tr>
                   <tr><th>種類</th><td>{`${kindName(it.kind)} (0x${it.kind.toString(16).toUpperCase()})`}</td></tr>
                   <tr><th>☆</th><td>{it.rarity}</td></tr>
                   <tr><th title="ItemDataCore +0x04 / +0x08 (推定)">買値 / 売値</th><td>{`${it.buy} / ${it.sell}`}</td></tr>
@@ -124,7 +131,14 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
             </div>
             {equip && <LanaiEquipEffects session={session} equip={equip} kind={it.kind} onEdit={() => session.edited()} />}
             <div className="row">
-              {changed(it) && <button onClick={() => {
+              <CopyRemoveButtons copy={lanaiItemCopy(session, byRow)} from={it.row} onEdit={() => session.edited()} remove={lanaiItemAdded(session, it.row) ? {
+                used: sources.index
+                  ? [...(sources.index.shops.get(it.id) ?? []).map((x) => x.label), ...(drops.get(it.id) ?? []).map((x) => x.label), ...(sources.index.chests.get(it.id) ?? []).map((x) => x.place)]
+                  : ['(先に「すべてのコンテンツの店を調べる」で、店と宝箱を調べてください)'],
+                remove: () => lanaiRemoveItem(session, it), next: '#/items',
+              } : undefined} />
+              {changed(it) && !lanaiItemAdded(session, it.row) && <button onClick={() => {
+                data.revertRow(it.row);
                 if (core.rowChanged(it.core)) core.setRow(it.core, core.originalRow(it.core)!);
                 if (equip?.table.rowChanged(equip.row)) equip.table.setRow(equip.row, equip.table.originalRow(equip.row)!);
                 session.edited();
@@ -142,6 +156,30 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
       </div>
     </div>
   );
+}
+
+/** The name of an item (ItemData +0x00, a string of the row), written on leaving the box. */
+function ItemName({ session, row }: { session: LanaiSession; row: number }): ReactNode {
+  const data = session.need('ItemData');
+  const value = session.stringAt(data, data.u32(row, 0x00)).text;
+  const was = session.originalField(data, row, 0x00);
+  return <TextBox key={row} value={value} multi={false} edited={!!was && was.text !== value} onCommit={(v) => { session.setText(data, row, 0x00, v); session.edited(); }} />;
+}
+
+const COPY_INFO = [
+  'このアイテムを、ItemData のアイテムのない行 (元のゲームに 611 行あり、それぞれ ID を持つ) に写して、新しいアイテムを作ります。',
+  'ItemDataCore の行 (値段・種類・☆・説明・モデル) も写すので、元と別に変えられます。装備は EquipInfo の行も写します。道具・家具などの種類ごとの表の行は元と共有します。',
+  '名前はこのページで書き換えられます。モデルは「モデルを選ぶ…」で、この作品やほかの作品のアイテムから選び直せます。',
+  'お店・宝箱・モンスターのドロップに入れると、ゲームで手に入ります。ゲームでの確認はまだです。',
+].join('\n');
+
+/** Copying an item into a free ItemData row (the buttons of an item and the list's "＋ 新しいアイテム"). */
+function lanaiItemCopy(session: LanaiSession, items: Map<number, LanaiItem>): CopySpec {
+  const free = lanaiFreeItemRow(session) >= 0;
+  return {
+    noun: 'アイテム', can: free, why: 'アイテムのない ItemData の行が残っていません', info: COPY_INFO, href: lanaiItemHref,
+    cannot: (row) => (items.has(row) ? null : 'アイテムとして使われていない行です'), copy: (row) => lanaiCopyItem(session, row),
+  };
 }
 
 const slotLink = (session: LanaiSession, it: LanaiItem): SourceLink[] => {

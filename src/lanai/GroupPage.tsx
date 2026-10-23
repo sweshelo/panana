@@ -7,6 +7,8 @@ import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RawBytes } from '../editor/fields';
 import { NumberInput, useScrollTop, useSticky } from '../ui/book';
 import { GroupListView } from '../ui/GroupDetail';
+import { Dialog } from '../ui/Dialog';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
@@ -74,6 +76,17 @@ function Groups({ session, contents, content, maps, row, error }: {
     <>
       <div className="book-side">
         <div className="row"><ContentSelect contents={contents} content={content} /></div>
+        {maps && t && (
+          <NewRecordButton copy={lanaiGroupCopy(maps, content)} current={selected ?? 0} onEdit={() => session.edited()} picker={(p) => (
+            <Dialog title={p.title} onClose={p.onClose}>
+              <div className="group-picker">
+                <GroupListView groups={groups} monsters={(x) => groupMonsterRows(maps, x)} name={(r) => list[r]?.name}
+                  icon={(r, i) => <Fragment key={i}>{lanaiMonsterIcon(session, r)}</Fragment>} changed={changed}
+                  filters={[['all', 'すべて', () => true], ['used', 'マップで使う', used]]} selected={p.current} onSelect={(x) => p.onPick(x.row)} />
+              </div>
+            </Dialog>
+          )} />
+        )}
         {!maps || !t ? <p className="muted small">{error ?? 'このコンテンツには MonsterGroup の表がありません。'}</p> : (
           <GroupListView
             groups={groups}
@@ -99,6 +112,14 @@ function Groups({ session, contents, content, maps, row, error }: {
       </div>
     </>
   );
+}
+
+/** Copying a group to a new row of the content's MonsterGroup (the buttons of a group and the list's "＋ 新しい群れ"). */
+function lanaiGroupCopy(maps: LanaiMaps, content: LanaiContent): CopySpec {
+  return {
+    noun: '群れ', can: true, info: 'この群れを写した新しい行を作ります。マップの区画 6 や宝箱の戦闘で選べます。',
+    copy: (row) => { const n = maps.monsterGroup!.addRow(row); maps.changed(); return n; }, href: (n) => lanaiGroupHref(content.index, n),
+  };
 }
 
 export function LanaiGroupDetail({ session, maps, content, g }: { session: LanaiSession; maps: LanaiMaps; content: LanaiContent; g: LanaiMonsterGroupRow }): ReactNode {
@@ -140,11 +161,11 @@ export function LanaiGroupDetail({ session, maps, content, g }: { session: Lanai
         変更はこのコンテンツのアーカイブの MonsterGroup として書き出されます。
       </p>
       <div className="row">
-        <button title="この群れを写した新しい行を作ります。マップの区画 6 や宝箱の戦闘で選べます" onClick={() => {
-          const n = t.addRow(g.row);
-          edited();
-          location.hash = lanaiGroupHref(content.index, n);
-        }}>写して新しい群れを作る</button>
+        <CopyRemoveButtons copy={lanaiGroupCopy(maps, content)} from={g.row} onEdit={edited} remove={added ? {
+          used: uses.map((u) => (u.cells === 'map' ? u.map : `${u.map} (セル ${u.cells} 個)`)),
+          why: g.row === t.rows - 1 ? undefined : '消せるのは最後に追加した群れだけです',
+          remove: () => t.removeLastRow(), next: lanaiGroupHref(content.index, g.row - 1),
+        } : undefined} />
         {!added && t.rowChanged(g.row) && <button onClick={() => { t.revertRow(g.row); edited(); }}>この群れの変更を元に戻す</button>}
       </div>
       <h3>編成の出方 (+0x6A)</h3>
