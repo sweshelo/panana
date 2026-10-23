@@ -71,15 +71,18 @@ export function LanaiMonsterPicker({ session, current, title = 'モンスター�
 }
 
 /** Picks an item (ItemData row; the pick is the row number), or one of `choices` before them. */
-export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', choices = [], choicesLabel, onPick, onClose }: {
-  session: LanaiSession; current: number; title?: string; choices?: PickerChoice[]; choicesLabel?: string; onPick: (row: number) => void; onClose: () => void;
+export function LanaiItemPicker({ session, current, title = 'アイテムを選ぶ', choices = [], choicesLabel, unavailable, onPick, onClose }: {
+  session: LanaiSession; current: number; title?: string; choices?: PickerChoice[]; choicesLabel?: string;
+  /** Why a row cannot be picked (greyed out), or null. */
+  unavailable?: (row: number) => string | null;
+  onPick: (row: number) => void; onClose: () => void;
 }): ReactNode {
   const entries = useMemo(() => {
     const t = session.need('ItemData');
     const out = [];
     for (let r = 1; r < t.rows; r++) {
       const name = session.plain(t, r, 'name');
-      if (name) out.push({ id: r, name, sub: `#${r}`, icon: lanaiItemIcon(session, r, name, true) });
+      if (name) out.push({ id: r, name, sub: `#${r}`, icon: lanaiItemIcon(session, r, name, true), unavailable: unavailable?.(r) ?? null });
     }
     return out;
   }, [session]);

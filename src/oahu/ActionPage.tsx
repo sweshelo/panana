@@ -9,6 +9,7 @@ import { OAHU_ACTION_TEXTS, type OahuBattle } from './battle';
 import { InfoTip } from '../ui/InfoTip';
 import { Board, EmptyBoard } from '../ui/Board';
 import { ActionButtons, ActionHead, ActionListPane, ActionTexts, ActionUsers } from '../ui/ActionParts';
+import { NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { FieldCheck } from '../ui/FieldEdit';
 import { enumOptions, FieldNumber, FieldSelect, rowAccess, Stat } from './FieldInput';
 import { OahuActionPreview, OahuPerformanceSlots } from './ActionPreview';
@@ -58,7 +59,8 @@ export function OahuActionPage({ session, arg }: { session: OahuSession; arg: st
         total={actions.length} columns={[['種別'], ['属性'], ['威力']]} selected={selected} href={oahuActionHref}
         query={query} setQuery={setQuery} placeholder="名前・行で検索" filter={filter} setFilter={setFilter}
         filters={[['all', 'すべて'], ...Object.entries(OAHU_ACTION_KIND).map(([k, v]): [string, string] => [`k${k}`, `カテゴリ: ${v}`]),
-          ...Object.entries(OAHU_ACTION_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, `種別: ${v}`]), ['changed', '変更したもの']]} />
+          ...Object.entries(OAHU_ACTION_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, `種別: ${v}`]), ['changed', '変更したもの']]}
+        top={<NewRecordButton copy={oahuActionCopy(battle)} current={selected} onEdit={onEdit} picker={(p) => <OahuActionPicker battle={battle} {...p} />} />} />
       <div className="book-detail" ref={detail}>
         <ActionDetail key={selected} session={session} row={selected} onEdit={onEdit} />
       </div>
@@ -71,6 +73,14 @@ const COPY_INFO = [
   '名前と結果のメッセージは同じ本文の新しいメッセージ (MessageSystemCommon の 8658 番から) になり、元と別に書き換えられます。',
   '写したアクションは、モンスターのワザやアイテムの「使うアクション」で選ぶと使われます。',
 ].join('\n');
+
+/** Copying an action to a new row (the buttons of an action and the list's "＋ 新しいアクション"). */
+function oahuActionCopy(battle: OahuBattle): CopySpec {
+  return {
+    noun: 'アクション', can: true, info: COPY_INFO, cannot: (row) => (battle.canCopyAction(row) ? null : 'メッセージの空きがありません'),
+    copy: (row) => battle.copyAction(row), href: oahuActionHref,
+  };
+}
 
 function ActionDetail({ session, row, onEdit }: { session: OahuSession; row: number; onEdit: () => void }): ReactNode {
   const { battle } = session;
@@ -122,10 +132,12 @@ function ActionDetail({ session, row, onEdit }: { session: OahuSession; row: num
         <FieldCheck f={access} k="noFloat" edited={onEdit} label="浮遊の相手に当たらない" />
       </div>
       <ActionValues battle={battle} row={row} onEdit={onEdit} />
-      <ActionButtons note="変更はマスター (21350000) の actionData.bin とメッセージ、演出は 402F0000 の directData.bin として書き出されます。" copyInfo={COPY_INFO}
-        canCopy={battle.canCopyAction(row)} cannotCopy="メッセージの空きがありません"
-        onCopy={() => { const n = battle.copyAction(row); onEdit(); location.hash = oahuActionHref(n); }}
-        onRemove={battle.canRemoveAction(row) ? () => { battle.removeAction(row); onEdit(); location.hash = oahuActionHref(row - 1); } : undefined}
+      <ActionButtons note="変更はマスター (21350000) の actionData.bin とメッセージ、演出は 402F0000 の directData.bin として書き出されます。"
+        copy={oahuActionCopy(battle)} from={row} onEdit={onEdit} remove={rows.added(row) ? {
+          used: [...users.monsters.map((m) => battle.monsterName(m)), ...users.items.map((i) => battle.itemName(i))],
+          why: battle.canRemoveAction(row) ? undefined : '消せるのは最後に追加したアクションだけです',
+          remove: () => battle.removeAction(row), next: oahuActionHref(row - 1),
+        } : undefined}
         onRevert={battle.actionChanged(row) && !rows.added(row) ? () => { battle.revertAction(row); onEdit(); } : undefined} />
       <h3 className="with-info">{'演出'}<InfoTip text="使う側・対象・場に出す演出 (402F0000 の directData の行) です。変えた演出は、402F0000 の directData.bin として書き出されます。" /></h3>
       <OahuPerformanceSlots session={session} row={row} onEdit={onEdit} />

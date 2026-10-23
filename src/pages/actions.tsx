@@ -11,6 +11,8 @@ import { useEdits, useSticky, type PageProps } from '../ui/book';
 import { ActionButtons, ActionHead, ActionListPane, ActionUsers } from '../ui/ActionParts';
 import { ActionPreview } from '../ui/PerformanceEditor';
 import { RowFields } from '../ui/RowFields';
+import { ActionPicker } from '../ui/ActionPicker';
+import { NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 
 export const actionHref = (row: number): string => `#/actions/${row}`;
 
@@ -41,7 +43,9 @@ export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
     <div className="book">
       <ActionView book={book} selected={selected} context={{ message: (id) => master.message(id) }}
         original={(r) => (r < master.originalRows('actionData.bin') ? master.originalRow('actionData.bin', r) : undefined)}
-        editor={(a) => <ActionEdit session={session} book={book} row={a.row} onChange={changed} />} />
+        editor={(a) => <ActionEdit session={session} book={book} row={a.row} onChange={changed} />}
+        top={<NewRecordButton copy={actionCopy(session)} current={selected} onEdit={changed}
+          picker={(p) => <ActionPicker actions={book} {...p} />} />} />
     </div>
   );
 }
@@ -52,16 +56,27 @@ const EDIT_INFO = [
   '演出を変えたアクションは、演出の表 (2713402F の directData.bin) も書き出します。',
 ].join('\n');
 
+/** Copying an action to a new row (the buttons of an action and the list's "＋ 新しいアクション"). */
+function actionCopy(session: Session): CopySpec {
+  const edits = actionEdits(session);
+  return { noun: 'アクション', can: true, info: EDIT_INFO, copy: (row) => edits.copy(row), href: actionHref };
+}
+
 /** The editable fields of the action, copying it, putting it back, and the preview of its performance. */
 function ActionEdit({ session, book, row, onChange }: { session: Session; book: ActionBook; row: number; onChange: () => void }): ReactNode {
   const edits = actionEdits(session);
   const users = book.refsOf(row).monsters.map((m) => session.book?.monster(m.row)).filter((m): m is Monster => !!m);
   const added = edits.added(row);
+  const refs = book.refsOf(row);
   return (
     <>
       <ActionEditor session={session} actions={book} row={row} monsters={users} onChange={onChange} />
-      <ActionButtons note="変更はマスター (56562135) の actionData.bin と、演出を変えたときは 2713402F の directData.bin として書き出されます。" copyInfo={EDIT_INFO}
-        canCopy cannotCopy="" onCopy={() => { const n = edits.copy(row); onChange(); location.hash = actionHref(n); }}
+      <ActionButtons note="変更はマスター (56562135) の actionData.bin と、演出を変えたときは 2713402F の directData.bin として書き出されます。"
+        copy={actionCopy(session)} from={row} onEdit={onChange} remove={added ? {
+          used: [...refs.monsters.map((m) => m.name), ...refs.items.map((i) => i.name)],
+          why: edits.canRemove(row) ? undefined : '消せるのは最後に追加したアクションだけです',
+          remove: () => { edits.remove(row); session.book?.reload(); }, next: actionHref(row - 1),
+        } : undefined}
         onRevert={!added && edits.changed(row) ? () => { edits.revert(row); session.book?.reload(); onChange(); } : undefined} />
       {session.book?.directData && <ActionPreview session={session} actions={book} edits={edits} row={row} users={users} onChange={onChange} />}
     </>
@@ -70,8 +85,10 @@ function ActionEdit({ session, book, row, onChange }: { session: Session; book: 
 
 const FILTERS: [Filter, string][] = [['item', 'アイテムの効果 (種類 2)'], ['used-item', 'アイテムが使う'], ['skill', 'モンスターのワザ'], ['all', 'すべて']];
 
-export function ActionView({ book, selected, editor, context, original }: {
+export function ActionView({ book, selected, editor, context, original, top }: {
   book: Book;
+  /** Above the list's search (the "＋ 新しいアクション" button). */
+  top?: ReactNode;
   selected: number;
   editor?: (a: Action) => ReactNode;
   /** Names of the messages in the table of all the fields. */
@@ -92,7 +109,7 @@ export function ActionView({ book, selected, editor, context, original }: {
           return { row: x.row, name: x.name || <span className="muted">(名前なし)</span>, cells: [itemEffect(x) || actionKindLabel(x.kind, x.type), n ? String(n) : ''] };
         })}
         total={book.actions.length} columns={[['内容'], ['参照', '使うアイテムとモンスターの数']]} selected={selected} href={actionHref}
-        query={query} setQuery={setQuery} placeholder="名前・効果・アイテム・モンスターで検索" filter={filter} setFilter={setFilter} filters={FILTERS} />
+        query={query} setQuery={setQuery} placeholder="名前・効果・アイテム・モンスターで検索" filter={filter} setFilter={setFilter} filters={FILTERS} top={top} />
       <div className="book-detail">{a && <ActionDetail action={a} book={book} editor={editor} context={context} original={original?.(a.row)} />}</div>
     </>
   );

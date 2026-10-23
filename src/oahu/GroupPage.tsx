@@ -6,6 +6,8 @@ import { useEdits, useScrollTop, useSticky } from '../ui/book';
 import { Board, EmptyBoard } from '../ui/Board';
 import { GroupListView, GroupSlotEditor } from '../ui/GroupDetail';
 import { InfoTip } from '../ui/InfoTip';
+import { Dialog } from '../ui/Dialog';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { RowFields } from '../ui/RowFields';
 import type { OahuBattle, OahuGroup } from './battle';
 import { battleContext } from './MonsterPage';
@@ -32,6 +34,15 @@ export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: str
   return (
     <div className="book">
       <div className="book-side">
+        <NewRecordButton copy={oahuGroupCopy(battle)} current={selected} onEdit={onEdit} picker={(p) => (
+          <Dialog title={p.title} onClose={p.onClose}>
+            <div className="group-picker">
+              <GroupListView groups={groups} monsters={groupMonsters} name={(r) => battle.monsterName(r)}
+                icon={(r, i) => <Fragment key={i}>{oahuMonsterIcon(battle, r)}</Fragment>} changed={(g) => battle.groups.changed(g.row)}
+                filters={[['used', 'モンスターのいる群れ', used], ['all', 'すべて', () => true]]} selected={p.current} onSelect={(g) => p.onPick(g.row)} />
+            </div>
+          </Dialog>
+        )} />
         <GroupListView
           groups={groups}
           monsters={groupMonsters}
@@ -53,6 +64,14 @@ export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: str
       </div>
     </div>
   );
+}
+
+/** Copying a group to a new row (the buttons of a group and the list's "＋ 新しい群れ"). */
+function oahuGroupCopy(battle: OahuBattle): CopySpec {
+  return {
+    noun: '群れ', can: true, href: oahuGroupHref, copy: (row) => battle.copyGroup(row),
+    info: 'この群れを monsterGroup の最後に新しい行として写します (索引のハッシュは新しく付けます)。マップや宝箱の戦闘から使うには、その欄で選び直してください。',
+  };
 }
 
 const SLOT_INFO = [
@@ -78,8 +97,13 @@ function GroupDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number;
     <>
       <div className="book-head">
         <h2>{`群れ #${row}`}</h2>
-        <span className="muted">monsterGroup の行</span>
-        {rows.changed(row) && <button onClick={() => { rows.revert(row); onEdit(); }}>この群れの変更を元に戻す</button>}
+        <span className="muted">{`monsterGroup の行${rows.added(row) ? '  (追加した行)' : ''}`}</span>
+        <CopyRemoveButtons copy={oahuGroupCopy(battle)} from={row} onEdit={onEdit} remove={rows.added(row) ? {
+          used: battle.groupUsers(row),
+          why: battle.canRemoveGroup(row) ? undefined : '消せるのは最後に追加した群れだけです',
+          remove: () => battle.removeGroup(row), next: oahuGroupHref(row - 1),
+        } : undefined} />
+        {rows.changed(row) && !rows.added(row) && <button onClick={() => { rows.revert(row); onEdit(); }}>この群れの変更を元に戻す</button>}
       </div>
       <p className="muted small book-desc">候補は 5 個まで。変更はマスター (21350000) の monsterGroup.bin として書き出されます。</p>
       <div className="book-cols group-cols">

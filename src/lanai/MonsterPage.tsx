@@ -11,6 +11,9 @@ import { ModelView } from '../ui/ModelView';
 import { PortLookButton } from '../ui/PortLook';
 import { MonsterList } from '../ui/MonsterList';
 import { RowFields } from '../ui/RowFields';
+import { TextBox } from '../ui/book';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
+import { lanaiCanRemoveMonster, lanaiCopyMonster, lanaiRemoveMonster, lanaiTransformSources } from './monsterCopy';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import {
@@ -19,8 +22,8 @@ import {
 import { lanaiActionName, lanaiFlavor, lanaiItemName, lanaiMonsterChanged, lanaiMonsterStats, lanaiTransforms } from './monsterBook';
 import { lanaiMonsterModel, lanaiMonsterSet } from './monsterModels';
 import { ACTION_SLOT_OFFSETS, lanaiRevertMonster, lanaiStatsOf } from './monsterStats';
-import { lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex, type LanaiMonster } from './monsters';
-import { lanaiMonsterIcon } from './pickers';
+import { forgetLanaiMonsters, lanaiModelIndex, lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex, type LanaiMonster } from './monsters';
+import { lanaiMonsterIcon, LanaiMonsterPicker } from './pickers';
 import type { LanaiRows } from './rows';
 import type { LanaiSession } from './session';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
@@ -82,7 +85,9 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
           const s = lanaiMonsterStats(session, m.row);
           return { row: m.row, icon: lanaiMonsterIcon(session, m.row), name: m.name, level: s?.level, hp: s?.hp, changed: lanaiMonsterChanged(session, m.row) };
         })}
-        total={monsters.length} selected={selected} href={lanaiMonsterHref} listRef={list} />
+        total={monsters.length} selected={selected} href={lanaiMonsterHref} listRef={list}
+        top={<NewRecordButton copy={lanaiMonsterCopy(session)} current={selected} onEdit={() => session.edited()}
+          picker={(p) => <LanaiMonsterPicker session={session} {...p} />} />} />
       <div className="book-detail" ref={detail}>
         {monsters[selected] && <MonsterDetail key={selected} session={session} monster={monsters[selected]} index={index} indexError={loaded instanceof Error ? loaded : null} />}
       </div>
@@ -90,9 +95,33 @@ export function LanaiMonsterPage({ session, arg }: { session: LanaiSession; arg:
   );
 }
 
+const COPY_INFO = [
+  'この行を MonsterParameter の最後に写して、新しいモンスターを作ります (行 ID は使われている最大 + 1)。能力の行も写すので、能力・ドロップ・ワザは元と別に変えられます。',
+  '名前と群れの名前は、この行の文字列として書き換えられます。見た目は「見た目を選ぶ…」で、この作品やほかの作品のモンスターから選び直せます。',
+  '図鑑番号 (+0x00 bit10-19) は種族の代表の行だけが持つので、写しでは 0 にします。群れ (ステージの MonsterGroup) に入れるとゲームに出ます。',
+  'ゲームが表の後ろに足した行を受け付けるかは、まだゲームで確かめていません。',
+].join('\n');
+
+/** Copying a monster to a new row (the buttons of a monster and the list's "＋ 新しいモンスター"). */
+function lanaiMonsterCopy(session: LanaiSession): CopySpec {
+  const p = session.need('MonsterParameter');
+  return {
+    noun: 'モンスター', can: true, info: COPY_INFO, href: lanaiMonsterHref, copy: (row) => lanaiCopyMonster(session, row),
+    cannot: (row) => (row > 0 && row < p.rows && p.u32(row, 0x04) ? null : '名前のない行は写せません'),
+  };
+}
+
+/** What refers to a monster: the groups of the stages read so far and the transformations into it. */
+function lanaiMonsterUsers(session: LanaiSession, row: number): string[] {
+  return [
+    ...lanaiMonsterGroups(session, row).map((f) => `${contentTitle(f.content)} の群れ #${f.group}`),
+    ...lanaiTransformSources(session, row).map((m) => `${lanaiMonsters(session)[m]?.name || `#${m}`} の変身`),
+  ];
+}
+
 const PARAM_INFO = [
   '変更はマスター (2135000A) の MonsterParameter と能力の表 (MonsterParameterMain / Extra / RegularEvent / SpecialEvent) として書き出されます。',
-  '名前・群れの名前・説明文は表の文字列で、まだ編集できません。+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
+  '名前・群れの名前は表の文字列で、ここで書き換えられます。説明文はまだ編集できません。+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
   '能力は +0x16 bit0-2 の表の +0x14 の行にあります (naauao lanai/monsters.md)。',
 ].join('\n');
 
@@ -124,15 +153,20 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
       <div className="book-head">
         <h2 className="with-info">{m.name || '(名前なし)'}<InfoTip text={PARAM_INFO} /></h2>
         <span className="muted">{`#${m.row}  ID ${hex8(m.id)}  能力 ${ref ? `${ref.table.replace('MonsterParameter', '')} ${ref.row}${ref.row >= session.need(ref.table).originalRows ? ' (追加した行)' : ''}` : 'なし'}  デザイン ${m.designRow >= 0 ? m.designRow : 'なし'}`}</span>
-        {lanaiMonsterChanged(session, m.row) && <button onClick={() => { lanaiRevertMonster(session, m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
+        <CopyRemoveButtons copy={lanaiMonsterCopy(session)} from={m.row} onEdit={edited} remove={params.originalRow(m.row) ? undefined : {
+          used: lanaiMonsterUsers(session, m.row),
+          why: lanaiCanRemoveMonster(session, m.row) ? undefined : '消せるのは最後に追加したモンスターだけです',
+          remove: () => lanaiRemoveMonster(session, m.row), next: lanaiMonsterHref(m.row - 1),
+        }} />
+        {lanaiMonsterChanged(session, m.row) && !!params.originalRow(m.row) && <button onClick={() => { lanaiRevertMonster(session, m.row); forgetLanaiMonsters(session); edited(); }}>このモンスターの変更を元に戻す</button>}
       </div>
       {ref && <SharedStatsWarning session={session} monster={m.row} statsRef={ref} edited={edited} />}
       <div className="book-top">
         <div>
           <table className="enc-table desc-table">
             <tbody>
-              <tr><th title="MonsterParameter +0x04">名前</th><td className="book-desc">{m.name || <span className="muted">(空)</span>}</td></tr>
-              <tr><th title="MonsterParameter +0x0C">群れの名前</th><td className="book-desc">{m.group || <span className="muted">(空)</span>}</td></tr>
+              <NameRow session={session} row={m.row} offset={0x04} label="名前" edited={edited} />
+              <NameRow session={session} row={m.row} offset={0x0c} label="群れの名前" edited={edited} />
               {flavor && <tr><th title={`MonsterParameter +0x10、MessageFlavor ${hex8(m.design)}`}>説明</th><td className="book-desc">{flavor}</td></tr>}
               {voice.bytes.length > 0 && (
                 <tr>
@@ -183,6 +217,26 @@ function MonsterDetail({ session, monster: m, index, indexError }: {
   );
 }
 
+/** A string field of the monster's MonsterParameter row (its name, its group's name), written on leaving the box. */
+function NameRow({ session, row, offset, label, edited }: { session: LanaiSession; row: number; offset: number; label: string; edited: () => void }): ReactNode {
+  const t = session.need('MonsterParameter');
+  if (!t.isString(row, offset)) return null;
+  const value = session.stringAt(t, t.u32(row, offset)).text;
+  const was = session.originalField(t, row, offset);
+  return (
+    <tr>
+      <th title={`MonsterParameter +0x${offset.toString(16).toUpperCase()}`}>{label}</th>
+      <td className="book-desc">
+        <TextBox key={`${row}:${offset}`} value={value} multi={false} edited={!!was && was.text !== value} onCommit={(v) => {
+          session.setText(t, row, offset, v);
+          forgetLanaiMonsters(session);
+          edited();
+        }} />
+      </td>
+    </tr>
+  );
+}
+
 /** The other monsters of the same model (colour variants, other forms). */
 function SameModel({ session, monster: m }: { session: LanaiSession; monster: LanaiMonster }): ReactNode {
   const designs = session.rows('MonsterDesign');
@@ -230,8 +284,8 @@ function MonsterModel({ session, monster: m, indexError, edited }: { session: La
   );
 }
 
-/** The groups (MonsterGroup rows) of the contents read so far that have the monster, linked to the group page. */
-function MonsterGroupsOf({ session, row }: { session: LanaiSession; row: number }): ReactNode {
+/** The groups (MonsterGroup rows) of the contents read so far that have the monster. */
+function lanaiMonsterGroups(session: LanaiSession, row: number): { content: LanaiContent; group: number; maps: number }[] {
   const id = session.need('MonsterParameter').rowId(row);
   const found: { content: LanaiContent; group: number; maps: number }[] = [];
   for (const c of lanaiContents(session)) {
@@ -240,6 +294,12 @@ function MonsterGroupsOf({ session, row }: { session: LanaiSession; row: number 
     const uses = maps.monsterGroupUses();
     for (const g of maps.monsterGroups()) if (g.monsters.includes(id)) found.push({ content: c, group: g.row, maps: uses.get(g.row)?.length ?? 0 });
   }
+  return found;
+}
+
+/** The groups of the contents read so far that have the monster, linked to the group page. */
+function MonsterGroupsOf({ session, row }: { session: LanaiSession; row: number }): ReactNode {
+  const found = lanaiMonsterGroups(session, row);
   return (
     <div className="book-where">
       {found.map((f) => (

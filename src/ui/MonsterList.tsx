@@ -15,7 +15,7 @@ export interface MonsterListRow {
   changed?: boolean;
 }
 
-export function MonsterList<F extends string>({ query, setQuery, filter, setFilter, options, rows, total, selected, href, countHead, listRef }: {
+export function MonsterList<F extends string>({ query, setQuery, filter, setFilter, options, rows, total, selected, href, countHead, listRef, top }: {
   query: string;
   setQuery: (q: string) => void;
   filter: F;
@@ -28,9 +28,12 @@ export function MonsterList<F extends string>({ query, setQuery, filter, setFilt
   /** Heading of the count column ("出現", "群れ"); no column when undefined. */
   countHead?: string;
   listRef: RefObject<HTMLDivElement | null>;
+  /** Above the search (the "＋ 新しいモンスター" button). */
+  top?: ReactNode;
 }): ReactNode {
   return (
     <div className="book-side">
+      {top}
       <ListFilter query={query} setQuery={setQuery} placeholder="名前・ワザ・ドロップで検索" filter={filter} setFilter={setFilter} options={options} />
       <div className="book-list" ref={listRef}>
         <Count shown={rows.length} total={total} />

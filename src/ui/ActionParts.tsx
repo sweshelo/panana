@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MessageStore } from '../game/gmsg';
 import { Count, EditedMark, ListFilter, useActiveRow } from './book';
 import { InfoTip } from './InfoTip';
+import { CopyRemoveButtons, type CopySpec, type RemoveSpec } from './RecordButtons';
 import { MessageEditor } from './message';
 
 const PAGE = 200;
@@ -23,7 +24,7 @@ export interface ActionListRow {
  * The left pane: a search box and a filter, the count, and the table (shown in pages of 200, always far enough to
  * show the selected row).
  */
-export function ActionListPane<F extends string>({ rows, total, columns, selected, href, query, setQuery, placeholder, filter, setFilter, filters }: {
+export function ActionListPane<F extends string>({ rows, total, columns, selected, href, query, setQuery, placeholder, filter, setFilter, filters, top }: {
   rows: ActionListRow[];
   total: number;
   /** Headers of the cells after 行 and 名前, with a tooltip each when given. */
@@ -36,6 +37,8 @@ export function ActionListPane<F extends string>({ rows, total, columns, selecte
   filter: F;
   setFilter: (f: F) => void;
   filters: [F, string][];
+  /** Above the search (the "＋ 新しいアクション" button). */
+  top?: ReactNode;
 }): ReactNode {
   const [limit, setLimit] = useState(PAGE);
   const list = useRef<HTMLDivElement>(null);
@@ -45,6 +48,7 @@ export function ActionListPane<F extends string>({ rows, total, columns, selecte
   useEffect(() => setLimit(PAGE), [query, filter]);
   return (
     <div className="book-side">
+      {top}
       <ListFilter query={query} setQuery={setQuery} placeholder={placeholder} filter={filter} setFilter={setFilter} options={filters} />
       <div className="book-list" ref={list}>
         <Count shown={rows.length} total={total} />
@@ -155,26 +159,20 @@ export function ActionUsers({ monsters, items }: { monsters: ActionUser[]; items
 }
 
 /** Copying the action to a new row, removing an added one, putting the row back; with where the edits are written. */
-export function ActionButtons({ note, copyInfo, canCopy, cannotCopy, onCopy, onRemove, onRevert }: {
+export function ActionButtons({ note, copy, from, remove, onEdit, onRevert }: {
   note: string;
-  copyInfo: string;
-  canCopy: boolean;
-  /** Why it cannot be copied. */
-  cannotCopy: string;
-  onCopy: () => void;
-  /** Remove: only for an added row that can be removed. */
-  onRemove?: () => void;
+  copy: CopySpec;
+  from: number;
+  /** Remove: only for an added row. */
+  remove?: RemoveSpec;
+  onEdit: () => void;
   /** Revert: only for a changed row of the archive. */
   onRevert?: () => void;
 }): ReactNode {
   return (
     <div className="row">
       <span className="muted small">{note}</span>
-      <span className="with-info">
-        <button disabled={!canCopy} title={canCopy ? '' : cannotCopy} onClick={onCopy}>写して新しいアクションを作る</button>
-        <InfoTip text={copyInfo} />
-      </span>
-      {onRemove && <button title="追加したアクションを消します (使っているワザやアイテムは直してください)" onClick={onRemove}>このアクションを消す</button>}
+      <CopyRemoveButtons copy={copy} from={from} remove={remove} onEdit={onEdit} />
       {onRevert && <button onClick={onRevert}>このアクションの変更を元に戻す</button>}
     </div>
   );

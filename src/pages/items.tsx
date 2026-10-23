@@ -15,7 +15,9 @@ import type { ItemData, Session } from '../session';
 import { InfoTip } from '../ui/InfoTip';
 import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
+import { ItemPicker } from '../ui/ItemPicker';
 import { PortItemButton } from '../ui/PortLook';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { Photo } from '../ui/Photo';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { itemModelArchive } from '../game/items';
@@ -123,6 +125,8 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
   return (
     <div className="book">
       <div className="book-side">
+        <NewRecordButton copy={itemCopy(items)} current={selected} onEdit={onEdit}
+          picker={(p) => <ItemPicker game={game} items={items} {...p} unavailable={(x) => p.unavailable(x.id)} />} />
         <ListFilter query={query} setQuery={setQuery} placeholder="名前・説明・効果で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ...Object.entries(ITEM_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, v]),
             ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更した']]} />
@@ -174,7 +178,10 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
       <div className="row">
         <span className="muted small">変更はマスター (56562135) の itemData.bin として書き出されます。</span>
         {changed && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
-        <CopyButtons items={items} it={it} used={[...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)]} onEdit={onEdit} />
+        <CopyRemoveButtons copy={itemCopy(items)} from={it.id} onEdit={onEdit} remove={items.added(it.id) ? {
+          used: [...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)],
+          remove: () => items.removeItem(it.id), next: '#/items',
+        } : undefined} />
         {it.model !== 0 && <PortItemButton target="kahara" id={it.id} onDone={onEdit} />}
       </div>
       <ItemSources
@@ -194,30 +201,16 @@ const COPY_INFO = [
   'このアイテムを itemData の空きの行 (分類ごとの予約の行) に写して、新しいアイテムを作ります。名前と説明は同じ本文の新しいメッセージになり、元と別に書き換えられます。',
   '道具は、使うと減るアイテムがアクションの +0x14 で決まります。写した道具にはアクションの写しが付き、+0x14 が新しいアイテムになります。',
   'そのアクションは表の後ろに足すので、書き出しに code.ips のパッチ「追加したアイテムのアクション」が入ります (元のゲームは +0x14 を行 178〜230 でしか読みません)。',
-  'お店・宝箱・モンスターのドロップに入れると、ゲームで手に入ります。',
+  'お店・宝箱・モンスターのドロップに入れると、ゲームで手に入ります。モデルは「モデルを選ぶ…」で、この作品やほかの作品のアイテムから選び直せます。',
 ].join('\n');
 
-/** Copy this item into an empty row; remove an added one when nothing gives it. */
-function CopyButtons({ items, it, used, onEdit }: { items: ItemBook; it: Item; used: string[]; onEdit: () => void }): ReactNode {
-  return (
-    <>
-      <span className="with-info">
-        <button disabled={!items.canCopy(it.id)} title={items.canCopy(it.id) ? '' : '空きの行がありません'} onClick={() => {
-          const n = items.copyItem(it.id);
-          onEdit();
-          location.hash = `#/items/${n}`;
-        }}>写して新しいアイテムを作る</button>
-        <InfoTip text={COPY_INFO} />
-      </span>
-      {items.added(it.id) && (
-        <button disabled={used.length > 0} title={used.length ? `手に入る場所があります: ${used.slice(0, 5).join('・')}` : '追加したアイテムを消して、空きの行に戻します'} onClick={() => {
-          items.removeItem(it.id);
-          onEdit();
-          location.hash = '#/items';
-        }}>このアイテムを消す</button>
-      )}
-    </>
-  );
+/** Copying an item into an empty row of its category (the buttons of an entry and the list's "＋ 新しいアイテム"). */
+function itemCopy(items: ItemBook): CopySpec {
+  return {
+    noun: 'アイテム', can: true, info: COPY_INFO,
+    cannot: (id) => (items.canCopy(id) ? null : '空きの行 (この分類の予約の行) か、メッセージの空きがありません'),
+    copy: (id) => items.copyItem(id), href: (id) => `#/items/${id}`,
+  };
 }
 
 /** The name and the message fields (+0x10..+0x1C): editable text boxes; empty fields are left out. */

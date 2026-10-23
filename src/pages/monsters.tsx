@@ -13,6 +13,8 @@ import type { MapDoc } from '../game/sections';
 import type { Session } from '../session';
 import { useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
 import { MonsterList } from '../ui/MonsterList';
+import { MonsterPicker } from '../ui/MonsterPicker';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec, type RemoveSpec } from '../ui/RecordButtons';
 import { GroupDetail } from '../ui/GroupDetail';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
@@ -89,14 +91,20 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
   };
   const rows = book.monsters.filter(matches);
   const m = book.monster(selected);
+  const onEdit = (): void => {
+    session.scheduleSave();
+    edited();
+  };
   return (
     <div className="book">
       <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
         options={[['all', 'すべて'], ['seen', 'マップに出る'], ['boss', 'ボス・変身'], ...dungeons.map((d): [string, string] => [`d${d}`, game.master.dungeonName(d) || `ダンジョン ${d}`])]}
         rows={rows.map((m) => ({ row: m.row, icon: <Photo model={monsterRef(game, book, m)} />, name: m.name, level: m.level, hp: m.hp.max, count: where.get(m.row)?.length ?? 0 }))}
-        total={book.monsters.length} selected={selected} href={(r) => `#/monsters/${r}`} countHead="出現" listRef={list} />
+        total={book.monsters.length} selected={selected} href={(r) => `#/monsters/${r}`} countHead="出現" listRef={list}
+        top={<NewRecordButton copy={monsterCopy(book)} current={selected} onEdit={onEdit}
+          picker={(p) => <MonsterPicker session={session} book={book} {...p} />} />} />
       <div className="book-detail">
-        {m && <MonsterDetail session={session} book={book} m={m} where={where.get(m.row) ?? []} edited={() => { session.scheduleSave(); edited(); }} />}
+        {m && <MonsterDetail session={session} book={book} m={m} where={where.get(m.row) ?? []} edited={onEdit} />}
       </div>
     </div>
   );
@@ -112,7 +120,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
       <div className="book-head">
         <h2 className="with-info">{m.name}<InfoTip text={'変更はマスター (56562135) の monsterParameter.bin として書き出されます。\n同じモンスターの別の形態 (ボスなど) は別の行です。'} /></h2>
         <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}${book.added(m.row) ? '  (追加した行)' : ''}`}</span>
-        <CopyButtons book={book} m={m} edited={edited} />
+        <CopyRemoveButtons copy={monsterCopy(book)} from={m.row} remove={monsterRemove(book, m)} onEdit={edited} />
         {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
         <PortLookButton target="kahara" row={m.row} onDone={edited} />
       </div>
@@ -153,35 +161,26 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
 
 const COPY_INFO = [
   'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',
+  '見た目は「見た目を選ぶ…」で、この作品やほかの作品のモンスターから選び直せます。',
   '群れ・ボス戦の敵・次の形態で選べます。',
   'ゲームは行 185 以降を弾くので、追加した行があると書き出しに code.ips のパッチ「追加したモンスター」が入ります。行は 255 まで。',
 ].join('\n');
 
-/** Copy this row as a new monster; remove the last added one when nothing refers to it. */
-function CopyButtons({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
-  const users = book.canRemove(m.row) ? book.users(m.row) : null;
-  const used = users ? [
-    ...users.groups.map((r) => `群れ #${r}`), ...users.fixes.map((r) => `ボス戦の敵 #${r}`), ...users.forms.map((r) => `#${r} の次の形態`),
-  ] : [];
-  return (
-    <>
-      <span className="with-info">
-        <button disabled={!book.canCopy()} title={book.canCopy() ? '' : 'モンスターは行 255 までです'} onClick={() => {
-          const n = book.copyMonster(m.row);
-          edited();
-          location.hash = `#/monsters/${n}`;
-        }}>写して新しいモンスターを作る</button>
-        <InfoTip text={COPY_INFO} />
-      </span>
-      {users && (
-        <button disabled={used.length > 0} title={used.length ? `使われています: ${used.join('・')}` : '最後に追加したモンスターを消します'} onClick={() => {
-          book.removeMonster(m.row);
-          edited();
-          location.hash = `#/monsters/${m.row - 1}`;
-        }}>このモンスターを消す</button>
-      )}
-    </>
-  );
+/** Copying a row as a new monster (the buttons of an entry and the list's "＋ 新しいモンスター"). */
+export function monsterCopy(book: MonsterBook): CopySpec {
+  return { noun: 'モンスター', can: book.canCopy(), why: 'モンスターは行 255 までです', info: COPY_INFO, copy: (row) => book.copyMonster(row), href: (r) => `#/monsters/${r}` };
+}
+
+/** Removing the last added monster when nothing refers to it. */
+function monsterRemove(book: MonsterBook, m: Monster): RemoveSpec | undefined {
+  if (!book.added(m.row)) return undefined;
+  if (!book.canRemove(m.row)) return { used: [], why: '消せるのは最後に追加したモンスターだけです', remove: () => {}, next: '' };
+  const users = book.users(m.row);
+  return {
+    used: [...users.groups.map((r) => `群れ #${r}`), ...users.fixes.map((r) => `ボス戦の敵 #${r}`), ...users.forms.map((r) => `#${r} の次の形態`)],
+    remove: () => book.removeMonster(m.row),
+    next: `#/monsters/${m.row - 1}`,
+  };
 }
 
 const RESIST_INFO = [

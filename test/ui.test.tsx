@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import type { Session } from '../src/session';
 import { MapPicker } from '../src/ui/MapPicker';
 import { ItemPicker } from '../src/ui/ItemPicker';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../src/ui/RecordButtons';
 import type { ItemBook, Item } from '../src/game/items';
 import { TreasureEditor } from '../src/editor/treasure';
 import type { MapInfo } from '../src/game/codebin';
@@ -410,5 +411,28 @@ describe('item book: sources and order', () => {
     expect(controls).toContain('☆ 1');
     expect(controls).toContain('☆ 2'); // the selected one, though no item has it
     expect(controls).toContain('☆ 3');
+  });
+});
+
+describe('record buttons (ui/RecordButtons)', () => {
+  const copy: CopySpec = { noun: 'モンスター', can: true, cannot: (r) => (r === 2 ? '名前のない行' : null), copy: (r) => r + 100, href: (r) => `#/monsters/${r}` };
+
+  test('copy, and remove only when nothing uses the added record', () => {
+    const free = renderToString(<CopyRemoveButtons copy={copy} from={1} remove={{ used: [], remove: () => {}, next: '#/monsters' }} onEdit={() => {}} />);
+    expect(free).toContain('写して新しいモンスターを作る');
+    expect(free).toContain('このモンスターを消す');
+    expect(free).not.toContain('disabled');
+    const used = renderToString(<CopyRemoveButtons copy={copy} from={2} remove={{ used: ['群れ #3'], remove: () => {}, next: '#/monsters' }} onEdit={() => {}} />);
+    expect(used).toContain('使われています: 群れ #3');
+    expect(used).toContain('名前のない行');
+    expect(renderToString(<CopyRemoveButtons copy={copy} from={1} onEdit={() => {}} />)).not.toContain('消す');
+  });
+
+  test('"＋ 新しい…" at the top of a list, off when the table is full', () => {
+    const picker = (): null => null;
+    expect(renderToString(<NewRecordButton copy={copy} current={1} picker={picker} onEdit={() => {}} />)).toContain('＋ 新しいモンスター');
+    const full = renderToString(<NewRecordButton copy={{ ...copy, can: false, why: '行 255 まで' }} current={1} picker={picker} onEdit={() => {}} />);
+    expect(full).toContain('disabled');
+    expect(full).toContain('行 255 まで');
   });
 });

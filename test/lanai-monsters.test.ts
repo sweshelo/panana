@@ -6,8 +6,12 @@ import { renderToString } from 'react-dom/server';
 import { bchSummary, unwrapBch } from '../src/bch/bch';
 import { lanaiMonsterSet } from '../src/lanai/monsterModels';
 import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
-import { lanaiModelIndex, lanaiMonsterDesign, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex } from '../src/lanai/monsters';
+import { forgetLanaiMonsters, lanaiModelIndex, lanaiMonsterDesign, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex } from '../src/lanai/monsters';
 import { LanaiSession } from '../src/lanai/session';
+import { lanaiCanRemoveMonster, lanaiCopyMonster, lanaiRemoveMonster } from '../src/lanai/monsterCopy';
+import { lanaiCopyItem, lanaiFreeItemRow, lanaiItemAdded, lanaiRemoveItem } from '../src/lanai/itemCopy';
+import { lanaiItems } from '../src/lanai/items';
+import { lanaiStatsOf } from '../src/lanai/monsterStats';
 import { openImages } from '../src/rom/dump';
 import { hex8 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -114,5 +118,41 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
     const html = renderToString(createElement(LanaiMonsterPage, { session: s, arg: '50' }));
     for (const t of ['アイスバード', 'アイスバードたち', 'MonsterParameter の行', 'MonsterDesign 行 8', '同じモデルのモンスター', 'おおくちばし', 'モデルあり', '1231 / 1231'])
       expect(html).toContain(t);
+  });
+
+  test('a copied monster: a new row ID, an ability row of its own, its own name; removed again', () => {
+    const p = s.need('MonsterParameter');
+    const rows = p.rows;
+    const from = 1;
+    const ref = lanaiStatsOf(s, from)!;
+    const stats = s.need(ref.table).rows;
+    const n = lanaiCopyMonster(s, from);
+    expect([n, p.rows]).toEqual([rows, rows + 1]);
+    expect(p.rowId(n)).toBeGreaterThan(p.rowId(rows - 1));
+    expect(lanaiStatsOf(s, n)).toEqual({ ...ref, row: stats });
+    expect(lanaiMonsters(s)[n]!.name).toBe('いちごおばけ');
+    s.setText(p, n, 0x04, 'いちごおばけ改');
+    forgetLanaiMonsters(s);
+    expect([lanaiMonsters(s)[n]!.name, lanaiMonsters(s)[from]!.name]).toEqual(['いちごおばけ改', 'いちごおばけ']);
+    const html = renderToString(createElement(LanaiMonsterPage, { session: s, arg: String(n) }));
+    for (const t of ['このモンスターを消す', '＋ 新しいモンスター']) expect(html).toContain(t);
+    expect(lanaiCanRemoveMonster(s, n)).toBe(true);
+    lanaiRemoveMonster(s, n);
+    expect([p.rows, s.need(ref.table).rows]).toEqual([rows, stats]);
+  });
+
+  test('a copied item goes into an ItemData row without an item, with its own ItemDataCore row; removed again', () => {
+    const data = s.need('ItemData');
+    const core = s.need('ItemDataCore');
+    const cores = core.rows;
+    const from = lanaiItems(s).find((x) => x.name && x.model)!;
+    const free = lanaiFreeItemRow(s);
+    expect(free).toBeGreaterThan(0);
+    const r = lanaiCopyItem(s, from.row);
+    expect(r).toBe(free);
+    const it = lanaiItems(s).find((x) => x.row === r)!;
+    expect([it.name, it.core, it.model, it.kind, lanaiItemAdded(s, r)]).toEqual([from.name, cores, from.model, from.kind, true]);
+    lanaiRemoveItem(s, it);
+    expect([core.rows, data.u16(r, 0x0c), lanaiItems(s).some((x) => x.row === r)]).toEqual([cores, 0, false]);
   });
 });

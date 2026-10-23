@@ -14,6 +14,7 @@ import { ModelView } from '../ui/ModelView';
 import { PortLookButton } from '../ui/PortLook';
 import { oneIn, pct } from '../pages/monsteredit';
 import { RowFields } from '../ui/RowFields';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { OAHU_MONSTER_TEXTS, type OahuBattle, type OahuFormChange } from './battle';
 import { enumOptions, MessageFields, rowAccess } from './FieldInput';
 import {
@@ -72,12 +73,28 @@ export function OahuMonsterPage({ session, arg }: { session: OahuSession; arg: s
       <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
         options={[['all', 'すべて'], ['seen', '群れにいる'], ['changed', '変更したもの']]}
         rows={rows.map((m) => ({ row: m.id, icon: oahuMonsterIcon(battle, m.id), name: m.name, level: m.level, hp: m.hp[1], count: groups.get(m.id)?.length ?? 0, changed: battle.monsterChanged(m.id) }))}
-        total={monsters.length} selected={selected} href={oahuMonsterHref} countHead="群れ" listRef={list} />
+        total={monsters.length} selected={selected} href={oahuMonsterHref} countHead="群れ" listRef={list}
+        top={<NewRecordButton copy={oahuMonsterCopy(battle)} current={selected} onEdit={onEdit} picker={(p) => <OahuMonsterPicker battle={battle} {...p} />} />} />
       <div className="book-detail" ref={detail}>
         {monsters.some((m) => m.id === selected) && <MonsterDetail key={selected} session={session} row={selected} groups={groups.get(selected) ?? []} onEdit={onEdit} />}
       </div>
     </div>
   );
+}
+
+const COPY_INFO = [
+  'このモンスターを monsterParameter の最後に新しい行として写します。見た目 (デザインの行)・図鑑の番号・ワザ・ドロップは元と同じで、名前と説明は同じ本文の新しいメッセージになり、別に書き換えられます。',
+  '見た目は「見た目を選ぶ…」で、この作品やほかの作品のモンスターから選び直せます。群れの候補・決まった並び・変身先で選ぶとゲームに出ます。',
+  '行は 255 まで (呼ぶアクションが行を 1 バイトで持つため)。ゲームが表の後ろに足した行を受け付けるかは、まだゲームで確かめていません。',
+].join('\n');
+
+/** Copying a monster to a new row (the buttons of a monster and the list's "＋ 新しいモンスター"). */
+function oahuMonsterCopy(battle: OahuBattle): CopySpec {
+  return {
+    noun: 'モンスター', can: battle.monsters.rows < 0x100, why: 'モンスターは行 255 までです', info: COPY_INFO,
+    cannot: (row) => (battle.canCopyMonster(row) ? null : 'メッセージの空きがないか、名前のない行です'),
+    copy: (row) => battle.copyMonster(row), href: oahuMonsterHref,
+  };
 }
 
 const STAT_INFO = '戦闘のたびに、下と上の間の乱数になります (FUN_004CCBE8)。上の値は固定のとき (ボスなど) の値です。';
@@ -92,7 +109,12 @@ function MonsterDetail({ session, row, groups, onEdit }: { session: OahuSession;
       <div className="book-head">
         <h2 className="with-info">{battle.monsterName(row)}<InfoTip text="変更はマスター (21350000) の monsterParameter.bin とメッセージとして書き出されます。" /></h2>
         <span className="muted">{`#${row}  図鑑 ${rows.get(row, 'book')}  ミュージアム ${rows.get(row, 'museum')}  デザイン ${rows.get(row, 'design')}`}</span>
-        {battle.monsterChanged(row) && <button onClick={() => { battle.revertMonster(row); onEdit(); }}>このモンスターの変更を元に戻す</button>}
+        <CopyRemoveButtons copy={oahuMonsterCopy(battle)} from={row} onEdit={onEdit} remove={rows.added(row) ? {
+          used: battle.monsterUsers(row),
+          why: battle.canRemoveMonster(row) ? undefined : '消せるのは最後に追加したモンスターだけです',
+          remove: () => battle.removeMonster(row), next: oahuMonsterHref(row - 1),
+        } : undefined} />
+        {battle.monsterChanged(row) && !rows.added(row) && <button onClick={() => { battle.revertMonster(row); onEdit(); }}>このモンスターの変更を元に戻す</button>}
       </div>
       <div className="book-top">
         <div>
