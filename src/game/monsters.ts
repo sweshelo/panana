@@ -530,6 +530,19 @@ export class MonsterBook {
     return row >= this.master.originalRows('monsterGroup.bin');
   }
 
+  /** Whether a group row can be removed: the last added row (the rows stay in order). */
+  canRemoveGroup(row: number): boolean {
+    return this.groupAdded(row) && row === this.master.table('monsterGroup.bin').rows - 1;
+  }
+
+  /** Remove the last added group (its hash leaves the index; the maps naming it must be changed first). */
+  removeGroup(row: number): void {
+    if (!this.canRemoveGroup(row)) throw new Error('消せるのは最後に追加した群れだけです');
+    const t = this.master.table('monsterGroup.bin');
+    t.data = t.withRows(Array.from({ length: t.rows - 1 }, (_, i) => t.row(i).slice()));
+    this.loadGroups();
+  }
+
   /** Whether a group row differs from the archive (added rows always do). */
   groupChanged(row: number): boolean {
     if (this.groupAdded(row)) return true;

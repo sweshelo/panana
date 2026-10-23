@@ -8,8 +8,15 @@ import type { Session } from '../session';
 import { useEdits, useSticky, type PageProps } from '../ui/book';
 import { GroupList, groupHref, GroupSlotEditor, groupUses, rpg2Monster, type GroupUse } from '../ui/GroupDetail';
 import { MonsterPicker } from '../ui/MonsterPicker';
+import { Dialog } from '../ui/Dialog';
+import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 
 export { groupHref, groupUses, type GroupUse };
+
+/** Copying a group to a new row (the buttons of a group and the list's "＋ 新しい群れ"). */
+function groupCopy(book: MonsterBook): CopySpec {
+  return { noun: '群れ', can: true, info: 'この群れを写した新しい行を作ります。マップ編集の「出現する敵」で選べます。', copy: (row) => book.copyGroup(row), href: groupHref };
+}
 
 export function GroupPage({ session, arg, visit, book }: PageProps & { book: MonsterBook }): ReactNode {
   const { game } = session;
@@ -25,6 +32,13 @@ export function GroupPage({ session, arg, visit, book }: PageProps & { book: Mon
   return (
     <div className="book">
       <div className="book-side">
+        <NewRecordButton copy={groupCopy(book)} current={selected} onEdit={onEdit} picker={(p) => (
+          <Dialog title={p.title} onClose={p.onClose}>
+            <div className="group-picker">
+              <GroupList game={game} book={book} uses={uses} selected={p.current} onSelect={(g) => p.onPick(g.row)} />
+            </div>
+          </Dialog>
+        )} />
         <GroupList game={game} book={book} uses={uses} selected={selected} onSelect={(g) => (location.hash = groupHref(g.row))} />
       </div>
       <div className="book-detail">
@@ -48,11 +62,11 @@ function GroupDetailEditor({ session, book, g, uses, onEdit }: { session: Sessio
         候補は 5 個まで。変更はマスター (56562135) の monsterGroup.bin として書き出されます。
       </p>
       <div className="row">
-        <button title="この群れを写した新しい行を作ります。マップ編集の「出現する敵」で選べます" onClick={() => {
-          const n = book.copyGroup(g.row);
-          onEdit();
-          location.hash = groupHref(n);
-        }}>写して新しい群れを作る</button>
+        <CopyRemoveButtons copy={groupCopy(book)} from={g.row} onEdit={onEdit} remove={added ? {
+          used: uses.map((u) => mapTitle(u.map, game.code.maps, game.master)),
+          why: book.canRemoveGroup(g.row) ? undefined : '消せるのは最後に追加した群れだけです',
+          remove: () => book.removeGroup(g.row), next: groupHref(g.row - 1),
+        } : undefined} />
         {!added && book.groupChanged(g.row) && <button onClick={() => { book.revertGroup(g.row); onEdit(); }}>この群れの変更を元に戻す</button>}
       </div>
       <div className="book-cols group-cols">

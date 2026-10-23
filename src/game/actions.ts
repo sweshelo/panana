@@ -279,6 +279,22 @@ export class ActionEdits {
     return n;
   }
 
+  /** Whether a row can be removed: the last added row (the rows stay in order). */
+  canRemove(row: number): boolean {
+    return this.added(row) && row === this.table.rows - 1;
+  }
+
+  /** Remove the last added action, with its name message when that is the last added one and no other row shows it. */
+  remove(row: number): void {
+    if (!this.canRemove(row)) throw new Error('消せるのは最後に追加したアクションだけです');
+    const t = this.table;
+    const name = u32(this.row(row), 4);
+    t.data = t.withRows(Array.from({ length: t.rows - 1 }, (_, i) => t.row(i).slice()));
+    const texts = this.master.texts;
+    const used = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 4)).includes(name);
+    if (!used && name === texts.addedIds().at(-1)) texts.removeAdded(name);
+  }
+
   /**
    * Append a copy of an item's action for another item: +0x14 (the item it uses up, FUN_002f4c54) becomes that item.
    * The messages stay shared ("āはĆを使った" names the item from +0x14). Returns the new row.
