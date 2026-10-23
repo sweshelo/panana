@@ -11,6 +11,7 @@ import type { OahuBattle, OahuGroup } from './battle';
 import { battleContext } from './MonsterPage';
 import { oahuGroupHref, oahuGroupMonster, oahuMonsterHref, oahuMonsterIcon, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
+import { OAHU_BATTLE_BGM, OAHU_BOSS_BGM_BIT } from './sound';
 import { OAHU_MONSTER_GROUP } from './tables';
 
 /** Monster rows of a group: candidates (leads first), then the fixed formation, each once. */
@@ -88,11 +89,35 @@ function GroupDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number;
         ))}
         <FixedEditor battle={battle} g={g} onEdit={onEdit} />
       </div>
+      <BattleSettings battle={battle} row={row} onEdit={onEdit} />
       <details className="row-fields-box">
         <summary>{`monsterGroup の行 ${row} のすべての欄`}</summary>
         <RowFields def={OAHU_MONSTER_GROUP} row={rows.row(row)} original={rows.originalRow(row)} context={battleContext(battle)} />
       </details>
     </>
+  );
+}
+
+const BOSS_BGM_INFO = [
+  `決まった戦闘 (ボス戦・宝箱の戦闘など) を BGM の指定なしで始めると、この印があれば ${OAHU_BATTLE_BGM.boss} BGM_BATTLE_2、なければ ${OAHU_BATTLE_BGM.normal} BGM_BATTLE_1 が鳴ります (+0x32 bit2、@0x2111C0)。`,
+  'BGM を指定して始める戦闘 (イベントの一部、コードの呼び出し) には効きません。マップを歩く敵との戦闘は、ダンジョンの「戦闘の BGM」(マップのページ) が鳴ります。',
+  'この印は、戦闘の初期化で戦闘のフラグ (+0x2D662 bit0) も立てます (逃げられない等と推定)。',
+  'RPG3 の群れには戦闘の背景の欄がありません。背景はいるダンジョンのもの (マップのページ) です。',
+].join('\n');
+
+/** The battle BGM of the group's fixed battles (+0x32 bit2) and where the rest of a battle's look comes from. */
+function BattleSettings({ battle, row, onEdit }: { battle: OahuBattle; row: number; onEdit: () => void }): ReactNode {
+  const flags = battle.groups.get(row, 'flags');
+  const on = !!(flags & OAHU_BOSS_BGM_BIT);
+  const edited = !!(battle.groups.original(row, 'flags') & OAHU_BOSS_BGM_BIT) !== on;
+  return (
+    <section>
+      <h3 className="with-info">戦闘の BGM<InfoTip text={BOSS_BGM_INFO} /></h3>
+      <label className={`layer${edited ? ' edited' : ''}`}>
+        <input type="checkbox" checked={on} onChange={(e) => { battle.groups.set(row, 'flags', e.target.checked ? flags | OAHU_BOSS_BGM_BIT : flags & ~OAHU_BOSS_BGM_BIT); onEdit(); }} />
+        {` ボスの曲 (+0x32 bit2): BGM 指定なしの決まった戦闘で ${on ? 'BGM_BATTLE_2' : 'BGM_BATTLE_1'} が鳴る`}
+      </label>
+    </section>
   );
 }
 
