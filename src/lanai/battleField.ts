@@ -3,7 +3,10 @@
 // SoundData row) picked by the group (MonsterGroup +0x00, from the content's table when +0x69 bit3 is set). A value the
 // table doesn't have is its row 0. MapResource +0x10 is the content row a map starts with, and MapData +0x04 / +0x06 /
 // +0x08 are the map's field BGM, the tune of one encounter path and the encounter sound.
+import type { ModelRef } from '../pages/modelview';
+import { hex8 } from '../util/bytes';
 import type { LanaiMaps } from './maps';
+import { lanaiObjectModels } from './mapModels';
 import { LANAI_MG_FIELD, LANAI_MG_FLAGS } from './monsterGroup';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
@@ -96,4 +99,13 @@ export function lanaiBattleFieldUses(session: LanaiSession, maps: LanaiMaps, con
       if (v) add(lanaiBattleFieldRow(t, v).row, { label: `MapResource 行 ${r}` });
     }
   return out;
+}
+
+/** The background model of a row (+0x00 archive, +0x04 entry) for the viewer. */
+export function lanaiBattleBackgroundRef(session: LanaiSession, archive: number, entry: number): ModelRef | null {
+  if (!archive || !entry) return null;
+  return {
+    key: `lanai-btmp/${session.dump.title.key}/${hex8(archive)}/${hex8(entry)}`,
+    load: async () => ({ set: await lanaiObjectModels(session, { archive: archive >>> 0, entry: entry >>> 0 }), hash: entry >>> 0 }),
+  };
 }

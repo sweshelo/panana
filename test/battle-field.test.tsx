@@ -4,12 +4,12 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { OahuMapBattlePanel } from '../src/oahu/BattleParts';
-import { OAHU_BATTLE_BACKGROUNDS, OAHU_RESOURCE_BATTLE_BG, oahuBattleRows, setOahuResourceBackground } from '../src/oahu/battleField';
+import { OAHU_BATTLE_BACKGROUNDS, OAHU_RESOURCE_BATTLE_BG, oahuBattleBackgroundRef, oahuBattleRows, setOahuResourceBackground } from '../src/oahu/battleField';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuEditState } from '../src/oahu/mapedit';
 import { OahuSession } from '../src/oahu/session';
 import { LanaiGroupBattleField, LanaiMapBattlePanel } from '../src/lanai/BattleParts';
-import { LANAI_BF, LANAI_MAP_SOUNDS, lanaiBackgroundName, lanaiBattleFieldTable, lanaiGroupBattleField } from '../src/lanai/battleField';
+import { LANAI_BATTLE_BACKGROUNDS, LANAI_BF, LANAI_MAP_SOUNDS, lanaiBackgroundName, lanaiBattleBackgroundRef, lanaiBattleFieldTable, lanaiGroupBattleField } from '../src/lanai/battleField';
 import { lanaiContents } from '../src/lanai/contents';
 import { lanaiEditState } from '../src/lanai/mapedit';
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
@@ -57,6 +57,14 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 battle background and BGM'
     }
   });
 
+  test('every background model of 52120000 loads for the preview', async () => {
+    for (const [h] of OAHU_BATTLE_BACKGROUNDS) {
+      const r = await oahuBattleBackgroundRef(s.dump, h)!.load();
+      expect(r!.set.errors).toEqual([]);
+      expect(r!.set.models.has(h)).toBe(true);
+    }
+  }, 300000);
+
   test('the group page toggles the boss BGM bit (+0x32 bit2)', () => {
     const html = renderToString(<OahuGroupPage session={s} arg="19" />);
     expect(html).toContain('ボスの曲 (+0x32 bit2)');
@@ -83,6 +91,14 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
     expect(sounds.rows).toBe(896);
     expect([2, 3, 4, 676].map((r) => sounds.name(r))).toEqual(['BGM_BATTLE_NORMAL', 'BGM_BATTLE_BOSS', 'BGM_BATTLE_GOAL', 'BGM_BATTLE_HONOLULU']);
   });
+
+  test('every background model of 52120000 / F0F40000 loads for the preview', async () => {
+    for (const b of LANAI_BATTLE_BACKGROUNDS) {
+      const r = await lanaiBattleBackgroundRef(s, b.archive, b.entry)!.load();
+      expect(r!.set.errors).toEqual([]);
+      expect(r!.set.models.has(b.entry)).toBe(true);
+    }
+  }, 300000);
 
   test('a group\'s row of BattleFieldContents (content 38 row 1: 80000009) shows on the group page', () => {
     const f = lanaiGroupBattleField(s, maps, 1);

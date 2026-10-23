@@ -2,7 +2,10 @@
 // the dungeon's mapData row (mapGroup +0x2E, save +0x5469 in the game): its [5] is the battle BGM, and its [1] is the
 // mapResource row whose +0x10 is the background (an entry of archive 52120000). Groups have no background; a fixed
 // battle started without a BGM plays BGM_BATTLE_2 when the group's +0x32 bit2 is set (sound.ts).
-import { u32, w32 } from '../util/bytes';
+import { hex8, u32, w32 } from '../util/bytes';
+import type { ModelRef } from '../pages/modelview';
+import type { Dump } from '../rom/dump';
+import { oahuObjectModels } from './mapModels';
 import type { MapDoc } from '../game/sections';
 import type { OahuMaps, OahuMapInfo } from './maps';
 import type { OahuMaster } from './master';
@@ -89,4 +92,11 @@ export function oahuResourceUsers(master: OahuMaster): Map<number, number[]> {
     out.set(res, [...(out.get(res) ?? []), r]);
   }
   return out;
+}
+
+/** The background model (an entry of 52120000) for the viewer. */
+export function oahuBattleBackgroundRef(dump: Dump, hash: number): ModelRef | null {
+  if (!hash) return null;
+  const archive = hex8(OAHU_BATTLE_BG_ARCHIVE).toUpperCase();
+  return { key: `oahu-btmp/${dump.title.key}/${hex8(hash)}`, load: async () => ({ set: await oahuObjectModels(dump, { archive, entry: hash >>> 0 }), hash: hash >>> 0 }) };
 }

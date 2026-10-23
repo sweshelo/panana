@@ -3,12 +3,14 @@
 // battle field it starts with (MapResource +0x10). The rows are shared by the groups and maps that pick them.
 import type { ReactNode } from 'react';
 import type { SoundNames } from '../game/sound';
+import { ModelPreviewButton } from '../ui/ModelPreview';
 import { SoundButton } from '../ui/SoundPicker';
+import { SoundSlotsBox } from '../ui/SoundSlots';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import {
   LANAI_BATTLE_BACKGROUNDS, LANAI_BF, LANAI_MAP_SOUNDS, LANAI_MG_FIELD_CONTENTS, LANAI_RESOURCE_BATTLE_FIELD, lanaiBackgroundKey, lanaiBackgroundName,
-  lanaiBattleFieldRow, lanaiBattleFieldTable, lanaiBattleFieldUses, lanaiGroupBattleField,
+  lanaiBattleBackgroundRef, lanaiBattleFieldRow, lanaiBattleFieldTable, lanaiBattleFieldUses, lanaiGroupBattleField,
 } from './battleField';
 import { lanaiGroupHref } from './MapParts';
 import type { LanaiMaps } from './maps';
@@ -69,6 +71,8 @@ function BattleFieldRowEditor({ session, sounds, t, row, edit, users }: {
             return <option key={k} value={k}>{lanaiBackgroundName(b.archive, b.entry)}</option>;
           })}
         </select>
+        <ModelPreviewButton model={lanaiBattleBackgroundRef(session, archive, entry)} name={lanaiBackgroundName(archive, entry)}
+          note="モデルだけを表示しています。戦闘のカメラの位置は再現していません。" />
       </label>
       <div className="field">
         <span>戦闘の BGM (+0x08)</span>
@@ -152,30 +156,24 @@ export function LanaiMapBattlePanel({ session, maps, mapData, resource, edit }: 
   const hasMd = !!md && mapData >= 0 && mapData < md.rows;
   const hasRes = !!res && resource >= 0 && resource < res.rows;
   return (
-    <div className="add-panel">
-      <h3>BGM・戦闘</h3>
-      {hasMd && LANAI_MAP_SOUNDS.map((s) => {
-        const v = md!.u16(mapData, s.offset);
-        return (
-          <div key={s.offset} className="field" title={s.note}>
-            <span>{`${s.label} (+0x${s.offset.toString(16).toUpperCase().padStart(2, '0')})`}</span>
-            {sounds
-              ? <SoundButton game={session} sounds={sounds} value={v} kind={s.kind} max={MAX_SOUND} title={`${s.label} を選ぶ`} onChange={(n) => edit(() => md!.setU16(mapData, s.offset, n))} />
-              : <span>{`サウンド ${v}`}</span>}
-          </div>
-        );
-      })}
+    <SoundSlotsBox className="add-panel" title="BGM・戦闘" game={session} sounds={sounds}
+      slots={hasMd ? LANAI_MAP_SOUNDS.map((s) => ({
+        key: String(s.offset), label: `${s.label} (+0x${s.offset.toString(16).toUpperCase().padStart(2, '0')})`, value: md!.u16(mapData, s.offset), kind: s.kind,
+        max: MAX_SOUND, note: s.note, onChange: (n: number) => edit(() => md!.setU16(mapData, s.offset, n)),
+      })) : []}
+      note={
+        <>
+          {hasMd ? `MapData 行 ${mapData} の欄 (同じ行を使うマップで共有)。` : 'MapData が見つかりません。'}
+          {' フィールドの BGM はセーブの曲の指定があればそちらが鳴ります。'}
+          {'歩いて出会う戦闘とボス戦の背景・BGM は群れ (MonsterGroup +0x00) の行で決まり、MapResource +0x10 は群れで引き直さない戦闘にだけ効きます (推定)。群れのページで変えられます。'}
+        </>
+      }>
       {hasRes && bf && (
         <label className="field"><span>入ったときの戦闘の背景 (MapResource +0x10)</span>
           <BattleFieldSelect t={bf} value={res!.u32(resource, LANAI_RESOURCE_BATTLE_FIELD)} sounds={sounds} none="0: 群れの行"
             onChange={(v) => edit(() => res!.setU32(resource, LANAI_RESOURCE_BATTLE_FIELD, v))} />
         </label>
       )}
-      <p className="muted small">
-        {hasMd ? `MapData 行 ${mapData} の欄 (同じ行を使うマップで共有)。` : 'MapData が見つかりません。'}
-        {' フィールドの BGM はセーブの曲の指定があればそちらが鳴ります。'}
-        {'歩いて出会う戦闘とボス戦の背景・BGM は群れ (MonsterGroup +0x00) の行で決まり、MapResource +0x10 は群れで引き直さない戦闘にだけ効きます (推定)。群れのページで変えられます。'}
-      </p>
-    </div>
+    </SoundSlotsBox>
   );
 }
