@@ -43,8 +43,9 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
           }
       }
     }
-    expect(Object.fromEntries(byType)).toEqual({ 2: 2468, 5: 2, 8: 646, 10: 125 });
-    expect([models, textures]).toEqual([2352, 3453]);
+    // Type 8 counts the 19 parts whose BCH starts at 0x100 (header +0x38): 6 btmp_, 9 bgpt_town, map_room/room_00〜03.
+    expect(Object.fromEntries(byType)).toEqual({ 2: 2468, 5: 2, 8: 665, 10: 125 });
+    expect([models, textures]).toEqual([2371, 3577]);
     expect(motions).toBeGreaterThan(1000);
   }, 120_000);
 
