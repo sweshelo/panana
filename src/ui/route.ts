@@ -8,7 +8,7 @@ const subscribeHash = (f: () => void): (() => void) => {
 
 /** The page named by the hash (`fallback` when it is not one of `pages`), its argument, and the hash itself. */
 export function useHashRoute<P extends string>(pages: readonly P[], fallback: P): { page: P; arg: string | undefined; hash: string } {
-  const hash = useSyncExternalStore(subscribeHash, () => location.hash);
+  const hash = useSyncExternalStore(subscribeHash, () => location.hash, () => location.hash);
   const [p, arg] = hash.replace(/^#\/?/, '').split('/');
   const page = pages.includes(p as P) ? (p as P) : fallback;
   return { page, arg, hash };
