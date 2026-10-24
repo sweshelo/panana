@@ -1,5 +1,7 @@
 // RomFS of 電波人間のRPG (honolulu): naauao honolulu/analysis.md §2. Many root names are RPG2's (56562135 the master,
-// 2713402F, 470D2848, …), but the tables in them have other rows and fields: RPG2's definitions are not used.
+// 2713402F, 470D2848, …), but the tables in them have other rows and fields: RPG2's definitions are not used, the
+// first game's own are (honolulu/tables.ts).
+import { HONOLULU_TABLES } from '../honolulu/tables';
 import { HONOLULU } from '../rom/titles';
 import type { RomfsProfile } from './profile';
 
@@ -52,4 +54,5 @@ export const honoluluRomfsProfile: RomfsProfile = {
     8: 'マップのパーツ (0x180 + CGFX)',
     9: 'GS テーブル',
   },
+  tables: HONOLULU_TABLES,
 };
