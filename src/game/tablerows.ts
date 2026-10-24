@@ -1,0 +1,69 @@
+// One GS table of a master (mastertables.ts) edited through its field definitions (tabledef.ts): read and write a
+// field of a row, the value in the archive, and whether a row was changed. RPG3's monster, group and action books
+// (OahuRows) and 初代's pages use it.
+import type { GsTable } from '../archive/gstable';
+import { field, readField, writeField, type FieldDef, type TableDef } from './tabledef';
+import { equalBytes } from '../util/bytes';
+import type { MasterTables } from './mastertables';
+
+export class TableRows {
+  readonly table: GsTable;
+
+  constructor(
+    private readonly master: MasterTables,
+    readonly def: TableDef,
+  ) {
+    this.table = master.table(def.file);
+  }
+
+  get rows(): number {
+    return this.table.rows;
+  }
+
+  field(key: string): FieldDef {
+    return field(this.def, key);
+  }
+
+  row(row: number): Uint8Array {
+    return this.table.row(row);
+  }
+
+  originalRow(row: number): Uint8Array {
+    return this.master.originalRow(this.def.file, row);
+  }
+
+  get(row: number, key: string): number {
+    return readField(this.row(row), this.field(key));
+  }
+
+  original(row: number, key: string): number {
+    return readField(this.originalRow(row), this.field(key));
+  }
+
+  set(row: number, key: string, v: number): void {
+    writeField(this.row(row), this.field(key), v);
+  }
+
+  /** Whether an edit added the row (past the archive's rows). */
+  added(row: number): boolean {
+    return row >= this.master.originalRows(this.def.file);
+  }
+
+  /** Append a row (a copy of `from`); returns its index. */
+  addRow(from: Uint8Array): number {
+    return this.master.addRow(this.def.file, from);
+  }
+
+  /** Drop the last row when an edit added it. */
+  removeLastRow(): void {
+    this.master.removeLastRow(this.def.file);
+  }
+
+  changed(row: number): boolean {
+    return !equalBytes(this.row(row), this.originalRow(row));
+  }
+
+  revert(row: number): void {
+    this.row(row).set(this.originalRow(row));
+  }
+}
