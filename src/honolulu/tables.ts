@@ -24,7 +24,7 @@ export const HONOLULU_ITEM_DATA: TableDef = {
     f('sell', 0x10, 'u32', '売値'),
     f('kind', 0x14, 'u8', '種類のビット', { hex: true, unsure: true, note: '0x01 装備・ふく、0x10 だいじなもの系、0x08 道具、0x20 フルーツと推定' }),
     f('used', 0x18, 'u8', '中身のある行', { note: '1 = 中身のある行、0 = 空き' }),
-    f('sub', 0x19, 'u8', '装備・ふくの行', { note: '分類 3 は equipData、分類 4 は clothData の行。ほかの分類は 0' }),
+    f('sub', 0x19, 'u8', '装備・ふくの行', { note: '分類 3 は equipData、分類 4 は clothData の行。道具 (分類 1 の行 1〜27) は 124〜150 の連番で、何の行かは未解析 (naauao items.md は「ほかの分類は 0」としている)' }),
     f('category', 0x1a, 'u8', '分類', { ref: { kind: 'enum', values: HONOLULU_ITEM_CATEGORY } }),
   ],
 };

@@ -1,5 +1,6 @@
-// Pieces of the item books shared by RPG2, RPG3 and RPG FREE!: where an item is got (the shops that sell it, the
+// Pieces of the item books shared by RPG2, RPG3, RPG FREE! and 初代: where an item is got (the shops that sell it, the
 // monsters that drop it, the chests that hold it, each linked to its page), and the sort and ☆ filter of the list.
+// A game that does not know its drops and chests (初代) leaves them out; one without ☆ gives no rarities.
 import { Fragment, type ReactNode } from 'react';
 
 /** A shop or a monster that gives the item, with a note ("ジュエル 30", "レア・1/64"). */
@@ -29,13 +30,15 @@ const count = <T,>(s: Sources<T>): string => (Array.isArray(s) ? ` (${s.length})
 
 export const chanceText = (c: number): string => `${c.toFixed(c < 10 ? 1 : 0)}%`;
 
-/** The shops, the monsters and the chests of an item. */
-export function ItemSources({ shops, drops, chests, noChests = 'なし' }: {
+/** The shops, the monsters and the chests of an item (the drops and the chests left out when not given). */
+export function ItemSources({ shops, drops, chests, noChests = 'なし', note }: {
   shops: Sources<SourceLink>;
-  drops: Sources<SourceLink>;
-  chests: Sources<ChestLink>;
+  drops?: Sources<SourceLink>;
+  chests?: Sources<ChestLink>;
   /** Shown when no chest holds the item (what was counted). */
   noChests?: string;
+  /** Shown below (e.g. which sources are not known yet). */
+  note?: ReactNode;
 }): ReactNode {
   return (
     <>
@@ -44,13 +47,15 @@ export function ItemSources({ shops, drops, chests, noChests = 'なし' }: {
           <h3>{`お店${count(shops)}`}</h3>
           <LinkList links={shops} />
         </section>
-        <section>
-          <h3>{`落とすモンスター${count(drops)}`}</h3>
-          <LinkList links={drops} />
-        </section>
+        {drops && (
+          <section>
+            <h3>{`落とすモンスター${count(drops)}`}</h3>
+            <LinkList links={drops} />
+          </section>
+        )}
       </div>
-      <h3>{`宝箱${count(chests)}`}</h3>
-      {!Array.isArray(chests) ? chests.pending
+      {chests && <h3>{`宝箱${count(chests)}`}</h3>}
+      {!chests ? null : !Array.isArray(chests) ? chests.pending
         : chests.length
           ? <table className="enc-table book-chests">
               <tbody>
@@ -66,6 +71,7 @@ export function ItemSources({ shops, drops, chests, noChests = 'なし' }: {
               </tbody>
             </table>
           : <div className="muted">{noChests}</div>}
+      {note && <div className="muted small">{note}</div>}
     </>
   );
 }
@@ -86,7 +92,7 @@ function LinkList({ links }: { links: Sources<SourceLink> }): ReactNode {
 }
 
 /** How the list is ordered. Unpriced items (0 G) stay at the end of a price order either way. */
-export type ItemSort = 'id' | 'name' | 'price-asc' | 'price-desc' | 'sell-asc' | 'sell-desc' | 'rarity-asc' | 'rarity-desc';
+export type ItemSort = 'id' | 'name' | 'kind' | 'price-asc' | 'price-desc' | 'sell-asc' | 'sell-desc' | 'rarity-asc' | 'rarity-desc';
 
 export const ITEM_SORTS: [ItemSort, string][] = [
   ['id', 'ID 順'],
@@ -99,13 +105,24 @@ export const ITEM_SORTS: [ItemSort, string][] = [
   ['rarity-desc', '☆ の多い順'],
 ];
 
+/** The orders of a game whose items have no ☆ (初代): by the category and the prices. */
+export const PLAIN_ITEM_SORTS: [ItemSort, string][] = [
+  ['id', 'ID 順'],
+  ['name', '名前順'],
+  ['kind', '分類順'],
+  ...ITEM_SORTS.filter(([s]) => s.startsWith('price') || s.startsWith('sell')),
+];
+
 /** What an item is sorted by. */
 export interface ItemSortKeys {
   id: number;
   name: string;
   price: number;
   sell: number;
-  rarity: number;
+  /** ☆ (0 for a game without). */
+  rarity?: number;
+  /** The category (the 'kind' order; the ID order within one). */
+  kind?: number;
 }
 
 const byName = new Intl.Collator('ja');
@@ -115,12 +132,13 @@ export function sortItems<T>(rows: T[], sort: ItemSort, keys: (t: T) => ItemSort
   if (sort === 'id') return rows;
   const ks = new Map(rows.map((r) => [r, keys(r)]));
   const k = (r: T): ItemSortKeys => ks.get(r)!;
-  const [field, dir] = sort.split('-') as ['name' | 'price' | 'sell' | 'rarity', 'asc' | 'desc' | undefined];
+  const [field, dir] = sort.split('-') as ['name' | 'kind' | 'price' | 'sell' | 'rarity', 'asc' | 'desc' | undefined];
   const sign = dir === 'desc' ? -1 : 1;
   const cmp = (a: T, b: T): number => {
     const x = k(a), y = k(b);
     if (field === 'name') return (!x.name ? 1 : 0) - (!y.name ? 1 : 0) || byName.compare(x.name, y.name);
-    if (field === 'rarity') return sign * (x.rarity - y.rarity);
+    if (field === 'rarity') return sign * ((x.rarity ?? 0) - (y.rarity ?? 0));
+    if (field === 'kind') return (x.kind ?? 0) - (y.kind ?? 0);
     const p = x[field], q = y[field];
     return (!p ? 1 : 0) - (!q ? 1 : 0) || sign * (p - q);
   };
@@ -132,28 +150,29 @@ export type RarityFilter = 'all' | `${number}`;
 
 export const rarityMatches = (f: RarityFilter, rarity: number): boolean => f === 'all' || rarity === Number(f);
 
-/** The order and the ☆ filter of an item list (below its search box). */
-export function ItemListControls({ sort, setSort, rarity, setRarity, rarities }: {
+/** The order and the ☆ filter of an item list (below its search box); a game without ☆ gives none of the rarity props. */
+export function ItemListControls({ sort, setSort, rarity, setRarity, rarities, sorts = ITEM_SORTS }: {
   sort: ItemSort;
   setSort: (s: ItemSort) => void;
-  rarity: RarityFilter;
-  setRarity: (r: RarityFilter) => void;
+  rarity?: RarityFilter;
+  setRarity?: (r: RarityFilter) => void;
   /** The ☆ the items have. */
-  rarities: number[];
+  rarities?: number[];
+  sorts?: [ItemSort, string][];
 }): ReactNode {
   return (
     <div className="row">
       <label className="small muted">{'並び '}
         <select value={sort} onChange={(e) => setSort(e.target.value as ItemSort)}>
-          {ITEM_SORTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+          {sorts.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>
       </label>
-      <label className="small muted">{'☆ '}
+      {rarities && rarity !== undefined && setRarity && <label className="small muted">{'☆ '}
         <select value={rarity} onChange={(e) => setRarity(e.target.value as RarityFilter)}>
           <option value="all">すべて</option>
           {[...new Set([...rarities, ...(rarity === 'all' ? [] : [Number(rarity)])])].sort((a, b) => a - b).map((r) => <option key={r} value={String(r)}>{`☆ ${r}`}</option>)}
         </select>
-      </label>
+      </label>}
     </div>
   );
 }
