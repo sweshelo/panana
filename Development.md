@@ -70,13 +70,15 @@ src/
             events.ts objects.ts names.ts                              EventObject、オブジェクトのモデル、名前
             monsters.ts sound.ts items.ts actions.ts                   モンスター・群れ・区画 6・耐性、音の名前、アイテム・お店、アクション
             arm.ts asm.ts disasm.ts                                    イベントのスクリプトを動かす ARM 実行器・アセンブラ・逆アセンブル
-            tabledef.ts kaharatables.ts                                テーブルの欄の定義 (作品ごと)
+            tabledef.ts kaharatables.ts                                テーブルの欄の定義 (作品ごと)、定義のない欄の生データ
+            mastertables.ts tablerows.ts                               マスターの表の編集用の写しと書き出し、欄の定義を通した行の読み書き
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts tev.ts                                   アニメ (CANM) の読み込みと再生、PICA の TEV 再現
   editor/   mapeditor.tsx state.ts controller.ts view2d.ts view3d.ts validate.ts ...  マップ編集: 状態・操作・2D / 3D ビュー (canvas)
             panes.tsx inspector.tsx addpanel.tsx palette.tsx treasure.tsx ...  マップ編集のヘッダーと左右のペイン (React)
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
+  honolulu/ tables.ts master.ts                                       初代: 表の欄の定義、マスター (56562135) の表
   romfs/    kahara.ts oahu.ts formats.tsx                              作品ごとのプロファイル、形式ごとのビュー (FORMAT_VIEWS)
   ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
             book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx
@@ -93,7 +95,7 @@ src/
 - ペインは `useEditorState` で編集の状態を、`Signal` で表示の設定 (ビュー、モデル、検証の結果) を購読して描き直します。
 - three.js のモデルビューアはクラスのまま `src/ui/mount.tsx` の `Dom` で差し込みます。
 - マップ・アイテムの選択は、ページでもマップ編集でも同じダイアログ (`MapPicker` / `ItemPicker`) を使います。
-- RomFS の欄 (位置・型・ビット・意味・メッセージや別の表の行を指すか) は `src/game/tabledef.ts` の形で、作品ごとに `src/oahu/tables.ts` / `src/game/kaharatables.ts` に書きます。RPG3 の図鑑はこの定義を通して行を読み書きします。
+- RomFS の欄 (位置・型・ビット・意味・メッセージや別の表の行を指すか) は `src/game/tabledef.ts` の形で、作品ごとに `src/oahu/tables.ts` / `src/game/kaharatables.ts` に書きます。RPG3 の図鑑と初代 (`src/honolulu/tables.ts`) はこの定義を通して行を読み書きします (`src/game/mastertables.ts` の表を `src/game/tablerows.ts` で読む)。欄の分からないバイトは `rowDef` / `withRawFields` が生データ (16 進) の欄にするので、未解析の表もそのまま `RowFields` で出せます。
 - 作品ごとの違い (ファイルの中身・種類の番号の意味) は `src/romfs/kahara.ts` / `oahu.ts` のプロファイルに書きます。形式ごとのビューは `src/romfs/formats.tsx` の `FORMAT_VIEWS` に足します。
 
 ## 実装メモ

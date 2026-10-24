@@ -157,3 +157,44 @@ export const defFor = (defs: Record<string, TableDef> | undefined, file: string 
   const d = file ? defs?.[file] : undefined;
   return d && d.rowSize === rowSize ? d : undefined;
 };
+
+/** Raw fields over bytes [from, to) of a row: u32 where aligned, else u16 / u8 (rows of 0x16 or 0x2E bytes). */
+export function rawFields(from: number, to: number): FieldDef[] {
+  const out: FieldDef[] = [];
+  for (let o = from; o < to; ) {
+    const type: FieldType = o % 4 === 0 && o + 4 <= to ? 'u32' : o % 2 === 0 && o + 2 <= to ? 'u16' : 'u8';
+    out.push({ key: `raw${o.toString(16)}`, offset: o, type, label: `+0x${o.toString(16).toUpperCase().padStart(2, '0')}`, unsure: true, hex: true });
+    o += SIZE[type];
+  }
+  return out;
+}
+
+/**
+ * The definition with raw fields over the bytes no field covers, in the order of the row: a table whose fields are
+ * partly known still shows every byte (in hex), and a table with no fields at all is shown as raw fields only.
+ */
+export function withRawFields(def: TableDef): TableDef {
+  const covered = new Uint8Array(def.rowSize);
+  for (const f of def.fields) covered.fill(1, f.offset, Math.min(def.rowSize, f.offset + SIZE[f.type]));
+  const raw: FieldDef[] = [];
+  for (let o = 0; o < def.rowSize; ) {
+    if (covered[o]) { o++; continue; }
+    let end = o;
+    while (end < def.rowSize && !covered[end]) end++;
+    raw.push(...rawFields(o, end));
+    o = end;
+  }
+  if (!raw.length) return def;
+  // a stable sort: fields at the same offset (bits of one value) keep their order
+  const fields = [...def.fields, ...raw].sort((a, b) => a.offset - b.offset);
+  return { ...def, fields };
+}
+
+/** A table without field definitions, as raw fields. */
+export const rawTableDef = (file: string, rowSize: number): TableDef => withRawFields({ file, rowSize, fields: [] });
+
+/** The definition of a table (with raw fields over the bytes it leaves out), or raw fields when there is none. */
+export const rowDef = (defs: Record<string, TableDef> | undefined, file: string, rowSize: number): TableDef => {
+  const d = defFor(defs, file, rowSize);
+  return d ? withRawFields(d) : rawTableDef(file, rowSize);
+};
