@@ -16,17 +16,15 @@ export function StartScreen({ error, onOpen }: { error?: string; onOpen: (open: 
   return (
     <div className="start">
       <h1>Panana</h1>
-      <p>{`『${KAHARA.name}』v1.1.0 (${KAHARA.titleId}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`}</p>
-      <p>{`『${OAHU.name}』(${OAHU.titleId}) は、Base の CIA でメッセージと RomFS の中身を見て、メッセージを編集できます。MOD の書き出しには Update の CIA も要ります (Base と一緒に選ぶか、開いたあとで足せます)。`}</p>
-      <p>{`『${LANAI.name}』(${LANAI.titleId}) は、ステージ・表のメッセージ・モンスター・コード入力とチェックインの表・RomFS の中身を見られます (読み取りだけ)。Update の CIA も一緒に選ぶと、ゲームが実際に読むデータになります。`}</p>
-      <p>{`『${HONOLULU.name}』(初代、${HONOLULU.titleId}) は、いまは RomFS の中身を見られます (読み取りだけ)。`}</p>
-      <p>{'複数の作品の CIA をまとめて選ぶと、同時に開けます。別の作品のモンスターやアイテムを選んで移植するときに使います (開いたあとで上のバーの「ROM」から足すこともできます)。'}</p>
+      <p>電波人間のRPG シリーズのデータをブラウザの中で読み、マップ・図鑑・ショップ・メッセージなどを見て編集し、LayeredFS 用の MOD として書き出すツールです。</p>
+      <p>{`対応: ${[HONOLULU, KAHARA, OAHU, LANAI].map((t) => `『${t.name}』${t === KAHARA ? ' v1.1.0' : ''}`).join('、')}`}</p>
+      <p>{'Update のある作品は Base と Update の CIA を一緒に選んでください。複数の作品をまとめて開くと、作品をまたいでモンスターやアイテムを移植できます。'}</p>
       <p className="muted">ROM のデータはブラウザの中だけで読み取ります (どこにも送信しません)。読み取った一部のファイルは、この端末の IndexedDB にキャッシュします。</p>
       {error && <div className="error">{error}</div>}
       <div className="choices">
         <label className="choice">
           <b>復号済みの CIA / CXI</b>
-          <span className="muted">GodMode9 などで復号したダンプ (RPG3・FREE! は Base、または Base と Update。複数の作品をまとめて選べます)</span>
+          <span className="muted">GodMode9 などで復号したダンプ (Base と Update、複数の作品をまとめて選べます)</span>
           <input type="file" multiple accept=".cia,.cxi,.app,.bin" onChange={(e) => {
             const fs = [...(e.target.files ?? [])];
             if (fs.length) onOpen(() => openDumps(fs, (f) => (f as File).name));

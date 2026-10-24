@@ -98,3 +98,26 @@ export function RomButton({ label, count, onClick }: { label: string; count: num
     </button>
   );
 }
+
+/** After the dumps of several games were opened at once: which game's pages to show first. */
+export function TitleChoiceDialog({ opened, keys, onPick, onClose }: { opened: Opened; keys: TitleKey[]; onPick: (key: TitleKey) => void; onClose: () => void }): ReactNode {
+  return (
+    <Dialog title="どの作品を閲覧しますか？" wide={false} onClose={onClose}>
+      <p className="muted small">ほかの作品も開いたままです。上のバーの「ROM」からいつでも切り替えられます。</p>
+      <table className="rom-list">
+        <tbody>
+          {TITLES.filter((t) => keys.includes(t.key)).map((t) => (
+            <tr key={t.key} data-title={t.key}>
+              <th>
+                <div>{t.name}</div>
+                <div className="muted small">{`${t.key} (${t.titleId})`}</div>
+              </th>
+              <td className="rom-files">{openedDump(opened, t.key)?.label ?? ''}</td>
+              <td className="rom-actions"><button className="primary" onClick={() => onPick(t.key)}>閲覧する</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Dialog>
+  );
+}

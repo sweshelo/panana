@@ -436,3 +436,16 @@ describe('record buttons (ui/RecordButtons)', () => {
     expect(full).toContain('行 255 まで');
   });
 });
+
+describe('TitleChoiceDialog', () => {
+  test('lists the games opened together, in the order of the titles', async () => {
+    const { TitleChoiceDialog } = await import('../src/ui/RomDialog');
+    const dump = (label: string) => ({ dump: { label } });
+    const opened = { oahu: dump('rpg3-base.cia + rpg3-update.cia'), honolulu: dump('rpg1.cia') } as unknown as import('../src/ui/workspace').Opened;
+    const html = renderToString(<TitleChoiceDialog opened={opened} keys={['honolulu', 'oahu']} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('どの作品を閲覧しますか？');
+    expect(html.indexOf('電波人間のRPG3')).toBeLessThan(html.indexOf('rpg1.cia'));
+    expect(html).toContain('rpg3-base.cia + rpg3-update.cia');
+    expect(html.match(/閲覧する/g)?.length).toBe(2);
+  });
+});
