@@ -106,13 +106,34 @@ export const HONOLULU_MAP_PARTS: TableDef = {
   ],
 };
 
-/** skillData.bin (master エントリ 42): 152 × 0x28, the skills of the antennas (naauao honolulu/analysis.md §3.1). */
+/**
+ * skillData.bin (master エントリ 42): 152 × 0x28, the skills of the antennas, put into a battle action by FUN_00205260
+ * like the monsters' skills (naauao honolulu/monsters.md §4). The bits of +0x0C go to the action's bits ("行動 w4 …").
+ */
 export const HONOLULU_SKILL_DATA: TableDef = {
   file: 'skillData.bin',
   rowSize: 0x28,
   fields: [
     f('name', 0x00, 'u32', '名前', { ref: msg }),
     f('desc', 0x04, 'u32', '説明', { ref: msg }),
+    f('name2', 0x08, 'u32', '名前 (2)', { ref: msg, note: '+0x00 と同じ値' }),
+    f('act2', 0x0c, 'u32', '行動 bit2', { bits: [0, 1], unsure: true }),
+    f('act3', 0x0c, 'u32', '行動 bit3', { bits: [1, 1], unsure: true }),
+    f('act45', 0x0c, 'u32', '行動 bit4-5', { bits: [2, 2], unsure: true }),
+    f('raw0c', 0x0c, 'u32', 'w3 bit4-5', { bits: [4, 2], unsure: true, hex: true }),
+    f('w4a', 0x0c, 'u32', '行動 w4 bit23-26', { bits: [6, 4], unsure: true }),
+    f('status', 0x0c, 'u32', '状態', { bits: [10, 5], ref: row('conditionData.bin'), note: '行動 w4 bit18-22。conditionData の行、0 = なし' }),
+    f('w4b', 0x0c, 'u32', '行動 w4 bit3-4', { bits: [15, 2], unsure: true }),
+    f('w4c', 0x0c, 'u32', '行動 w4 bit0-2', { bits: [17, 3], unsure: true }),
+    f('w4d', 0x0c, 'u32', '行動 w4 bit5-8', { bits: [20, 4], unsure: true }),
+    f('w4e', 0x0c, 'u32', '行動 w4 bit9-12', { bits: [24, 4], unsure: true }),
+    f('raw0cb', 0x0c, 'u32', 'w3 bit28-31', { bits: [28, 4], unsure: true, hex: true }),
+    f('v10', 0x10, 'u16', '+0x10', { unsure: true, note: '3 / 4 / 0x0D〜0x10。範囲か消費と推定' }),
+    f('v12', 0x12, 'u16', '+0x12', { unsure: true, note: 'かいふく系で 3〜25' }),
+    f('min', 0x14, 'u16', '量の最小', { note: '行動 +0x0C。回復は最小〜最大の乱数を HP に足す' }),
+    f('max', 0x16, 'u16', '量の最大', { note: '行動 +0x0E' }),
+    f('direct1', 0x18, 'u16', '演出 1', { unsure: true, note: '演出と推定 (0x1E3〜)' }),
+    f('direct2', 0x1a, 'u16', '演出 2', { unsure: true, note: '演出と推定 (0x198〜)' }),
   ],
 };
 
@@ -232,6 +253,7 @@ export const HONOLULU_MONSTER_ATTACK_SKILL: TableDef = {
   fields: [
     f('message', 0x00, 'u32', '戦闘メッセージ', { ref: msg }),
     f('bits', 0x04, 'u32', 'ビット詰め', { hex: true, unsure: true, note: '+0x1D bit2 = 1 のとき bit4-8 が状態 (conditionData の行) など。naauao monsters.md §3' }),
+    f('status', 0x04, 'u32', '状態', { bits: [4, 5], alias: true, ref: row('conditionData.bin'), note: '+0x1D bit2 = 1 のときだけ (行動 w4 bit18-22)。conditionData の行、0 = なし' }),
     f('power', 0x08, 'f32', '威力の倍率', { unsure: true, note: '推定 (100 / 130 / 150 …)' }),
     f('min', 0x0c, 'u16', '量の最小'),
     f('max', 0x0e, 'u16', '量の最大'),
