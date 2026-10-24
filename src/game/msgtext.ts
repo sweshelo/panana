@@ -5,6 +5,7 @@
 //                   0x10 page break (eats the next line break), others see tagKind
 //                   (RPG2's numbers; another game's are in its MessageSyntax, e.g. OAHU_SYNTAX)
 //   0x0002 0x0026 ID 0x0000   another message inserted (place names etc.; RPG3: 0x002A, the syntax's ref)
+//   0x0002 X A 0x0000         another control of the same form, when the syntax names X in `calls` (初代 0x0028)
 
 export const hex4 = (c: number): string => c.toString(16).toUpperCase().padStart(4, '0');
 
@@ -15,6 +16,7 @@ export type MessageToken =
   | { t: 'tag'; x: number; args: number[] }
   | { t: 'ruby'; base: string; reading: string }
   | { t: 'ref'; id: number }
+  | { t: 'call'; x: number; arg: number }
   | { t: 'raw'; c: number };
 
 const TAG = 0x0001;
@@ -39,6 +41,9 @@ export function parseBody(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): {
       i += 1 + n;
     } else if (c === REF && i + 3 < u.length && u[i + 1] === syn.ref && u[i + 3] === 0) {
       out.push({ t: 'ref', id: u[i + 2]! });
+      i += 3;
+    } else if (c === REF && i + 3 < u.length && syn.calls?.[u[i + 1]!] !== undefined && u[i + 3] === 0) {
+      out.push({ t: 'call', x: u[i + 1]!, arg: u[i + 2]! });
       i += 3;
     } else if (c < 0x20) out.push({ t: 'raw', c });
     else {
@@ -72,6 +77,7 @@ function tokenUnits(t: MessageToken, syn: MessageSyntax): number[] {
     case 'tag': return [TAG, t.x, ...t.args];
     case 'ruby': return [TAG, syn.ruby[0], ...tokenUnits({ t: 'text', s: t.base }, syn), TAG, syn.ruby[1], ...tokenUnits({ t: 'text', s: t.reading }, syn), TAG, syn.ruby[2]];
     case 'ref': return [REF, syn.ref, t.id, 0];
+    case 'call': return [REF, t.x, t.arg, 0];
     case 'raw': return [t.c];
   }
 }
@@ -86,7 +92,8 @@ export interface MessageText {
 /**
  * The text form the editors show and take back (lossless):
  *   line breaks as they are, {ruby:親字|よみ}, {page} (page break), {tag:XXXX} / {tag:XXXX,AAAA,BBBB} (other tags),
- *   {msg:XXXX} (another message), {XXXX} (any other unit, and the braces themselves).
+ *   {msg:XXXX} (another message), {call:XXXX,AAAA} (0x0002 XXXX AAAA 0x0000 of the syntax's calls), {XXXX} (any other
+ *   unit, and the braces themselves).
  */
 export function unitsToText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): MessageText {
   if (!u.length) return { kind: 0, text: '', tail: new Uint16Array() };
@@ -98,6 +105,7 @@ export function unitsToText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX):
       case 'tag': return t.x === syn.page && !t.args.length ? '{page}' : `{tag:${[t.x, ...t.args].map(hex4).join(',')}}`;
       case 'ruby': return /[{}|]/.test(t.base + t.reading) ? tokenUnits(t, syn).map((c) => (c < 0x20 ? `{${hex4(c)}}` : String.fromCharCode(c))).join('') : `{ruby:${t.base}|${t.reading}}`;
       case 'ref': return `{msg:${hex4(t.id)}}`;
+      case 'call': return `{call:${hex4(t.x)},${hex4(t.arg)}}`;
       case 'raw': return `{${hex4(t.c)}}`;
     }
   }).join('');
@@ -132,6 +140,11 @@ export function textToUnits(m: MessageText, syn: MessageSyntax = KAHARA_SYNTAX):
         if (vs.length !== 1 + n) throw new Error(`タグ ${hex4(x)} は引数が ${n} 個です (${at} 文字目)`);
         out.push(TAG, ...vs);
       } else if (name === 'msg') out.push(REF, syn.ref, hex(arg, at), 0);
+      else if (name === 'call') {
+        const vs = arg.split(',').map((v) => hex(v.trim(), at));
+        if (vs.length !== 2) throw new Error(`{call:XXXX,AAAA} は 2 つの値で書きます (${at} 文字目)`);
+        out.push(REF, vs[0]!, vs[1]!, 0);
+      }
       else if (!arg && /^[0-9A-Fa-f]{1,4}$/.test(name)) out.push(parseInt(name, 16));
       else throw new Error(`「{${body}}」は分かりません。{ruby:親字|よみ}、{page}、{tag:XXXX}、{msg:XXXX}、{XXXX} が使えます (${at} 文字目)`);
       i = close;
@@ -234,7 +247,7 @@ export function previewText(u: Uint16Array, lookup: (id: number) => string | und
   }).join('');
 }
 
-/** Type codes (the first unit) seen in the data. */
+/** Type codes (the first unit) seen in RPG2's data (another game's are its syntax's `kinds`). */
 export const MESSAGE_KINDS: Record<number, string> = {
   0x0001: '名前・台詞',
   0x000c: '説明',
@@ -259,6 +272,10 @@ export interface MessageSyntax {
   fixedNames: Record<number, number>;
   /** The unit after 0x0002 of an inserted message (0x0002 ref ID 0x0000). */
   ref: number;
+  /** Other controls of the inserted message's form (0x0002 X A 0x0000): X -> label. */
+  calls?: Record<number, string>;
+  /** The type codes (the first unit) and what they are used for; default {@link MESSAGE_KINDS}. */
+  kinds?: Record<number, string>;
 }
 
 export const KAHARA_SYNTAX: MessageSyntax = {
@@ -286,4 +303,47 @@ export const OAHU_SYNTAX: MessageSyntax = {
   fixedNames: {},
   // place names in the navi's titles and hints, 1864 uses (naauao oahu/analysis.md §5)
   ref: 0x2a,
+};
+
+/**
+ * 電波人間のRPG (初代, honolulu): RPG2's form with most numbers 2 lower (naauao honolulu/analysis.md §6): ruby 0x25 /
+ * 0x26 / 0x27, page break 0x0E, inserted message 0x0002 0x0024. The names are RPG2's 0x0101-0x0107; the voices are
+ * RPG2's 0x010D-0x010F moved to 0x010B-0x010D (the speaker's first tag: 0x010C the shop clerk's broken speech,
+ * 0x010D the spirit's polite speech, 0x010B the demon king's). 0x010A / 0x010E are names written into the story (the
+ * one taken by the demon king / the queen's sister; from which message is not known). Numbers 0x02-0x11 and 0x100.
+ * Read from the data (2026-10, the Base v1024), not from the code.
+ */
+function honoluluTagKind(x: number): TagKind {
+  if (x === 0x0e) return 'page';
+  if ((x >= 0x02 && x <= 0x11) || x === 0x100) return 'number';
+  if (x >= 0x10b && x <= 0x10d) return 'voice';
+  if ((x >= 0x101 && x <= 0x107) || HONOLULU_STORY_NAMES[x]) return 'name';
+  return 'other';
+}
+
+const HONOLULU_STORY_NAMES: Record<number, string> = { 0x10a: 'さらわれた人', 0x10e: '女王の妹' };
+const HONOLULU_VOICES: Record<number, string> = { 0x10b: '魔王の口調', 0x10c: '片言 (店員など)', 0x10d: 'です調 (精霊など)' };
+
+function honoluluTagLabel(x: number): string {
+  switch (honoluluTagKind(x)) {
+    case 'page': return 'ページ送り';
+    case 'number': return '数値';
+    case 'name': return NAME_TAGS[x] ?? HONOLULU_STORY_NAMES[x]!;
+    case 'voice': return `声: ${HONOLULU_VOICES[x]}`;
+    default: return `タグ ${hex4(x)}`;
+  }
+}
+
+export const HONOLULU_SYNTAX: MessageSyntax = {
+  ruby: [0x25, 0x26, 0x27],
+  page: 0x0e,
+  argTags: {},
+  kind: honoluluTagKind,
+  label: honoluluTagLabel,
+  fixedNames: {},
+  ref: 0x24,
+  // once, in 3295 before a page break (a wait or a sound; not analysed)
+  calls: { 0x28: '制御 0028 (未解析)' },
+  // by where they are used: 0 battle and the names of monsters, 1 menus and the names of items, 5 talk, 6 yes / no
+  kinds: { 0x0000: '戦闘・モンスター名', 0x0001: 'メニュー・名前・説明', 0x0005: '会話', 0x0006: '問いかけ (はい・いいえ)' },
 };

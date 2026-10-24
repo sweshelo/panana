@@ -29,7 +29,9 @@ export function MessagePreview({ texts, units, depth = 0 }: { texts: MessageStor
         if (t.t === 'br') return prev?.t === 'tag' && prev.x === syn.page ? null : <br key={i} />; // the page break eats it
         if (t.t === 'ruby') return <ruby key={i}>{t.base}<rp>(</rp><rt>{t.reading}</rt><rp>)</rp></ruby>;
         if (t.t === 'ref') return nested(i, t.id, `メッセージ ${hexId(t.id)} の差し込み`);
+        if (t.t === 'call') return depth ? null : <span key={i} className="msg-kind" title={`0002 ${hexId(t.x)} ${hexId(t.arg)} 0000 (画面には出ない)`}>{syn.calls?.[t.x] ?? hexId(t.x)}</span>;
         if (t.t === 'raw') return <span key={i} className="msg-ctl" title="制御コード (意味は未解析)">{hexId(t.c)}</span>;
+        if (syn.ruby.includes(t.x)) return null; // a ruby tag not around base and reading (初代 2916: a line break in the base)
         const k = syn.kind(t.x);
         const label = syn.label(t.x);
         const title = `タグ ${hexId(t.x)}: ${label}`;
@@ -87,7 +89,10 @@ export function gmsgSource(texts: MessageStore): MessageSource {
     },
     kind: {
       get: (id) => texts.text(id)!.kind,
-      options: (id) => [...new Set([...Object.keys(MESSAGE_KINDS).map(Number), texts.text(id)!.kind])].sort((a, b) => a - b).map((k) => [k, `${hexId(k)} ${MESSAGE_KINDS[k] ?? ''}`]),
+      options: (id) => {
+        const kinds = texts.syntax.kinds ?? MESSAGE_KINDS;
+        return [...new Set([...Object.keys(kinds).map(Number), texts.text(id)!.kind])].sort((a, b) => a - b).map((k) => [k, `${hexId(k)} ${kinds[k] ?? ''}`]);
+      },
       set: (id, k) => texts.setKind(id, k),
     },
     missing: (id) => (id ? `${hexId(id)}: 見つからない ID` : '(なし)'),

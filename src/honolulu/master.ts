@@ -2,8 +2,9 @@
 // like RPG3's: the pages read and edit rows through rows() and the definitions of tables.ts, and the export puts the
 // changed tables back (an unedited master comes out as it was). The name of the archive is the same as RPG2's.
 import { parseArchive, rebuildArchive, unpackEntry } from '../archive/gsarc';
-import { GmsgFile } from '../game/master';
+import { Gmsg, MessageStore, type MessageFile } from '../game/gmsg';
 import { MasterTables } from '../game/mastertables';
+import { HONOLULU_SYNTAX } from '../game/msgtext';
 import { rowDef, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { TableRows } from '../game/tablerows';
 import type { Dump } from '../rom/dump';
@@ -16,29 +17,26 @@ export const HONOLULU_MASTER = HONOLULU.master;
 const NAMED: Record<string, string> = { 'itemData.bin': 'name', 'dungeonData.bin': 'name', 'skillData.bin': 'name' };
 
 export class HonoluluMaster extends MasterTables {
-  private readonly messages: GmsgFile[] = [];
   private readonly loaded = new Map<string, TableRows>();
+  /** The messages the names come from: the session's (every archive's, with the edits), or the master's own. */
+  private readonly texts: MessageStore;
 
-  constructor(bytes: Uint8Array) {
+  constructor(bytes: Uint8Array, texts?: MessageStore) {
     super(parseArchive(bytes), HONOLULU_MASTER);
-    for (const e of this.archive.entries) {
+    this.texts = texts ?? new MessageStore(this.archive.entries.flatMap((e): MessageFile[] => {
       const { name, body } = unpackEntry(this.archive, e);
-      // the _IN files hold the readings in another encoding (analysis.md §6)
-      if (String.fromCharCode(...body.subarray(0, 4)) === 'GMSG' && !name?.includes('_IN')) this.messages.push(new GmsgFile(body));
-    }
+      if (String.fromCharCode(...body.subarray(0, 4)) !== 'GMSG') return [];
+      return [{ name: name ?? `エントリ ${e.index}`, entryIndex: e.index, gmsg: new Gmsg(body), editable: false }];
+    }), HONOLULU_SYNTAX, false);
   }
 
-  static async load(dump: Dump): Promise<HonoluluMaster> {
-    return new HonoluluMaster(await dump.readRomfs(HONOLULU_MASTER));
+  static async load(dump: Dump, texts?: MessageStore): Promise<HonoluluMaster> {
+    return new HonoluluMaster(await dump.readRomfs(HONOLULU_MASTER), texts);
   }
 
-  /** The text of a message of the master's message files (MessageSystemCommon …). */
+  /** A message on one line, as a reader sees it (ruby as the base, names as 〈…〉): names of rows, field views. */
   message(id: number): string | undefined {
-    for (const m of this.messages) {
-      const t = m.text(id);
-      if (t !== undefined) return t;
-    }
-    return undefined;
+    return this.texts.preview(id, true);
   }
 
   /** The definition of a table of the master: its fields and raw fields over the rest (tables.ts, tabledef.rowDef). */

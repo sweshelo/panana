@@ -14,6 +14,9 @@ interface Loaded {
 /** A row edit kept across loads: the row as it was and as it is (only the bytes that differ are put back). */
 export type SavedRow = [table: string, row: number, before: Uint8Array, after: Uint8Array];
 
+/** A table whose number of rows an edit changed (rows added or taken out): restored before its rows. */
+export type SavedRowCount = [table: string, rows: number];
+
 export class MasterTables {
   private readonly tables = new Map<string, Loaded>();
 
@@ -77,6 +80,25 @@ export class MasterTables {
       }
     }
     return out;
+  }
+
+  /** The tables whose number of rows is not the archive's, for saving (saved() keeps only the rows there are). */
+  savedRowCounts(): SavedRowCount[] {
+    return [...this.tables].filter(([name, t]) => t.table.rows !== this.originalRows(name)).map(([name, t]) => [name, t.table.rows]);
+  }
+
+  /** Give tables their saved number of rows (rows past the end dropped, new ones zero), before restore(). */
+  restoreRowCounts(counts: SavedRowCount[]): void {
+    for (const [name, rows] of counts) {
+      let t: GsTable;
+      try {
+        t = this.table(name);
+      } catch {
+        continue;
+      }
+      if (rows === t.rows || rows < 0) continue;
+      t.data = t.withRows(Array.from({ length: rows }, (_, i) => (i < t.rows ? t.row(i).slice() : new Uint8Array(t.rowSize))));
+    }
   }
 
   /**
