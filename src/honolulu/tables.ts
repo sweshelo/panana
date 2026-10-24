@@ -116,7 +116,7 @@ export const HONOLULU_SKILL_DATA: TableDef = {
   fields: [
     f('name', 0x00, 'u32', '名前', { ref: msg }),
     f('desc', 0x04, 'u32', '説明', { ref: msg }),
-    f('name2', 0x08, 'u32', '名前 (2)', { ref: msg, note: '+0x00 と同じ値' }),
+    f('name2', 0x08, 'u32', '名前 (2)', { ref: msg, unsure: true, note: '名前のある行では +0x00 と同じ値。名前が 0 でもここに値のある行がある' }),
     f('act2', 0x0c, 'u32', '行動 bit2', { bits: [0, 1], unsure: true }),
     f('act3', 0x0c, 'u32', '行動 bit3', { bits: [1, 1], unsure: true }),
     f('act45', 0x0c, 'u32', '行動 bit4-5', { bits: [2, 2], unsure: true }),

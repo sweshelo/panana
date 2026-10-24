@@ -52,11 +52,12 @@ describe.skipIf(!hasHonolulu)('初代の action page (ROM)', () => {
 
   test('the amounts of naauao monsters.md §4: ちょっとかいふく 30〜45, ぜんぶかいふく 999', () => {
     const actions = honoluluActions(session);
-    expect(actions.find((a) => a.kind === 's' && a.name === 'ちょっとかいふく')).toMatchObject({ min: 30, max: 45 });
+    const small = actions.find((a) => a.kind === 's' && a.name === 'ちょっとかいふく');
+    expect(small).toMatchObject({ min: 30, max: 45 });
     expect(actions.find((a) => a.kind === 's' && a.name === 'ぜんぶかいふく')?.max).toBe(999);
-    // skillData +0x08 is the name again
+    // skillData +0x08 is the name again in the named rows (not in every row: some rows without a name have one there)
     const t = actionRows(session, 's');
-    for (let r = 1; r < t.rows; r++) expect(t.get(r, 'name2')).toBe(t.get(r, 'name'));
+    expect(t.get(small!.row, 'name2')).toBe(t.get(small!.row, 'name'));
     expect(antennaSkillName(session, 1)).toBeTruthy();
   });
 

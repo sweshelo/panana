@@ -13,7 +13,7 @@ export type HonoluluActionKind = 's' | 'w';
 export const ACTION_KIND_LABEL: Record<HonoluluActionKind, string> = { s: 'アンテナの特技', w: 'モンスターのワザ' };
 export const ACTION_FILE: Record<HonoluluActionKind, string> = { s: ANTENNA_SKILL_FILE, w: SKILL_FILE };
 
-/** The messages of an action: [field, label]. skillData +0x08 holds the same message as +0x00. */
+/** The messages of an action: [field, label]. skillData +0x08 is +0x00 again where +0x00 is set. */
 export const ACTION_TEXTS: Record<HonoluluActionKind, [string, string][]> = {
   s: [['name', '名前'], ['desc', '説明']],
   w: [['message', '戦闘メッセージ']],
@@ -40,10 +40,11 @@ export function parseActionKey(arg: string | undefined): [HonoluluActionKind, nu
 
 export const actionRows = (session: HonoluluSession, kind: HonoluluActionKind): TableRows => session.master.rows(ACTION_FILE[kind]);
 
-/** An antenna skill's name (skillData +0x00). */
+/** An antenna skill's name: skillData +0x00, or +0x08 in the rows where only that one is set. */
 export function antennaSkillName(session: HonoluluSession, row: number): string {
   const t = actionRows(session, 's');
-  return row > 0 && row < t.rows ? session.messages.texts.preview(t.get(row, 'name'), true) ?? '' : '';
+  if (row <= 0 || row >= t.rows) return '';
+  return session.messages.texts.preview(t.get(row, 'name') || t.get(row, 'name2'), true) ?? '';
 }
 
 export function actionName(session: HonoluluSession, kind: HonoluluActionKind, row: number): string {
