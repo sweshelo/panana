@@ -80,6 +80,8 @@ src/
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
   honolulu/ tables.ts master.ts                                       初代: 表の欄の定義、マスター (56562135) の表
+            worldmap.ts WorldmapPage.tsx                                初代: ワールドマップ (49C917B7 の PierData と船着場の絵)
+  layout/   darc.ts bclim.ts                                           レイアウトのアーカイブ (darc) と画像 (BCLIM) の読み込み
   romfs/    kahara.ts oahu.ts formats.tsx                              作品ごとのプロファイル、形式ごとのビュー (FORMAT_VIEWS)
   ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
             book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx
