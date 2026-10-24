@@ -17,7 +17,7 @@ import { giveItemModel, itemLooks } from '../src/port/items';
 import { monsterLooks, type MonsterLook } from '../src/port/looks';
 import { PortStore } from '../src/port/store';
 import { openDumps, openImage } from '../src/rom/dump';
-import type { TitleKey } from '../src/rom/titles';
+import type { PortTitle } from '../src/port/convert';
 import { ItemBook } from '../src/game/items';
 import type { Session } from '../src/session';
 import type { Opened } from '../src/ui/workspace';
@@ -52,8 +52,8 @@ describe.skipIf(!ready)('porting between the games', () => {
     for (const t of ['kahara', 'oahu', 'lanai'] as const) (await PortStore.of(t)).clear();
   });
 
-  const looks = new Map<TitleKey, MonsterLook[]>();
-  const look = async (t: TitleKey, name: string): Promise<MonsterLook> => {
+  const looks = new Map<PortTitle, MonsterLook[]>();
+  const look = async (t: PortTitle, name: string): Promise<MonsterLook> => {
     if (!looks.has(t)) looks.set(t, await monsterLooks(o, t));
     const l = looks.get(t)!.find((x) => x.names.some((n) => n.includes(name))) ?? looks.get(t)![0]!;
     return l;

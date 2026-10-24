@@ -1,6 +1,11 @@
 // Shared pieces of the converters: the games, bone matrices and the animation name prefixes.
 
+import type { TitleKey } from '../../rom/titles';
+
+/** The games looks are ported between (the first game, honolulu, not yet). */
 export type PortTitle = 'kahara' | 'oahu' | 'lanai';
+
+export const isPortTitle = (k: TitleKey): k is PortTitle => k === 'kahara' || k === 'oahu' || k === 'lanai';
 
 /** The H3D header each H3D game's own files have. */
 export const H3D_HEADER = {

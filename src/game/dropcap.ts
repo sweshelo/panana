@@ -29,8 +29,11 @@ import { u32 } from '../util/bytes';
 export const DROP_CAP_ID = 'panana:drop-cap';
 export const DROP_CAP_TITLE = 'ドロップ率の天井を撤廃';
 
+/** The games the patch is written for (not yet the first game, honolulu). */
+export type DropCapTitle = Exclude<TitleKey, 'honolulu'>;
+
 /** What the patch does in each title, for the export dialogs. */
-export const DROP_CAP_NOTE: Record<TitleKey, string> = {
+export const DROP_CAP_NOTE: Record<DropCapTitle, string> = {
   kahara: 'おたから・レア・激レアの倍率 (装備・ワザの「ドロップ率アップ」) を、5 倍・10 倍・50 倍で止めずにそのまま掛けます。',
   oahu: 'おたから・レア・激レアの倍率 (装備・ワザ) を、5 倍・10 倍・50 倍で止めずにそのまま掛けます (約 2147 万倍まで。164 倍を超えると 0.2 % ほどの誤差が出ます)。',
   lanai: 'おたから+・レア+・激レア+ (装備・ワザ) を、500 %・1000 %・2000 % で止めずにそのまま足します。値は 16 ビットで持つので、32767 % が限界です。',
@@ -292,20 +295,20 @@ const LANAI = `; ${DROP_CAP_TITLE} (RPG FREE!): おたから+・レア+・激レ
   bx lr
 `;
 
-const SOURCES: Record<TitleKey, string> = { kahara: KAHARA, oahu: OAHU, lanai: LANAI };
+const SOURCES: Record<DropCapTitle, string> = { kahara: KAHARA, oahu: OAHU, lanai: LANAI };
 
 /** The words the patch replaces, as in the game (RPG2 v1.1.0, RPG3 Update v4096, RPG FREE! Update v17408). */
-const EXPECT: Record<TitleKey, [number, number][]> = {
+const EXPECT: Record<DropCapTitle, [number, number][]> = {
   kahara: [[0x283F7C, 0xEB025071], [0x283F94, 0xEB02506B], [0x283FAC, 0xEB025065]],
   oahu: [[0x19FD4C, 0xE1D052FE], [0x19FE1C, 0xE6BF4070], [0x2B7690, 0xE1D242FE], [0x4CED28, 0xE1D242FE], [0x4CEF08, 0xE1D042FE]],
   lanai: [[0x1651AC, 0xE1D071FE], [0x165240, 0xE6BF4070], [0x2EE8C8, 0xE1D241FE], [0x2DC8EC, 0xE1D151FE], [0x2DCA34, 0xE59F100C]],
 };
 
 /** Why the patch cannot go on `code` (another version, or a base MOD that rewrote the same code), or null. */
-export function dropCapProblem(code: Uint8Array, title: TitleKey): string | null {
+export function dropCapProblem(code: Uint8Array, title: DropCapTitle): string | null {
   const bad = EXPECT[title].filter(([a, w]) => a - BASE + 4 > code.length || u32(code, a - BASE) !== w);
   return bad.length ? `code.bin の 0x${bad.map(([a]) => a.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${DROP_CAP_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)` : null;
 }
 
 /** The patch for a title (always enabled: it is only built when the option is on). */
-export const dropCapPatch = (title: TitleKey): CodePatch => ({ id: DROP_CAP_ID, title: DROP_CAP_TITLE, source: SOURCES[title], enabled: true });
+export const dropCapPatch = (title: DropCapTitle): CodePatch => ({ id: DROP_CAP_ID, title: DROP_CAP_TITLE, source: SOURCES[title], enabled: true });

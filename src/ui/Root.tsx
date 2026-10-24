@@ -10,7 +10,9 @@ import { Session } from '../session';
 import { PortStore } from '../port/store';
 import { forgetArchives } from '../cgfx/loader';
 import { idbGet, idbSet } from '../util/idb';
+import { HonoluluSession } from '../honolulu/session';
 import { LanaiSession } from '../lanai/session';
+import { HonoluluShell } from './HonoluluShell';
 import { LanaiShell } from './LanaiShell';
 import { OahuShell } from './OahuShell';
 import { OahuSession } from '../oahu/session';
@@ -66,6 +68,7 @@ export function Root(): ReactNode {
   /** Opens one dump as the pages of its game (RPG2's session is restored without asking when it replaces one). */
   const openOne = async (dump: Dump, opened: Opened): Promise<Opened> => {
     if (dump.title.key === 'oahu') return { ...opened, oahu: await OahuSession.open(dump) };
+    if (dump.title.key === 'honolulu') return { ...opened, honolulu: await HonoluluSession.open(dump) };
     if (dump.title.key === 'lanai') {
       opened.lanai?.saveNow();
       return { ...opened, lanai: await LanaiSession.open(dump) };
@@ -83,7 +86,7 @@ export function Root(): ReactNode {
   /** Opens `dumps` on top of what is open; the first of them is shown. */
   const openAll = async (dumps: Dump[], prev: Ready | null): Promise<Ready> => {
     let opened: Opened = prev?.opened ?? {};
-    const idsOf = { ...(prev?.ids ?? { kahara: 0, oahu: 0, lanai: 0 }) };
+    const idsOf = { ...(prev?.ids ?? { kahara: 0, oahu: 0, lanai: 0, honolulu: 0 }) };
     for (const d of dumps) {
       opened = await openOne(d, opened);
       idsOf[d.title.key] = ++ids.current;
@@ -211,6 +214,8 @@ export function Root(): ReactNode {
     shell = <OahuShell key={ready.ids.oahu} session={opened.oahu} onSession={(session) => replace({ oahu: session })} />;
   else if (active === 'lanai' && opened.lanai)
     shell = <LanaiShell key={ready.ids.lanai} session={opened.lanai} onSession={(session) => replace({ lanai: session })} />;
+  else if (active === 'honolulu' && opened.honolulu)
+    shell = <HonoluluShell key={ready.ids.honolulu} session={opened.honolulu} />;
   else if (opened.kahara)
     shell = <Shell key={ready.ids.kahara} session={opened.kahara.session} editor={opened.kahara.editor} onPickBaseMod={() => pickBaseMod(opened.kahara!.session)} />;
   return (

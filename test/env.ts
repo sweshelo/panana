@@ -26,8 +26,12 @@ export const LANAI_BASE = join(ROMS, 'lanai-base.cia');
 export const LANAI_UPDATE = join(ROMS, 'lanai-update.cia');
 export const hasLanai = existsSync(LANAI_BASE) && existsSync(LANAI_UPDATE);
 
+// 電波人間のRPG (初代、honolulu): the Base CIA (decrypted; the game has no Update)
+export const HONOLULU_BASE = join(ROMS, 'honolulu-base.cia');
+export const hasHonolulu = existsSync(HONOLULU_BASE);
+
 // CI の ROM ジョブ (REQUIRE_ROM=1) では、スキップして緑になるのを防ぐ
 if (process.env.REQUIRE_ROM) {
-  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE].filter((f) => !existsSync(f));
+  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE, HONOLULU_BASE].filter((f) => !existsSync(f));
   if (missing.length) throw new Error(`REQUIRE_ROM is set but roms/ lacks: ${missing.join(' ')}`);
 }

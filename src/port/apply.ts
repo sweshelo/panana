@@ -4,13 +4,13 @@
 import { forgetArchives } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE } from '../game/monsters';
 import { forgetLanaiMonsters, forgetLanaiModelIndex } from '../lanai/monsters';
-import type { TitleKey } from '../rom/titles';
+import type { PortTitle } from './convert';
 import type { Opened } from '../ui/workspace';
 import { hasAltIdle, lanaiTemplate, portedDesign, portedEntries, takenIn, type MonsterLook } from './looks';
 import { PortStore } from './store';
 
 /** Gives monster `row` of `target` the look; returns the new design row. */
-export async function giveMonsterLook(o: Opened, target: TitleKey, row: number, look: MonsterLook): Promise<number> {
+export async function giveMonsterLook(o: Opened, target: PortTitle, row: number, look: MonsterLook): Promise<number> {
   if (look.title === target) return giveOwnLook(o, target, row, look);
   const store = await PortStore.of(target);
   if (target === 'kahara') {
@@ -75,7 +75,7 @@ export async function giveMonsterLook(o: Opened, target: TitleKey, row: number, 
  * row (the name is in the monster's row); RPG2 keeps the name and description in the design row (+0x00 / +0x04), so
  * the monster gets a new design row with its own name and the rest of the look's. Returns the design row.
  */
-async function giveOwnLook(o: Opened, target: TitleKey, row: number, look: MonsterLook): Promise<number> {
+async function giveOwnLook(o: Opened, target: PortTitle, row: number, look: MonsterLook): Promise<number> {
   // the other idle needs a 002_ animation the look may not have
   const alt = hasAltIdle(await look.files(), target);
   if (!alt && altIdle(o, target, row)) setAltIdle(o, target, row, false);
@@ -107,13 +107,13 @@ async function giveOwnLook(o: Opened, target: TitleKey, row: number, look: Monst
  * The battle's other idle of a monster: it plays `002_` instead of `001_` (RPG2 MonsterParameter +0x4A bit3, RPG3
  * monsterParameter +0x48 bit9, FREE! MonsterParameter +0x18 bit0).
  */
-export function altIdle(o: Opened, target: TitleKey, row: number): boolean {
+export function altIdle(o: Opened, target: PortTitle, row: number): boolean {
   if (target === 'kahara') return !!(o.kahara!.session.book!.paramRow(row)[0x4a]! & 8);
   if (target === 'oahu') return !!(o.oahu!.battle.monsters.row(row)[0x49]! & 2);
   return !!(o.lanai!.need('MonsterParameter').u32(row, 0x18) & 1);
 }
 
-export function setAltIdle(o: Opened, target: TitleKey, row: number, on: boolean): void {
+export function setAltIdle(o: Opened, target: PortTitle, row: number, on: boolean): void {
   if (target === 'kahara') {
     const s = o.kahara!.session;
     const p = s.book!.paramRow(row);

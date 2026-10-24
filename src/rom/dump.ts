@@ -3,7 +3,7 @@
 // or an extracted RomFS folder together with code.bin.
 import { ascii } from '../util/bytes';
 import { applyIps } from './ips';
-import { blzDecompress } from './blz';
+import { blzDecompress, isBlz } from './blz';
 import { parseCia } from './cia';
 import { readExefsFile } from './exefs';
 import { isCodeCompressed, parseNcch } from './ncch';
@@ -188,18 +188,30 @@ export async function openDumps(files: Blob[], label: (f: Blob) => string): Prom
   return out;
 }
 
-/** Folder input: any file named code.bin (or .code) plus files whose name is an 8-digit hex hash. */
+/** The program ID in an ExHeader (+0x200, the ARM11 local system capabilities), as hex. */
+export const exheaderProgramId = (exh: Uint8Array): string => (hex8(u32(exh, 0x204)) + hex8(u32(exh, 0x200))).toUpperCase();
+
+/**
+ * Folder input: any file named code.bin (or .code) plus files whose name is an 8-digit hex hash. The game is told by the
+ * title ID in exheader.bin when the folder has one (naauao ctr.py extract writes it), else by the root files (the first
+ * game's master has RPG2's name, titles.ts).
+ */
 export async function openFolder(files: File[], label: string): Promise<Dump> {
   const code = files.find((f) => /^(code\.bin|\.code)$/i.test(f.name));
   if (!code) throw new Error('フォルダに code.bin がありません (ExeFS の .code を展開したもの)');
   let codeBytes: Uint8Array = new Uint8Array(await code.arrayBuffer());
-  if (codeBytes.length < 0x400000) codeBytes = blzDecompress(codeBytes); // still compressed
+  // still compressed (the first game's whole code.bin is smaller than RPG2's, and ends without a BLZ footer)
+  if (codeBytes.length < 0x400000 && isBlz(codeBytes)) codeBytes = blzDecompress(codeBytes);
   const map = new Map<string, File>();
   for (const f of files) if (/^[0-9A-Fa-f]{8}$/.test(f.name)) map.set(f.name.toUpperCase(), f);
   if (!map.size) throw new Error('フォルダに RomFS のファイル (A90C8038 など) がありません');
+  const exh = files.find((f) => /^exheader\.bin$/i.test(f.name));
+  // (a folder merged with its Update has the Update's ExHeader)
+  const id = exh && exheaderProgramId(new Uint8Array(await exh.arrayBuffer()));
+  const title = (id && (titleById(id) ?? titleByUpdateId(id))) || titleByRootFiles(map.keys()) || KAHARA;
   return {
     label,
-    title: titleByRootFiles(map.keys()) ?? KAHARA,
+    title,
     code: codeBytes,
     names: () => [...map.keys()],
     files: () => [...map].map(([path, f]) => ({ path, size: f.size })),
