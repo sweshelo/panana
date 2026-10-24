@@ -44,6 +44,17 @@ describe.skipIf(!hasHonolulu)('初代の BGM・効果音 (ROM)', () => {
     }
   });
 
+  test('the sequenced BGMs (all but 2) play at their timebase (96) to their loop', async () => {
+    const r = await s.soundRenderer();
+    expect(r.archive.sounds.filter((x) => x.name.startsWith('BGM_') && x.type === 'stream').map((x) => x.name)).toEqual(['BGM_SYS_MAIN', 'BGM_SYS_ENDING']);
+    const cave = r.archive.sounds.findIndex((x) => x.name === 'BGM_FLD_CAVE');
+    const pcm = await r.render(cave, 300, true);
+    // the loop as rendered at timebase 96 (at 48 it would be twice as long): 11.7 s to 140.1 s
+    expect(pcm.loop).toBe(true);
+    expect(pcm.loopStart / pcm.rate).toBeCloseTo(11.7, 0);
+    expect(pcm.loopEnd / pcm.rate).toBeCloseTo(140.1, 0);
+  });
+
   test('mapData +0x07 points at soundData rows (a guess)', () => {
     const md = s.master.rows('mapData.bin');
     const values = Array.from({ length: md.rows }, (_, r) => md.get(r, 'sound'));
