@@ -16,7 +16,7 @@ import { HonoluluShell } from './HonoluluShell';
 import { LanaiShell } from './LanaiShell';
 import { OahuShell } from './OahuShell';
 import { OahuSession } from '../oahu/session';
-import { RomDialog } from './RomDialog';
+import { RomDialog, TitleChoiceDialog } from './RomDialog';
 import { Shell } from './Shell';
 import { StartScreen } from './StartScreen';
 import { openedKeys, WorkspaceContext, type Opened, type Workspace } from './workspace';
@@ -57,6 +57,8 @@ export function Root(): ReactNode {
   /** The hash each game's pages were left at, to come back to it. */
   const hashes = useRef(new Map<TitleKey, string>());
   const [roms, setRoms] = useState(false);
+  /** The games of the dumps just opened together, while asking which one to show. */
+  const [choice, setChoice] = useState<TitleKey[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [romError, setRomError] = useState<string | null>(null);
   const ready = state.kind === 'ready' ? state.ready : null;
@@ -83,7 +85,7 @@ export function Root(): ReactNode {
     return { ...opened, kahara: await openPages(game, !!before) };
   };
 
-  /** Opens `dumps` on top of what is open; the first of them is shown. */
+  /** Opens `dumps` on top of what is open; the first of them is shown (asked when they are of several games). */
   const openAll = async (dumps: Dump[], prev: Ready | null): Promise<Ready> => {
     let opened: Opened = prev?.opened ?? {};
     const idsOf = { ...(prev?.ids ?? { kahara: 0, oahu: 0, lanai: 0, honolulu: 0 }) };
@@ -96,7 +98,12 @@ export function Root(): ReactNode {
       hashes.current.set(prev.active, location.hash);
       if (active !== prev.active || dumps.some((d) => d.title.key === prev.active)) history.replaceState(null, '', location.pathname + location.search + (hashes.current.get(active) ?? ''));
       window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } else if (location.hash) {
+      // a hash left from before names another game's page: every game opens on its first page (the maps)
+      history.replaceState(null, '', location.pathname + location.search);
     }
+    const games = [...new Set(dumps.map((d) => d.title.key))];
+    setChoice(games.length > 1 ? games : null);
     if (active !== 'kahara') opened.kahara?.editor.hide();
     return { opened, active, ids: idsOf };
   };
@@ -140,6 +147,7 @@ export function Root(): ReactNode {
     if (key !== 'kahara') ready.opened.kahara?.editor.hide();
     setState({ kind: 'ready', ready: { ...ready, active: key } });
     setRoms(false);
+    setChoice(null);
   };
 
   const unload = (key: TitleKey): void => {
@@ -167,6 +175,7 @@ export function Root(): ReactNode {
     if (ready) for (const k of openedKeys(ready.opened)) k === 'kahara' ? ready.opened.kahara!.session.saveNow() : ready.opened[k]!.saveNow();
     hashes.current.clear();
     setRoms(false);
+    setChoice(null);
     setState({ kind: 'start' });
   };
 
@@ -225,6 +234,7 @@ export function Root(): ReactNode {
         <RomDialog opened={opened} active={active} busy={busy} error={romError} onShow={show} onClose={() => { if (!busy) setRoms(false); }}
           onUnload={unload} onAdd={add} onStart={toStart} />
       )}
+      {choice && !roms && <TitleChoiceDialog opened={opened} keys={choice.filter((k) => opened[k])} onPick={show} onClose={() => setChoice(null)} />}
     </WorkspaceContext.Provider>
   );
 }

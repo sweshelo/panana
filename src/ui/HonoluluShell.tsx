@@ -1,6 +1,6 @@
 // The pages of a 電波人間のRPG (honolulu, the first game) dump on the shared frame (PageShell): the monsters (#155), the
 // items (#154), the shop (#153), the messages (#157) and the RomFS viewer (#150), and the export of the edits; the maps
-// (#156) are added as a tab here.
+// (#156) are added as a tab here and become the first page (the other games open on their maps).
 import { useMemo, useState, type ReactNode } from 'react';
 import { HonoluluExportDialog } from '../honolulu/ExportDialog';
 import { HonoluluItemPage } from '../honolulu/ItemPage';
@@ -21,7 +21,7 @@ export function HonoluluShell({ session }: { session: HonoluluSession }): ReactN
   const [exporting, setExporting] = useState(false);
   const context = useMemo(() => session.master.context(), [session]);
   return (
-    <PageShell pages={HONOLULU_PAGES} titles={TITLES} fallback="items" brand="電波人間のRPG ビューア" titleSuffix=" (RPG)" romLabel={dump.label}
+    <PageShell pages={HONOLULU_PAGES} titles={TITLES} fallback="monsters" brand="電波人間のRPG エディタ" titleSuffix=" (RPG)" romLabel={dump.label}
       actions={(closeMenu) => <button className="primary" title="変更した表・メッセージを LayeredFS 用の MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>}
       render={(id, { arg: a }) => (
         id === 'monsters' ? <HonoluluMonsterPage session={session} arg={a} />

@@ -56,7 +56,7 @@ export function LanaiShell({ session, onSession }: {
   }, [session]);
   const u = dump.update;
   return (
-    <PageShell pages={LANAI_PAGES} titles={TITLES} fallback="stages" brand="電波人間のRPG FREE! ビューア" titleSuffix=" (RPG FREE!)" romLabel={dump.label}
+    <PageShell pages={LANAI_PAGES} titles={TITLES} fallback="maps" brand="電波人間のRPG FREE! エディタ" titleSuffix=" (RPG FREE!)" romLabel={dump.label}
       actions={(closeMenu) => (
         <>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.length} 個`}>{`Update v${u.titleVersion ?? '?'}`}</span>

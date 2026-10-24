@@ -52,7 +52,7 @@ export function OahuShell({ session, onSession }: {
   const u = dump.update;
   const context = useMemo((): FieldContext => ({ ...battleContext(session.battle), message: (id) => session.messages.texts.preview(id, true) }), [session]);
   return (
-    <PageShell pages={OAHU_PAGES} titles={TITLES} fallback="messages" brand="電波人間のRPG3 エディタ" titleSuffix=" (RPG3)" romLabel={dump.label}
+    <PageShell pages={OAHU_PAGES} titles={TITLES} fallback="maps" brand="電波人間のRPG3 エディタ" titleSuffix=" (RPG3)" romLabel={dump.label}
       actions={(closeMenu) => (
         <>
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.join(', ')}`}>{`Update v${u.titleVersion ?? '?'}`}</span>
