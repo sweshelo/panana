@@ -1,10 +1,11 @@
 // 初代's maps (#/maps/<マップのハッシュ>; naauao honolulu/map.md, #156), shown with the parts of the other games' map
-// pages: the frame, the layers and the status bar (editor/mappage.tsx), the top-down grid and its controller
-// (honolulu/mapview.ts), the map picker dialog (ui/MapPicker.tsx). View only. Header: the map (by dungeon) and which of
-// its floors to show; left: the layers and the dungeon's floors; right: the picked tile or record, or the floor's
-// encounters and chests (the floor definitions, naauao#47).
+// pages: the frame, the layers and the status bar (editor/mappage.tsx), the top-down grid, the 3D scene and their
+// controller (honolulu/mapview.ts), the map picker dialog (ui/MapPicker.tsx). View only. Header: the map (by dungeon),
+// which of its floors to show (the floor decides the tileset of the 3D view) and the view mode; left: the layers and
+// the dungeon's floors; right: the picked tile or record, or the floor's encounters and chests (the floor
+// definitions, naauao#47).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { MapFrame, MapHeaderControls, MapLayers, MapStatus } from '../editor/mappage';
+import { LayerBox, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import type { Rec } from '../game/sections';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
@@ -63,27 +64,37 @@ function MapDetail({ session, maps, info }: { session: HonoluluSession; maps: Ho
   const st = useMemo(() => new HonoluluMapState(), [info]);
   const [view, setView] = useState<HonoluluMapView | null>(null);
   const [floorIndex, setFloorIndex] = useState(0);
+  const [mode, setMode] = useState<MapViewMode>('split');
   const floor = info.floors[floorIndex] ?? null;
   const pane2d = useRef<HTMLDivElement>(null);
   const pane3d = useRef<HTMLDivElement>(null);
   useEditorState(st);
   useEffect(() => {
     st.show(maps.floorDoc(info, floor));
-    const v = new HonoluluMapView(st);
+    const v = new HonoluluMapView(st, session.dump, maps);
+    v.showFloor(floor);
     pane2d.current!.append(v.grid.canvas);
+    pane3d.current!.append(v.scene.canvas);
     setView(v);
     requestAnimationFrame(() => v.fit());
-    return () => v.grid.canvas.remove();
-  }, [st, maps, info]);
+    return () => {
+      v.grid.canvas.remove();
+      v.scene.canvas.remove();
+      v.dispose();
+    };
+  }, [st, session, maps, info]);
   useEffect(() => {
     if (!view) return;
     st.show(maps.floorDoc(info, floor));
-    view.refresh();
+    view.showFloor(floor);
   }, [view, floor]);
+  useEffect(() => {
+    requestAnimationFrame(() => view?.refresh());
+  }, [view, mode]);
   const groups = useMemo(() => mapGroups(maps), [maps]);
   const dungeon = floor ? maps.dungeon(floor.dungeon) : undefined;
   return (
-    <MapFrame mode="2d" pane2d={pane2d} pane3d={pane3d}
+    <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
       header={
         <>
           <MapPickerButton groups={groups} value={info.hash} className="map-select" label={`${mapTitle(info)}  ${mapCode(info)}`}
@@ -94,12 +105,14 @@ function MapDetail({ session, maps, info }: { session: HonoluluSession; maps: Ho
             </select>
           ) : <span>{floor ? floorName(maps, floor) : 'どの階の定義にもない'}</span>}
           <span className="muted small">{`csvMap の行 ${info.index}・2 つ目の区画 ${info.objects ? hexUp(info.objects) : 'なし'}`}</span>
-          <MapHeaderControls st={st} view={view} open={false} mode="2d" setMode={() => {}} showModes={false} />
+          <MapHeaderControls st={st} view={view} open={false} mode={mode} setMode={setMode} showModes />
         </>
       }
       left={view && (
         <>
-          <MapLayers st={st} view={view} sections={HONOLULU_POINT_SECTIONS} layouts={HONOLULU_LAYOUTS} room={false} />
+          <MapLayers st={st} view={view} sections={HONOLULU_POINT_SECTIONS} layouts={HONOLULU_LAYOUTS} room={false}>
+            <LayerBox view={view} label="3D で置物・部屋のモデルを描く" checked={view.showModels} set={(v) => (view.showModels = v)} />
+          </MapLayers>
           {dungeon && (
             <div className="layers">
               <h3>{dungeonLabel(dungeon)}</h3>
@@ -146,16 +159,24 @@ function Inspector({ session, maps, st, view, info, floor }: {
     const [x, y] = sel.cells[0]!;
     const t = tileAt(doc, x, y);
     if (t) {
+      const part = maps.part(t.kind);
+      const src = view.source;
+      const model = view.tileModel(t.kind);
       return (
         <>
           <h3>{`タイル (${t.x}, ${t.y})`}</h3>
           <table className="enc-table desc-table small">
             <tbody>
               <tr><th>種類</th><td>{t.kind}</td></tr>
+              <tr><th>部品</th><td>{part ? `${part.name} (mapParts の行 ${part.row}・変種 ${part.variant})` : <span className="muted">部品名ファイルにない種類</span>}</td></tr>
+              <tr><th>回転</th><td>{`${maps.partAngle(t.kind)}°`}</td></tr>
+              {src && <tr><th>タイルセット</th><td>{`${src.tileset} (mapData ${src.mapData < 0 ? 'なし: 行 1 で表示' : src.mapData}・mapResource ${src.resource})`}</td></tr>}
+              <tr><th>モデル</th><td className="mono">{model ? `${src?.modelArchive}/${hexUp(model)} ${view.tileModelName(t.kind)}` : 'なし'}</td></tr>
               <tr><th>+0x08〜0x0B</th><td className="mono">{[t.rotHi || HONOLULU_ROT_CODEC.encode(t.rot), t.letter, t.pad & 0xff, t.pad >> 8].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</td></tr>
             </tbody>
           </table>
-          <p className="muted small">種類からモデル (mapParts・mapResource) へのたどり方はまだ分かっていません (naauao#49)。+0x08 は全タイルで 'N'。</p>
+          <p className="muted small">種類は部品名ファイル (A90C8038 の 63165400) の番号で、名前から mapParts の行と変種が決まり、階のタイルセットでモデルを選びます (naauao honolulu/map.md §3.3)。+0x08 は全タイルで 'N'。</p>
+          {src?.designed ? <p className="muted small">{`この階は作り込みの部屋 (designedMap の行 ${src.designed}) で、ゲームはタイルの代わりに部屋のモデル (AD853AFD/${hexUp(src.designedModel)}) を描きます。`}</p> : null}
         </>
       );
     }
@@ -260,7 +281,10 @@ function RecInfo({ session, maps, section, rec, index }: { session: HonoluluSess
   const r = rec.raw;
   const floorRec = section !== HONOLULU_OBJECT_SECTION;
   const rows: [string, ReactNode][] = [['位置', floorRec ? `(${rec.x}, ${rec.y}) (ファイルの値 + ${FLOOR_CELL_OFFSET})` : `(${rec.x}, ${rec.y})`]];
-  if (section === HONOLULU_OBJECT_SECTION) rows.push(['種類', u32(r, 0)], ['向き', facingLetter(r[8]!)]);
+  if (section === HONOLULU_OBJECT_SECTION) {
+    const ref = maps.objectModel(u32(r, 0));
+    rows.push(['種類 (mapObject の行)', u32(r, 0)], ['向き', facingLetter(r[8]!)], ['モデル', ref ? <span className="mono">{`${hexUp(ref.archive)}/${hexUp(ref.entry)}${ref.scale !== 1 ? ` × ${ref.scale.toFixed(2)}` : ''}`}</span> : 'なし']);
+  }
   if (section === HONOLULU_EXIT_SECTION) {
     rows.push(['出入口の ID', hexUp(u32(r, 0))], ['行き先の記録', hexUp(u32(r, 4))], ['行き先の出入口', hexUp(u32(r, 8))], ['+0x0C〜0x0F', [...r.subarray(0x0c, 0x10)].join(' ')]);
     const dest = maps.dungeons.flatMap((d) => d.records).find((f) => f.id === u32(r, 4) && f.exits.some((e) => u32(e.raw, 0) === u32(r, 8)));
@@ -285,7 +309,7 @@ function RecInfo({ session, maps, section, rec, index }: { session: HonoluluSess
         <summary className="small">{`レコードのバイト (${r.length})`}</summary>
         <code className="small mono" style={{ wordBreak: 'break-all' }}>{[...r].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</code>
       </details>
-      {section === HONOLULU_OBJECT_SECTION && <p className="muted small">2 つ目の区画の種類 (24〜57) が何を置くかは未確認です (naauao honolulu/map.md §3.2)。</p>}
+      {section === HONOLULU_OBJECT_SECTION && <p className="muted small">2 つ目の区画の種類 (24〜57) は mapObject の行と推定しています (使われる行と mapObject の欄が重なるため。naauao honolulu/map.md §3.2)。</p>}
     </>
   );
 }

@@ -35,8 +35,15 @@ const memory = new Map<string, Promise<TilesetModels>>();
 
 /** Tile models of a map, for its own tileset or `tileset`. */
 export function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Promise<TilesetModels> {
-  const src = game.tilesetSource(map, tileset);
-  const key = `tileset/${src.modelArchive}/${hex8(src.textureEntry)}/v${CACHE_VERSION}`;
+  return loadTileset(game, game.tilesetSource(map, tileset));
+}
+
+/**
+ * Every model of a tile archive with the textures of an entry of another archive ('00000000' = none). `scope` keeps
+ * another game's archive of the same name apart (初代's 46910AB6 is not RPG2's) in the caches.
+ */
+export function loadTileset(game: Pick<Game, 'dump'>, src: { modelArchive: string; textureArchive: string; textureEntry: number }, scope = ''): Promise<TilesetModels> {
+  const key = `tileset/${scope ? `${scope}/` : ''}${src.modelArchive}/${hex8(src.textureEntry)}/v${CACHE_VERSION}`;
   let p = memory.get(key);
   if (!p) {
     p = (async () => {
@@ -71,18 +78,22 @@ export function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Pr
   return p;
 }
 
-const objKey = (archive: number, entry: number): string => `object/${hex8(archive)}/${hex8(entry)}/v${CACHE_VERSION}`;
+const objKey = (archive: number, entry: number, scope = ''): string => `object/${scope ? `${scope}/` : ''}${hex8(archive)}/${hex8(entry)}/v${CACHE_VERSION}`;
 
-/** Models of object files (mapObject rows). Files of the same archive are converted in one request. */
+/**
+ * Models of object files (mapObject rows). Files of the same archive are converted in one request. `scope` keeps
+ * another game's archives of the same name apart (as for loadTileset); the keys of the result are objKey's with it.
+ */
 export async function loadObjectModels(
-  game: Game,
+  game: Pick<Game, 'dump'>,
   refs: { archive: number; entry: number }[],
+  scope = '',
 ): Promise<Map<string, TilesetModels>> {
   const out = new Map<string, TilesetModels>();
   const todo = new Map<number, number[]>();
   const waits: Promise<void>[] = [];
   for (const { archive, entry } of refs) {
-    const key = objKey(archive, entry);
+    const key = objKey(archive, entry, scope);
     if (out.has(key)) continue;
     const m = memory.get(key);
     if (m) {
@@ -98,7 +109,7 @@ export async function loadObjectModels(
       const found = new Map<number, TilesetModels>();
       const missing: number[] = [];
       for (const e of entries) {
-        const c = await idbGet<TilesetModels>(objKey(archive, e));
+        const c = await idbGet<TilesetModels>(objKey(archive, e, scope));
         if (c && c.models instanceof Map) found.set(e, c);
         else missing.push(e);
       }
@@ -107,16 +118,16 @@ export async function loadObjectModels(
         const res = await run<Map<number, TilesetModels>>({ kind: 'objects', archive: bytes, entries: missing }, [bytes.buffer as ArrayBuffer]);
         for (const [e, t] of res) {
           found.set(e, t);
-          await idbSet(objKey(archive, e), t);
+          await idbSet(objKey(archive, e, scope), t);
         }
       }
       return found;
     })();
     for (const e of entries) {
       const p = job.then((f) => f.get(e)!);
-      memory.set(objKey(archive, e), p);
-      p.catch(() => memory.delete(objKey(archive, e)));
-      waits.push(p.then((t) => void out.set(objKey(archive, e), t)).catch(() => {}));
+      memory.set(objKey(archive, e, scope), p);
+      p.catch(() => memory.delete(objKey(archive, e, scope)));
+      waits.push(p.then((t) => void out.set(objKey(archive, e, scope), t)).catch(() => {}));
     }
   }
   await Promise.all(waits);

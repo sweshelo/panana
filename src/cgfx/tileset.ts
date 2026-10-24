@@ -43,7 +43,7 @@ export function buildTileset(modelArchive: Uint8Array, textureArchive: Uint8Arra
   return out;
 }
 
-/** Object models (mapObject rows): each entry is a bcres with its own textures. */
+/** Object models (mapObject rows): each entry is a bcres with its own textures (or a t8 entry wrapping one: 初代's designed rooms). */
 export function buildObjects(archive: Uint8Array, entries: number[]): Map<number, TilesetModels> {
   const arc = parseArchive(archive);
   const out = new Map<number, TilesetModels>();
@@ -52,7 +52,8 @@ export function buildObjects(archive: Uint8Array, entries: number[]): Map<number
     try {
       const e = findEntry(arc, h);
       if (!e) throw new Error('エントリがありません');
-      const f = parseCgfx(unpackEntry(arc, e).body);
+      const body = unpackEntry(arc, e).body;
+      const f = parseCgfx(isCgfx(body) ? body : unwrapT8(body).cgfx);
       for (const t of f.textures) set.textures.set(t.name, t);
       const m = f.models[0];
       if (m) {
@@ -66,6 +67,8 @@ export function buildObjects(archive: Uint8Array, entries: number[]): Map<number
   }
   return out;
 }
+
+const isCgfx = (b: Uint8Array): boolean => b[0] === 0x43 && b[1] === 0x47 && b[2] === 0x46 && b[3] === 0x58;
 
 /**
  * The set with the draw order of its meshes reversed (a copy). The CGFX reader orders meshes as RPG2 draws them, the
