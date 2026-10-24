@@ -91,7 +91,7 @@ export const HONOLULU_MAP_DATA: TableDef = {
   fields: [
     f('tileset', 0x00, 'u8', 'タイルセット', { note: 'mapParts のモデルの組 (0〜7)' }),
     f('resource', 0x06, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
-    f('sound', 0x07, 'u8', '+0x07', { unsure: true, note: '音 (FUN_0020C2A0 に渡す) と推定' }),
+    f('sound', 0x07, 'u8', '階の BGM', { ref: row('soundData.bin'), unsure: true, note: 'soundData の行。全行がタイルセットに合う BGM_FLD_* (FUN_0020C2A0 に渡す)。実機では未確認' }),
   ],
 };
 

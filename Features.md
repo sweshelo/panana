@@ -261,7 +261,7 @@ master のほか 0901BA07・1D37838B・6F896E38・90EACC05・91B0619D・FBADD94C
 
 master の soundData (252 行) を、`sound/sound.bcsar` の音の名前・種類 (BGM・ME・効果音) つきで並べ、▶ で試聴できます (RPG2 / RPG3 と同じ一覧と再生)。
 
-- 「使われている場所」は、階のタイルセット (mapData) の +0x07 だけを「推定」として出します。ボス戦の BGM (bossBgm)・音の種類 (soundDataType)・コードの中で決まる BGM は解析中 (naauao#55) で、まだ出しません。
+- 「使われている場所」は、階のタイルセット (mapData) の +0x07 を階の BGM として「推定」つきで出します (全行が `BGM_FLD_*` を指すことからの推定)。ボス戦の BGM (bossBgm)・音の種類 (soundDataType)・コードの中で決まる BGM は解析中 (naauao#55) で、まだ出しません。
 - 表示だけで、音の差し替えはできません。
 
 ### 書き出し (初代)

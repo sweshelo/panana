@@ -26,7 +26,7 @@ export function HonoluluSoundBook({ session, sounds, arg }: { session: HonoluluS
   return (
     <div className="book">
       <SoundView game={session} sounds={sounds} selected={selected} href={honoluluSoundHref} uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う場所の数 (mapData +0x07、推定)" usedLabel="使われている">
+        usesTitle="この音を使う場所の数 (mapData +0x07 の階の BGM、推定)" usedLabel="使われている">
         <HonoluluSoundUses use={uses.get(selected) ?? []} />
       </SoundView>
     </div>
@@ -34,7 +34,7 @@ export function HonoluluSoundBook({ session, sounds, arg }: { session: HonoluluS
 }
 
 const USES_INFO = [
-  'mapData +0x07: 階のタイルセット (mapData) の行の 1 バイトで、コードが音の関数 (FUN_0020C2A0) に渡すので音と推定しています。ダンジョンは、dungeonData +0x16 がその行のものです (階の定義の頭で別の行を選ぶ階もあります)。',
+  '階の BGM: 階のタイルセット (mapData) の行の +0x07。全行がタイルセットに合う BGM_FLD_* を指し、コードが音の関数 (FUN_0020C2A0) に渡すので階の BGM と推定しています (実機では未確認)。ダンジョンは、dungeonData +0x16 がその行のものです (階の定義の頭で別の行を選ぶ階もあります)。',
   'ボス戦の BGM (bossBgm)・音の種類 (soundDataType)・コードの中で決まる BGM はまだ解析中です (sweshelo/naauao#55)。',
 ].join('\n');
 
@@ -56,7 +56,7 @@ function HonoluluSoundUses({ use }: { use: HonoluluSoundUse[] }): ReactNode {
           </tbody>
         </table>
       ) : (
-        <div className="muted">分かっている表 (mapData +0x07) には見つかりません。ボス戦・イベント・コードから鳴らす音は、まだ数えていません。</div>
+        <div className="muted">分かっている表 (mapData +0x07 の階の BGM) には見つかりません。ボス戦・イベント・コードから鳴らす音は、まだ数えていません。</div>
       )}
     </>
   );
