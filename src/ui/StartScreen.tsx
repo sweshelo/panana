@@ -19,7 +19,7 @@ export function StartScreen({ error, onOpen }: { error?: string; onOpen: (open: 
       <p>{`『${KAHARA.name}』v1.1.0 (${KAHARA.titleId}) のデータを調べるツールです。ダンジョンのマップを編集して LayeredFS 用の MOD として書き出すほか、モンスター図鑑、マップの出現する敵・BGM を見られます。`}</p>
       <p>{`『${OAHU.name}』(${OAHU.titleId}) は、Base の CIA でメッセージと RomFS の中身を見て、メッセージを編集できます。MOD の書き出しには Update の CIA も要ります (Base と一緒に選ぶか、開いたあとで足せます)。`}</p>
       <p>{`『${LANAI.name}』(${LANAI.titleId}) は、ステージ・表のメッセージ・モンスター・コード入力とチェックインの表・RomFS の中身を見られます (読み取りだけ)。Update の CIA も一緒に選ぶと、ゲームが実際に読むデータになります。`}</p>
-      <p>{`『${HONOLULU.name}』(初代、${HONOLULU.titleId}) は、いまは RomFS の中身を見られます (読み取りだけ)。`}</p>
+      <p>{`『${HONOLULU.name}』(初代、${HONOLULU.titleId}) は、Base の CIA でモンスター・アイテム・ショップ・メッセージを見て編集し、LayeredFS 用の MOD として書き出せます (マップは対応中)。`}</p>
       <p>{'複数の作品の CIA をまとめて選ぶと、同時に開けます。別の作品のモンスターやアイテムを選んで移植するときに使います (開いたあとで上のバーの「ROM」から足すこともできます)。'}</p>
       <p className="muted">ROM のデータはブラウザの中だけで読み取ります (どこにも送信しません)。読み取った一部のファイルは、この端末の IndexedDB にキャッシュします。</p>
       {error && <div className="error">{error}</div>}
