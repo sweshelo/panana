@@ -168,6 +168,6 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     const stock = renderToString(<GsTableView body={body('shopItemData.bin')} name="shopItemData.bin" profile={honoluluRomfsProfile} context={ctx} />);
     expect(stock).toContain('#1 キズぐすり');
     // no definition: hex columns only
-    expect(renderToString(<GsTableView body={body('monsterGroup.bin')} name="monsterGroup.bin" profile={honoluluRomfsProfile} context={ctx} />)).not.toContain('欄ごと');
+    expect(renderToString(<GsTableView body={body('monsterFieldData.bin')} name="monsterFieldData.bin" profile={honoluluRomfsProfile} context={ctx} />)).not.toContain('欄ごと');
   });
 });

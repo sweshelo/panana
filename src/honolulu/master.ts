@@ -21,8 +21,12 @@ export class HonoluluMaster extends MasterTables {
   /** The messages the names come from: the session's (every archive's, with the edits), or the master's own. */
   private readonly texts: MessageStore;
 
-  constructor(bytes: Uint8Array, texts?: MessageStore) {
-    super(parseArchive(bytes), HONOLULU_MASTER);
+  /** Names of rows of the tables another archive holds (the session's: the monsters, whose names are in 2713402F). */
+  names?: (table: string, row: number) => string | undefined;
+
+  /** `name`: the root archive; the master, or another archive of GS tables (2713402F, HONOLULU_MONSTER_ARCHIVE). */
+  constructor(bytes: Uint8Array, texts?: MessageStore, name = HONOLULU_MASTER) {
+    super(parseArchive(bytes), name);
     this.texts = texts ?? new MessageStore(this.archive.entries.flatMap((e): MessageFile[] => {
       const { name, body } = unpackEntry(this.archive, e);
       if (String.fromCharCode(...body.subarray(0, 4)) !== 'GMSG') return [];
@@ -30,8 +34,8 @@ export class HonoluluMaster extends MasterTables {
     }), HONOLULU_SYNTAX, false);
   }
 
-  static async load(dump: Dump, texts?: MessageStore): Promise<HonoluluMaster> {
-    return new HonoluluMaster(await dump.readRomfs(HONOLULU_MASTER), texts);
+  static async load(dump: Dump, texts?: MessageStore, name = HONOLULU_MASTER): Promise<HonoluluMaster> {
+    return new HonoluluMaster(await dump.readRomfs(name), texts, name);
   }
 
   /** A message on one line, as a reader sees it (ruby as the base, names as 〈…〉): names of rows, field views. */
@@ -39,7 +43,7 @@ export class HonoluluMaster extends MasterTables {
     return this.texts.preview(id, true);
   }
 
-  /** The definition of a table of the master: its fields and raw fields over the rest (tables.ts, tabledef.rowDef). */
+  /** The definition of a table of the archive: its fields and raw fields over the rest (tables.ts, tabledef.rowDef). */
   def(file: string): TableDef {
     return rowDef(HONOLULU_TABLES, file, this.table(file).rowSize);
   }
@@ -57,7 +61,7 @@ export class HonoluluMaster extends MasterTables {
       message: (id) => this.message(id),
       rowName: (table, row) => {
         const key = NAMED[table];
-        if (!key) return undefined;
+        if (!key) return this.names?.(table, row);
         const rows = this.rows(table);
         return row < rows.rows ? this.message(readField(rows.row(row), rows.field(key))) : undefined;
       },
