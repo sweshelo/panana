@@ -112,7 +112,7 @@ export class HonoluluShop {
 
   /**
    * Whether the clerk marks a row as new: its item is not in the stage before (stage 0: itself, so never). The code
-   * keeps this in the list (+0x0A of the entry).
+   * keeps this in the list (+0x06 of the entry).
    */
   isNew(stage: number, item: number): boolean {
     return !this.rows(Math.max(0, stage - 1)).some((r) => r.item === item);
