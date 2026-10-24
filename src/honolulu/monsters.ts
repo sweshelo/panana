@@ -3,6 +3,7 @@
 // skills of monsterAttackSkill, and the groups (monsterGroup, monsterFixGroup) that hold them. Where the groups appear
 // (the dungeon floors' files) is not read yet (naauao#47).
 import { loadComposite } from '../cgfx/loader';
+import { lowerPriorityFirst } from '../cgfx/tileset';
 import type { TableRows } from '../game/tablerows';
 import type { ModelRef } from '../pages/modelview';
 import { hex8 } from '../util/bytes';
@@ -65,14 +66,19 @@ export function attackName(session: HonoluluSession, row: number): string {
   return text.replace(/^〈モンスター〉(?:〈[^〉]*〉)?[のは][\s　]*/, '').replace(/[！!。]$/, '') || text;
 }
 
+export const honoluluMonsterHref = (row: number): string => `#/monsters/${row}`;
+
+/** The name of a monsterBattleParameter row (its look's), '' when there is none. */
+export function monsterName(session: HonoluluSession, row: number): string {
+  const t = battleRows(session);
+  return row > 0 && row < t.rows ? designName(session, t.get(row, 'design')) : '';
+}
+
 /** Names of rows of the monster tables (FieldContext.rowName for the tables both archives refer to). */
 export function monsterRowName(session: HonoluluSession, table: string, row: number): string | undefined {
   switch (table) {
     case DESIGN_FILE: return designName(session, row) || undefined;
-    case BATTLE_FILE: {
-      const t = battleRows(session);
-      return row > 0 && row < t.rows ? designName(session, t.get(row, 'design')) || undefined : undefined;
-    }
+    case BATTLE_FILE: return monsterName(session, row) || undefined;
     case SKILL_FILE: return attackName(session, row) || undefined;
   }
   return undefined;
@@ -115,7 +121,8 @@ export function honoluluMonsterModel(session: HonoluluSession, design: number): 
   if (!model) return null;
   return {
     key: `honolulu-monster/${hex8(model)}/${hex8(texture)}`,
-    load: async () => ({ set: await loadComposite(session, HONOLULU_MONSTER_MODELS, model, texture, 'honolulu'), hash: model }),
+    // 初代 draws the lower render priority first (the eyes over the bodies), not RPG2's order
+    load: async () => ({ set: lowerPriorityFirst(await loadComposite(session, HONOLULU_MONSTER_MODELS, model, texture, 'honolulu')), hash: model }),
   };
 }
 

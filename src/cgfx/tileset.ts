@@ -68,6 +68,16 @@ export function buildObjects(archive: Uint8Array, entries: number[]): Map<number
 }
 
 /**
+ * The set with the draw order of its meshes reversed (a copy). The CGFX reader orders meshes as RPG2 draws them, the
+ * higher render priority first (cgfx.ts CgfxMesh.drawOrder); 初代 draws the lower one first, like the H3D games: its
+ * bodies have priority 0 and its eyes (no depth writes) 1〜20, so in RPG2's order the bodies covered the eyes.
+ */
+export function lowerPriorityFirst(set: TilesetModels): TilesetModels {
+  const models = new Map([...set.models].map(([h, m]): [number, CgfxModel] => [h, { ...m, meshes: m.meshes.map((me) => ({ ...me, drawOrder: 255 - me.drawOrder })) }]));
+  return { ...set, models };
+}
+
+/**
  * A model bcres combined with a texture bcres of the same archive (monsters: MonsterDesign w4 = model with
  * its animations, w5 = textures of the colour variant, which win by name). texture 0 = the model's own.
  */

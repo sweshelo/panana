@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { findByName, parseArchive } from '../src/archive/gsarc';
 import { GsTable } from '../src/archive/gstable';
-import { buildComposite } from '../src/cgfx/tileset';
+import { buildComposite, lowerPriorityFirst } from '../src/cgfx/tileset';
 import { readField, writeField } from '../src/game/tabledef';
 import { HonoluluMonsterPage } from '../src/honolulu/MonsterPage';
 import {
@@ -63,6 +63,16 @@ describe.skipIf(!hasHonolulu)('初代の monster book (ROM)', () => {
     expect(groups.get(4)?.fixed).toContain(1);
   });
 
+  test('初代 draws the lower render priority first: the eyes (no depth writes) after the bodies', async () => {
+    const arc = parseArchive(await session.dump.readRomfs(HONOLULU_MONSTER_MODELS));
+    const d = designRows(session);
+    // ぶたばなウサギ: body priority 0, eyes 3
+    const set = lowerPriorityFirst(buildComposite(arc, d.get(4, 'model'), d.get(4, 'texture')));
+    const model = [...set.models.values()][0]!;
+    const order = (re: RegExp): number => model.meshes.find((m) => re.test(model.materials[m.material]!.name))!.drawOrder;
+    expect(order(/_eye$/)).toBeGreaterThan(order(/_body$/));
+  });
+
   test('every look has a model in 470D2848 that converts with its motions', async () => {
     const arc = parseArchive(await session.dump.readRomfs(HONOLULU_MONSTER_MODELS));
     const d = designRows(session);
@@ -93,7 +103,11 @@ describe.skipIf(!hasHonolulu)('初代の monster book (ROM)', () => {
     expect(html).toContain('まおう');
     expect(html).toContain('次の形態');
     expect(html).toContain('href="#/monsters/23"');
-    expect(html).toContain('ドロップ');
+    // the shared parts: drop and skill slots, the resistance charts
+    expect(html).toContain('drop-slots');
+    expect(html).toContain('skill-slots');
+    expect(html).toContain('ダークブロー');
+    expect(html).toContain('radar-box');
   });
 
   test('edits of the stats and of the name go into the master and 2713402F; reverted, the export is empty', async () => {

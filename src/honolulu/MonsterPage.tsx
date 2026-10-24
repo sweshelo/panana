@@ -1,7 +1,8 @@
 // 初代's monster book (#/monsters/<monsterBattleParameter の行>): the 110 monsters with their photos, stats, drops,
 // skills, forms and the groups that hold them (naauao honolulu/monsters.md). The look (name and model) is monsterData's
-// row in 2713402F, shared by the forms of a monster. The fields whose meaning is known are edited; the others (the
-// resistances, the flags) are shown by their definitions. Where the groups appear is not known yet (naauao#47).
+// row in 2713402F, shared by the forms of a monster. The drops, skills, forms and resistances use the parts of the other
+// games' books (ui/MonsterSlots); the flags are shown by their definitions. Where the groups appear is not known yet
+// (naauao#47).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fieldRange } from '../game/tabledef';
 import type { TableRows } from '../game/tablerows';
@@ -13,17 +14,21 @@ import { MessageEditor } from '../ui/message';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
 import { MonsterList } from '../ui/MonsterList';
-import { Photo } from '../ui/Photo';
+import { BoardSlot, DropSlots, Heading, moveTo, ResistCharts, SkillSlots } from '../ui/MonsterSlots';
 import { RowFields } from '../ui/RowFields';
-import { honoluluItemHref, useHonoluluRevision } from './ItemPage';
-import { honoluluItems } from './items';
+import { useHonoluluRevision } from './ItemPage';
 import {
-  attackName, battleRows, designName, designRows, DROP_SLOTS, FIX_GROUP_FILE, GROUP_FILE, groupMembers, honoluluMonsterModel, honoluluMonsters,
-  monsterChanged, monsterGroups, previousForms, revertMonster, sameDesign, SKILL_SLOTS, skillRows, type HonoluluMonster, type MonsterGroups,
+  attackName, battleRows, designName, designRows, DROP_SLOTS, FIX_GROUP_FILE, GROUP_FILE, groupMembers, honoluluMonsterHref, honoluluMonsterModel,
+  honoluluMonsters, monsterChanged, monsterGroups, monsterName, previousForms, revertMonster, sameDesign, SKILL_SLOTS, skillRows, type HonoluluMonster,
+  type MonsterGroups,
 } from './monsters';
+import {
+  honoluluItemEntry, HonoluluItemPicker, honoluluMonsterEntry, honoluluMonsterIcon, HonoluluMonsterPicker, honoluluSkillEntry, HonoluluSkillPicker,
+  honoluluSkillSub,
+} from './pickers';
 import type { HonoluluSession } from './session';
 
-export const honoluluMonsterHref = (row: number): string => `#/monsters/${row}`;
+export { honoluluMonsterHref };
 
 /** The fields of one row of a table, for the shared inputs (ui/FieldEdit). */
 const access = (rows: TableRows, row: number): FieldAccess => ({
@@ -62,7 +67,7 @@ export function HonoluluMonsterPage({ session, arg }: { session: HonoluluSession
     <div className="book">
       <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
         options={[['all', 'すべて'], ['forms', '変身する・変身後'], ['grouped', '群れにいる'], ['alone', '群れにいない'], ['changed', '変更したもの']]}
-        rows={rows.map((x) => ({ row: x.row, icon: <Photo model={honoluluMonsterModel(session, x.design)} />, name: x.name, level: x.level, hp: x.hp.max, count: groupCount(x.row), changed: monsterChanged(session, x.row) }))}
+        rows={rows.map((x) => ({ row: x.row, icon: honoluluMonsterIcon(session, x.row), name: x.name, level: x.level, hp: x.hp.max, count: groupCount(x.row), changed: monsterChanged(session, x.row) }))}
         total={monsters.length} selected={selected} href={honoluluMonsterHref} countHead="群れ" listRef={list} />
       <div className="book-detail" ref={detail}>
         {m && <MonsterDetail key={m.row} session={session} m={m} groups={groups.get(m.row)} />}
@@ -99,12 +104,7 @@ function MonsterDetail({ session, m, groups }: { session: HonoluluSession; m: Ho
   const nameId = d.get(m.design, 'name');
   const texts = session.messages.texts;
   const sharers = sameDesign(session, m.row);
-  const items = useMemo(() => honoluluItems(session), [session]);
-  const itemOptions: [number, string][] = [[0, 'なし'], ...items.map((it): [number, string] => [it.row, `${it.row}: ${it.name}`])];
-  const skillOptions: [number, string][] = [[0, '空き'], ...Array.from({ length: skillRows(session).rows - 1 }, (_, i): [number, string] => [i + 1, `${i + 1}: ${attackName(session, i + 1)}`])];
   const designOptions: [number, string][] = Array.from({ length: d.rows - 1 }, (_, i): [number, string] => [i + 1, `${i + 1}: ${designName(session, i + 1)}`]);
-  const monsterOptions: [number, string][] = [[0, 'なし'], ...Array.from({ length: t.rows - 1 }, (_, i): [number, string] => [i + 1, `${i + 1}: ${designName(session, t.get(i + 1, 'design'))}`])];
-  const prev = previousForms(session, m.row);
   const skills = [...new Set(SKILL_SLOTS.map((k) => t.get(m.row, k)).filter((s) => s))];
   return (
     <>
@@ -141,44 +141,13 @@ function MonsterDetail({ session, m, groups }: { session: HonoluluSession; m: Ho
         </div>
         <MonsterModel model={model} name={m.name} />
       </div>
-      <div className="book-cols monster-cols honolulu-monster-cols">
-        <section>
-          <h3 className="with-info">ドロップ<InfoTip text={DROP_INFO} /></h3>
-          <table className="enc-table">
-            <tbody>
-              {DROP_SLOTS.map(([item, rate], k) => (
-                <tr key={item}>
-                  <th>{`枠 ${k + 1}`}</th>
-                  <td><FieldChoice f={f} k={item} edited={edited} options={itemOptions} /></td>
-                  <td style={{ width: '6em' }}><FieldChoice f={f} k={rate} edited={edited} labels={(v) => `段階 ${v}`} /></td>
-                  <td style={{ width: '3em' }}>{t.get(m.row, item) > 0 && <a href={honoluluItemHref(t.get(m.row, item))}>図鑑</a>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-        <section>
-          <h3 className="with-info">ワザ<InfoTip text="monsterAttackSkill の行。名前は戦闘メッセージから「〈モンスター〉の」「〈モンスター〉は」を除いたものです。" /></h3>
-          <table className="enc-table">
-            <tbody>
-              {SKILL_SLOTS.map((k, i) => (
-                <tr key={k}><th>{`${i + 1}`}</th><td><FieldChoice f={f} k={k} edited={edited} options={skillOptions} /></td></tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-        <section>
-          <h3>変身</h3>
-          <table className="enc-table">
-            <tbody>
-              <tr><th>次の形態</th><td><FieldChoice f={f} k="next" edited={edited} options={monsterOptions} /></td>
-                <td style={{ width: '3em' }}>{m.next > 0 && <a href={honoluluMonsterHref(m.next)}>{`#${m.next}`}</a>}</td></tr>
-              <tr><th>前の形態</th><td colSpan={2}>{prev.length ? prev.map((r, i) => <span key={r}>{i ? ' ' : ''}<a href={honoluluMonsterHref(r)}>{`#${r} ${designName(session, t.get(r, 'design'))}`}</a></span>) : <span className="muted">なし</span>}</td></tr>
-              {t.get(m.row, 'line') > 0 && <tr><th>セリフ</th><td colSpan={2} className="book-desc">{texts.preview(t.get(m.row, 'line'))}</td></tr>}
-            </tbody>
-          </table>
-        </section>
+      <div className="book-cols monster-cols">
+        <DropEditor session={session} f={f} edited={edited} />
+        <SkillEditor session={session} f={f} edited={edited} />
+        <FormEditor session={session} row={m.row} f={f} edited={edited} />
       </div>
+      <Heading title="耐性" info={RESIST_INFO} />
+      <ResistEditor f={f} edited={edited} />
       <h3 className="with-info">{`群れ (${(groups?.groups.length ?? 0) + (groups?.fixed.length ?? 0)})`}<InfoTip text="群れがどのダンジョンの階に出るかは、階の定義ファイルの解析 (naauao#47) のあとで足します。" /></h3>
       <div className="book-where">
         {!groups && <div className="muted">どの群れにもいません (イベント戦など)</div>}
@@ -200,5 +169,116 @@ function MonsterDetail({ session, m, groups }: { session: HonoluluSession; m: Ho
         </details>
       ))}
     </>
+  );
+}
+
+interface EditProps {
+  session: HonoluluSession;
+  f: FieldAccess;
+  edited: () => void;
+}
+
+/** The 2 drop slots: the item's board (itemData's row, 0 = none) and the rate's step. */
+function DropEditor({ session, f, edited }: EditProps): ReactNode {
+  return (
+    <DropSlots
+      info={DROP_INFO}
+      slots={DROP_SLOTS.map(([item, rate]) => ({
+        item: f.get(item),
+        original: f.original(item),
+        sub: `率の段階 ${f.get(rate)}`,
+        rate: <FieldChoice f={f} k={rate} edited={edited} labels={(v) => `段階 ${v}`} />,
+      }))}
+      entry={(row) => honoluluItemEntry(session, row)}
+      setItem={(k, row) => { f.set(DROP_SLOTS[k]![0], row); edited(); }}
+      picker={(k, current, pick, close) => <HonoluluItemPicker session={session} title={`ドロップ ${k + 1} のアイテムを選ぶ`} current={current} onPick={pick} onClose={close} />}
+    />
+  );
+}
+
+const SKILL_INFO = [
+  '5 枠 (+0x20〜+0x29、monsterAttackSkill の行)。ドラッグで並べ替え、× で外します (後ろの枠が詰まります)。',
+  '名前は戦闘メッセージから「〈モンスター〉の」「〈モンスター〉は」を除いたもの。どの枠を選ぶか (AI) は未解析です。',
+].join('\n');
+
+/** The 5 skill slots, packed to the front (0 = empty). */
+function SkillEditor({ session, f, edited }: EditProps): ReactNode {
+  const now = SKILL_SLOTS.map((k) => f.get(k)).filter((s) => s);
+  const set = (next: number[]): void => {
+    SKILL_SLOTS.forEach((k, i) => f.set(k, next[i] ?? 0));
+    edited();
+  };
+  return (
+    <section>
+      <Heading title="ワザ" info={SKILL_INFO} />
+      <SkillSlots
+        slots={now.map((s, i) => ({ action: s, entry: honoluluSkillEntry(session, s), sub: honoluluSkillSub(session, s), edited: f.original(SKILL_SLOTS[i]!) !== s }))}
+        max={SKILL_SLOTS.length}
+        move={(from, to) => set(moveTo(now, from, to))}
+        pick={(i, row) => set(i < 0 ? [...now, row] : now.map((s, j) => (j === i ? row : s)))}
+        remove={(i) => set(now.filter((_, j) => j !== i))}
+        picker={(current, pick, close) => <HonoluluSkillPicker session={session} current={current} onPick={pick} onClose={close} />}
+        empty="ワザがありません。"
+      />
+    </section>
+  );
+}
+
+const FORM_INFO = [
+  '次の形態 (+0x33、monsterBattleParameter の行、0 = なし)。この行の敵を倒すと次の形態の行になります (例: まおう 22 → 23)。',
+  '最初の形態の経験値・お金・ドロップは 0 で、最後の形態の行が持ちます。セリフ (+0x1E) はこの行の形態になったときに出ます。',
+].join('\n');
+
+/** The next form as a board picked from the monsters, the forms before this one and the line said on changing. */
+function FormEditor({ session, row, f, edited }: EditProps & { row: number }): ReactNode {
+  const [picking, setPicking] = useState(false);
+  const next = f.get('next');
+  const prev = previousForms(session, row);
+  const line = f.get('line');
+  return (
+    <section>
+      <Heading title="変身" info={FORM_INFO} />
+      <table className="enc-table ai-fields">
+        <tbody>
+          <tr>
+            <td>次の形態</td>
+            <td>
+              <BoardSlot entry={next ? honoluluMonsterEntry(session, next) : null} id={next || undefined} edited={next !== f.original('next')}
+                title="次の形態を選び直す" emptyLabel="＋ 次の形態" onPick={() => setPicking(true)} onClear={() => { f.set('next', 0); edited(); }} />
+            </td>
+          </tr>
+          {prev.map((r) => (
+            <tr key={r}><td>前の形態</td><td><a href={honoluluMonsterHref(r)}>{`${monsterName(session, r)} (#${r})`}</a></td></tr>
+          ))}
+          {line > 0 && <tr><td>セリフ</td><td className="book-desc">{session.messages.texts.preview(line)}</td></tr>}
+        </tbody>
+      </table>
+      {picking && (
+        <HonoluluMonsterPicker session={session} title="次の形態を選ぶ" current={next} onClose={() => setPicking(false)}
+          onPick={(r) => { setPicking(false); f.set('next', r); edited(); }} />
+      )}
+    </section>
+  );
+}
+
+const RESIST_INFO = [
+  '読み方はコードで確かめていますが、どの軸が何の耐性かは未確認です (naauao honolulu/monsters.md §2)。',
+  '4 bit × 6 (+0x2D〜+0x2F、−8〜+7): 属性の耐性と推定。戦闘の物体 +0xD8〜 に入ります。',
+  '2 bit × 11 (+0x30〜+0x32、0〜3): 状態異常の耐性と推定。値で 4 段階の表 (*0x31F644 +0x4C) を引きます。',
+].join('\n');
+
+const RESIST4 = Array.from({ length: 6 }, (_, k) => `resist${k}`);
+const RESIST2 = Array.from({ length: 11 }, (_, k) => `ailment${k}`);
+
+/** The resistances as the shared charts (one per kind: their ranges differ), with generic axis names. */
+function ResistEditor({ f, edited }: Omit<EditProps, 'session'>): ReactNode {
+  const chart = (label: string, keys: string[]) => [{ label, axes: keys.map((k, i) => ({ name: `${i + 1}`, value: f.get(k), original: f.original(k), title: k })) }];
+  return (
+    <div className="resist-pair">
+      <ResistCharts charts={chart('耐性 A (4 bit、属性と推定)', RESIST4)} min={-8} max={7} rings={[-8, -4, 0, 4, 7]} effect={() => ''}
+        onChange={(_, j, v) => { f.set(RESIST4[j]!, v); edited(); }} />
+      <ResistCharts charts={chart('耐性 B (2 bit、状態異常と推定)', RESIST2)} min={0} max={3} rings={[0, 1, 2, 3]} effect={() => ''}
+        onChange={(_, j, v) => { f.set(RESIST2[j]!, v); edited(); }} />
+    </div>
   );
 }
