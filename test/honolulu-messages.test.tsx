@@ -6,6 +6,7 @@ import { renderToString } from 'react-dom/server';
 import { parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { Gmsg } from '../src/game/gmsg';
 import { HONOLULU_SYNTAX, KAHARA_SYNTAX, parseBody, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
+import { HonoluluMessagePage } from '../src/honolulu/MessagePage';
 import { HonoluluSession } from '../src/honolulu/session';
 import { openImage } from '../src/rom/dump';
 import { MessagePreview } from '../src/ui/message';
@@ -113,5 +114,20 @@ describe.skipIf(!hasHonolulu)('初代の messages (ROM)', () => {
       texts.revert(3305);
     }
     expect(messages.changedArchives().size).toBe(0);
+  });
+
+  test('the page: the list, the file filter and the selected message with ruby and its kind', () => {
+    const html = renderToString(<HonoluluMessagePage session={session} arg="0x227" />);
+    expect(html).toContain('メッセージ 551');
+    expect(html).toContain('MessageSystemCommon_JP.gsmb (56562135)');
+    expect(html).toContain('きばコウモリ');
+    expect(html).toContain('5359 / 5359 件');
+    expect(html).toContain('MessageNagomi (3348〜)');
+    // the unnamed file of 0901BA07 is its own choice
+    expect(html).toContain('エントリ 2 (3300〜)');
+    const talk = renderToString(<HonoluluMessagePage session={session} arg="140" />);
+    expect(talk).toContain('<ruby>個<rp>(</rp><rt>こ</rt>');
+    expect(talk).toContain('声: 片言 (店員など)');
+    expect(talk).toContain('〈アイテム〉');
   });
 });
