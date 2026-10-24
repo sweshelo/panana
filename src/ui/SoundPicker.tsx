@@ -53,7 +53,7 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
   const [filter, setFilter] = useState<KindFilter>(kind);
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
-  useEffect(() => grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }), [filter]);
+  useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [filter]);
   // The preview stops with the dialog.
   useEffect(() => () => soundPlayer.stop(), []);
   const q = query.trim().toUpperCase();

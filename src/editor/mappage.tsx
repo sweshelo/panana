@@ -17,7 +17,8 @@ export type MapViewMode = 'split' | '2d' | '3d';
 /** What the shared panes need of a game's map view (oahu/mapview.ts OahuMapView, lanai/mapview.ts LanaiMapView). */
 export interface MapPageView {
   readonly grid: GridCanvas;
-  readonly scene: MapScene;
+  /** The 3D view; none on a page with the 2D view only (初代's). */
+  readonly scene?: MapScene;
   readonly ctl: Controller;
   /** Emitted when what the panes show changes (models loaded, layers). */
   readonly signal: Signal;
@@ -91,7 +92,7 @@ export function MapHeaderControls({ st, view, open, mode, setMode, showModes, on
         </span>
       )}
       {view && <button onClick={() => view.fit()}>全体を表示</button>}
-      {view && <button onClick={() => view.scene.topView()}>真上から</button>}
+      {view?.scene && <button onClick={() => view.scene!.topView()}>真上から</button>}
       {open && onRevert && <button onClick={onRevert}>このマップの変更を元に戻す</button>}
     </>
   );
@@ -125,11 +126,13 @@ export function LayerBox({ view, label, checked, set, color }: { view: MapPageVi
 }
 
 /** What the views show: the tiles, section 6's cells and the point sections (with their counts), then `children`. */
-export function MapLayers({ st, view, sections, layouts, children }: {
+export function MapLayers({ st, view, sections, layouts, room = true, children }: {
   st: MapEditState;
   view: MapPageView;
   sections: readonly number[];
   layouts: Record<number, RecordLayout>;
+  /** Whether the maps have section 6's cells (初代's have no such section). */
+  room?: boolean;
   children?: ReactNode;
 }): ReactNode {
   useSignal(view.signal);
@@ -140,7 +143,7 @@ export function MapLayers({ st, view, sections, layouts, children }: {
     <div className="layers">
       <h3>表示</h3>
       <LayerBox view={view} label={`タイル ${doc.tiles.length}`} checked={layers.tiles} set={(v) => (layers.tiles = v)} />
-      <LayerBox view={view} label={`区画 6 のセル ${doc.cells6.length}`} checked={layers.room} set={(v) => (layers.room = v)} color="rgba(80,200,255,0.8)" />
+      {room && <LayerBox view={view} label={`区画 6 のセル ${doc.cells6.length}`} checked={layers.room} set={(v) => (layers.room = v)} color="rgba(80,200,255,0.8)" />}
       {sections.map((k) => (
         <LayerBox key={k} view={view} label={`${layouts[k]!.label} ${doc.recs[k]?.length ?? 0}`} checked={!!layers.sections[k]} set={(v) => (layers.sections[k] = v)} color={SECTION_COLORS[k]} />
       ))}

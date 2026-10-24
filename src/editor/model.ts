@@ -79,6 +79,9 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   revision = 0;
   private listeners: Listener[] = [];
 
+  /** A view-only map (初代's map page): edit, touch, editTables and checkpoint do nothing, so dragging in the views moves nothing. */
+  readonly readOnly: boolean = false;
+
   /** Record layouts of the sections, by RPG2's section numbers. */
   abstract readonly layouts: Record<number, RecordLayout>;
   /** Sections with positioned records, drawn last first. */
@@ -114,7 +117,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   /** Record an undo point, then mutate the current document. */
   edit(f: (doc: MapDoc) => void): void {
     const doc = this.current;
-    if (!doc) return;
+    if (!doc || this.readOnly) return;
     this.checkpoint();
     f(doc);
     this.emit('doc');
@@ -126,6 +129,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
 
   /** Change the shared tables (events, treasure, messages …) with an undo point on the current map. */
   editTables(f: () => void): void {
+    if (this.readOnly) return;
     this.checkpoint();
     f();
     this.emit('doc');
@@ -134,7 +138,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   /** Push an undo snapshot (for drags: call once at the start, then mutate with `touch`). */
   checkpoint(): void {
     const doc = this.current;
-    if (!doc) return;
+    if (!doc || this.readOnly) return;
     const u = this.undoStacks.get(doc.hash) ?? [];
     u.push(this.snapshot(doc));
     if (u.length > 200) u.shift();
@@ -143,7 +147,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   }
 
   touch(f: (doc: MapDoc) => void): void {
-    if (!this.current) return;
+    if (!this.current || this.readOnly) return;
     f(this.current);
     this.emit('doc');
   }

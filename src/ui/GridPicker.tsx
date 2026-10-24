@@ -54,7 +54,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('');
   const grid = useRef<HTMLDivElement>(null);
-  useEffect(() => grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }), []);
+  useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, []);
   const q = query.trim();
   const c = cat ? Number(cat) : 0;
   const match = (e: GridEntry): boolean => (!c || e.category === c) && (!q || e.name.includes(q) || String(e.id) === q);
