@@ -80,6 +80,29 @@ export const HONOLULU_DUNGEON_DATA: TableDef = {
   fields: [
     f('name', 0x10, 'u16', '名前', { ref: msg }),
     f('desc', 0x12, 'u16', '説明', { ref: msg, note: '推奨レベル' }),
+    f('mapData', 0x16, 'u8', 'mapData の行', { ref: row('mapData.bin'), note: '階の定義の頭 +0x14 が 0 の階のタイルセット (naauao honolulu/map.md §3.3)' }),
+  ],
+};
+
+/** mapData.bin (master エントリ 33): 15 × 0xC, a floor's tileset (naauao honolulu/map.md §3.3). */
+export const HONOLULU_MAP_DATA: TableDef = {
+  file: 'mapData.bin',
+  rowSize: 0xc,
+  fields: [
+    f('tileset', 0x00, 'u8', 'タイルセット', { note: 'mapParts のモデルの組 (0〜7)' }),
+    f('resource', 0x06, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
+    f('sound', 0x07, 'u8', '+0x07', { unsure: true, note: '音 (FUN_0020C2A0 に渡す) と推定' }),
+  ],
+};
+
+/** mapParts.bin (master エントリ 36): 48 × 0x114, the paths and rooms of the tiles (naauao honolulu/map.md §3.3). */
+export const HONOLULU_MAP_PARTS: TableDef = {
+  file: 'mapParts.bin',
+  rowSize: 0x114,
+  fields: [
+    f('shape', 0x08, 'u8', '形の番号', { note: '向きだけ違う行が同じ値' }),
+    f('edges', 0x10c, 'u8', '辺のビット', { hex: true, unsure: true, note: '上位 4 bit が部屋の壁 (0x40 上・0x80 右・0x20 下・0x10 左)、下位が通路の開いた辺と推定' }),
+    f('angle', 0x110, 's16', '回転 (度)', { note: 'Y 軸の回転。0・90・−90・180' }),
   ],
 };
 
@@ -110,6 +133,7 @@ export const HONOLULU_MAP_OBJECT: TableDef = {
   fields: [
     f('archive', 0x00, 'u32', 'アーカイブ', { hex: true, note: 'モデルを入れたルートのアーカイブ (15BE1AD4・3A309010・FB501D1A)' }),
     f('model', 0x04, 'u32', 'モデル', { ref: hash }),
+    f('scale', 0x14, 'f32', '+0x14', { unsure: true, note: '拡大率と推定 (多くは 1)' }),
   ],
 };
 
@@ -117,7 +141,21 @@ export const HONOLULU_MAP_OBJECT: TableDef = {
 export const HONOLULU_MAP_RESOURCE: TableDef = {
   file: 'mapResource.bin',
   rowSize: 0x14,
-  fields: [f('tiles', 0x00, 'u32', 'タイルのモデルのアーカイブ', { hex: true })],
+  fields: [
+    f('tiles', 0x00, 'u32', 'タイルのモデルのアーカイブ', { hex: true }),
+    f('texture', 0x04, 'u32', 'テクスチャ', { ref: hash, note: '469B3DC6 のエントリ' }),
+    f('extra', 0x08, 'u32', '+0x08', { ref: hash, unsure: true, note: 'タイルのモデルのアーカイブのエントリ (用途は未確認)' }),
+  ],
+};
+
+/** designedMap.bin (master エントリ 38): 83 × 0x20, the designed rooms (naauao honolulu/map.md §3.3). */
+export const HONOLULU_DESIGNED_MAP: TableDef = {
+  file: 'designedMap.bin',
+  rowSize: 0x20,
+  fields: [
+    f('model', 0x04, 'u32', '部屋のモデル', { ref: hash, note: 'AD853AFD のエントリ。0 = 頭の行の後ろに置く物の行' }),
+    f('resource', 0x08, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
+  ],
 };
 
 /** monsterData.bin (2713402F): 92 × 0x2C, the looks of the monsters (naauao honolulu/analysis.md §3.1, monsters.md §2.1). */
@@ -246,8 +284,11 @@ export const HONOLULU_TABLES: Record<string, TableDef> = Object.fromEntries(
     HONOLULU_DUNGEON_DATA,
     HONOLULU_SKILL_DATA,
     HONOLULU_SCENARIO,
+    HONOLULU_MAP_DATA,
+    HONOLULU_MAP_PARTS,
     HONOLULU_MAP_OBJECT,
     HONOLULU_MAP_RESOURCE,
+    HONOLULU_DESIGNED_MAP,
     HONOLULU_MONSTER_DATA,
     HONOLULU_MONSTER_BATTLE_PARAMETER,
     HONOLULU_MONSTER_ATTACK_SKILL,

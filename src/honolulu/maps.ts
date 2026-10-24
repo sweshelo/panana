@@ -4,12 +4,15 @@
 // facing N / S / E / W, named by the table of code.bin 0x2FF6D8. A dungeon (dungeonData +0x04) names the A90C8038
 // entry of its floor definitions ("261" files, map.md §4): a record per floor with its map, its encounters
 // (monsterGroup key), its default chest contents (itemGroup key) and arrays of exits, people, chests and placed groups.
+// The 3D view's models (map.md §3.2, §3.3): a tile's kind names a part (A90C8038's entry 63165400), the part a mapParts
+// row and variant, and the floor's mapData row the tileset (which of mapParts' 8 sets of models) and the archive; a
+// prop's kind is a mapObject row.
 import { findByName, findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from '../game/mapdb';
 import { loadDoc, type MapDoc, type MapFormat, type RecordLayout, type RotCodec, type TileLayout } from '../game/sections';
 import type { Dump } from '../rom/dump';
-import { s16, u16, u32 } from '../util/bytes';
+import { hex8, s16, u16, u32 } from '../util/bytes';
 import type { HonoluluMaster } from './master';
 
 /** The map → second section table of code.bin (map.md §2): 98 × {u32 map, u32 section}; FUN_002A6xxx reads 98. */
@@ -29,6 +32,54 @@ export const RANDOM_POS = -9999;
  * tile, against 424 as they are (data; the map's own second section is not moved: 694 of 695 are on a tile).
  */
 export const FLOOR_CELL_OFFSET = 1;
+
+/** The names of the tiles' parts (map.md §3.3): u32 count, then {char name[8], u8 × 4 edges}; a tile's kind is the index. */
+const PARTS_ENTRY = 0x63165400;
+/** The textures of the tiles (mapResource +0x04 is an entry of it). */
+export const HONOLULU_TILE_TEXTURES = '469B3DC6';
+/** The rooms of designedMap (+0x04 is an entry of it). */
+export const HONOLULU_DESIGNED_ROOMS = 'AD853AFD';
+
+/** The names of the part file: "path_00", "room28a", …. */
+export function parsePartNames(b: Uint8Array): string[] {
+  const n = b.length >= 4 ? u32(b, 0) : 0;
+  const out: string[] = [];
+  for (let i = 0; i < n && 4 + 12 * (i + 1) <= b.length; i++) {
+    let name = '';
+    for (let k = 0; k < 8 && b[4 + 12 * i + k]; k++) name += String.fromCharCode(b[4 + 12 * i + k]!);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
+ * The mapParts row and variant a part's name places (FUN_0016CB70): "path_NN" is row 1 + NN, "room_NN" row 16 + NN;
+ * a name without the "_" ("room28a") is the same part, its letter a〜g the variant 1〜7 (0 for the "_" names).
+ */
+export function partOfName(name: string): { row: number; variant: number } | null {
+  const m = /^(path|room)(_?)(\d\d)([a-g]?)$/.exec(name);
+  if (!m) return null;
+  const n = Number(m[3]);
+  return { row: (m[1] === 'path' ? 1 : 16) + n, variant: !m[2] && m[4] ? m[4].charCodeAt(0) - 0x60 : 0 };
+}
+
+/** Where a floor's tile models come from (map.md §3.3). */
+export interface HonoluluTileSource {
+  /** mapData row: the floor's header +0x14 key, else dungeonData +0x16 (-1: no floor; row 1 is used, row 0 is empty). */
+  mapData: number;
+  /** Which of mapParts' 8 sets of models (mapData +0x00). */
+  tileset: number;
+  /** mapResource row (mapData +0x06). */
+  resource: number;
+  /** The archive of the tile models (mapResource +0x00). */
+  modelArchive: string;
+  /** The textures' entry in 469B3DC6 (mapResource +0x04). */
+  textureEntry: number;
+  /** The designedMap row whose room model the game draws instead of the tiles (the floor's header +0x4C key; 0 = none). */
+  designed: number;
+  /** That row's model (an entry of AD853AFD). */
+  designedModel: number;
+}
 
 /** The facing letters of the records: 'N' / 'E' / 'S' / 'W' as turns 0..3 (north up in the 2D view; estimated). */
 const FACING_BYTES = [0x4e, 0x45, 0x53, 0x57] as const;
@@ -103,6 +154,10 @@ export interface HonoluluFloor {
   itemGroup: number;
   /** +0x18 s16: -1 = B1F, 1 = 1F. */
   floor: number;
+  /** +0x14: mapData key (the tileset; 0 = the dungeon's, dungeonData +0x16). */
+  mapDataKey: number;
+  /** +0x4C: designedMap key (a room drawn as one model; 0 = none). */
+  designedKey: number;
   /** Array 0 (20 B): {u32 exit id, u32 destination record id, u32 destination exit id, 4 × u8, s16 x, s16 y}. */
   exits: FloorPoint[];
   /** Array 3 (12 B): {u32 itemGroup key, u8 count min, u8 count max (excluded), u8 room (generated floors; 0xFF = any), 0, s16 x, s16 y}. */
@@ -141,6 +196,8 @@ export class HonoluluMaps {
     /** The floor definition files by their A90C8038 entry. */
     floorFiles: Map<number, Uint8Array>,
     readonly master: HonoluluMaster,
+    /** The parts' names (A90C8038's entry 63165400), by tile kind. */
+    readonly parts: string[] = [],
   ) {
     const sections = new Map<number, number>();
     for (let i = 0; i < SECTION_PAIRS; i++) {
@@ -180,12 +237,14 @@ export class HonoluluMaps {
     const csv = findByName(archive, 'csvMap.bin');
     if (!db || !csv) throw new Error(`${MAPDB_ARCHIVE} にマップ DB / csvMap がありません`);
     const floors = new Map<number, Uint8Array>();
+    let parts: string[] = [];
     for (const e of archive.entries) {
       if (e.index === db.index || e.index === csv.entry.index) continue;
       const { body } = unpackEntry(archive, e);
       if (body.length >= 8 && u32(body, 0) === FLOORS_MAGIC) floors.set(e.hash, body);
+      else if (e.hash === PARTS_ENTRY) parts = parsePartNames(body);
     }
-    return new HonoluluMaps(new MapDb(unpackEntry(archive, db).body), new GsTable(csv.body), dump.code, floors, master);
+    return new HonoluluMaps(new MapDb(unpackEntry(archive, db).body), new GsTable(csv.body), dump.code, floors, master, parts);
   }
 
   map(hash: number): HonoluluMapInfo | undefined {
@@ -219,6 +278,57 @@ export class HonoluluMaps {
     put(HONOLULU_NPC_SECTION, floor.npcs);
     put(HONOLULU_MONSTER_SECTION, floor.monsters);
     return d;
+  }
+
+  /** The tile models of a floor of the map (null: a map no floor uses; shown with mapData row 1). */
+  tileSource(floor: HonoluluFloor | null): HonoluluTileSource {
+    const m = this.master;
+    const mapData = !floor ? -1 : floor.mapDataKey ? (m.table('mapData.bin').hashIndex().get(floor.mapDataKey) ?? -1) : m.rows('dungeonData.bin').get(floor.dungeon, 'mapData');
+    const md = m.rows('mapData.bin');
+    const mdRow = mapData > 0 && mapData < md.rows ? mapData : 1;
+    const resource = md.get(mdRow, 'resource');
+    const res = m.rows('mapResource.bin');
+    const ok = resource > 0 && resource < res.rows;
+    const designed = floor?.designedKey ? (m.table('designedMap.bin').hashIndex().get(floor.designedKey) ?? 0) : 0;
+    return {
+      mapData,
+      tileset: md.get(mdRow, 'tileset'),
+      resource,
+      modelArchive: ok ? hex8(res.get(resource, 'tiles')).toUpperCase() : '',
+      textureEntry: ok ? res.get(resource, 'texture') : 0,
+      designed,
+      designedModel: designed ? m.rows('designedMap.bin').get(designed, 'model') : 0,
+    };
+  }
+
+  /** The part of a tile kind (its name in the part file, its mapParts row and variant), or null. */
+  part(kind: number): { name: string; row: number; variant: number } | null {
+    const name = this.parts[kind];
+    const p = name ? partOfName(name) : null;
+    return p && p.row < this.master.table('mapParts.bin').rows ? { name: name!, ...p } : null;
+  }
+
+  /** The model of a tile kind in a tileset (an entry of the tile source's archive; 0 = none). */
+  partModel(kind: number, tileset: number): number {
+    const p = this.part(kind);
+    if (!p || tileset < 0 || tileset > 7) return 0;
+    return u32(this.master.table('mapParts.bin').row(p.row), 0x0c + tileset * 0x20 + p.variant * 4);
+  }
+
+  /** The turn of a tile kind's part about the Y axis, in degrees (mapParts +0x110). */
+  partAngle(kind: number): number {
+    const p = this.part(kind);
+    return p ? this.master.rows('mapParts.bin').get(p.row, 'angle') : 0;
+  }
+
+  /** The model of a prop (a second section kind: a mapObject row, map.md §3.2; estimated), or null. */
+  objectModel(kind: number): { archive: number; entry: number; scale: number } | null {
+    const t = this.master.rows('mapObject.bin');
+    if (kind <= 0 || kind >= t.rows) return null;
+    const archive = t.get(kind, 'archive'), entry = t.get(kind, 'model');
+    if (!archive || !entry) return null;
+    const scale = t.get(kind, 'scale');
+    return { archive, entry, scale: scale > 0 && scale < 10 ? scale : 1 };
   }
 
   dungeon(row: number): HonoluluDungeon | undefined {
@@ -283,7 +393,7 @@ export function parseFloors(file: Uint8Array, dungeon: number): HonoluluFloor[] 
     });
     const at = (xo: number) => (raw: Uint8Array): FloorPoint => ({ x: s16(raw, xo), y: s16(raw, xo + 2), raw });
     out.push({
-      dungeon, index, id: u32(h, 0), map: u32(h, 4), monsterGroup: u32(h, 8), itemGroup: u32(h, 0x0c), floor: s16(h, 0x18),
+      dungeon, index, id: u32(h, 0), map: u32(h, 4), monsterGroup: u32(h, 8), itemGroup: u32(h, 0x0c), floor: s16(h, 0x18), mapDataKey: u32(h, 0x14), designedKey: u32(h, 0x4c),
       exits: arrays[0]!.map(at(0x10)), npcs: arrays[1]!.map(at(8)), chests2: arrays[2]!.map(at(8)), chests: arrays[3]!.map(at(8)), monsters: arrays[7]!.map(at(8)), arrays,
     });
   }
