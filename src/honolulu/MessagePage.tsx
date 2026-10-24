@@ -7,7 +7,7 @@ import type { HonoluluSession } from './session';
 export function HonoluluMessagePage({ session, arg }: { session: HonoluluSession; arg: string | undefined }): ReactNode {
   const { messages } = session;
   return (
-    <MessageBook texts={messages.texts} files={messages.files} arg={arg} onEdit={() => session.saveNow()}
+    <MessageBook texts={messages.texts} files={messages.files} arg={arg} onEdit={() => session.edited()}
       placeholder="本文か ID (551、0x227) で検索"
       help={
         <>
