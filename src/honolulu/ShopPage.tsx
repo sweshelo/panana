@@ -2,7 +2,7 @@
 // with the other games (ui/ShopBook): the list picks a stage instead of a shop, and a stage shows when it starts (a
 // dungeon and its progress, editable), its stock as item boards (reordered, added, removed; the 目玉 bit and the new
 // marks the clerk shows) and the clerk's greetings. A stock that grows or shrinks moves the stages after it.
-import { useMemo, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { NumberInput, useEdits } from '../ui/book';
 import { GridPicker, type GridEntry } from '../ui/GridPicker';
 import { InfoTip } from '../ui/InfoTip';
@@ -43,17 +43,17 @@ export function HonoluluShopPage({ master, shop, arg, edited }: { master: Honolu
   const [, redraw] = useEdits();
   const itemRows = master.rows('itemData.bin');
   const dungeons = master.rows('dungeonData.bin');
-  // the items (their names, categories and prices are read once: the item book may change them later)
-  const items = useMemo(() => Array.from({ length: itemRows.rows }, (_, id): Item => ({
+  // the items as they are now (the item book may have changed their names, categories and prices)
+  const items = Array.from({ length: itemRows.rows }, (_, id): Item => ({
     id,
     name: master.message(itemRows.get(id, 'name')) ?? `#${id}`,
     category: itemRows.get(id, 'category'),
     price: itemRows.get(id, 'price'),
-  })), [master]);
+  }));
   const item = (id: number): Item | undefined => (id > 0 && id < items.length && itemRows.get(id, 'used') ? items[id] : undefined);
-  const entries = useMemo((): GridEntry[] => items.filter((it) => item(it.id) && it.category !== 6).map((it) => ({
+  const entries = (): GridEntry[] => items.filter((it) => item(it.id) && it.category !== 6).map((it) => ({
     id: it.id, name: it.name, icon: itemIcon(it, true), sub: `${it.price} G`, title: `#${it.id} ${HONOLULU_ITEM_CATEGORY[it.category] ?? ''}`, category: it.category,
-  })), [items]);
+  }));
   const dungeonName = (d: number): string => (d === 0 ? '最初' : d < dungeons.rows ? master.message(dungeons.get(d, 'name')) ?? `#${d}` : `#${d}`);
   const conditionText = (stage: number): string => {
     const c = shop.condition(stage);
@@ -92,7 +92,7 @@ export function HonoluluShopPage({ master, shop, arg, edited }: { master: Honolu
         { head: '新', className: 'num', cell: (r) => (s.id > 0 && shop.isNew(s.id, r.item) ? <span className="muted" title={NEW_HELP}>新</span> : '') },
       ]}
       setRows={setRows}
-      picker={(p) => <GridPicker title={p.title} entries={entries} categories={HONOLULU_ITEM_CATEGORY} onPick={p.onPick} onClose={p.onClose} />}
+      picker={(p) => <GridPicker title={p.title} entries={entries()} categories={HONOLULU_ITEM_CATEGORY} onPick={p.onPick} onClose={p.onClose} />}
       sub={(s) => conditionText(s.id)}
       info={(s) => {
         const featured = shop.rows(s.id).filter((r) => r.featured).length;

@@ -1,7 +1,10 @@
 // 電波人間のRPG (初代)'s shop (src/honolulu/shops.ts, naauao honolulu/shops.md): the 12 stages of shopItemGroup and their
 // runs of shopItemData, laid out again when a stock grows or shrinks. Needs the decrypted Base CIA (test/env.ts).
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { renderToString } from 'react-dom/server';
+import { HonoluluExportDialog } from '../src/honolulu/ExportDialog';
+import { HonoluluSession } from '../src/honolulu/session';
+import { HonoluluShopPage } from '../src/honolulu/ShopPage';
 import { HonoluluMaster } from '../src/honolulu/master';
 import { HONOLULU_SHOP_STAGES, HonoluluShop, honoluluShopProblems, honoluluShopRowBytes } from '../src/honolulu/shops';
 import { HONOLULU } from '../src/rom/titles';
@@ -127,5 +130,35 @@ describe.skipIf(!hasHonolulu)('初代のショップ (ROM)', () => {
     shop2.revert();
     expect(m2.changedEntries().size).toBe(0);
     expect(equalBytes(m2.export(), bytes)).toBe(true);
+  });
+});
+
+describe.skipIf(!hasHonolulu)('初代のショップのページ (ROM)', () => {
+  let session: HonoluluSession;
+  beforeAll(async () => {
+    session = await HonoluluSession.open(await openImage(Bun.file(HONOLULU_BASE), 'honolulu-base.cia'));
+  });
+
+  test('the page lists the 12 stages and shows a stage with its condition, stock and greetings', () => {
+    const html = renderToString(<HonoluluShopPage master={session.master} shop={session.shop} arg="5" edited={() => session.edited()} />);
+    expect(html).toContain('12 / 12 段階');
+    expect(html).toContain('段階 5');
+    expect(html).toContain('しゃくねつ火山 の進み具合 = 4');
+    expect(html).toContain('51 品');
+    expect(html).toContain('キズぐすり');
+    expect(html).toContain('いらっしゃい');
+  });
+
+  test('a stock edited through the session is exported in the master, and the export dialog names the stage', () => {
+    const shop = session.shop;
+    const stock = shop.rows(3);
+    shop.set(3, stock.slice(1));
+    expect(session.changed()).toBe(true);
+    const out = new HonoluluShop(new HonoluluMaster(session.modFiles().get(HONOLULU.master)!));
+    expect(out.rows(3).length).toBe(stock.length - 1);
+    expect(out.range(4)).toEqual([75, 115]);
+    expect(renderToString(<HonoluluExportDialog session={session} onClose={() => {}} />)).toContain('段階 3');
+    shop.set(3, stock);
+    expect(session.changed()).toBe(false);
   });
 });
