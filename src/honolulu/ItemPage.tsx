@@ -16,11 +16,10 @@ import {
   itemTextIds, revertItem, type HonoluluItem, type ItemStage,
 } from './items';
 import type { HonoluluSession } from './session';
+import { honoluluShopHref } from './ShopPage';
 import { HONOLULU_ITEM_DATA } from './tables';
 
 export const honoluluItemHref = (row: number): string => `#/items/${row}`;
-/** The shop page of a stage (shopItemGroup's row; the shop page, #153). */
-const shopHref = (stage: number): string => `#/shops/${stage}`;
 
 /** Redraws on every edit of the session (this page's and the other pages'). */
 export function useHonoluluRevision(session: HonoluluSession): number {
@@ -37,7 +36,7 @@ const clothTextures = (session: HonoluluSession): HonoluluClothTextures => {
 };
 
 const stageLinks = (stages: ItemStage[] | undefined): SourceLink[] =>
-  (stages ?? []).map((s) => ({ label: `段階 ${s.stage}: ${s.dungeon}`, href: shopHref(s.stage), note: s.featured ? '目玉の品' : undefined }));
+  (stages ?? []).map((s) => ({ label: `段階 ${s.stage}: ${s.dungeon}`, href: honoluluShopHref(s.stage), note: s.featured ? '目玉の品' : undefined }));
 
 export function HonoluluItemPage({ session, arg }: { session: HonoluluSession; arg: string | undefined }): ReactNode {
   const revision = useHonoluluRevision(session);
