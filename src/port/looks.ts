@@ -9,7 +9,7 @@ import { lanaiMonsterModel } from '../lanai/monsterModels';
 import { OAHU_MONSTER_MODEL_ARCHIVE } from '../oahu/monsterModels';
 import { monsterRef } from '../pages/monsters';
 import type { ModelRef } from '../pages/modelview';
-import type { TitleKey } from '../rom/titles';
+import type { PortTitle } from './convert';
 import type { Opened } from '../ui/workspace';
 import { f32, hex8, s16, u16, u32, w32 } from '../util/bytes';
 import { convertMonster, type MonsterFiles } from './convert';
@@ -38,7 +38,7 @@ interface DesignLayout {
   clear: [number, number][];
 }
 
-export const DESIGN_LAYOUT: Record<TitleKey, DesignLayout> = {
+export const DESIGN_LAYOUT: Record<PortTitle, DesignLayout> = {
   kahara: { model: 0x10, texture: 0x14, motion: null, distances: 0x18, distanceCount: 4, scales: [0x28, 0x2c, 0x30, 0x34], heights: 0x3c, attach: 0x40, radius: 0x66, clear: [[0x68, 1], [0x69, 1]] },
   oahu: { model: 0x0c, texture: 0x10, motion: 0x14, distances: 0x18, distanceCount: 5, scales: [0x2c, 0x30, 0x34, 0x38], heights: 0x40, attach: 0x48, radius: 0x6e, clear: [[0x70, 1], [0x71, 1]] },
   // +0x4C〜 effects. The string fields (+0x18 a procedural texture, +0x34 the waist bone's name) are not cleared but
@@ -61,7 +61,7 @@ export interface LookParams {
   radius: number;
 }
 
-export function readLookParams(title: TitleKey, r: Uint8Array): LookParams {
+export function readLookParams(title: PortTitle, r: Uint8Array): LookParams {
   const l = DESIGN_LAYOUT[title];
   return {
     distances: Array.from({ length: l.distanceCount }, (_, i) => f32(r, l.distances + i * 4)),
@@ -72,7 +72,7 @@ export function readLookParams(title: TitleKey, r: Uint8Array): LookParams {
   };
 }
 
-function writeLookParams(title: TitleKey, r: Uint8Array, p: LookParams): void {
+function writeLookParams(title: PortTitle, r: Uint8Array, p: LookParams): void {
   const l = DESIGN_LAYOUT[title];
   const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
   // a distance the source has no value for keeps the template's
@@ -87,7 +87,7 @@ function writeLookParams(title: TitleKey, r: Uint8Array, p: LookParams): void {
 
 /** A design row of an opened game, as a look to port. */
 export interface MonsterLook {
-  title: TitleKey;
+  title: PortTitle;
   /** The design row. */
   design: number;
   /** Names of the monsters with this look. */
@@ -106,7 +106,7 @@ const body = async (read: (name: string) => Promise<Uint8Array>, archive: string
 };
 
 /** The looks of an opened game that monsters use (one per design row with a model). */
-export async function monsterLooks(o: Opened, title: TitleKey): Promise<MonsterLook[]> {
+export async function monsterLooks(o: Opened, title: PortTitle): Promise<MonsterLook[]> {
   const out: MonsterLook[] = [];
   if (title === 'kahara') {
     const s = o.kahara?.session;
@@ -171,7 +171,7 @@ export async function monsterLooks(o: Opened, title: TitleKey): Promise<MonsterL
 export const portName = (look: Pick<MonsterLook, 'title' | 'design'>): string => `enemy_${look.title[0]}${look.design}`;
 
 /** The converted files of a look for another game, and the entries they become in that game's model archive. */
-export async function portedEntries(look: MonsterLook, target: TitleKey, template: Uint8Array, taken: (archive: string, hash: number) => boolean): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number }; altIdle: boolean }> {
+export async function portedEntries(look: MonsterLook, target: PortTitle, template: Uint8Array, taken: (archive: string, hash: number) => boolean): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number }; altIdle: boolean }> {
   const files = convertMonster(await look.files(), look.title, target, { name: portName(look) });
   const l = DESIGN_LAYOUT[target];
   const archive = target === 'kahara' ? MONSTER_MODEL_ARCHIVE : target === 'oahu' ? OAHU_MONSTER_MODEL_ARCHIVE : LANAI_PORT_ARCHIVE;
@@ -191,7 +191,7 @@ export async function portedEntries(look: MonsterLook, target: TitleKey, templat
 }
 
 /** A new design row for `target`: the template row (the monster's current look) with the ported files and the look's sizes. */
-export function portedDesign(look: MonsterLook, target: TitleKey, template: Uint8Array, hashes: { model: number; texture: number; motion: number }): Uint8Array {
+export function portedDesign(look: MonsterLook, target: PortTitle, template: Uint8Array, hashes: { model: number; texture: number; motion: number }): Uint8Array {
   const r = template.slice();
   const l = DESIGN_LAYOUT[target];
   // A look whose colour has no textures of its own: RPG3 / FREE! name their empty texture file (dummy_tex.bch, in
@@ -210,7 +210,7 @@ export function portedDesign(look: MonsterLook, target: TitleKey, template: Uint
 }
 
 /** Whether an archive of the target already has an entry (the game's own, or one a port added). */
-export async function takenIn(target: TitleKey, read: (name: string) => Promise<Uint8Array>): Promise<(archive: string, hash: number) => boolean> {
+export async function takenIn(target: PortTitle, read: (name: string) => Promise<Uint8Array>): Promise<(archive: string, hash: number) => boolean> {
   const store = await PortStore.of(target);
   const archives = target === 'kahara' ? [MONSTER_MODEL_ARCHIVE] : target === 'oahu' ? [OAHU_MONSTER_MODEL_ARCHIVE] : [...LANAI_MONSTER_MODEL_ARCHIVES];
   const have = new Set<string>();
@@ -237,7 +237,7 @@ export function lanaiTemplate(row: (i: number) => Uint8Array, rows: number, curr
  * Whether the files have a looping `002_` skeletal animation: the battle's other idle, which a monster plays instead
  * of `001_` when its switch is on (RPG2 MonsterParameter +0x4A bit3, RPG3 +0x48 bit9, FREE! +0x18 bit0).
  */
-export function hasAltIdle(files: MonsterFiles, title: TitleKey): boolean {
+export function hasAltIdle(files: MonsterFiles, title: PortTitle): boolean {
   const names: string[] = [];
   if (title === 'kahara') names.push(...readGfx(files.model).skeletalAnimations.map((a) => a.name));
   else for (const b of [files.model, files.motion]) if (b) names.push(...readH3D(b).skeletalAnimations.map((a) => a.name));

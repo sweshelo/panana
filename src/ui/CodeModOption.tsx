@@ -1,10 +1,9 @@
 // The export dialogs' switch for Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts), written to exefs/code.ips.
 import type { ReactNode } from 'react';
-import { DROP_CAP_NOTE, DROP_CAP_TITLE } from '../game/dropcap';
-import type { TitleKey } from '../rom/titles';
+import { DROP_CAP_NOTE, DROP_CAP_TITLE, type DropCapTitle } from '../game/dropcap';
 
 export function CodeModOption({ title, on, problem, onChange }: {
-  title: TitleKey;
+  title: DropCapTitle;
   on: boolean;
   /** Why it cannot be written to this dump (shown instead of the switch when it is off), or null. */
   problem: string | null;

@@ -25,7 +25,7 @@ bun test
 - `test/unit.test.ts`: ROM なしで動く単体テスト
 - `test/ui.test.tsx`: React のページを文字列に描画して確かめるテスト (ROM なし)
 - `test/rom.test.ts`: Python の参照実装との照合とラウンドトリップ。
-- `test/oahu*.test.ts(x)` (RPG3)、`test/lanai*.test.ts(x)` (RPG FREE!)。
+- `test/oahu*.test.ts(x)` (RPG3)、`test/lanai*.test.ts(x)` (RPG FREE!)、`test/honolulu*.test.ts(x)` (初代)。
 
 ROM のテストは、リポジトリ直下の `roms/` (git には入れない) にあるファイルを読みます (`test/env.ts`)。ないファイルを使うテストはスキップします。
 
@@ -36,6 +36,7 @@ ROM のテストは、リポジトリ直下の `roms/` (git には入れない) 
 | `roms/mod/out/` | 土台の MOD (elpulse の mod/out。任意) |
 | `roms/oahu-base.cia` / `roms/oahu-update.cia` | RPG3 の Base / Update (復号済み) |
 | `roms/lanai-base.cia` / `roms/lanai-update.cia` | RPG FREE! の Base / Update (復号済み) |
+| `roms/honolulu-base.cia` | 初代 (電波人間のRPG) の Base (復号済み。Update は知られていない) |
 
 ROM のテストで確かめていること:
 
@@ -54,7 +55,7 @@ ROM のテストで確かめていること:
 ### ROM バンドルの準備 (一度だけ)
 
 1. `roms/` に RPG2 の CIA と `golden.json` (あれば `mod/out`) を置いてから、PowerShell で暗号化したバンドルを作ります: `.\scripts\pack-rom-bundle.ps1` (パスフレーズを聞かれます)。`rom-bundle.tar.gpg` ができます。gpg (Gpg4win など) が要ります。
-2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードします (300 MB を超えるときは `aws s3 cp` など S3 API で)。RPG3 と RPG FREE! の復号済み CIA は、同じバケットに `oahu-base.cia` / `oahu-update.cia`、`lanai-base.cia` / `lanai-update.cia` として置きます (キーはリポジトリ変数 `OAHU_BASE_KEY` などで変えられます)。CI はバンドルの中身とこれらを `roms/` に置いてテストします。
+2. Cloudflare R2 に非公開バケット `panana` を作り、`rom-bundle.tar.gpg` をアップロードします (300 MB を超えるときは `aws s3 cp` など S3 API で)。RPG3 と RPG FREE! の復号済み CIA は、同じバケットに `oahu-base.cia` / `oahu-update.cia`、`lanai-base.cia` / `lanai-update.cia`、初代は `honolulu-base.cia` として置きます (キーはリポジトリ変数 `OAHU_BASE_KEY` などで変えられます)。CI はバンドルの中身とこれらを `roms/` に置いてテストします。
 3. R2 の API トークンを「Object Read only・このバケットだけ」で作ります。
 4. リポジトリの Settings → Secrets and variables → Actions に登録します: `ROM_BUNDLE_PASSPHRASE`、`R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`。バケット名・キーを変えるときは Variables の `ROM_BUNDLE_BUCKET`・`ROM_BUNDLE_KEY`。
 

@@ -54,6 +54,8 @@ jobs:
       # 電波人間のRPG Free! の復号済み CIA (Base / Update)。束とは別に、同じバケットにそのまま置いてある
       LANAI_BASE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.LANAI_BASE_KEY || 'lanai-base.cia' }}
       LANAI_UPDATE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.LANAI_UPDATE_KEY || 'lanai-update.cia' }}
+      # 電波人間のRPG (初代) の復号済み CIA (Base だけ)。束とは別に、同じバケットにそのまま置いてある
+      HONOLULU_BASE_OBJECT: s3://${{ vars.ROM_BUNDLE_BUCKET || 'panana' }}/${{ vars.HONOLULU_BASE_KEY || 'honolulu-base.cia' }}
       # テストはリポジトリ直下の roms/ を見る (test/env.ts。.gitignore 済み)
       ROM_DIR: ${{ github.workspace }}/roms
     steps:
@@ -90,6 +92,7 @@ jobs:
           aws s3 cp "$OAHU_UPDATE_OBJECT" "$ROM_DIR/oahu-update.cia" --endpoint-url "$endpoint" --no-progress
           aws s3 cp "$LANAI_BASE_OBJECT" "$ROM_DIR/lanai-base.cia" --endpoint-url "$endpoint" --no-progress
           aws s3 cp "$LANAI_UPDATE_OBJECT" "$ROM_DIR/lanai-update.cia" --endpoint-url "$endpoint" --no-progress
+          aws s3 cp "$HONOLULU_BASE_OBJECT" "$ROM_DIR/honolulu-base.cia" --endpoint-url "$endpoint" --no-progress
           ls -l "$ROM_DIR"
 
       - name: Test (ROM)

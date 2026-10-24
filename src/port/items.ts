@@ -6,7 +6,7 @@ import { findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
 import { itemModelArchive } from '../game/items';
 import { itemRef } from '../pages/items';
 import type { ModelRef } from '../pages/modelview';
-import type { TitleKey } from '../rom/titles';
+import type { PortTitle } from './convert';
 import type { Opened } from '../ui/workspace';
 import { bchOffset } from '../bch/bch';
 import { convertItem } from './convert';
@@ -20,7 +20,7 @@ const LANAI_ITEM_ARCHIVE = '719F0000';
 const LANAI_ITEM_LIKE = 0;
 
 export interface ItemLook {
-  title: TitleKey;
+  title: PortTitle;
   id: number;
   name: string;
   model: ModelRef | null;
@@ -31,7 +31,7 @@ export interface ItemLook {
 }
 
 /** The items of an opened game with a 3D model. */
-export async function itemLooks(o: Opened, title: TitleKey): Promise<ItemLook[]> {
+export async function itemLooks(o: Opened, title: PortTitle): Promise<ItemLook[]> {
   if (title === 'kahara') {
     const s = o.kahara?.session;
     if (!s) return [];
@@ -95,7 +95,7 @@ function withTextures(body: Uint8Array, extra: Uint8Array[]): Uint8Array {
 }
 
 /** Gives item `id` of `target` the model of `look`. */
-export async function giveItemModel(o: Opened, target: TitleKey, id: number, look: ItemLook): Promise<number> {
+export async function giveItemModel(o: Opened, target: PortTitle, id: number, look: ItemLook): Promise<number> {
   if (look.title === target && target === 'lanai') {
     // the game reads any archive ItemDataCore +0x18 names: point the item at the other item's entry
     const s = o.lanai!;

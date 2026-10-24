@@ -8,7 +8,7 @@ import { emptyH3D, gfxToH3D } from './gfx2h3d';
 import { h3dToGfx } from './h3d2gfx';
 import { retarget } from './retarget';
 
-export type { PortTitle } from './common';
+export { isPortTitle, type PortTitle } from './common';
 
 /**
  * A monster look as the target / source game stores it: kahara = model bcres (all animations) + texture bcres (motion

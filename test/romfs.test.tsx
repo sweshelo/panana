@@ -61,7 +61,7 @@ describe('titles', () => {
   });
 
   test('an extracted folder is told apart by its master archive', () => {
-    expect(titleByRootFiles(['A90C8038', '56562135'])).toBe(KAHARA);
+    expect(titleByRootFiles(['A90C8038', '56562135', '49A43B63', '302996EB'])).toBe(KAHARA);
     expect(titleByRootFiles(['21350000', 'a4070000'])).toBe(OAHU);
     expect(titleByRootFiles(['12345678'])).toBeUndefined();
   });

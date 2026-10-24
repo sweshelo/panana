@@ -2,13 +2,23 @@
 // Footer: u32 bufferTopAndBottom (top = low 24 bits, bottom = high 8 bits), u32 extra size.
 import { u32 } from '../util/bytes';
 
+/** Whether `src` ends with a BLZ footer (a decompressed code.bin does not). */
+export function isBlz(src: Uint8Array): boolean {
+  const size = src.length;
+  if (size < 8) return false;
+  const topBottom = u32(src, size - 8);
+  const top = topBottom & 0xffffff;
+  const bottom = topBottom >>> 24;
+  return bottom >= 8 && bottom <= 12 && top >= bottom && top <= size;
+}
+
 export function blzDecompress(src: Uint8Array): Uint8Array {
   const size = src.length;
   const topBottom = u32(src, size - 8);
   const extra = u32(src, size - 4);
   const top = topBottom & 0xffffff;
   const bottom = topBottom >>> 24;
-  if (bottom < 8 || bottom > 12 || top < bottom || top > size) throw new Error('BLZ: フッターが不正です');
+  if (!isBlz(src)) throw new Error('BLZ: フッターが不正です');
   const out = new Uint8Array(size + extra);
   out.set(src);
   let dst = out.length;

@@ -32,6 +32,6 @@ export const hasHonolulu = existsSync(HONOLULU_BASE);
 
 // CI の ROM ジョブ (REQUIRE_ROM=1) では、スキップして緑になるのを防ぐ
 if (process.env.REQUIRE_ROM) {
-  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE].filter((f) => !existsSync(f));
+  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE, HONOLULU_BASE].filter((f) => !existsSync(f));
   if (missing.length) throw new Error(`REQUIRE_ROM is set but roms/ lacks: ${missing.join(' ')}`);
 }

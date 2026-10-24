@@ -2,6 +2,7 @@
 // pick a monster or an item of another game. Root holds them; the shells and the pickers read them from this context.
 import { createContext, useContext } from 'react';
 import type { MapEditor } from '../editor/mapeditor';
+import type { HonoluluSession } from '../honolulu/session';
 import type { LanaiSession } from '../lanai/session';
 import type { OahuSession } from '../oahu/session';
 import type { Dump } from '../rom/dump';
@@ -13,6 +14,7 @@ export interface Opened {
   kahara?: { session: Session; editor: MapEditor };
   oahu?: OahuSession;
   lanai?: LanaiSession;
+  honolulu?: HonoluluSession;
 }
 
 export interface Workspace {

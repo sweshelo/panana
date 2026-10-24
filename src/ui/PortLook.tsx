@@ -4,21 +4,22 @@ import { useState, type ReactNode } from 'react';
 import { altIdle, giveMonsterLook, setAltIdle } from '../port/apply';
 import { giveItemModel, itemLooks, type ItemLook } from '../port/items';
 import { monsterLooks, type MonsterLook } from '../port/looks';
-import { TITLES, type TitleKey } from '../rom/titles';
+import { isPortTitle, type PortTitle } from '../port/convert';
+import { TITLES } from '../rom/titles';
 import { Dialog } from './Dialog';
 import { Photo } from './Photo';
 import { useAsync } from './useAsync';
 import { openedKeys, useWorkspace, type Opened } from './workspace';
 
-const titleName = (k: TitleKey): string => TITLES.find((t) => t.key === k)!.name;
+const titleName = (k: PortTitle): string => TITLES.find((t) => t.key === k)!.name;
 
 /** The games to pick a look from: the shown one first ("この作品"), then the other opened ones. */
-const lookSources = (opened: Opened, target: TitleKey): TitleKey[] => [target, ...openedKeys(opened).filter((k) => k !== target)];
-const sourceLabel = (k: TitleKey, target: TitleKey): string => (k === target ? `この作品 (${titleName(k)})` : titleName(k));
+const lookSources = (opened: Opened, target: PortTitle): PortTitle[] => [target, ...openedKeys(opened).filter(isPortTitle).filter((k) => k !== target)];
+const sourceLabel = (k: PortTitle, target: PortTitle): string => (k === target ? `この作品 (${titleName(k)})` : titleName(k));
 
-function LookPicker({ opened, target, onPick, onClose }: { opened: Opened; target: TitleKey; onPick: (look: MonsterLook) => void; onClose: () => void }): ReactNode {
+function LookPicker({ opened, target, onPick, onClose }: { opened: Opened; target: PortTitle; onPick: (look: MonsterLook) => void; onClose: () => void }): ReactNode {
   const sources = lookSources(opened, target);
-  const [from, setFrom] = useState<TitleKey>(target);
+  const [from, setFrom] = useState<PortTitle>(target);
   const [query, setQuery] = useState('');
   const looks = useAsync(() => monsterLooks(opened, from), [opened, from]);
   const q = query.trim();
@@ -54,7 +55,7 @@ function LookPicker({ opened, target, onPick, onClose }: { opened: Opened; targe
  * "見た目を選ぶ…" for monster `row` of the shown game `target`: a look of another monster of this game, or of another
  * opened game's (ported). `onDone` gets the design row once the look is given.
  */
-export function PortLookButton({ target, row, onDone }: { target: TitleKey; row: number; onDone: (design: number) => void }): ReactNode {
+export function PortLookButton({ target, row, onDone }: { target: PortTitle; row: number; onDone: (design: number) => void }): ReactNode {
   const ws = useWorkspace();
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState('');
@@ -85,9 +86,9 @@ export function PortLookButton({ target, row, onDone }: { target: TitleKey; row:
   );
 }
 
-function ItemModelPicker({ opened, target, onPick, onClose }: { opened: Opened; target: TitleKey; onPick: (look: ItemLook) => void; onClose: () => void }): ReactNode {
+function ItemModelPicker({ opened, target, onPick, onClose }: { opened: Opened; target: PortTitle; onPick: (look: ItemLook) => void; onClose: () => void }): ReactNode {
   const sources = lookSources(opened, target);
-  const [from, setFrom] = useState<TitleKey>(target);
+  const [from, setFrom] = useState<PortTitle>(target);
   const [query, setQuery] = useState('');
   const looks = useAsync(() => itemLooks(opened, from), [opened, from]);
   const q = query.trim();
@@ -120,7 +121,7 @@ function ItemModelPicker({ opened, target, onPick, onClose }: { opened: Opened; 
 }
 
 /** "モデルを選ぶ…" for item `id` of the shown game: another item's model of this game, or of another opened game's (converted). */
-export function PortItemButton({ target, id, onDone }: { target: TitleKey; id: number; onDone: () => void }): ReactNode {
+export function PortItemButton({ target, id, onDone }: { target: PortTitle; id: number; onDone: () => void }): ReactNode {
   const ws = useWorkspace();
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState('');
@@ -155,7 +156,7 @@ export function PortItemButton({ target, id, onDone }: { target: TitleKey; id: n
  * The battle's other idle (`002_` instead of `001_`): a switch of the monster row. Only a look with a looping `002_`
  * animation should have it on.
  */
-export function AltIdleToggle({ target, row, onDone }: { target: TitleKey; row: number; onDone: () => void }): ReactNode {
+export function AltIdleToggle({ target, row, onDone }: { target: PortTitle; row: number; onDone: () => void }): ReactNode {
   const ws = useWorkspace();
   if (!ws?.opened[target]) return null;
   const on = altIdle(ws.opened, target, row);
