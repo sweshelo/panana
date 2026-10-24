@@ -23,9 +23,9 @@ import { oahuEventEntries, type OahuEventEntry } from './events';
 import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
 import { CodeIndex } from '../game/scripts';
 import { OAHU_TEXT_END } from './scripts';
-import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
-import { SoundArchive } from '../sound/formats';
-import { SoundRenderer } from '../sound/render';
+import type { SoundNames } from '../game/sound';
+import type { SoundRenderer } from '../sound/render';
+import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { u32 } from '../util/bytes';
 
 const EDITS_KEY = 'oahu/edits/v1';
@@ -280,36 +280,19 @@ export class OahuSession {
 
   /** Names of the soundData rows, from the Base's sound/sound.bcsar (cached by name, apart from RPG2's). */
   sounds(): Promise<SoundNames> {
-    this.soundNames ??= (async () => {
-      const t = this.master.table('soundData.bin');
-      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
-      // +8: the volume byte, then D0 padding
-      const volumes = Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!);
-      const key = 'oahu/sound/names/v1';
-      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
-      if (!names)
-        try {
-          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
-          await idbSet(key, names).catch(() => {});
-        } catch {
-          names = null;
-        }
-      return new SoundNames(items, names, volumes);
-    })();
-    return this.soundNames;
+    const t = this.master.table('soundData.bin');
+    // +8: the volume byte, then D0 padding
+    return (this.soundNames ??= loadSoundNames(this.dump, 'oahu/sound/names/v1', Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0)), Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!)));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
 
   /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
-      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
-      (err: Error) => {
-        this.renderer = null;
-        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
-      },
-    );
+    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+      this.renderer = null;
+      throw err;
+    });
     return this.renderer;
   }
 }
