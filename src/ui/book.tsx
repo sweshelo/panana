@@ -37,6 +37,55 @@ export function useScrollTop(detail: RefObject<HTMLElement | null>, selected: un
   }, [detail, selected]);
 }
 
+/** A column of a book's list after the row number (and the photo). */
+export interface BookColumn<T> {
+  head: string;
+  className?: string;
+  cell: (row: T) => ReactNode;
+}
+
+const BOOK_PAGE = 300;
+
+/**
+ * A book's list: the count, a row per entry (a click opens it), the first rows shown and a button for more. `photo`
+ * adds a photo column before the row number; a game whose entries have no model (初代's items) gives none.
+ */
+export function BookList<T>({ rows, total, id, selected, href, columns, photo, changed, listRef }: {
+  rows: T[];
+  total: number;
+  /** The entry's number (the row, the ID): the first column and the key. */
+  id: (row: T) => number;
+  selected: number;
+  href: (id: number) => string;
+  /** The columns after the number; the first one gets the edited mark. */
+  columns: BookColumn<T>[];
+  photo?: (row: T) => ReactNode;
+  changed?: (row: T) => boolean;
+  listRef: RefObject<HTMLDivElement | null>;
+}): ReactNode {
+  const [limit, setLimit] = useState(BOOK_PAGE);
+  // a new search or filter starts from the first rows again
+  useEffect(() => setLimit(BOOK_PAGE), [rows.length]);
+  return (
+    <div className="book-list" ref={listRef}>
+      <Count shown={rows.length} total={total} />
+      <table className="book-table">
+        <thead><tr>{photo && <th></th>}<th>行</th>{columns.map((c) => <th key={c.head}>{c.head}</th>)}</tr></thead>
+        <tbody>
+          {rows.slice(0, limit).map((x) => (
+            <tr key={id(x)} className={id(x) === selected ? 'active' : ''} onClick={() => (location.hash = href(id(x)))}>
+              {photo && <td className="photo-cell">{photo(x)}</td>}
+              <td className="num muted">{id(x)}</td>
+              {columns.map((c, i) => <td key={c.head} className={c.className}>{c.cell(x)}{i === 0 && changed?.(x) && <EditedMark text=" ●" />}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length > limit && <div className="row"><button onClick={() => setLimit(limit + BOOK_PAGE * 5)}>{`続きを表示 (${rows.length - limit} 件)`}</button></div>}
+    </div>
+  );
+}
+
 export function Count({ shown, total, unit = '件' }: { shown: number; total: number; unit?: string }): ReactNode {
   return <div className="muted small">{`${shown} / ${total} ${unit}`}</div>;
 }

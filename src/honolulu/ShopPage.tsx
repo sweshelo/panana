@@ -7,6 +7,7 @@ import { NumberInput, useEdits } from '../ui/book';
 import { GridPicker, type GridEntry } from '../ui/GridPicker';
 import { InfoTip } from '../ui/InfoTip';
 import { ShopBook, type ShopBookShop } from '../ui/ShopBook';
+import { honoluluItemHref } from './ItemPage';
 import type { HonoluluMaster } from './master';
 import { HONOLULU_SHOP_LIMITS, HONOLULU_SHOP_STAGES, honoluluShopProblems, honoluluShopRowBytes, type HonoluluShop, type HonoluluShopRow } from './shops';
 import { HONOLULU_ITEM_CATEGORY } from './tables';
@@ -79,7 +80,7 @@ export function HonoluluShopPage({ master, shop, arg, edited }: { master: Honolu
       replaceItem={(r, id) => ({ ...r, item: id, bytes: honoluluShopRowBytes(id, r.featured, r.bytes) })}
       item={(id) => {
         const it = item(id);
-        return it && { name: it.name, icon: itemIcon(it) };
+        return it && { name: it.name, href: honoluluItemHref(id), icon: itemIcon(it) };
       }}
       columns={(s) => [
         { head: '分類', className: 'muted nowrap', cell: (r) => { const it = item(r.item); return it ? HONOLULU_ITEM_CATEGORY[it.category] ?? '' : ''; } },
