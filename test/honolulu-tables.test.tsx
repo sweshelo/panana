@@ -1,18 +1,17 @@
 // The field definitions of 初代 (honolulu/tables.ts), the raw fields over what they leave out (tabledef.rowDef) and the
 // master read through them (honolulu/master.ts). The tests with the ROM read roms/honolulu-base.cia.
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { renderToString } from 'react-dom/server';
 import { findByName, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { GsTable } from '../src/archive/gstable';
 import { field, fieldSize, rawFields, rawTableDef, readField, rowDef, withRawFields, type TableDef } from '../src/game/tabledef';
 import { HonoluluMaster, HONOLULU_MASTER } from '../src/honolulu/master';
 import { HONOLULU_ITEM_DATA, HONOLULU_TABLES } from '../src/honolulu/tables';
-import { parseCia } from '../src/rom/cia';
-import { parseNcch } from '../src/rom/ncch';
-import { parseRomfs } from '../src/rom/romfs';
-import { BytesSource } from '../src/rom/source';
+import { openImage, type Dump } from '../src/rom/dump';
+import { GsTableView } from '../src/romfs/formats';
+import { honoluluRomfsProfile } from '../src/romfs/honolulu';
 import { RowFields } from '../src/ui/RowFields';
+import { HonoluluSession } from '../src/honolulu/session';
 import { equalBytes } from '../src/util/bytes';
 import { hasHonolulu, HONOLULU_BASE } from './env';
 
@@ -67,18 +66,14 @@ describe('raw fields', () => {
 });
 
 describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
+  let dump: Dump;
   let bytes: Uint8Array;
   /** Root RomFS files by name. */
   const roots = new Map<string, Uint8Array>();
 
   beforeAll(async () => {
-    // opened like rom/dump.ts does; openImage does not know the title yet
-    const ncch = await parseNcch((await parseCia(new BytesSource(readFileSync(HONOLULU_BASE)))).content0);
-    const files = await parseRomfs(ncch.romfs);
-    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038']) {
-      const f = files.get('/' + name)!;
-      roots.set(name, await ncch.romfs.read(f.offset, f.size));
-    }
+    dump = await openImage(Bun.file(HONOLULU_BASE), 'honolulu-base.cia');
+    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038']) roots.set(name, await dump.readRomfs(name));
     bytes = roots.get(HONOLULU_MASTER)!;
   });
 
@@ -159,5 +154,20 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     items.revert(1);
     expect(m.changedEntries().size).toBe(0);
     expect(equalBytes(m.export(), bytes)).toBe(true);
+  });
+
+  test('the RomFS viewer shows the tables by their fields, with the names of messages and rows', async () => {
+    const session = await HonoluluSession.open(dump);
+    const ctx = session.master.context();
+    const arc = parseArchive(bytes);
+    const body = (file: string) => findByName(arc, file)!.body;
+    const items = renderToString(<GsTableView body={body('itemData.bin')} name="itemData.bin" profile={honoluluRomfsProfile} context={ctx} />);
+    expect(items).toContain('欄ごと');
+    expect(items).toContain('キズぐすり');
+    expect(items).toContain('店員の説明');
+    const stock = renderToString(<GsTableView body={body('shopItemData.bin')} name="shopItemData.bin" profile={honoluluRomfsProfile} context={ctx} />);
+    expect(stock).toContain('#1 キズぐすり');
+    // no definition: hex columns only
+    expect(renderToString(<GsTableView body={body('monsterGroup.bin')} name="monsterGroup.bin" profile={honoluluRomfsProfile} context={ctx} />)).not.toContain('欄ごと');
   });
 });

@@ -1,6 +1,6 @@
 // The pages of a 電波人間のRPG (honolulu, the first game) dump. Only the RomFS viewer for now (#150); the other pages
 // (shop, items, monsters, maps, messages: #153-#157) come once the shells are one (#151).
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { HonoluluSession } from '../honolulu/session';
 import { honoluluRomfsProfile } from '../romfs/honolulu';
 import { RomfsPage } from '../romfs/RomfsPage';
@@ -23,6 +23,7 @@ export function HonoluluShell({ session }: { session: HonoluluSession }): ReactN
   useEffect(() => {
     document.title = `Panana — ${TITLES[page]} (RPG)`;
   }, [page]);
+  const context = useMemo(() => session.master.context(), [session]);
   const visits = useRef(new Map<HonoluluPage, string | undefined>());
   visits.current.set(page, arg);
   return (
@@ -45,7 +46,7 @@ export function HonoluluShell({ session }: { session: HonoluluSession }): ReactN
         if (!visits.current.has(id)) return null;
         return (
           <div key={id} className={`page page-${id}`}>
-            <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={visits.current.get(id)} />
+            <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={visits.current.get(id)} context={context} />
           </div>
         );
       })}

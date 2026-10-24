@@ -7,9 +7,10 @@ import { MasterTables } from '../game/mastertables';
 import { rowDef, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { TableRows } from '../game/tablerows';
 import type { Dump } from '../rom/dump';
+import { HONOLULU } from '../rom/titles';
 import { HONOLULU_TABLES } from './tables';
 
-export const HONOLULU_MASTER = '56562135';
+export const HONOLULU_MASTER = HONOLULU.master;
 
 /** The tables whose rows a `row` field names by their name field. */
 const NAMED: Record<string, string> = { 'itemData.bin': 'name', 'dungeonData.bin': 'name', 'skillData.bin': 'name' };
