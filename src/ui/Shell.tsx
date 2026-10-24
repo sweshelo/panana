@@ -1,5 +1,5 @@
 // The pages of an opened dump: top bar, hash routing (#/page/arg), the map editor and the React pages.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { MapEditor } from '../editor/mapeditor';
 import { buildShops, loadShopTable } from '../game/shops';
 import { ActionPage } from '../pages/actions';
@@ -18,10 +18,7 @@ import type { PageProps } from './book';
 import { ExportDialog } from './ExportDialog';
 import { Dom } from './mount';
 import { useAsync } from './useAsync';
-import { InfoTooltip } from './InfoTip';
-import { useHashRoute } from './route';
-import { RomButton } from './RomDialog';
-import { openedKeys, useWorkspace } from './workspace';
+import { PageShell } from './PageShell';
 
 export const PAGES = [
   ['map', 'マップ編集'],
@@ -42,10 +39,7 @@ const TITLES: Record<Page, string> = {
   map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS',
 };
 
-const PAGE_IDS = PAGES.map(([id]) => id);
-
-/** #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID], #/sounds[/row] or #/romfs[/path[:entry]]. */
-const useRoute = (): { page: Page; arg: string | undefined; hash: string } => useHashRoute(PAGE_IDS, 'map');
+// The routes: #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID], #/sounds[/row] or #/romfs[/path[:entry]].
 
 function Loading(): ReactNode {
   return <div className="start"><p>読み込み中…</p></div>;
@@ -107,63 +101,23 @@ export function Shell({ session, editor, onPickBaseMod }: {
   onPickBaseMod: () => void;
 }): ReactNode {
   const { game } = session;
-  const ws = useWorkspace();
-  const { page, arg, hash } = useRoute();
   const [exporting, setExporting] = useState(false);
-  // The page menu of narrow screens (the top bar's tabs and buttons in a drawer); closed by any navigation.
-  const [menu, setMenu] = useState(false);
-  useEffect(() => setMenu(false), [hash]);
-  // On narrow screens a book page shows either its list or the selected entry (the one the route names).
-  const detail = page !== 'map' && (page === 'world' ? !!arg?.includes('.') : !!arg);
-  // Pages are built when first shown and kept (with their search and filter) while others are shown.
-  // Each page keeps the route it was last shown with; `n` counts the navigations to it.
-  const visits = useRef(new Map<Page, { hash: string; arg: string | undefined; n: number }>());
-  const last = visits.current.get(page);
-  if (!last || last.hash !== hash) visits.current.set(page, { hash, arg, n: (last?.n ?? 0) + 1 });
-
-  useEffect(() => {
-    document.title = `Panana — ${TITLES[page]}`;
-    if (page === 'map') editor.show(arg);
-    else editor.hide();
-  }, [editor, page, arg, hash]);
-
-  // Back on the list (narrow screens), show the entry that was open.
-  useEffect(() => {
-    if (!detail) document.querySelector(`.page-${page} .book-list tr.active`)?.scrollIntoView({ block: 'center' });
-  }, [page, detail]);
-
   return (
-    <div className="shell" data-page={page} data-detail={detail || undefined}>
-      <nav className={menu ? 'topnav open' : 'topnav'}>
-        <button className="nav-toggle" aria-label="メニュー" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
-        <b className="brand">Panana<span className="brand-sub"> - 電波人間のRPG2 エディタ</span></b>
-        <span className="nav-title">{TITLES[page]}</span>
-        <div className="nav-items">
-          {PAGES.map(([id, label]) => (
-            <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
-          ))}
-          <span className="grow" />
-          <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => { setMenu(false); setExporting(true); }}>書き出し…</button>
+    <PageShell pages={PAGES} titles={TITLES} fallback="map" brand="電波人間のRPG2 エディタ" romLabel={game.dump.label}
+      isDetail={(page, arg) => page !== 'map' && (page !== 'world' || arg.includes('.'))}
+      backHref={(page, arg) => (page === 'world' ? `#/world/${arg.split('.')[0]}` : `#/${page}`)}
+      onRoute={(page, arg) => (page === 'map' ? editor.show(arg) : editor.hide())}
+      actions={(closeMenu) => (
+        <>
+          <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
           <button className="base-btn" title="既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります" onClick={onPickBaseMod}>
             {`土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`}
           </button>
-          {ws && <RomButton label={game.dump.label} count={openedKeys(ws.opened).length} onClick={() => { setMenu(false); ws.showRoms(); }} />}
-        </div>
-      </nav>
-      {menu && <div className="nav-backdrop" onClick={() => setMenu(false)} />}
-      {detail && <a className="back-bar" href={page === 'world' ? `#/world/${arg!.split('.')[0]}` : `#/${page}`}>{`← ${TITLES[page]}の一覧`}</a>}
-      <Dom node={editor.el} className="page page-map" />
-      <InfoTooltip />
-      {PAGES.map(([id]) => {
-        const v = visits.current.get(id);
-        if (id === 'map' || !v) return null;
-        return (
-          <div key={id} className={`page page-${id}`}>
-            <PageBody page={id} session={session} arg={v.arg} visit={v.n} />
-          </div>
-        );
-      })}
+        </>
+      )}
+      render={(page, v) => (page === 'map' ? null : <PageBody page={page} session={session} arg={v.arg} visit={v.n} />)}
+      outside={<Dom node={editor.el} className="page page-map" />}>
       {exporting && <ExportDialog session={session} onClose={() => setExporting(false)} />}
-    </div>
+    </PageShell>
   );
 }
