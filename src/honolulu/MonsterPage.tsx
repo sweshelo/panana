@@ -1,13 +1,16 @@
 // 初代's monster book (#/monsters/<monsterBattleParameter の行>): the 110 monsters with their photos, stats, drops,
 // skills, forms and the groups that hold them (naauao honolulu/monsters.md). The look (name and model) is monsterData's
 // row in 2713402F, shared by the forms of a monster. The drops, skills, forms and resistances use the parts of the other
-// games' books (ui/MonsterSlots); the flags are shown by their definitions. Where the groups appear is not known yet
-// (naauao#47).
+// games' books (ui/MonsterSlots); the flags are shown by their definitions. The floors where a group appears come from
+// the dungeons' floor definitions (maps.ts, naauao honolulu/map.md §4).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fieldRange } from '../game/tabledef';
 import type { TableRows } from '../game/tablerows';
 import type { ModelRef } from '../pages/modelview';
 import { useActiveRow, useScrollTop, useSticky } from '../ui/book';
+import { useAsync } from '../ui/useAsync';
+import { honoluluMapHref } from './MapPage';
+import { dungeonLabel, floorLabel, type HonoluluMapInfo } from './maps';
 import { FieldChoice, StatFields, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import { MessageEditor } from '../ui/message';
@@ -148,10 +151,10 @@ function MonsterDetail({ session, m, groups }: { session: HonoluluSession; m: Ho
       </div>
       <Heading title="耐性" info={RESIST_INFO} />
       <ResistEditor f={f} edited={edited} />
-      <h3 className="with-info">{`群れ (${(groups?.groups.length ?? 0) + (groups?.fixed.length ?? 0)})`}<InfoTip text="群れがどのダンジョンの階に出るかは、階の定義ファイルの解析 (naauao#47) のあとで足します。" /></h3>
+      <h3 className="with-info">{`群れ (${(groups?.groups.length ?? 0) + (groups?.fixed.length ?? 0)})`}<InfoTip text="群れが出る階は、ダンジョンの階の定義 (階の敵、または置かれた群れ) から引いています。" /></h3>
       <div className="book-where">
         {!groups && <div className="muted">どの群れにもいません (イベント戦など)</div>}
-        {groups?.groups.map((g) => <div key={`g${g}`}>{`monsterGroup #${g}: `}<span className="muted">{groupMembers(session, GROUP_FILE, g).join('、')}</span></div>)}
+        {groups?.groups.map((g) => <div key={`g${g}`}>{`monsterGroup #${g}: `}<span className="muted">{groupMembers(session, GROUP_FILE, g).join('、')}</span><GroupFloors session={session} row={g} /></div>)}
         {groups?.fixed.map((g) => <div key={`f${g}`}>{`monsterFixGroup #${g} (固定の組): `}<span className="muted">{groupMembers(session, FIX_GROUP_FILE, g).join('、')}</span></div>)}
       </div>
       <details className="row-fields-box">
@@ -279,6 +282,27 @@ function ResistEditor({ f, edited }: Omit<EditProps, 'session'>): ReactNode {
         onChange={(_, j, v) => { f.set(RESIST4[j]!, v); edited(); }} />
       <ResistCharts charts={chart('耐性 B (2 bit、状態異常と推定)', RESIST2)} min={0} max={3} rings={[0, 1, 2, 3]} effect={() => ''}
         onChange={(_, j, v) => { f.set(RESIST2[j]!, v); edited(); }} />
+    </div>
+  );
+}
+
+/** The floors where a monsterGroup row appears, linked to the map page. */
+function GroupFloors({ session, row }: { session: HonoluluSession; row: number }): ReactNode {
+  const maps = useAsync(() => session.maps(), [session]);
+  if (!maps || maps instanceof Error) return null;
+  const floors = maps.groupFloors(row);
+  if (!floors.length) return <div className="muted small">どの階にも出ません</div>;
+  // records of one floor number (areas of a floor) are named once
+  const seen = new Map<string, HonoluluMapInfo | undefined>();
+  for (const { floor, placed } of floors) {
+    const d = maps.dungeon(floor.dungeon);
+    const label = `${d ? dungeonLabel(d) : `ダンジョン ${floor.dungeon}`} ${floorLabel(floor.floor)}${placed ? ' (置かれた群れ)' : ''}`;
+    if (!seen.has(label)) seen.set(label, maps.map(floor.map));
+  }
+  return (
+    <div className="small">
+      {'出る階: '}
+      {[...seen].map(([label, m], i) => <span key={label}>{i ? '、' : ''}{m ? <a href={honoluluMapHref(m)}>{label}</a> : label}</span>)}
     </div>
   );
 }

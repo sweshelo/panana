@@ -45,7 +45,7 @@ export function MessagePicker({ session, current, onPick, onClose }: {
     for (let id = file.gmsg.first; id <= file.gmsg.last; id++) if (file.gmsg.has(id)) out.push(id);
     return out;
   }, [file]);
-  useEffect(() => list.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }), [users]);
+  useEffect(() => { list.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [users]);
   const q = query.trim();
   const shown = ids.filter((id) => {
     if (id === current) return true;
