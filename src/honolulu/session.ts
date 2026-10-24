@@ -9,6 +9,7 @@ import type { SavedRow, SavedRowCount } from '../game/mastertables';
 import { HonoluluMaster } from './master';
 import { HonoluluMessages } from './messages';
 import { HONOLULU_MONSTER_ARCHIVE, monsterRowName } from './monsters';
+import { HonoluluShop, type HonoluluSavedShop } from './shops';
 
 const EDITS_KEY = 'honolulu/edits/v1';
 
@@ -20,6 +21,8 @@ interface Saved {
   counts?: SavedRowCount[];
   /** Changed rows of 2713402F's tables (monsterData). */
   design?: SavedRow[];
+  /** The stocks of the shop's stages (shops.ts; laid out again after the rows). */
+  shops?: HonoluluSavedShop;
 }
 
 export class HonoluluSession {
@@ -27,6 +30,8 @@ export class HonoluluSession {
   private readonly listeners = new Set<() => void>();
   /** Bumped by every edit (the pages recompute what it may have changed). */
   revision = 0;
+  /** The shop's 12 stages (shopItemGroup / shopItemData). */
+  readonly shop: HonoluluShop;
 
   private constructor(
     readonly dump: Dump,
@@ -35,6 +40,7 @@ export class HonoluluSession {
     /** 2713402F: monsterData (the monsters' names and models), directData and effectData. */
     readonly design: HonoluluMaster,
   ) {
+    this.shop = new HonoluluShop(master);
     const names = (table: string, row: number): string | undefined => monsterRowName(this, table, row);
     master.names = names;
     design.names = names;
@@ -66,7 +72,7 @@ export class HonoluluSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), design: this.design.saved() };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), shops: this.shop.saved(), design: this.design.saved() };
   }
 
   private restore(saved: Saved): void {
@@ -74,6 +80,7 @@ export class HonoluluSession {
     if (saved.counts) this.master.restoreRowCounts(saved.counts);
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.design) this.design.restore(saved.design);
+    if (saved.shops) this.shop.restore(saved.shops);
   }
 
   readonly scheduleSave = (): void => {

@@ -1,19 +1,20 @@
 // The pages of a 電波人間のRPG (honolulu, the first game) dump on the shared frame (PageShell): the monsters (#155), the
-// items (#154), the messages (#157) and the RomFS viewer (#150), and the export of the edits; the shop and maps (#153,
-// #156) are added as tabs here.
+// items (#154), the shop (#153), the messages (#157) and the RomFS viewer (#150), and the export of the edits; the maps
+// (#156) are added as a tab here.
 import { useMemo, useState, type ReactNode } from 'react';
 import { HonoluluExportDialog } from '../honolulu/ExportDialog';
 import { HonoluluItemPage } from '../honolulu/ItemPage';
 import { HonoluluMessagePage } from '../honolulu/MessagePage';
 import { HonoluluMonsterPage } from '../honolulu/MonsterPage';
+import { HonoluluShopPage } from '../honolulu/ShopPage';
 import type { HonoluluSession } from '../honolulu/session';
 import { honoluluRomfsProfile } from '../romfs/honolulu';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { PageShell } from './PageShell';
 
-export const HONOLULU_PAGES = [['monsters', 'モンスター'], ['items', 'アイテム'], ['messages', 'メッセージ'], ['romfs', 'RomFS']] as const;
+export const HONOLULU_PAGES = [['monsters', 'モンスター'], ['items', 'アイテム'], ['shops', 'ショップ'], ['messages', 'メッセージ'], ['romfs', 'RomFS']] as const;
 type HonoluluPage = (typeof HONOLULU_PAGES)[number][0];
-const TITLES: Record<HonoluluPage, string> = { monsters: 'モンスター', items: 'アイテム', messages: 'メッセージ', romfs: 'RomFS' };
+const TITLES: Record<HonoluluPage, string> = { monsters: 'モンスター', items: 'アイテム', shops: 'ショップ', messages: 'メッセージ', romfs: 'RomFS' };
 
 export function HonoluluShell({ session }: { session: HonoluluSession }): ReactNode {
   const { dump } = session;
@@ -25,6 +26,7 @@ export function HonoluluShell({ session }: { session: HonoluluSession }): ReactN
       render={(id, { arg: a }) => (
         id === 'monsters' ? <HonoluluMonsterPage session={session} arg={a} />
           : id === 'items' ? <HonoluluItemPage session={session} arg={a} />
+          : id === 'shops' ? <HonoluluShopPage master={session.master} shop={session.shop} arg={a} edited={() => session.edited()} />
           : id === 'messages' ? <HonoluluMessagePage session={session} arg={a} />
           : <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={a} context={context} />
       )}>
