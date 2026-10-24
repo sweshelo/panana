@@ -418,6 +418,9 @@ input.edited { border-color: var(--warn); }
 .stat-edit { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .monster-cols { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1200px; }
 .monster-cols > section { min-width: 0; }
+.honolulu-monster-cols .enc-table { width: 100%; table-layout: fixed; }
+.honolulu-monster-cols .enc-table th { width: 4.5em; }
+.honolulu-monster-cols select { width: 100%; }
 .ai-fields { width: 100%; table-layout: fixed; }
 .ai-fields td:first-child { width: 128px; }
 .ai-fields select { max-width: 100%; }

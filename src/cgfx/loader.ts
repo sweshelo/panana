@@ -138,20 +138,24 @@ export function forgetArchives(name?: string): void {
 }
 const queues = new Map<string, Map<string, { model: number; tex: number; resolve: (t: TilesetModels) => void; reject: (e: Error) => void }>>();
 
-/** A model of an archive with the textures of another entry (0 = its own); batched per archive. */
-export function loadComposite(game: Game, name: string, model: number, tex: number): Promise<TilesetModels> {
-  const key = compositeKey(name, model, tex);
+/**
+ * A model of an archive with the textures of another entry (0 = its own); batched per archive. `scope` keeps the models
+ * of another game's archive of the same name apart (初代's 470D2848 is not RPG2's) in the caches and the worker.
+ */
+export function loadComposite(game: Pick<Game, 'dump'>, name: string, model: number, tex: number, scope = ''): Promise<TilesetModels> {
+  const id = scope ? `${scope}/${name}` : name;
+  const key = compositeKey(id, model, tex);
   let p = memory.get(key);
   if (!p) {
     p = (async () => {
       const cached = await idbGet<TilesetModels>(key).catch(() => undefined);
       if (cached && cached.models instanceof Map) return cached;
       return new Promise<TilesetModels>((resolve, reject) => {
-        let q = queues.get(name);
+        let q = queues.get(id);
         if (!q) {
           q = new Map();
-          queues.set(name, q);
-          setTimeout(() => flush(game, name), 0);
+          queues.set(id, q);
+          setTimeout(() => flush(game, name, id), 0);
         }
         q.set(`${model}/${tex}`, { model, tex, resolve, reject });
       });
@@ -162,17 +166,17 @@ export function loadComposite(game: Game, name: string, model: number, tex: numb
   return p;
 }
 
-async function flush(game: Game, name: string): Promise<void> {
-  const q = queues.get(name);
-  queues.delete(name);
+async function flush(game: Pick<Game, 'dump'>, name: string, id: string): Promise<void> {
+  const q = queues.get(id);
+  queues.delete(id);
   if (!q?.size) return;
   try {
-    const archive = sentArchives.has(name) ? null : (await game.dump.readRomfs(name)).slice();
+    const archive = sentArchives.has(id) ? null : (await game.dump.readRomfs(name)).slice();
     const res = await run<Map<string, TilesetModels>>(
-      { kind: 'composite', name, archive, pairs: [...q.values()].map((x) => [x.model, x.tex] as [number, number]) },
+      { kind: 'composite', name: id, archive, pairs: [...q.values()].map((x) => [x.model, x.tex] as [number, number]) },
       archive ? [archive.buffer as ArrayBuffer] : [],
     );
-    sentArchives.add(name);
+    sentArchives.add(id);
     for (const [k, w] of q) {
       const t = res.get(k);
       if (!t) {
@@ -180,7 +184,7 @@ async function flush(game: Game, name: string): Promise<void> {
         continue;
       }
       w.resolve(t);
-      idbSet(compositeKey(name, w.model, w.tex), t).catch(() => {});
+      idbSet(compositeKey(id, w.model, w.tex), t).catch(() => {});
     }
   } catch (err) {
     for (const w of q.values()) w.reject(err as Error);

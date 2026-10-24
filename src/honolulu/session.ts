@@ -1,5 +1,5 @@
-// One opened 電波人間のRPG (honolulu, the first game) dump: its master read through the field definitions
-// (master.ts, tables.ts) and the messages of every archive (messages.ts; the master's names come from them), their edits saved to IndexedDB and restored when the dump is
+// One opened 電波人間のRPG (honolulu, the first game) dump: its master and 2713402F (the monsters' looks) read through
+// the field definitions (master.ts, tables.ts) and the messages of every archive (messages.ts; the master's names come from them), their edits saved to IndexedDB and restored when the dump is
 // opened again, and the MOD export (LayeredFS zip; the game has no Update, so the edits go on the Base's files).
 import { buildModZip } from '../export/pack';
 import type { Dump } from '../rom/dump';
@@ -8,6 +8,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { SavedRow, SavedRowCount } from '../game/mastertables';
 import { HonoluluMaster } from './master';
 import { HonoluluMessages } from './messages';
+import { HONOLULU_MONSTER_ARCHIVE, monsterRowName } from './monsters';
 
 const EDITS_KEY = 'honolulu/edits/v1';
 
@@ -17,6 +18,8 @@ interface Saved {
   rows: SavedRow[];
   /** The tables whose number of rows an edit changed. */
   counts?: SavedRowCount[];
+  /** Changed rows of 2713402F's tables (monsterData). */
+  design?: SavedRow[];
 }
 
 export class HonoluluSession {
@@ -29,16 +32,22 @@ export class HonoluluSession {
     readonly dump: Dump,
     readonly master: HonoluluMaster,
     readonly messages: HonoluluMessages,
-  ) {}
+    /** 2713402F: monsterData (the monsters' names and models), directData and effectData. */
+    readonly design: HonoluluMaster,
+  ) {
+    const names = (table: string, row: number): string | undefined => monsterRowName(this, table, row);
+    master.names = names;
+    design.names = names;
+  }
 
   /** Opens the dump; refuses one whose master is not the first game's (a version 5 GS archive). */
   static async open(dump: Dump): Promise<HonoluluSession> {
     if (dump.title !== HONOLULU) throw new Error(`『${dump.title.name}』のダンプです`);
     const messages = await HonoluluMessages.load(dump);
-    const master = await HonoluluMaster.load(dump, messages.texts);
+    const [master, design] = await Promise.all([HonoluluMaster.load(dump, messages.texts), HonoluluMaster.load(dump, messages.texts, HONOLULU_MONSTER_ARCHIVE)]);
     const { version } = master.archive;
     if (version !== 5) throw new Error(`master (${HONOLULU.master}) のアーカイブが version ${version} です (初代は 5)`);
-    const s = new HonoluluSession(dump, master, messages);
+    const s = new HonoluluSession(dump, master, messages, design);
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) s.restore(saved);
     return s;
@@ -57,13 +66,14 @@ export class HonoluluSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts() };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), design: this.design.saved() };
   }
 
   private restore(saved: Saved): void {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.counts) this.master.restoreRowCounts(saved.counts);
     if (saved.rows) this.master.restore(saved.rows);
+    if (saved.design) this.design.restore(saved.design);
   }
 
   readonly scheduleSave = (): void => {
@@ -78,12 +88,13 @@ export class HonoluluSession {
 
   /** Whether anything was edited (the export has something to write). */
   changed(): boolean {
-    return this.messages.texts.changed() || this.master.changedEntries().size > 0;
+    return this.messages.texts.changed() || this.master.changedEntries().size > 0 || this.design.changedEntries().size > 0;
   }
 
   /** RomFS files of the MOD (root name -> bytes): the archives with edited tables or messages. */
   modFiles(): Map<string, Uint8Array> {
-    return this.messages.changedArchives(new Map([[HONOLULU.master, this.master.changedEntries()]]), new Map([[HONOLULU.master, this.master.archive]]));
+    const tables = [this.master, this.design];
+    return this.messages.changedArchives(new Map(tables.map((t) => [t.name, t.changedEntries()])), new Map(tables.map((t) => [t.name, t.archive])));
   }
 
   /** The LayeredFS zip: 0004000000077E00/romfs/…. */
