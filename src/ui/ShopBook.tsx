@@ -36,7 +36,11 @@ export interface ShopBookItem {
 export interface ShopColumn<T> {
   head: string;
   className?: string;
-  cell: (row: T, index: number) => ReactNode;
+  /**
+   * `setRow` writes the row back through the book (setRows, then a redraw): a cell that edits its row uses it, since
+   * the book does not redraw for writes it does not make.
+   */
+  cell: (row: T, index: number, setRow: (next: T) => void) => ReactNode;
 }
 
 export interface ShopBookProps<T extends { item: number }> {
@@ -229,7 +233,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                           title={setRows ? 'ほかのアイテムに替える' : it?.name}
                           onClick={setRows ? () => setReplacing(i) : undefined} />
                       </td>
-                      {columns(shop).map((c) => <td key={c.head} className={c.className}>{c.cell(r, i)}</td>)}
+                      {columns(shop).map((c) => <td key={c.head} className={c.className}>{c.cell(r, i, (next) => edit(shop, stock.map((x, j) => (j === i ? next : x))))}</td>)}
                       {setRows && (
                         <td className="shop-ops">
                           <button className="small" title={`この${props.unit ?? '店'}から外す`} onClick={() => edit(shop, stock.filter((_, j) => j !== i))}>×</button>

@@ -44,9 +44,8 @@ function ShopList({ session, shops, arg }: { session: OahuSession; shops: OahuSh
     return {
       head: `値段 (${unit})`,
       className: 'num',
-      cell: (r, i) => (
-        <NumberInput value={r.price} min={0} max={OAHU_PRICE_MAX[pay] ?? 9999} title={PRICE_HELP}
-          onCommit={(v) => setRows(s, shops.rows(s.id).map((x, j) => (j === i ? { ...x, price: v } : x)))} />
+      cell: (r, _, setRow) => (
+        <NumberInput value={r.price} min={0} max={OAHU_PRICE_MAX[pay] ?? 9999} title={PRICE_HELP} onCommit={(v) => setRow({ ...r, price: v })} />
       ),
     };
   };
