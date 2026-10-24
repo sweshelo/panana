@@ -8,6 +8,7 @@ import { idbGet, idbSet } from '../util/idb';
 import type { SavedRow, SavedRowCount } from '../game/mastertables';
 import { HonoluluMaster } from './master';
 import { HonoluluMessages } from './messages';
+import { HonoluluShop, type HonoluluSavedShop } from './shops';
 
 const EDITS_KEY = 'honolulu/edits/v1';
 
@@ -17,6 +18,8 @@ interface Saved {
   rows: SavedRow[];
   /** The tables whose number of rows an edit changed. */
   counts?: SavedRowCount[];
+  /** The stocks of the shop's stages (shops.ts; laid out again after the rows). */
+  shops?: HonoluluSavedShop;
 }
 
 export class HonoluluSession {
@@ -24,12 +27,16 @@ export class HonoluluSession {
   private readonly listeners = new Set<() => void>();
   /** Bumped by every edit (the pages recompute what it may have changed). */
   revision = 0;
+  /** The shop's 12 stages (shopItemGroup / shopItemData). */
+  readonly shop: HonoluluShop;
 
   private constructor(
     readonly dump: Dump,
     readonly master: HonoluluMaster,
     readonly messages: HonoluluMessages,
-  ) {}
+  ) {
+    this.shop = new HonoluluShop(master);
+  }
 
   /** Opens the dump; refuses one whose master is not the first game's (a version 5 GS archive). */
   static async open(dump: Dump): Promise<HonoluluSession> {
@@ -57,13 +64,14 @@ export class HonoluluSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts() };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), shops: this.shop.saved() };
   }
 
   private restore(saved: Saved): void {
     if (saved.messages) this.messages.texts.restore(saved.messages);
     if (saved.counts) this.master.restoreRowCounts(saved.counts);
     if (saved.rows) this.master.restore(saved.rows);
+    if (saved.shops) this.shop.restore(saved.shops);
   }
 
   readonly scheduleSave = (): void => {

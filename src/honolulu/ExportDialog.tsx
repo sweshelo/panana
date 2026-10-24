@@ -12,6 +12,7 @@ export function HonoluluExportDialog({ session, onClose }: { session: HonoluluSe
   const edited = texts.editedIds();
   const files = [...new Set(edited.map((id) => texts.file(id)!.name))];
   const tables = [...new Set(session.master.saved().map(([name]) => name))];
+  const stages = session.shop.changedStages();
   return (
     <Dialog title="MOD の書き出し (RPG)" onClose={onClose}>
       {!session.changed() ? (
@@ -20,6 +21,7 @@ export function HonoluluExportDialog({ session, onClose }: { session: HonoluluSe
         <>
           {edited.length > 0 && <p>{`メッセージ: 変更 ${edited.length} 個 (${files.join('、')})`}</p>}
           {tables.length > 0 && <p>{`変更した表: ${tables.join('、')}`}</p>}
+          {stages.length > 0 && <p>{`店の品揃え: 段階 ${stages.join('・')} (shopItemData・shopItemGroup。後ろの段階の行の範囲もずらします)`}</p>}
           <p className="muted small">{`zip の中身: ${HONOLULU.titleId}/romfs/${[...session.modFiles().keys()].join('・')} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます。`}</p>
           {error && <div className="error">{error}</div>}
           <div className="row">

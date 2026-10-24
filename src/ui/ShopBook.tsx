@@ -76,6 +76,8 @@ export interface ShopBookProps<T extends { item: number }> {
   /** Where the edits are written ("ShopItem として … に書き出されます"). */
   exportNote?: string;
   stockNote?: ReactNode;
+  /** What the list counts and its column (初代's shop lists its stages: "段階"); "店" by default. */
+  unit?: string;
 }
 
 const sameList = <T,>(a: T[], b: T[], same: (x: T, y: T) => boolean): boolean => a.length === b.length && a.every((r, i) => same(r, b[i]!));
@@ -162,9 +164,9 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
         <ListFilter query={query} setQuery={setQuery} placeholder="アイテム名・店員の台詞で検索" filter={filter} setFilter={setFilter}
           options={[['all', 'すべて'], ['changed', '変更した']]} />
         <div className="book-list" ref={list}>
-          <Count shown={shown.length} total={shops.length} unit="店" />
+          <Count shown={shown.length} total={shops.length} unit={props.unit ?? '店'} />
           <table className="book-table">
-            <thead><tr><th>ID</th><th>店</th><th>品数</th></tr></thead>
+            <thead><tr><th>ID</th><th>{props.unit ?? '店'}</th><th>品数</th></tr></thead>
             <tbody>
               {shown.map((s) => (
                 <tr key={s.id} className={s.id === selected ? 'active' : ''} onClick={() => (location.hash = props.href(s.id))}>
@@ -230,7 +232,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                       {columns(shop).map((c) => <td key={c.head} className={c.className}>{c.cell(r, i)}</td>)}
                       {setRows && (
                         <td className="shop-ops">
-                          <button className="small" title="この店から外す" onClick={() => edit(shop, stock.filter((_, j) => j !== i))}>×</button>
+                          <button className="small" title={`この${props.unit ?? '店'}から外す`} onClick={() => edit(shop, stock.filter((_, j) => j !== i))}>×</button>
                         </td>
                       )}
                     </tr>
@@ -276,7 +278,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
 }
 
 /** Adding an item, reverting the shop, and warnings about lists the game was not seen with. */
-function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, item, original, picker, newRow, warnings, exportNote }: ShopBookProps<T> & {
+function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, item, original, picker, newRow, warnings, exportNote, unit = '店' }: ShopBookProps<T> & {
   shop: ShopBookShop; stock: T[]; changed: boolean; edit: (next: T[]) => void;
 }): ReactNode {
   const [picking, setPicking] = useState(false);
@@ -290,7 +292,7 @@ function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, i
       <div className="row">
         <button onClick={() => setPicking(true)}>＋ 追加</button>
         <span className="muted small">行をドラッグして並べ替え、× で外します。</span>
-        {changed && <button onClick={() => edit(original(shop))}>この店の変更を元に戻す</button>}
+        {changed && <button onClick={() => edit(original(shop))}>{`この${unit}の変更を元に戻す`}</button>}
       </div>
       {exportNote && <div className="muted small">{exportNote}</div>}
       {notes.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
