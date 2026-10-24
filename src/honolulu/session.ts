@@ -1,5 +1,5 @@
-// One opened 電波人間のRPG (honolulu, the first game) dump: its master and 2713402F (the monsters' looks) read through
-// the field definitions (master.ts, tables.ts) and the messages of every archive (messages.ts; the master's names come from them), their edits saved to IndexedDB and restored when the dump is
+// One opened 電波人間のRPG (honolulu, the first game) dump: its master, 2713402F (the monsters' looks) and 49C917B7 (the
+// pier's world map) read through the field definitions (master.ts, tables.ts) and the messages of every archive (messages.ts; the master's names come from them), their edits saved to IndexedDB and restored when the dump is
 // opened again, and the MOD export (LayeredFS zip; the game has no Update, so the edits go on the Base's files).
 import { buildModZip } from '../export/pack';
 import type { Dump } from '../rom/dump';
@@ -11,6 +11,7 @@ import { HonoluluMaster } from './master';
 import { HonoluluMessages } from './messages';
 import { HONOLULU_MONSTER_ARCHIVE, monsterRowName } from './monsters';
 import { HonoluluShop, type HonoluluSavedShop } from './shops';
+import { HonoluluWorldmap } from './worldmap';
 
 const EDITS_KEY = 'honolulu/edits/v1';
 
@@ -24,6 +25,8 @@ interface Saved {
   design?: SavedRow[];
   /** The stocks of the shop's stages (shops.ts; laid out again after the rows). */
   shops?: HonoluluSavedShop;
+  /** Changed rows of 49C917B7's PierData (the world map). */
+  pier?: SavedRow[];
 }
 
 export class HonoluluSession {
@@ -41,6 +44,8 @@ export class HonoluluSession {
     readonly messages: HonoluluMessages,
     /** 2713402F: monsterData (the monsters' names and models), directData and effectData. */
     readonly design: HonoluluMaster,
+    /** 49C917B7: PierData, the islands of the pier's world map. */
+    readonly worldmap: HonoluluWorldmap,
   ) {
     this.shop = new HonoluluShop(master);
     const names = (table: string, row: number): string | undefined => monsterRowName(this, table, row);
@@ -52,10 +57,14 @@ export class HonoluluSession {
   static async open(dump: Dump): Promise<HonoluluSession> {
     if (dump.title !== HONOLULU) throw new Error(`『${dump.title.name}』のダンプです`);
     const messages = await HonoluluMessages.load(dump);
-    const [master, design] = await Promise.all([HonoluluMaster.load(dump, messages.texts), HonoluluMaster.load(dump, messages.texts, HONOLULU_MONSTER_ARCHIVE)]);
+    const [master, design, worldmap] = await Promise.all([
+      HonoluluMaster.load(dump, messages.texts),
+      HonoluluMaster.load(dump, messages.texts, HONOLULU_MONSTER_ARCHIVE),
+      HonoluluWorldmap.load(dump, messages.texts),
+    ]);
     const { version } = master.archive;
     if (version !== 5) throw new Error(`master (${HONOLULU.master}) のアーカイブが version ${version} です (初代は 5)`);
-    const s = new HonoluluSession(dump, master, messages, design);
+    const s = new HonoluluSession(dump, master, messages, design, worldmap);
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) s.restore(saved);
     return s;
@@ -79,7 +88,7 @@ export class HonoluluSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), shops: this.shop.saved(), design: this.design.saved() };
+    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), shops: this.shop.saved(), design: this.design.saved(), pier: this.worldmap.pier.saved() };
   }
 
   private restore(saved: Saved): void {
@@ -88,6 +97,7 @@ export class HonoluluSession {
     if (saved.rows) this.master.restore(saved.rows);
     if (saved.design) this.design.restore(saved.design);
     if (saved.shops) this.shop.restore(saved.shops);
+    if (saved.pier) this.worldmap.pier.restore(saved.pier);
   }
 
   readonly scheduleSave = (): void => {
@@ -102,12 +112,17 @@ export class HonoluluSession {
 
   /** Whether anything was edited (the export has something to write). */
   changed(): boolean {
-    return this.messages.texts.changed() || this.master.changedEntries().size > 0 || this.design.changedEntries().size > 0;
+    return this.messages.texts.changed() || this.tables().some((t) => t.changedEntries().size > 0);
+  }
+
+  /** The archives of GS tables the pages edit: the master, 2713402F and 49C917B7. */
+  tables(): HonoluluMaster[] {
+    return [this.master, this.design, this.worldmap.pier];
   }
 
   /** RomFS files of the MOD (root name -> bytes): the archives with edited tables or messages. */
   modFiles(): Map<string, Uint8Array> {
-    const tables = [this.master, this.design];
+    const tables = this.tables();
     return this.messages.changedArchives(new Map(tables.map((t) => [t.name, t.changedEntries()])), new Map(tables.map((t) => [t.name, t.archive])));
   }
 

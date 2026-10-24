@@ -73,26 +73,26 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
 
   beforeAll(async () => {
     dump = await openImage(Bun.file(HONOLULU_BASE), 'honolulu-base.cia');
-    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038']) roots.set(name, await dump.readRomfs(name));
+    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038', '49C917B7']) roots.set(name, await dump.readRomfs(name));
     bytes = roots.get(HONOLULU_MASTER)!;
   });
 
-  /** GS tables of a root archive: file name -> table. */
+  /** GS tables of a root archive: file name (an entry without one: the table's own name, 49C917B7's PierData) -> table. */
   const tables = (name: string): Map<string, GsTable> => {
     const arc = parseArchive(roots.get(name)!);
     const out = new Map<string, GsTable>();
     for (const e of arc.entries) {
       const { name: file, body } = unpackEntry(arc, e);
-      if (file?.endsWith('.bin') && body.length >= 0x40 && body.subarray(0, 4).some((b) => b)) {
+      if ((file === null || file.endsWith('.bin')) && body.length >= 0x40 && body.subarray(0, 4).some((b) => b)) {
         const t = new GsTable(body);
-        if (t.rowSize && t.offset + t.rows * t.rowSize <= body.length) out.set(file, t);
+        if (t.rowSize && t.offset >= 0x30 && t.offset + t.rows * t.rowSize <= body.length) out.set(file ?? t.name, t);
       }
     }
     return out;
   };
 
   test('every definition has the row size of its table in the ROM', () => {
-    const all = new Map([...tables(HONOLULU_MASTER), ...tables('2713402F'), ...tables('A90C8038')]);
+    const all = new Map([...tables(HONOLULU_MASTER), ...tables('2713402F'), ...tables('A90C8038'), ...tables('49C917B7')]);
     for (const d of Object.values(HONOLULU_TABLES)) expect([d.file, all.get(d.file)?.rowSize]).toEqual([d.file, d.rowSize]);
   });
 

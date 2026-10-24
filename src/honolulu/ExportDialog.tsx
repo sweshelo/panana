@@ -11,7 +11,7 @@ export function HonoluluExportDialog({ session, onClose }: { session: HonoluluSe
   const [error, setError] = useState('');
   const edited = texts.editedIds();
   const files = [...new Set(edited.map((id) => texts.file(id)!.name))];
-  const tables = [...new Set([...session.master.saved(), ...session.design.saved()].map(([name]) => name))];
+  const tables = [...new Set(session.tables().flatMap((t) => t.saved()).map(([name]) => name))];
   const stages = session.shop.changedStages();
   return (
     <Dialog title="MOD の書き出し (RPG)" onClose={onClose}>
