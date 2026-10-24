@@ -8,6 +8,7 @@ import { HonoluluMapPage } from '../src/honolulu/MapPage';
 import { findEntry, parseArchive } from '../src/archive/gsarc';
 import { HONOLULU_CHEST_SECTION, HONOLULU_DESIGNED_ROOMS, HONOLULU_EXIT_SECTION, HONOLULU_OBJECT_SECTION, HONOLULU_ROT_CODEC, mapCode, parseFloors, parsePartNames, partOfName, RANDOM_POS, type HonoluluMaps } from '../src/honolulu/maps';
 import { HonoluluMapState, partTurn, PROP_ANGLES } from '../src/honolulu/mapview';
+import { buildObjects, buildTileset } from '../src/cgfx/tileset';
 import { hex8 } from '../src/util/bytes';
 import { HonoluluSession } from '../src/honolulu/session';
 import { openImage } from '../src/rom/dump';
@@ -160,6 +161,7 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
     };
     let tiles = 0;
     const designed = new Set<string>();
+    const roomTextures = new Map<string, string[]>();
     for (const m of maps.maps) {
       for (const f of m.floors) {
         const src = maps.tileSource(f);
@@ -173,6 +175,15 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
         if (src.designed) {
           designed.add(`${maps.dungeon(f.dungeon)!.floors}/${f.index}`);
           expect(findEntry(await archive(HONOLULU_DESIGNED_ROOMS), src.designedModel)).toBeDefined();
+          // a room's materials name its own textures and its tileset's (the view fills those in)
+          const key = `${hex8(src.designedModel)}/${src.textureEntry}`;
+          if (!roomTextures.has(key)) {
+            const room = buildObjects(await session.dump.readRomfs(HONOLULU_DESIGNED_ROOMS), [src.designedModel]).get(src.designedModel)!;
+            const tex = buildTileset(await session.dump.readRomfs(src.modelArchive), await session.dump.readRomfs('469B3DC6'), src.textureEntry).textures;
+            const names = room.models.get(src.designedModel)!.materials.flatMap((mt) => mt.textures).filter((t): t is string => !!t);
+            roomTextures.set(key, names.filter((n) => !room.textures.has(n) && !tex.has(n)));
+          }
+          expect(roomTextures.get(key)).toEqual([]);
         }
       }
       for (const r of maps.doc(m).recs[HONOLULU_OBJECT_SECTION] ?? []) {

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { loadObjectModels, loadTileset, objKey } from '../cgfx/loader';
 import { ModelFactory } from '../cgfx/three';
-import { lowerPriorityFirst } from '../cgfx/tileset';
+import { lowerPriorityFirst, type TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
 import { drawHover, drawSelection } from '../editor/draw2d';
 import { drawTileGlyph, GridCanvas } from '../editor/gridcanvas';
@@ -202,15 +202,19 @@ export class HonoluluMapView implements MapPageView {
     this.refresh();
   }
 
-  /** An instance of an object file's model (a prop, a room); starts loading it the first time (redrawn when it is there). */
-  private objectModel(archive: number, entry: number): THREE.Object3D | null {
-    const key = `${hex8(archive)}/${hex8(entry)}`;
+  /**
+   * An instance of an object file's model (a prop, a room); starts loading it the first time (redrawn when it is there).
+   * `textures` (by name) fill in the ones the file does not hold: a designed room uses its tileset's (469B3DC6).
+   */
+  private objectModel(archive: number, entry: number, textures?: { key: string; byName: TilesetModels['textures'] }): THREE.Object3D | null {
+    const key = `${hex8(archive)}/${hex8(entry)}${textures ? `/${textures.key}` : ''}`;
     if (!this.objects.has(key)) {
       this.objects.set(key, null);
       void loadObjectModels({ dump: this.dump }, [{ archive, entry }], SCOPE).then((sets) => {
         const set = sets.get(objKey(archive, entry, SCOPE));
         if (this.disposed || !set?.models.size) return;
-        this.objects.set(key, { factory: new ModelFactory(lowerPriorityFirst(set)), hash: entry });
+        const full = textures ? { ...set, textures: new Map([...textures.byName, ...set.textures]) } : set;
+        this.objects.set(key, { factory: new ModelFactory(lowerPriorityFirst(full)), hash: entry });
         this.sync3d();
         this.signal.emit();
       }, () => {});
@@ -272,8 +276,9 @@ export class HonoluluMapView implements MapPageView {
     const ts = this.source?.tileset ?? -1;
     this.room.clear();
     const src = this.source;
-    if (this.showModels && layers.tiles && src?.designedModel) {
-      const m = this.objectModel(parseInt(HONOLULU_DESIGNED_ROOMS, 16), src.designedModel);
+    if (this.showModels && layers.tiles && src?.designedModel && f) {
+      // the rooms hold only their own textures; the ground and walls are the tileset's (else drawn untextured)
+      const m = this.objectModel(parseInt(HONOLULU_DESIGNED_ROOMS, 16), src.designedModel, { key: this.loadedFor, byName: f.set.textures });
       if (m && doc.tiles.length) {
         // the room is centred on the middle of the map's tiles (estimated: so its walls meet the tiles')
         const xs = doc.tiles.map((t) => t.x), ys = doc.tiles.map((t) => t.y);
