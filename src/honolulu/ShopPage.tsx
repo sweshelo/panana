@@ -65,8 +65,6 @@ export function HonoluluShopPage({ master, shop, arg, edited }: { master: Honolu
     shop.set(s.id, rows);
     edited();
   };
-  const setFeatured = (s: ShopBookShop, i: number, on: boolean): void =>
-    setRows(s, shop.rows(s.id).map((r, j) => (j === i ? { ...r, featured: on, bytes: honoluluShopRowBytes(r.item, on, r.bytes) } : r)));
   return (
     <ShopBook<HonoluluShopRow>
       shops={stages}
@@ -88,7 +86,10 @@ export function HonoluluShopPage({ master, shop, arg, edited }: { master: Honolu
         {
           head: '目玉',
           className: 'num',
-          cell: (r, i) => <input type="checkbox" checked={r.featured} title={FEATURED_HELP} onChange={(e) => setFeatured(s, i, e.target.checked)} />,
+          cell: (r, _, setRow) => (
+            <input type="checkbox" checked={r.featured} title={FEATURED_HELP}
+              onChange={(e) => setRow({ ...r, featured: e.target.checked, bytes: honoluluShopRowBytes(r.item, e.target.checked, r.bytes) })} />
+          ),
         },
         { head: '新', className: 'num', cell: (r) => (s.id > 0 && shop.isNew(s.id, r.item) ? <span className="muted" title={NEW_HELP}>新</span> : '') },
       ]}
