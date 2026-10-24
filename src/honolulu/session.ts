@@ -6,6 +6,7 @@ import type { Dump } from '../rom/dump';
 import { HONOLULU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
 import type { SavedRow, SavedRowCount } from '../game/mastertables';
+import { HonoluluMaps } from './maps';
 import { HonoluluMaster } from './master';
 import { HonoluluMessages } from './messages';
 import { HONOLULU_MONSTER_ARCHIVE, monsterRowName } from './monsters';
@@ -32,6 +33,7 @@ export class HonoluluSession {
   revision = 0;
   /** The shop's 12 stages (shopItemGroup / shopItemData). */
   readonly shop: HonoluluShop;
+  private mapsLoad: Promise<HonoluluMaps> | undefined;
 
   private constructor(
     readonly dump: Dump,
@@ -57,6 +59,11 @@ export class HonoluluSession {
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) s.restore(saved);
     return s;
+  }
+
+  /** The maps (A90C8038 and the floor definitions), read when the map page is first shown. */
+  maps(): Promise<HonoluluMaps> {
+    return (this.mapsLoad ??= HonoluluMaps.load(this.dump, this.master));
   }
 
   /** A page changed the data: redraw the pages that show it and save. */

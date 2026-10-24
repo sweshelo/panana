@@ -56,7 +56,7 @@ export function MapPickerDialog({ groups, current, withNone = false, modified, t
 }): ReactNode {
   const [query, setQuery] = useState('');
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' }), []);
+  useEffect(() => { list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' }); }, []);
   const q = query.trim().toUpperCase();
   const shown = groups
     .map(([label, rows]) => [label, q && !label.toUpperCase().includes(q) ? rows.filter((r) => r.title.toUpperCase().includes(q) || r.code.toUpperCase().includes(q)) : rows] as const)

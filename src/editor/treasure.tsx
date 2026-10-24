@@ -60,7 +60,7 @@ function TreasureRowPicker({ st, current, apply, onPick, onClose }: {
   const [query, setQuery] = useState('');
   const [onlyFree, setOnlyFree] = useState(false);
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' }), []);
+  useEffect(() => { list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' }); }, []);
   const used = usage(st);
   const q = query.trim();
   const rows: { row: number; text: string; users: string[] }[] = [];

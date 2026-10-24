@@ -1,7 +1,7 @@
 // 初代's monsters (naauao honolulu/monsters.md): the rows of monsterBattleParameter (master, bit-packed stats, drops and
 // skills), their looks in monsterData (2713402F: the name and the 470D2848 model, shared by the forms of a monster), the
 // skills of monsterAttackSkill, and the groups (monsterGroup, monsterFixGroup) that hold them. Where the groups appear
-// (the dungeon floors' files) is not read yet (naauao#47).
+// is read from the dungeon floors' files (maps.ts groupFloors).
 import { loadComposite } from '../cgfx/loader';
 import { lowerPriorityFirst } from '../cgfx/tileset';
 import type { TableRows } from '../game/tablerows';
