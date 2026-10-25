@@ -2,7 +2,8 @@
 // template dungeon, a name of its own (a new message) and its own event archive (a copy of the template's, with an
 // empty EventObject table). The save has no room past the dungeons' ranges (0x8E / 0x91 / 0x92 end where flagData
 // +0x08 ends, with no gaps), so the event row states (0x8E) are the unused tail of another dungeon's range, which
-// that dungeon gives up (its +0x1C shrinks to the rows and slots it uses); the values (0x91) and flags (0x92) get none. Its maps go into a row of the
+// that dungeon gives up (its +0x1C shrinks to the rows and slots it uses); the values (0x91) and flags (0x92) get only
+// what the vacant row had of its own. Its maps go into a row of the
 // dungeon table that has none (game/mappatch.ts), so code.bin keeps its 56 rows.
 //
 // Why a vacant row and not a new one: the dungeon ID (mapGroup row) is checked against 0x3A (the 58 rows) in many

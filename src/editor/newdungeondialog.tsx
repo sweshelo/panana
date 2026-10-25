@@ -84,7 +84,7 @@ export function NewDungeonDialog({ session, currentDungeon, onCreated, onClose }
       <label className="layer"><input type="checkbox" checked={copyTiles} onChange={(e) => setCopyTiles(e.target.checked)} /> タイルも写す</label>
       <p className="muted small" style={{ whiteSpace: 'pre-line' }}>
         {[
-          `ダンジョンの番号は ${slot} (mapGroup の空いている行) を使います。見た目 (タイルセット・BGM)・フラグ・状態の枠の数は写す元のダンジョンと同じにし、セーブの状態・値・フラグの枠は、ほかのダンジョンと重ならないところを割り当てます。`,
+          `ダンジョンの番号は ${slot} (mapGroup の空いている行) を使います。見た目 (タイルセット・BGM)・フラグは写す元のダンジョンと同じにします。セーブには空きがないので、宝箱などの状態の枠は、使っていない枠がいちばん多いダンジョンから末尾を分けてもらいます。`,
           'イベントの表 (EventObject) は空のアーカイブを新しく作ります。宝箱やギミックはあとから足してください。',
           'マップのコードはダンジョンのコードで始まります (例: D11B01001)。ほかのダンジョン・マップのコードと重ならないようにしてください。',
           '作ったあと、ワールドマップのページで入口の行き先をこのダンジョンのマップにし、このマップにも出口を置いてください。',

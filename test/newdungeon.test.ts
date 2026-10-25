@@ -118,7 +118,13 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       expect(nd.ranges[0]!.first).toBe(u16(dOrig, MG.states) + nd.donorSlots);
       expect(nd.ranges[0]!.first + nd.ranges[0]!.count).toBe(u16(dOrig, MG.states) + dOrig[MG.stateCount]!);
       expect((await game.eventTable(nd.donor))!.capacity).toBe(nd.donorSlots);
-      expect([r11[MG.valueCount], r11[MG.flagCount]]).toEqual([0, 0]);
+      // 0x91 / 0x92: only what row 11 had of its own (the dungeons fill them without gaps)
+      const o11 = mg0.subarray(game.master.mapGroup.offset + 11 * 0x2c);
+      for (const [first, count] of [[MG.values, MG.valueCount], [MG.flags, MG.flagCount]] as const) {
+        if (!r11[count]) continue;
+        expect(u16(r11, first)).toBeGreaterThanOrEqual(u16(o11, first));
+        expect(u16(r11, first) + r11[count]!).toBeLessThanOrEqual(u16(o11, first) + o11[count]!);
+      }
       for (const u of usedRanges(game, MG.states, MG.stateCount, 11)) expect(nd.ranges[0]!.first >= u.first + u.count || nd.ranges[0]!.first + nd.ranges[0]!.count <= u.first).toBe(true);
       expect(rowLabel(game, 11)).toBe('D11');
       // The archive: the template's entries, an empty EventObject table
