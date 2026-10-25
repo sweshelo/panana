@@ -53,11 +53,12 @@ function trimmed(b: Uint8Array): Uint8Array {
   return b.subarray(0, end);
 }
 
-/** The track info RPG2 writes: volume 127, pan 64, and the indices of every channel. */
+/** The track info RPG2 writes: volume 127, pan 64, +3 = 1 (as in all its streams), and the indices of every channel. */
 export function trackInfo(channels: number): Uint8Array {
   const t = new Uint8Array(0x10 + align(channels, 4));
   t[0] = 0x7f;
   t[1] = 0x40;
+  t[3] = 1;
   w16(t, 4, 0x0100);
   w32(t, 8, 0x0c);
   w32(t, 0x0c, channels);
