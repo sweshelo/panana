@@ -26,5 +26,5 @@ export class Signal {
 }
 
 export function useSignal(s: Signal): number {
-  return useSyncExternalStore(s.subscribe, s.get);
+  return useSyncExternalStore(s.subscribe, s.get, s.get);
 }

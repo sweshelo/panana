@@ -58,13 +58,13 @@ export function OahuMapPage({ session, arg }: { session: OahuSession; arg: strin
 }
 
 /** The maps by dungeon for the map picker (the same dialog as RPG2's map editor). */
-function useMapGroups(session: OahuSession): MapPickerGroups {
+export function useMapGroups(session: OahuSession): MapPickerGroups {
   const { maps } = session;
   const revision = useMaps(maps);
   return useMemo(() => {
     const out = new Map<number, MapPickerRow[]>();
     for (const m of maps.maps) {
-      const title = m.world ? 'ワールドマップ (表示のみ)' : `${oahuFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
+      const title = m.world ? 'ワールドマップ' : `${oahuFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
       out.set(m.dungeon, [...(out.get(m.dungeon) ?? []), { hash: m.hash, title, code: m.name }]);
     }
     return [...out].sort(([a], [b]) => a - b).map(([d, rows]): [string, MapPickerRow[]] => [oahuDungeonLabel(session, d), rows]);
@@ -122,7 +122,7 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
           {preview && <div className="story-preview small">{preview}</div>}
         </>
       }
-      placeholder={info.world ? <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) の区画は別の形 (naauao oahu/map.md §8) なので、まだ表示できません。</p> : undefined}
+      placeholder={info.world ? <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) は区画の形が別 (naauao oahu/worldmap.md) なので、<a href="#/world">ワールドマップのページ</a>で表示・編集します。</p> : undefined}
       left={open && (
         <>
           <Tools st={st} />

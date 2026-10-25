@@ -391,6 +391,8 @@ input.edited { border-color: var(--warn); }
 .world-scroll { overflow: auto; max-height: 72vh; border: 1px solid var(--border); background: #0c1a30; }
 .world-scroll canvas { display: block; image-rendering: pixelated; touch-action: none; }
 .world-hover { height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.world-terrain-tools .row { flex-wrap: wrap; gap: 6px; align-items: center; }
+.world-3d-pane { height: 420px; border: 1px solid var(--border); }
 .warn-mark { color: var(--warn); }
 
 /* Event page: annotated assembly */
@@ -674,3 +676,17 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .pier-icon-button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 4px; }
 .pier-icon-button.active { outline: 2px solid #ffd84a; }
 .pier-icon-button .photo, .pier-icon-button .photo img { width: 32px; height: 32px; }
+
+/* RPG3 world map (oahu/WorldPage.tsx) */
+.world-palette .brush-info { margin: 4px 0; }
+.small-swatch { display: inline-block; width: 16px; height: 16px; border-radius: 3px; flex: none; border: 1px solid rgba(0, 0, 0, 0.4); }
+.world-parts { display: flex; flex-direction: column; gap: 1px; max-height: 260px; overflow: auto; margin: 4px 0 8px; }
+.world-part { display: flex; align-items: center; gap: 6px; text-align: left; padding: 1px 4px; font-size: 12px; }
+.world-part .world-part-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.world-palette input[type='search'], .world-entrances input[type='search'] { width: 100%; box-sizing: border-box; }
+.world-entrance-table { font-size: 12px; }
+.world-entrance-table tr { cursor: pointer; }
+.world-entrance-table tr.group th { text-align: left; color: var(--muted); font-weight: normal; padding-top: 6px; }
+.world-entrance .num-input { width: 72px; }
+.world-exits { padding-left: 16px; }
+.world-dest-maps table { font-size: 12px; }
