@@ -172,14 +172,34 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     }
   });
 
-  test('PROBE (temporary): every dungeon archive names its EventObject entry with the same hash', async () => {
-    const hashes = new Set<number>();
-    for (let d = 1; d < game.master.mapGroup.rows; d++) {
+  test('PROBE (temporary): summary', async () => {
+    const t = game.master.mapGroup;
+    const nonzero: Record<string, number> = {};
+    for (let r = 0; r < t.rows; r++) for (const o of [0x1d, 0x21, 0x25]) if (t.row(r)[o]) nonzero[`r${r}+${o.toString(16)}`] = t.row(r)[o]!;
+    const ranges: Record<string, unknown> = {};
+    for (const [key, first, count] of RANGE_FIELDS) {
+      const used = usedRanges(game, first, count, -1);
+      ranges[hex8(key)] = { size: saveSize(game, key), maxEnd: Math.max(...used.map((u) => u.first + u.count)), rows: used.length, gaps: (() => { let pos = 0, g = 0; for (const u of used) { if (u.first > pos) g += u.first - pos; pos = Math.max(pos, u.first + u.count); } return g; })() };
+    }
+    const fd = game.master.table('flagData.bin');
+    const flagRows = Object.fromEntries([0x8e, 0x91, 0x92].map((k) => [hex8(k), { u8_0: fd.row(k)[0], u16_8: u16(fd.row(k), 8), b_a: fd.row(k)[0xa], b_b: fd.row(k)[0xb], u16_c: u16(fd.row(k), 0xc) }]));
+    // Where the EventObject entry is: its index in each archive, and offsets of the dungeon's mapGroup row holding its hash.
+    const idx = new Set<number>();
+    let offsets: number[] | null = null;
+    let names = 0;
+    for (let d = 1; d < t.rows; d++) {
       const a = game.master.eventArchive(d);
       if (!a) continue;
       const arc = parseArchive(await game.dump.readRomfs(hex8(a)));
-      for (const e of arc.entries) if (e.comp === 1 && unpackEntry(arc, e).name?.endsWith('_EventObject.bin')) hashes.add(e.hash);
+      const e = arc.entries.find((x) => x.comp === 1 && unpackEntry(arc, x).name?.endsWith('_EventObject.bin'));
+      if (!e) continue;
+      idx.add(e.index);
+      const n = unpackEntry(arc, e).name!;
+      if (n.slice(0, 3).toUpperCase() === (rowLabel(game, d) ?? '')) names++;
+      const row = t.row(d);
+      const here = Array.from({ length: 11 }, (_, k) => k * 4).filter((o) => u32(row, o) === e.hash);
+      offsets = offsets === null ? here : offsets.filter((o) => here.includes(o));
     }
-    expect(hashes.size).toBe(1);
+    expect({ nonzero, ranges, flagRows, eventIndex: [...idx], eventHashOffsets: offsets, namesMatchLabel: names }).toEqual({} as never);
   });
 });
