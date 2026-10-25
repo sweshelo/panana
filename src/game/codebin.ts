@@ -4,7 +4,7 @@ import { readWorldTable, type WorldInfo } from './worldmap';
 
 export * from './codeconst';
 import { BASE, MAP_DATA_KEYS, MAP_DATA_NONE, MAP_ROWS, MAP_SECTIONS, MAP_SECTIONS_ROWS, MAP_TABLE, MAP_TABLE_ROWS, PROBE_MAP } from './codeconst';
-import { readExtension } from './mappatch';
+import { readExtension, type AddedDungeon } from './mappatch';
 
 export interface MapInfo {
   hash: number;
@@ -30,6 +30,8 @@ export class CodeBin {
   readonly maps: MapInfo[];
   /** World maps (their own section table; not in {@link maps}). docs/worldmap.md. */
   readonly worlds: WorldInfo[];
+  /** Dungeons added by the editor (read from the PNMP extension, or added in this session; game/newdungeon.ts). */
+  readonly dungeons: AddedDungeon[] = [];
   constructor(readonly code: Uint8Array) {
     const at = (addr: number): number => addr - BASE;
     if (code.length < at(MAP_TABLE) + MAP_TABLE_ROWS * 16) throw new Error('code.bin が短すぎます');
@@ -46,6 +48,7 @@ export class CodeBin {
     }
     const ext = readExtension(code);
     const added = new Set<number>();
+    const given = new Set(ext?.dungeons.map((r) => r.tableRow) ?? []);
     for (const row of ext?.sections ?? []) {
       sections.set(row[0]!, row);
       added.add(row[0]!);
@@ -65,6 +68,7 @@ export class CodeBin {
       const dungeonCode = str(u32(code, o + 4));
       const n = u32(code, o + 8);
       const arr = u32(code, o + 12);
+      if (given.has(i)) this.dungeons.push({ dungeon, code: dungeonCode });
       for (let j = 0; j < n; j++) {
         const r = at(arr) + j * 0x1c;
         const hash = u32(code, r);
@@ -120,6 +124,18 @@ export class CodeBin {
       const i = this.maps.findIndex((m) => m.hash === h && m.added);
       if (i >= 0) this.maps.splice(i, 1);
     }
+  }
+
+  /** Add a dungeon made in the editor (its maps are added with {@link addMap}). */
+  addDungeon(d: AddedDungeon): void {
+    if (this.dungeons.some((x) => x.dungeon === d.dungeon)) throw new Error(`ダンジョン ${d.dungeon} はもうあります`);
+    this.dungeons.push({ ...d });
+  }
+
+  /** Undo {@link addDungeon}. */
+  removeDungeon(dungeon: number): void {
+    const i = this.dungeons.findIndex((d) => d.dungeon === dungeon);
+    if (i >= 0) this.dungeons.splice(i, 1);
   }
 
   /** Maps added by the editor (read from the PNMP extension, or added in this session). */
