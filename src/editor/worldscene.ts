@@ -67,6 +67,8 @@ export class WorldScene {
     this.scene.camera.far = 60000;
     this.scene.camera.updateProjectionMatrix();
     this.scene.scene.add(this.sea, this.tiles.group, this.marksGroup);
+    // the grid on the ground would show through the sea
+    for (const o of this.scene.scene.children) if (o instanceof THREE.GridHelper) o.visible = false;
     this.scene.controls.addEventListener('change', () => this.follow());
   }
 

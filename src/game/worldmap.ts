@@ -228,8 +228,10 @@ export interface WorldPart {
   object: number;
 }
 
-/** Archive of the terrain's models (bcres with their textures). */
+/** Archive of the terrain's models (bcres; the buildings on the map have their own textures). */
 export const WORLD_MODEL_ARCHIVE = 0xd98f0e82;
+/** The terrain's shared textures in that archive (a bcres of 93 textures: bg_sea, mnmp_*). */
+export const WORLD_TEXTURES = 0xcc4e7000;
 
 /** worldmapParts +4 flags (docs/worldmap.md §4). */
 export const PART_2X2 = 0x10;

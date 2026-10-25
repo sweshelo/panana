@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { ModelFactory } from '../cgfx/three';
 import { WorldScene, type WorldMark } from '../editor/worldscene';
-import { ENT, WORLD_MODEL_ARCHIVE, WORLD_SIZE, type WorldInfo, type WorldPart } from '../game/worldmap';
+import { ENT, WORLD_MODEL_ARCHIVE, WORLD_SIZE, WORLD_TEXTURES, type WorldInfo, type WorldPart } from '../game/worldmap';
 import type { Session } from '../session';
 
 /** Base colours by terrain type (worldmapParts +4 bits 0-1), and the sea (no part). */
@@ -99,13 +99,16 @@ export function World3D({ session, world, entrances, selected, revision, onSelec
     };
     setStatus('地形のモデルを読み込み中…');
     const refs = [...new Set(parts.map((p) => p.model).filter((h) => h))].map((entry) => ({ archive: WORLD_MODEL_ARCHIVE, entry }));
-    void loadObjectModels(game, refs).then(
+    void loadObjectModels(game, [...refs, { archive: WORLD_MODEL_ARCHIVE, entry: WORLD_TEXTURES }]).then(
       (sets) => {
         if (disposed) return;
         const errors: string[] = [];
+        // the terrain's models name the shared textures (their own come first)
+        const shared = sets.get(objKey(WORLD_MODEL_ARCHIVE, WORLD_TEXTURES))?.textures ?? new Map();
+        if (!shared.size) errors.push('共有のテクスチャ (CC4E7000) を読めません');
         for (const { entry } of refs) {
           const set = sets.get(objKey(WORLD_MODEL_ARCHIVE, entry));
-          if (set?.models.size) models.set(entry, new ModelFactory(set));
+          if (set?.models.size) models.set(entry, new ModelFactory({ ...set, textures: new Map([...shared, ...set.textures]) }));
           else errors.push(...(set?.errors ?? [`${entry.toString(16)} を読めません`]));
         }
         setStatus(errors.length ? `モデルの一部を読めませんでした: ${errors.slice(0, 3).join(' / ')}` : '');

@@ -10,7 +10,7 @@ import { useSignal } from '../ui/useEditorState';
 import { equalBytes, f32, hex8, u32, w32 } from '../util/bytes';
 import { EventObjectEditor } from './EventObjectEditor';
 import { oahuEventKey } from './events';
-import { OAHU_EXIT_KIND, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo } from './maps';
+import { OAHU_EVENT_SECTIONS, OAHU_EXIT_KIND, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo } from './maps';
 import { oahuDungeonLabel, oahuMapHref, useMapGroups, useMaps } from './MapPage';
 import { oahuGroupHref } from './pickers';
 import type { OahuSession } from './session';
@@ -22,6 +22,8 @@ import {
 
 export const oahuWorldHref = (index?: number): string => (index === undefined ? '#/world' : `#/world/${index}`);
 const DIRS = ['0 (180°)', '1 (90°)', '2 (0°)', '3 (−90°)'];
+/** Sections whose records name an EventObject row (an exit to the world can be any of them). */
+const SECTION_NAME: Record<number, string> = { 3: '出入口', 4: '宝箱', 5: 'キャラ・オブジェクト', 8: 'イベントの範囲' };
 const SLOT_LABEL: Record<number, string> = { [WS.land]: 'エンカウントの範囲 (陸、区画 3)', [WS.sea]: 'エンカウントの範囲 (海、区画 4)', [WS.chests]: '宝箱 (区画 8)', [WS.props]: '置物 (区画 6)', [WS.events]: 'イベントの範囲 (区画 5)' };
 
 export function OahuWorldPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
@@ -459,6 +461,8 @@ function DestPoint({ session, map, point, onChange }: { session: OahuSession; ma
 
 interface WorldExit {
   map: OahuMapInfo;
+  /** The record's section (3 exits, 8 event ranges …) and index. */
+  section: number;
   exit: number;
   point: number;
   /** The entrance of the world the exit leads to (-1: none with that ID). */
@@ -478,13 +482,14 @@ function DestMaps({ session, view, map, entranceId }: { session: OahuSession; vi
       const t = d ? await maps.eventTable(d).catch(() => null) : null;
       const out: WorldExit[] = [];
       for (const m of list)
-        (maps.doc(m).recs[3] ?? []).forEach((e, i) => {
-          const row = oahuRecEventRow(3, e.raw);
-          if (!t || !row || row >= t.rows) return;
-          const ev = t.row(row);
-          if (u32(ev, 0x10) !== OAHU_WORLD) return;
-          out.push({ map: m, exit: i, point: u32(ev, 0x14), entrance: world.entranceById(u32(ev, 0x14)) });
-        });
+        for (const section of OAHU_EVENT_SECTIONS)
+          (maps.doc(m).recs[section] ?? []).forEach((e, i) => {
+            const row = oahuRecEventRow(section, e.raw);
+            if (!t || !row || row >= t.rows) return;
+            const ev = t.row(row);
+            if (u32(ev, 0x10) !== OAHU_WORLD) return;
+            out.push({ map: m, section, exit: i, point: u32(ev, 0x14), entrance: world.entranceById(u32(ev, 0x14)) });
+          });
       if (live) setExits(out);
     })();
     return () => {
@@ -512,8 +517,8 @@ function DestMaps({ session, view, map, entranceId }: { session: OahuSession; vi
           {exits.map((x) => {
             const e = x.entrance >= 0 ? world.entrances()[x.entrance] : undefined;
             return (
-              <li key={`${x.map.hash}.${x.exit}`}>
-                <a href={oahuMapHref(x.map)}>{`${x.map.name} の出入口 #${x.exit}`}</a>
+              <li key={`${x.map.hash}.${x.section}.${x.exit}`}>
+                <a href={oahuMapHref(x.map)}>{`${x.map.name} の${SECTION_NAME[x.section] ?? `区画 ${x.section} の`} #${x.exit}`}</a>
                 {' → '}
                 {e ? <a href={oahuWorldHref(x.entrance)} onClick={(ev) => { ev.preventDefault(); view.select({ type: 'entrance', index: x.entrance }, true); }}>
                   {`${WE.part(e) ? '入口' : '出る位置'} #${x.entrance} (${WE.x(e)}, ${WE.y(e)})`}
