@@ -5,7 +5,7 @@ import type { MapEditor } from '../editor/mapeditor';
 import type { HonoluluSession } from '../honolulu/session';
 import type { LanaiSession } from '../lanai/session';
 import type { OahuSession } from '../oahu/session';
-import type { Dump } from '../rom/dump';
+import type { BaseMod, Dump } from '../rom/dump';
 import { TITLES, type TitleKey } from '../rom/titles';
 import type { Session } from '../session';
 
@@ -34,6 +34,12 @@ export const useWorkspace = (): Workspace | null => useContext(WorkspaceContext)
 export function openedDump(o: Opened, key: TitleKey): Dump | undefined {
   if (key === 'kahara') return o.kahara?.session.game.dump;
   return o[key]?.dump;
+}
+
+/** The base MOD an opened game is read with. */
+export function openedBaseMod(o: Opened, key: TitleKey): BaseMod | null {
+  if (key === 'kahara') return o.kahara?.session.game.baseMod ?? null;
+  return o[key]?.baseMod ?? null;
 }
 
 /** The opened games, in the order of TITLES. */

@@ -3,7 +3,8 @@
 // opened again, and the MOD export (LayeredFS zip; the game has no Update, so the edits go on the Base's files).
 import { buildModZip } from '../export/pack';
 import type { SoundNames } from '../game/sound';
-import type { Dump } from '../rom/dump';
+import { packageOn } from '../rom/basemod';
+import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { HONOLULU } from '../rom/titles';
 import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
@@ -40,6 +41,10 @@ export class HonoluluSession {
   /** The shop's 12 stages (shopItemGroup / shopItemData). */
   readonly shop: HonoluluShop;
   private mapsLoad: Promise<HonoluluMaps> | undefined;
+  /** The dump as opened, without the base MOD ({@link dump} reads through it). */
+  raw!: Dump;
+  /** The existing MOD the dump is read with (its files also go into the export), or null. */
+  baseMod: BaseMod | null = null;
 
   private constructor(
     readonly dump: Dump,
@@ -56,9 +61,10 @@ export class HonoluluSession {
     design.names = names;
   }
 
-  /** Opens the dump; refuses one whose master is not the first game's (a version 5 GS archive). */
-  static async open(dump: Dump): Promise<HonoluluSession> {
-    if (dump.title !== HONOLULU) throw new Error(`『${dump.title.name}』のダンプです`);
+  /** Opens the dump (on a base MOD when one is given); refuses one whose master is not the first game's (a version 5 GS archive). */
+  static async open(raw: Dump, baseMod: BaseMod | null = null): Promise<HonoluluSession> {
+    if (raw.title !== HONOLULU) throw new Error(`『${raw.title.name}』のダンプです`);
+    const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     const messages = await HonoluluMessages.load(dump);
     const [master, design, worldmap] = await Promise.all([
       HonoluluMaster.load(dump, messages.texts),
@@ -68,6 +74,8 @@ export class HonoluluSession {
     const { version } = master.archive;
     if (version !== 5) throw new Error(`master (${HONOLULU.master}) のアーカイブが version ${version} です (初代は 5)`);
     const s = new HonoluluSession(dump, master, messages, design, worldmap);
+    s.raw = raw;
+    s.baseMod = baseMod;
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) s.restore(saved);
     return s;
@@ -148,8 +156,13 @@ export class HonoluluSession {
     return this.messages.changedArchives(new Map(tables.map((t) => [t.name, t.changedEntries()])), new Map(tables.map((t) => [t.name, t.archive])));
   }
 
+  /** The files of the MOD below the title folder: romfs/… (with the base MOD's files) and the base MOD's exefs/code.ips. */
+  modPackage(): Map<string, Uint8Array> {
+    return packageOn(this.baseMod, this.modFiles(), this.baseMod?.ips ?? null);
+  }
+
   /** The LayeredFS zip: 0004000000077E00/romfs/…. */
   modZip(): Uint8Array {
-    return buildModZip(new Map([...this.modFiles()].map(([name, b]) => [`romfs/${name}`, b])), HONOLULU.titleId);
+    return buildModZip(this.modPackage(), HONOLULU.titleId);
   }
 }

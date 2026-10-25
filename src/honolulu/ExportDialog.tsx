@@ -2,6 +2,7 @@
 // (0004000000077E00/romfs/…). The game has no Update, so the edits go on the Base's files.
 import { useState, type ReactNode } from 'react';
 import { HONOLULU } from '../rom/titles';
+import { BaseModNote } from '../ui/BaseModButton';
 import { Dialog } from '../ui/Dialog';
 import { download } from '../ui/download';
 import type { HonoluluSession } from './session';
@@ -22,7 +23,8 @@ export function HonoluluExportDialog({ session, onClose }: { session: HonoluluSe
           {edited.length > 0 && <p>{`メッセージ: 変更 ${edited.length} 個 (${files.join('、')})`}</p>}
           {tables.length > 0 && <p>{`変更した表: ${tables.join('、')}`}</p>}
           {stages.length > 0 && <p>{`店の品揃え: 段階 ${stages.join('・')} (shopItemData・shopItemGroup。後ろの段階の行の範囲もずらします)`}</p>}
-          <p className="muted small">{`zip の中身: ${HONOLULU.titleId}/romfs/${[...session.modFiles().keys()].join('・')} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます。`}</p>
+          <BaseModNote mod={session.baseMod} />
+          <p className="muted small">{`zip の中身: ${[...session.modPackage().keys()].map((p) => `${HONOLULU.titleId}/${p}`).join('・')} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます。`}</p>
           {error && <div className="error">{error}</div>}
           <div className="row">
             <button className="primary" onClick={() => {

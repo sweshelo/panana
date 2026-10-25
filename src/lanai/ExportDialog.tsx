@@ -4,6 +4,7 @@
 import { useState, type ReactNode } from 'react';
 import { LANAI } from '../rom/titles';
 import { PortStore } from '../port/store';
+import { BaseModNote } from '../ui/BaseModButton';
 import { CodeModOption } from '../ui/CodeModOption';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
@@ -17,7 +18,8 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   const maps = session.changedMapDbs();
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
-  const archives = [...new Set([...changed.map((t) => t.archive), ...maps.map((m) => m.archive), ...ported.map((p) => p.split(':')[0]!)])];
+  const archives = [...new Set([...changed.map((t) => t.archive), ...maps.map((m) => m.archive), ...ported.map((p) => p.split(':')[0]!), ...(session.baseMod?.romfs.keys() ?? [])])];
+  const ips = session.dropCap || !!session.baseMod?.ips;
   return (
     <Dialog title="MOD の書き出し (RPG FREE!)" onClose={onClose}>
       {!session.canExport ? (
@@ -45,7 +47,8 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                 {ported.map((p) => <li key={`port/${p}`}>{p}</li>)}
                 {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (exefs/code.ips)</li>}
               </ul>
-              <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', session.dropCap ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
+              <BaseModNote mod={session.baseMod} />
+              <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', ips ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
               {error && <div className="error">{error}</div>}
               <div className="row">
                 <button className="primary" onClick={async () => {

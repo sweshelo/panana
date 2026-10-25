@@ -41,6 +41,7 @@ export async function giveMonsterLook(o: Opened, target: PortTitle, row: number,
     if (!template) throw new Error('このモンスターのデザインの行がありません');
     const { entries, hashes, altIdle } = await portedEntries(look, target, template, await takenIn(target, (n) => s.dump.readRomfs(n)));
     store.add(entries);
+    s.monsterModels.forgetModels();
     const d = await s.monsterModels.addRow(portedDesign(look, target, template, hashes));
     mons.set(row, 'design', d);
     // the other idle (+0x48 bit9) needs a 002_ animation the new look may not have

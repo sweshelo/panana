@@ -4,12 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MapEditor } from '../editor/mapeditor';
 import { Game } from '../game/game';
 import { saveDumpCache } from '../rom/cache';
-import { baseModFromFiles, openDumps, type BaseMod, type Dump } from '../rom/dump';
+import { savedBaseMod, saveBaseMod } from '../rom/basemod';
+import { openDumps, type BaseMod, type Dump } from '../rom/dump';
 import type { TitleKey } from '../rom/titles';
 import { Session } from '../session';
 import { PortStore } from '../port/store';
 import { forgetArchives } from '../cgfx/loader';
-import { idbGet, idbSet } from '../util/idb';
 import { HonoluluSession } from '../honolulu/session';
 import { LanaiSession } from '../lanai/session';
 import { HonoluluShell } from './HonoluluShell';
@@ -21,12 +21,18 @@ import { Shell } from './Shell';
 import { StartScreen } from './StartScreen';
 import { openedKeys, WorkspaceContext, type Opened, type Workspace } from './workspace';
 
-const BASEMOD_KEY = 'basemod/v1';
-type SavedBaseMod = { label: string; romfs: [string, Uint8Array][]; ips: Uint8Array | null };
-
-async function savedBaseMod(): Promise<BaseMod | null> {
-  const s = await idbGet<SavedBaseMod>(BASEMOD_KEY);
-  return s ? { label: s.label, romfs: new Map(s.romfs), ips: s.ips } : null;
+/** Opens a game on its saved base MOD; when that fails, the base MOD is taken off and the dump opened without it. */
+async function withSavedMod<T>(key: TitleKey, open: (mod: BaseMod | null) => Promise<T>): Promise<T> {
+  const mod = await savedBaseMod(key);
+  if (!mod) return open(null);
+  try {
+    return await open(mod);
+  } catch (err) {
+    console.error(err);
+    await saveBaseMod(key, null);
+    alert(`土台の MOD「${mod.label}」を重ねると開けなかったので、外して開きます: ${(err as Error).message}`);
+    return open(null);
+  }
 }
 
 /** The opened dumps, the game shown, and a number per opening so that a reopened game's pages are built anew. */
@@ -69,20 +75,20 @@ export function Root(): ReactNode {
 
   /** Opens one dump as the pages of its game (RPG2's session is restored without asking when it replaces one). */
   const openOne = async (dump: Dump, opened: Opened): Promise<Opened> => {
-    if (dump.title.key === 'oahu') return { ...opened, oahu: await OahuSession.open(dump) };
-    if (dump.title.key === 'honolulu') return { ...opened, honolulu: await HonoluluSession.open(dump) };
+    if (dump.title.key === 'oahu') return { ...opened, oahu: await withSavedMod('oahu', (mod) => OahuSession.open(dump, mod)) };
+    if (dump.title.key === 'honolulu') return { ...opened, honolulu: await withSavedMod('honolulu', (mod) => HonoluluSession.open(dump, mod)) };
     if (dump.title.key === 'lanai') {
       opened.lanai?.saveNow();
-      return { ...opened, lanai: await LanaiSession.open(dump) };
+      return { ...opened, lanai: await withSavedMod('lanai', (baseMod) => LanaiSession.open(dump, { baseMod })) };
     }
     if (dump.titleVersion !== undefined && dump.titleVersion !== 1040)
       throw new Error(`TitleVersion が ${dump.titleVersion} です。電波人間のRPG2 は v1.1.0 (1040) 専用です。`);
     const before = opened.kahara;
     before?.session.saveNow();
     rawDump.current = dump;
-    const game = await Game.load(dump, await savedBaseMod());
+    const pages = await withSavedMod('kahara', async (mod) => openPages(await Game.load(dump, mod), !!before));
     if (!dump.label.endsWith('(キャッシュ)')) saveDumpCache(dump, (await Game.load(dump)).neededFiles()).catch(() => {});
-    return { ...opened, kahara: await openPages(game, !!before) };
+    return { ...opened, kahara: pages };
   };
 
   /** Opens `dumps` on top of what is open; the first of them is shown (asked when they are of several games). */
@@ -182,34 +188,30 @@ export function Root(): ReactNode {
   /** Reload RPG2 with another base MOD, keeping the edits (they are saved first). */
   const reloadWith = async (session: Session, mod: BaseMod | null): Promise<void> => {
     if (!ready) return;
-    await idbSet(BASEMOD_KEY, mod ? { label: mod.label, romfs: [...mod.romfs], ips: mod.ips } satisfies SavedBaseMod : null);
     session.saveNow();
     const pages = await openPages(await Game.load(rawDump.current!, mod), true);
+    await saveBaseMod('kahara', mod);
     pages.editor.setStatus(mod ? `土台の MOD: ${mod.label}` : '土台の MOD を外しました');
     setState({ kind: 'ready', ready: { ...ready, opened: { ...ready.opened, kahara: pages }, ids: { ...ready.ids, kahara: ++ids.current } } });
   };
 
-  const pickBaseMod = (session: Session): void => {
-    const game = session.game;
-    if (game.baseMod && confirm(`今の土台: ${game.baseMod.label}\n外しますか? (「キャンセル」で別のフォルダを選ぶ)`)) {
-      reloadWith(session, null);
-      return;
+  /** Reopens RPG3, FREE! or the first game on another base MOD, keeping the edits (they are saved first). */
+  const reopenWith = async (key: Exclude<TitleKey, 'kahara'>, mod: BaseMod | null): Promise<void> => {
+    if (!ready) return;
+    const o = ready.opened;
+    let next: Partial<Opened>;
+    if (key === 'oahu') {
+      o.oahu!.saveNow();
+      next = { oahu: await OahuSession.open(o.oahu!.raw, mod) };
+    } else if (key === 'lanai') {
+      o.lanai!.saveNow();
+      next = { lanai: await LanaiSession.open(o.lanai!.raw, { baseMod: mod }) };
+    } else {
+      o.honolulu!.saveNow();
+      next = { honolulu: await HonoluluSession.open(o.honolulu!.raw, mod) };
     }
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.setAttribute('webkitdirectory', '');
-    input.addEventListener('change', async () => {
-      const files = [...(input.files ?? [])];
-      if (!files.length) return;
-      try {
-        const label = files[0]!.webkitRelativePath.split('/')[0] || 'MOD';
-        const mod = baseModFromFiles(label, await Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))));
-        await reloadWith(session, mod);
-      } catch (err) {
-        alert(`MOD として読めませんでした: ${(err as Error).message}`);
-      }
-    });
-    input.click();
+    await saveBaseMod(key, mod);
+    setState({ kind: 'ready', ready: { ...ready, opened: { ...o, ...next }, ids: { ...ready.ids, [key]: ++ids.current } } });
   };
 
   const workspace = useMemo((): Workspace | null => ready && { opened: ready.opened, active: ready.active, showRoms: () => { setRomError(null); setRoms(true); } }, [ready]);
@@ -220,13 +222,13 @@ export function Root(): ReactNode {
   const replace = (o: Partial<Opened>): void => setState({ kind: 'ready', ready: { ...ready, opened: { ...ready.opened, ...o }, ids: { ...ready.ids, [active]: ++ids.current } } });
   let shell: ReactNode;
   if (active === 'oahu' && opened.oahu)
-    shell = <OahuShell key={ready.ids.oahu} session={opened.oahu} onSession={(session) => replace({ oahu: session })} />;
+    shell = <OahuShell key={ready.ids.oahu} session={opened.oahu} onSession={(session) => replace({ oahu: session })} onBaseMod={(mod) => reopenWith('oahu', mod)} />;
   else if (active === 'lanai' && opened.lanai)
-    shell = <LanaiShell key={ready.ids.lanai} session={opened.lanai} onSession={(session) => replace({ lanai: session })} />;
+    shell = <LanaiShell key={ready.ids.lanai} session={opened.lanai} onSession={(session) => replace({ lanai: session })} onBaseMod={(mod) => reopenWith('lanai', mod)} />;
   else if (active === 'honolulu' && opened.honolulu)
-    shell = <HonoluluShell key={ready.ids.honolulu} session={opened.honolulu} />;
+    shell = <HonoluluShell key={ready.ids.honolulu} session={opened.honolulu} onBaseMod={(mod) => reopenWith('honolulu', mod)} />;
   else if (opened.kahara)
-    shell = <Shell key={ready.ids.kahara} session={opened.kahara.session} editor={opened.kahara.editor} onPickBaseMod={() => pickBaseMod(opened.kahara!.session)} />;
+    shell = <Shell key={ready.ids.kahara} session={opened.kahara.session} editor={opened.kahara.editor} onBaseMod={(mod) => reloadWith(opened.kahara!.session, mod)} />;
   return (
     <WorkspaceContext.Provider value={workspace}>
       {shell}
