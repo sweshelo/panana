@@ -1,7 +1,7 @@
 // The GS tables of a master archive, edited in place: editable copies of the tables the books change, their rows as
 // they are in the archive, and the changed entries for the export (rebuildArchive). RPG3 (oahu/master.ts) and 初代
 // (honolulu/master.ts) keep their masters in it; TableRows reads one of its tables through the field definitions.
-import { findByName, type Archive } from '../archive/gsarc';
+import { findByName, unpackEntry, type ArcEntry, type Archive } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { equalBytes } from '../util/bytes';
 
@@ -30,7 +30,7 @@ export class MasterTables {
   table(name: string): GsTable {
     const have = this.tables.get(name);
     if (have) return have.table;
-    const found = findByName(this.archive, name);
+    const found = findByName(this.archive, name) ?? findByTableName(this.archive, name);
     if (!found) throw new Error(`${this.name} に ${name} がありません`);
     const loaded = { entryIndex: found.entry.index, table: new GsTable(found.body.slice()), original: found.body };
     this.tables.set(name, loaded);
@@ -120,4 +120,20 @@ export class MasterTables {
       for (let i = 0; i < row.length; i++) if (after[i] !== before[i]) row[i] = after[i]!;
     }
   }
+}
+
+/**
+ * An entry without a file name (LZ10, as 初代's 49C917B7) by the name in its table's header (+0x30, "PierData"). Only
+ * entries that are GS tables are looked at (the header's data offset and size fit the body).
+ */
+function findByTableName(arc: Archive, name: string): { entry: ArcEntry; body: Uint8Array } | undefined {
+  for (const e of arc.entries) {
+    if (e.comp === 1) continue;
+    const { body } = unpackEntry(arc, e);
+    if (body.length < 0x40) continue;
+    const t = new GsTable(body);
+    if (t.offset < 0x30 || t.offset > body.length || t.offset + t.rows * t.rowSize > body.length) continue;
+    if (t.name === name) return { entry: e, body };
+  }
+  return undefined;
 }

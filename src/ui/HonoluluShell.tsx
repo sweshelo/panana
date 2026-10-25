@@ -1,6 +1,7 @@
 // The pages of a 電波人間のRPG (honolulu, the first game) dump on the shared frame (PageShell): the monsters (#155), the
-// items (#154), the shop (#153), the maps (#156, view only), the messages (#157), the BGM and sound effects (#176) and the RomFS viewer (#150), and the
-// export of the edits. Like the other games, the dump opens on the maps.
+// items (#154), the shop (#153), the maps (#156, view only), the world map (#174, the pier's islands), the messages
+// (#157), the BGM and sound effects (#176) and the RomFS viewer (#150), and the export of the edits. Like the other
+// games, the dump opens on the maps.
 import { useMemo, useState, type ReactNode } from 'react';
 import { HonoluluExportDialog } from '../honolulu/ExportDialog';
 import { HonoluluItemPage } from '../honolulu/ItemPage';
@@ -9,14 +10,15 @@ import { HonoluluMessagePage } from '../honolulu/MessagePage';
 import { HonoluluMonsterPage } from '../honolulu/MonsterPage';
 import { HonoluluShopPage } from '../honolulu/ShopPage';
 import { HonoluluSoundPage } from '../honolulu/SoundPage';
+import { HonoluluWorldmapPage } from '../honolulu/WorldmapPage';
 import type { HonoluluSession } from '../honolulu/session';
 import { honoluluRomfsProfile } from '../romfs/honolulu';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { PageShell } from './PageShell';
 
-export const HONOLULU_PAGES = [['monsters', 'モンスター'], ['items', 'アイテム'], ['shops', 'ショップ'], ['maps', 'マップ'], ['messages', 'メッセージ'], ['sounds', 'BGM・効果音'], ['romfs', 'RomFS']] as const;
+export const HONOLULU_PAGES = [['monsters', 'モンスター'], ['items', 'アイテム'], ['shops', 'ショップ'], ['maps', 'マップ'], ['world', 'ワールドマップ'], ['messages', 'メッセージ'], ['sounds', 'BGM・効果音'], ['romfs', 'RomFS']] as const;
 type HonoluluPage = (typeof HONOLULU_PAGES)[number][0];
-const TITLES: Record<HonoluluPage, string> = { monsters: 'モンスター', items: 'アイテム', shops: 'ショップ', maps: 'マップ', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS' };
+const TITLES: Record<HonoluluPage, string> = { monsters: 'モンスター', items: 'アイテム', shops: 'ショップ', maps: 'マップ', world: 'ワールドマップ', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS' };
 
 export function HonoluluShell({ session }: { session: HonoluluSession }): ReactNode {
   const { dump } = session;
@@ -30,6 +32,7 @@ export function HonoluluShell({ session }: { session: HonoluluSession }): ReactN
           : id === 'items' ? <HonoluluItemPage session={session} arg={a} />
           : id === 'shops' ? <HonoluluShopPage master={session.master} shop={session.shop} arg={a} edited={() => session.edited()} />
           : id === 'maps' ? <HonoluluMapPage session={session} arg={a} />
+          : id === 'world' ? <HonoluluWorldmapPage session={session} arg={a} />
           : id === 'messages' ? <HonoluluMessagePage session={session} arg={a} />
           : id === 'sounds' ? <HonoluluSoundPage session={session} arg={a} />
           : <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={a} context={context} />
