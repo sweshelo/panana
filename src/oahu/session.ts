@@ -19,6 +19,7 @@ import { OahuMessages } from './messages';
 import { OAHU_DESIGN_ARCHIVE, OahuMonsterModels } from './monsterModels';
 import { PortStore } from '../port/store';
 import { OahuShops, type SavedShop } from './shops';
+import { OahuWorld, type OahuWorldSaved } from './worldmap';
 import { oahuEventEntries, type OahuEventEntry } from './events';
 import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
 import { CodeIndex } from '../game/scripts';
@@ -42,6 +43,8 @@ interface Saved {
   maps?: OahuMapSaved;
   /** Edited shop stocks. */
   shops?: SavedShop[];
+  /** The world map: its terrain and its sections. */
+  world?: OahuWorldSaved;
   /** The story (#87): code edits (write immediates, script messages), names of the save values, the preview state. */
   storyEdits?: StoryCodeEdit[];
   storyNames?: Record<string, string>;
@@ -62,6 +65,8 @@ export class OahuSession {
   readonly monsterModels: OahuMonsterModels;
   /** The performances of the actions (402F0000) and the names of the effects, read when first used. */
   readonly performances: OahuPerformances;
+  /** The world map W01 (naauao oahu/worldmap.md). */
+  readonly world: OahuWorld;
   /** The Update's code.bin; null without the Update (or when the Update is another version, see {@link codeError}). */
   readonly code: OahuCode | null = null;
   /** Why an Update's code.bin cannot be used. */
@@ -104,6 +109,7 @@ export class OahuSession {
     this.itemModels = new OahuItemModels(dump);
     this.performances = new OahuPerformances(dump);
     this.monsterModels = new OahuMonsterModels(dump);
+    this.world = new OahuWorld(maps, master);
     this.battle = new OahuBattle(master, this.items, this.monsterModels, this.itemModels);
     try {
       this.code = OahuCode.of(dump);
@@ -137,7 +143,7 @@ export class OahuSession {
 
   private saved(): Saved {
     return {
-      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
+      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [], world: this.world.saved(),
       storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(), direct: this.performances.saved(),
       ...(this.dropCap ? { dropCap: true } : {}),
     };
@@ -157,6 +163,7 @@ export class OahuSession {
     if (saved.direct) await this.performances.restore(saved.direct);
     this.items.reload();
     if (saved.maps) await this.maps.restore(saved.maps);
+    if (saved.world) this.world.restore(saved.world);
   }
 
   readonly scheduleSave = (): void => {
@@ -251,7 +258,7 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    const more = new Map([[OAHU_MASTER, this.master.changedEntries()]]);
+    const more = new Map([[OAHU_MASTER, new Map([...this.master.changedEntries(), ...this.world.changedMasterEntries()])]]);
     for (const [name, repl] of this.shops?.changedEntries() ?? []) more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
     const files = this.messages.changedArchives(more, this.shops?.archives());
     for (const [name, b] of this.maps.changedArchives()) files.set(name, b);
