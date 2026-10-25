@@ -10,6 +10,7 @@ import { BOSS_PATCH, usesBoss } from '../game/boss';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
+import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
@@ -44,7 +45,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
-      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : [])];
+      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : [])];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

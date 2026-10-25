@@ -4,7 +4,12 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { Game } from '../src/game/game';
 import { BCSAR_PATH, bcsarSoundNames } from '../src/game/sound';
-import { bgmCandidates, originalSoundItem, portBgm, rowsPlaying } from '../src/port/bgm';
+import { bgmCandidates, portBgm, portedRows } from '../src/port/bgm';
+import { BGM_EXT_PATCH, BGM_EXT_PATCH_ID, bgmRow, bgmValue, hasBgmRows } from '../src/game/bgmext';
+import { buildPatches } from '../src/game/patch';
+import { BOSS_PATCH } from '../src/game/boss';
+import { MONSTER_ROWS_PATCH } from '../src/game/monsters';
+import { ITEM_ACTION_PATCH } from '../src/game/items';
 import { SoundPortStore } from '../src/port/sounds';
 import { openImage, type Dump } from '../src/rom/dump';
 import { Session } from '../src/session';
@@ -256,7 +261,7 @@ describe.skipIf(!hasCia)('RPG2: ported BGMs (needs the dumps)', () => {
     expect(cstmForKahara(src)).toBe(src);
   });
 
-  test.skipIf(!hasOahuBase)('porting from the picker: the row plays the new sound, the export writes it, and it can be put back', async () => {
+  test.skipIf(!hasOahuBase)('porting from the picker: an added soundData row plays the new sound, a BGM field names it 0x80, the export writes it', async () => {
     const dump = await openImage(Bun.file(CIA), 'cia');
     const game = await Game.load(dump);
     const store = SoundPortStore.fresh();
@@ -269,34 +274,47 @@ describe.skipIf(!hasCia)('RPG2: ported BGMs (needs the dumps)', () => {
     const c = list.find((x) => x.title === 'oahu' && x.name === 'BGM_BATTLE_1')!;
     expect(c).toBeTruthy();
     expect(list.some((x) => x.title === 'kahara')).toBe(false);
+    expect(hasBgmRows(game.master)).toBe(false);
     // the store is the shared one in the app; the test gives its own to the game and patches `of`
     const of = SoundPortStore.of;
     SoundPortStore.of = () => Promise.resolve(store);
     try {
-      const index = await portBgm(opened, session, c, 28);
-      expect(index).toBe(430);
+      const row = await portBgm(opened, session, c);
+      expect(row).toBe(418);
+      expect(bgmValue(row)).toBe(0x80);
+      expect(bgmRow(0x80)).toBe(418);
       const sounds = session.sounds!;
-      expect(sounds.name(28)).toBe('BGM_OAHU_BATTLE_1');
-      expect(sounds.index(28)).toBe(430);
-      expect(await rowsPlaying(session, c)).toEqual([28]);
-      // the second time it is reused
-      expect(await portBgm(opened, session, c, 29)).toBe(430);
-      expect(store.list().length).toBe(1);
+      expect(sounds.rows).toBe(419);
+      expect(sounds.name(418)).toBe('BGM_OAHU_BATTLE_1');
+      expect(sounds.index(418)).toBe(430);
+      // the rest of the row as row 1 (a stream BGM); the game's rows are kept
+      const t = game.master.table('soundData.bin');
+      expect(Array.from(t.row(418).subarray(4))).toEqual(Array.from(t.row(1).subarray(4)));
+      expect(sounds.name(28)).toBe('BGM_BATTLE_2');
+      expect(await portedRows(session)).toEqual(new Map([['oahu/BGM_BATTLE_1', 418]]));
+      // the second time the row is reused
+      expect(await portBgm(opened, session, c)).toBe(418);
+      expect([store.list().length, t.rows]).toEqual([1, 419]);
+      expect(hasBgmRows(game.master)).toBe(true);
       // it plays through RPG2's player (sound.bcsar and the stream read with the ported ones)
       const pcm = await (await game.soundRenderer()).render(430, 1);
       expect(pcm.channels.length).toBe(2);
-      // the export: sound.bcsar and the stream
+      // the export: sound.bcsar and the stream, soundData with the row
       const files = new Map(await store.files());
       expect([...files.keys()]).toEqual([BCSAR_PATH, 'sound/stream/BGM_OAHU_BATTLE_1.bcstm']);
       expect(cstmVersion(files.get('sound/stream/BGM_OAHU_BATTLE_1.bcstm')!)).toBe(0x02010000);
       expect(game.master.changedTables()).toContain('soundData.bin');
-      // back to the game's sound
-      const { setSoundItem } = await import('../src/port/bgm');
-      for (const r of [28, 29]) setSoundItem(session, r, originalSoundItem(session, r));
-      expect(sounds.name(28)).toBe('BGM_BATTLE_2');
-      expect(game.master.changedTables()).not.toContain('soundData.bin');
     } finally {
       SoundPortStore.of = of;
     }
   }, 120000);
+
+  test('the patch "BGM の追加枠": the instructions it replaces, and it builds with the other patches of the export', async () => {
+    const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
+    const built = buildPatches(game.dump.code, [BOSS_PATCH, MONSTER_ROWS_PATCH, ITEM_ACTION_PATCH, BGM_EXT_PATCH]);
+    for (const b of built.values()) expect(b.errors).toEqual([]);
+    const b = built.get(BGM_EXT_PATCH_ID)!;
+    // mov r5, r0 / mov r8, #0 / mov r1, r0 / cmp r5, #5
+    expect(b.blocks.slice(0, 4).map((x) => x.lines.map((l) => l.before))).toEqual([[0xe1a05000], [0xe3a08000], [0xe1a01000], [0xe3550005]]);
+  });
 });

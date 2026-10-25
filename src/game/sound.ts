@@ -4,6 +4,7 @@ import { u16, u32 } from '../util/bytes';
 import type { MapInfo } from './codebin';
 import type { Game } from './game';
 import type { SoundRenderer } from '../sound/render';
+import { bgmRow } from './bgmext';
 import type { MapDoc } from './sections';
 
 export const BCSAR_PATH = 'sound/sound.bcsar';
@@ -46,6 +47,14 @@ export const SOUND_SLOTS = [
 export type SoundSlot = (typeof SOUND_SLOTS)[number][0];
 /** Largest soundData row a mapData byte can hold. */
 export const MAX_MAP_SOUND = 0xff;
+
+/** A sound field whose values are not soundData rows (RPG2's BGM fields with the added rows, game/bgmext.ts). */
+export interface SoundField {
+  /** soundData row of a value. */
+  row(value: number): number;
+  /** Value for a soundData row, or null when the field cannot hold it. */
+  value(row: number): number | null;
+}
 
 /** What plays the sounds of a soundData row (Game for RPG2, OahuSession for RPG3). */
 export interface SoundSource {
@@ -147,14 +156,14 @@ export interface SoundUse {
   slot: SoundSlot;
 }
 
-/** soundData row -> the mapData rows (and slots) that pick it. */
+/** soundData row -> the mapData rows (and slots) that pick it (the BGM fields read 0x80- as the added rows, bgmext.ts). */
 export function soundUses(game: Game): Map<number, SoundUse[]> {
   const out = new Map<number, SoundUse[]>();
   const t = game.master.mapData;
   for (let r = 0; r < t.rows; r++) {
     const row = t.row(r);
     for (const [slot, , o] of SOUND_SLOTS) {
-      const s = row[o]!;
+      const s = slot === 'steps' ? row[o]! : bgmRow(row[o]!);
       if (s) out.set(s, [...(out.get(s) ?? []), { mapDataRow: r, slot }]);
     }
   }
