@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SOUND_KIND, type SoundKind, type SoundNames, type SoundSource } from '../game/sound';
 import { soundPlayer, usePlayer } from '../sound/player';
+import { BgmPortTab } from './BgmPort';
 import { Dialog } from './Dialog';
+import { openedKeys, useWorkspace } from './workspace';
 
 type KindFilter = SoundKind | '';
 
@@ -56,6 +58,11 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
 }): ReactNode {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<KindFilter>(kind);
+  // RPG2's BGMs can also come from another opened game (ui/BgmPort.tsx)
+  const ws = useWorkspace();
+  const kahara = ws?.opened.kahara?.session;
+  const portable = !!ws && !!kahara && game === kahara.game && kind !== 'se' && openedKeys(ws.opened).length > 1;
+  const [tab, setTab] = useState<'own' | 'port'>('own');
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
   useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [filter]);
@@ -95,22 +102,34 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
   };
   return (
     <Dialog title={title} onClose={onClose}>
+      {portable && (
+        <div className="seg">
+          <button type="button" className={tab === 'own' ? 'active' : ''} onClick={() => setTab('own')}>この作品の音</button>
+          <button type="button" className={tab === 'port' ? 'active' : ''} onClick={() => setTab('port')}>ほかの作品から移植</button>
+        </div>
+      )}
       <div className="row">
         <input type="search" placeholder="名前 (BGM_CAVE など) か行番号で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select value={filter} onChange={(e) => setFilter(e.target.value as KindFilter)}>
-          <option value="">すべて</option>
-          {Object.entries(SOUND_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
+        {tab === 'own' && (
+          <select value={filter} onChange={(e) => setFilter(e.target.value as KindFilter)}>
+            <option value="">すべて</option>
+            {Object.entries(SOUND_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        )}
       </div>
       {!sounds.named && <p className="muted small">sound/sound.bcsar が読めなかったので、音の名前はわかりません (行番号だけ)。</p>}
       {player.error && <p className="error small">{`再生できません: ${player.error.message}`}</p>}
-      <div className="picker-list">
+      {tab === 'port' && portable ? (
+        <div className="picker-list">
+          <BgmPortTab opened={ws.opened} session={kahara} sounds={sounds} query={query} max={Math.min(max, 0xff)} usage={usage} onPicked={onPick} />
+        </div>
+      ) : <div className="picker-list">
         <div className="sound-grid" ref={grid}>
           {!q && cell(0)}
           {rows.map(cell)}
           {!rows.length && <div className="muted">見つかりません</div>}
         </div>
-      </div>
+      </div>}
     </Dialog>
   );
 }

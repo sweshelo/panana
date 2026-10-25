@@ -14,7 +14,7 @@ import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './mo
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
 import { groundFromTiles, parseGround, type Ground, type WorldInfo, type WorldPart } from './worldmap';
-import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
+import { BCSAR_PATH, bcsarSoundNames, SoundNames, type SoundRows } from './sound';
 import { SoundArchive } from '../sound/formats';
 import { SoundRenderer } from '../sound/render';
 
@@ -25,6 +25,14 @@ export interface TilesetSource {
   modelArchive: string;
   textureArchive: string;
   textureEntry: number;
+}
+
+/** What the game needs of the ported sounds (port/sounds.ts). */
+export interface SoundPorts {
+  /** sound.bcsar as the game has it. */
+  originalBcsar(): Promise<Uint8Array>;
+  /** Names of the ported sounds, in their order after the game's own. */
+  names(): string[];
 }
 
 export class Game {
@@ -109,24 +117,45 @@ export class Game {
 
   private soundNames: Promise<SoundNames> | null = null;
 
-  /** Names of soundData rows (from sound/sound.bcsar when the dump has it; cached by name only). */
+  /** The BGMs ported from other games (port/sounds.ts), once installed on the dump. */
+  soundPorts: SoundPorts | null = null;
+
+  /**
+   * Names of soundData rows (from sound/sound.bcsar when the dump has it, the game's own cached by name only, then the
+   * ported ones). The rows are read from soundData as it is now.
+   */
   sounds(): Promise<SoundNames> {
     this.soundNames ??= (async () => {
       const t = this.master.table('soundData.bin');
-      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
-      const volumes = Array.from({ length: t.rows }, (_, i) => (t.rowSize >= 0xc ? u32(t.row(i), 8) : 0));
-      const key = 'sound/names/v1';
-      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
-      if (!names)
-        try {
-          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
-          await idbSet(key, names).catch(() => {});
-        } catch {
-          names = null;
-        }
-      return new SoundNames(items, names, volumes);
+      const rows: SoundRows = {
+        get count() {
+          return t.rows;
+        },
+        item: (r) => u32(t.row(r), 0),
+        volume: (r) => (t.rowSize >= 0xc ? u32(t.row(r), 8) : 0),
+      };
+      return new SoundNames(rows, await this.soundNameList());
     })();
     return this.soundNames;
+  }
+
+  private async soundNameList(): Promise<string[] | null> {
+    const key = 'sound/names/v1';
+    let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
+    if (!names)
+      try {
+        names = bcsarSoundNames(await (this.soundPorts ? this.soundPorts.originalBcsar() : this.dump.readRomfs(BCSAR_PATH)));
+        await idbSet(key, names).catch(() => {});
+      } catch {
+        return null;
+      }
+    return this.soundPorts ? [...names, ...this.soundPorts.names()] : names;
+  }
+
+  /** Sounds were ported: the names and the player read sound.bcsar again. */
+  async soundsChanged(): Promise<void> {
+    this.renderer = null;
+    if (this.soundNames) (await this.soundNames).setNames(await this.soundNameList());
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
