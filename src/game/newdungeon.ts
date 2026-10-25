@@ -1,6 +1,8 @@
 // Making a new dungeon (docs/integrations/panana/new-map.md §10): a vacant mapGroup row gets the settings of a
-// template dungeon, a name of its own (a new message), its own state ranges in the save (0x8E / 0x91 / 0x92) and its
-// own event archive (a copy of the template's, with an empty EventObject table). Its maps go into a row of the
+// template dungeon, a name of its own (a new message) and its own event archive (a copy of the template's, with an
+// empty EventObject table). The save has no room past the dungeons' ranges (0x8E / 0x91 / 0x92 end where flagData
+// +0x08 ends, with no gaps), so the event row states (0x8E) are the unused tail of another dungeon's range, which
+// that dungeon gives up (its +0x1C shrinks to the rows and slots it uses); the values (0x91) and flags (0x92) get none. Its maps go into a row of the
 // dungeon table that has none (game/mappatch.ts), so code.bin keeps its 56 rows.
 //
 // Why a vacant row and not a new one: the dungeon ID (mapGroup row) is checked against 0x3A (the 58 rows) in many
@@ -8,6 +10,7 @@
 import { parseArchive, rebuildArchive, unpackEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { hex8, u16, u32, w16, w32 } from '../util/bytes';
+import type { EventTable } from './events';
 import type { Game } from './game';
 import { dungeonRows, freeTableRows, newHash } from './mappatch';
 import { WORLD_DUNGEON } from './worldmap';
@@ -195,6 +198,9 @@ export interface NewDungeon {
   archive: Uint8Array;
   /** Save ranges given to it: 0x8E, 0x91, 0x92. */
   ranges: Range[];
+  /** The dungeon whose unused 0x8E slots it got (-1 = none), and that dungeon's number of slots now. */
+  donor: number;
+  donorSlots: number;
   /** Name message ID. */
   nameId: number;
 }
@@ -203,7 +209,34 @@ export interface NewDungeon {
  * Fill the vacant mapGroup row (an edit of mapGroup.bin, exported with the master archive) and make the event archive.
  * `existing` = RomFS root files that the archive name must not be.
  */
-export async function makeDungeon(game: Game, spec: NewDungeonSpec, existing: Set<string>, rand: () => number = Math.random): Promise<NewDungeon> {
+/** The 0x8E slots a dungeon needs: past its rows and the slots they use (rows from `capacity` on keep no state). */
+export function slotsNeeded(t: EventTable | null): number {
+  if (!t) return 0;
+  let n = Math.min(t.rows, t.capacity);
+  for (let i = 0; i < t.rows; i++) if (i < t.capacity) n = Math.max(n, t.slot(i) + 1);
+  return n;
+}
+
+/** The dungeon with the most unused 0x8E slots at the end of its range: its row, how many it needs, and the tail. */
+export async function stateDonor(game: Game, eventsOf: (d: number) => Promise<EventTable | null>, except: number): Promise<{ donor: number; need: number; tail: Range } | null> {
+  const t = game.master.mapGroup;
+  let best: { donor: number; need: number; tail: Range } | null = null;
+  for (let r = 1; r < t.rows; r++) {
+    if (r === except) continue;
+    const cap = t.row(r)[MG.stateCount]!;
+    if (!cap) continue;
+    const ev = await eventsOf(r).catch(() => null);
+    if (!ev) continue;
+    const need = slotsNeeded(ev);
+    const tail = { first: u16(t.row(r), MG.states) + need, count: cap - need };
+    if (tail.count > 0 && (!best || tail.count > best.tail.count)) best = { donor: r, need, tail };
+  }
+  return best;
+}
+
+export async function makeDungeon(
+  game: Game, spec: NewDungeonSpec, existing: Set<string>, eventsOf: (d: number) => Promise<EventTable | null> = (d) => game.eventTable(d), rand: () => number = Math.random,
+): Promise<NewDungeon> {
   const code = spec.code.trim().toUpperCase();
   const name = spec.name.trim();
   if (!vacantDungeons(game).includes(spec.dungeon)) throw new Error(`mapGroup の行 ${spec.dungeon} は空いていません`);
@@ -233,8 +266,20 @@ export async function makeDungeon(game: Game, spec: NewDungeonSpec, existing: Se
   if (!repl.size) throw new Error('写す元のアーカイブに EventObject がありません');
   const archive = rebuildArchive({ ...src, hash }, repl);
 
-  // Save ranges: as many slots as the template has, where no other dungeon's are.
-  const ranges = RANGES.map((r) => freeRange(saveSize(game, r.key), usedRanges(game, r.first, r.count, spec.dungeon), tmpl[r.count]!));
+  // Save ranges: free space first (none in v1.1.0); for the states, the largest unused tail of a dungeon's range.
+  const ranges = RANGES.map((r) => {
+    const f = freeRange(saveSize(game, r.key), usedRanges(game, r.first, r.count, spec.dungeon), tmpl[r.count]!);
+    return f.count ? f : { first: 0, count: 0 };
+  });
+  let donor = -1, donorSlots = 0;
+  if (!ranges[0]!.count) {
+    const d = await stateDonor(game, eventsOf, spec.dungeon);
+    if (d) {
+      ranges[0] = { first: d.tail.first, count: Math.min(d.tail.count, 0xff) };
+      donor = d.donor;
+      donorSlots = d.need;
+    }
+  }
   const row = mg.row(spec.dungeon);
   row.set(tmpl);
   w32(row, MG.archive, hash);
@@ -245,11 +290,16 @@ export async function makeDungeon(game: Game, spec: NewDungeonSpec, existing: Se
     w16(row, r.first, ranges[i]!.first);
     row[r.count] = ranges[i]!.count;
   });
+  if (donor >= 0) {
+    mg.row(donor)[MG.stateCount] = donorSlots;
+    const ev = await eventsOf(donor);
+    if (ev) ev.capacity = donorSlots;
+  }
   // The row's label in the table header ("E00" for row 11) becomes the code, when the labels are in row order.
   if (rowLabel(game, spec.dungeon) !== null) {
     const o = 0x30 + (spec.dungeon - 1) * 4;
     mg.data.fill(0, o, o + 4);
     for (let k = 0; k < 3; k++) mg.data[o + k] = code.charCodeAt(k);
   }
-  return { dungeon: spec.dungeon, code, archiveName: hex8(hash), archive, ranges, nameId };
+  return { dungeon: spec.dungeon, code, archiveName: hex8(hash), archive, ranges, nameId, donor, donorSlots };
 }

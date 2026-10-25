@@ -9,7 +9,7 @@ import { buildMapPatch, dungeonRows, freeTableRows, readExtension } from '../src
 import { makeMap } from '../src/game/newmap';
 import {
   DUNGEON_LIMIT, MG, SAVE_FLAGS, SAVE_STATES, SAVE_VALUES, codeProblem, dungeonRoom, freeRange, makeDungeon, rowLabel, rowLabels,
-  saveSize, suggestCode, usedRanges, vacantDungeons,
+  saveSize, slotsNeeded, stateDonor, suggestCode, usedRanges, vacantDungeons,
 } from '../src/game/newdungeon';
 import { buildModFiles, codeIps, modPackage } from '../src/export/pack';
 import { applyIps, buildIps } from '../src/rom/ips';
@@ -50,27 +50,38 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     expect(dungeonRoom(game)).toBe(1);
   });
 
-  test('mapGroup: the header labels are the codes of rows 1.., the counts of the ranges are bytes', () => {
+  test('mapGroup: the header labels are the codes of rows 1.. (row 11 = E00)', () => {
     const labels = rowLabels(game.master.mapGroup);
     expect(labels.length).toBe(57);
     expect(rowLabel(game, 1)).toBe('D01');
     expect(rowLabel(game, 57)).toBe('X02');
     expect(rowLabel(game, 11)).toBe('E00');
-    const t = game.master.mapGroup;
-    for (let r = 0; r < t.rows; r++) for (const o of [MG.stateCount + 1, MG.valueCount + 1, MG.flagCount + 1]) expect(t.row(r)[o]).toBe(0);
   });
 
-  test('save ranges: the dungeons do not overlap, and there is room for a copy of each dungeon', () => {
+  test('save ranges: the dungeons fill 0x8E / 0x91 / 0x92 to the end without gaps; row 11 has no slots', () => {
     for (const [key, first, count] of RANGE_FIELDS) {
       const size = saveSize(game, key);
-      const used = usedRanges(game, first, count, 11);
-      expect(size).toBeGreaterThan(0);
-      for (const u of used) expect(u.first + u.count).toBeLessThanOrEqual(size);
+      const used = usedRanges(game, first, count, -1);
       for (let i = 1; i < used.length; i++) expect(used[i]!.first).toBeGreaterThanOrEqual(used[i - 1]!.first + used[i - 1]!.count);
-      const d01 = game.master.mapGroup.row(1)[count]!;
-      const r = freeRange(size, used, d01);
-      expect({ key: hex8(key), count: r.count }).toEqual({ key: hex8(key), count: d01 });
+      expect(Math.max(...used.map((u) => u.first + u.count))).toBe(size);
+      expect(freeRange(size, used, 1).count).toBe(0);
     }
+    expect(game.master.mapGroup.row(11)[MG.stateCount]).toBe(0);
+  });
+
+  test('freeRange: the first gap that fits, else the largest', () => {
+    expect(freeRange(100, [{ first: 0, count: 10 }, { first: 20, count: 10 }], 5)).toEqual({ first: 10, count: 5 });
+    expect(freeRange(100, [{ first: 0, count: 10 }, { first: 20, count: 75 }], 20)).toEqual({ first: 10, count: 10 });
+    expect(freeRange(30, [{ first: 0, count: 30 }], 4)).toEqual({ first: 0, count: 0 });
+  });
+
+  test('the state donor: some dungeon has unused 0x8E slots at the end of its range', async () => {
+    const d = await stateDonor(game, (r) => game.eventTable(r), 11);
+    expect(d).not.toBeNull();
+    expect(d!.tail.count).toBeGreaterThan(0);
+    const t = (await game.eventTable(d!.donor))!;
+    expect(slotsNeeded(t)).toBe(d!.need);
+    expect(d!.need).toBeGreaterThanOrEqual(t.rows);
   });
 
   test('codes: D11 is the next dungeon code; existing codes and labels are refused', () => {
@@ -86,7 +97,7 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     const mg0 = game.master.mapGroup.data.slice();
     const texts0 = game.master.texts.saved();
     const tmpl = game.code.byName('D01B02001')!;
-    const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), () => 0.37);
+    const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), (d) => game.eventTable(d), () => 0.37);
     try {
       // mapGroup row 11 = row 1 but for the archive, the name and the ranges
       const r11 = game.master.mapGroup.row(11), r1 = game.master.mapGroup.row(1);
@@ -99,12 +110,16 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       expect(game.dump.names().map((n) => n.toUpperCase())).not.toContain(nd.archiveName);
       expect(game.master.dungeonName(11)).toBe('テストのどうくつ');
       expect(u16(r11, MG.name)).toBe(nd.nameId);
-      for (const [i, [key, first, count]] of RANGE_FIELDS.entries()) {
-        const mine = { first: u16(r11, first), count: r11[count]! };
-        expect(mine).toEqual(nd.ranges[i]!);
-        for (const u of usedRanges(game, first, count, 11)) expect(mine.first >= u.first + u.count || mine.first + mine.count <= u.first).toBe(true);
-        expect(mine.first + mine.count).toBeLessThanOrEqual(saveSize(game, key));
-      }
+      // 0x8E: the donor's unused tail (the donor keeps what its rows use); no 0x91 / 0x92
+      expect(nd.donor).toBeGreaterThan(0);
+      const dRow = game.master.mapGroup.row(nd.donor), dOrig = mg0.subarray(game.master.mapGroup.offset + nd.donor * 0x2c);
+      expect(dRow[MG.stateCount]).toBe(nd.donorSlots);
+      expect({ first: u16(r11, MG.states), count: r11[MG.stateCount]! }).toEqual(nd.ranges[0]!);
+      expect(nd.ranges[0]!.first).toBe(u16(dOrig, MG.states) + nd.donorSlots);
+      expect(nd.ranges[0]!.first + nd.ranges[0]!.count).toBe(u16(dOrig, MG.states) + dOrig[MG.stateCount]!);
+      expect((await game.eventTable(nd.donor))!.capacity).toBe(nd.donorSlots);
+      expect([r11[MG.valueCount], r11[MG.flagCount]]).toEqual([0, 0]);
+      for (const u of usedRanges(game, MG.states, MG.stateCount, 11)) expect(nd.ranges[0]!.first >= u.first + u.count || nd.ranges[0]!.first + nd.ranges[0]!.count <= u.first).toBe(true);
       expect(rowLabel(game, 11)).toBe('D11');
       // The archive: the template's entries, an empty EventObject table
       const arc = parseArchive(nd.archive);
@@ -169,66 +184,7 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       game.forgetEvents(11);
       game.master.restoreTable('mapGroup.bin', mg0);
       game.master.texts.restore(texts0);
+      for (let d = 0; d < game.master.mapGroup.rows; d++) game.forgetEvents(d);
     }
   });
-
-  // ---- PROBE (temporary): yes / no questions about the ROM
-  for (const o of [0x1d, 0x21, 0x25]) test(`H ${o.toString(16)}: zero in every mapGroup row`, () => {
-    for (let r = 0; r < game.master.mapGroup.rows; r++) expect(game.master.mapGroup.row(r)[o]).toBe(0);
-  });
-  for (const [key, first, count] of RANGE_FIELDS) {
-    const used = (): { size: number; maxEnd: number } => {
-      const u = usedRanges(game, first, count, -1);
-      return { size: saveSize(game, key), maxEnd: Math.max(...u.map((x) => x.first + x.count)) };
-    };
-    test(`H ${hex8(key)}: flagData +8 is 0`, () => expect(used().size).toBe(0));
-    test(`H ${hex8(key)}: flagData +8 equals the end of the last range`, () => expect(used().size).toBe(used().maxEnd));
-    test(`H ${hex8(key)}: flagData +8 is beyond the end of the last range`, () => expect(used().size).toBeGreaterThan(used().maxEnd));
-    test(`H ${hex8(key)}: flagData +8 is at least end + D01's count`, () => expect(used().size).toBeGreaterThanOrEqual(used().maxEnd + game.master.mapGroup.row(1)[count]!));
-    test(`H ${hex8(key)}: the ranges leave no gap before the last end`, () => {
-      let pos = 0, g = 0;
-      for (const u of usedRanges(game, first, count, -1)) { if (u.first > pos) g += u.first - pos; pos = Math.max(pos, u.first + u.count); }
-      expect(g).toBe(0);
-    });
-    test(`H ${hex8(key)}: flagData +0x0C (u16) is beyond the last end`, () => expect(u16(game.master.table('flagData.bin').row(key), 0xc)).toBeGreaterThan(used().maxEnd));
-  }
-  const eventEntries = async (): Promise<{ d: number; index: number; hash: number; name: string }[]> => {
-    const out: { d: number; index: number; hash: number; name: string }[] = [];
-    for (let d = 1; d < game.master.mapGroup.rows; d++) {
-      const a = game.master.eventArchive(d);
-      if (!a) continue;
-      const arc = parseArchive(await game.dump.readRomfs(hex8(a)));
-      const e = arc.entries.find((x) => x.comp === 1 && unpackEntry(arc, x).name?.endsWith('_EventObject.bin'));
-      if (e) out.push({ d, index: e.index, hash: e.hash, name: unpackEntry(arc, e).name! });
-    }
-    return out;
-  };
-  test('H EventObject is entry 0 of every dungeon archive', async () => {
-    for (const e of await eventEntries()) expect(e.index).toBe(0);
-  });
-  test('H EventObject is the same entry index in every dungeon archive', async () => {
-    expect(new Set((await eventEntries()).map((e) => e.index)).size).toBe(1);
-  });
-  test('H some u32 of the mapGroup row holds the EventObject entry hash', async () => {
-    const es = await eventEntries();
-    const ok = Array.from({ length: 11 }, (_, k) => k * 4).filter((o) => es.every((e) => u32(game.master.mapGroup.row(e.d), o) === e.hash));
-    expect(ok.length).toBeGreaterThan(0);
-  });
-  test('H the EventObject file name starts with the row label', async () => {
-    for (const e of await eventEntries()) expect(e.name.slice(0, 3).toUpperCase()).toBe(rowLabel(game, e.d) ?? '?');
-  });
-  test('H several dungeons share an event archive', async () => {
-    const seen = new Set<number>();
-    let shared = false;
-    for (let d = 1; d < game.master.mapGroup.rows; d++) {
-      const a = game.master.eventArchive(d);
-      if (a && seen.has(a)) shared = true;
-      seen.add(a);
-    }
-    expect(shared).toBe(true);
-  });
-  test('H row 11 has an event archive', () => expect(game.master.eventArchive(11)).not.toBe(0));
-  test('H row 11 has the same event archive as row 1', () => expect(game.master.eventArchive(11)).toBe(game.master.eventArchive(1)));
-  test('H row 11 has state slots (+0x1C > 0)', () => expect(game.master.mapGroup.row(11)[0x1c]).toBeGreaterThan(0));
-  test('H row 11 has the same 0x8E range as row 1', () => expect(u16(game.master.mapGroup.row(11), 0x1a)).toBe(u16(game.master.mapGroup.row(1), 0x1a)));
 });

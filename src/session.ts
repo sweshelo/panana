@@ -167,13 +167,16 @@ export class Session {
     const game = this.game;
     const mg = game.master.mapGroup;
     const before = mg.data.slice();
-    const nd = await makeDungeon(game, spec, new Set([...game.dump.names(), ...game.addedFiles.keys()]));
+    const nd = await makeDungeon(game, spec, new Set([...game.dump.names(), ...game.addedFiles.keys()]), this.eventsOf);
     let map: { info: MapInfo; doc: MapDoc };
     try {
       map = makeMap(game, { ...first, dungeon: nd.dungeon, newDungeonCode: nd.code });
     } catch (e) {
       mg.data = before;
       game.master.texts.removeAdded(nd.nameId);
+      if (nd.donor >= 0) game.forgetEvents(nd.donor);
+      const t = nd.donor >= 0 ? this.st.events.get(nd.donor) : undefined;
+      if (t) t.capacity = mg.row(nd.donor)[0x1c]!;
       throw e;
     }
     game.addedFiles.set(nd.archiveName, nd.archive);
