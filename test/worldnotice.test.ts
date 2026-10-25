@@ -160,7 +160,8 @@ describe.skipIf(!hasCia)('notice patch on code.bin', () => {
   test('W01: its table has room for notices, the template message is narration', async () => {
     const ev = (await game.eventTable(NOTICE_DUNGEON))!;
     expect(ev.roomLeft()).toBeGreaterThan(0);
-    expect(game.master.texts.text(NOTICE_TEMPLATE)?.text).toContain('開いた');
+    // "{msg:0088}が{ruby:開|ひら}いた！": a place name inserted, the same shape as the notices' text
+    expect(game.master.texts.text(NOTICE_TEMPLATE)?.text).toMatch(/^\{msg:[0-9A-F]{4}\}が.*いた！$/);
     const w01 = game.worldMaps().find((w) => w.code === 'W01')!;
     const ents = parseEntrances(game.db.get(w01.sections[2]!));
     // the vanilla entrances with a row: none has a notice
