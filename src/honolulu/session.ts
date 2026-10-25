@@ -2,8 +2,11 @@
 // pier's world map) read through the field definitions (master.ts, tables.ts) and the messages of every archive (messages.ts; the master's names come from them), their edits saved to IndexedDB and restored when the dump is
 // opened again, and the MOD export (LayeredFS zip; the game has no Update, so the edits go on the Base's files).
 import { buildModZip } from '../export/pack';
+import type { SoundNames } from '../game/sound';
 import type { Dump } from '../rom/dump';
 import { HONOLULU } from '../rom/titles';
+import type { SoundRenderer } from '../sound/render';
+import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { idbGet, idbSet } from '../util/idb';
 import type { SavedRow, SavedRowCount } from '../game/mastertables';
 import { HonoluluMaps } from './maps';
@@ -73,6 +76,25 @@ export class HonoluluSession {
   /** The maps (A90C8038 and the floor definitions), read when the map page is first shown. */
   maps(): Promise<HonoluluMaps> {
     return (this.mapsLoad ??= HonoluluMaps.load(this.dump, this.master));
+  }
+
+  private soundNames: Promise<SoundNames> | undefined;
+
+  /** The soundData rows with the names of sound/sound.bcsar (the BGM page). */
+  sounds(): Promise<SoundNames> {
+    const t = this.master.rows('soundData.bin');
+    return (this.soundNames ??= loadSoundNames(this.dump, 'honolulu/sound/names/v1', Array.from({ length: t.rows }, (_, r) => t.get(r, 'item')), Array.from({ length: t.rows }, (_, r) => t.get(r, 'volume'))));
+  }
+
+  private renderer: Promise<SoundRenderer> | undefined;
+
+  /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
+  soundRenderer(): Promise<SoundRenderer> {
+    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+      this.renderer = undefined;
+      throw err;
+    });
+    return this.renderer;
   }
 
   /** A page changed the data: redraw the pages that show it and save. */

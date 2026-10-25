@@ -16,9 +16,9 @@ import type { Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
-import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
-import { SoundArchive } from '../sound/formats';
-import { SoundRenderer } from '../sound/render';
+import type { SoundNames } from '../game/sound';
+import type { SoundRenderer } from '../sound/render';
+import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { LANAI_MAPDB_ENTRY } from './maps';
 import { encodeLanaiMessage, lanaiPlain, lanaiText, parseLanaiMessage, parseLanaiText, type LanaiToken } from './message';
@@ -389,34 +389,18 @@ export class LanaiSession {
 
   /** Names of the SoundData rows (+0x00 = sound.bcsar item ID, battle-field.md §5), from the Base's sound/sound.bcsar. */
   sounds(): Promise<SoundNames> {
-    this.soundNames ??= (async () => {
-      const t = this.need('SoundData');
-      const items = Array.from({ length: t.rows }, (_, i) => t.u32(i, 0));
-      const key = 'lanai/sound/names/v1';
-      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
-      if (!names)
-        try {
-          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
-          await idbSet(key, names).catch(() => {});
-        } catch {
-          names = null;
-        }
-      return new SoundNames(items, names);
-    })();
-    return this.soundNames;
+    const t = this.need('SoundData');
+    return (this.soundNames ??= loadSoundNames(this.dump, 'lanai/sound/names/v1', Array.from({ length: t.rows }, (_, i) => t.u32(i, 0))));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
 
   /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
-      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
-      (err: Error) => {
-        this.renderer = null;
-        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
-      },
-    );
+    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+      this.renderer = null;
+      throw err;
+    });
     return this.renderer;
   }
 

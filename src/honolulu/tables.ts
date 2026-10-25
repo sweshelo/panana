@@ -91,7 +91,17 @@ export const HONOLULU_MAP_DATA: TableDef = {
   fields: [
     f('tileset', 0x00, 'u8', 'タイルセット', { note: 'mapParts のモデルの組 (0〜7)' }),
     f('resource', 0x06, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
-    f('sound', 0x07, 'u8', '+0x07', { unsure: true, note: '音 (FUN_0020C2A0 に渡す) と推定' }),
+    f('sound', 0x07, 'u8', '階の BGM', { ref: row('soundData.bin'), unsure: true, note: 'soundData の行。全行がタイルセットに合う BGM_FLD_* (FUN_0020C2A0 に渡す)。実機では未確認' }),
+  ],
+};
+
+/** soundData.bin (master エントリ 64): 252 × 0xC, the sounds the game names by row (naauao honolulu/analysis.md §3.1; as RPG2 / RPG3). */
+export const HONOLULU_SOUND_DATA: TableDef = {
+  file: 'soundData.bin',
+  rowSize: 0xc,
+  fields: [
+    f('item', 0x00, 'u32', 'アイテム ID', { hex: true, note: 'sound.bcsar のアイテム (0x01nnnnnn = 音 nnnnnn)' }),
+    f('volume', 0x08, 'u8', '音量', { unsure: true, note: 'RPG2 / RPG3 と同じ並びと推定' }),
   ],
 };
 
@@ -312,6 +322,7 @@ export const HONOLULU_TABLES: Record<string, TableDef> = Object.fromEntries(
     HONOLULU_SKILL_DATA,
     HONOLULU_SCENARIO,
     HONOLULU_MAP_DATA,
+    HONOLULU_SOUND_DATA,
     HONOLULU_MAP_PARTS,
     HONOLULU_MAP_OBJECT,
     HONOLULU_MAP_RESOURCE,

@@ -44,8 +44,8 @@ export class SoundRenderer {
     return b;
   }
 
-  /** Sound `index` of the archive; sequences are cut after `maxSeconds`. */
-  async render(index: number, maxSeconds = 8): Promise<Pcm> {
+  /** Sound `index` of the archive; sequences are cut after `maxSeconds`, or with `loop` end at their loop (a BGM's). */
+  async render(index: number, maxSeconds = 8, loop = false): Promise<Pcm> {
     const s = this.archive.sounds[index];
     if (!s) throw new Error(`音 ${index} がありません`);
     const gain = s.volume / 127;
@@ -73,7 +73,7 @@ export class SoundRenderer {
         this.seqData.set(s.fileId, data);
       }
       const bank = this.bank(s.banks[0] ?? 0x03000000);
-      return renderSequence({ data, start: s.start, bank, wave: this.wave }, s.volume, maxSeconds);
+      return renderSequence({ data, start: s.start, bank, wave: this.wave }, s.volume, maxSeconds, loop);
     }
     throw new Error(`${s.name || `音 ${index}`} は再生できない種類です`);
   }

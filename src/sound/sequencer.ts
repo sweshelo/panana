@@ -1,13 +1,15 @@
-// Renders a sequence sound (CSEQ commands playing the instruments of a bank) to PCM, for previewing sound effects.
+// Renders a sequence sound (CSEQ commands playing the instruments of a bank) to PCM, for previewing sound effects and
+// the sequenced BGMs (the first game's: only 2 of its BGMs are streams).
 // An approximation of the console's sequencer: notes, programs, volume / pan / transpose / pitch bend (with the
 // random, variable and time prefixes), envelopes, sweep and vibrato, tracks, calls, jumps and loops.
-// Tempo in quarter notes per minute, 48 ticks a quarter note. Envelopes as the DS / 3DS sound libraries: a level in
+// Tempo in quarter notes per minute, 48 ticks a quarter note unless the sequence sets its timebase (0xB0; the first
+// game's BGMs use 96). Envelopes as the DS / 3DS sound libraries: a level in
 // 1/128 dB updated every 3 ms, attack multiplying it, decay / release subtracting from it.
 import { u16be } from '../util/bytes';
 import type { Adshr, Bank, Pcm } from './formats';
 
 export const SAMPLE_RATE = 32728;
-const TIMEBASE = 48;
+const DEFAULT_TIMEBASE = 48;
 const ENV_STEP = 0.003;
 const SILENT = -92544;
 const ATTACK_TABLE = [0x00, 0x01, 0x05, 0x0e, 0x1a, 0x26, 0x33, 0x3f, 0x49, 0x54, 0x5c, 0x64, 0x6d, 0x74, 0x7b, 0x7f, 0x84, 0x89, 0x8f];
@@ -97,13 +99,20 @@ function newTrack(pc: number): Track {
   };
 }
 
-/** Render `src` for at most `maxSeconds` (then fade out); `volume` is the sound's (127 = as recorded). */
-export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8): Pcm {
+/**
+ * Render `src` for at most `maxSeconds` (then fade out); `volume` is the sound's (127 = as recorded). With `loop`, the
+ * rendering stops where the first track jumps back to a command it has played (a BGM's loop) and the PCM loops there.
+ */
+export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8, loop = false): Pcm {
   const d = src.data;
   const tracks: (Track | undefined)[] = [newTrack(src.start)];
   const voices: Voice[] = [];
   const vars = new Int16Array(48);
   let tempo = 120;
+  let timebase = DEFAULT_TIMEBASE;
+  /** The first track's commands: where each was first played (sample), to find the loop. */
+  const played = new Map<number, number>();
+  let looped: [number, number] | null = null;
   let left: Float32Array = new Float32Array(SAMPLE_RATE * 2);
   let right: Float32Array = new Float32Array(SAMPLE_RATE * 2);
   let length = 0;
@@ -133,13 +142,14 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
     voices.push({
       track: t, wave, pos: 0, key, root: r.root, gain: vol(velocity) * vol(r.volume), pan: r.pan - 64, pitch: r.pitch, env,
       level: env.a >= 127 ? 0 : SILENT, phase: 'attack', hold: 0, left: length > 0 ? length : -1, age: 0,
-      sweep: t.sweep / 64, sweepTicks: length > 0 ? length : TIMEBASE,
+      sweep: t.sweep / 64, sweepTicks: length > 0 ? length : timebase,
     });
   }
 
   /** Run a track's commands until it waits or ends. */
   function step(t: Track, id: number): void {
     for (let guard = 0; t.alive && t.wait === 0 && guard < 10000; guard++) {
+      if (loop && id === 0 && !played.has(t.pc)) played.set(t.pc, length);
       let cmd = d[t.pc++];
       if (cmd === undefined) {
         t.alive = false;
@@ -198,7 +208,13 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
         case 0x89: {
           const o = u24(t.pc);
           t.pc += 3;
-          if (exec) t.pc = o;
+          if (!exec) break;
+          if (loop && id === 0 && played.has(o) && !looped) {
+            looped = [played.get(o)!, length];
+            t.alive = false;
+            break;
+          }
+          t.pc = o;
           break;
         }
         case 0x8a: {
@@ -272,6 +288,7 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
               case 0xd1: t.env.d = v; break;
               case 0xd2: t.env.s = v; break;
               case 0xd3: t.env.r = v; break;
+              case 0xb0: if (v) timebase = v; break;
               case 0xb1: t.env.h = v; break;
               case 0xd4: t.loops.push({ pc: t.pc, count: v }); break;
               case 0xd5: t.volume2.set(v, time); break;
@@ -336,7 +353,9 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
       if (t.wait > 0) t.wait--;
       if (t.wait === 0) step(t, i);
     });
-    const tickSeconds = 60 / (tempo * TIMEBASE);
+    // the loop's end: what was played until here repeats from its start
+    if (looped) break;
+    const tickSeconds = 60 / (tempo * timebase);
     sampleCarry += tickSeconds * SAMPLE_RATE;
     const n = Math.floor(sampleCarry);
     sampleCarry -= n;
@@ -418,5 +437,5 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
   let peak = 0;
   for (const c of channels) for (const x of c) peak = Math.max(peak, Math.abs(x));
   if (peak > 0.98) for (const c of channels) for (let i = 0; i < c.length; i++) c[i]! *= 0.98 / peak;
-  return { rate: SAMPLE_RATE, channels, loop: false, loopStart: 0, loopEnd: length };
+  return looped ? { rate: SAMPLE_RATE, channels, loop: true, loopStart: looped[0], loopEnd: looped[1] } : { rate: SAMPLE_RATE, channels, loop: false, loopStart: 0, loopEnd: length };
 }
