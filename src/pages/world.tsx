@@ -14,11 +14,13 @@ import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } f
 import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_TEMPLATE, noticeMessage, setNoticeMessage } from '../game/worldnotice';
 import { textToUnits } from '../game/msgtext';
 import { hexId } from '../editor/message';
-import { ENT, WORLD_SIZE, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
+import { ENT, WORLD_SIZE, freeEntranceId, moveEntrance, newEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
 import { Count, EditedMark, ListFilter, NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
 import { ConditionPicker } from '../ui/ConditionPicker';
 import { MapButton } from '../ui/MapPicker';
+import { ObjectPicker, objectModelRef } from '../ui/ObjectPicker';
+import { Photo } from '../ui/Photo';
 import { useSignal } from '../ui/useEditorState';
 import { equalBytes, hex8, u16, u32, w32 } from '../util/bytes';
 import { KaharaWorldSource } from './worldsource';
@@ -73,6 +75,27 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
     src?.changed();
     edited();
   };
+  /** A new entrance (section 2 grows) at the centre of the 2D view. */
+  const addEntrance = (): void => {
+    view?.mark();
+    const [x, y] = view?.viewCell() ?? src?.start ?? [150, 150];
+    const r = newEntrance(sel, freeEntranceId(list), x, y);
+    session.setEntrances(world, [...list, r]);
+    src?.changed();
+    setSelId(ENT.id(r));
+    history.replaceState(null, '', worldHref(world.code, ENT.id(r)));
+    edited();
+  };
+  /** Remove an entrance Panana added (the game's own keep their places in the list). */
+  const removeEntrance = (i: number): void => {
+    if (i < original.length) return;
+    view?.mark();
+    const l = list.filter((_, k) => k !== i);
+    session.setEntrances(world, l);
+    src?.changed();
+    setSelId(l[Math.min(i, l.length - 1)] ? ENT.id(l[Math.min(i, l.length - 1)]!) : 0);
+    edited();
+  };
   const q = query.trim();
   const rows = list
     .map((r, i) => ({ r, i }))
@@ -108,7 +131,11 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
         <div className="world-entrances">
           <ListFilter query={query} setQuery={setQuery} placeholder="行き先のマップ・入口 ID で検索" filter={filter} setFilter={setFilter}
             options={[['all', 'すべて'], ['changed', '変更した'], ['issues', '問題あり']]} />
-          <Count shown={rows.length} total={list.length} unit="入口" />
+          <div className="row">
+            <Count shown={rows.length} total={list.length} unit="入口" />
+            <button className="small" title="2D の地図の真ん中に、選んでいる入口と同じ種類・見た目・行き先の入口を置きます" onClick={addEntrance}>入口を追加</button>
+            {index >= original.length && <button className="small" onClick={() => removeEntrance(index)}>この入口を消す</button>}
+          </div>
           <table className="book-table world-entrance-table">
             <tbody>
               {rows.map(({ r, i }) => (
@@ -161,6 +188,7 @@ function EntranceEditor({ session, world, r, original, points, issues, update, m
   edited: () => void;
 }): ReactNode {
   const { game, st } = session;
+  const [picking, setPicking] = useState(false);
   const id = ENT.id(r);
   const set = (field: EntranceField) => (v: number) => update(setEntranceU32(r, field, v));
   const dest = ENT.destMap(r);
@@ -235,10 +263,19 @@ function EntranceEditor({ session, world, r, original, points, issues, update, m
             {points.map((p) => <option key={p.id} value={p.id}>{`${hex8(p.id)} (${p.x}, ${p.y})`}</option>)}
           </select>
         </label>
-        <label className="field">
+        <div className="field">
           <span>表示モデル (+0x18、mapObject の行。0 = 入口の種類のモデル)</span>
-          <NumberInput value={ENT.model(r)} min={0} max={game.master.mapObject.rows - 1} className={`num-input${differs(0x18) ? ' edited' : ''}`} onCommit={set(0x18)} />
-        </label>
+          <div className="row">
+            <Photo model={objectModelRef(game, ENT.model(r) || (game.worldParts()[ENT.part(r)]?.object ?? 0))} className="photo" />
+            <NumberInput value={ENT.model(r)} min={0} max={game.master.mapObject.rows - 1} className={`num-input${differs(0x18) ? ' edited' : ''}`} onCommit={set(0x18)} />
+            <button className="small" onClick={() => setPicking(true)}>モデルを選ぶ</button>
+          </div>
+          {picking && (
+            <ObjectPicker game={game} title="入口のモデルを選ぶ" current={ENT.model(r)} zero="0 (入口の種類のモデル)"
+              used={session.entrancesOf(world).map((e) => ENT.model(e)).filter((m) => m)}
+              onPick={(row) => { setPicking(false); set(0x18)(row); }} onClose={() => setPicking(false)} />
+          )}
+        </div>
         <label className="field">
           <span>入口の種類 (+0x00、worldmapParts の行)</span>
           <NumberInput value={ENT.part(r)} min={0} max={255} className={`num-input${differs(0x00) ? ' edited' : ''}`} onCommit={set(0x00)} />

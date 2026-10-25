@@ -8,7 +8,7 @@ import { Game } from '../src/game/game';
 import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } from '../src/game/worldconditions';
 import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, setNoticeMessage, type Notice } from '../src/game/worldnotice';
-import { ENT, parseEntrances, setEntranceU32, ENTRANCE_SIZE } from '../src/game/worldmap';
+import { ENT, ENTRANCE_SIZE, freeEntranceId, newEntrance, parseEntrances, setEntranceU32 } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
 import { u32, w32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
@@ -38,6 +38,22 @@ describe('entrance conditions', () => {
     expect([u32(row, 0), u32(row, 4), row[0x4b], row[0x4c]]).toEqual([1, 4, 0xb1, 0x37]);
     expect(row.subarray(8, 0x4b).every((b) => b === 0)).toBe(true);
     expect(newEntranceRow(0x50, null).filter((b) => b).length).toBe(1);
+  });
+
+  test('a new entrance: a copy with its own ID, no row and no point, at the cell', () => {
+    const t = new Uint8Array(ENTRANCE_SIZE);
+    w32(t, 0x00, 77);
+    w32(t, 0x04, 5);
+    w32(t, 0x08, 0xd71400a3);
+    w32(t, 0x10, 25);
+    w32(t, 0x14, 0x1234);
+    w32(t, 0x18, 0xf0);
+    const seq = [5 / 2 ** 32, 0, 9 / 2 ** 32];
+    const id = freeEntranceId([t], () => seq.shift()!);
+    expect(id).toBe(9); // 5 is taken, 0 is never an ID
+    const r = newEntrance(t, id, 120, 299);
+    expect([ENT.part(r), ENT.id(r), ENT.destMap(r), ENT.event(r), ENT.point(r), ENT.model(r), ENT.x(r), ENT.y(r)]).toEqual([77, 9, 0xd71400a3, 0, 0, 0xf0, 120, 299]);
+    expect(ENT.part(newEntrance(undefined, 1, 0, 0))).toBe(76);
   });
 
   test('setting and clearing a condition', () => {

@@ -132,7 +132,7 @@ describe('world map page', () => {
       worldPartFlags: () => null,
       code: { maps: [info], byHash: (h: number) => (h === D ? info : undefined), world: (h: number) => (h === W ? world : undefined) },
       db: { get: () => new Uint8Array(0) },
-      master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 } },
+      master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 }, objectModel: () => null },
     } as unknown as Game;
     const doc = { hash: D, recs: { 3: [{ raw: p3, x: 3, y: 4 }] } };
     const rows = Array.from({ length: 30 }, () => new Uint8Array(0x50));
@@ -172,6 +172,8 @@ describe('world map page', () => {
     expect(html).toContain('はじめて出たときに「〇〇が出現した！」と出す');
     expect(html).toContain('[水の神殿]が出現した！');
     expect(html).not.toContain('入れない入口');
+    expect(html).toContain('入口を追加');
+    expect(html).toContain('モデルを選ぶ');
     // the shared world map frame: the views' panes (their canvases come with the view)
     expect(html).toContain('pane2d');
     expect(html).toContain('pane3d');
