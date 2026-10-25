@@ -68,11 +68,15 @@ describe('entrance conditions', () => {
 
 // a blank code.bin: the patch only needs the cave and the hook's address
 const BLANK = new Uint8Array(0x420000);
-const F = { w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8 };
+const F = { w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970, cameraTo: 0x317210, cameraBack: 0x301a44, release: 0x31c89c };
+/** The camera and handle functions of the notice (stubbed: they only matter by their order). */
+const CAMERA = [0x31c958, 0x31b1b4, 0x3179b8, 0x301f80, 0x31c948, 0x338450, F.cameraTo, 0x301d9c, 0x300854, 0x317524, F.cameraBack, 0x3007c0, 0x301888, 0x301764, F.release];
 
 /** Run the hook (FUN_0019aa88's W01 branch) and, when it made the notice action, its [2]. */
-function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean }) {
+function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean }) {
   const stubs = new Map<number, (m: ArmMachine) => number>([
+    ...CAMERA.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
+    [F.object, (m) => ((o.placed ?? (() => true))(m.r[0]!) ? 0x9000000 + m.r[0]! : 0)],
     [F.w01, () => o.game ?? 0],
     [F.alloc, (m) => m.alloc(0x10)],
     [F.base, (m) => m.r[0]!],
@@ -87,16 +91,19 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
   const first = m.calls.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2));
   let shown: number[] = [];
   let written: number[][] = [];
+  let order: string[] = [];
   if (made) {
     const vtable = m.read(action, 4);
     const m2 = new ArmMachine(code, { stubs, maxDepth: 6 });
     m2.run(m2.read(vtable + 8, 4), [action]);
     shown = m2.calls.filter((c) => c.target === F.narrate).map((c) => c.args[0]!);
     written = m2.calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3));
+    const names = new Map([[F.cameraTo, 'to'], [F.narrate, 'message'], [F.cameraBack, 'back'], [F.release, 'release'], [F.setState, 'done']]);
+    order = m2.calls.filter((c) => names.has(c.target)).map((c) => names.get(c.target)!);
     expect(m.calls.find((c) => c.target === F.base)?.args[1]).toBe(0x1000000);
     expect(vtable).toBe(built.labels.get('wn_vtable')!);
   }
-  return { action, made, first, shown, written };
+  return { action, made, first, shown, written, order };
 }
 
 describe('notice patch (blank code.bin)', () => {
@@ -130,6 +137,11 @@ describe('notice patch (blank code.bin)', () => {
     expect(r.made).toBe(true);
     expect(r.shown).toEqual([0x2c00, 0x2c01]);
     expect(r.written).toEqual([[NOTICE_DUNGEON, 29, 1], [NOTICE_DUNGEON, 30, 1]]);
+  });
+
+  test('the camera goes to the entrance and back around each message; without its object, the message only', () => {
+    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29 });
+    expect(r.order).toEqual(['to', 'message', 'back', 'release', 'done', 'message', 'done']);
   });
 
   test('nothing is made once shown, or when nothing holds', () => {

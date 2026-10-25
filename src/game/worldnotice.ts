@@ -56,8 +56,10 @@ export function notices(events: EventTable | null | undefined): Notice[] {
  *   are still set) and returns its action; when it is 0 and a notice is due, a notice action (0x10 bytes,
  *   FUN_0031b170(obj, 0x1000000), the vtable of 0x4FB8C8 with our [2]).
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
- * - [2]: for each due notice, FUN_0030cc48(message, 0, 0, 0) (s0 = 0.2, like FUN_001c0630), then
- *   FUN_003048f8(0x34, row, 1). [4] (0x31713C) writes nothing for the pseudo-row.
+ * - [2]: for each due notice, the camera to the entrance (its object FUN_0031c970(row): entrances keep their row
+ *   at +0x5E), FUN_0030cc48(message, 0, 0, 0) (s0 = 0.2, like FUN_001c0630), the camera back, then
+ *   FUN_003048f8(0x34, row, 1). The camera is the D01 gate script's (FUN_00258e54; elpulse's swshow) without the
+ *   opening; no object (not on this map) = the message only. [4] (0x31713C) writes nothing for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
   const hex = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
@@ -108,13 +110,8 @@ wr_loop:
   bl wn_due
   cmp r0, #0
   beq wr_next
-  ldr r1, =0x3E4CCCCD        ; 0.2 (FUN_001c0630 と同じ)
-  vmov s0, r1
-  ldr r0, [r4, #0x14]        ; メッセージ
-  mov r1, #0
-  mov r2, #0
-  mov r3, #0
-  bl FUN_0030cc48            ; 地の文の窓 (閉じるまで待つ)
+  mov r0, r4
+  bl wn_show                 ; カメラを入口へ向けてメッセージ
   mov r0, #0x34
   ldr r1, [r4]
   mov r2, #1
@@ -124,6 +121,93 @@ wr_next:
   b wr_loop
 wr_done:
   pop {r4, pc}
+; r0 = 表の 1 件: カメラを入口 (行のオブジェクト、FUN_0031c970) へ向け、メッセージを出して戻す。
+; elpulse mod/build_code.py の swshow (D01 の門のスクリプト FUN_00258e54 と同じ) から扉を開ける処理を除いたもの
+wn_show:
+  push {r4, r5, r6, lr}
+  sub sp, sp, #0xf0          ; +0 カメラ、+0x9C / +0xA8 差分、+0xB8 ハンドル、+0xD4 視点、+0xE0 注視点
+  mov r4, r0
+  ldr r0, [r4]
+  bl FUN_0031c970            ; 入口のオブジェクト (0 = このマップにない)
+  movs r5, r0
+  beq ws_message
+  mov r1, r5
+  mov r2, #0
+  add r0, sp, #0xb8
+  bl FUN_0031c958            ; ハンドル
+  mov r0, sp
+  mov r1, #0
+  mov r2, #1
+  bl FUN_0031b1b4            ; カメラ
+  mov r0, sp
+  bl FUN_003179b8
+  mov r0, sp
+  bl FUN_00301f80            ; 今の視点・注視点を覚える
+  add r0, sp, #0xb8
+  bl FUN_0031c948            ; 入口の位置
+  mov r1, #0
+  str r1, [sp, #0xa8]
+  str r1, [sp, #0xb0]
+  ldr r1, =0x42480000        ; + (0, 50, 0): 注視点
+  str r1, [sp, #0xac]
+  add r1, sp, #0xa8
+  add r2, sp, #0xe0
+  bl FUN_00338450
+  add r0, sp, #0xb8
+  bl FUN_0031c948
+  mov r1, #0
+  str r1, [sp, #0x9c]
+  ldr r1, =0x44947000        ; + (0, 1187.5, 1300): 視点
+  str r1, [sp, #0xa0]
+  ldr r1, =0x44A28000
+  str r1, [sp, #0xa4]
+  add r1, sp, #0x9c
+  add r2, sp, #0xd4
+  bl FUN_00338450
+  ldr r0, =0x3FC00000        ; 1.5 秒
+  vmov s0, r0
+  mov r0, sp
+  add r1, sp, #0xd4
+  add r2, sp, #0xe0
+  mov r3, #3
+  bl FUN_00317210            ; カメラを入口へ
+  mov r0, sp
+  bl FUN_00301d9c            ; 動き終わるまで待つ
+ws_message:
+  ldr r1, =0x3E4CCCCD        ; 0.2 (FUN_001c0630 と同じ)
+  vmov s0, r1
+  ldr r0, [r4, #0x14]        ; メッセージ
+  mov r1, #0
+  mov r2, #0
+  mov r3, #0
+  bl FUN_0030cc48            ; 地の文の窓 (閉じるまで待つ)
+  cmp r5, #0
+  beq ws_out
+  ldr r0, =0x3E99999A        ; 0.3
+  vmov s0, r0
+  bl FUN_00300854
+  mov r0, #0x2f
+  bl FUN_00317524            ; 効果音
+  ldr r0, =0x3FC00000        ; 1.5 秒
+  vmov s0, r0
+  mov r0, sp
+  mov r1, #3
+  mov r2, #0
+  bl FUN_00301a44            ; カメラを戻す
+  mov r0, sp
+  bl FUN_00301d9c
+  ldr r0, =0x3E99999A
+  vmov s0, r0
+  bl FUN_003007c0
+  mov r0, sp
+  bl FUN_00301888
+  mov r0, sp
+  bl FUN_00301764            ; カメラの後始末
+  add r0, sp, #0xb8
+  bl FUN_0031c89c            ; ハンドルを解放
+ws_out:
+  add sp, sp, #0xf0
+  pop {r4, r5, r6, pc}
 ; 出すべき告知があるか
 wn_pending:
   push {r4, lr}
