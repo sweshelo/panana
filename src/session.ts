@@ -94,13 +94,20 @@ export class Session {
     return !!this.groundEntry(w) && !!this.game.ground(w);
   }
 
+  private readonly groundEntries = new Map<number, { entry: ArcEntry; body: Uint8Array } | null>();
+
+  /** The master's Wxx_ground.bin of a world map (found once: the lookup unpacks the archive's entries). */
   private groundEntry(w: WorldInfo): { entry: ArcEntry; body: Uint8Array } | null {
     if (!w.groundFile) return null;
-    const arc = this.game.master.archive;
-    const named = findByName(arc, w.groundFile);
-    if (named) return named;
-    const e = findEntry(arc, w.groundEntry);
-    return e ? { entry: e, body: unpackEntry(arc, e).body } : null;
+    if (!this.groundEntries.has(w.hash)) {
+      const arc = this.game.master.archive;
+      const e = findByName(arc, w.groundFile) ?? (() => {
+        const x = findEntry(arc, w.groundEntry);
+        return x ? { entry: x, body: unpackEntry(arc, x).body } : undefined;
+      })();
+      this.groundEntries.set(w.hash, e ?? null);
+    }
+    return this.groundEntries.get(w.hash)!;
   }
 
   /** Terrains edited since their master entry was last rebuilt. */

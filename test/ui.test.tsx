@@ -148,10 +148,12 @@ describe('world map page', () => {
     const html = renderToString(<WorldPage session={session} arg="W01" visit={1} />);
     expect(html).toContain('1 / 1 入口');
     expect(html).toContain('入口 00000011');
-    expect(html).toContain('10, 20');
+    expect(html).toContain('10,20');
     expect(html).toContain('ワールドマップ W01');
     expect(html).toContain('この入口に戻ります');
-    expect(html).toContain('<canvas');
+    // the shared world map frame: the views' panes (their canvases come with the view)
+    expect(html).toContain('pane2d');
+    expect(html).toContain('pane3d');
   });
 });
 

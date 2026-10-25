@@ -1,9 +1,10 @@
-// RPG3's world map (#/world[/entrance]; naauao oahu/worldmap.md): the 2D map of the whole world and the 3D preview of the
-// cells around the camera (worldview.ts). Left: the tools, the terrain's parts to paint with, the layers and the
-// entrances by the dungeon they lead to; right: the selected entrance (its fields, its EventObject row, the maps behind
-// it and the exits that come back to the world), range, chest, prop or event range.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { MapFrame, type MapViewMode } from '../editor/mappage';
+// RPG3's world map (#/world[/entrance]; naauao oahu/worldmap.md) in the world map frame shared with RPG2
+// (editor/worldpage.tsx): the views draw OahuWorldSource (worldsource.ts). Left: the entrances by the dungeon they lead
+// to; right: the selected entrance (its fields, its EventObject row, the maps behind it and the exits that come back to
+// the world), range, chest, prop or event range.
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useWorldView, WorldFrame } from '../editor/worldpage';
+import type { WorldSelection, WorldView } from '../editor/worldview';
 import { NumberInput } from '../ui/book';
 import { MapPickerButton } from '../ui/MapPicker';
 import { useSignal } from '../ui/useEditorState';
@@ -14,10 +15,10 @@ import { OAHU_EVENT_SECTIONS, OAHU_EXIT_KIND, oahuFloorLabel, oahuRecEventRow, t
 import { oahuDungeonLabel, oahuMapHref, useMapGroups, useMaps } from './MapPage';
 import { oahuGroupHref } from './pickers';
 import type { OahuSession } from './session';
-import { ENTRANCE_COLORS, LAYER_COLORS, OahuWorldView, WORLD_LAYERS, type WorldLayer, type WorldSelection } from './worldview';
+import { ENTRANCE_COLORS, OAHU_POINT_SLOT, OAHU_RANGE_SLOT, OahuWorldSource } from './worldsource';
 import {
-  entranceCell, grid2, moveEntrance, OAHU_WORLD, OAHU_WORLD_SECTIONS, OAHU_WORLD_SIZE, partColor, setEntranceByte, setEntranceU32, WE, WS,
-  type OahuWorld, type OahuWorldRange,
+  entranceCell, grid2, moveEntrance, OAHU_WORLD, OAHU_WORLD_SECTIONS, OAHU_WORLD_SIZE, parseChests, parseEventRanges, parseProps, setEntranceByte, setEntranceU32, WE, WS,
+  type OahuWorldRange,
 } from './worldmap';
 
 export const oahuWorldHref = (index?: number): string => (index === undefined ? '#/world' : `#/world/${index}`);
@@ -30,187 +31,61 @@ const SLOT_LABEL: Record<number, string> = { [WS.land]: 'エンカウントの�
 export function OahuWorldPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { maps, world } = session;
   useMaps(maps);
-  const [view, setView] = useState<OahuWorldView | null>(null);
-  const [mode, setMode] = useState<MapViewMode>('split');
-  const pane2d = useRef<HTMLDivElement>(null);
-  const pane3d = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // the dungeons' event codes (D10 …) come with their tables
     for (const d of maps.dungeons) if (d.archive && !d.code) void maps.eventTable(d).catch(() => null);
   }, [maps]);
+  const { view, pane2d, pane3d } = useWorldView(() => new OahuWorldSource(session.dump, world), [session, world], '#/world', (sel) => {
+    const want = sel.type === 'entrance' ? oahuWorldHref(sel.index) : oahuWorldHref();
+    if (location.hash !== want) history.replaceState(null, '', want);
+  });
+  // the route picks the first selection
   useEffect(() => {
-    const v = new OahuWorldView(session.dump, world);
-    pane2d.current!.append(v.grid.canvas);
-    pane3d.current!.append(v.scene.canvas);
-    v.onSelect = (sel) => {
-      const want = sel.type === 'entrance' ? oahuWorldHref(sel.index) : oahuWorldHref();
-      if (location.hash !== want) history.replaceState(null, '', want);
-    };
-    setView(v);
+    if (!view) return;
     const index = arg !== undefined ? Number(arg) : NaN;
     requestAnimationFrame(() => {
-      if (Number.isInteger(index) && index >= 0 && index < world.entrances().length) v.select({ type: 'entrance', index }, true);
+      if (Number.isInteger(index) && index >= 0 && index < world.entrances().length) view.select({ type: 'entrance', index }, true);
       else {
-        v.fitWorld();
-        v.focus();
-        v.fitWorld();
+        view.focus();
+        view.fitWorld();
       }
     });
-    const off = maps.on(() => session.scheduleSave());
-    const onKey = (e: KeyboardEvent): void => {
-      if (!location.hash.startsWith('#/world') || document.querySelector('dialog[open], .modal')) return;
-      if (v.key(e)) e.preventDefault();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      off();
-      v.grid.canvas.remove();
-      v.scene.canvas.remove();
-      v.dispose();
-    };
-    // the route only picks the first selection
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, world, maps]);
-  useEffect(() => {
-    requestAnimationFrame(() => view?.refresh());
-  }, [view, mode]);
+  }, [view]);
+  useEffect(() => maps.on(() => session.scheduleSave()), [maps, session]);
   return (
-    <div className="map-detail">
-      <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
-        header={<WorldHeader session={session} view={view} mode={mode} setMode={setMode} />}
-        left={view && <WorldLeft session={session} view={view} />}
-        right={view && <WorldInspector session={session} view={view} />}
-        status={view && <WorldStatus world={world} view={view} />}
-      />
-    </div>
+    <WorldFrame view={view} pane2d={pane2d} pane3d={pane3d}
+      title={<><strong>ワールドマップ W01</strong><span className="muted small">{`${hex8(OAHU_WORLD).toUpperCase()}・${OAHU_WORLD_SIZE} × ${OAHU_WORLD_SIZE} セル`}</span></>}
+      changed={world.isChanged()}
+      onRevert={() => {
+        if (!view || !confirm('ワールドマップの変更 (地形・入口・範囲など) をすべて元に戻しますか? (入口の EventObject の行はイベントの表のまま残ります)')) return;
+        view.mark();
+        world.revertGround();
+        for (let k = 0; k < OAHU_WORLD_SECTIONS.length; k++) world.setSection(k, world.originalSection(k).slice());
+      }}
+      list={view && <EntranceList session={session} view={view} />}
+      inspector={view && <WorldInspector session={session} view={view} />}
+      statusOf={(x, y) => {
+        const out: string[] = [];
+        const dark = grid2(world.section(WS.dark), x, y);
+        if (dark) out.push(`暗い海 ${dark} / 3`);
+        const inRange = (slot: typeof WS.land | typeof WS.sea): number => world.ranges(slot).filter((r) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h).length;
+        const land = inRange(WS.land), sea = inRange(WS.sea);
+        if (land || sea) out.push(`範囲 陸 ${land}・海 ${sea}`);
+        return out;
+      }}
+    />
   );
 }
 
-function WorldHeader({ session, view, mode, setMode }: { session: OahuSession; view: OahuWorldView | null; mode: MapViewMode; setMode: (m: MapViewMode) => void }): ReactNode {
-  const { world } = session;
-  useSignal(view?.signal ?? DUMMY);
-  const changed = world.isChanged();
-  return (
-    <>
-      <strong>{`ワールドマップ W01`}</strong>
-      <span className="muted small">{`${hex8(OAHU_WORLD).toUpperCase()}・${OAHU_WORLD_SIZE} × ${OAHU_WORLD_SIZE} セル`}</span>
-      {changed && <span className="edited-mark" title="変更した">●</span>}
-      <span className="grow" />
-      <span className="seg">
-        {(['2d', 'split', '3d'] as const).map((m) => <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>{m === 'split' ? '両方' : m.toUpperCase()}</button>)}
-      </span>
-      {view && (
-        <>
-          <span className="seg">
-            <button title="元に戻す (Ctrl+Z)" disabled={!view.canUndo} onClick={() => view.undo()}>↶ 戻す</button>
-            <button title="やり直す (Ctrl+Y)" disabled={!view.canRedo} onClick={() => view.redo()}>↷ やり直し</button>
-          </span>
-          <button onClick={() => view.fitWorld()}>全体を表示</button>
-          <button title="選んだものを 2D・3D の真ん中に (F)" onClick={() => view.focus()}>選択へ移動</button>
-          <button onClick={() => view.scene.topView()}>真上から</button>
-        </>
-      )}
-      {changed && view && (
-        <button onClick={() => {
-          if (!confirm('ワールドマップの変更 (地形・入口・範囲など) をすべて元に戻しますか? (入口の EventObject の行はイベントの表のまま残ります)')) return;
-          view.mark();
-          world.revertGround();
-          for (let k = 0; k < OAHU_WORLD_SECTIONS.length; k++) world.setSection(k, world.originalSection(k).slice());
-        }}>ワールドの変更を元に戻す</button>
-      )}
-    </>
-  );
-}
-
-const DUMMY = { subscribe: () => () => {}, get: () => 0 } as unknown as OahuWorldView['signal'];
-
-// ---- left: tools, the terrain's parts, layers, the entrances
-
-function WorldLeft({ session, view }: { session: OahuSession; view: OahuWorldView }): ReactNode {
-  useSignal(view.signal);
-  return (
-    <>
-      <div className="tools">
-        <button className={view.tool === 'select' ? 'active' : ''} title="入口・範囲を選んでドラッグで動かす (V)" onClick={() => view.setTool('select')}>選択・移動 <kbd>V</kbd></button>
-        <button className={view.tool === 'paint' ? 'active' : ''} title="地形の部品を置く (B、Alt+クリックで拾う、R で回す)" onClick={() => view.setTool('paint')}>地形を塗る <kbd>B</kbd></button>
-      </div>
-      {view.tool === 'paint' && <PartPalette world={session.world} view={view} />}
-      <WorldLayers session={session} view={view} />
-      <EntranceList session={session} view={view} />
-    </>
-  );
-}
-
-function PartPalette({ world, view }: { world: OahuWorld; view: OahuWorldView }): ReactNode {
-  const [query, setQuery] = useState('');
-  const b = view.brush;
-  const cur = world.parts[b.part];
-  // the terrain's parts (entrance kinds 87〜94 have no model and are not terrain)
-  const parts = world.parts.filter((p) => p.row === 0 || p.model).filter((p) => !query || p.name.includes(query) || String(p.row) === query);
-  const count = useMemo(() => {
-    const n = new Map<number, number>();
-    for (const p of world.ground?.parts ?? []) n.set(p, (n.get(p) ?? 0) + 1);
-    return n;
-  }, [world, world.revision]);
-  return (
-    <div className="world-palette">
-      <h3>地形の部品</h3>
-      <div className="brush-info">
-        <span className="pal-swatch small-swatch" style={{ background: partColor(cur) }} />
-        <span>{b.part ? `${b.part} ${cur?.name.replace(/\.bch$/, '') ?? ''}` : '0 なし (消す)'}</span>
-      </div>
-      <div className="row">
-        <span className="muted small">向き</span>
-        <span className="seg">{[0, 1, 2, 3].map((r) => <button key={r} className={r === b.rot ? 'active' : ''} onClick={() => { view.brush = { ...b, rot: r }; view.signal.emit(); }}>{['↑', '→', '↓', '←'][r]}</button>)}</span>
-        <span className="muted small">R で回す</span>
-      </div>
-      <input type="search" placeholder="名前 (flat, mount …) か行で絞る" value={query} onChange={(e) => setQuery(e.target.value)} />
-      <div className="world-parts">
-        {parts.map((p) => (
-          <button key={p.row} className={`world-part${p.row === b.part ? ' active' : ''}`} title={`worldmapParts の行 ${p.row}・+4 = 0x${p.flags.toString(16)}${p.flags & 0x10 ? ' (2×2)' : p.flags & 0x20 ? ' (2 マス)' : ''}・戦闘 mapData ${p.battle}`}
-            onClick={() => { view.brush = { part: p.row, rot: b.rot }; view.signal.emit(); }}>
-            <span className="pal-swatch small-swatch" style={{ background: p.row ? partColor(p) : 'repeating-linear-gradient(45deg,#333 0 4px,#555 4px 8px)' }} />
-            <span className="world-part-name">{p.row ? `${p.row} ${p.name.replace(/^bgpt_wld_|\.bch$/g, '')}` : '0 なし (消す)'}</span>
-            <span className="muted small">{`${p.flags & 0x10 ? '2×2 ' : p.flags & 0x20 ? '2 ' : ''}${count.get(p.row) ?? 0}`}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WorldLayers({ session, view }: { session: OahuSession; view: OahuWorldView }): ReactNode {
-  const w = session.world;
-  const counts: Partial<Record<WorldLayer, number>> = {
-    entrances: w.entrances().filter((r) => WE.part(r)).length,
-    returns: w.entrances().filter((r) => !WE.part(r)).length,
-    land: w.ranges(WS.land).length,
-    sea: w.ranges(WS.sea).length,
-    chests: view.points(WS.chests).length,
-    props: view.points(WS.props).length,
-    events: view.points(WS.events).length,
-  };
-  return (
-    <div className="layers">
-      <h3>表示</h3>
-      {(Object.keys(WORLD_LAYERS) as WorldLayer[]).map((k) => (
-        <label key={k} className="layer">
-          <input type="checkbox" checked={view.layers[k]} onChange={(e) => { view.layers[k] = e.target.checked; view.refresh(); }} />
-          {LAYER_COLORS[k] && <span style={{ color: LAYER_COLORS[k] }}>● </span>}
-          {`${WORLD_LAYERS[k]}${counts[k] !== undefined ? ` ${counts[k]}` : ''}`}
-        </label>
-      ))}
-      <label className="layer">
-        <input type="checkbox" checked={view.showModels} onChange={(e) => { view.showModels = e.target.checked; view.refresh(); }} />
-        3D でモデルを描く
-      </label>
-    </div>
-  );
-}
+/** The points of a set of the world (chests, props, event ranges). */
+const pointsOf = (session: OahuSession, slot: number): ReturnType<typeof parseChests> => {
+  const b = session.world.section(slot);
+  return slot === WS.chests ? parseChests(b) : slot === WS.props ? parseProps(b) : parseEventRanges(b);
+};
 
 /** The entrances grouped by the dungeon (mapGroup) their destination belongs to. */
-function EntranceList({ session, view }: { session: OahuSession; view: OahuWorldView }): ReactNode {
+function EntranceList({ session, view }: { session: OahuSession; view: WorldView }): ReactNode {
   const { world } = session;
   const [query, setQuery] = useState('');
   const list = world.entrances();
@@ -270,16 +145,16 @@ function EntranceList({ session, view }: { session: OahuSession; view: OahuWorld
 
 // ---- right: the inspector
 
-function WorldInspector({ session, view }: { session: OahuSession; view: OahuWorldView }): ReactNode {
+function WorldInspector({ session, view }: { session: OahuSession; view: WorldView }): ReactNode {
   useSignal(view.signal);
   const sel = view.sel;
   if (sel.type === 'entrance') return <EntranceInspector key={sel.index} session={session} view={view} index={sel.index} />;
-  if (sel.type === 'range') return <RangeInspector session={session} view={view} slot={sel.slot} index={sel.index} />;
+  if (sel.type === 'range') return <RangeInspector session={session} view={view} slot={OAHU_RANGE_SLOT[sel.set]!} index={sel.index} />;
   if (sel.type === 'point') return <PointInspector session={session} view={view} sel={sel} />;
   return <WorldSummary session={session} view={view} />;
 }
 
-function WorldSummary({ session, view }: { session: OahuSession; view: OahuWorldView }): ReactNode {
+function WorldSummary({ session, view }: { session: OahuSession; view: WorldView }): ReactNode {
   const { world } = session;
   const slots = world.changedSlots();
   return (
@@ -319,7 +194,7 @@ function FloatInput({ value, onCommit }: { value: number; onCommit: (v: number) 
   return <input className="num-input" type="number" step={0.25} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
 }
 
-function EntranceInspector({ session, view, index }: { session: OahuSession; view: OahuWorldView; index: number }): ReactNode {
+function EntranceInspector({ session, view, index }: { session: OahuSession; view: WorldView; index: number }): ReactNode {
   const { world, maps } = session;
   const groups = useMapGroups(session);
   // the kinds of entrance (worldmapParts 88〜93) and the first letters of the maps they lead to in the ROM
@@ -471,7 +346,7 @@ interface WorldExit {
 }
 
 /** The maps behind an entrance (the destination's dungeon) and their exits that lead back to the world. */
-function DestMaps({ session, view, map, entranceId }: { session: OahuSession; view: OahuWorldView; map: OahuMapInfo; entranceId: number }): ReactNode {
+function DestMaps({ session, view, map, entranceId }: { session: OahuSession; view: WorldView; map: OahuMapInfo; entranceId: number }): ReactNode {
   const { maps, world } = session;
   const revision = useMaps(maps);
   const list = world.dungeonMaps(map.dungeon);
@@ -535,7 +410,7 @@ function DestMaps({ session, view, map, entranceId }: { session: OahuSession; vi
 }
 
 /** The exits of every map that lead to a place of the world without a model (where the player comes out). */
-function ComesHere({ session, view, id }: { session: OahuSession; view: OahuWorldView; id: number }): ReactNode {
+function ComesHere({ session, view, id }: { session: OahuSession; view: WorldView; id: number }): ReactNode {
   const { world } = session;
   // the entrance next to this place (the town it belongs to)
   const list = world.entrances();
@@ -563,7 +438,7 @@ function ComesHere({ session, view, id }: { session: OahuSession; view: OahuWorl
   );
 }
 
-function RangeInspector({ session, view, slot, index }: { session: OahuSession; view: OahuWorldView; slot: typeof WS.land | typeof WS.sea; index: number }): ReactNode {
+function RangeInspector({ session, view, slot, index }: { session: OahuSession; view: WorldView; slot: typeof WS.land | typeof WS.sea; index: number }): ReactNode {
   const { world, master } = session;
   const list = world.ranges(slot);
   const r = list[index];
@@ -611,61 +486,34 @@ function RangeInspector({ session, view, slot, index }: { session: OahuSession; 
           {` ・+0x04 = ${info[4]! | (info[5]! << 8)}・+0x06 = ${info[6]} (${info[6] === 1 ? '陸' : info[6] === 2 ? '海' : '?'})`}
         </p>
       )}
-      <button className="small" onClick={() => { view.mark(); world.setRanges(slot, [...list, { ...r, x: Math.min(OAHU_WORLD_SIZE - r.w, r.x + 3) }]); view.select({ type: 'range', slot, index: list.length }); }}>この範囲を複製</button>
+      <button className="small" onClick={() => { view.mark(); world.setRanges(slot, [...list, { ...r, x: Math.min(OAHU_WORLD_SIZE - r.w, r.x + 3) }]); view.select({ type: 'range', set: slot === WS.land ? 'land' : 'sea', index: list.length }); }}>この範囲を複製</button>
       <button className="small" onClick={() => { view.mark(); world.setRanges(slot, list.filter((_, i) => i !== index)); view.select({ type: 'none' }); }}>この範囲を消す</button>
     </div>
   );
 }
 
-function PointInspector({ session, view, sel }: { session: OahuSession; view: OahuWorldView; sel: Extract<WorldSelection, { type: 'point' }> }): ReactNode {
+function PointInspector({ session, view, sel }: { session: OahuSession; view: WorldView; sel: Extract<WorldSelection, { type: 'point' }> }): ReactNode {
   const { world, maps } = session;
-  const p = view.points(sel.slot)[sel.index];
+  const slot = OAHU_POINT_SLOT[sel.set]!;
+  const p = pointsOf(session, slot)[sel.index];
   if (!p) return null;
   const wd = world.info && maps.dungeonOf(world.info);
-  const raw = world.section(sel.slot);
+  const raw = world.section(slot);
   return (
     <div>
-      <h3>{`${SLOT_LABEL[sel.slot]} #${sel.index}`}</h3>
+      <h3>{`${SLOT_LABEL[slot]} #${sel.index}`}</h3>
       <p className="small">{`位置 (${p.x.toFixed(2)}, ${p.y.toFixed(2)}) セル`}</p>
-      {sel.slot === WS.props ? (
+      {slot === WS.props ? (
         <p className="small">{`mapObject の行 ${p.value}`}</p>
       ) : (
         <p className="small">
-          {sel.slot === WS.events && `種類 ${p.kind}・`}
+          {slot === WS.events && `種類 ${p.kind}・`}
           {`w01_EventObject の行 ${p.value}`}
           {wd && <a href={`#/events/${oahuEventKey({ dungeon: wd.row, row: p.value })}`}> 一覧で開く</a>}
         </p>
       )}
-      {sel.slot === WS.events && <p className="muted small">{`範囲の大きさ ${f32(raw, sel.index * 32 + 0x14).toFixed(2)} × ${f32(raw, sel.index * 32 + 0x18).toFixed(2)}・+0x1D = ${raw[sel.index * 32 + 0x1d]}`}</p>}
+      {slot === WS.events && <p className="muted small">{`範囲の大きさ ${f32(raw, sel.index * 32 + 0x14).toFixed(2)} × ${f32(raw, sel.index * 32 + 0x18).toFixed(2)}・+0x1D = ${raw[sel.index * 32 + 0x1d]}`}</p>}
       <p className="muted small">この区画の編集はまだできません (表示のみ)。</p>
     </div>
   );
-}
-
-// ---- the status bar
-
-function WorldStatus({ world, view }: { world: OahuWorld; view: OahuWorldView }): ReactNode {
-  useSignal(view.signal);
-  useSignal(view.hoverSignal);
-  const h = view.hover;
-  const parts: string[] = [];
-  if (h && h[0] >= 0 && h[1] >= 0 && h[0] < OAHU_WORLD_SIZE && h[1] < OAHU_WORLD_SIZE) {
-    const [x, y] = h;
-    parts.push(`セル (${x}, ${y})`);
-    const g = world.ground;
-    if (g) {
-      const i = y * OAHU_WORLD_SIZE + x;
-      const p = world.parts[g.parts[i]!];
-      parts.push(g.parts[i] ? `部品 ${g.parts[i]} ${p?.name.replace(/^bgpt_wld_|\.bch$/g, '') ?? ''} 向き ${g.rots[i]}` : '部品なし');
-    }
-    const dark = grid2(world.section(WS.dark), x, y);
-    if (dark) parts.push(`暗い海 ${dark} / 3`);
-    const inRange = (slot: typeof WS.land | typeof WS.sea): number => world.ranges(slot).filter((r) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h).length;
-    const land = inRange(WS.land), sea = inRange(WS.sea);
-    if (land || sea) parts.push(`範囲 陸 ${land}・海 ${sea}`);
-  }
-  parts.push(`ツール: ${view.tool === 'paint' ? '地形を塗る' : '選択・移動'}`);
-  if (view.status) parts.push(view.status);
-  else parts.push('右ドラッグ: 2D は移動、3D は回転 / 中ドラッグ: 3D の移動 / ホイール: 拡大');
-  return <>{parts.join('   ')}</>;
 }
