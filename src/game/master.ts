@@ -146,9 +146,18 @@ export class Master {
     this.table(name).data = bytes.slice();
   }
 
+  /** Entries that are not tables replaced by edits (the world maps' Wxx_ground.bin): entry index -> bytes. */
+  readonly rawEntries = new Map<number, Uint8Array>();
+
+  /** Replace an entry that is not a table (the same bytes as the archive's drop the replacement). */
+  setRawEntry(e: ArcEntry, bytes: Uint8Array): void {
+    if (equalBytes(bytes, unpackEntry(this.archive, e).body)) this.rawEntries.delete(e.index);
+    else this.rawEntries.set(e.index, bytes);
+  }
+
   /** Anything to export in this archive. */
   changed(): boolean {
-    return this.treasureChanged() || this.changedTables().length > 0;
+    return this.treasureChanged() || this.changedTables().length > 0 || this.rawEntries.size > 0;
   }
 
   /** mapData [4] = field BGM, [5] = battle BGM, [6] = footsteps (soundData rows) of a map. */
@@ -231,6 +240,7 @@ export class Master {
     const repl = new Map([[this.treasureEntry.index, this.treasureGroup.data]]);
     for (const [, t] of this.extra) if (!equalBytes(t.table.data, t.original)) repl.set(t.entry.index, t.table.data);
     for (const [i, b] of this.texts.replacements()) repl.set(i, b);
+    for (const [i, b] of this.rawEntries) repl.set(i, b);
     // new messages: a message file of their own, packed like the archive's other message files
     const add = this.texts.newFile();
     const like = this.archive.entries[this.texts.files[0]?.entryIndex ?? -1];

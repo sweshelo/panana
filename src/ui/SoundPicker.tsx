@@ -7,6 +7,9 @@ import { Dialog } from './Dialog';
 
 type KindFilter = SoundKind | '';
 
+/** Longest a sequenced BGM / ME is rendered when it does not loop before (then it fades out). */
+const BGM_SECONDS = 300;
+
 /** ▶ plays the sound of a soundData row (■ stops it); the reason shows in the tooltip when it cannot play. */
 export function PlayButton({ game, sounds, row, className = '' }: { game: SoundSource; sounds: SoundNames; row: number; className?: string }): ReactNode {
   const st = usePlayer();
@@ -25,8 +28,10 @@ export function PlayButton({ game, sounds, row, className = '' }: { game: SoundS
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Sequences are rendered again each time (they may be random); the rest is kept for a while.
-        void soundPlayer.toggle(key, async () => (await game.soundRenderer()).render(index), sounds.kind(row) !== 'se');
+        // Sound effects are rendered again each time (their sequences may be random); the BGMs and MEs are kept for a
+        // while, and sequenced ones (the first game's) play to their loop and loop like the streams.
+        const se = sounds.kind(row) === 'se';
+        void soundPlayer.toggle(key, async () => (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se), !se);
       }}
     >
       {on ? (st.loading ? '…' : '■') : '▶'}

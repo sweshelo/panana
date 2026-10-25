@@ -91,7 +91,17 @@ export const HONOLULU_MAP_DATA: TableDef = {
   fields: [
     f('tileset', 0x00, 'u8', 'タイルセット', { note: 'mapParts のモデルの組 (0〜7)' }),
     f('resource', 0x06, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
-    f('sound', 0x07, 'u8', '+0x07', { unsure: true, note: '音 (FUN_0020C2A0 に渡す) と推定' }),
+    f('sound', 0x07, 'u8', '階の BGM', { ref: row('soundData.bin'), unsure: true, note: 'soundData の行。全行がタイルセットに合う BGM_FLD_* (FUN_0020C2A0 に渡す)。実機では未確認' }),
+  ],
+};
+
+/** soundData.bin (master エントリ 64): 252 × 0xC, the sounds the game names by row (naauao honolulu/analysis.md §3.1; as RPG2 / RPG3). */
+export const HONOLULU_SOUND_DATA: TableDef = {
+  file: 'soundData.bin',
+  rowSize: 0xc,
+  fields: [
+    f('item', 0x00, 'u32', 'アイテム ID', { hex: true, note: 'sound.bcsar のアイテム (0x01nnnnnn = 音 nnnnnn)' }),
+    f('volume', 0x08, 'u8', '音量', { unsure: true, note: 'RPG2 / RPG3 と同じ並びと推定' }),
   ],
 };
 
@@ -295,7 +305,34 @@ export const HONOLULU_CSV_MAP: TableDef = {
   fields: [f('map', 0x00, 'u32', 'マップ', { hex: true, note: 'マップ DB (A2C14C00) のハッシュ' })],
 };
 
-/** The definitions by file name (master 56562135, 2713402F, A90C8038). */
+/** PierData +0x02: the island's icon, a row of menuList (its layout island_*; naauao honolulu/worldmap.md §3). */
+export const HONOLULU_PIER_ICONS: Record<number, string> = { 58: 'cave', 59: 'plain', 60: 'tower', 61: 'dark', 62: 'ice', 63: 'volcano', 64: 'last' };
+
+/** The ship stages (セーブ変数 0x26): PierData +0x10 is the one an island needs (naauao honolulu/worldmap.md §4.5). */
+export const HONOLULU_SHIP_STAGES: Record<number, string> = { 0: 'なし', 1: 'いかだ', 2: 'ふね', 3: 'クルーザー' };
+
+/**
+ * PierData (49C917B7 エントリ 1, no file name: found by the table's own name): 10 × 0x12, the islands of the pier's
+ * world map (naauao honolulu/worldmap.md §3). A position is the icon's centre on the lower screen, from its middle,
+ * +y up; the ship stage picks one of the three.
+ */
+export const HONOLULU_PIER_DATA: TableDef = {
+  file: 'PierData',
+  rowSize: 0x12,
+  fields: [
+    f('dungeon', 0x00, 'u16', '行き先のダンジョン', { ref: row('dungeonData.bin'), note: '上画面の名前・説明 (dungeonData +0x10 / +0x12) と「ここにいく」の行き先' }),
+    f('icon', 0x02, 'u16', 'アイコン', { ref: { kind: 'enum', values: HONOLULU_PIER_ICONS }, note: 'menuList の行 (島のレイアウト island_*)。星のアニメーションもこれで選ぶ' }),
+    f('x1', 0x04, 's16', '位置 x (船 0〜1)'),
+    f('y1', 0x06, 's16', '位置 y (船 0〜1)', { note: '上が +' }),
+    f('x2', 0x08, 's16', '位置 x (船 2)'),
+    f('y2', 0x0a, 's16', '位置 y (船 2)', { note: '上が +' }),
+    f('x3', 0x0c, 's16', '位置 x (船 3)'),
+    f('y3', 0x0e, 's16', '位置 y (船 3)', { note: '上が +' }),
+    f('ship', 0x10, 'u8', '要る船の段階', { ref: { kind: 'enum', values: HONOLULU_SHIP_STAGES }, note: 'セーブ変数 0x26 (船の段階) がこの値以上のとき島が出る。拠点の 3D の島も同じ条件 (行 2 は常に表示)' }),
+  ],
+};
+
+/** The definitions by file name (master 56562135, 2713402F, A90C8038, 49C917B7). */
 export const HONOLULU_TABLES: Record<string, TableDef> = Object.fromEntries(
   [
     HONOLULU_ITEM_DATA,
@@ -307,6 +344,7 @@ export const HONOLULU_TABLES: Record<string, TableDef> = Object.fromEntries(
     HONOLULU_SKILL_DATA,
     HONOLULU_SCENARIO,
     HONOLULU_MAP_DATA,
+    HONOLULU_SOUND_DATA,
     HONOLULU_MAP_PARTS,
     HONOLULU_MAP_OBJECT,
     HONOLULU_MAP_RESOURCE,
@@ -317,5 +355,6 @@ export const HONOLULU_TABLES: Record<string, TableDef> = Object.fromEntries(
     HONOLULU_MONSTER_GROUP,
     HONOLULU_MONSTER_FIX_GROUP,
     HONOLULU_CSV_MAP,
+    HONOLULU_PIER_DATA,
   ].map((d) => [d.file, d]),
 );

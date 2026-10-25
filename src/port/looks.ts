@@ -134,7 +134,6 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
       const d = mons.get(r, 'design');
       names.set(d, [...(names.get(d) ?? []), s.battle.monsterName(r)]);
     }
-    const read = (n: string): Promise<Uint8Array> => s.dump.readRomfs(n);
     const n = await models.rows();
     for (let d = 0; d < n; d++) {
       const row = (await models.rowBytes(d))!;
@@ -142,7 +141,10 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
       if (!model || !names.has(d)) continue;
       out.push({
         title, design: d, row, names: [...new Set(names.get(d))], model: models.ref(d),
-        files: async () => ({ model: (await body(read, OAHU_MONSTER_MODEL_ARCHIVE, model))!, texture: await body(read, OAHU_MONSTER_MODEL_ARCHIVE, texture), motion: await body(read, OAHU_MONSTER_MODEL_ARCHIVE, motion) }),
+        files: async () => {
+          const i = await models.modelIndex();
+          return { model: i.body(model)!, texture: i.body(texture), motion: i.body(motion) };
+        },
       });
     }
   } else {

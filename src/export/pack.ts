@@ -6,6 +6,7 @@ import type { EventTable } from '../game/events';
 import type { MapInfo } from '../game/codebin';
 import { MapDb, MAPDB_ARCHIVE } from '../game/mapdb';
 import { buildMapPatch, readExtension, type AddedMap } from '../game/mappatch';
+import { packageOn } from '../rom/basemod';
 import { appendIps } from '../rom/ips';
 import { buildPatches, patchRecords, type CodePatch } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
@@ -81,12 +82,7 @@ export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], 
  * code.ips. Keys are paths below the title folder ("romfs/A90C8038", "exefs/code.ips").
  */
 export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: CodePatch[] = []): Map<string, Uint8Array> {
-  const out = new Map<string, Uint8Array>();
-  for (const [name, data] of game.baseMod?.romfs ?? []) out.set(`romfs/${name}`, data);
-  for (const [name, data] of files) out.set(`romfs/${name}`, data);
-  const ips = codeIps(game, extra);
-  if (ips) out.set('exefs/code.ips', ips);
-  return out;
+  return packageOn(game.baseMod, files, codeIps(game, extra));
 }
 
 /**

@@ -174,6 +174,8 @@ export function oahuCharaModel(mapChara: GsTable, chara: number, variant: number
 
 /** The angle of props and the objects placed like them: FUN_00276078 turns directions past 3 into c = 1 (180°). */
 const propAngle = (dir: number): number => QUARTER2[propC(dir) - 1]!;
+/** The same for the world map's entrances (+0x1C) and props (naauao oahu/worldmap.md §5). */
+export const oahuPropAngle = propAngle;
 
 /** mapObject +0x35 (s8): what FUN_00364B80 (props) and FUN_00366880 (section 5 kinds 4〜6 / 0x0B / 0x0D / 0x0E) add to the height. */
 export function oahuObjectLift(mapObject: GsTable, row: number): number {

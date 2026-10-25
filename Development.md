@@ -66,6 +66,7 @@ ROM のテストで確かめていること:
 ```
 src/
   rom/      cia.ts ncch.ts exefs.ts romfs.ts blz.ts dump.ts cache.ts   ダンプ → code.bin / RomFS のファイル
+            basemod.ts                                                 作品ごとの土台の MOD (保存・書き出しのパッケージ)
   archive/  gsarc.ts lz10.ts zip.ts gstable.ts                          独自アーカイブ・LZ10・GS テーブル
   game/     codebin.ts mapdb.ts sections.ts master.ts game.ts          マップ表・マップ DB・区画・mapParts など
             events.ts objects.ts names.ts                              EventObject、オブジェクトのモデル、名前
@@ -76,10 +77,14 @@ src/
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts tev.ts                                   アニメ (CANM) の読み込みと再生、PICA の TEV 再現
   editor/   mapeditor.tsx state.ts controller.ts view2d.ts view3d.ts validate.ts ...  マップ編集: 状態・操作・2D / 3D ビュー (canvas)
+            worldview.ts worldpage.tsx worldscene.ts                   ワールドマップ (RPG2・RPG3 共通): 2D / 3D のビューと道具、ページの枠、3D (カメラのまわりの窓だけ描く)。
+                                                                       作品ごとの違いは WorldSource (oahu/worldsource.ts、pages/worldsource.ts)
             panes.tsx inspector.tsx addpanel.tsx palette.tsx treasure.tsx ...  マップ編集のヘッダーと左右のペイン (React)
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
   honolulu/ tables.ts master.ts                                       初代: 表の欄の定義、マスター (56562135) の表
+            worldmap.ts WorldmapPage.tsx                                初代: ワールドマップ (49C917B7 の PierData と船着場の絵)
+  layout/   darc.ts bclim.ts                                           レイアウトのアーカイブ (darc) と画像 (BCLIM) の読み込み
   romfs/    kahara.ts oahu.ts formats.tsx                              作品ごとのプロファイル、形式ごとのビュー (FORMAT_VIEWS)
   ui/       Root.tsx StartScreen.tsx Shell.tsx ExportDialog.tsx        開始画面、上部のタブとルーティング、書き出し
             book.tsx Dialog.tsx Photo.tsx ModelView.tsx Radar.tsx message.tsx GroupDetail.tsx
@@ -123,6 +128,11 @@ src/
 - 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
 - 群れのエントリ (monsterGroup) は +0x28〜が未解析です。
+
+## モンスターのモデルの読み込み
+
+- RPG3 と FREE! は、モデルのアーカイブを `BchEntryIndex` (`src/bch/models.ts`) で一度だけ読んでハッシュで引き、デザインの行 (モデル・色・モーション) を `bchLookSet` でモデルのセットにします。図鑑の写真を何百枚作っても、アーカイブ (RPG3 は 28480000) を 1 回しか読みません。移植でエントリを足したら `forgetModels` / `forgetLanaiModelIndex` で読み直します。
+- 色の BCH のテクスチャは、モデルの同じ名前のテクスチャを上書きします (色違いはそうして作られている)。
 
 ## 作品間の移植 (#100)
 

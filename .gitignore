@@ -42,3 +42,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # CI 用の暗号化したダンプ (scripts/pack-rom-bundle.ps1)
 rom-bundle.tar.gpg
 roms/
+# 参照実装の照合データ (ROM 由来)。今は roms/golden.json に書くが、2026-10-11 より前の
+# test/golden/export_golden.py はここに書いていた
+test/golden/golden.json

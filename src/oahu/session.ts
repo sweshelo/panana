@@ -5,8 +5,9 @@ import { OahuPerformances } from './performance';
 import { buildModZip } from '../export/pack';
 import { dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { buildPatches, patchRecords, type BuiltPatch, type CodePatch } from '../game/patch';
-import { buildIps } from '../rom/ips';
-import { withUpdate, type Dump, type UpdateImage } from '../rom/dump';
+import { packageOn } from '../rom/basemod';
+import { appendIps } from '../rom/ips';
+import { overlayDump, withUpdate, type BaseMod, type Dump, type UpdateImage } from '../rom/dump';
 import { OAHU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
 import { OahuBattle } from './battle';
@@ -19,13 +20,14 @@ import { OahuMessages } from './messages';
 import { OAHU_DESIGN_ARCHIVE, OahuMonsterModels } from './monsterModels';
 import { PortStore } from '../port/store';
 import { OahuShops, type SavedShop } from './shops';
+import { OahuWorld, type OahuWorldSaved } from './worldmap';
 import { oahuEventEntries, type OahuEventEntry } from './events';
 import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
 import { CodeIndex } from '../game/scripts';
 import { OAHU_TEXT_END } from './scripts';
-import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
-import { SoundArchive } from '../sound/formats';
-import { SoundRenderer } from '../sound/render';
+import type { SoundNames } from '../game/sound';
+import type { SoundRenderer } from '../sound/render';
+import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { u32 } from '../util/bytes';
 
 const EDITS_KEY = 'oahu/edits/v1';
@@ -42,6 +44,8 @@ interface Saved {
   maps?: OahuMapSaved;
   /** Edited shop stocks. */
   shops?: SavedShop[];
+  /** The world map: its terrain and its sections. */
+  world?: OahuWorldSaved;
   /** The story (#87): code edits (write immediates, script messages), names of the save values, the preview state. */
   storyEdits?: StoryCodeEdit[];
   storyNames?: Record<string, string>;
@@ -62,10 +66,16 @@ export class OahuSession {
   readonly monsterModels: OahuMonsterModels;
   /** The performances of the actions (402F0000) and the names of the effects, read when first used. */
   readonly performances: OahuPerformances;
+  /** The world map W01 (naauao oahu/worldmap.md). */
+  readonly world: OahuWorld;
   /** The Update's code.bin; null without the Update (or when the Update is another version, see {@link codeError}). */
   readonly code: OahuCode | null = null;
   /** Why an Update's code.bin cannot be used. */
   readonly codeError: string = '';
+  /** The dump as opened, without the base MOD ({@link dump} reads through it). */
+  raw!: Dump;
+  /** The existing MOD the dump is read with (its files and code.ips also go into the export), or null. */
+  baseMod: BaseMod | null = null;
   /** Code patches written to code.ips. */
   codePatches: CodePatch[] = [];
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
@@ -104,6 +114,7 @@ export class OahuSession {
     this.itemModels = new OahuItemModels(dump);
     this.performances = new OahuPerformances(dump);
     this.monsterModels = new OahuMonsterModels(dump);
+    this.world = new OahuWorld(maps, master);
     this.battle = new OahuBattle(master, this.items, this.monsterModels, this.itemModels);
     try {
       this.code = OahuCode.of(dump);
@@ -112,16 +123,20 @@ export class OahuSession {
     }
   }
 
-  private static async load(dump: Dump): Promise<OahuSession> {
+  private static async load(raw: Dump, baseMod: BaseMod | null): Promise<OahuSession> {
+    const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
     const master = await OahuMaster.load(dump);
     const s = new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master), await OahuShops.load(dump));
+    s.raw = raw;
+    s.baseMod = baseMod;
     await s.monsterModels.rows(); // the design rows are read before the pages ask for the monsters' models
     return s;
   }
 
-  static async open(dump: Dump): Promise<OahuSession> {
-    const s = await OahuSession.load(dump);
+  /** Opens a dump (on a base MOD when one is given) and puts back the edits saved in IndexedDB. */
+  static async open(dump: Dump, baseMod: BaseMod | null = null): Promise<OahuSession> {
+    const s = await OahuSession.load(dump, baseMod);
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) await s.restore(saved);
     return s;
@@ -130,14 +145,14 @@ export class OahuSession {
   /** The same edits on the dump with its Update applied. */
   async withUpdate(update: UpdateImage): Promise<OahuSession> {
     this.saveNow();
-    const next = await OahuSession.load(withUpdate(this.dump, update));
+    const next = await OahuSession.load(withUpdate(this.raw, update), this.baseMod);
     await next.restore(this.saved());
     return next;
   }
 
   private saved(): Saved {
     return {
-      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [],
+      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [], world: this.world.saved(),
       storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(), direct: this.performances.saved(),
       ...(this.dropCap ? { dropCap: true } : {}),
     };
@@ -157,6 +172,7 @@ export class OahuSession {
     if (saved.direct) await this.performances.restore(saved.direct);
     this.items.reload();
     if (saved.maps) await this.maps.restore(saved.maps);
+    if (saved.world) this.world.restore(saved.world);
   }
 
   readonly scheduleSave = (): void => {
@@ -195,12 +211,16 @@ export class OahuSession {
     return [...this.enabledPatches(), ...(this.dropCap && !this.dropCapProblem() ? [dropCapPatch('oahu')] : [])];
   }
 
-  /** code.ips of the enabled patches and code MODs (those with errors left out) and the story's edits, or null when there is none. */
+  /**
+   * code.ips: the base MOD's, then the enabled patches and code MODs (those with errors left out) and the story's edits;
+   * null when there is none.
+   */
   codeIps(): Uint8Array | null {
-    if (!this.code) return null;
+    const base = this.baseMod?.ips ?? null;
+    if (!this.code) return base;
     const patches = this.exportedPatches();
     const records = [...(patches.length ? patchRecords(this.buildPatches(patches).values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
-    return records.length ? buildIps(records, this.code.code) : null;
+    return records.length ? appendIps(base, records, this.code.code) : base;
   }
 
   // ---- the story (#87)
@@ -251,7 +271,7 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    const more = new Map([[OAHU_MASTER, this.master.changedEntries()]]);
+    const more = new Map([[OAHU_MASTER, new Map([...this.master.changedEntries(), ...this.world.changedMasterEntries()])]]);
     for (const [name, repl] of this.shops?.changedEntries() ?? []) more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
     const files = this.messages.changedArchives(more, this.shops?.archives());
     for (const [name, b] of this.maps.changedArchives()) files.set(name, b);
@@ -268,48 +288,28 @@ export class OahuSession {
     return files;
   }
 
-  /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
+  /** The LayeredFS zip: 00040000000EF000/romfs/… (with the base MOD's files) and exefs/code.ips. */
   async modZip(): Promise<Uint8Array> {
-    const pkg = new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b]));
-    const ips = this.codeIps();
-    if (ips) pkg.set('exefs/code.ips', ips);
-    return buildModZip(pkg, OAHU.titleId);
+    return buildModZip(packageOn(this.baseMod, await this.allModFiles(), this.codeIps()), OAHU.titleId);
   }
 
   private soundNames: Promise<SoundNames> | null = null;
 
   /** Names of the soundData rows, from the Base's sound/sound.bcsar (cached by name, apart from RPG2's). */
   sounds(): Promise<SoundNames> {
-    this.soundNames ??= (async () => {
-      const t = this.master.table('soundData.bin');
-      const items = Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0));
-      // +8: the volume byte, then D0 padding
-      const volumes = Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!);
-      const key = 'oahu/sound/names/v1';
-      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
-      if (!names)
-        try {
-          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
-          await idbSet(key, names).catch(() => {});
-        } catch {
-          names = null;
-        }
-      return new SoundNames(items, names, volumes);
-    })();
-    return this.soundNames;
+    const t = this.master.table('soundData.bin');
+    // +8: the volume byte, then D0 padding
+    return (this.soundNames ??= loadSoundNames(this.dump, 'oahu/sound/names/v1', Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0)), Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!)));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
 
   /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
-      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
-      (err: Error) => {
-        this.renderer = null;
-        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
-      },
-    );
+    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+      this.renderer = null;
+      throw err;
+    });
     return this.renderer;
   }
 }

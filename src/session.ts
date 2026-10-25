@@ -13,7 +13,8 @@ import { makeMap, type NewMapSpec } from './game/newmap';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
 import type { SoundNames } from './game/sound';
-import { buildEntrances, parseEntrances, type WorldInfo } from './game/worldmap';
+import { buildEntrances, buildGround, parseEntrances, type Ground, type WorldInfo } from './game/worldmap';
+import { findByName, findEntry, unpackEntry, type ArcEntry } from './archive/gsarc';
 import { equalBytes } from './util/bytes';
 import { idbGet, idbSet } from './util/idb';
 
@@ -35,6 +36,8 @@ export class Session {
   private saveTimer = 0;
   /** Edited entrances (section 2) of the world maps, by map ID. */
   readonly worldEdits = new Map<number, Uint8Array[]>();
+  /** Edited terrains of the world maps with a Wxx_ground.bin (W01 / W02), by map ID. */
+  readonly groundEdits = new Map<number, Ground>();
 
   private constructor(
     readonly game: Game,
@@ -81,6 +84,64 @@ export class Session {
     });
   }
 
+  /** The terrain of a world map as edited so far (null: none to read). */
+  groundOf(w: WorldInfo): Ground | null {
+    return this.groundEdits.get(w.hash) ?? this.game.ground(w);
+  }
+
+  /** Whether a world map's terrain can be edited (its Wxx_ground.bin is in the master). */
+  groundEditable(w: WorldInfo): boolean {
+    return !!this.groundEntry(w) && !!this.game.ground(w);
+  }
+
+  private readonly groundEntries = new Map<number, { entry: ArcEntry; body: Uint8Array } | null>();
+
+  /** The master's Wxx_ground.bin of a world map (found once: the lookup unpacks the archive's entries). */
+  private groundEntry(w: WorldInfo): { entry: ArcEntry; body: Uint8Array } | null {
+    if (!w.groundFile) return null;
+    if (!this.groundEntries.has(w.hash)) {
+      const arc = this.game.master.archive;
+      const e = findByName(arc, w.groundFile) ?? (() => {
+        const x = findEntry(arc, w.groundEntry);
+        return x ? { entry: x, body: unpackEntry(arc, x).body } : undefined;
+      })();
+      this.groundEntries.set(w.hash, e ?? null);
+    }
+    return this.groundEntries.get(w.hash)!;
+  }
+
+  /** Terrains edited since their master entry was last rebuilt. */
+  private readonly groundsDirty = new Set<number>();
+
+  /** Put an edited terrain in place (null = the ROM's); its master entry is rebuilt by {@link flushGrounds}. */
+  setGround(w: WorldInfo, g: Ground | null): void {
+    if (!this.groundEntry(w)) return;
+    if (g) this.groundEdits.set(w.hash, g);
+    else this.groundEdits.delete(w.hash);
+    this.groundsDirty.add(w.hash);
+    this.scheduleSave();
+  }
+
+  /** Rebuild the master's Wxx_ground.bin of the edited terrains (with their pools; before saving and exporting). */
+  flushGrounds(): void {
+    for (const h of this.groundsDirty) {
+      const w = this.game.code.worlds.find((x) => x.hash === h);
+      const f = w && this.groundEntry(w);
+      if (!f) continue;
+      const g = this.groundEdits.get(h);
+      this.game.master.setRawEntry(f.entry, g ? buildGround(f.body, g) : f.body);
+    }
+    this.groundsDirty.clear();
+  }
+
+  /** World maps whose terrain differs from the ROM's. */
+  changedGrounds(): WorldInfo[] {
+    return this.game.code.worlds.filter((w) => {
+      const e = this.groundEdits.get(w.hash), o = this.game.ground(w);
+      return !!e && !!o && (!equalBytes(e.parts, o.parts) || !equalBytes(e.rots, o.rots));
+    });
+  }
+
   /** Map DB entries to replace for the edited world maps: [section hash, bytes]. */
   worldSections(): [number, Uint8Array][] {
     return this.changedWorlds().map((w) => [w.sections[2]!, buildEntrances(this.entrancesOf(w))]);
@@ -112,6 +173,7 @@ export class Session {
 
   saveNow(): void {
     clearTimeout(this.saveTimer);
+    this.flushGrounds();
     const st = this.st;
     const maps: Record<number, Record<number, Uint8Array>> = {};
     for (const d of st.modifiedDocs()) {
@@ -127,12 +189,20 @@ export class Session {
     const shops = this.stock?.saved() ?? [];
     const worlds: Record<number, Uint8Array> = {};
     for (const w of this.changedWorlds()) worlds[w.hash] = buildEntrances(this.entrancesOf(w));
+    const grounds: Record<number, Uint8Array> = {};
+    for (const w of this.changedGrounds()) {
+      const g = this.groundEdits.get(w.hash)!;
+      const b = new Uint8Array(g.parts.length * 2);
+      b.set(g.parts);
+      b.set(g.rots, g.parts.length);
+      grounds[w.hash] = b;
+    }
     const added = this.game.code
       .addedMaps()
       .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
     const patches = this.game.codePatches;
     const direct = this.book?.directChanged() ? this.book.directData!.data : null;
-    idbSet(EDITS_KEY, { added, worlds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
+    idbSet(EDITS_KEY, { added, worlds, grounds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -144,6 +214,8 @@ export class Session {
       messages?: [number, Uint16Array][];
       shops?: [number, number[]][];
       worlds?: Record<number, Uint8Array>;
+      /** Terrains of the world maps: parts then rotations (300 x 300 each). */
+      grounds?: Record<number, Uint8Array>;
       added?: MapInfo[];
       patches?: CodePatch[];
       /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
@@ -165,10 +237,11 @@ export class Session {
     const nMessages = edits.messages?.length ?? 0;
     const nShops = edits.shops?.length ?? 0;
     const worlds = Object.keys(edits.worlds ?? {}).map((h) => mapLabel(game, Number(h)));
+    const grounds = Object.keys(edits.grounds ?? {}).map((h) => mapLabel(game, Number(h)));
     const nPatches = edits.patches?.length ?? 0;
     const direct = edits.direct && this.book?.directData ? edits.direct : null;
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !nPatches && !edits.dropCap && !direct && !edits.design) return;
-    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !grounds.length && !nPatches && !edits.dropCap && !direct && !edits.design) return;
+    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), grounds.map((w) => `${w} の地形`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       game.code.removeMaps(added.map((m) => m.hash));
       await idbSet(EDITS_KEY, null);
@@ -188,6 +261,12 @@ export class Session {
     for (const [hash, bytes] of Object.entries(edits.worlds ?? {})) {
       if (game.code.world(Number(hash))) this.worldEdits.set(Number(hash), parseEntrances(bytes));
     }
+    for (const [hash, bytes] of Object.entries(edits.grounds ?? {})) {
+      const w = game.code.worlds.find((x) => x.hash === Number(hash));
+      const n = bytes.length / 2;
+      if (w && this.groundEditable(w) && n === this.game.ground(w)!.parts.length) this.setGround(w, { parts: bytes.slice(0, n), rots: bytes.slice(n) });
+    }
+    this.flushGrounds();
     for (const [d, bytes] of Object.entries(edits.events)) {
       const t = await game.eventTable(Number(d));
       if (t) {

@@ -11,14 +11,15 @@ import { PortStore } from '../port/store';
 import { dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MapDb } from '../game/mapdb';
 import { buildPatches, patchRecords } from '../game/patch';
-import { buildIps } from '../rom/ips';
-import type { Dump } from '../rom/dump';
+import { packageOn } from '../rom/basemod';
+import { appendIps } from '../rom/ips';
+import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
-import { BCSAR_PATH, bcsarSoundNames, SoundNames } from '../game/sound';
-import { SoundArchive } from '../sound/formats';
-import { SoundRenderer } from '../sound/render';
+import type { SoundNames } from '../game/sound';
+import type { SoundRenderer } from '../sound/render';
+import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { LANAI_MAPDB_ENTRY } from './maps';
 import { encodeLanaiMessage, lanaiPlain, lanaiText, parseLanaiMessage, parseLanaiText, type LanaiToken } from './message';
@@ -133,6 +134,10 @@ export class LanaiSession {
   revision = 0;
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
   dropCap = false;
+  /** The dump as opened, without the base MOD ({@link dump} reads through it). */
+  raw!: Dump;
+  /** The existing MOD the dump is read with (its files and code.ips also go into the export), or null. */
+  baseMod: BaseMod | null = null;
 
   private constructor(
     readonly dump: Dump,
@@ -147,8 +152,9 @@ export class LanaiSession {
     }
   }
 
-  /** Opens a dump and puts back the edits saved in IndexedDB (none with `fresh`). */
-  static async open(dump: Dump, { fresh = false }: { fresh?: boolean } = {}): Promise<LanaiSession> {
+  /** Opens a dump (on a base MOD when one is given) and puts back the edits saved in IndexedDB (none with `fresh`). */
+  static async open(raw: Dump, { fresh = false, baseMod = null }: { fresh?: boolean; baseMod?: BaseMod | null } = {}): Promise<LanaiSession> {
+    const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
     if (dump.title !== LANAI) throw new Error(`『${LANAI.name}』のダンプではありません`);
     const names = dump.names().filter((n) => /^[0-9A-F]{4}000A$/i.test(n)).sort((a, b) => (a === LANAI.master ? -1 : b === LANAI.master ? 1 : a.localeCompare(b)));
@@ -161,6 +167,8 @@ export class LanaiSession {
       tables.push(...archiveTables(n.toUpperCase(), arc));
     }
     const s = new LanaiSession(dump, tables, sources);
+    s.raw = raw;
+    s.baseMod = baseMod;
     if (!fresh) {
       const saved = await idbGet<LanaiSaved>(LANAI_EDITS_KEY).catch(() => undefined);
       if (saved?.rows) await s.restore(saved);
@@ -365,58 +373,43 @@ export class LanaiSession {
     }
   }
 
-  /** exefs/code.ips of Panana's code MODs that are on, or null when there is none (throws when one cannot be built). */
+  /**
+   * exefs/code.ips: the base MOD's, then Panana's code MODs that are on; null when there is none (throws when one cannot
+   * be built).
+   */
   codeIps(): Uint8Array | null {
-    if (!this.dropCap) return null;
+    const base = this.baseMod?.ips ?? null;
+    if (!this.dropCap) return base;
     const problem = this.dropCapProblem();
     if (problem) throw new Error(problem);
     const code = lanaiCode(this.dump);
     const built = [...buildPatches(code, [dropCapPatch('lanai')], LANAI_LAYOUT).values()];
     const err = built.find((b) => b.errors.length)?.errors[0];
     if (err) throw new Error(`パッチの ${err.line} 行目: ${err.message}`);
-    return buildIps(patchRecords(built), code);
+    return appendIps(base, patchRecords(built), code);
   }
 
-  /** The LayeredFS zip: 0004000000125D00/romfs/<archive> and exefs/code.ips. */
+  /** The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and exefs/code.ips. */
   async modZip(): Promise<Uint8Array> {
-    const pkg = new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b]));
-    const ips = this.codeIps();
-    if (ips) pkg.set('exefs/code.ips', ips);
-    return buildModZip(pkg, LANAI.titleId);
+    return buildModZip(packageOn(this.baseMod, await this.allModFiles(), this.codeIps()), LANAI.titleId);
   }
 
   private soundNames: Promise<SoundNames> | null = null;
 
   /** Names of the SoundData rows (+0x00 = sound.bcsar item ID, battle-field.md §5), from the Base's sound/sound.bcsar. */
   sounds(): Promise<SoundNames> {
-    this.soundNames ??= (async () => {
-      const t = this.need('SoundData');
-      const items = Array.from({ length: t.rows }, (_, i) => t.u32(i, 0));
-      const key = 'lanai/sound/names/v1';
-      let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
-      if (!names)
-        try {
-          names = bcsarSoundNames(await this.dump.readRomfs(BCSAR_PATH));
-          await idbSet(key, names).catch(() => {});
-        } catch {
-          names = null;
-        }
-      return new SoundNames(items, names);
-    })();
-    return this.soundNames;
+    const t = this.need('SoundData');
+    return (this.soundNames ??= loadSoundNames(this.dump, 'lanai/sound/names/v1', Array.from({ length: t.rows }, (_, i) => t.u32(i, 0))));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
 
   /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= this.dump.readRomfs(BCSAR_PATH).then(
-      (b) => new SoundRenderer(new SoundArchive(b), (path) => this.dump.readRomfs(`sound/${path}`)),
-      (err: Error) => {
-        this.renderer = null;
-        throw new Error(`${BCSAR_PATH} を読めません (${err.message})`);
-      },
-    );
+    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+      this.renderer = null;
+      throw err;
+    });
     return this.renderer;
   }
 

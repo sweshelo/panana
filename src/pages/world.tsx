@@ -1,18 +1,21 @@
-// World maps (W01 ...): the terrain as a 2D map (read only) and the entrances to towns and dungeons (section 2),
-// which can be moved on the map and pointed at other maps. docs/worldmap.md.
-import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
+// World maps (W01 ...; docs/worldmap.md) in the world map frame shared with RPG3 (editor/worldpage.tsx): the 2D map and
+// the 3D preview of KaharaWorldSource (worldsource.ts), the terrain painted with worldmapParts rows (W01 / W02's
+// Wxx_ground.bin), and the entrances to towns and dungeons (section 2), moved on the map and pointed at other maps.
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { mapLabel, pointLabel, worldHref, worldLabel } from '../editor/labels';
 import { validateWorld, type WorldIssue } from '../editor/validate';
-import type { Game } from '../game/game';
+import { useWorldView, WorldFrame } from '../editor/worldpage';
 import { P3 } from '../game/sections';
-import { ENT, WORLD_SIZE, coveredParts, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
+import { ENT, WORLD_SIZE, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
-import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
+import { Count, EditedMark, ListFilter, NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
 import { MapButton } from '../ui/MapPicker';
+import { useSignal } from '../ui/useEditorState';
 import { equalBytes, hex8, w32 } from '../util/bytes';
+import { KaharaWorldSource } from './worldsource';
 
 const ROT_LABEL = ['↑ 0', '→ 1', '↓ 2', '← 3'];
-const SCALES = [2, 3, 4, 6, 8];
+const DUMMY = { subscribe: () => () => {}, get: () => 0 } as unknown as Parameters<typeof useSignal>[0];
 
 export function WorldPage({ session, arg }: PageProps): ReactNode {
   const { game } = session;
@@ -30,23 +33,36 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
   const [filter, setFilter] = useState<'all' | 'changed' | 'issues'>('all');
   const list = session.entrancesOf(world);
   const original = useMemo(() => session.originalEntrances(world), [session, world]);
-  const selectedId = useSticky(routeId, (id) => list.some((r) => ENT.id(r) === id), () => (list[0] ? ENT.id(list[0]) : 0));
-  const index = list.findIndex((r) => ENT.id(r) === selectedId);
+  const [selId, setSelId] = useState(() => routeId ?? (list[0] ? ENT.id(list[0]) : 0));
+  const index = list.findIndex((r) => ENT.id(r) === selId);
   const sel = list[index];
-  const listEl = useRef<HTMLDivElement>(null);
-  useActiveRow(listEl, selectedId);
-  const issues = useMemo(() => validateWorld(game, world.hash, list, original, session.st.docs), [game, world, list, original, session, rev]);
+  const { view, pane2d, pane3d } = useWorldView(() => new KaharaWorldSource(session, world), [session, world], '#/world', (s) => {
+    const r = s.type === 'entrance' ? session.entrancesOf(world)[s.index] : undefined;
+    if (!r) return;
+    setSelId(ENT.id(r));
+    history.replaceState(null, '', worldHref(world.code, ENT.id(r)));
+  });
+  useSignal(view?.signal ?? DUMMY);
+  const src = view?.src as KaharaWorldSource | undefined;
+  // the views follow the selection of the list (and the route)
+  useEffect(() => {
+    if (routeId !== undefined) setSelId(routeId);
+  }, [routeId]);
+  useEffect(() => {
+    if (!view || index < 0) return;
+    if (view.sel.type !== 'entrance' || view.sel.index !== index) requestAnimationFrame(() => view.select({ type: 'entrance', index }, true));
+  }, [view, index]);
+  const issues = useMemo(() => validateWorld(game, world.hash, list, original, session.st.docs), [game, world, list, original, session, rev, src?.revision()]);
   const points = useMemo(() => parseWorldPoints(game.db.get(world.sections[3]!)), [game, world]);
 
   const changed = (i: number): boolean => !original[i] || !equalBytes(original[i]!, list[i]!);
   const update = (i: number, next: Uint8Array): void => {
+    view?.mark();
     const l = list.slice();
     l[i] = next;
     session.setEntrances(world, l);
+    src?.changed();
     edited();
-  };
-  const go = (id: number): void => {
-    location.hash = worldHref(world.code, id);
   };
   const q = query.trim();
   const rows = list
@@ -56,27 +72,36 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
       if (filter === 'issues' && !issues.some((x) => x.index === i)) return false;
       return !q || mapLabel(game, ENT.destMap(r)).includes(q) || hex8(ENT.id(r)).includes(q.toUpperCase());
     });
+  const worldChanged = session.changedWorlds().includes(world) || session.changedGrounds().includes(world);
 
   return (
-    <div className="book">
-      <div className="book-side">
+    <WorldFrame view={view} pane2d={pane2d} pane3d={pane3d}
+      title={<><strong>{worldLabel(world.code)}</strong><span className="muted small">{`${hex8(world.hash)}・${WORLD_SIZE} × ${WORLD_SIZE} セル`}</span></>}
+      changed={worldChanged}
+      onRevert={() => {
+        if (!confirm(`${worldLabel(world.code)} の変更 (地形・入口) をすべて元に戻しますか?`)) return;
+        view?.mark();
+        session.setEntrances(world, original);
+        if (session.groundEditable(world)) session.setGround(world, null);
+        src?.changed();
+        edited();
+      }}
+      top={
         <div className="row">
           <select value={world.code} onChange={(e) => (location.hash = worldHref(e.target.value))}>
             {worlds.map((w) => <option key={w.hash} value={w.code}>{`${worldLabel(w.code)} (${hex8(w.hash)})`}</option>)}
           </select>
-          {session.changedWorlds().includes(world) && (
-            <button onClick={() => { if (confirm(`${worldLabel(world.code)} の入口の変更をすべて元に戻しますか?`)) { session.setEntrances(world, original); edited(); } }}>すべて元に戻す</button>
-          )}
         </div>
-        <ListFilter query={query} setQuery={setQuery} placeholder="行き先のマップ・入口 ID で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['changed', '変更した'], ['issues', '問題あり']]} />
-        <div className="book-list" ref={listEl}>
+      }
+      list={
+        <div className="world-entrances">
+          <ListFilter query={query} setQuery={setQuery} placeholder="行き先のマップ・入口 ID で検索" filter={filter} setFilter={setFilter}
+            options={[['all', 'すべて'], ['changed', '変更した'], ['issues', '問題あり']]} />
           <Count shown={rows.length} total={list.length} unit="入口" />
-          <table className="book-table">
-            <thead><tr><th>#</th><th>行き先</th><th>位置</th></tr></thead>
+          <table className="book-table world-entrance-table">
             <tbody>
               {rows.map(({ r, i }) => (
-                <tr key={i} className={i === index ? 'active' : ''} onClick={() => go(ENT.id(r))}>
+                <tr key={i} className={i === index ? 'active' : ''} onClick={() => { setSelId(ENT.id(r)); history.replaceState(null, '', worldHref(world.code, ENT.id(r))); }}>
                   <td className="num muted">{i}</td>
                   <td>
                     {mapLabel(game, ENT.destMap(r))}
@@ -84,39 +109,30 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
                     {issues.some((x) => x.index === i) && <span className="warn-mark" title="問題あり"> ⚠</span>}
                     <div className="muted small mono">{hex8(ENT.id(r))}</div>
                   </td>
-                  <td className="num">{`${ENT.x(r)}, ${ENT.y(r)}`}</td>
+                  <td className="num muted small">{`${ENT.x(r)},${ENT.y(r)}`}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
-      <div className="book-detail world-detail">
-        {sel && (
-          <EntranceEditor
-            session={session}
-            world={world}
-            r={sel}
-            original={original[index]}
-            points={points}
-            issues={issues.filter((x) => x.index === index)}
-            update={(next) => update(index, next)}
-            edited={edited}
-          />
-        )}
-        <WorldCanvas
-          game={game}
+      }
+      inspector={sel && (
+        <EntranceEditor
+          session={session}
           world={world}
-          ground={game.ground(world)}
-          entrances={list}
+          r={sel}
+          original={original[index]}
           points={points}
-          selected={index}
-          changed={changed}
-          onSelect={(i) => go(ENT.id(list[i]!))}
-          onMove={(i, x, y) => update(i, moveEntrance(list[i]!, x, y))}
+          issues={issues.filter((x) => x.index === index)}
+          update={(next) => update(index, next)}
+          edited={() => { src?.changed(); edited(); }}
         />
-      </div>
-    </div>
+      )}
+      statusOf={(x, y) => {
+        const under = list.findIndex((r) => ENT.x(r) === x && ENT.y(r) === y);
+        return under >= 0 ? [`入口 ${hex8(ENT.id(list[under]!))} → ${mapLabel(game, ENT.destMap(list[under]!))}`] : [];
+      }}
+    />
   );
 }
 
@@ -223,157 +239,3 @@ function EntranceEditor({ session, world, r, original, points, issues, update, e
   );
 }
 
-/** Base colours by terrain type (worldmapParts +4 bits 0-1), and the sea (no part). */
-const TERRAIN_RGB: [number, number, number][] = [[84, 140, 76], [196, 176, 112], [118, 118, 126], [92, 146, 170]];
-const SEA_RGB: [number, number, number] = [22, 48, 92];
-
-/** Colour of a worldmapParts row: its terrain type, a little lighter or darker per row. */
-function partColor(part: number, flags: Uint8Array | null): [number, number, number] {
-  if (!part) return SEA_RGB;
-  const base = TERRAIN_RGB[flags ? (flags[part] ?? 0) & 3 : 0]!;
-  const k = 0.85 + ((part * 7) % 5) * 0.06;
-  return base.map((c) => Math.min(255, Math.round(c * k))) as [number, number, number];
-}
-
-/** The terrain (one pixel per cell, drawn scaled up) with the entrances and the section 3 points on top. */
-function WorldCanvas({ game, world, ground, entrances, points, selected, changed, onSelect, onMove }: {
-  game: Game;
-  world: WorldInfo;
-  ground: Ground | null;
-  entrances: Uint8Array[];
-  points: WorldPoint[];
-  selected: number;
-  changed: (i: number) => boolean;
-  onSelect: (i: number) => void;
-  onMove: (i: number, x: number, y: number) => void;
-}): ReactNode {
-  const [scale, setScale] = useState(3);
-  const [hover, setHover] = useState<[number, number] | null>(null);
-  /** Entrance being dragged, and where it is now. */
-  const [drag, setDrag] = useState<{ i: number; x: number; y: number } | null>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const box = useRef<HTMLDivElement>(null);
-  const [terrain, setTerrain] = useState<HTMLCanvasElement | null>(null);
-  const size = WORLD_SIZE * scale;
-
-  useEffect(() => {
-    const c = document.createElement('canvas');
-    c.width = c.height = WORLD_SIZE;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    const img = ctx.createImageData(WORLD_SIZE, WORLD_SIZE);
-    const flags = game.worldPartFlags();
-    const parts = ground && flags ? coveredParts(ground, (p) => flags[p] ?? 0) : ground?.parts;
-    for (let i = 0; i < WORLD_SIZE * WORLD_SIZE; i++) {
-      const [r, g, b] = partColor(parts?.[i] ?? 0, flags);
-      img.data.set([r, g, b, 255], i * 4);
-    }
-    ctx.putImageData(img, 0, 0);
-    setTerrain(c);
-  }, [game, ground]);
-
-  const pos = (i: number): [number, number] => (drag?.i === i ? [drag.x, drag.y] : [ENT.x(entrances[i]!), ENT.y(entrances[i]!)]);
-
-  useEffect(() => {
-    const ctx = canvas.current?.getContext('2d');
-    if (!ctx || !terrain) return;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(terrain, 0, 0, size, size);
-    const cx = (v: number): number => (v + 0.5) * scale;
-    ctx.fillStyle = 'rgba(255,255,255,0.6)';
-    for (const p of points) ctx.fillRect(cx(p.x) - 1.5, cx(p.y) - 1.5, 3, 3);
-    const r = Math.max(3, scale * 0.9);
-    entrances.forEach((_, i) => {
-      const [x, y] = pos(i);
-      ctx.beginPath();
-      ctx.arc(cx(x), cx(y), r, 0, Math.PI * 2);
-      ctx.fillStyle = changed(i) ? '#e0b04c' : '#ff5a5a';
-      ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = '#000';
-      ctx.stroke();
-    });
-    if (entrances[selected]) {
-      const [x, y] = pos(selected);
-      ctx.beginPath();
-      ctx.arc(cx(x), cx(y), r + 4, 0, Math.PI * 2);
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#fff';
-      ctx.stroke();
-    }
-  });
-
-  // Bring the selected entrance into view when another one is selected (or the scale changes).
-  useEffect(() => {
-    const b = box.current;
-    const e = entrances[selected];
-    if (!b || !e) return;
-    const x = (ENT.x(e) + 0.5) * scale;
-    const y = (ENT.y(e) + 0.5) * scale;
-    if (x < b.scrollLeft || x > b.scrollLeft + b.clientWidth || y < b.scrollTop || y > b.scrollTop + b.clientHeight)
-      b.scrollTo({ left: x - b.clientWidth / 2, top: y - b.clientHeight / 2 });
-  }, [selected, scale, world]);
-
-  const cellAt = (e: PointerEvent): [number, number] => {
-    const rect = canvas.current!.getBoundingClientRect();
-    const clamp = (v: number): number => Math.max(0, Math.min(WORLD_SIZE - 1, Math.floor(v / scale)));
-    return [clamp(e.clientX - rect.left), clamp(e.clientY - rect.top)];
-  };
-  /** Nearest entrance within 2 cells (the selected one first). */
-  const hit = (x: number, y: number): number => {
-    let best = -1;
-    let bestD = 2.5;
-    entrances.forEach((r, i) => {
-      const d = Math.hypot(ENT.x(r) - x, ENT.y(r) - y) - (i === selected ? 0.5 : 0);
-      if (d < bestD) [best, bestD] = [i, d];
-    });
-    return best;
-  };
-
-  const cell = hover ? hover[1] * WORLD_SIZE + hover[0] : -1;
-  const under = hover ? entrances.findIndex((r) => ENT.x(r) === hover[0] && ENT.y(r) === hover[1]) : -1;
-  return (
-    <div className="world-map">
-      <div className="row">
-        <span className="muted small">拡大</span>
-        {SCALES.map((s) => <button key={s} className={s === scale ? 'active small' : 'small'} onClick={() => setScale(s)}>{`×${s}`}</button>)}
-        <span className="muted small">入口 (赤、変更したものは黄) をクリックで選び、ドラッグで動かします。白い点は区画 3 の地点。地形は worldmapParts の地形の種類 (+4 の下位 2 ビット) で色分け。</span>
-      </div>
-      {/* Fixed height, so that the map does not move while the pointer is over it. */}
-      <div className="world-hover muted small">
-        {hover
-          ? `(${hover[0]}, ${hover[1]})  地形: worldmapParts ${ground?.parts[cell] ?? '-'} 向き ${ground?.rots[cell] ?? '-'}${under >= 0 ? `  入口 ${hex8(ENT.id(entrances[under]!))} → ${mapLabel(game, ENT.destMap(entrances[under]!))}` : ''}`
-          : '\u00a0'}
-      </div>
-      {!ground && <div className="issue warn">{`地形 (${world.groundFile ?? '区画 0'}) を読めなかったので、海だけを表示しています。`}</div>}
-      <div className="world-scroll" ref={box}>
-        <canvas
-          ref={canvas}
-          width={size}
-          height={size}
-          style={{ width: size, height: size, cursor: drag ? 'grabbing' : 'crosshair' }}
-          onPointerDown={(e) => {
-            const [x, y] = cellAt(e);
-            const i = hit(x, y);
-            if (i < 0) return;
-            if (i !== selected) onSelect(i);
-            e.currentTarget.setPointerCapture(e.pointerId);
-            setDrag({ i, x: ENT.x(entrances[i]!), y: ENT.y(entrances[i]!) });
-          }}
-          onPointerMove={(e) => {
-            const [x, y] = cellAt(e);
-            setHover([x, y]);
-            if (drag && (drag.x !== x || drag.y !== y)) setDrag({ ...drag, x, y });
-          }}
-          onPointerUp={() => {
-            if (!drag) return;
-            const r = entrances[drag.i]!;
-            if (drag.x !== ENT.x(r) || drag.y !== ENT.y(r)) onMove(drag.i, drag.x, drag.y);
-            setDrag(null);
-          }}
-          onPointerLeave={() => setHover(null)}
-        />
-      </div>
-    </div>
-  );
-}

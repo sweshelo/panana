@@ -127,6 +127,8 @@ describe('world map page', () => {
       worldMaps: () => [world],
       editableMaps: () => [info],
       ground: () => null,
+      worldParts: () => [],
+      worldPartFlags: () => null,
       code: { maps: [info], byHash: (h: number) => (h === D ? info : undefined), world: (h: number) => (h === W ? world : undefined) },
       db: { get: () => new Uint8Array(0) },
       master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 } },
@@ -139,14 +141,19 @@ describe('world map page', () => {
       entrancesOf: () => [ent],
       originalEntrances: () => [ent],
       changedWorlds: () => [],
+      groundOf: () => null,
+      groundEditable: () => false,
+      changedGrounds: () => [],
     } as unknown as Session;
     const html = renderToString(<WorldPage session={session} arg="W01" visit={1} />);
     expect(html).toContain('1 / 1 入口');
     expect(html).toContain('入口 00000011');
-    expect(html).toContain('10, 20');
+    expect(html).toContain('10,20');
     expect(html).toContain('ワールドマップ W01');
     expect(html).toContain('この入口に戻ります');
-    expect(html).toContain('<canvas');
+    // the shared world map frame: the views' panes (their canvases come with the view)
+    expect(html).toContain('pane2d');
+    expect(html).toContain('pane3d');
   });
 });
 
