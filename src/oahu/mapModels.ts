@@ -69,3 +69,19 @@ export async function oahuObjectModels(dump: Dump, ref: { archive: string; entry
   addEntry(set, await archive(dump, ref.archive), ref.entry);
   return set;
 }
+
+/** The world map's terrain models (worldmapParts +0x00, entries of archive `archive`) with the textures of entry `texture`. */
+export async function oahuWorldModels(dump: Dump, archiveName: string, texture: number, hashes: Iterable<number>): Promise<TilesetModels> {
+  const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
+  const arc = await archive(dump, archiveName);
+  const t = findEntry(arc, texture);
+  if (t)
+    try {
+      for (const x of parseBch(unwrapBch(unpackEntry(arc, t).body)).textures) set.textures.set(x.name, x);
+    } catch (err) {
+      set.errors.push(`テクスチャ ${hex8(texture)}: ${(err as Error).message}`);
+    }
+  else set.errors.push(`テクスチャ ${hex8(texture)} がありません`);
+  for (const h of new Set(hashes)) if (h) addEntry(set, arc, h);
+  return set;
+}

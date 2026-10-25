@@ -130,6 +130,78 @@ export function parseGround(b: Uint8Array): Ground | null {
   return { parts, rots };
 }
 
+/** The window the pools of ground.bin +0x2BF30 are counted in: 23 x 15 cells (docs/worldmap.md §4). */
+export const POOL_WINDOW = { w: 23, h: 15 } as const;
+
+/**
+ * The most cells a part starts at in any window of `win` cells (the world wraps around), per worldmapParts row:
+ * ground.bin's pools (+0x2BF30, FUN_00204160). Part 0 (the sea) has none.
+ */
+export function groundPools(parts: Uint8Array, count: number, win: { w: number; h: number } = POOL_WINDOW): number[] {
+  const N = WORLD_SIZE;
+  const out = new Array<number>(count).fill(0);
+  // per part: column sums over win.h rows (wrapping), then a running sum over win.w columns
+  const byPart = new Map<number, number[]>();
+  for (let i = 0; i < N * N; i++) {
+    const p = parts[i]!;
+    if (!p || p >= count) continue;
+    let l = byPart.get(p);
+    if (!l) byPart.set(p, (l = []));
+    l.push(i);
+  }
+  for (const [p, cells] of byPart) {
+    const grid = new Uint8Array(N * N);
+    for (const i of cells) grid[i] = 1;
+    const col = new Int32Array(N * N); // col[y][x] = cells in rows y .. y + h - 1 of column x
+    for (let x = 0; x < N; x++) {
+      let s = 0;
+      for (let k = 0; k < win.h; k++) s += grid[(k % N) * N + x]!;
+      for (let y = 0; y < N; y++) {
+        col[y * N + x] = s;
+        s += grid[((y + win.h) % N) * N + x]! - grid[y * N + x]!;
+      }
+    }
+    let best = 0;
+    for (let y = 0; y < N; y++) {
+      let s = 0;
+      for (let k = 0; k < win.w; k++) s += col[y * N + (k % N)]!;
+      for (let x = 0; x < N; x++) {
+        if (s > best) best = s;
+        s += col[y * N + ((x + win.w) % N)]! - col[y * N + x]!;
+      }
+    }
+    out[p] = best;
+  }
+  return out;
+}
+
+/**
+ * Wxx_ground.bin with the grid replaced and its two u32 x 81 tables (+0x2BF30 pools, +0x2C074 unknown) made large
+ * enough for it: a pool that the recount (23 x 15) finds too small grows to it, and +0x2C074 grows by as much; an
+ * unedited grid gives the ROM's bytes.
+ */
+export function buildGround(original: Uint8Array, g: Ground): Uint8Array {
+  const N = WORLD_SIZE;
+  const out = original.slice();
+  for (let i = 0; i < N * N; i++) {
+    out[0x10 + i * 2] = g.parts[i]!;
+    out[0x11 + i * 2] = (original[0x11 + i * 2]! & ~3) | (g.rots[i]! & 3);
+  }
+  const t1 = u32(original, 8), t2 = u32(original, 12);
+  const count = Math.max(0, Math.floor((t2 - t1) / 4));
+  const pools = groundPools(g.parts, count);
+  for (let p = 0; p < count; p++) {
+    // +0x2C074 is counted another way: it grows by as much as the pool
+    const grow = Math.max(0, pools[p]! - u32(original, t1 + p * 4));
+    w32(out, t1 + p * 4, u32(original, t1 + p * 4) + grow);
+    if (t2 + p * 4 + 4 <= out.length) w32(out, t2 + p * 4, u32(original, t2 + p * 4) + grow);
+  }
+  return out;
+}
+
+/** A copy of a terrain (to edit). */
+export const copyGround = (g: Ground): Ground => ({ parts: g.parts.slice(), rots: g.rots.slice() });
+
 /** Terrain of W98 / W99: section 0 in the dungeon tile layout (12 bytes, the kind is a worldmapParts row). */
 export function groundFromTiles(b: Uint8Array): Ground {
   const n = WORLD_SIZE * WORLD_SIZE;
@@ -144,6 +216,22 @@ export function groundFromTiles(b: Uint8Array): Ground {
   }
   return { parts, rots };
 }
+
+/** A worldmapParts row (master #52, 12 bytes; docs/worldmap.md §4). */
+export interface WorldPart {
+  row: number;
+  /** Model: an entry of archive WORLD_MODEL_ARCHIVE (0 = none). */
+  model: number;
+  /** +4 flags (0x10 2 x 2, 0x20 2 cells, bits 0-1 the kind of terrain). */
+  flags: number;
+  /** +8 mapObject row of the entrances of this kind. */
+  object: number;
+}
+
+/** Archive of the terrain's models (bcres; the buildings on the map have their own textures). */
+export const WORLD_MODEL_ARCHIVE = 0xd98f0e82;
+/** The terrain's shared textures in that archive (a bcres of 93 textures: bg_sea, mnmp_*). */
+export const WORLD_TEXTURES = 0xcc4e7000;
 
 /** worldmapParts +4 flags (docs/worldmap.md §4). */
 export const PART_2X2 = 0x10;

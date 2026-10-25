@@ -23,6 +23,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const [out, setOut] = useState('');
   // What is exported is fixed when the dialog opens (like the summary shown in it).
   const [what] = useState(() => {
+    session.flushGrounds();
     const docs = st.modifiedDocs();
     const events = [...st.events.values()].filter((t) => t.changed());
     const issues: { map: string; issue: Issue }[] = [];
@@ -38,6 +39,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const added = game.code.addedMaps();
     if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
+    for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),

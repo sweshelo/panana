@@ -15,6 +15,8 @@ export class GridCanvas {
   private readonly ctx: CanvasRenderingContext2D;
   /** Pixels per cell. */
   scale = 28;
+  /** Smallest zoom (pixels per cell; RPG3's world map goes below the maps' 6). */
+  minScale = 6;
   ox = 20;
   oy = 20;
   private pan: { x: number; y: number; ox: number; oy: number } | null = null;
@@ -68,7 +70,7 @@ export class GridCanvas {
         const mx = e.clientX - r.left;
         const my = e.clientY - r.top;
         const f = Math.exp(-e.deltaY * 0.0015);
-        const ns = Math.max(6, Math.min(120, this.scale * f));
+        const ns = Math.max(this.minScale, Math.min(120, this.scale * f));
         this.ox = mx - ((mx - this.ox) * ns) / this.scale;
         this.oy = my - ((my - this.oy) * ns) / this.scale;
         this.scale = ns;
@@ -88,7 +90,7 @@ export class GridCanvas {
   fitBox(x0: number, y0: number, x1: number, y1: number): void {
     const r = this.canvas.getBoundingClientRect();
     if (!r.width || x1 <= x0 || y1 <= y0) return;
-    this.scale = Math.max(6, Math.min(80, Math.min(r.width / (x1 - x0), r.height / (y1 - y0))));
+    this.scale = Math.max(this.minScale, Math.min(80, Math.min(r.width / (x1 - x0), r.height / (y1 - y0))));
     this.ox = (r.width - (x1 - x0) * this.scale) / 2 - x0 * this.scale;
     this.oy = (r.height - (y1 - y0) * this.scale) / 2 - y0 * this.scale;
     this.draw();
@@ -129,7 +131,8 @@ export class GridCanvas {
     g.strokeStyle = css.getPropertyValue('--grid') || 'rgba(255,255,255,0.07)';
     g.lineWidth = 1;
     g.beginPath();
-    for (let i = 0; i <= n; i++) {
+    // no lines while the cells are too small to see them
+    for (let i = 0; i <= n && s >= 4; i++) {
       g.moveTo(i * s + 0.5, 0);
       g.lineTo(i * s + 0.5, n * s);
       g.moveTo(0, i * s + 0.5);

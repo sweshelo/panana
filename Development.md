@@ -76,6 +76,8 @@ src/
   cgfx/     cgfx.ts texture.ts tileset.ts worker.ts loader.ts three.ts  CGFX → three.js (Web Worker で変換)
             anim.ts player.ts tev.ts                                   アニメ (CANM) の読み込みと再生、PICA の TEV 再現
   editor/   mapeditor.tsx state.ts controller.ts view2d.ts view3d.ts validate.ts ...  マップ編集: 状態・操作・2D / 3D ビュー (canvas)
+            worldview.ts worldpage.tsx worldscene.ts                   ワールドマップ (RPG2・RPG3 共通): 2D / 3D のビューと道具、ページの枠、3D (カメラのまわりの窓だけ描く)。
+                                                                       作品ごとの違いは WorldSource (oahu/worldsource.ts、pages/worldsource.ts)
             panes.tsx inspector.tsx addpanel.tsx palette.tsx treasure.tsx ...  マップ編集のヘッダーと左右のペイン (React)
   pages/    monsters.tsx items.tsx groups.tsx actions.tsx messages.tsx shops.tsx  図鑑などのページ (React)
             modelview.ts                                               モデルの写真と 3D ビューア (three.js)
