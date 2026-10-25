@@ -172,34 +172,63 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     }
   });
 
-  test('PROBE (temporary): summary', async () => {
-    const t = game.master.mapGroup;
-    const nonzero: Record<string, number> = {};
-    for (let r = 0; r < t.rows; r++) for (const o of [0x1d, 0x21, 0x25]) if (t.row(r)[o]) nonzero[`r${r}+${o.toString(16)}`] = t.row(r)[o]!;
-    const ranges: Record<string, unknown> = {};
-    for (const [key, first, count] of RANGE_FIELDS) {
-      const used = usedRanges(game, first, count, -1);
-      ranges[hex8(key)] = { size: saveSize(game, key), maxEnd: Math.max(...used.map((u) => u.first + u.count)), rows: used.length, gaps: (() => { let pos = 0, g = 0; for (const u of used) { if (u.first > pos) g += u.first - pos; pos = Math.max(pos, u.first + u.count); } return g; })() };
-    }
-    const fd = game.master.table('flagData.bin');
-    const flagRows = Object.fromEntries([0x8e, 0x91, 0x92].map((k) => [hex8(k), { u8_0: fd.row(k)[0], u16_8: u16(fd.row(k), 8), b_a: fd.row(k)[0xa], b_b: fd.row(k)[0xb], u16_c: u16(fd.row(k), 0xc) }]));
-    // Where the EventObject entry is: its index in each archive, and offsets of the dungeon's mapGroup row holding its hash.
-    const idx = new Set<number>();
-    let offsets: number[] | null = null;
-    let names = 0;
-    for (let d = 1; d < t.rows; d++) {
+  // ---- PROBE (temporary): yes / no questions about the ROM
+  for (const o of [0x1d, 0x21, 0x25]) test(`H ${o.toString(16)}: zero in every mapGroup row`, () => {
+    for (let r = 0; r < game.master.mapGroup.rows; r++) expect(game.master.mapGroup.row(r)[o]).toBe(0);
+  });
+  for (const [key, first, count] of RANGE_FIELDS) {
+    const used = (): { size: number; maxEnd: number } => {
+      const u = usedRanges(game, first, count, -1);
+      return { size: saveSize(game, key), maxEnd: Math.max(...u.map((x) => x.first + x.count)) };
+    };
+    test(`H ${hex8(key)}: flagData +8 is 0`, () => expect(used().size).toBe(0));
+    test(`H ${hex8(key)}: flagData +8 equals the end of the last range`, () => expect(used().size).toBe(used().maxEnd));
+    test(`H ${hex8(key)}: flagData +8 is beyond the end of the last range`, () => expect(used().size).toBeGreaterThan(used().maxEnd));
+    test(`H ${hex8(key)}: flagData +8 is at least end + D01's count`, () => expect(used().size).toBeGreaterThanOrEqual(used().maxEnd + game.master.mapGroup.row(1)[count]!));
+    test(`H ${hex8(key)}: the ranges leave no gap before the last end`, () => {
+      let pos = 0, g = 0;
+      for (const u of usedRanges(game, first, count, -1)) { if (u.first > pos) g += u.first - pos; pos = Math.max(pos, u.first + u.count); }
+      expect(g).toBe(0);
+    });
+    test(`H ${hex8(key)}: flagData +0x0C (u16) is beyond the last end`, () => expect(u16(game.master.table('flagData.bin').row(key), 0xc)).toBeGreaterThan(used().maxEnd));
+  }
+  const eventEntries = async (): Promise<{ d: number; index: number; hash: number; name: string }[]> => {
+    const out: { d: number; index: number; hash: number; name: string }[] = [];
+    for (let d = 1; d < game.master.mapGroup.rows; d++) {
       const a = game.master.eventArchive(d);
       if (!a) continue;
       const arc = parseArchive(await game.dump.readRomfs(hex8(a)));
       const e = arc.entries.find((x) => x.comp === 1 && unpackEntry(arc, x).name?.endsWith('_EventObject.bin'));
-      if (!e) continue;
-      idx.add(e.index);
-      const n = unpackEntry(arc, e).name!;
-      if (n.slice(0, 3).toUpperCase() === (rowLabel(game, d) ?? '')) names++;
-      const row = t.row(d);
-      const here = Array.from({ length: 11 }, (_, k) => k * 4).filter((o) => u32(row, o) === e.hash);
-      offsets = offsets === null ? here : offsets.filter((o) => here.includes(o));
+      if (e) out.push({ d, index: e.index, hash: e.hash, name: unpackEntry(arc, e).name! });
     }
-    expect({ nonzero, ranges, flagRows, eventIndex: [...idx], eventHashOffsets: offsets, namesMatchLabel: names }).toEqual({} as never);
+    return out;
+  };
+  test('H EventObject is entry 0 of every dungeon archive', async () => {
+    for (const e of await eventEntries()) expect(e.index).toBe(0);
   });
+  test('H EventObject is the same entry index in every dungeon archive', async () => {
+    expect(new Set((await eventEntries()).map((e) => e.index)).size).toBe(1);
+  });
+  test('H some u32 of the mapGroup row holds the EventObject entry hash', async () => {
+    const es = await eventEntries();
+    const ok = Array.from({ length: 11 }, (_, k) => k * 4).filter((o) => es.every((e) => u32(game.master.mapGroup.row(e.d), o) === e.hash));
+    expect(ok.length).toBeGreaterThan(0);
+  });
+  test('H the EventObject file name starts with the row label', async () => {
+    for (const e of await eventEntries()) expect(e.name.slice(0, 3).toUpperCase()).toBe(rowLabel(game, e.d) ?? '?');
+  });
+  test('H several dungeons share an event archive', async () => {
+    const seen = new Set<number>();
+    let shared = false;
+    for (let d = 1; d < game.master.mapGroup.rows; d++) {
+      const a = game.master.eventArchive(d);
+      if (a && seen.has(a)) shared = true;
+      seen.add(a);
+    }
+    expect(shared).toBe(true);
+  });
+  test('H row 11 has an event archive', () => expect(game.master.eventArchive(11)).not.toBe(0));
+  test('H row 11 has the same event archive as row 1', () => expect(game.master.eventArchive(11)).toBe(game.master.eventArchive(1)));
+  test('H row 11 has state slots (+0x1C > 0)', () => expect(game.master.mapGroup.row(11)[0x1c]).toBeGreaterThan(0));
+  test('H row 11 has the same 0x8E range as row 1', () => expect(u16(game.master.mapGroup.row(11), 0x1a)).toBe(u16(game.master.mapGroup.row(1), 0x1a)));
 });
