@@ -66,6 +66,7 @@ ROM のテストで確かめていること:
 ```
 src/
   rom/      cia.ts ncch.ts exefs.ts romfs.ts blz.ts dump.ts cache.ts   ダンプ → code.bin / RomFS のファイル
+            basemod.ts                                                 作品ごとの土台の MOD (保存・書き出しのパッケージ)
   archive/  gsarc.ts lz10.ts zip.ts gstable.ts                          独自アーカイブ・LZ10・GS テーブル
   game/     codebin.ts mapdb.ts sections.ts master.ts game.ts          マップ表・マップ DB・区画・mapParts など
             events.ts objects.ts names.ts                              EventObject、オブジェクトのモデル、名前
@@ -125,6 +126,11 @@ src/
 - 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
 - 群れのエントリ (monsterGroup) は +0x28〜が未解析です。
+
+## モンスターのモデルの読み込み
+
+- RPG3 と FREE! は、モデルのアーカイブを `BchEntryIndex` (`src/bch/models.ts`) で一度だけ読んでハッシュで引き、デザインの行 (モデル・色・モーション) を `bchLookSet` でモデルのセットにします。図鑑の写真を何百枚作っても、アーカイブ (RPG3 は 28480000) を 1 回しか読みません。移植でエントリを足したら `forgetModels` / `forgetLanaiModelIndex` で読み直します。
+- 色の BCH のテクスチャは、モデルの同じ名前のテクスチャを上書きします (色違いはそうして作られている)。
 
 ## 作品間の移植 (#100)
 

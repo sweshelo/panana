@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { OAHU } from '../rom/titles';
 import { PortStore } from '../port/store';
+import { BaseModNote } from '../ui/BaseModButton';
 import { CodeModOption } from '../ui/CodeModOption';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
@@ -29,7 +30,7 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
   const designs = !!session.monsterModels.saved();
   const direct = session.performances.changed;
   const nothing = !edited.length && !added.length && !tables.length && !patches.length && !shops.length && !storyEdits && !ported.length && !designs && !direct && !session.dropCap;
-  const ips = patches.length > 0 || storyEdits > 0 || session.dropCap;
+  const ips = patches.length > 0 || storyEdits > 0 || session.dropCap || !!session.baseMod?.ips;
   return (
     <Dialog title="MOD の書き出し (RPG3)" onClose={onClose}>
       {!session.canExport ? (
@@ -57,6 +58,7 @@ export function OahuExportDialog({ session, onAddUpdate, onClose }: { session: O
               {(ported.length > 0 || designs) && <p>{`移植したモデル: ${[...ported, ...(designs ? ['402F0000: monsterDesign.bin (見た目の行・カメラの大きさ)'] : [])].join('、')}`}</p>}
               {direct && <p>{'アクションの演出 (402F0000 の directData.bin)'}</p>}
               {tables.length > 0 && <p className="muted small">{`変更した表: ${[...new Set(tables)].join('、')}`}</p>}
+              <BaseModNote mod={session.baseMod} />
               <p className="muted small">{`zip の中身: ${OAHU.titleId}/romfs/…${ips ? '、exefs/code.ips' : ''} 。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${ips ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと、戦闘に入るときなどに落ちます。' : ''}`}</p>
               {error && <div className="error">{error}</div>}
               <div className="row">

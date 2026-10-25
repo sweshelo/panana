@@ -1,9 +1,8 @@
 // The models of RPG FREE!'s monsters for the viewer: the model BCH of a MonsterDesign row with the textures of its
-// colour's BCH put in (by name, over any the model has: the colour variants are made that way) and the animations
-// of its battle motion BCH. The BCHs are H3D version 0x21 (RPG3's are 8).
+// colour's BCH and the animations of its battle motion BCH (bch/models.ts bchLookSet, shared with RPG3). The BCHs are
+// H3D version 0x21 (RPG3's are 8).
 import type { TilesetModels } from '../cgfx/tileset';
-import { parseBch, unwrapBch } from '../bch/bch';
-import { bchModelSet } from '../bch/models';
+import { bchLookSet } from '../bch/models';
 import type { ModelRef } from '../pages/modelview';
 import { hex8 } from '../util/bytes';
 import { lanaiModelIndex, type LanaiMonsterDesign } from './monsters';
@@ -18,21 +17,7 @@ export function lanaiMonsterSet(session: LanaiSession, d: LanaiMonsterDesign, mo
   const key = keyOf(d, motions);
   let p = sets.get(key);
   if (!p) {
-    p = lanaiModelIndex(session).then((index) => {
-      const model = index.body(d.model);
-      if (!model) throw new Error(`モデルのエントリ ${hex8(d.model)} がありません`);
-      const motion = motions ? index.body(d.motion) : null;
-      const set = bchModelSet(model, [], motion ? [motion] : []);
-      const tex = index.body(d.texture);
-      if (tex) {
-        try {
-          for (const t of parseBch(unwrapBch(tex)).textures) set.textures.set(t.name, t);
-        } catch (err) {
-          set.errors.push((err as Error).message);
-        }
-      }
-      return set;
-    });
+    p = lanaiModelIndex(session).then((index) => bchLookSet(index, d, motions));
     sets.set(key, p);
   }
   return p;

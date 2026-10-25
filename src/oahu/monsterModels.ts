@@ -4,7 +4,7 @@
 // the texture entry (はなもぐら, ネズミはなもぐら and はなざかりもぐら are all enemy_66).
 import { findByName, parseArchive, rebuildArchive, type Archive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
-import { bchEntryRef } from '../bch/models';
+import { BchEntryIndex, bchLookSet } from '../bch/models';
 import type { ModelRef } from '../pages/modelview';
 import type { Dump } from '../rom/dump';
 import { equalBytes, u32 } from '../util/bytes';
@@ -47,6 +47,8 @@ export class OahuMonsterModels {
   private loaded: DesignTable | null = null;
   /** The table read before the designs were (a saved one to put back once they are). */
   private pending: Uint8Array | null = null;
+  /** The entries of 28480000 (read once for every model, as FREE!'s are). */
+  private index: Promise<BchEntryIndex> | null = null;
 
   constructor(readonly dump: Dump) {}
 
@@ -128,6 +130,23 @@ export class OahuMonsterModels {
     t.row(row)[OAHU_CAMERA_SIZE] = v & 0xff;
   }
 
+  /** The model archive by hash (read once; again after forgetModels). */
+  modelIndex(): Promise<BchEntryIndex> {
+    if (!this.index) {
+      const p = BchEntryIndex.of([OAHU_MONSTER_MODEL_ARCHIVE], (n) => this.dump.readRomfs(n).then(parseArchive));
+      p.catch(() => {
+        if (this.index === p) this.index = null;
+      });
+      this.index = p;
+    }
+    return this.index;
+  }
+
+  /** The model archive is read again next time (a port added entries to it). */
+  forgetModels(): void {
+    this.index = null;
+  }
+
   async design(row: number): Promise<OahuMonsterDesign | null> {
     const t = await this.designs();
     if (!t || row < 0 || row >= t.rows) return null;
@@ -138,17 +157,17 @@ export class OahuMonsterModels {
 
   /** The model of a design row with its colour's textures (for the photos), and its skill motions for the viewers. */
   ref(design: number, motions = false): ModelRef {
-    // A row a port added (#100) is named by its files (the photos are cached by the key, and the row may be another
-    // look after the edits are discarded and redone).
+    // A row is named by its files: the photos are cached by the key, and a row may be another look (one a port added
+    // (#100) after the edits are discarded and redone, any one on a base MOD).
     const t = this.loaded;
-    const origRows = t ? new GsTable(t.original).rows : 0;
-    const added = !t ? `/r${Math.random()}` : design >= origRows && design < t.table.rows ? `/${[0x0c, 0x10, 0x14].map((o) => u32(t.table.row(design), o).toString(16)).join('-')}` : '';
+    const added = !t ? `/r${Math.random()}` : design >= 0 && design < t.table.rows ? `/${[0x0c, 0x10, 0x14].map((o) => u32(t.table.row(design), o).toString(16)).join('-')}` : '';
     return {
       key: `oahu-monster/${this.dump.title.key}/${design}${added}${motions ? '/motions' : ''}`,
       load: async () => {
         const d = await this.design(design);
         if (!d?.model) return null;
-        return bchEntryRef(this.dump, OAHU_MONSTER_MODEL_ARCHIVE, d.model, 0, d.texture ? [d.texture] : [], motions && d.motion ? [d.motion] : []).load();
+        const index = await this.modelIndex();
+        return index.get(d.model) ? { set: bchLookSet(index, d, motions), hash: 0 } : null;
       },
     };
   }

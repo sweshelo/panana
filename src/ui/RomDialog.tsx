@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { TITLES, type TitleKey } from '../rom/titles';
 import { Dialog } from './Dialog';
-import { openedDump, openedKeys, type Opened } from './workspace';
+import { openedBaseMod, openedDump, openedKeys, type Opened } from './workspace';
 
 export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnload, onAdd, onStart }: {
   opened: Opened;
@@ -42,7 +42,7 @@ export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnlo
                         {[
                           dump.titleVersion !== undefined ? `Base v${dump.titleVersion}` : '',
                           t.updateTitleId ? (dump.update ? `Update v${dump.update.titleVersion ?? '?'}` : 'Update なし') : '',
-                          t.key === 'kahara' ? `土台の MOD: ${opened.kahara!.session.game.baseMod?.label ?? 'なし'}` : '',
+                          `土台の MOD: ${openedBaseMod(opened, t.key)?.label ?? 'なし'}`,
                         ].filter(Boolean).join(' / ')}
                       </div>
                     </>

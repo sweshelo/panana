@@ -15,9 +15,10 @@ import { OahuShopPage } from '../oahu/ShopPage';
 import { OahuSoundPage } from '../oahu/SoundPage';
 import { battleContext, OahuMonsterPage } from '../oahu/MonsterPage';
 import type { OahuSession } from '../oahu/session';
-import { openUpdate } from '../rom/dump';
+import { openUpdate, type BaseMod } from '../rom/dump';
 import { oahuRomfsProfile } from '../romfs/oahu';
 import { RomfsPage } from '../romfs/RomfsPage';
+import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
 export const OAHU_PAGES = [['maps', 'マップ'], ['events', 'イベント'], ['story', 'ストーリー'], ['flags', 'セーブの値'], ['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
@@ -41,10 +42,12 @@ function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void 
   input.click();
 }
 
-export function OahuShell({ session, onSession }: {
+export function OahuShell({ session, onSession, onBaseMod }: {
   session: OahuSession;
   /** The session with the Update added (same edits). */
   onSession: (s: OahuSession) => void;
+  /** Reopens the dump on another base MOD (null: none), keeping the edits. */
+  onBaseMod: (mod: BaseMod | null) => Promise<void>;
 }): ReactNode {
   const { dump } = session;
   const [exporting, setExporting] = useState(false);
@@ -58,6 +61,7 @@ export function OahuShell({ session, onSession }: {
           {u ? <span className="muted small" title={`patchList.bin: ${u.patched.join(', ')}`}>{`Update v${u.titleVersion ?? '?'}`}</span>
             : <button title="書き出しと、code.bin を使う機能には Update が要ります" onClick={addUpdate}>Update を追加…</button>}
           <button className="primary" title="変更したメッセージ・表・コードのパッチを LayeredFS 用の MOD として書き出します (Update が必要)" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
+          <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
       render={(id, { arg: a }) => (

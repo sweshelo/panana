@@ -18,6 +18,8 @@ import type { PageProps } from './book';
 import { ExportDialog } from './ExportDialog';
 import { Dom } from './mount';
 import { useAsync } from './useAsync';
+import type { BaseMod } from '../rom/dump';
+import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
 export const PAGES = [
@@ -95,10 +97,11 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
   }
 }
 
-export function Shell({ session, editor, onPickBaseMod }: {
+export function Shell({ session, editor, onBaseMod }: {
   session: Session;
   editor: MapEditor;
-  onPickBaseMod: () => void;
+  /** Reopens the dump on another base MOD (null: none), keeping the edits. */
+  onBaseMod: (mod: BaseMod | null) => Promise<void>;
 }): ReactNode {
   const { game } = session;
   const [exporting, setExporting] = useState(false);
@@ -110,9 +113,9 @@ export function Shell({ session, editor, onPickBaseMod }: {
       actions={(closeMenu) => (
         <>
           <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
-          <button className="base-btn" title="既存の MOD (elpulse の mod/out など: romfs のファイルと code.ips) を土台にします。マップの書き出しにはその MOD の全ファイルが入ります" onClick={onPickBaseMod}>
+          <BaseModButton title={game.dump.title} mod={game.baseMod} onChange={onBaseMod}>
             {`土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`}
-          </button>
+          </BaseModButton>
         </>
       )}
       render={(page, v) => (page === 'map' ? null : <PageBody page={page} session={session} arg={v.arg} visit={v.n} />)}

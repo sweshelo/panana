@@ -5,8 +5,9 @@ import { OahuPerformances } from './performance';
 import { buildModZip } from '../export/pack';
 import { dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { buildPatches, patchRecords, type BuiltPatch, type CodePatch } from '../game/patch';
-import { buildIps } from '../rom/ips';
-import { withUpdate, type Dump, type UpdateImage } from '../rom/dump';
+import { packageOn } from '../rom/basemod';
+import { appendIps } from '../rom/ips';
+import { overlayDump, withUpdate, type BaseMod, type Dump, type UpdateImage } from '../rom/dump';
 import { OAHU } from '../rom/titles';
 import { idbGet, idbSet } from '../util/idb';
 import { OahuBattle } from './battle';
@@ -66,6 +67,10 @@ export class OahuSession {
   readonly code: OahuCode | null = null;
   /** Why an Update's code.bin cannot be used. */
   readonly codeError: string = '';
+  /** The dump as opened, without the base MOD ({@link dump} reads through it). */
+  raw!: Dump;
+  /** The existing MOD the dump is read with (its files and code.ips also go into the export), or null. */
+  baseMod: BaseMod | null = null;
   /** Code patches written to code.ips. */
   codePatches: CodePatch[] = [];
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
@@ -112,16 +117,20 @@ export class OahuSession {
     }
   }
 
-  private static async load(dump: Dump): Promise<OahuSession> {
+  private static async load(raw: Dump, baseMod: BaseMod | null): Promise<OahuSession> {
+    const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
     const master = await OahuMaster.load(dump);
     const s = new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master), await OahuShops.load(dump));
+    s.raw = raw;
+    s.baseMod = baseMod;
     await s.monsterModels.rows(); // the design rows are read before the pages ask for the monsters' models
     return s;
   }
 
-  static async open(dump: Dump): Promise<OahuSession> {
-    const s = await OahuSession.load(dump);
+  /** Opens a dump (on a base MOD when one is given) and puts back the edits saved in IndexedDB. */
+  static async open(dump: Dump, baseMod: BaseMod | null = null): Promise<OahuSession> {
+    const s = await OahuSession.load(dump, baseMod);
     const saved = await idbGet<Saved>(EDITS_KEY).catch(() => undefined);
     if (saved) await s.restore(saved);
     return s;
@@ -130,7 +139,7 @@ export class OahuSession {
   /** The same edits on the dump with its Update applied. */
   async withUpdate(update: UpdateImage): Promise<OahuSession> {
     this.saveNow();
-    const next = await OahuSession.load(withUpdate(this.dump, update));
+    const next = await OahuSession.load(withUpdate(this.raw, update), this.baseMod);
     await next.restore(this.saved());
     return next;
   }
@@ -195,12 +204,16 @@ export class OahuSession {
     return [...this.enabledPatches(), ...(this.dropCap && !this.dropCapProblem() ? [dropCapPatch('oahu')] : [])];
   }
 
-  /** code.ips of the enabled patches and code MODs (those with errors left out) and the story's edits, or null when there is none. */
+  /**
+   * code.ips: the base MOD's, then the enabled patches and code MODs (those with errors left out) and the story's edits;
+   * null when there is none.
+   */
   codeIps(): Uint8Array | null {
-    if (!this.code) return null;
+    const base = this.baseMod?.ips ?? null;
+    if (!this.code) return base;
     const patches = this.exportedPatches();
     const records = [...(patches.length ? patchRecords(this.buildPatches(patches).values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
-    return records.length ? buildIps(records, this.code.code) : null;
+    return records.length ? appendIps(base, records, this.code.code) : base;
   }
 
   // ---- the story (#87)
@@ -268,12 +281,9 @@ export class OahuSession {
     return files;
   }
 
-  /** The LayeredFS zip: 00040000000EF000/romfs/… and exefs/code.ips. */
+  /** The LayeredFS zip: 00040000000EF000/romfs/… (with the base MOD's files) and exefs/code.ips. */
   async modZip(): Promise<Uint8Array> {
-    const pkg = new Map([...(await this.allModFiles())].map(([name, b]) => [`romfs/${name}`, b]));
-    const ips = this.codeIps();
-    if (ips) pkg.set('exefs/code.ips', ips);
-    return buildModZip(pkg, OAHU.titleId);
+    return buildModZip(packageOn(this.baseMod, await this.allModFiles(), this.codeIps()), OAHU.titleId);
   }
 
   private soundNames: Promise<SoundNames> | null = null;

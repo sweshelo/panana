@@ -7,7 +7,8 @@
 // `enemy_NN_battle.bch` of the root archives 28480000 (Base) and 719F0000 (Update). Monsters of one species share a
 // model and differ by the texture entry (おおくちばし and アイスバード are both enemy_02).
 // The abilities (MonsterParameterMain / Extra / RegularEvent / SpecialEvent, 0x9C) are read and edited in monsterStats.ts.
-import { entryBlob, unpackEntry, type ArcEntry, type Archive } from '../archive/gsarc';
+import { entryBlob } from '../archive/gsarc';
+import { BchEntryIndex, type BchIndexEntry } from '../bch/models';
 import { zipEntryName } from '../archive/zip';
 import { u32 } from '../util/bytes';
 import type { LanaiSession } from './session';
@@ -39,12 +40,9 @@ export interface LanaiMonsterDesign {
 }
 
 /** An entry of the model archives. */
-export interface LanaiModelEntry {
-  hash: number;
-  archive: string;
+export interface LanaiModelEntry extends BchIndexEntry {
   /** File name in its ZIP ("enemy_02.bch"). */
   name: string;
-  entry: ArcEntry;
 }
 
 export const lanaiMonsterHref = (row: number): string => `#/monsters/${row}`;
@@ -90,40 +88,18 @@ export function lanaiVoice(t: LanaiTable, row: number): { bytes: number[]; text:
   return { bytes, text };
 }
 
-/** The entries of the model archives by hash (names from their ZIPs, nothing unpacked). */
-export class LanaiModelIndex {
-  private constructor(
-    readonly archives: Map<string, Archive>,
-    readonly entries: Map<number, LanaiModelEntry>,
-  ) {}
-
+/** The entries of the model archives by hash, with their file names (from their ZIPs, nothing unpacked). */
+export class LanaiModelIndex extends BchEntryIndex<LanaiModelEntry> {
   static async open(session: LanaiSession): Promise<LanaiModelIndex> {
-    const archives = new Map<string, Archive>();
-    const entries = new Map<number, LanaiModelEntry>();
-    for (const name of LANAI_MONSTER_MODEL_ARCHIVES) {
-      const arc = await session.archive(name);
-      archives.set(name, arc);
-      for (const e of arc.entries) {
-        if (entries.has(e.hash)) continue;
-        const file = e.comp === 1 ? zipEntryName(entryBlob(arc, e)) : null;
-        entries.set(e.hash, { hash: e.hash, archive: name, name: file ?? '', entry: e });
-      }
-    }
+    const [archives, entries] = await BchEntryIndex.read(LANAI_MONSTER_MODEL_ARCHIVES, (n) => session.archive(n), (e, arc): LanaiModelEntry => ({
+      ...e,
+      name: (e.entry.comp === 1 ? zipEntryName(entryBlob(arc, e.entry)) : null) ?? '',
+    }));
     return new LanaiModelIndex(archives, entries);
-  }
-
-  get(hash: number): LanaiModelEntry | undefined {
-    return hash ? this.entries.get(hash) : undefined;
   }
 
   name(hash: number): string | undefined {
     return this.get(hash)?.name || undefined;
-  }
-
-  /** The unpacked bytes of an entry, or null when no archive has it. */
-  body(hash: number): Uint8Array | null {
-    const e = this.get(hash);
-    return e ? unpackEntry(this.archives.get(e.archive)!, e.entry).body : null;
   }
 }
 
