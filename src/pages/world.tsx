@@ -1,18 +1,26 @@
-// World maps (W01 ...): the terrain as a 2D map (read only) and the entrances to towns and dungeons (section 2),
-// which can be moved on the map and pointed at other maps. docs/worldmap.md.
+// World maps (W01 ...): the terrain as a 2D map, painted with worldmapParts rows (W01 / W02's Wxx_ground.bin), the
+// entrances to towns and dungeons (section 2), which can be moved on the map and pointed at other maps, and a 3D preview
+// (world3d.tsx). docs/worldmap.md.
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { mapLabel, pointLabel, worldHref, worldLabel } from '../editor/labels';
 import { validateWorld, type WorldIssue } from '../editor/validate';
 import type { Game } from '../game/game';
 import { P3 } from '../game/sections';
-import { ENT, WORLD_SIZE, coveredParts, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
+import { ENT, WORLD_SIZE, copyGround, coveredParts, moveEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type Ground, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
 import { Count, EditedMark, ListFilter, NumberInput, useActiveRow, useEdits, useSticky, type PageProps } from '../ui/book';
 import { MapButton } from '../ui/MapPicker';
 import { equalBytes, hex8, w32 } from '../util/bytes';
+import { partRgb, rgbHex, World3D } from './world3d';
 
 const ROT_LABEL = ['↑ 0', '→ 1', '↓ 2', '← 3'];
 const SCALES = [2, 3, 4, 6, 8];
+
+/** A worldmapParts row and its rotation to paint the terrain with. */
+interface Brush {
+  part: number;
+  rot: number;
+}
 
 export function WorldPage({ session, arg }: PageProps): ReactNode {
   const { game } = session;
@@ -47,6 +55,20 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
   };
   const go = (id: number): void => {
     location.hash = worldHref(world.code, id);
+  };
+  const [brush, setBrush] = useState<Brush | null>(null);
+  const [show3d, setShow3d] = useState(false);
+  const undo = useRef<Ground[]>([]);
+  const paint = (x: number, y: number): void => {
+    const g = session.groundOf(world);
+    if (!g || !brush) return;
+    const i = y * WORLD_SIZE + x;
+    if (g.parts[i] === brush.part && (g.rots[i] === brush.rot || !brush.part)) return;
+    const next = copyGround(g);
+    next.parts[i] = brush.part;
+    next.rots[i] = brush.part ? brush.rot : 0;
+    session.setGround(world, next);
+    edited();
   };
   const q = query.trim();
   const rows = list
@@ -104,18 +126,70 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
             edited={edited}
           />
         )}
+        <TerrainTools session={session} world={world} brush={brush} setBrush={setBrush} undo={undo} edited={edited} />
         <WorldCanvas
           game={game}
           world={world}
-          ground={game.ground(world)}
+          ground={session.groundOf(world)}
           entrances={list}
           points={points}
           selected={index}
           changed={changed}
           onSelect={(i) => go(ENT.id(list[i]!))}
           onMove={(i, x, y) => update(i, moveEntrance(list[i]!, x, y))}
+          brush={brush}
+          onPaint={paint}
+          onStroke={() => {
+            const g = session.groundOf(world);
+            if (g) undo.current.push(copyGround(g));
+          }}
+          onPick={(part, rot) => setBrush((b) => (b ? { part, rot } : b))}
         />
+        {show3d ? (
+          <World3D session={session} world={world} entrances={list} selected={index} revision={rev} onSelect={(i) => go(ENT.id(list[i]!))} />
+        ) : null}
+        <label className="layer"><input type="checkbox" checked={show3d} onChange={(e) => setShow3d(e.target.checked)} /> 3D で見る (地形・入口のモデル)</label>
       </div>
+    </div>
+  );
+}
+
+/** Painting the terrain (W01 / W02): the brush (a worldmapParts row and its rotation), undo and revert. */
+function TerrainTools({ session, world, brush, setBrush, undo, edited }: {
+  session: Session;
+  world: WorldInfo;
+  brush: Brush | null;
+  setBrush: (f: (b: Brush | null) => Brush | null) => void;
+  undo: { current: Ground[] };
+  edited: () => void;
+}): ReactNode {
+  const { game } = session;
+  const parts = game.worldParts();
+  const flags = game.worldPartFlags();
+  const editable = session.groundEditable(world);
+  const changedGround = session.changedGrounds().includes(world);
+  if (!editable) return <p className="muted small">{`${worldLabel(world.code)} の地形はマップ DB の区画 0 なので、まだ編集できません。`}</p>;
+  return (
+    <div className="world-terrain-tools">
+      <div className="row">
+        <label className="layer"><input type="checkbox" checked={!!brush} onChange={(e) => setBrush(() => (e.target.checked ? { part: parts.find((p) => p.model)?.row ?? 1, rot: 0 } : null))} /> 地形を塗る</label>
+        {brush && (
+          <>
+            <select value={brush.part} onChange={(e) => setBrush((b) => b && { ...b, part: Number(e.target.value) })}>
+              <option value={0}>0 なし (海)</option>
+              {parts.filter((p) => p.model).map((p) => (
+                <option key={p.row} value={p.row}>{`${p.row}${p.flags & 0x10 ? ' (2×2)' : p.flags & 0x20 ? ' (2 マス)' : ''} 種類 ${p.flags & 3}`}</option>
+              ))}
+            </select>
+            <span className="pal-swatch small-swatch" style={{ background: rgbHex(partRgb(brush.part, flags)) }} />
+            <span className="seg">{[0, 1, 2, 3].map((r) => <button key={r} className={r === brush.rot ? 'active small' : 'small'} onClick={() => setBrush((b) => b && { ...b, rot: r })}>{['↑', '→', '↓', '←'][r]}</button>)}</span>
+            <span className="muted small">クリック・ドラッグで置く、Alt+クリックで拾う</span>
+          </>
+        )}
+        <button className="small" disabled={!undo.current.length} onClick={() => { const g = undo.current.pop(); if (g) { session.setGround(world, g); edited(); } }}>↶ 地形を戻す</button>
+        {changedGround && <button className="small" onClick={() => { if (confirm(`${worldLabel(world.code)} の地形の変更をすべて元に戻しますか?`)) { session.setGround(world, null); undo.current.length = 0; edited(); } }}>地形を元に戻す</button>}
+      </div>
+      {brush && <p className="muted small">{`2×2 や 2 マスの部品は左上 (起点) のセルに置きます。書き出しで ${world.groundFile} の部品ごとのプールの数 (+0x2BF30 / +0x2C074) を作り直します。`}</p>}
     </div>
   );
 }
@@ -223,20 +297,8 @@ function EntranceEditor({ session, world, r, original, points, issues, update, e
   );
 }
 
-/** Base colours by terrain type (worldmapParts +4 bits 0-1), and the sea (no part). */
-const TERRAIN_RGB: [number, number, number][] = [[84, 140, 76], [196, 176, 112], [118, 118, 126], [92, 146, 170]];
-const SEA_RGB: [number, number, number] = [22, 48, 92];
-
-/** Colour of a worldmapParts row: its terrain type, a little lighter or darker per row. */
-function partColor(part: number, flags: Uint8Array | null): [number, number, number] {
-  if (!part) return SEA_RGB;
-  const base = TERRAIN_RGB[flags ? (flags[part] ?? 0) & 3 : 0]!;
-  const k = 0.85 + ((part * 7) % 5) * 0.06;
-  return base.map((c) => Math.min(255, Math.round(c * k))) as [number, number, number];
-}
-
 /** The terrain (one pixel per cell, drawn scaled up) with the entrances and the section 3 points on top. */
-function WorldCanvas({ game, world, ground, entrances, points, selected, changed, onSelect, onMove }: {
+function WorldCanvas({ game, world, ground, entrances, points, selected, changed, onSelect, onMove, brush, onPaint, onStroke, onPick }: {
   game: Game;
   world: WorldInfo;
   ground: Ground | null;
@@ -246,8 +308,16 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
   changed: (i: number) => boolean;
   onSelect: (i: number) => void;
   onMove: (i: number, x: number, y: number) => void;
+  /** Painting the terrain (null: the entrances are dragged). */
+  brush: Brush | null;
+  onPaint: (x: number, y: number) => void;
+  /** A stroke starts (an undo point). */
+  onStroke: () => void;
+  /** Alt+click: take the part (and rotation) of a cell. */
+  onPick: (part: number, rot: number) => void;
 }): ReactNode {
   const [scale, setScale] = useState(3);
+  const painting = useRef(false);
   const [hover, setHover] = useState<[number, number] | null>(null);
   /** Entrance being dragged, and where it is now. */
   const [drag, setDrag] = useState<{ i: number; x: number; y: number } | null>(null);
@@ -265,7 +335,7 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
     const flags = game.worldPartFlags();
     const parts = ground && flags ? coveredParts(ground, (p) => flags[p] ?? 0) : ground?.parts;
     for (let i = 0; i < WORLD_SIZE * WORLD_SIZE; i++) {
-      const [r, g, b] = partColor(parts?.[i] ?? 0, flags);
+      const [r, g, b] = partRgb(parts?.[i] ?? 0, flags);
       img.data.set([r, g, b, 255], i * 4);
     }
     ctx.putImageData(img, 0, 0);
@@ -354,6 +424,18 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
           style={{ width: size, height: size, cursor: drag ? 'grabbing' : 'crosshair' }}
           onPointerDown={(e) => {
             const [x, y] = cellAt(e);
+            if (brush) {
+              if (e.altKey) {
+                const c = ground ? coveredOrigin(ground, game.worldPartFlags(), x, y) : -1;
+                onPick(c >= 0 ? ground!.parts[c]! : 0, c >= 0 ? ground!.rots[c]! : 0);
+                return;
+              }
+              e.currentTarget.setPointerCapture(e.pointerId);
+              painting.current = true;
+              onStroke();
+              onPaint(x, y);
+              return;
+            }
             const i = hit(x, y);
             if (i < 0) return;
             if (i !== selected) onSelect(i);
@@ -362,10 +444,12 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
           }}
           onPointerMove={(e) => {
             const [x, y] = cellAt(e);
-            setHover([x, y]);
+            if (!hover || hover[0] !== x || hover[1] !== y) setHover([x, y]);
+            if (painting.current) onPaint(x, y);
             if (drag && (drag.x !== x || drag.y !== y)) setDrag({ ...drag, x, y });
           }}
           onPointerUp={() => {
+            painting.current = false;
             if (!drag) return;
             const r = entrances[drag.i]!;
             if (drag.x !== ENT.x(r) || drag.y !== ENT.y(r)) onMove(drag.i, drag.x, drag.y);
@@ -376,4 +460,20 @@ function WorldCanvas({ game, world, ground, entrances, points, selected, changed
       </div>
     </div>
   );
+}
+
+/** The cell whose part covers (x, y): its own, or a 2 x 2 / 2-cell part starting left of or above it (-1: none). */
+function coveredOrigin(g: Ground, flags: Uint8Array | null, x: number, y: number): number {
+  const N = WORLD_SIZE;
+  const at = (cx: number, cy: number): number => ((cy + N) % N) * N + ((cx + N) % N);
+  const i = at(x, y);
+  if (g.parts[i]) return i;
+  for (const [dx, dy] of [[-1, 0], [0, -1], [-1, -1]] as const) {
+    const j = at(x + dx, y + dy), p = g.parts[j]!;
+    if (!p) continue;
+    const f = flags?.[p] ?? 0;
+    if (f & 0x10) return j;
+    if (f & 0x20 && dx + dy === -1 && (dy === -1) === !!(g.rots[j]! & 1)) return j;
+  }
+  return -1;
 }

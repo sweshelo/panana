@@ -13,7 +13,7 @@ import { isIndoor } from './objects';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
-import { groundFromTiles, parseGround, type Ground, type WorldInfo } from './worldmap';
+import { groundFromTiles, parseGround, type Ground, type WorldInfo, type WorldPart } from './worldmap';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames } from './sound';
 import { SoundArchive } from '../sound/formats';
 import { SoundRenderer } from '../sound/render';
@@ -183,6 +183,28 @@ export class Game {
       this.grounds.set(w.hash, g);
     }
     return this.grounds.get(w.hash)!;
+  }
+
+  private parts: WorldPart[] | undefined;
+
+  /** worldmapParts (docs/worldmap.md §4): the model (archive D98F0E82), the flags and the entrances' mapObject row. */
+  worldParts(): WorldPart[] {
+    if (this.parts === undefined) {
+      this.parts = [];
+      for (const name of ['worldmapParts.bin', 'WorldmapParts.bin']) {
+        try {
+          const t = this.master.table(name);
+          this.parts = Array.from({ length: t.rows }, (_, i) => {
+            const r = t.row(i);
+            return { row: i, model: u32(r, 0), flags: r[4] ?? 0, object: r[8] ?? 0 };
+          });
+          break;
+        } catch {
+          /* try the next name */
+        }
+      }
+    }
+    return this.parts;
   }
 
   private partFlags: Uint8Array | null | undefined;
