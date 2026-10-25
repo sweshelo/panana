@@ -314,7 +314,7 @@ describe.skipIf(!hasCia)('RPG2: ported BGMs (needs the dumps)', () => {
     const built = buildPatches(game.dump.code, [BOSS_PATCH, MONSTER_ROWS_PATCH, ITEM_ACTION_PATCH, BGM_EXT_PATCH]);
     for (const b of built.values()) expect(b.errors).toEqual([]);
     const b = built.get(BGM_EXT_PATCH_ID)!;
-    // mov r5, r0 / mov r8, #0 / mov r1, r0 / cmp r5, #5
-    expect(b.blocks.slice(0, 4).map((x) => x.lines.map((l) => l.before))).toEqual([[0xe1a05000], [0xe3a08000], [0xe1a01000], [0xe3550005]]);
+    // mov r5, r0 / mov r8, #0 / the three bl FUN_00303b44 with a BGM field's value / cmp r5, #5
+    expect(b.blocks.slice(0, 6).map((x) => x.lines.map((l) => l.before))).toEqual([[0xe1a05000], [0xe3a08000], [0xeb00764d], [0xeb0075cc], [0xebfc0646], [0xe3550005]]);
   });
 });

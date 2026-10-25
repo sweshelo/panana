@@ -34,8 +34,11 @@ export const BGM_EXT_PATCH_ID = 'bgm-ext';
 export const BGM_EXT_PATCH_TITLE = 'BGM の追加枠 (0x80〜0xFF = soundData の行 418〜)';
 
 /**
- * - FUN_0030378c (plays a BGM row, keeps it at 0x56FC08 +4), FUN_00308bac (changes the BGM unless the same row plays)
- *   and FUN_00303b44 (is a row playing) read 0x80-0xFF as the added rows; every BGM path goes through them.
+ * - FUN_0030378c (plays a BGM row, keeps it at 0x56FC08 +4) and FUN_00308bac (changes the BGM unless the same row
+ *   plays) read 0x80-0xFF as the added rows; every BGM path goes through them.
+ * - FUN_00303b44 (is a row playing) is also asked of sound effects (rows from data, which may be 0x80-0xFF), so only
+ *   its three callers with a BGM field's value convert it: the world map's BGM (0x2e6208, 0x2e640c) and the field BGM
+ *   kept at +0x6C (0x402224).
  * - FUN_00317d04 (the BGM of a scene): in battle (scene 5) it leaves rows 27 / 28 / 29 / 32 playing; an added row
  *   playing is left too.
  */
@@ -45,8 +48,13 @@ export const BGM_EXT_PATCH_SOURCE = `; BGM の追加枠: BGM の欄の 1 バイ�
   bl bgm_r5
 @0x308BB0                    ; FUN_00308bac (BGM を変える。同じ行なら何もしない): mov r8, #0
   bl bgm_r0
-@0x303B44                    ; FUN_00303b44 (行が鳴っているか): mov r1, r0
-  b bgm_r1
+; FUN_00303b44 (行が鳴っているか) は効果音にも使うので、BGM の欄の値を渡す 3 か所だけで直す
+@0x2E6208                    ; ワールドマップの BGM: bl FUN_00303b44
+  bl bgm_playing
+@0x2E640C                    ; 同じ (+0x1AD4 に保存した値): bl FUN_00303b44
+  bl bgm_playing
+@0x402224                    ; +0x6C のフィールドの BGM: bl FUN_00303b44
+  bl bgm_playing
 @0x317D34                    ; FUN_00317d04 (場面の BGM): cmp r5, #5
   b bgm_battle
 @cave bgm_ext
@@ -64,13 +72,12 @@ bgm_r0:
   addlo r0, r12, #0x1A0
   addlo r0, r0, #2
   bx lr
-bgm_r1:
-  mov r1, r0
-  sub r12, r1, #0x80
+bgm_playing:
+  sub r12, r0, #0x80
   cmp r12, #0x80
-  addlo r1, r12, #0x1A0
-  addlo r1, r1, #2
-  b 0x303B48
+  addlo r0, r12, #0x1A0
+  addlo r0, r0, #2
+  b 0x303B44
 ; 戦闘の場面: 追加の行が鳴っていれば、行 27 / 28 / 29 / 32 と同じく場面の BGM で上書きしない
 bgm_battle:
   cmp r5, #5
@@ -81,7 +88,7 @@ bgm_battle:
   ldr r1, =0x1A2
   cmp r0, r1
   blo bgm_battle_back
-  bl 0x303B44
+  bl 0x303B44                ; その行が鳴っているか (行のまま)
   cmp r0, #0
   bne bgm_battle_keep
 bgm_battle_back:
