@@ -10,10 +10,9 @@ import { WorldScene, type WorldMark } from '../editor/worldscene';
 import type { Dump } from '../rom/dump';
 import { Signal } from '../ui/useEditorState';
 import { oahuObjectModels, oahuWorldModels } from './mapModels';
-import { oahuPropAngle } from './mapObjects';
 import {
   entranceCell, moveEntrance, oahuCoveredBy, OAHU_WORLD_MODELS, OAHU_WORLD_SIZE, OAHU_WORLD_TEXTURES, parseChests, parseEventRanges, parseProps,
-  partColor, WE, WP_2, WP_2X2, WS, grid2, type OahuWorld, type OahuWorldPoint, type OahuWorldRange,
+  partColor, WE, WP_2, WP_2X2, WS, grid2, worldObjectAngle, type OahuWorld, type OahuWorldPoint, type OahuWorldRange,
 } from './worldmap';
 
 const N = OAHU_WORLD_SIZE;
@@ -34,13 +33,15 @@ export const WORLD_LAYERS = {
   chests: '宝箱',
   props: '置物',
   events: 'イベントの範囲',
-  zone: '区画 1 (2 bit、未解析)',
+  dark: '暗い海 (区画 1。濃いほど暗い)',
   explored: '区画 7 の初期値 (推定: 地図の開けた範囲)',
 } as const;
 export type WorldLayer = keyof typeof WORLD_LAYERS;
 
 /** Colours of the entrances by worldmapParts row (88〜93), the layers' colours. */
 export const ENTRANCE_COLORS: Record<number, string> = { 88: '#ff9f43', 89: '#ff6b6b', 90: '#48dbfb', 91: '#f368e0', 92: '#feca57', 93: '#1dd1a1' };
+/** The dark sea's steps (slot 1: 1, 2, 3 = darkest) over the 2D map. */
+const DARK_SEA = ['', 'rgba(0,0,12,0.22)', 'rgba(0,0,12,0.42)', 'rgba(0,0,12,0.62)'];
 export const LAYER_COLORS: Partial<Record<WorldLayer, string>> = { land: '#b8f58a', sea: '#7fd3ff', chests: '#ffd54f', props: '#bdbdbd', events: '#b388ff', returns: '#ffffff' };
 
 interface Snapshot {
@@ -64,7 +65,7 @@ export class OahuWorldView {
   tool: WorldTool = 'select';
   brush = { part: 2, rot: 0 };
   sel: WorldSelection = { type: 'none' };
-  layers: Record<WorldLayer, boolean> = { terrain: true, entrances: true, returns: true, land: false, sea: false, chests: true, props: true, events: true, zone: false, explored: false };
+  layers: Record<WorldLayer, boolean> = { terrain: true, entrances: true, returns: true, land: false, sea: false, chests: true, props: true, events: true, dark: true, explored: false };
   hover: [number, number] | null = null;
   status = '';
   /** Draw the terrain's models in 3D (else coloured slabs). */
@@ -99,6 +100,7 @@ export class OahuWorldView {
       model: (p) => this.factory?.instance(world.parts[p]?.model ?? 0) ?? null,
       color: (p) => partColor(world.parts[p]),
     };
+    this.world3d.seaShade = (i) => (this.layers.dark ? grid2(world.section(WS.dark), i % N, Math.floor(i / N)) / 3 : 0);
     this.world3d.seaModel = () => (this.showModels && this.factory && world.parts[1]?.model ? this.factory.instance(world.parts[1].model) : null);
     this.world3d.marks = () => this.marks3d();
     const pointer = {
@@ -434,7 +436,7 @@ export class OahuWorldView {
       g.imageSmoothingEnabled = false;
       g.drawImage(terrain, 0, 0, N * s, N * s);
     }
-    if (L.zone) this.paintGrid2(g, s, w.section(WS.zone), ['', 'rgba(255,255,255,0.25)', 'rgba(255,200,0,0.3)', 'rgba(160,220,255,0.35)']);
+    if (L.dark) this.paintGrid2(g, s, w.section(WS.dark), ['', DARK_SEA[1]!, DARK_SEA[2]!, DARK_SEA[3]!]);
     if (L.explored) {
       g.fillStyle = 'rgba(255,255,255,0.35)';
       for (const [x, y] of w.explored()) g.fillRect(x * s, y * s, s, s);
@@ -588,7 +590,7 @@ export class OahuWorldView {
       const [x, y] = entranceCell(r);
       const row = WE.model(r) || (WE.part(r) ? w.parts[WE.part(r)]?.object ?? 0 : 0);
       out.push({
-        x, y, angle: oahuPropAngle(WE.dir(r)), scale: w.maps.objectScale(row),
+        x, y, angle: worldObjectAngle(WE.dir(r)), scale: w.maps.objectScale(row),
         make: row && this.showModels ? () => this.objectModel(row) : undefined,
         color: WE.part(r) ? ENTRANCE_COLORS[WE.part(r)] ?? '#ffffff' : '#ffffff',
         selected: sel.type === 'entrance' && sel.index === i,
@@ -598,7 +600,7 @@ export class OahuWorldView {
       if (!L[layer]) continue;
       this.points(slot).forEach((p, i) => {
         out.push({
-          x: p.x, y: p.y, scale: slot === WS.props ? w.maps.objectScale(p.value) : 1,
+          x: p.x, y: p.y, angle: p.dir !== undefined ? worldObjectAngle(p.dir) : 0, scale: slot === WS.props ? w.maps.objectScale(p.value) : 1,
           make: slot === WS.props && this.showModels ? () => this.objectModel(p.value) : undefined,
           color: LAYER_COLORS[layer]!,
           selected: sel.type === 'point' && sel.slot === slot && sel.index === i,

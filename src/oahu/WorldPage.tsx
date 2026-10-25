@@ -21,7 +21,8 @@ import {
 } from './worldmap';
 
 export const oahuWorldHref = (index?: number): string => (index === undefined ? '#/world' : `#/world/${index}`);
-const DIRS = ['0 (180°)', '1 (90°)', '2 (0°)', '3 (−90°)'];
+/** The entrances' directions and the angles of their models (worldObjectAngle). */
+const DIRS = ['0 (0°)', '1 (−90°)', '2 (180°)', '3 (90°)'];
 /** Sections whose records name an EventObject row (an exit to the world can be any of them). */
 const SECTION_NAME: Record<number, string> = { 3: '出入口', 4: '宝箱', 5: 'キャラ・オブジェクト', 8: 'イベントの範囲' };
 const SLOT_LABEL: Record<number, string> = { [WS.land]: 'エンカウントの範囲 (陸、区画 3)', [WS.sea]: 'エンカウントの範囲 (海、区画 4)', [WS.chests]: '宝箱 (区画 8)', [WS.props]: '置物 (区画 6)', [WS.events]: 'イベントの範囲 (区画 5)' };
@@ -657,7 +658,8 @@ function WorldStatus({ world, view }: { world: OahuWorld; view: OahuWorldView })
       const p = world.parts[g.parts[i]!];
       parts.push(g.parts[i] ? `部品 ${g.parts[i]} ${p?.name.replace(/^bgpt_wld_|\.bch$/g, '') ?? ''} 向き ${g.rots[i]}` : '部品なし');
     }
-    parts.push(`区画 1 = ${grid2(world.section(WS.zone), x, y)}`);
+    const dark = grid2(world.section(WS.dark), x, y);
+    if (dark) parts.push(`暗い海 ${dark} / 3`);
     const inRange = (slot: typeof WS.land | typeof WS.sea): number => world.ranges(slot).filter((r) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h).length;
     const land = inRange(WS.land), sea = inRange(WS.sea);
     if (land || sea) parts.push(`範囲 陸 ${land}・海 ${sea}`);

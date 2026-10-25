@@ -48,6 +48,10 @@ export class WorldScene {
   /** The sea model (world units) and how many cells it is wide; null = a flat blue plane. */
   seaModel: (() => THREE.Object3D | null) | null = null;
   seaCells = 25;
+  /** How dark the sea is at cell index y * size + x (0 = as it is .. 1 = darkest; RPG3's dark sea). */
+  seaShade: ((i: number) => number) | null = null;
+  private readonly shadeGeo = new THREE.PlaneGeometry(CELL, CELL).rotateX(-Math.PI / 2);
+  private readonly shadeMats = new Map<number, THREE.MeshBasicMaterial>();
   /** The marks to draw (called on each sync; only those near the camera are added). */
   marks: () => WorldMark[] = () => [];
   private readonly tiles = new TileLayer();
@@ -159,6 +163,18 @@ export class WorldScene {
         o.position.z = (gy + 0.5) * S * CELL;
         this.sea.add(o);
       }
+    // the dark sea: a see-through black square over each dark cell, just above the sea
+    if (this.seaShade)
+      for (let y = cy - W; y <= cy + W; y++)
+        for (let x = cx - W; x <= cx + W; x++) {
+          const v = Math.round(this.seaShade((((y % N) + N) % N) * N + (((x % N) + N) % N)) * 3);
+          if (!v) continue;
+          let mat = this.shadeMats.get(v);
+          if (!mat) this.shadeMats.set(v, (mat = new THREE.MeshBasicMaterial({ color: 0x00000c, transparent: true, opacity: 0.22 * v, depthWrite: false })));
+          const m = new THREE.Mesh(this.shadeGeo, mat);
+          m.position.set((x + 0.5) * CELL, -100 * WORLD_SCALE + 10, (y + 0.5) * CELL);
+          this.sea.add(m);
+        }
     // the marks near the camera
     this.marksGroup.clear();
     for (const k of this.marks()) {

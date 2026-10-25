@@ -6,6 +6,7 @@
 import { findByName, findEntry, parseArchive, unpackEntry, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import type { Dump } from '../rom/dump';
+import { oahuPropAngle } from './mapObjects';
 import { equalBytes, f32, hex8, s16, u16, u32, u8, view, w16, w32 } from '../util/bytes';
 import type { OahuMapInfo, OahuMaps } from './maps';
 import type { OahuMaster } from './master';
@@ -17,7 +18,7 @@ export const OAHU_WORLD_TABLE = 0x556d54;
 /** The table's hashes (v4096; the tests read them back from code.bin). */
 export const OAHU_WORLD_SECTIONS = [0xa8654391, 0xf54b912e, 0x85175911, 0x085d1b2b, 0x6b11fa64, 0xad947450, 0x59a0b01e, 0x32407956, 0x3bf20831] as const;
 /** Slots of the table (the getter of each and its user in naauao oahu/worldmap.md §2). */
-export const WS = { tiles: 0, zone: 1, entrances: 2, land: 3, sea: 4, events: 5, props: 6, explored: 7, chests: 8 } as const;
+export const WS = { tiles: 0, dark: 1, entrances: 2, land: 3, sea: 4, events: 5, props: 6, explored: 7, chests: 8 } as const;
 export const OAHU_WORLD_SIZE = 300;
 /** World units per cell; a cell's centre is 50 + x * 100 (dungeons: 500). */
 export const OAHU_WORLD_CELL = 100;
@@ -251,7 +252,15 @@ export interface OahuWorldPoint {
   y: number;
   /** Kind of an event range (+0x00). */
   kind?: number;
+  /** Direction of a prop (+0x10, as the entrances' +0x1C). */
+  dir?: number;
 }
+
+/**
+ * The angle (three.js rotation.y) of an entrance's or prop's model by its direction: the dungeons' prop table
+ * (oahuPropAngle) turned by 180° (direction 0 faces the other way on the world map).
+ */
+export const worldObjectAngle = (dir: number): number => oahuPropAngle(dir) + Math.PI;
 
 export function parseChests(b: Uint8Array): OahuWorldPoint[] {
   const out: OahuWorldPoint[] = [];
@@ -261,7 +270,7 @@ export function parseChests(b: Uint8Array): OahuWorldPoint[] {
 
 export function parseProps(b: Uint8Array): OahuWorldPoint[] {
   const out: OahuWorldPoint[] = [];
-  for (let o = 0; o + 20 <= b.length; o += 20) out.push({ value: u32(b, o), x: s16(b, o + 4) + f32(b, o + 8) + 0.5, y: s16(b, o + 6) + f32(b, o + 12) + 0.5 });
+  for (let o = 0; o + 20 <= b.length; o += 20) out.push({ value: u32(b, o), x: s16(b, o + 4) + f32(b, o + 8) + 0.5, y: s16(b, o + 6) + f32(b, o + 12) + 0.5, dir: b[o + 0x10]! });
   return out;
 }
 
@@ -271,7 +280,10 @@ export function parseEventRanges(b: Uint8Array): OahuWorldPoint[] {
   return out;
 }
 
-/** The 2-bit grids of slots 1 and 7 (300 x 300, 4 cells a byte, FUN_002ab700). */
+/**
+ * The 2-bit grids of slots 1 and 7 (300 x 300, 4 cells a byte, FUN_002ab700). Slot 1 is the dark sea: 0 = the usual sea
+ * (and all land), 3 = dark, 1 and 2 the steps between (they lie between 0 and 3).
+ */
 export const grid2 = (b: Uint8Array, x: number, y: number): number => ((b[(y * N + x) >> 2] ?? 0) >> (((y * N + x) & 3) * 2)) & 3;
 
 // ---- the world as the pages edit it
