@@ -3,12 +3,14 @@ import { useState, type ReactNode } from 'react';
 import { validate, validateWorld, type Issue } from '../editor/validate';
 import { mapLabel } from '../editor/labels';
 import { PortStore } from '../port/store';
+import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
+import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
@@ -43,7 +45,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
-      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : [])];
+      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : [])];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);
@@ -72,7 +74,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : [])];
   const capError = dropCap && !capProblem ? buildPatches(game.dump.code, exportedPatches(game, extra)).get(DROP_CAP_ID)?.errors[0] : undefined;
   // models ported from other games (#100): the archives that hold them
-  const ported = useAsync(() => PortStore.of('kahara').then((p) => p.summary()), []);
+  const ported = useAsync(async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()], []);
   const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
@@ -80,6 +82,8 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
+      // BGMs ported from other games: sound.bcsar and their streams
+      for (const [name, bytes] of await (await SoundPortStore.of()).files()) files.set(name, bytes);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
       if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, extra);
@@ -99,8 +103,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       // Accept the mods folder or the title folder.
       if (dir.name.toUpperCase() !== TITLE_ID) dir = await dir.getDirectoryHandle(TITLE_ID, { create: true });
       for (const [path, data] of pkg) {
-        const [sub, name] = path.split('/') as [string, string];
-        const d = await dir.getDirectoryHandle(sub, { create: true });
+        // "romfs/56562135", "romfs/sound/stream/BGM_….bcstm", "exefs/code.ips"
+        const parts = path.split('/');
+        const name = parts.pop()!;
+        let d = dir;
+        for (const sub of parts) d = await d.getDirectoryHandle(sub, { create: true });
         const w = await (await d.getFileHandle(name, { create: true })).createWritable();
         await w.write(data as BlobPart);
         await w.close();

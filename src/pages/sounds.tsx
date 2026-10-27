@@ -5,9 +5,10 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import { mapShortTitle } from '../game/names';
 import { mapDataUsers, SOUND_KIND, SOUND_SLOTS, soundUses, type SoundKind, type SoundNames, type SoundSource, type SoundUse } from '../game/sound';
-import { hex8 } from '../util/bytes';
 import { Count, ListFilter, useActiveRow, useSticky, type PageProps } from '../ui/book';
 import { PlayButton } from '../ui/SoundPicker';
+import { hex8 } from '../util/bytes';
+import { BGM_EXT_BASE, bgmValue } from '../game/bgmext';
 
 export const soundHref = (row: number): string => `#/sounds/${row}`;
 
@@ -25,9 +26,23 @@ export function SoundPage({ session, arg, visit, sounds }: PageProps & { sounds:
     <div className="book">
       <SoundView game={game} sounds={sounds} selected={selected} href={soundHref} uses={(r) => uses.get(r)?.length ?? 0}
         usesTitle="この音を使う mapData の欄の数" usedLabel="マップで使う">
+        <AddedRow row={selected} />
         <MapUses use={use} users={users} mapTitle={(m) => mapShortTitle(m, game.code.maps)} />
       </SoundView>
     </div>
+  );
+}
+
+/** An added row (a BGM ported from another game, port/bgm.ts): the value the BGM fields name it by. */
+function AddedRow({ row }: { row: number }): ReactNode {
+  const v = bgmValue(row);
+  if (row < BGM_EXT_BASE) return null;
+  return (
+    <p className="muted small">
+      {v === null
+        ? 'ほかの作品から移植した BGM の行ですが、BGM の欄には入りません。'
+        : `ほかの作品から移植した BGM の行です。マップ・ボス戦の BGM の欄では 0x${v.toString(16).toUpperCase()} になります (コードのパッチ「BGM の追加枠」)。`}
+    </p>
   );
 }
 

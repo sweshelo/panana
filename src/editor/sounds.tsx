@@ -6,6 +6,7 @@ import { mapShortTitle } from '../game/names';
 import { MAX_MAP_SOUND, SOUND_SLOTS, soundUses, mapDataUsers, type SoundKind, type SoundNames } from '../game/sound';
 import type { Session } from '../session';
 import { SoundSlotsBox } from '../ui/SoundSlots';
+import { BGM_FIELD } from '../game/bgmext';
 
 const SLOT_KIND: Record<string, SoundKind> = { bgm: 'bgm', battle: 'bgm', steps: 'se' };
 
@@ -32,7 +33,7 @@ export function MapSoundPanel({ session, sounds }: { session: Session; sounds: S
       sounds={sounds}
       usage={usage}
       slots={SOUND_SLOTS.map(([slot, label]) => ({
-        key: slot, label, value: s[slot], kind: SLOT_KIND[slot]!, max: MAX_MAP_SOUND,
+        key: slot, label, value: s[slot], kind: SLOT_KIND[slot]!, max: MAX_MAP_SOUND, field: slot === 'steps' ? undefined : BGM_FIELD,
         onChange: (v) => st.editTables(() => master.setSound(row, slot, v)),
       }))}
       note={
