@@ -127,6 +127,7 @@ src/
 - 新しいメッセージ番号は作れません。MessageSystemCommon 0〜6106、MessageBattle 6107〜7134、MessageField 7135〜8623 が隙間なく続き、ゲームは範囲に番号を含む最初のファイルを使います (FUN_00310438)。新しいメッセージは `MessageMod_JP.gsmb` (ID 0x2C00〜、elpulse の MOD と同じ) に入ります。
 - 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
+- RPG2 の変身はユニットのデータだけを作り直し、戦闘のモデルは戦闘の始めに `FUN_00289524` が作ったままです。デザインの違う行への変身があると、書き出しの code.ips にパッチ「見た目の変わる変身」(`src/game/transform.ts`) が入ります。変身を見せる演出の段 (セリフ +0x38 を出して待機のアニメを選び直すところ) で、表示ユニット +0x2F7 に覚えたデザインとユニット +0x02 が違えば、白くフェードアウトして待ち、`FUN_00289524` を同じユニットで呼んでモデルを作り直してフェードインします (naauao kahara/battle.md §3.4)。
 - 群れのエントリ (monsterGroup) は +0x28〜が未解析です。
 
 ## モンスターのモデルの読み込み
