@@ -23,6 +23,8 @@ import * as THREE from 'three';
 import { uvMatrix } from '../src/cgfx/tev';
 import { buildPatches } from '../src/game/patch';
 import { DROP_CAP_ID, dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { CHASE, CHASE_PATCH_ID, chaseSpeedPatch, chaseSpeedProblem } from '../src/game/chase';
+import { getField, setField } from '../src/game/monsters';
 import { OAHU_LAYOUT } from '../src/oahu/code';
 import { LANAI_LAYOUT } from '../src/lanai/code';
 import { extractPatch } from '../src/ui/PatchPanel';
@@ -1035,5 +1037,30 @@ describe('sound decoding', () => {
     expect(Array.from(out.subarray(0, 4), (x) => Math.round(x * 32768))).toEqual([1, 2, -1, 0]);
     // Frame 2: scale 2, predicted from the previous sample (0): 2, 2 + 0 = 2
     expect(Array.from(out.subarray(14, 16), (x) => Math.round(x * 32768))).toEqual([2, 2]);
+  });
+});
+
+describe('symbol movement (game/chase.ts)', () => {
+  test('design fields are bits of +0x08 / +0x0C', () => {
+    const r = new Uint8Array(0x70);
+    w32(r, 8, 0x40a00283); // kind 3, style 0, wait min 20 and other bits set
+    expect([getField(r, CHASE.kind), getField(r, CHASE.style), getField(r, CHASE.waitMin)]).toEqual([3, 0, 20]);
+    setField(r, CHASE.sight, 600);
+    setField(r, CHASE.fly, 1);
+    expect(u32(r, 0x0c)).toBe((600 << 7) | (1 << 17));
+    expect(u32(r, 8)).toBe(0x40a00283);
+  });
+
+  test('the speed patch writes only the changed floats', () => {
+    expect(chaseSpeedPatch({})).toBeNull();
+    expect(chaseSpeedPatch({ fleeTime: 1.7 })).toBeNull();
+    const p = chaseSpeedPatch({ fastDungeon: 1000, walk: 150 })!;
+    expect(p.source).toContain('@0x1EDA14\n  .word 0x447a0000');
+    expect(p.source).not.toContain('0x1EE238');
+    const code = new Uint8Array(0x100000);
+    const built = buildPatches(code, [p]).get(CHASE_PATCH_ID)!;
+    expect(built.errors).toEqual([]);
+    expect(built.blocks.map((b) => [b.addr, b.lines[0]!.word])).toEqual([[0x1eda14, 0x447a0000]]);
+    expect(chaseSpeedProblem(code)).not.toBeNull(); // zeros are not the game's speeds
   });
 });

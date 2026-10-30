@@ -7,6 +7,7 @@ import { idbGet, idbSet } from '../util/idb';
 import { CodeBin, type MapInfo } from './codebin';
 import { EventTable } from './events';
 import type { CodePatch } from './patch';
+import type { ChaseSpeeds } from './chase';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from './mapdb';
 import { Master, MASTER_ARCHIVE, TILESETS, type MapRef } from './master';
 import { isIndoor } from './objects';
@@ -49,6 +50,8 @@ export class Game {
   codePatches: CodePatch[] = [];
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to code.ips. */
   dropCap = false;
+  /** Changed speeds of the map symbols (game/chase.ts), exported as the code patch "シンボルの速さ". */
+  chaseSpeeds: ChaseSpeeds = {};
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;

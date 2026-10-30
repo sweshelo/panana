@@ -1,4 +1,5 @@
-// Editors of a MonsterParameter row in the monster book: stats, drops, skills and AI, boss forms.
+// Editors of a MonsterParameter row in the monster book: stats, drops, skills and AI, boss forms, and how its symbol
+// moves on the map (its MonsterDesign row; game/chase.ts).
 // Fields: src/game/monsters.ts PARAM (elpulse docs/battle.md §2〜§4).
 import { useEffect, useState, type ReactNode } from 'react';
 import { ACTION_KIND, ELEMENT, type ActionBook } from '../game/actions';
@@ -6,7 +7,9 @@ import {
   AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
   type Monster, type MonsterBook, type ParamKey,
 } from '../game/monsters';
+import { CHASE, CHASE_KIND, CHASE_KIND_NOTE, CHASE_SPEED_MAX, CHASE_SPEEDS, CHASE_STYLE, CHASE_STYLE_NOTE, changedSpeeds, type ChaseKey, type ChaseSpeed } from '../game/chase';
 import type { Session } from '../session';
+import { NumberInput } from '../ui/book';
 import { ActionPicker } from '../ui/ActionPicker';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
 import { BattleMessagePicker } from '../ui/BattleMessagePicker';
@@ -419,6 +422,123 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
         <MonsterPicker session={session} book={book} current={m.nextForm} title="次の形態を選ぶ" onClose={() => setPicking(false)}
           onPick={(row) => { setPicking(false); book.set(m.row, 'nextForm', row); edited(); }} />
       )}
+    </section>
+  );
+}
+
+const CHASE_INFO = [
+  'マップに出るシンボルの敵の動きです。モンスターのデザイン (2713402F の monsterDesign.bin) の +0x08 / +0x0C の欄で、群れの先頭に選ばれたモンスターの行が使われます (naauao kahara/symbol.md)。',
+  '同じデザインのモンスター (色違い・ボスの別の形態など) は動きも同じです。「このモンスターだけの動きにする」でデザインの行を複製して分けられます。',
+  '時間の欄は 0.1 秒単位、距離はワールドの単位 (ダンジョンの 1 マス = 500) です。ワールドマップでは見える距離が 2 倍になります。',
+  '速さはコードに書かれた全モンスター共通の値なので、下の「速さ (全モンスター共通)」で変えます。',
+].join('\n');
+
+const SPEED_INFO = [
+  'コード (code.bin) の定数で、全モンスター共通です。変えると書き出しに code.ips のパッチ「シンボルの速さ」が入ります。',
+  '速さはワールドの単位 / 秒 (ダンジョンの 1 マス = 500)。気づいて動き出すときに、動き方の種類とマップ (ダンジョンかワールドマップか) で決まります。',
+  '★ はこのモンスターの動き方が使う値です。',
+].join('\n');
+
+/** Tenths of a second as "1.5 秒". */
+const tenths = (v: number): string => `${(v / 10).toFixed(1)} 秒`;
+
+/** How the monster's symbol moves on the map (its design's fields), and the speeds every symbol shares. */
+export function ChaseEditor({ session, book, m, edited }: EditProps & { session: Session }): ReactNode {
+  const { game } = session;
+  const d = m.design;
+  if (d >= book.designRows) return null;
+  const f: FieldAccess = {
+    get: (k) => book.chaseGet(d, k as ChaseKey),
+    original: (k) => book.chaseOriginal(d, k as ChaseKey),
+    set: (k, v) => book.chaseSet(d, k as ChaseKey, v),
+    range: (k) => [0, fieldMax(CHASE[k as ChaseKey])],
+  };
+  const fp = { f, edited };
+  const kind = f.get('kind');
+  const sharers = book.designUsers(d).filter((r) => r !== m.row);
+  const own = (): void => {
+    try {
+      book.newLook(m.row, () => {});
+    } catch (err) {
+      alert((err as Error).message);
+      return;
+    }
+    edited();
+  };
+  const speed = (s: ChaseSpeed): number => game.chaseSpeeds[s.key] ?? s.vanilla;
+  const setSpeed = (s: ChaseSpeed, v: number): void => {
+    const next = { ...game.chaseSpeeds };
+    if (Math.fround(v) === Math.fround(s.vanilla)) delete next[s.key];
+    else next[s.key] = v;
+    game.chaseSpeeds = next;
+    edited();
+  };
+  const speedsChanged = changedSpeeds(game.chaseSpeeds).length > 0;
+  return (
+    <section>
+      <Heading title="マップでの動き" info={CHASE_INFO} />
+      {sharers.length > 0 && (
+        <div className="small">
+          <span className="muted">{`同じ動き (デザイン ${d}): ${sharers.slice(0, 4).map((r) => `${book.monster(r)?.name ?? '?'} #${r}`).join('、')}${sharers.length > 4 ? ` ほか ${sharers.length - 4}` : ''} `}</span>
+          <button className="small" disabled={!book.canNewLook()} title="デザインの行を複製して、このモンスターだけの動きにします (名前・見た目は同じまま)" onClick={own}>このモンスターだけの動きにする</button>
+        </div>
+      )}
+      <table className="enc-table ai-fields">
+        <tbody>
+          <tr>
+            <td className="with-info">動き方<InfoTip text={CHASE_KIND.slice(0, 7).map((n, v) => `${v} ${n}: ${CHASE_KIND_NOTE[v]}`).join('\n')} /></td>
+            <td><FieldChoice {...fp} k="kind" labels={(v) => `${v} ${CHASE_KIND[v]}`} title={CHASE_KIND_NOTE[kind]} /></td>
+          </tr>
+          <tr>
+            <td className="with-info">出方・歩き方<InfoTip text={CHASE_STYLE.map((n, v) => `${v} ${n}: ${CHASE_STYLE_NOTE[v]}`).join('\n')} /></td>
+            <td><FieldChoice {...fp} k="style" labels={(v) => `${v} ${CHASE_STYLE[v]}`} /></td>
+          </tr>
+          <tr>
+            <td className="with-info">待つ時間<InfoTip text="歩く前に立ち止まる時間。毎回「最小〜最大」の乱数です (+0x08 bit5-11 / bit12-18、0.1 秒単位)" /></td>
+            <td><div className="inline-fields"><FieldNumber {...fp} k="waitMin" />〜<FieldNumber {...fp} k="waitMax" /><span className="muted small">{`${tenths(f.get('waitMin'))}〜${tenths(f.get('waitMax'))}`}</span></div></td>
+          </tr>
+          <tr>
+            <td className="with-info">歩く時間<InfoTip text="気づく前に歩き回る 1 回の長さ (+0x08 bit19-25、0.1 秒単位)。壁に当たると向きを変えます" /></td>
+            <td><div className="inline-fields"><FieldNumber {...fp} k="walk" /><span className="muted small">{tenths(f.get('walk'))}</span></div></td>
+          </tr>
+          <tr>
+            <td className="with-info">追う時間<InfoTip text="気づいてから追いかける長さ (+0x0C bit0-6、0.1 秒単位)。見える距離 + 100 (最低 800) より離れても追うのをやめます。突進・逃げるには使いません" /></td>
+            <td><div className="inline-fields"><FieldNumber {...fp} k="chase" /><span className="muted small">{tenths(f.get('chase'))}</span></div></td>
+          </tr>
+          <tr>
+            <td className="with-info">見える距離<InfoTip text="この距離の中で、前方 ±90° にプレイヤーがいると気づきます (+0x0C bit7-16)。ワールドマップでは 2 倍。逃げる種類はこの欄を使いません" /></td>
+            <td><div className="inline-fields"><FieldNumber {...fp} k="sight" /><span className="muted small">{`${(f.get('sight') / 500).toFixed(1)} マス`}</span></div></td>
+          </tr>
+          <tr>
+            <td className="with-info">飛ぶ<InfoTip text="+0x0C bit17。穴の上も通れます。マップの見た目 (mapData) の [1] が 5 のマップでだけ効きます (FUN_0043df38)" /></td>
+            <td><SharedFieldCheck {...fp} k="fly" label="穴の上を飛ぶ" /></td>
+          </tr>
+        </tbody>
+      </table>
+      {f.get('waitMin') > f.get('waitMax') && <div className="issue warn">⚠ 待つ時間の最小が最大より大きくなっています。</div>}
+      <details>
+        <summary className="with-info">{`速さ (全モンスター共通)${speedsChanged ? ' ・変更あり' : ''}`}<InfoTip text={SPEED_INFO} /></summary>
+        <table className="enc-table ai-fields">
+          <tbody>
+            {CHASE_SPEEDS.map((s) => {
+              const v = speed(s);
+              const ch = Math.fround(v) !== Math.fround(s.vanilla);
+              return (
+                <tr key={s.key}>
+                  <td>{`${s.kinds.includes(kind) ? '★ ' : ''}${s.label}`}</td>
+                  <td><div className="inline-fields">
+                    {s.unit === 'speed'
+                      ? <NumberInput value={Math.round(v)} min={0} max={CHASE_SPEED_MAX.speed} className={`num-input${ch ? ' edited' : ''}`} title={`元の値 ${s.vanilla}`} onCommit={(x) => setSpeed(s, x)} />
+                      : <NumberInput value={Math.round(v * 10)} min={0} max={CHASE_SPEED_MAX.time * 10} className={`num-input${ch ? ' edited' : ''}`} title={`元の値 ${s.vanilla} 秒 (0.1 秒単位)`} onCommit={(x) => setSpeed(s, x / 10)} />}
+                    <span className="muted small">{s.unit === 'speed' ? `${(v / 500).toFixed(2)} マス/秒` : `${v.toFixed(1)} 秒`}</span>
+                  </div></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {speedsChanged && <button className="small" onClick={() => { game.chaseSpeeds = {}; edited(); }}>速さを元に戻す</button>}
+      </details>
     </section>
   );
 }

@@ -12,6 +12,7 @@ import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { buildPatches } from '../game/patch';
+import { CHASE_PATCH_ID, chaseSpeedPatch, chaseSpeedProblem } from '../game/chase';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
@@ -46,6 +47,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     // added items' actions: game/items.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : [])];
+    // the speeds of the map symbols (game/chase.ts), when changed on the monster page
+    const chase = chaseSpeedPatch(game.chaseSpeeds);
+    const chaseProblem = chase && chaseSpeedProblem(game.dump.code);
+    if (chaseProblem) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `${chaseProblem} (このパッチは書き出しません)`, key: `patch:${CHASE_PATCH_ID}` } });
+    else if (chase) extra.push(chase);
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

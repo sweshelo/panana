@@ -128,6 +128,7 @@ src/
 - 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
 - 群れのエントリ (monsterGroup) は +0x28〜が未解析です。
+- マップのシンボルの敵の動き (`src/game/chase.ts`、naauao kahara/symbol.md): 群れの先頭のモンスターの MonsterDesign +0x08 / +0x0C のビットを `FUN_001ee5e0` が読み、`FUN_001eee7c` が状態を進める。速さはデザインの行になく、`FUN_001ed820` / `FUN_001ee088` のリテラル (それぞれ 1 命令だけが読む) なので、「シンボルの速さ」のパッチは変えた値の `.word` を書くだけ。元の値と違う code.bin (別の版・土台の MOD) には入れない。
 
 ## モンスターのモデルの読み込み
 
