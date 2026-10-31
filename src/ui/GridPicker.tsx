@@ -14,6 +14,8 @@ export interface GridEntry {
   unavailable?: string | null;
   /** Matched by the category filter. */
   category?: number;
+  /** Also matched by the search (e.g. the maps that use a row). */
+  keywords?: string;
 }
 
 /** A section of the grid: a heading and the ids of its entries (e.g. "このワザを持つモンスター"). */
@@ -37,7 +39,7 @@ export interface PickerChoice {
  * Every entry as a picture with its name. `sections` come first, each under its heading, then every entry (under
  * "すべて" when there are sections or choices); `current` is highlighted and scrolled into view.
  */
-export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, placeholder = '名前か番号で絞り込み', onPick, onClose }: {
+export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, placeholder = '名前か番号で絞り込み', wide = false, onPick, onClose }: {
   title: string;
   entries: GridEntry[];
   current?: number;
@@ -48,6 +50,8 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   /** Category filter: value → label. */
   categories?: Record<number, string>;
   placeholder?: string;
+  /** Wider cells for entries with several lines of text (`sub` keeps its line breaks). */
+  wide?: boolean;
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
@@ -57,7 +61,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, []);
   const q = query.trim();
   const c = cat ? Number(cat) : 0;
-  const match = (e: GridEntry): boolean => (!c || e.category === c) && (!q || e.name.includes(q) || String(e.id) === q);
+  const match = (e: GridEntry): boolean => (!c || e.category === c) && (!q || e.name.includes(q) || String(e.id) === q || !!e.keywords?.includes(q));
   const byId = new Map(entries.map((e) => [e.id, e]));
   const cell = (e: GridEntry, key: string): ReactNode => (
     <button key={key} className={`monster-cell${e.unavailable ? ' sold' : ''}${e.id === current ? ' current' : ''}`} disabled={!!e.unavailable}
@@ -86,7 +90,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
       <div className="picker-list" ref={grid}>
         {shownChoices.length > 0 && choicesLabel && <h4 className="picker-heading">{choicesLabel}</h4>}
         {shownChoices.length > 0 && (
-          <div className="monster-grid">
+          <div className={`monster-grid${wide ? ' wide' : ''}`}>
             {shownChoices.map((x) => (
               <button key={`c${x.value}`} className={`monster-cell${x.value === current ? ' current' : ''}`} title={x.title} onClick={() => onPick(x.value)}>
                 {x.icon ?? <span className="photo photo-lg picker-none" />}
@@ -99,7 +103,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
         {shown.map((s, i) => (
           <section key={i}>
             {s.label && <h4 className="picker-heading">{s.label}</h4>}
-            <div className="monster-grid">{s.list.map((e) => cell(e, `${i}:${e.id}`))}</div>
+            <div className={`monster-grid${wide ? ' wide' : ''}`}>{s.list.map((e) => cell(e, `${i}:${e.id}`))}</div>
           </section>
         ))}
         {!shown.length && !shownChoices.length && <div className="muted">見つかりません</div>}
