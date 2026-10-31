@@ -19,7 +19,8 @@ import { gimmickTemplates } from '../src/game/templates';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
-import { equalBytes, u16, u32 } from '../src/util/bytes';
+import { equalBytes, f32, u16, u32 } from '../src/util/bytes';
+import { chaseSpeedPatch, chaseSpeedProblem, type ChaseKey } from '../src/game/chase';
 import { BASE_MOD, CIA, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
@@ -383,6 +384,34 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(king.name).toBe('キングウッキー');
     expect(king.focus).toBe(true);
     expect(book.monster(21)!.nextForm).toBe(20);
+  });
+
+  test('how the symbols move (naauao kahara/symbol.md): design fields and the speed patch', async () => {
+    const book = await game.monsters();
+    // MonsterDesign 4 charges, 27 sees through walls, 64 runs away (and hops), 1 drops in and flies
+    expect([4, 27, 64, 1].map((d) => book.chaseGet(d, 'kind'))).toEqual([3, 6, 4, 1]);
+    expect([book.chaseGet(64, 'style'), book.chaseGet(1, 'style'), book.chaseGet(1, 'fly')]).toEqual([2, 1, 1]);
+    expect(['waitMin', 'waitMax', 'walk', 'chase', 'sight'].map((k) => book.chaseGet(0, k as ChaseKey))).toEqual([10, 30, 80, 50, 600]);
+    const saved = book.designData().slice();
+    book.chaseSet(0, 'kind', 4);
+    book.chaseSet(0, 'sight', 1023);
+    expect([book.chaseGet(0, 'kind'), book.chaseGet(0, 'sight'), book.chaseOriginal(0, 'kind')]).toEqual([4, 1023, 2]);
+    expect(book.designChanged()).toBe(true);
+    // only the bytes of the two fields changed
+    const before = new GsTable(saved).row(0);
+    const changed = [...book.designBytes(0)].flatMap((v, i) => (v !== before[i] ? [i] : []));
+    expect(changed.every((i) => i === 8 || (i >= 0x0c && i <= 0x0e))).toBe(true);
+    book.restoreDesign(saved);
+    expect(book.designChanged()).toBe(false);
+
+    expect(chaseSpeedProblem(game.dump.code)).toBeNull();
+    expect(chaseSpeedPatch({ walk: 150 })).toBeNull(); // the game's value: nothing to patch
+    const ips = modPackage(game, new Map(), [chaseSpeedPatch({ fastDungeon: 1000, chargeTime: 2.5 })!]).get('exefs/code.ips')!;
+    const patched = applyIps(game.dump.code, ips);
+    expect(f32(patched, 0x1eda14 - 0x100000)).toBe(1000);
+    expect(f32(patched, 0x1eda24 - 0x100000)).toBe(2.5);
+    expect(f32(patched, 0x1eda10 - 0x100000)).toBe(680);
+    expect(chaseSpeedProblem(patched)).not.toBeNull();
   });
 
   test('map encounter groups (section 6) resolve to monsterGroup rows', async () => {
