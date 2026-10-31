@@ -155,6 +155,7 @@ describe('world map page', () => {
     rows[29]![0x4b] = 0x18;
     w32(rows[29]!, 0, 3);
     w32(rows[29]!, 0x40, 0x2c00);
+    w32(rows[29]!, 0x44, 0x2f);
     const events = {
       dungeon: 0x34, rows: 30, capacity: 39, data: new Uint8Array(0), table: { row: (i: number) => rows[i]!, rowSize: 0x50 },
       has: (i: number) => i >= 0 && i < 30, kind: (i: number) => rows[i]![0x4d]!, originalRow: (i: number) => (i < 29 ? rows[i] : undefined),
@@ -186,6 +187,7 @@ describe('world map page', () => {
     expect(html).toContain('消える:');
     expect(html).toContain('はじめて出たときに「〇〇が出現した！」と出す');
     expect(html).toContain('[水の神殿]が出現した！');
+    expect(html).toContain('出現の音:');
     expect(html).not.toContain('入れない入口');
     expect(html).toContain('入口を追加');
     expect(html).toContain('モデルを選ぶ');

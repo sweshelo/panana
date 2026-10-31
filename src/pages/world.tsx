@@ -11,7 +11,8 @@ import { conditionTypes } from '../game/eventlist';
 import type { EventTable } from '../game/events';
 import { P3 } from '../game/sections';
 import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } from '../game/worldconditions';
-import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_TEMPLATE, noticeMessage, setNoticeMessage } from '../game/worldnotice';
+import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_SOUND_DEFAULT, NOTICE_TEMPLATE, noticeMessage, noticeSound, setNoticeMessage, setNoticeSound } from '../game/worldnotice';
+import { SoundButton } from '../ui/SoundPicker';
 import { textToUnits } from '../game/msgtext';
 import { hexId } from '../editor/message';
 import { ENT, WORLD_SIZE, freeEntranceId, moveEntrance, newEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
@@ -392,9 +393,10 @@ function EntranceNotice({ session, events, row, r, added, write }: {
   added: boolean;
   write: (f: (row: Uint8Array) => void) => void;
 }): ReactNode {
-  const { game } = session;
+  const { game, sounds } = session;
   const { texts } = game.master;
   const message = noticeMessage(events.table.row(row));
+  const sound = noticeSound(events.table.row(row));
   if (!added) return <div className="muted small">「〇〇が出現した！」の告知は、この入口だけの行 (Panana が足した行) につけられます。</div>;
   const enable = (): void => {
     const dest = game.code.byHash(ENT.destMap(r));
@@ -402,7 +404,7 @@ function EntranceNotice({ session, events, row, r, added, write }: {
     const tpl = texts.text(NOTICE_TEMPLATE);
     const text = `${nameId ? `{msg:${nameId.toString(16).toUpperCase().padStart(4, '0')}}` : '新しい場所'}が出現した！`;
     const id = tpl ? texts.add(textToUnits({ ...tpl, text })) : 0;
-    if (id) write((b) => setNoticeMessage(b, id));
+    if (id) write((b) => (setNoticeMessage(b, id), setNoticeSound(b, NOTICE_SOUND_DEFAULT)));
   };
   return (
     <div className="world-notice">
@@ -414,7 +416,17 @@ function EntranceNotice({ session, events, row, r, added, write }: {
       {message > 0 && (
         <div className="muted small">
           <a href={`#/messages/${hexId(message)}`}>{texts.preview(message, true) ?? `メッセージ ${hexId(message)}`}</a>
-          {' '}— ワールドマップに入ったとき、条件が成り立っていて行の状態が 0 なら一度だけ出し、状態を 1 にします (書き出しの code.ips に告知のパッチが入ります)。
+          {' '}— ワールドマップに入ったとき、条件が成り立っていて行の状態が 0 なら一度だけ、カメラをこの入口へ向けて出し、状態を 1 にします (書き出しの code.ips に告知のパッチが入ります)。
+        </div>
+      )}
+      {message > 0 && (
+        <div className="row small">
+          出現の音:
+          {sounds
+            ? <SoundButton game={game} sounds={sounds} value={sound} title="出現の音を選ぶ" onChange={(v) => write((b) => setNoticeSound(b, v))} />
+            : <NumberInput value={sound} min={0} max={0xffff} onCommit={(v) => write((b) => setNoticeSound(b, v))} />}
+          {sound > 0 && <button type="button" className="link" onClick={() => write((b) => setNoticeSound(b, 0))}>鳴らさない</button>}
+          {sound === 0 && <span className="muted">鳴らさない</span>}
         </div>
       )}
     </div>
