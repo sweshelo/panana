@@ -275,6 +275,14 @@ export class WorldView {
     this.world3d.focus(x, y);
   }
 
+  /** The cell at the centre of the 2D view. */
+  viewCell(): [number, number] {
+    const r = this.grid.canvas.getBoundingClientRect();
+    const n = this.src.size;
+    const wrap = (v: number): number => ((Math.floor(v) % n) + n) % n;
+    return [wrap((r.width / 2 - this.grid.ox) / this.grid.scale), wrap((r.height / 2 - this.grid.oy) / this.grid.scale)];
+  }
+
   /** The whole world in the 2D view. */
   fitWorld(): void {
     this.grid.fitBox(0, 0, this.src.size, this.src.size);

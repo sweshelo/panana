@@ -7,6 +7,7 @@ import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { NOTICE_DUNGEON, noticePatch } from '../game/worldnotice';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
@@ -49,7 +50,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
-      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : [])];
+      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON))].filter((p) => !!p)];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

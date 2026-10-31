@@ -96,6 +96,28 @@ export function moveEntrance(r: Uint8Array, x: number, y: number, rot = ENT.rot(
   return c;
 }
 
+/** An entrance ID (+0x04) no entrance of `list` has (never 0). */
+export function freeEntranceId(list: Uint8Array[], random: () => number = Math.random): number {
+  const used = new Set(list.map((r) => ENT.id(r)));
+  for (;;) {
+    const id = Math.floor(random() * 0x100000000) >>> 0;
+    if (id && !used.has(id)) return id;
+  }
+}
+
+/**
+ * A new entrance at cell (x, y): a copy of `template` (its kind, model and destination) with its own ID, no
+ * appearance row (+0x10) and no section-3 point (+0x14).
+ */
+export function newEntrance(template: Uint8Array | undefined, id: number, x: number, y: number): Uint8Array {
+  const r = template ? template.slice() : new Uint8Array(ENTRANCE_SIZE);
+  if (!template) w32(r, 0x00, 76);
+  w32(r, 0x04, id);
+  w32(r, 0x10, 0);
+  w32(r, 0x14, 0);
+  return moveEntrance(r, x, y);
+}
+
 // ---- section 3: points {u32 id, s16 x, s16 y} (FUN_00234234)
 export interface WorldPoint {
   id: number;

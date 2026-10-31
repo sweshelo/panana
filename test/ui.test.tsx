@@ -130,6 +130,7 @@ describe('world map page', () => {
     w32(ent, 4, 0x11);
     w32(ent, 8, D);
     w32(ent, 0x0c, 0x22);
+    w32(ent, 0x10, 29); // a row Panana added: shown when 進行 0x8D[0] ≥ 3, with a notice
     ent[0x1c] = 10;
     ent[0x1e] = 20;
     const p3 = new Uint8Array(28);
@@ -146,12 +147,26 @@ describe('world map page', () => {
       worldPartFlags: () => null,
       code: { maps: [info], byHash: (h: number) => (h === D ? info : undefined), world: (h: number) => (h === W ? world : undefined) },
       db: { get: () => new Uint8Array(0) },
-      master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 } },
+      master: { dungeonName: () => '山のどうくつ', mapObject: { rows: 300 }, message: () => undefined, mapGroup: { rows: 60 }, objectModel: () => null },
     } as unknown as Game;
     const doc = { hash: D, recs: { 3: [{ raw: p3, x: 3, y: 4 }] } };
+    const rows = Array.from({ length: 30 }, () => new Uint8Array(0x50));
+    rows[29]![0x4d] = 0x11;
+    rows[29]![0x4b] = 0x18;
+    w32(rows[29]!, 0, 3);
+    w32(rows[29]!, 0x40, 0x2c00);
+    w32(rows[29]!, 0x44, 0x2f);
+    const events = {
+      dungeon: 0x34, rows: 30, capacity: 39, data: new Uint8Array(0), table: { row: (i: number) => rows[i]!, rowSize: 0x50 },
+      has: (i: number) => i >= 0 && i < 30, kind: (i: number) => rows[i]![0x4d]!, originalRow: (i: number) => (i < 29 ? rows[i] : undefined),
+      roomLeft: () => 9, changed: () => true,
+    };
+    const texts = { canAdd: () => true, preview: (id: number) => (id === 0x2c00 ? '[水の神殿]が出現した！' : undefined) };
+    (game as unknown as { master: { texts: unknown } }).master.texts = texts;
+    (game as unknown as { code: { code: Uint8Array } }).code.code = new Uint8Array(0x420000);
     const session = {
       game,
-      st: { docs: new Map() },
+      st: { docs: new Map(), events: new Map([[0x34, events]]) },
       docOf: () => doc,
       entrancesOf: () => [ent],
       originalEntrances: () => [ent],
@@ -166,6 +181,16 @@ describe('world map page', () => {
     expect(html).toContain('10,20');
     expect(html).toContain('ワールドマップ W01');
     expect(html).toContain('この入口に戻ります');
+    // the entrance's conditions (its W01_EventObject row) and the notice
+    expect(html).toContain('行 29');
+    expect(html).toContain('出る:');
+    expect(html).toContain('消える:');
+    expect(html).toContain('はじめて出たときに「〇〇が出現した！」と出す');
+    expect(html).toContain('[水の神殿]が出現した！');
+    expect(html).toContain('出現の音:');
+    expect(html).not.toContain('入れない入口');
+    expect(html).toContain('入口を追加');
+    expect(html).toContain('モデルを選ぶ');
     // the shared world map frame: the views' panes (their canvases come with the view)
     expect(html).toContain('pane2d');
     expect(html).toContain('pane3d');

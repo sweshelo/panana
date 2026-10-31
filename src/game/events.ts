@@ -104,6 +104,15 @@ export class EventTable {
   changed(): boolean {
     return !equalBytes(this.table.data, this.original);
   }
+  /** Back to the table as in the game. */
+  revert(): void {
+    this.table.data = this.original.slice();
+  }
+  /** A row as in the game (undefined for added rows). */
+  originalRow(row: number): Uint8Array | undefined {
+    const t = new GsTable(this.original);
+    return row >= 0 && row < t.rows ? t.row(row) : undefined;
+  }
 
   /** The event archive with this table re-packed (other entries copied verbatim). */
   buildArchive(): Uint8Array {
