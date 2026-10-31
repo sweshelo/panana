@@ -17,7 +17,7 @@ export class EventTable {
   private constructor(
     readonly dungeon: number,
     /** Rows that can keep a state (mapGroup +0x1C). */
-    readonly capacity: number,
+    public capacity: number,
     readonly archiveName: string,
     private readonly archive: Archive,
     private readonly entry: ArcEntry,

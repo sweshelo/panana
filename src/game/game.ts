@@ -13,7 +13,7 @@ import { isIndoor } from './objects';
 import { MonsterBook, MONSTER_DESIGN_ARCHIVE, MONSTER_MODEL_ARCHIVE } from './monsters';
 import { ITEM_MODEL_ARCHIVES, SHOP_ARCHIVE } from './items';
 import { loadDoc, type MapDoc } from './sections';
-import { groundFromTiles, parseGround, type Ground, type WorldInfo, type WorldPart } from './worldmap';
+import { groundFromTiles, parseEntrances, parseGround, type Ground, type WorldInfo, type WorldPart } from './worldmap';
 import { BCSAR_PATH, bcsarSoundNames, SoundNames, type SoundRows } from './sound';
 import { SoundArchive } from '../sound/formats';
 import { SoundRenderer } from '../sound/render';
@@ -91,7 +91,24 @@ export class Game {
     this.masterLabel = label;
   }
 
+  /** RomFS root files made by the editor (the event archives of new dungeons): name -> bytes. Exported as they are. */
+  readonly addedFiles = new Map<string, Uint8Array>();
+
+  /** A root RomFS file: one made by the editor, else the dump's (with the base MOD's). */
+  readFile(name: string): Promise<Uint8Array> {
+    const f = this.addedFiles.get(name.toUpperCase());
+    return f ? Promise.resolve(f.slice()) : this.dump.readRomfs(name);
+  }
+
+  /** Entrances of a world map as edited (the session replaces this; validate.ts uses it). */
+  entrances: (w: WorldInfo) => Uint8Array[] = (w) => parseEntrances(this.db.get(w.sections[2]!));
+
   private readonly events = new Map<number, Promise<EventTable | null>>();
+
+  /** Read a dungeon's EventObject table again next time (its mapGroup row changed: a new dungeon). */
+  forgetEvents(dungeon: number): void {
+    this.events.delete(dungeon);
+  }
 
   /** EventObject table of a dungeon (null when it has none). */
   eventTable(dungeon: number): Promise<EventTable | null> {
@@ -99,8 +116,7 @@ export class Game {
     if (!p) {
       const a = this.master.eventArchive(dungeon);
       p = a
-        ? this.dump
-            .readRomfs(hex8(a))
+        ? this.readFile(hex8(a))
             .then((b) => EventTable.fromArchive(dungeon, this.master.mapGroup.row(dungeon)[0x1c]!, hex8(a), b))
             .catch(() => null)
         : Promise.resolve(null);

@@ -18,15 +18,20 @@ export interface DungeonChoice {
   maps: MapInfo[];
 }
 
-/** Dungeons a map can be added to (rows of the dungeon table with maps; not the world maps). */
+/** Dungeons a map can be added to (rows of the dungeon table with maps, and the new dungeons; not the world maps). */
 export function addableDungeons(game: Game): DungeonChoice[] {
   const rows = dungeonRows(game.dump.code);
   const out: DungeonChoice[] = [];
+  const added = new Set(game.code.dungeons.map((d) => d.dungeon));
   for (const r of rows) {
-    if (r.count <= 0) continue;
+    if (r.count <= 0 || added.has(r.dungeon)) continue;
     const maps = game.code.maps.filter((m) => m.dungeon === r.dungeon);
     if (!maps.length) continue;
     out.push({ dungeon: r.dungeon, code: maps[0]!.dungeonCode, maps });
+  }
+  for (const d of game.code.dungeons) {
+    const maps = game.code.maps.filter((m) => m.dungeon === d.dungeon);
+    if (maps.length) out.push({ dungeon: d.dungeon, code: d.code, maps });
   }
   return out;
 }
@@ -49,6 +54,8 @@ export interface NewMapSpec {
   copyTiles: boolean;
   /** The template as edited (tiles are taken from it). */
   templateDoc: MapDoc;
+  /** Code of a new dungeon (game/newdungeon.ts) the map is the first of: the template may be another dungeon's. */
+  newDungeonCode?: string;
 }
 
 /** Every hash in use: map DB entries, sections of every map and world map. */
@@ -64,7 +71,7 @@ export function makeMap(game: Game, spec: NewMapSpec, rand: () => number = Math.
   const name = spec.name.trim().toUpperCase();
   if (!/^[A-Z0-9]{1,15}$/.test(name)) throw new Error('マップのコードは英数字 15 文字までにしてください (例: D01B03001)');
   if (game.code.byName(name)) throw new Error(`${name} はもうあります`);
-  if (spec.template.dungeon !== spec.dungeon) throw new Error('写す元は同じダンジョンのマップにしてください');
+  if (spec.template.dungeon !== spec.dungeon && !spec.newDungeonCode) throw new Error('写す元は同じダンジョンのマップにしてください');
   if (!Number.isInteger(spec.floor) || Math.abs(spec.floor) > 99) throw new Error('階は -99〜99 にしてください');
   const taken = takenHashes(game);
   const isTaken = (h: number): boolean => taken.has(h) || game.db.has(h);
@@ -79,7 +86,7 @@ export function makeMap(game: Game, spec: NewMapSpec, rand: () => number = Math.
     hash: sections[0]!,
     name,
     dungeon: spec.dungeon,
-    dungeonCode: t.dungeonCode,
+    dungeonCode: spec.newDungeonCode ?? (game.code.dungeons.find((d) => d.dungeon === spec.dungeon)?.code || t.dungeonCode),
     floor: spec.floor,
     mapDataKey: t.mapDataKey,
     sections,

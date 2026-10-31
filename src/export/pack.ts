@@ -72,6 +72,7 @@ export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], 
   const out = new Map<string, Uint8Array>();
   if (docs.length || entries.length || game.code.addedMaps().some((m) => !game.db.has(m.hash)))
     out.set(MAPDB_ARCHIVE, buildArchive(game, docs, entries).archive);
+  for (const [name, bytes] of game.addedFiles) out.set(name, bytes); // new dungeons' event archives (edits below win)
   for (const t of events) out.set(t.archiveName, t.buildArchive());
   if (treasure || game.master.texts.changed()) out.set(MASTER_ARCHIVE, game.master.buildArchive());
   return out;
@@ -93,7 +94,7 @@ export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: Co
 export function codeIps(game: Game, extra: CodePatch[] = []): Uint8Array | null {
   let ips = game.baseMod?.ips ?? null;
   const added = game.code.addedMaps();
-  if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap)).records, game.dump.code);
+  if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap), game.code.dungeons).records, game.dump.code);
   // code patches (the event page); ones with errors are left out
   const records = patchRecords(buildPatches(game.dump.code, exportedPatches(game, extra)).values());
   if (records.length) ips = appendIps(ips, records, game.dump.code);
