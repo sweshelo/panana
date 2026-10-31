@@ -6,6 +6,7 @@ import {
   AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
   type Monster, type MonsterBook, type ParamKey,
 } from '../game/monsters';
+import { TRANSFORM_PATCH_TITLE } from '../game/transform';
 import type { Session } from '../session';
 import { ActionPicker } from '../ui/ActionPicker';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
@@ -358,7 +359,9 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
   const fromCond = book.monsters.filter((o) => o.nextForm === m.row);
   const fromSkill = book.monsters.flatMap((o) => o.skills.filter((s) => actions.action(s.action)?.formChange === m.row).map((s) => ({ o, s })));
   const next = m.nextForm ? book.monster(m.nextForm) : undefined;
-  const cond = (v: number): string => (v ? `${v} ${book.conditions[v] ?? ''}` : '0 なし');
+  // A form of another design: the game keeps the first model, so the export adds TRANSFORM_PATCH (game/transform.ts).
+  const newLook = [m.nextForm, ...skillForms.map((x) => x.to)].some((r) => r > 0 && book.monster(r) !== undefined && book.monster(r)!.design !== m.design);
+  const cond =(v: number): string => (v ? `${v} ${book.conditions[v] ?? ''}` : '0 なし');
   return (
     <section>
       <Heading title="ボス・変身" info={BOSS_INFO} />
@@ -415,6 +418,7 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
       {m.boss > 0 && !m.nextForm && <div className="issue warn">⚠ 変身の条件がありますが、次の形態がありません。</div>}
       {m.nextForm > 0 && !m.boss && !skillForms.length && <div className="issue warn">⚠ 次の形態はありますが、変身の条件が 0 なので攻撃では変身しません。</div>}
       {skillForms.map(({ s, to }, i) => <div key={i} className="small">{`ワザ「${s.name}」で `}{link(to)}{' に変身する'}</div>)}
+      {newLook && <div className="muted small">{`見た目 (デザイン) の違う形態に変身します。書き出しの code.ips にパッチ「${TRANSFORM_PATCH_TITLE}」が入ります。`}</div>}
       {picking && (
         <MonsterPicker session={session} book={book} current={m.nextForm} title="次の形態を選ぶ" onClose={() => setPicking(false)}
           onPick={(row) => { setPicking(false); book.set(m.row, 'nextForm', row); edited(); }} />
