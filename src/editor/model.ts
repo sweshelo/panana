@@ -68,6 +68,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   /** Tileset of the open map (the palette and the tile models). */
   tileset = 0;
   tool: Tool = 'select';
+  placementMode: 'tiles' | 'parts' = 'tiles';
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
   /** Applies to subsequent automatic strokes; existing tiles are not rerolled by the checkbox. */
   autoRandomVariants = true;
@@ -204,6 +205,13 @@ export abstract class MapEditState<S = unknown, T = unknown> {
 
   setTool(t: Tool): void {
     this.tool = t;
+    if (t === 'place') this.placementMode = 'parts';
+    else if (t === 'paint' || t === 'erase' || t === 'room') this.placementMode = 'tiles';
+    this.emit('tool');
+  }
+  setPlacementMode(mode: 'tiles' | 'parts'): void {
+    this.placementMode = mode;
+    this.tool = mode === 'tiles' ? 'paint' : this.stamp ? 'place' : 'select';
     this.emit('tool');
   }
   select(s: Selection): void {
