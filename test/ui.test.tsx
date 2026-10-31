@@ -29,6 +29,7 @@ import { SoundPicker } from '../src/ui/SoundPicker';
 import { MapUses, SoundView } from '../src/pages/sounds';
 import { ItemListControls, ItemSources, rarityMatches, sortItems } from '../src/ui/ItemSources';
 import { LevelStealthOption } from '../src/ui/LevelStealthOption';
+import { ConditionPicker } from '../src/ui/ConditionPicker';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x3c);
@@ -494,5 +495,24 @@ describe('TitleChoiceDialog', () => {
     expect(html.indexOf('電波人間のRPG3')).toBeLessThan(html.indexOf('rpg1.cia'));
     expect(html).toContain('rpg3-base.cia + rpg3-update.cia');
     expect(html.match(/閲覧する/g)?.length).toBe(2);
+  });
+});
+
+describe('ConditionPicker', () => {
+  const types = new Map([
+    [0x20, { type: 0x20, getter: 'progress' as const, index: 8, test: 'atLeast' as const }],
+    [0xb0, { type: 0xb0, getter: 'value91' as const, test: 'equals' as const, eq: 2 }],
+  ]);
+  test('the story milestones first; a milestone picked shows no type and value', () => {
+    const html = renderToString(<ConditionPicker types={types} type={0x20} value={3} story="いつも" onChange={() => {}} />);
+    expect(html).toContain('エンディング 1st のあと');
+    expect(html).toContain('ピラミッドのキングを倒したあと');
+    expect(html).toContain('詳しく設定する');
+    expect(html).not.toContain('title="値"');
+  });
+  test('a condition that is no milestone shows the type and value', () => {
+    const html = renderToString(<ConditionPicker types={types} type={0xb0} value={0x30} story="いつも" onChange={() => {}} />);
+    expect(html).toContain('title="値"');
+    expect(html).toContain('0x91[0x30] = 2');
   });
 });

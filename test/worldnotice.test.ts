@@ -10,6 +10,8 @@ import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } f
 import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, setNoticeMessage, type Notice } from '../src/game/worldnotice';
 import { ENT, ENTRANCE_SIZE, freeEntranceId, newEntrance, parseEntrances, setEntranceU32 } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
+import { readConditionTypes } from '../src/game/conditions';
+import { STORY_CONDITIONS } from '../src/game/storyconditions';
 import { u32, w32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
 
@@ -273,5 +275,14 @@ describe.skipIf(!hasCia)('notice patch on code.bin', () => {
     // the vanilla entrances with a row: none has a notice
     expect(notices(ev)).toEqual([]);
     expect(ents.filter((r) => ENT.event(r)).length).toBe(7);
+  });
+
+  test("the story milestones are this ROM's condition types", () => {
+    const types = readConditionTypes(game.dump.code);
+    // a boss beaten: 0x91[値] = 2; the endings: 0x8D[8] / 0x8D[9] at least the value
+    expect(types.get(0xb0)).toMatchObject({ getter: 'value91', test: 'equals', eq: 2 });
+    expect(types.get(0x20)).toMatchObject({ getter: 'progress', index: 8, test: 'atLeast' });
+    expect(types.get(0x21)).toMatchObject({ getter: 'progress', index: 9, test: 'atLeast' });
+    expect(STORY_CONDITIONS.every((c) => types.has(c.type))).toBe(true);
   });
 });

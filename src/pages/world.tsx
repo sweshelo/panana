@@ -358,7 +358,7 @@ function EntranceCondition({ session, world, r, edited, update, mark, changed }:
           <span className="small">{`${what}:`}</span>
           <ConditionPicker types={types} type={events.table.row(row)[field]!} value={u32(events.table.row(row), value)}
             edited={!equalBytes(events.originalRow(row)?.subarray(field, field + 1) ?? new Uint8Array(1), events.table.row(row).subarray(field, field + 1)) || !equalBytes(events.originalRow(row)?.subarray(value, value + 4) ?? new Uint8Array(4), events.table.row(row).subarray(value, value + 4))}
-            dungeonName={(d) => game.master.dungeonName(d)}
+            dungeonName={(d) => game.master.dungeonName(d)} story={field === 0x4b ? 'いつも' : '消えない'}
             onChange={(t, v) => write((b) => setRowCondition(b, field, t, v))} />
         </div>
       ))}
