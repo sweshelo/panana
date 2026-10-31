@@ -36,27 +36,28 @@ export function floorRef(game: Game, resource: number, tileset: number): ModelRe
 }
 
 /**
- * The maps of a mapData row, by dungeon: "D01 name: B1、B2" lines (the count past 3 maps or 4 dungeons), then every
- * map's title (for the tooltip and the search).
+ * The maps of a mapData row: the dungeon with the most of them ("D01 name", the first one on a tie), and every map's
+ * title (for the tooltip and the search).
  */
-function usersText(game: Game, ms: MapInfo[]): { lines: string; all: string } {
-  const by = new Map<string, MapInfo[]>();
+function usersText(game: Game, ms: MapInfo[]): { top: string; all: string } {
+  const by = new Map<string, number>();
   for (const m of ms) {
     const d = `${m.dungeonCode} ${game.master.dungeonName(m.dungeon)}`.trim();
-    by.set(d, [...(by.get(d) ?? []), m]);
+    by.set(d, (by.get(d) ?? 0) + 1);
   }
-  const lines = [...by].map(([d, list]) => `${d}: ${list.length > 3 ? `${list.length} マップ` : list.map((m) => mapShortTitle(m, game.code.maps)).join('、')}`);
+  let top = '';
+  let most = 0;
+  for (const [d, n] of by) if (n > most) [top, most] = [d, n];
   return {
-    lines: lines.length ? (lines.length > 4 ? [...lines.slice(0, 3), `ほか ${lines.length - 3} ダンジョン`] : lines).join('\n') : '使うマップなし',
+    top: top || '使うマップなし',
     all: ms.map((m) => `${mapTitle(m, game.code.maps, game.master)} (${m.name})`).join('\n'),
   };
 }
 
-/** Picking a tileset by the picture of its floor (only tilesets that some mapData row gives models to). */
-function TilesetPicker({ game, current, users, onPick, onClose }: {
+/** Picking a tileset by the picture of its floor (tilesets that no mapData row gives models to are greyed out). */
+function TilesetPicker({ game, current, onPick, onClose }: {
   game: Game;
   current: number;
-  users: Map<number, MapInfo[]>;
   onPick: (t: number) => void;
   onClose: () => void;
 }): ReactNode {
@@ -65,20 +66,14 @@ function TilesetPicker({ game, current, users, onPick, onClose }: {
   for (let t = 0; t < TILESETS; t++) {
     const from = master.tilesetRow(t);
     if (from < 0 && t !== current) continue;
-    const ms: MapInfo[] = [];
-    for (let r = 0; r < master.mapData.rows; r++) if (master.mapData.row(r)[0] === t) ms.push(...(users.get(r) ?? []));
-    const u = usersText(game, ms);
     entries.push({
       id: t,
       name: `タイルセット ${t}`,
       icon: <Photo model={from >= 0 ? floorRef(game, master.mapData.row(from)[1]!, t) : null} className="photo photo-lg" />,
-      sub: u.lines,
-      title: u.all,
-      keywords: u.all,
       unavailable: from < 0 ? 'モデルを持つ mapData の行がありません' : null,
     });
   }
-  return <GridPicker title="タイルセットを選ぶ" entries={entries} current={current} wide placeholder="番号・ダンジョン名・マップ名で絞り込み" onPick={onPick} onClose={onClose} />;
+  return <GridPicker title="タイルセットを選ぶ" entries={entries} current={current} placeholder="番号で絞り込み" onPick={onPick} onClose={onClose} />;
 }
 
 /** Picking a mapData row; each shows its floor and the dungeons / maps that use it. `none` comes first (value 0). */
@@ -100,9 +95,9 @@ function RowPicker({ game, title, current, users, from = 0, none, onPick, onClos
     const u = usersText(game, users.get(r) ?? []);
     entries.push({
       id: r,
-      name: `行 ${r}・タイルセット ${row[0]}`,
+      name: `#${r}`,
       icon: <Photo model={floorRef(game, row[1]!, row[0]!)} className="photo photo-lg" />,
-      sub: u.lines,
+      sub: u.top,
       title: u.all || '使うマップなし',
       keywords: u.all,
     });
@@ -155,7 +150,7 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
   const tileset = master.mapData.row(row)[0]!;
   const [open, setOpen] = useState<'' | 'tileset' | 'key' | 'dungeon'>('');
   const rowPhoto = (r: number): ModelRef | null => floorRef(game, master.mapData.row(r)[1]!, master.mapData.row(r)[0]!);
-  const rowLabel = (r: number): string => `行 ${r}・タイルセット ${master.mapData.row(r)[0]}`;
+  const rowLabel = (r: number): string => `#${r}`;
   const rowSub = (r: number): string => usersText(game, users.get(r) ?? []).all;
   const dungeonRow = master.dungeonMapDataRow(info.dungeon, ref.indoor);
   const listOf = (ms: MapInfo[]): string => ms.map((m) => mapTitle(m, game.code.maps, master)).join('、');
@@ -185,13 +180,13 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
         見た目と音 (mapData)
         {shared.length > 1 && <span className="badge" title={listOf(shared)}>{`${shared.length} マップで共有`}</span>}
       </h3>
-      <div className="muted small">{`mapData 行 ${row} を使います (決まり方: ${FROM[from]})。`}</div>
+      <div className="muted small">{`mapData #${row} を使います (決まり方: ${FROM[from]})。`}</div>
       <Field label="タイルセット">
         <PickButton photo={rowPhoto(row)} label={`タイルセット ${tileset}`} onOpen={() => setOpen('tileset')} />
       </Field>
       {added && (
         <Field label="このマップの行 (マップ自身のキー)">
-          <PickButton photo={rowPhoto(row)} label={from === 'key' ? rowLabel(row) : `ダンジョンの行に従う (行 ${dungeonRow})`} sub={rowSub(row)} onOpen={() => setOpen('key')} />
+          <PickButton photo={rowPhoto(row)} label={from === 'key' ? rowLabel(row) : `ダンジョンの行に従う (#${dungeonRow})`} sub={rowSub(row)} onOpen={() => setOpen('key')} />
         </Field>
       )}
       {fromDungeon && (
@@ -200,12 +195,12 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
         </Field>
       )}
       {open === 'tileset' && (
-        <TilesetPicker game={game} current={tileset} users={users} onClose={() => setOpen('')}
+        <TilesetPicker game={game} current={tileset} onClose={() => setOpen('')}
           onPick={(t) => { setOpen(''); edit(() => master.setTileset(row, t)); }} />
       )}
       {open === 'key' && (
         <RowPicker game={game} title="このマップの mapData 行を選ぶ" current={from === 'key' ? row : 0} users={users} from={1}
-          none={{ value: 0, label: 'ダンジョンの行に従う', sub: `行 ${dungeonRow}`, icon: <Photo model={rowPhoto(dungeonRow)} className="photo photo-lg" /> }}
+          none={{ value: 0, label: 'ダンジョンの行に従う', sub: `#${dungeonRow}`, icon: <Photo model={rowPhoto(dungeonRow)} className="photo photo-lg" /> }}
           onClose={() => setOpen('')} onPick={(r) => { setOpen(''); setKey(r); }} />
       )}
       {open === 'dungeon' && (
