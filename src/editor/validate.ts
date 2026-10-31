@@ -1,7 +1,8 @@
 // Checks before export (docs/map-editor-design.md §7 "検証ルール").
 import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
-import { fixGroup, KIND_BOSS, readStages } from '../game/boss';
+import { fixGroup, KIND_BOSS, readStages, stageCommands } from '../game/boss';
+import { ACTOR_HERO, ACTOR_NONE, ACTOR_PARTY, OP } from '../game/cutscene';
 import type { Game } from '../game/game';
 import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
@@ -104,6 +105,16 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
         if (k !== 8) out.push({ level: 'error', msg: `${name} は区画 8 (イベントの範囲) に置いてください`, target, key: `bosssec/${row}` });
         if (row >= 0x2000) out.push({ level: 'error', msg: `${name}: 行番号は 0x2000 未満にしてください`, target, key: `bossrow/${row}` });
         readStages(events.table.row(row)).forEach((s, n) => {
+          if (s.script) {
+            const lines = stageCommands(events, row, n);
+            for (const c of lines) {
+              if (c.op === OP.MSG && (!c.p || game.master.message(c.p) === undefined))
+                out.push({ level: 'warn', msg: `${name} の段階 ${n + 1}: 演出のセリフ ${hex8(c.p)} が見つかりません`, target, key: `scenemsg/${row}/${n}/${c.p}` });
+              if (c.actor !== ACTOR_NONE && c.actor !== ACTOR_HERO && c.actor !== ACTOR_PARTY && !(doc.recs[5] ?? []).some((x) => recEventRow(5, x.raw) === c.actor))
+                out.push({ level: 'warn', msg: `${name} の段階 ${n + 1}: 演出の役者 (イベント #${c.actor}) がこのマップの区画 5 にいません (その命令は何もしません)`, target, key: `sceneactor/${row}/${n}/${c.actor}` });
+            }
+          }
+          if (!s.fix) return; // no battle
           const g = fixGroup(game.master, s.fix);
           if (!g) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: monsterFixGroup の行 ${s.fix} がありません`, target, key: `bossfix/${row}/${n}` });
           else if (!g.slots.length) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: 敵がいません`, target, key: `bossnone/${row}/${n}` });

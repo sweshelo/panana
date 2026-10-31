@@ -96,6 +96,12 @@ export function AddPanel({ editor }: { editor: MapEditor }): ReactNode {
         : <div className="muted small">スイッチと柵: ヘッダーの「土台の MOD」で汎用スイッチ入りの MOD (elpulse の mod/out) を読み込むと使えます。</div>}
       <h4>ボス戦</h4>
       <BossStamp editor={editor} active={active?.type === 'boss'} disabled={room < 1} use={use} />
+      <h4>イベント</h4>
+      <div className="row">
+        <button className={active?.type === 'scene' ? 'active' : ''} disabled={room < 2} onClick={() => use({ type: 'scene' })}>イベントを置く</button>
+        <span className="muted small">範囲に入ると演出 (セリフと話者・歩く・カメラなど)</span>
+      </div>
+      <div className="muted small">演出の中身は右ペインで組みます。ボス戦の段階にも「戦闘の前」に演出を付けられます。書き出すと、演出を動かすコードのパッチも code.ips に入ります。</div>
       {active && <div className="place-hint">{`置くもの: ${stampLabel(active)}。マップをクリックして置く (Esc で終わる)`}</div>}
       <p className="muted small">
         宝箱とギミックには新しいイベントの行 (状態を保存する枠つき) を作ります。宝箱の中身は新しい行 (最初は同じダンジョンの宝箱の中身の写し) で、右ペインで編集できます。ギミックはゲーム中の同じ種類のものを写すので、動き (つながる扉・行き先など) は写し元の設定のままです。
