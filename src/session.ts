@@ -11,7 +11,7 @@ import { ItemBook } from './game/items';
 import { MapDb } from './game/mapdb';
 import type { MonsterBook } from './game/monsters';
 import { makeMap, type NewMapSpec } from './game/newmap';
-import { makeDungeon, type NewDungeonSpec } from './game/newdungeon';
+import { makeDungeon, renameDungeon, type NewDungeonSpec } from './game/newdungeon';
 import type { AddedDungeon } from './game/mappatch';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
@@ -187,6 +187,20 @@ export class Session {
     this.st.docs.set(map.info.hash, map.doc);
     this.saveNow();
     return game.code.byHash(map.info.hash)!;
+  }
+
+  /**
+   * Change a new dungeon's name and code (game/newdungeon.ts renameDungeon; its maps' codes follow the code). Not an
+   * undo point: saved with the other edits at once.
+   */
+  renameDungeon(dungeon: number, change: { name?: string; code?: string }): void {
+    renameDungeon(this.game, dungeon, change);
+    for (const m of this.game.code.maps) {
+      const doc = m.dungeon === dungeon ? this.st.docs.get(m.hash) : undefined;
+      if (doc) doc.name = m.name;
+    }
+    this.saveNow();
+    this.st.emit('doc');
   }
 
   items(): Promise<ItemData> {

@@ -17,6 +17,10 @@ interface KaharaTables {
   events: [number, Uint8Array][];
   treasure: Uint8Array;
   mapData: Uint8Array;
+  /** mapGroup +0x26 / +0x27 of every row (the mapData rows of the dungeons; the rest of mapGroup is not undone). */
+  dungeonRows: Uint8Array;
+  /** mapData keys of the added maps (the rows they pick). */
+  keys: [number, number][];
   /** monsterFixGroup (boss battles). */
   fix: Uint8Array;
   /** mapChara (the monsters shown for boss battles). */
@@ -51,6 +55,27 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.emit('map');
   }
 
+  /**
+   * Pick the open map's mapData row again (after its dungeon's row, its own key or its tiles changed): `ref` and the
+   * tileset follow the tables. Returns whether the tileset changed.
+   */
+  syncRef(): boolean {
+    if (!this.info || !this.current) return false;
+    const ref = this.game.mapRef(this.info, this.current), o = this.ref;
+    if (!o || o.hash !== ref.hash || o.mapDataKey !== ref.mapDataKey || o.indoor !== ref.indoor || o.dungeon !== ref.dungeon) this.ref = ref;
+    const t = this.game.master.tileset(this.ref ?? ref);
+    if (t === this.tileset) return false;
+    this.tileset = t;
+    return true;
+  }
+
+  private dungeonRows(): Uint8Array {
+    const mg = this.game.master.mapGroup;
+    const out = new Uint8Array(mg.rows * 2);
+    for (let r = 0; r < mg.rows; r++) out.set(mg.row(r).subarray(0x26, 0x28), r * 2);
+    return out;
+  }
+
   get currentEvents(): EventTable | null {
     return this.current ? this.events.get(this.current.dungeon) ?? null : null;
   }
@@ -60,6 +85,8 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
       events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
       treasure: this.game.master.treasureGroup.data.slice(),
       mapData: this.game.master.mapData.data.slice(),
+      dungeonRows: this.dungeonRows(),
+      keys: this.game.code.addedMaps().map((m) => [m.hash, m.mapDataKey]),
       fix: this.game.master.table(FIX_TABLE).data.slice(),
       chara: this.game.master.mapChara.data.slice(),
       messages: this.game.master.texts.saved(),
@@ -70,6 +97,12 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     for (const [d, bytes] of s.events) this.events.get(d)?.restore(bytes);
     this.game.master.restoreTreasure(s.treasure);
     this.game.master.restoreTable('mapData.bin', s.mapData);
+    const mg = this.game.master.mapGroup;
+    for (let r = 0; r < mg.rows && r * 2 + 1 < s.dungeonRows.length; r++) mg.row(r).set(s.dungeonRows.subarray(r * 2, r * 2 + 2), 0x26);
+    for (const [h, k] of s.keys) {
+      const m = this.game.code.byHash(h);
+      if (m?.added) m.mapDataKey = k;
+    }
     this.game.master.restoreTable(FIX_TABLE, s.fix);
     this.game.master.restoreTable('mapChara.bin', s.chara);
     this.game.master.texts.restore(s.messages, true);

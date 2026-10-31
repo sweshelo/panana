@@ -15,6 +15,8 @@ export class View2D {
   readonly canvas: HTMLCanvasElement;
   private readonly gc: GridCanvas;
   style: Style2D = 'symbols';
+  /** A click picked something at cell coordinates (x, y) (the 3D view looks there). */
+  onFocus: (x: number, y: number) => void = () => {};
 
   constructor(
     private readonly st: MapEditState,
@@ -25,7 +27,11 @@ export class View2D {
     this.gc = new GridCanvas('view2d', (g, s) => this.render(g, s), GRID);
     this.canvas = this.gc.canvas;
     this.gc.pointer = {
-      down: (cx, cy, e) => this.ctl.down(cx, cy, e),
+      down: (cx, cy, e) => {
+        this.ctl.down(cx, cy, e);
+        const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
+        if (f) this.onFocus(f[0], f[1]);
+      },
       move: (cx, cy) => this.ctl.move(cx, cy),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
