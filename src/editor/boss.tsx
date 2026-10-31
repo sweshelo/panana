@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { addBossChara, addFixGroup, bossCharaRows, clearState, newBossCharaRecord, syncBossCharas, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
 import { countLabel, type MonsterBook } from '../game/monsters';
-import { MAX_MAP_SOUND } from '../game/sound';
+import { BGM_FIELD } from '../game/bgmext';
 import { MonsterPicker } from '../ui/MonsterPicker';
 import { monsterRef } from '../pages/monsters';
 import { LAYOUTS, recCellPos, recEventRow, setRecCellPos } from '../game/sections';
@@ -157,7 +157,7 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
       <div className="field">
         <span>戦闘の BGM</span>
         {sounds
-          ? <SoundButton game={game} sounds={sounds} value={s.bgm || BOSS_BGM_DEFAULT} kind="bgm" max={MAX_MAP_SOUND} title="戦闘の BGM を選ぶ" onChange={(v) => set({ bgm: v })} />
+          ? <SoundButton game={game} sounds={sounds} value={s.bgm || BOSS_BGM_DEFAULT} kind="bgm" field={BGM_FIELD} title="戦闘の BGM を選ぶ" onChange={(v) => set({ bgm: v })} />
           : <Num value={s.bgm || BOSS_BGM_DEFAULT} min={1} max={255} onChange={(v) => set({ bgm: v })} />}
       </div>
       <Field label="勝ったら">
