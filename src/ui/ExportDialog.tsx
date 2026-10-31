@@ -12,6 +12,7 @@ import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../ga
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
+import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
@@ -46,10 +47,10 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
     for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
-    // added items' actions: game/items.ts)
+    // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
     const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
-      ...[noticePatch(st.events.get(NOTICE_DUNGEON))].filter((p) => !!p)];
+      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON))].filter((p) => !!p)];
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

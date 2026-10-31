@@ -220,7 +220,18 @@ function validateNewMap(game: Game, doc: MapDoc, docs: Map<number, MapDoc>): Iss
     const d = docs.get(m.hash) ?? loadDoc(game.db, m);
     return (d.recs[3] ?? []).some((r) => P3.destMap(r.raw) === doc.hash);
   });
-  if (!reached) out.push({ level: 'warn', msg: 'このマップに来る出入口がほかのマップにありません (行き先をこのマップにしてください)', key: 'new/reach' });
+  const fromWorld = game.code.worlds.some((w) => game.entrances(w).some((r) => ENT.destMap(r) === doc.hash));
+  const nd = game.code.dungeons.find((d) => d.dungeon === doc.dungeon);
+  if (!reached && !fromWorld)
+    out.push({
+      level: 'warn',
+      msg: nd
+        ? 'このマップに来る出入口がありません (ワールドマップの入口か、ほかのマップの出入口の行き先をこのマップにしてください)'
+        : 'このマップに来る出入口がほかのマップにありません (行き先をこのマップにしてください)',
+      key: 'new/reach',
+    });
+  if (nd && !game.code.maps.some((m) => m.dungeon === nd.dungeon && game.code.worlds.some((w) => game.entrances(w).some((r) => ENT.destMap(r) === m.hash))))
+    out.push({ level: 'warn', msg: `新しいダンジョン ${nd.code} に入るワールドマップの入口がありません (ワールドマップのページで入口の行き先をこのダンジョンのマップにしてください)`, key: 'new/world' });
   const n = game.code.maps.filter((m) => m.dungeon === doc.dungeon).length;
   if (hasAutomap(doc.dungeon) && n > AUTOMAP_LIMIT)
     out.push({ level: 'warn', msg: `このダンジョンのマップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
