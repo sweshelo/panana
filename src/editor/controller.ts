@@ -2,10 +2,14 @@
 // coordinates (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
 import { WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
 import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './model';
-import { autoTiles, cellKey, type AutoProfile } from './autotile';
+import { autoTiles, cellKey, partOf, roomGroups, type AutoCell, type AutoProfile } from './autotile';
+import { roomCenters, roomVariantLetters } from './autotile-variants';
 import type { Tile } from '../game/sections';
 
-interface AutoStroke { doc: MapDoc; start: string; base: Tile[]; cells: Set<string>; profile: AutoProfile; letter: number }
+interface AutoStroke {
+  doc: MapDoc; start: string; base: Tile[]; cells: Set<string>; profile: AutoProfile;
+  randomVariants: boolean; samples: Map<string,number>;
+}
 
 export interface Layers {
   tiles: boolean;
@@ -82,7 +86,7 @@ export class Controller {
         if (st.brush.auto && !st.autoProfile) return;
         st.checkpoint();
         if (st.brush.auto && st.autoProfile) {
-          const auto: AutoStroke = { doc, start: cellKey(x,y), base: doc.tiles.map(t => ({...t})), cells: new Set([cellKey(x,y)]), profile: st.autoProfile, letter: st.brush.letter };
+          const auto: AutoStroke = { doc, start: cellKey(x,y), base: doc.tiles.map(t => ({...t})), cells: new Set([cellKey(x,y)]), profile: st.autoProfile, randomVariants: st.autoRandomVariants, samples: new Map() };
           this.drag = { kind: 'paint', last: cellKey(x,y), auto };
           this.paintAuto(auto);
         } else {
@@ -174,9 +178,48 @@ export class Controller {
     // Opening a map or undoing during a captured gesture must not replay an old stroke into it.
     if (this.st.current !== auto.doc) { this.drag = null; return; }
     this.st.touch(doc => {
-      for (const tile of autoTiles(auto.base, auto.cells, auto.profile, auto.start)) {
-        const original = auto.base.find(t => t.x === tile.x && t.y === tile.y);
-        const letter = this.st.autoLetter(tile.kind, auto.cells.has(cellKey(tile.x,tile.y)) ? auto.letter : original?.letter ?? auto.letter);
+      const updates = autoTiles(auto.base, auto.cells, auto.profile, auto.start);
+      const originals = new Map(auto.base.map(tile => [cellKey(tile.x,tile.y),tile]));
+      const resolved = new Map<string,AutoCell>(originals);
+      for (const tile of updates) resolved.set(cellKey(tile.x,tile.y),tile);
+      const terrain = [...resolved.values()];
+      const groups = roomGroups(terrain,auto.profile);
+      const changed = new Set(auto.cells);
+      for (const tile of updates) {
+        const key = cellKey(tile.x,tile.y), original = originals.get(key);
+        if (!original || original.kind !== tile.kind || original.rot !== tile.rot) changed.add(key);
+      }
+      const touchedRooms = new Set([...changed].map(key => groups.get(key)).filter(id => id !== undefined));
+      const updatedKeys = new Set(updates.map(tile => cellKey(tile.x,tile.y)));
+      const region = terrain.filter(tile => updatedKeys.has(cellKey(tile.x,tile.y)) || touchedRooms.has(groups.get(cellKey(tile.x,tile.y))!));
+      const centers = roomCenters(region,auto.profile), previousCenters = roomCenters(auto.base,auto.profile);
+      const available = new Map<number,readonly number[]>();
+      const variants = roomVariantLetters(region,auto.profile,kind => {
+        if (!available.has(kind)) available.set(kind,this.st.autoVariantLetters(kind));
+        return available.get(kind)!;
+      },auto.randomVariants,tile => {
+        const key = `${cellKey(tile.x,tile.y)}/${tile.kind}`;
+        let sample = auto.samples.get(key);
+        if (sample === undefined) { sample = Math.random(); auto.samples.set(key,sample); }
+        return sample;
+      });
+      const encoded = new Map<string,number>();
+      for (const tile of region) {
+        const key = cellKey(tile.x,tile.y), original = originals.get(key);
+        const part = partOf(tile,auto.profile), role = part?.variation;
+        const roomTouched = touchedRooms.has(groups.get(key)!);
+        if (!updatedKeys.has(key) && !(role === 'floor' && roomTouched)) continue;
+        let preferred = letterByte(variants.get(key) ?? 0);
+        if (original && !auto.cells.has(key)) {
+          // Do not reroll unchanged decoration, nor alter unrelated existing manual variants.
+          const keepFloor = role === 'floor' && centers.has(key) && previousCenters.has(key) && auto.randomVariants;
+          const keepEdge = role && role !== 'floor' && !changed.has(key);
+          const keepCorridor = !role && !(part?.wide && part.narrow);
+          if (!roomTouched || keepFloor || keepEdge || keepCorridor) preferred = original.letter;
+        }
+        const codecKey = `${tile.kind}/${preferred}`;
+        if (!encoded.has(codecKey)) encoded.set(codecKey,this.st.autoLetter(tile.kind,preferred));
+        const letter = encoded.get(codecKey)!;
         setTile(doc, tile.x, tile.y, {...tile, letter});
       }
     });

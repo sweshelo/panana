@@ -50,6 +50,14 @@ export function Palette({ st, factory, palette, partModel, rotDir }: {
           <button className={automatic ? 'active' : ''} aria-pressed={automatic}
             onClick={() => { st.brush = {...st.brush, auto: true}; st.setTool('paint'); }}>自動</button>
           <p className="muted small">外から描く線は通路、部屋から描くと拡張。2×2 以上の面は部屋。通路で部屋の辺を塗ると接続。</p>
+          <label className="layer">
+            <input type="checkbox" checked={st.autoRandomVariants} onChange={(event) => {
+              st.autoRandomVariants = event.target.checked;
+              st.emit('tool');
+            }} />
+            部屋のバリエーションをランダムにする
+          </label>
+          <p className="muted small">既定が最も多く出現。床は部屋の中央1マスのみ抽選します。</p>
         </div>}
         {[...palette].map(([kind, letters]) => (
           <div key={kind} className="pal-kind">

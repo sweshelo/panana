@@ -57,14 +57,22 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
   }
 
   override get autoProfile(): AutoProfile | undefined {
-    if (!this.current || isIndoor(this.current)) return undefined;
+    if (!this.mapTopology) return undefined;
     const palette = this.game.master.palette(this.tileset);
     return KAHARA_AUTO.parts.every(p => palette.has(p.kind)) ? KAHARA_AUTO : undefined;
+  }
+
+  override get mapTopology(): AutoProfile | undefined {
+    return this.current && !isIndoor(this.current) ? KAHARA_AUTO : undefined;
   }
 
   override autoLetter(kind: number, preferred: number): number {
     const letters = this.game.master.palette(this.tileset).get(kind) ?? [0];
     return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : letters[0]!);
+  }
+
+  override autoVariantLetters(kind: number): readonly number[] {
+    return this.game.master.palette(this.tileset).get(kind) ?? [0];
   }
 
   get currentEvents(): EventTable | null {
@@ -137,4 +145,3 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.emit('doc');
   }
 }
-

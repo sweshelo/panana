@@ -170,3 +170,122 @@ test('controller keeps pointer-down intent while the drag subsequently crosses r
   expect(at(inside.current!.tiles,1,3)).toMatchObject({kind:7,rot:3});
   expect(at(inside.current!.tiles,2,3).kind).toBe(5);
 });
+import { roomGroups } from '../src/editor/autotile';
+import { letterByte, letterIndex } from '../src/game/sections';
+import { normalVariant, roomCenters, roomVariantLetters } from '../src/editor/autotile-variants';
+import { spyOn } from 'bun:test';
+
+describe('distinct rooms retain default doorways',()=>{
+  const first=()=>room().map(t=>({...t,x:t.x+1,y:t.y+1}));
+  const overlay=(base:AutoCell[],updates:AutoCell[]):AutoCell[]=>[...new Map([...base,...updates].map(t=>[cellKey(t.x,t.y),t])).values()];
+  test('touching rooms connect through entrances rather than being merged into floor',()=>{
+    const base=[...first(),...room().map(t=>({...t,x:t.x+4,y:t.y+1}))];
+    const tiles=overlay(base,solve([[3,2],[4,2]],base));
+    expect(at(tiles,3,2)).toMatchObject({kind:9,rot:1});
+    expect(at(tiles,4,2)).toMatchObject({kind:9,rot:3});
+    const groups=roomGroups(tiles,KAHARA_AUTO);
+    expect(groups.get('2,2')).not.toBe(groups.get('5,2'));
+    const variants=roomVariantLetters(tiles,KAHARA_AUTO,()=>[0,1,2,3],true,()=>0.99);
+    expect(variants.get('3,2')).toBe(0);expect(variants.get('4,2')).toBe(0);
+  });
+  test('a corridor begun inside one room does not extend the destination room',()=>{
+    const base=[...first(),...room().map(t=>({...t,x:t.x+5,y:t.y+1}))];
+    const tiles=overlay(base,solve([[3,2],[4,2],[5,2]],base));
+    expect(at(tiles,3,2)).toMatchObject({kind:9,rot:1});
+    expect(at(tiles,4,2)).toMatchObject({kind:1,rot:0});
+    expect(at(tiles,5,2)).toMatchObject({kind:9,rot:3});
+    expect(at(tiles,5,1)).toMatchObject({kind:14,rot:0});
+  });
+});
+
+describe('room variation policy',()=>{
+  test('normal weights favour the default and decrease for subsequent available variants',()=>{
+    const counts=[0,0,0,0];
+    for(let index=0;index<10000;index++) counts[normalVariant([0,1,2,3],(index+0.5)/10000)]!++;
+    expect(counts[0]!).toBeGreaterThan(counts[1]!);expect(counts[1]!).toBeGreaterThan(counts[2]!);expect(counts[2]!).toBeGreaterThan(counts[3]!);
+    expect(counts[0]!/counts[1]!).toBeCloseTo(Math.exp(0.5),2);
+    expect(normalVariant([0],0.999)).toBe(0);
+    expect([0,2,6]).toContain(normalVariant([6,2],0.95));
+  });
+  test('only one central floor varies; edges and corners vary but corridors and entrances do not',()=>{
+    const base=solve(square(5));
+    const tiles=[...new Map([...base,...solve([[2,-1],[2,0]],base)].map(t=>[cellKey(t.x,t.y),t])).values()];
+    const letters=roomVariantLetters(tiles,KAHARA_AUTO,()=>[0,1,2,3],true,()=>0.95);
+    expect([...roomCenters(tiles,KAHARA_AUTO)]).toEqual(['2,2']);
+    for(const tile of tiles) {
+      const value=letters.get(cellKey(tile.x,tile.y));
+      if(tile.kind===5) expect(value).toBe(tile.x===2&&tile.y===2?2:0);
+      if([7,14].includes(tile.kind)) expect(value).toBe(2);
+      if([1,4,9].includes(tile.kind)) expect(value).toBe(0);
+    }
+  });
+  test('even-sized and irregular rooms choose one available central floor, independently per room',()=>{
+    const even=solve(square(4));expect([...roomCenters(even,KAHARA_AUTO)]).toEqual(['1,1']);
+    const both=[...even,...room().map(t=>({...t,x:t.x+7}))];
+    expect([...roomCenters(both,KAHARA_AUTO)].sort()).toEqual(['1,1','8,1']);
+    expect(roomCenters(solve(square(2)),KAHARA_AUTO).size).toBe(0);
+  });
+  test('disabled variations use defaults and never draw random samples',()=>{
+    let calls=0;
+    const letters=roomVariantLetters(solve(square(5)),KAHARA_AUTO,()=>[0,1,2],false,()=>{calls++;return 0.99;});
+    expect(new Set(letters.values())).toEqual(new Set([0]));expect(calls).toBe(0);
+  });
+});
+class VariationState extends State {
+  override autoVariantLetters(){return [0,1,2,3];}
+}
+const variationState=():VariationState=>{
+  const st=new VariationState();st.current=doc();st.brush={auto:true,kind:5,rot:0,letter:0x63};st.setTool('paint');return st;
+};
+const drawSquare=(ctl:Controller,n:number):void=>{
+  ctl.down(0,0,{button:0,shiftKey:false});
+  for(const [x,y] of square(n)) ctl.move(x!,y!);
+};
+test('controller variation draws are stable within a gesture, preserve undo/redo, and obey the checkbox',()=>{
+  const random=spyOn(Math,'random').mockReturnValue(0.95);
+  try {
+    for(const enabled of [true,false]) {
+      const st=variationState();st.autoRandomVariants=enabled;
+      const ctl=new Controller(st);drawSquare(ctl,5);
+      const before=st.current!.tiles.map(t=>({...t}));
+      ctl.move(0,0);ctl.up();expect(st.current!.tiles).toEqual(before);
+      const floors=st.current!.tiles.filter(t=>t.kind===5&&letterIndex(t.letter)!==0);
+      expect(floors).toHaveLength(enabled?1:0);
+      if(enabled) expect(floors[0]).toMatchObject({x:2,y:2,letter:letterByte(2)});
+      for(const tile of st.current!.tiles.filter(t=>[7,14].includes(t.kind))) expect(letterIndex(tile.letter)).toBe(enabled?2:0);
+      st.undo();expect(st.current!.tiles).toEqual([]);st.redo();expect(st.current!.tiles).toEqual(before);
+    }
+  } finally {random.mockRestore();}
+});
+test('expansion moves central floor decoration and leaves other rooms untouched',()=>{
+  const random=spyOn(Math,'random').mockReturnValue(0.95);
+  try {
+    const st=variationState();const ctl=new Controller(st);drawSquare(ctl,5);ctl.up();
+    const remote=room().map(t=>({...t,x:t.x+15,rotHi:0,pad:0,letter:letterByte(3)}));
+    st.current!.tiles.push(...remote);
+    ctl.down(4,2,{button:0,shiftKey:false});
+    for(let y=0;y<5;y++) {ctl.move(5,y);ctl.move(6,y);}ctl.up();
+    expect(at(st.current!.tiles,2,2)).toMatchObject({kind:5,letter:letterByte(0)});
+    expect(at(st.current!.tiles,3,2)).toMatchObject({kind:5,letter:letterByte(2)});
+    for(const tile of remote) expect(at(st.current!.tiles,tile.x,tile.y)).toEqual(tile);
+  } finally {random.mockRestore();}
+});
+
+test('room-to-room entrances use default variants through the controller in all orientations',()=>{
+  const random=spyOn(Math,'random').mockReturnValue(0.95);
+  const rotate=(tile:AutoCell,rot:number):AutoCell=>{
+    let {x,y}=tile;for(let i=0;i<rot;i++) [x,y]=[-y,x];
+    return {...tile,x:x+10,y:y+10,rot:(tile.rot+rot)%4};
+  };
+  try {
+    for(let rot=0;rot<4;rot++) {
+      const st=variationState();
+      const base=[...room(),...room().map(tile=>({...tile,x:tile.x+3}))];
+      st.current!.tiles=base.map(tile=>({...rotate(tile,rot),letter:letterByte(3),pad:0,rotHi:0}));
+      const from=rotate({x:2,y:1,kind:9,rot:1},rot),to=rotate({x:3,y:1,kind:9,rot:3},rot);
+      const ctl=new Controller(st);ctl.down(from.x,from.y,{button:0,shiftKey:false});ctl.move(to.x,to.y);ctl.up();
+      expect(at(st.current!.tiles,from.x,from.y)).toMatchObject({...from,letter:letterByte(0)});
+      expect(at(st.current!.tiles,to.x,to.y)).toMatchObject({...to,letter:letterByte(0)});
+    }
+  } finally {random.mockRestore();}
+});

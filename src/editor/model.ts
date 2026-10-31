@@ -69,6 +69,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   tileset = 0;
   tool: Tool = 'select';
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
+  /** Applies to subsequent automatic strokes; existing tiles are not rerolled by the checkbox. */
+  autoRandomVariants = true;
   selection: Selection = { type: 'none' };
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
@@ -86,7 +88,10 @@ export abstract class MapEditState<S = unknown, T = unknown> {
 
   /** Games opt in with a verified vocabulary. */
   get autoProfile(): AutoProfile | undefined { return undefined; }
+  /** Verified geometry for display, even when a palette lacks automatic brush parts. */
+  get mapTopology(): AutoProfile | undefined { return this.autoProfile; }
   autoLetter(_kind: number, preferred: number): number { return preferred; }
+  autoVariantLetters(_kind: number): readonly number[] { return [0]; }
 
   /** The actual automatic tile under the pointer, shared by both views. */
   brushAt(x: number, y: number): Brush | undefined {
@@ -94,7 +99,7 @@ export abstract class MapEditState<S = unknown, T = unknown> {
     const profile = this.autoProfile;
     if (!this.current || !profile) return undefined;
     const tile = autoTiles(this.current.tiles, new Set([cellKey(x,y)]), profile).find(t => t.x === x && t.y === y);
-    return tile && {...tile, letter: this.autoLetter(tile.kind, this.brush.letter)};
+    return tile && {...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT)};
   }
 
   /** Record layouts of the sections, by RPG2's section numbers. */
