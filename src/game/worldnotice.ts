@@ -127,8 +127,8 @@ wr_done:
 ; また暗転して元の位置と向きに戻し、フェードインする。動く島の演出 (FUN_002c4d98) の移し方と、黄泉の門の演出
 ; (FUN_001c0630) のメッセージの出し方。カメラを遠くへ向けると地形が読み込まれないので、カメラは動かさない
 wn_show:
-  push {r4, r5, r6, lr}
-  sub sp, sp, #0x100         ; +0 カメラ、+0x9C 差分、+0xA8 元の位置、+0xB8 ハンドル、+0xD8 元の向き、+0xE4 移す先、+0xF0 北
+  push {r4, r5, r6, r7, r8, lr}
+  sub sp, sp, #0x110         ; +0 カメラ、+0x9C 差分、+0xA8 元の位置、+0xB8 ハンドル、+0xE4 移す先、+0xF0 北、+0x100 元の向き
   mov r4, r0
   ldr r0, [r4]
   bl FUN_0031c970            ; 入口のオブジェクト (0 = このマップにない)
@@ -156,12 +156,19 @@ ws_mover:
   str r1, [sp, #0xac]
   ldr r1, [r0, #0x1c]
   str r1, [sp, #0xb0]
-  ldr r1, [r0, #0x2c]
-  str r1, [sp, #0xd8]
-  ldr r1, [r0, #0x30]
-  str r1, [sp, #0xdc]
-  ldr r1, [r0, #0x34]
-  str r1, [sp, #0xe0]
+  ldr r1, [r0, #0x10]
+  and r7, r1, #8             ; 8 = 向きが四元数 (+0x38 の 4 語)、0 = オイラー角 (+0x2C の 3 語)
+  add r1, r0, #0x2c
+  cmp r7, #0
+  addne r1, r0, #0x38
+  ldr r2, [r1]
+  str r2, [sp, #0x100]
+  ldr r2, [r1, #4]
+  str r2, [sp, #0x104]
+  ldr r2, [r1, #8]
+  str r2, [sp, #0x108]
+  ldr r2, [r1, #12]
+  str r2, [sp, #0x10c]
   bl ws_fade_out
   mov r0, sp
   mov r1, #0
@@ -213,17 +220,24 @@ ws_message:
   mov r0, r6
   add r1, sp, #0xa8
   bl FUN_0031b408            ; 元の位置
+  add r1, sp, #0x100
+  cmp r7, #0
+  bne ws_quat
   mov r0, r6
-  add r1, sp, #0xd8
   bl FUN_00331ca8            ; 元の向き
+  b ws_turned
+ws_quat:
+  ldr r0, [r6, #0x10]
+  bl FUN_0032e6bc            ; 元の向き (四元数、変換ノードに)
+ws_turned:
   bl ws_fade_in
   mov r0, sp
   bl FUN_00301764            ; カメラの後始末
   add r0, sp, #0xb8
   bl FUN_0031c89c            ; ハンドルを解放
 ws_out:
-  add sp, sp, #0x100
-  pop {r4, r5, r6, pc}
+  add sp, sp, #0x110
+  pop {r4, r5, r6, r7, r8, pc}
 ; 黒へ 1 秒でフェードアウトし、終わるまで待つ
 ws_fade_out:
   push {r4, lr}
@@ -235,14 +249,10 @@ ws_fade_out:
   vldr s0, =1.0
   bl FUN_00300dbc
   pop {r4, pc}
-; (呼び元の sp + 8 のカメラ) を移した先へすぐ合わせ、1 秒待って 1 秒でフェードインする
+; カメラ (呼び元の sp + 8) を追従に戻し、1 秒待って (黒い間に追いつく) 1 秒でフェードインする
 ws_fade_in:
   push {r4, lr}
-  add r4, sp, #8             ; 呼び元のカメラ
-  mov r0, r4
-  vldr s0, =0.0
-  bl FUN_002fc19c            ; カメラを追従に (すぐ)
-  mov r0, r4
+  add r0, sp, #8             ; 呼び元のカメラ
   bl FUN_00301888
   vldr s0, =1.0
   bl FUN_003086e4            ; 1 秒待つ

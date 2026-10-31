@@ -70,10 +70,10 @@ describe('entrance conditions', () => {
 const BLANK = new Uint8Array(0x420000);
 const F = {
   w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970,
-  vehicle: 0x2e592c, party: 0x319a6c, place: 0x31c948, add: 0x338450, move: 0x31b408, turn: 0x331ca8, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
+  vehicle: 0x2e592c, party: 0x319a6c, place: 0x31c948, add: 0x338450, move: 0x31b408, turn: 0x331ca8, quat: 0x32e6bc, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
-const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x2fc19c, 0x301888, 0x3086e4, 0x31747c, 0x300854, 0x317524, 0x3007c0, 0x301764, F.release, F.turn];
+const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x301888, 0x3086e4, 0x31747c, 0x300854, 0x317524, 0x3007c0, 0x301764, F.release, F.turn];
 const f32 = (v: number): number => new Uint32Array(new Float32Array([v]).buffer)[0]!;
 const fromF32 = (v: number): number => new Float32Array(new Uint32Array([v]).buffer)[0]!;
 /** Where the party stands (x, y, z) and the entrances' objects' place. */
@@ -81,12 +81,15 @@ const PARTY = [1250, -3, 4050];
 const ENTRANCE_AT = [8150, 0, 2350];
 
 /** Run the hook (FUN_0019aa88's W01 branch) and, when it made the notice action, its [2]. */
-function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean; vehicle?: boolean }) {
+function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean; vehicle?: boolean; quat?: boolean }) {
   const vec = (m: ArmMachine, a: number): number[] => [0, 4, 8].map((i) => Math.round(fromF32(m.read(a + i, 4))));
+  const nodes: number[] = [];
   const mover = (m: ArmMachine): number => {
     const obj = m.alloc(0x20);
     const node = m.alloc(0x40);
     m.write(obj + 0x10, node, 4);
+    if (o.quat) m.write(node + 0x10, 8, 4);
+    nodes.push(node);
     PARTY.forEach((v, i) => m.write(node + 0x14 + i * 4, f32(v), 4));
     return obj;
   };
@@ -106,6 +109,7 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
       return out;
     }],
     [F.move, () => 0],
+    [F.quat, () => 0],
     [F.fadeOut, () => 0],
     [F.fadeIn, () => 0],
     [F.w01, () => o.game ?? 0],
@@ -124,6 +128,7 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
   let written: number[][] = [];
   let order: string[] = [];
   let moves: number[][] = [];
+  let turns: [string, number][] = [];
   if (made) {
     const vtable = m.read(action, 4);
     const m2 = new ArmMachine(code, { stubs, maxDepth: 6 });
@@ -133,6 +138,7 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
     m2.run(m2.read(vtable + 8, 4), [action]);
     stubs.set(F.move, () => 0);
     moves = at;
+    turns = m2.calls.filter((c) => c.target === F.turn || c.target === F.quat).map((c) => [c.target === F.turn ? 'euler' : 'quat', c.args[0]!] as [string, number]);
     shown = m2.calls.filter((c) => c.target === F.narrate).map((c) => c.args[0]!);
     written = m2.calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3));
     const names = new Map([[F.fadeOut, 'out'], [F.move, 'move'], [F.fadeIn, 'in'], [F.narrate, 'message'], [F.release, 'release'], [F.setState, 'done']]);
@@ -140,7 +146,7 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
     expect(m.calls.find((c) => c.target === F.base)?.args[1]).toBe(0x1000000);
     expect(vtable).toBe(built.labels.get('wn_vtable')!);
   }
-  return { action, made, first, shown, written, order, moves };
+  return { action, made, first, shown, written, order, moves, turns, nodes };
 }
 
 describe('notice patch (blank code.bin)', () => {
@@ -187,6 +193,14 @@ describe('notice patch (blank code.bin)', () => {
     const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, vehicle: true });
     expect(r.order.slice(0, 4)).toEqual(['out', 'move', 'in', 'message']);
     expect(r.moves.length).toBe(2);
+  });
+
+  test('a turn kept as a quaternion is put back on the node', () => {
+    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, quat: true });
+    expect(r.turns.map((t) => t[0])).toEqual(['euler', 'quat']);
+    expect(r.turns[1]![1]).toBe(r.nodes.at(-1)!);
+    const e = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29 });
+    expect(e.turns.map((t) => t[0])).toEqual(['euler', 'euler']);
   });
 
   test('nothing is made once shown, or when nothing holds', () => {
