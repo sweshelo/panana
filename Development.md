@@ -124,6 +124,7 @@ src/
 - 道具のアクションの +0x14 は、元のゲームでは行 178〜230 でしか読まれません (`FUN_002f4c54` → `FUN_0031140c`)。表の後ろに足したアクションを使う道具があると、書き出しに code.ips のパッチ「追加したアイテムのアクション」(行 178 以降をすべて読む) が入ります。
 - ボス戦の行 (種類 0x31) はゲームにない動きなので、あると書き出しの code.ips にパッチ「ボス戦」を自動で加えます。
 - コードの MOD「ドロップ率の天井を撤廃」 (`src/game/dropcap.ts`) は作品ごとにパッチの元を持ち、書き出しの画面で選ぶと code.ips に入ります。元のゲームの命令 (`EXPECT`) と違う code.bin には入れません。状態の値は s16 です。RPG3 の掛け算の状態は 16384 % 以上を指数と仮数で持ち、32 ビットで計算します。RPG FREE! (足し算) は上限を 0x7FFF にするだけです。
+- コードの MOD「レベルステルス」 (`src/game/levelstealth.ts`、RPG2) は、シンボルの敵が気づく判定 (`FUN_001eeaf0`) の入口のステルスの判定 (`bl FUN_00435380`) を差し替え、メンバーの平均 Lv ≧ 敵の Lv + 差でも気づかないようにします。差はパッチの元に即値で入ります。根拠は naauao の `integrations/panana/level-stealth.md`。
 - 新しいメッセージ番号は作れません。MessageSystemCommon 0〜6106、MessageBattle 6107〜7134、MessageField 7135〜8623 が隙間なく続き、ゲームは範囲に番号を含む最初のファイルを使います (FUN_00310438)。新しいメッセージは `MessageMod_JP.gsmb` (ID 0x2C00〜、elpulse の MOD と同じ) に入ります。
 - 戦闘の背景と BGM: RPG3 はダンジョンの mapData の行 (mapGroup +0x2E) の [5] が BGM、[1] の mapResource +0x10 が背景 (アーカイブ 52120000 のエントリ) で、群れには背景の欄がない (`src/oahu/battleField.ts`、naauao oahu/sound.md §3.5)。RPG FREE! は群れの +0x00 (+0x69 bit3 でコンテンツの BattleFieldContents / master の BattleField) が指す 12 B の行が背景 (+0x00 / +0x04) と BGM (+0x08) を一緒に持つ (`src/lanai/battleField.ts`、lanai/battle-field.md)。マップのページの編集 (mapData・mapResource、MapData・MapResource) は undo の対象。
 - 変身時のセリフ (+0x38) は、ユニットがその形態に変わったときに出す戦闘のメッセージです (`FUN_0022f430` @0x22FDE8 ほか)。
@@ -141,6 +142,13 @@ src/
 - RPG3 と FREE! は BCH の版を読み込み時に確かめる (RPG3 は 8、FREE! は 0x21) ので、同じ BCH でも変換が要る。シェーダー (`h3d_DefaultShader.bch` の `{0..3}@DefaultShader-…`) の番号は 3 − テクスチャ数、bool のユニフォームの意味も作品で違う (`src/port/convert/retarget.ts`)。
 - 新しいエントリのハッシュは中身から決めた値 (下位 8 ビット 0) で、ゲームは値を比べるだけ (名前からハッシュを作る関数は見つかっていない)。
 - 新しいデザインの行は、移植先のモンスターの今の行を写して、ファイルと大きさ・高さ・取り付け位置 (3 作品で単位が同じ) を移植元から入れる。色のアニメ・付いているエフェクトの欄は 0 にする。
+
+## BGM の移植 (RPG2)
+
+- 他作品のストリームを `sound/stream/<名前>.bcstm` に置き、`sound.bcsar` にその外部ファイルを鳴らすストリームの音を足す (`src/sound/write.ts`、`src/port/sounds.ts`)。新しい音は RPG2 の BGM_TITLE の要素の写しで、ファイル・音量・名前・確保するチャンネル数だけを変える。INFO の表は「数 + 参照の配列」の直後に要素が続くので、表ごとに組み直して後ろに足す。STRG は文字列表の末尾に名前を足し、名前の検索木 (パトリシア木) はそのまま (ゲームは soundData のアイテム ID で音を引く)。
+- CSTM の版: RPG2 は 2.1 (track の表が 1 本)。RPG3・FREE! は 2.2 (track の参照が null で、stream info の後ろに 12 B の region の欄) なので、その 12 B を track の表に置き換え、channel の表の後ろに track (音量 127・パン 64・全チャンネル) を挟んで 2.1 にする。初代は 2.0 で並びが 2.1 と同じなのでそのまま。
+- マップ (mapData [4] / [5])・ボス戦の BGM は soundData の行を 1 バイトで持ち、RPG2 の行 1〜255 はすべてゲームの音なので、新しい行を足してもそのままでは指せない。BGM の欄は 0x80 未満 (BGM・ME) しか使わないので、移植した音は soundData の 418 行目から行を足し (行 1 の写しで +0x00 だけ変える、`src/port/bgm.ts`)、欄の値 0x80 + k = 行 418 + k とする。コードのパッチ「BGM の追加枠」(`src/game/bgmext.ts`) が BGM を鳴らす FUN_0030378c・変える FUN_00308bac の入口と、鳴っているか調べる FUN_00303b44 を BGM の欄の値で呼ぶ 3 か所 (FUN_00303b44 は効果音の行でも呼ばれるので入口では直さない) で値を行に直し、戦闘の場面の FUN_00317d04 では足した行が鳴っていればボス戦の BGM と同じく鳴らしたままにする。soundData の行数はヘッダーから読まれるので、行を足すだけでゲームはその音を引ける。
+- 移植した音は IndexedDB (`port/kahara/sound/v1`) に保存し、ダンプの `sound/sound.bcsar` と新しいストリームの読み込みに重ねる。音の番号は RPG2 の 430 個の後ろに追加順で並ぶので、追加した音は消さない。
 
 ## 未対応
 

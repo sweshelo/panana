@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { uvMatrix } from '../src/cgfx/tev';
 import { buildPatches } from '../src/game/patch';
 import { DROP_CAP_ID, dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { LEVEL_STEALTH_ID, levelStealthPatch, levelStealthProblem } from '../src/game/levelstealth';
 import { OAHU_LAYOUT } from '../src/oahu/code';
 import { LANAI_LAYOUT } from '../src/lanai/code';
 import { extractPatch } from '../src/ui/PatchPanel';
@@ -964,6 +965,20 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
       expect(b.blocks.length).toBeGreaterThan(3);
       expect(dropCapProblem(code, title)).toContain('0x');
     }
+  });
+
+  test('the code MOD "レベルステルス" assembles with its Lv difference; a code.bin without its original word is refused', () => {
+    const code = new Uint8Array(0x3c0000);
+    for (const [diff, imm] of [[10, 10], [1, 1], [99, 99], [0, 10], [500, 99]] as const) {
+      const p = levelStealthPatch(diff);
+      expect(p.source).toContain(`add r6, r6, #${imm}`);
+      const b = buildPatches(code, [p]).get(LEVEL_STEALTH_ID)!;
+      expect(b.errors).toEqual([]);
+      expect(b.blocks.map((x) => x.kind)).toEqual(['at', 'cave']);
+      expect(b.blocks[0]!.addr).toBe(0x1eeb30);
+      expect(b.blocks[0]!.lines[0]!.word >>> 24).toBe(0xeb); // bl
+    }
+    expect(levelStealthProblem(code)).toContain('0x1EEB30');
   });
 
   test('the patch block of an AI answer', () => {
