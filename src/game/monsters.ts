@@ -710,6 +710,18 @@ export class MonsterBook {
     return r[0x4c]!;
   }
 
+  /**
+   * Change the look of monster `row` alone: its design row in place when an edit added that row and no other monster
+   * shows it, else a new design row (newLook), so the game's rows and the other monsters keep theirs. Returns the row.
+   */
+  editOwnLook(row: number, edit: (design: Uint8Array) => void): number {
+    const d = this.params.row(row)[0x4c]!;
+    if (d < u32(this.designOriginal, 0) || this.designUsers(d).length > 1) return this.newLook(row, edit);
+    edit(this.design.row(d));
+    this.reload();
+    return d;
+  }
+
   /** Whether the MonsterDesign table differs from the archive (it is then exported in MONSTER_DESIGN_ARCHIVE). */
   designChanged(): boolean {
     return !equalBytes(this.design.data, this.designOriginal);

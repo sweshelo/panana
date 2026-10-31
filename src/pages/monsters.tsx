@@ -19,6 +19,7 @@ import { GroupDetail } from '../ui/GroupDetail';
 import { ModelTextures } from '../ui/ModelTextures';
 import { ModelView } from '../ui/ModelView';
 import { PortLookButton } from '../ui/PortLook';
+import { replaceMonsterTexture } from '../port/textures';
 import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
 import { ResistCharts } from '../ui/MonsterSlots';
@@ -132,7 +133,8 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         </div>
         <div>
           <ModelView model={monsterRef(game, book, m)} name={m.name} motionHints={MONSTER_MOTIONS} />
-          <ModelTextures model={monsterRef(game, book, m)} />
+          <ModelTextures model={monsterRef(game, book, m)} replaceInfo={REPLACE_INFO}
+            replace={async (name, image) => { await replaceMonsterTexture(session, m.row, name, image); edited(); }} />
         </div>
       </div>
       <div className="book-cols monster-cols">
@@ -159,6 +161,12 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
     </>
   );
 }
+
+const REPLACE_INFO = [
+  '画像 (PNG など) をこのテクスチャの大きさ・形式 (ETC1 など)・ミップマップで書き直して、このモンスターの見た目にします。大きさが違う画像は引き伸ばします。',
+  '色のテクスチャ (デザイン +0x14) にその名前があればそれを、なければモデル (+0x10) を書き直し、470D2848 に新しいエントリとして足します。',
+  'ほかのモンスターと同じデザインの行を使っているときは、このモンスターに新しいデザインの行を作ります (元に戻すと元の見た目に戻ります)。',
+].join('\n');
 
 const COPY_INFO = [
   'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',

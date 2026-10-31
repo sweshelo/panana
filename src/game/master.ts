@@ -78,7 +78,7 @@ export class Master {
       if (!f) throw new Error(`マスター (56562135) に ${name} がありません`);
       return new GsTable(f.body);
     };
-    this.mapGroup = table('mapGroup.bin');
+    this.mapGroup = this.table('mapGroup.bin'); // edits (new dungeons, game/newdungeon.ts) are exported
     this.mapResource = table('mapResource.bin');
     this.mapParts = table('mapParts.bin');
     this.mapObject = table('mapObject.bin');
