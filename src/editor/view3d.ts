@@ -421,8 +421,9 @@ export class View3D {
     const hv = this.ctl.hover;
     if (hv) {
       addRect(hv[0], hv[1], hv[0], hv[1], 0xffffff);
-      if (this.st.tool === 'paint') {
-        const ghost = this.tileObject(this.st.brush.kind, this.st.brush.rot, this.st.brush.letter);
+      const brush = this.st.tool === 'paint' ? this.st.brushAt(hv[0], hv[1]) : undefined;
+      if (brush) {
+        const ghost = this.tileObject(brush.kind, brush.rot, brush.letter);
         ghost.position.set((hv[0] + 0.5) * CELL, 1, (hv[1] + 0.5) * CELL);
         ghost.traverse((o) => {
           if (o instanceof THREE.Mesh) {

@@ -2,6 +2,10 @@
 // coordinates (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
 import { WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
 import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './model';
+import { autoTiles, cellKey, type AutoProfile } from './autotile';
+import type { Tile } from '../game/sections';
+
+interface AutoStroke { doc: MapDoc; start: string; base: Tile[]; cells: Set<string>; profile: AutoProfile; letter: number }
 
 export interface Layers {
   tiles: boolean;
@@ -14,7 +18,7 @@ export class Controller {
   private drag:
     | null
     | { kind: 'rec'; section: number; index: number; dx: number; dy: number; moved: boolean }
-    | { kind: 'paint'; last: string }
+    | { kind: 'paint'; last: string; auto?: AutoStroke }
     | { kind: 'erase'; last: string }
     | { kind: 'rect'; x0: number; y0: number }
     | { kind: 'room'; on: boolean; last: string } = null;
@@ -75,9 +79,16 @@ export class Controller {
       }
       case 'paint':
         if (!inGrid(x, y)) return;
+        if (st.brush.auto && !st.autoProfile) return;
         st.checkpoint();
-        st.touch((d) => setTile(d, x, y, st.brush));
-        this.drag = { kind: 'paint', last: `${x},${y}` };
+        if (st.brush.auto && st.autoProfile) {
+          const auto: AutoStroke = { doc, start: cellKey(x,y), base: doc.tiles.map(t => ({...t})), cells: new Set([cellKey(x,y)]), profile: st.autoProfile, letter: st.brush.letter };
+          this.drag = { kind: 'paint', last: cellKey(x,y), auto };
+          this.paintAuto(auto);
+        } else {
+          st.touch((d) => setTile(d, x, y, st.brush));
+          this.drag = { kind: 'paint', last: cellKey(x,y) };
+        }
         return;
       case 'erase':
         st.checkpoint();
@@ -135,8 +146,13 @@ export class Controller {
       }
       case 'paint':
         if (key === d.last || !inGrid(x, y)) return;
+        const [px,py] = d.last.split(',').map(Number) as [number,number];
         d.last = key;
-        st.touch((doc) => setTile(doc, x, y, st.brush));
+        if (d.auto) {
+          const steps = Math.max(Math.abs(x-px),Math.abs(y-py));
+          for(let i=1;i<=steps;i++) d.auto.cells.add(cellKey(Math.round(px+(x-px)*i/steps),Math.round(py+(y-py)*i/steps)));
+          this.paintAuto(d.auto);
+        } else st.touch((doc) => setTile(doc, x, y, st.brush));
         return;
       case 'erase':
         if (key === d.last) return;
@@ -152,6 +168,18 @@ export class Controller {
         st.touch((doc) => toggleRoom(doc, x, y, d.on, st.cell6Value));
         return;
     }
+  }
+
+  private paintAuto(auto: AutoStroke): void {
+    // Opening a map or undoing during a captured gesture must not replay an old stroke into it.
+    if (this.st.current !== auto.doc) { this.drag = null; return; }
+    this.st.touch(doc => {
+      for (const tile of autoTiles(auto.base, auto.cells, auto.profile, auto.start)) {
+        const original = auto.base.find(t => t.x === tile.x && t.y === tile.y);
+        const letter = this.st.autoLetter(tile.kind, auto.cells.has(cellKey(tile.x,tile.y)) ? auto.letter : original?.letter ?? auto.letter);
+        setTile(doc, tile.x, tile.y, {...tile, letter});
+      }
+    });
   }
 
   up(): void {

@@ -45,8 +45,9 @@ export function drawHover(g: CanvasRenderingContext2D, s: number, st: MapEditSta
   if (!hover) return;
   const [x, y] = hover;
   if (st.tool === 'paint') {
+    const brush = st.brushAt(x,y);
     g.globalAlpha = 0.6;
-    drawTile(g, s, x, y, st.brush.kind, st.brush.rot, st.brush.letter, rotDir);
+    if (brush) drawTile(g, s, x, y, brush.kind, brush.rot, brush.letter, rotDir);
     g.globalAlpha = 1;
   }
   g.strokeStyle = '#fff';

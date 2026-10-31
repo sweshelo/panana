@@ -1,0 +1,12 @@
+# Automatic map tiles
+
+Kahara dungeon tile palettes offer **自動** above the manual tiles. The gesture start determines intent: starting outside a room keeps adjacent existing room tiles out of the area test, so a line along a room stays a corridor. Starting on room floor permits expansion using that room as support. Painting a filled area (at least 2×2) within the gesture still creates a new room. The brush updates adjacent corridors, room edges, corners and entrances during the gesture. One gesture is one undo step. A corridor opens an entrance only when the gesture actually paints the room boundary; merely passing alongside a closed wall leaves it closed. Intent is fixed from the original terrain at pointer-down, even after the stroke reaches a room. The normal tile buttons return to manual painting.
+
+`src/editor/autotile.ts` is a pure solver with no game IDs, ROM, UI or document dependencies. It distinguishes full-width room joins from narrow corridor joins and uses diagonal occupancy for inward corners. The controller passes the original tiles and the cumulative gesture cells, making the result independent of pointer visitation order for a fixed start. Only the gesture and its eight neighbours are rewritten; unrelated and unrecognized tiles retain their data.
+
+`src/game/autotile.ts` supplies the Kahara vocabulary. Directions are N/E/S/W; clockwise turns rotate both edge masks and inward corner masks. The mapping uses parts 8 and 13 for single/opposite inward corners, 9 for edge entrances, and 10/11/12 for corner entrances. If the tileset cannot represent a particular topology exactly, the solver selects the closest available shape, prioritizing room joins, then corridor joins, then diagonal corners.
+
+A new game opts in by overriding `MapEditState.autoProfile` and `autoLetter` with its verified part/rotation/variant mapping. Other games and Kahara indoor maps are currently excluded, since sharing numeric part IDs does not establish matching geometry. Section 6 encounter cells are independent of visible room floor and are not changed by this brush.
+
+Tests: `bun test test/autotile.test.ts`. The synthetic tests cover corridors, rooms, concave corners, entrance variants, connections between existing rooms, ordering, metadata, map changes and undo/redo. With `roms/kahara-base.cia`, the ROM test also checks palette availability, fallback letter selection and tile serialization.
+

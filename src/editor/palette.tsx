@@ -31,6 +31,7 @@ export function Palette({ st, factory, palette, partModel, rotDir }: {
     return url ?? null;
   };
   const b = st.brush;
+  const automatic = !!b.auto && !!st.autoProfile;
   const rot = (d: 1 | -1): void => {
     st.brush = { ...b, rot: (b.rot + d + 4) & 3 };
     st.emit('tool');
@@ -39,12 +40,17 @@ export function Palette({ st, factory, palette, partModel, rotDir }: {
     <div className="palette">
       <h3>タイル</h3>
       <div className="brush-info">
-        <span>{`ブラシ: 種類 ${b.kind}${letterIndex(b.letter) ? String.fromCharCode(b.letter) : ''} `}</span>
-        <button title="左に回す (Shift+R)" onClick={() => rot(-1)}>⟲</button>
+        <span>{automatic ? 'ブラシ: 自動' : `ブラシ: 種類 ${b.kind}${letterIndex(b.letter) ? String.fromCharCode(b.letter) : ''} `}</span>
+        <button disabled={automatic} title="左に回す (Shift+R)" onClick={() => rot(-1)}>⟲</button>
         <span className="rot">{` ${ROT_ARROW[rotDir?.[b.rot] ?? b.rot]} ${b.rot * 90}° `}</span>
-        <button title="右に回す (R)" onClick={() => rot(1)}>⟳</button>
+        <button disabled={automatic} title="右に回す (R)" onClick={() => rot(1)}>⟳</button>
       </div>
       <div className="palette-list">
+        {st.autoProfile && <div className="pal-kind">
+          <button className={automatic ? 'active' : ''} aria-pressed={automatic}
+            onClick={() => { st.brush = {...st.brush, auto: true}; st.setTool('paint'); }}>自動</button>
+          <p className="muted small">外から描く線は通路、部屋から描くと拡張。2×2 以上の面は部屋。通路で部屋の辺を塗ると接続。</p>
+        </div>}
         {[...palette].map(([kind, letters]) => (
           <div key={kind} className="pal-kind">
             <div className="pal-kind-name">{`${kind} ${kindName(kind)}`}</div>
@@ -52,14 +58,14 @@ export function Palette({ st, factory, palette, partModel, rotDir }: {
               {letters.map((l) => {
                 const hash = partModel(kind, l);
                 const url = thumb(hash);
-                const active = b.kind === kind && letterIndex(b.letter) === l;
+                const active = !automatic && b.kind === kind && letterIndex(b.letter) === l;
                 return (
                   <button
                     key={l}
                     className={'pal-item' + (active ? ' active' : '')}
                     title={`${kind}${l ? String.fromCharCode(0x60 + l) : ''} ${factory?.modelName(hash) ?? ''}`}
                     onClick={() => {
-                      st.brush = { ...st.brush, kind, letter: letterByte(l) };
+                      st.brush = { ...st.brush, auto: false, kind, letter: letterByte(l) };
                       st.setTool('paint');
                     }}
                   >
