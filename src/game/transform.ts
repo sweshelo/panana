@@ -55,6 +55,10 @@ export const TRANSFORM_PATCH_TITLE = '見た目の変わる変身 (白くフェ�
  * - The new model gets what the battle start gives a monster's model after FUN_00289524 (FUN_0040f3b4): the anchor of the
  *   damage numbers and the cursor (FUN_002f98d4, FUN_0042ded8 + MonsterDesign +0x60 / +0x62 / +0x64, FUN_002f9848).
  *   The old model is only hidden (vtable +0xC), not released: effects already put on it keep their model.
+ * - When the size class (MonsterDesign +0x6E) changes, the monsters' row (battle +0x10560, 26 cells: each monster as
+ *   many cells as its unit's size class +0x58 bit4-8, then a free one, like FUN_0040f3b4) is packed again in the same
+ *   order and FUN_00288e68 places them and sets the width the overview cameras use (+0x10612, FUN_002d0040 /
+ *   FUN_002c8480). The unit's size class is already the new one (FUN_00199c00), so the close cameras need nothing.
  */
 export const TRANSFORM_PATCH_SOURCE = `; 見た目の変わる変身: 変身を見せる段で画面を白くフェードアウトし、モデルを変身先のデザインで作り直してフェードインする。
 ; 戦闘のモデルを作るとき、使ったデザインを表示ユニット +0x2F7 に覚えておく
@@ -208,11 +212,14 @@ tf_wait:
   pop {r4, r5, r6, pc}
 ; r0 = 表示ユニット。ユニットの今の行でモデルを作り直し、前のモデルの位置・向きに置いて前のモデルを隠す
 tf_swap:
-  push {r4, r5, r6, r7, r8, lr}
+  push {r4, r5, r6, r7, r8, sb, sl, lr}
   sub sp, sp, #0x10
   mov r4, r0
   ldr r5, [r4, #4]           ; 前のモデル
   ldr r6, [r4, #8]           ; その影
+  ldrb r0, [r4, #0x2F7]
+  bl tf_design
+  ldrb sb, [r0, #0x6E]       ; 前のデザインの大きさの種類
   mov r0, r4
   bl tf_build
   ldr r7, [r4, #4]           ; 新しいモデル
@@ -228,13 +235,9 @@ tf_swap:
   mov r0, r7
   mov r1, #0
   bl 0x2F98D4
-  ldr r0, =0x520448
-  ldr r0, [r0]
-  add r0, r0, #0x900
-  add r0, r0, #0x14          ; マスター +0x914 (MonsterDesign)
-  ldr r1, [r4, #0x2F0]
-  ldrh r1, [r1, #2]
-  bl 0x31CFB8
+  ldr r0, [r4, #0x2F0]
+  ldrh r0, [r0, #2]
+  bl tf_design
   mov r8, r0
   mov r0, r7
   mov r1, sp
@@ -264,7 +267,92 @@ tf_swap:
   mov r1, #0
   blx r2
 tf_swap_end:
+  ldrb r0, [r8, #0x6E]
+  cmp r0, sb
+  blne tf_relayout           ; 大きさが変わった: 並びと全体のカメラの広さを作り直す
   add sp, sp, #0x10
+  pop {r4, r5, r6, r7, r8, sb, sl, pc}
+; r0 = MonsterDesign の行番号 → 行 (マスター +0x914)
+tf_design:
+  push {r4, lr}
+  mov r1, r0
+  ldr r0, =0x520448
+  ldr r0, [r0]
+  add r0, r0, #0x900
+  add r0, r0, #0x14
+  bl 0x31CFB8
+  pop {r4, pc}
+; モンスターの並び (戦闘 +0x10560 の 26 マス) を、いまの順のまま各ユニットの大きさの種類
+; (+0x58 bit4-8) のマス数で詰め直し (あいだに 1 マス空ける。戦闘の始めの FUN_0040f3b4 と同じ)、FUN_00288e68 で位置と
+; 全体のカメラの広さ (+0x10612) を決め直す
+tf_relayout:
+  push {r4, r5, r6, r7, r8, lr}
+  sub sp, sp, #0x20          ; 並んでいる番号 (26 個まで)
+  ldr r4, =0x51A770
+  ldr r4, [r4]               ; 戦闘
+  ldr r0, [r4, #4]
+  cmp r0, #3                 ; 種類 3 の戦闘 (並びは +0x1057A、ユニットは FUN_00318870) はそのまま
+  beq tf_rl_end
+  ldr r5, =0x10560
+  add r5, r4, r5             ; 並び
+  mov r6, #0
+  mov r7, #0
+tf_rl_collect:
+  ldrsb r0, [r5, r6]
+  cmp r0, #0
+  blt tf_rl_next
+  mov r1, #0
+tf_rl_seen:
+  cmp r1, r7
+  beq tf_rl_add
+  ldrb r2, [sp, r1]
+  cmp r2, r0
+  beq tf_rl_next
+  add r1, r1, #1
+  b tf_rl_seen
+tf_rl_add:
+  strb r0, [sp, r7]
+  add r7, r7, #1
+tf_rl_next:
+  add r6, r6, #1
+  cmp r6, #0x1A
+  blt tf_rl_collect
+  mvn r0, #0
+  mov r6, #0
+tf_rl_clear:
+  strb r0, [r5, r6]
+  add r6, r6, #1
+  cmp r6, #0x1A
+  blt tf_rl_clear
+  mov r6, #0
+  mov r8, #0                 ; 次のマス
+tf_rl_fill:
+  cmp r6, r7
+  bge tf_rl_done
+  ldrb r1, [sp, r6]
+  mov r0, r4
+  bl 0x2C1D4C                ; その番号のユニット
+  ldr r0, [r0, #0x58]
+  mov r0, r0, lsr #4
+  and r0, r0, #0x1F
+  cmp r0, #0
+  moveq r0, #1
+  ldrb r1, [sp, r6]
+tf_rl_one:
+  cmp r8, #0x1A
+  bge tf_rl_done
+  strb r1, [r5, r8]
+  add r8, r8, #1
+  subs r0, r0, #1
+  bne tf_rl_one
+  add r8, r8, #1
+  add r6, r6, #1
+  b tf_rl_fill
+tf_rl_done:
+  mov r0, r4
+  bl 0x288E68
+tf_rl_end:
+  add sp, sp, #0x20
   pop {r4, r5, r6, r7, r8, pc}
 ; [r1] (f32) += r0 (整数)。tf_add は r1 = 呼んだ側の sp (位置の x)
 tf_add:
