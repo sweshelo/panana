@@ -26,6 +26,7 @@ import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
 import { dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { levelStealthPatch, levelStealthProblem } from '../src/game/levelstealth';
 import { applyIps } from '../src/rom/ips';
 import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
 import { ELEMENT_AILMENTS, PLAIN_AILMENTS } from '../src/game/monsters';
@@ -306,6 +307,21 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
       if (ev) for (let i = 0; i < ev.rows; i++) if (!EVENT_KINDS[ev.kind(i)]) missing.add(ev.kind(i));
     }
     expect([...missing]).toEqual([]);
+  });
+
+  test('the code MOD "レベルステルス": the stealth check of FUN_001eeaf0 calls a cave function that calls it', () => {
+    expect(levelStealthProblem(game.dump.code)).toBeNull();
+    const ips = modPackage(game, new Map(), [levelStealthPatch(10)]).get('exefs/code.ips')!;
+    const patched = applyIps(game.dump.code, ips);
+    const bl = u32(patched, 0x1eeb30 - 0x100000);
+    expect(bl >>> 24).toBe(0xeb);
+    const cave = 0x1eeb30 + 8 + ((bl << 8) >> 6);
+    expect(cave).toBeGreaterThanOrEqual(0x4bf020);
+    expect(u32(patched, cave - 0x100000)).toBe(0xe92d41f0); // push {r4-r8, lr}
+    // its call of the game's check (bl FUN_00435380)
+    const call = u32(patched, cave + 8 - 0x100000);
+    expect(cave + 8 + 8 + ((call << 8) >> 6)).toBe(0x435380);
+    expect(levelStealthProblem(patched)).not.toBeNull();
   });
 
   test('the code MOD "ドロップ率の天井を撤廃": three calls to a cave function in code.ips', () => {

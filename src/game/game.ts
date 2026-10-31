@@ -49,6 +49,8 @@ export class Game {
   codePatches: CodePatch[] = [];
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to code.ips. */
   dropCap = false;
+  /** The Lv difference of Panana's code MOD "レベルステルス" (game/levelstealth.ts) written to code.ips, or 0 when it is off. */
+  levelStealth = 0;
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;
