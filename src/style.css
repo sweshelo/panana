@@ -712,12 +712,12 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .auto-swatch svg { width: 90%; height: 90%; }
 .map-display-settings { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 8px; }
 .map-display-settings > summary { cursor: pointer; color: var(--muted); }
-.part-chooser-buttons { display: grid; gap: 6px; }
-.part-chooser-buttons button { min-height: 34px; text-align: left; }
 .selected-part { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; min-width: 0; }
+.selected-part-pick { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 6px; text-align: left; }
 .selected-part-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .selected-part .photo.photo-lg, .selected-part .photo.photo-lg img { width: 40px; height: 40px; flex: none; }
 .photo.object-photo, .photo.stamp-badge { display: inline-flex; align-items: center; justify-content: center; background: var(--bg); color: var(--muted); font-size: 24px; }
 .object-photo img { object-fit: contain; }
 .part-directions { display: flex; gap: 4px; }
 .part-directions button { flex: 1; }
+.picker-category-heading { position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px; border-block: 1px solid var(--border); background: var(--panel2); font-weight: 600; }

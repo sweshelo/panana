@@ -7,6 +7,7 @@ import { LAYOUTS, P3, P7, recEventRow, setRecCellPos, type MapDoc, type Rec } fr
 import { u32, w16, w32 } from '../util/bytes';
 import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
 import { addBossChara, addFixGroup, FIX_FLAGS_BOSS, newBossCharaRecord, newBossRecord, newBossRow } from '../game/boss';
+import { defaultChestObjectRow, floorObjectRow, isIndoor } from '../game/objects';
 
 export type Stamp =
   | { type: 'chest' }
@@ -26,6 +27,17 @@ export function stampLabel(s: Stamp): string {
     case 'template': return `${s.t.label} (${s.t.source} から)`;
     case 'boss': return 'ボス戦 (範囲に入ると戦闘)';
     case 'switchgate': return s.gate === undefined ? 'スイッチと柵: まず柵を置く場所 (タイル) をクリック' : `スイッチと柵: 次に柵 (イベント #${s.gate}) を開けるスイッチを置く場所をクリック`;
+  }
+}
+
+/** Preview the same model that a new placement will use, including indoor chests. */
+export function stampObjectRow(stamp: Stamp, doc: MapDoc): number {
+  switch (stamp.type) {
+    case 'chest': return defaultChestObjectRow(isIndoor(doc));
+    case 'floor': return floorObjectRow(stamp.kind);
+    case 'prop': return stamp.row;
+    case 'template': return stamp.t.objectRow;
+    default: return 0;
   }
 }
 
