@@ -12,12 +12,14 @@ import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
+import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
 import { tableLabel, type Session } from '../session';
 import { CodeModOption } from './CodeModOption';
+import { LevelStealthOption } from './LevelStealthOption';
 import { download } from './download';
 
 
@@ -73,11 +75,18 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const [dropCap, setDropCap] = useState(game.dropCap);
   // game.dump.code has the base MOD's code.ips applied, so a base MOD that rewrote the same code is caught too
   const capProblem = useState(() => dropCapProblem(game.dump.code, 'kahara'))[0];
-  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : [])];
-  const capError = dropCap && !capProblem ? buildPatches(game.dump.code, exportedPatches(game, extra)).get(DROP_CAP_ID)?.errors[0] : undefined;
+  // Panana's code MOD "レベルステルス" (game/levelstealth.ts): its Lv difference, 0 = off
+  const [stealth, setStealth] = useState(game.levelStealth);
+  const stealthProblem = useState(() => levelStealthProblem(game.dump.code))[0];
+  const stealthOn = stealth > 0 && !stealthProblem;
+  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : []), ...(stealthOn ? [levelStealthPatch(stealth)] : [])];
+  const built = dropCap || stealthOn ? buildPatches(game.dump.code, exportedPatches(game, extra)) : null;
+  const capError = dropCap && !capProblem ? built?.get(DROP_CAP_ID)?.errors[0] : undefined;
+  const stealthError = stealthOn ? built?.get(LEVEL_STEALTH_ID)?.errors[0] : undefined;
   // models ported from other games (#100): the archives that hold them
   const ported = useAsync(async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()], []);
-  const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
+  const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []),
+    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = async (): Promise<Map<string, Uint8Array> | null> => {
@@ -131,6 +140,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
         <CodeModOption title="kahara" on={dropCap} problem={capProblem ?? (capError ? `${capError.line} 行目: ${capError.message} (書き出しません)` : null)} onChange={(on) => {
           game.dropCap = on;
           setDropCap(on);
+          session.scheduleSave();
+        }} />
+        <LevelStealthOption diff={stealth} problem={stealthProblem ?? (stealthError ? `${stealthError.line} 行目: ${stealthError.message} (書き出しません)` : null)} onChange={(d) => {
+          game.levelStealth = d;
+          setStealth(d);
           session.scheduleSave();
         }} />
         {errors > 0 && <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>}
