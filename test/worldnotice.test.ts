@@ -68,15 +68,46 @@ describe('entrance conditions', () => {
 
 // a blank code.bin: the patch only needs the cave and the hook's address
 const BLANK = new Uint8Array(0x420000);
-const F = { w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970, cameraTo: 0x317210, cameraBack: 0x301a44, release: 0x31c89c };
-/** The camera and handle functions of the notice (stubbed: they only matter by their order). */
-const CAMERA = [0x31c958, 0x31b1b4, 0x3179b8, 0x301f80, 0x31c948, 0x338450, F.cameraTo, 0x301d9c, 0x300854, 0x317524, F.cameraBack, 0x3007c0, 0x301888, 0x301764, F.release];
+const F = {
+  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970,
+  vehicle: 0x2e592c, party: 0x319a6c, place: 0x31c948, add: 0x338450, move: 0x31b408, turn: 0x331ca8, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
+};
+/** The other functions of the notice (stubbed: they only matter by their order). */
+const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x2fc19c, 0x301888, 0x3086e4, 0x31747c, 0x300854, 0x317524, 0x3007c0, 0x301764, F.release, F.turn];
+const f32 = (v: number): number => new Uint32Array(new Float32Array([v]).buffer)[0]!;
+const fromF32 = (v: number): number => new Float32Array(new Uint32Array([v]).buffer)[0]!;
+/** Where the party stands (x, y, z) and the entrances' objects' place. */
+const PARTY = [1250, -3, 4050];
+const ENTRANCE_AT = [8150, 0, 2350];
 
 /** Run the hook (FUN_0019aa88's W01 branch) and, when it made the notice action, its [2]. */
-function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean }) {
+function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean; vehicle?: boolean }) {
+  const vec = (m: ArmMachine, a: number): number[] => [0, 4, 8].map((i) => Math.round(fromF32(m.read(a + i, 4))));
+  const mover = (m: ArmMachine): number => {
+    const obj = m.alloc(0x20);
+    const node = m.alloc(0x40);
+    m.write(obj + 0x10, node, 4);
+    PARTY.forEach((v, i) => m.write(node + 0x14 + i * 4, f32(v), 4));
+    return obj;
+  };
   const stubs = new Map<number, (m: ArmMachine) => number>([
-    ...CAMERA.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
+    ...OTHERS.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
     [F.object, (m) => ((o.placed ?? (() => true))(m.r[0]!) ? 0x9000000 + m.r[0]! : 0)],
+    [F.vehicle, (m) => (o.vehicle ? mover(m) : 0)],
+    [F.party, (m) => mover(m)],
+    [F.place, (m) => {
+      const a = m.alloc(12);
+      ENTRANCE_AT.forEach((v, i) => m.write(a + i * 4, f32(v), 4));
+      return a;
+    }],
+    [F.add, (m) => {
+      const [a, b, out] = [m.r[0]!, m.r[1]!, m.r[2]!];
+      for (let i = 0; i < 12; i += 4) m.write(out + i, f32(fromF32(m.read(a + i, 4)) + fromF32(m.read(b + i, 4))), 4);
+      return out;
+    }],
+    [F.move, () => 0],
+    [F.fadeOut, () => 0],
+    [F.fadeIn, () => 0],
     [F.w01, () => o.game ?? 0],
     [F.alloc, (m) => m.alloc(0x10)],
     [F.base, (m) => m.r[0]!],
@@ -92,18 +123,24 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
   let shown: number[] = [];
   let written: number[][] = [];
   let order: string[] = [];
+  let moves: number[][] = [];
   if (made) {
     const vtable = m.read(action, 4);
     const m2 = new ArmMachine(code, { stubs, maxDepth: 6 });
+    // the places the mover is put at, read when FUN_0031b408 is called
+    const at: number[][] = [];
+    stubs.set(F.move, (mm) => (at.push(vec(mm, mm.r[1]!)), 0));
     m2.run(m2.read(vtable + 8, 4), [action]);
+    stubs.set(F.move, () => 0);
+    moves = at;
     shown = m2.calls.filter((c) => c.target === F.narrate).map((c) => c.args[0]!);
     written = m2.calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3));
-    const names = new Map([[F.cameraTo, 'to'], [F.narrate, 'message'], [F.cameraBack, 'back'], [F.release, 'release'], [F.setState, 'done']]);
+    const names = new Map([[F.fadeOut, 'out'], [F.move, 'move'], [F.fadeIn, 'in'], [F.narrate, 'message'], [F.release, 'release'], [F.setState, 'done']]);
     order = m2.calls.filter((c) => names.has(c.target)).map((c) => names.get(c.target)!);
     expect(m.calls.find((c) => c.target === F.base)?.args[1]).toBe(0x1000000);
     expect(vtable).toBe(built.labels.get('wn_vtable')!);
   }
-  return { action, made, first, shown, written, order };
+  return { action, made, first, shown, written, order, moves };
 }
 
 describe('notice patch (blank code.bin)', () => {
@@ -139,9 +176,17 @@ describe('notice patch (blank code.bin)', () => {
     expect(r.written).toEqual([[NOTICE_DUNGEON, 29, 1], [NOTICE_DUNGEON, 30, 1]]);
   });
 
-  test('the camera goes to the entrance and back around each message; without its object, the message only', () => {
+  test('a fade, the party 3 cells south of the entrance, the message, and back; without its object, the message only', () => {
     const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29 });
-    expect(r.order).toEqual(['to', 'message', 'back', 'release', 'done', 'message', 'done']);
+    expect(r.order).toEqual(['out', 'move', 'in', 'message', 'out', 'move', 'in', 'release', 'done', 'message', 'done']);
+    // the height kept, then the place it was at
+    expect(r.moves).toEqual([[ENTRANCE_AT[0]!, PARTY[1]!, ENTRANCE_AT[2]! + 300], PARTY]);
+  });
+
+  test('on a vehicle, the vehicle is moved', () => {
+    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, vehicle: true });
+    expect(r.order.slice(0, 4)).toEqual(['out', 'move', 'in', 'message']);
+    expect(r.moves.length).toBe(2);
   });
 
   test('nothing is made once shown, or when nothing holds', () => {

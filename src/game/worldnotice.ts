@@ -56,10 +56,12 @@ export function notices(events: EventTable | null | undefined): Notice[] {
  *   are still set) and returns its action; when it is 0 and a notice is due, a notice action (0x10 bytes,
  *   FUN_0031b170(obj, 0x1000000), the vtable of 0x4FB8C8 with our [2]).
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
- * - [2]: for each due notice, the camera to the entrance (its object FUN_0031c970(row): entrances keep their row
- *   at +0x5E), FUN_0030cc48(message, 0, 0, 0) (s0 = 0.2, like FUN_001c0630), the camera back, then
- *   FUN_003048f8(0x34, row, 1). The camera is the D01 gate script's (FUN_00258e54; elpulse's swshow) without the
- *   opening; no object (not on this map) = the message only. [4] (0x31713C) writes nothing for the pseudo-row.
+ * - [2]: for each due notice, a fade to black, the vehicle (FUN_002e592c) or the party (FUN_00319a6c) moved 3 cells
+ *   south of the entrance (its object FUN_0031c970(row): entrances keep their row at +0x5E) facing north, a fade
+ *   in, FUN_0030cc48(message, 0, 0, 0) (s0 = 0.2, like FUN_001c0630), then the same back to where it was, and
+ *   FUN_003048f8(0x34, row, 1). The move is the moving island's (FUN_002c4d98): turning the camera to a far place
+ *   leaves the map there unloaded. No object (not on this map) = the message only. [4] (0x31713C) writes nothing
+ *   for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
   const hex = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
@@ -121,11 +123,12 @@ wr_next:
   b wr_loop
 wr_done:
   pop {r4, pc}
-; r0 = 表の 1 件: カメラを入口 (行のオブジェクト、FUN_0031c970) へ向け、メッセージを出して戻す。
-; elpulse mod/build_code.py の swshow (D01 の門のスクリプト FUN_00258e54 と同じ) から扉を開ける処理を除いたもの
+; r0 = 表の 1 件: 暗転してプレイヤー (乗り物) を入口の 3 マス南へ移し、北を向かせてフェードインし、メッセージを出す。
+; また暗転して元の位置と向きに戻し、フェードインする。動く島の演出 (FUN_002c4d98) の移し方と、黄泉の門の演出
+; (FUN_001c0630) のメッセージの出し方。カメラを遠くへ向けると地形が読み込まれないので、カメラは動かさない
 wn_show:
   push {r4, r5, r6, lr}
-  sub sp, sp, #0xf0          ; +0 カメラ、+0x9C / +0xA8 差分、+0xB8 ハンドル、+0xD4 視点、+0xE0 注視点
+  sub sp, sp, #0x100         ; +0 カメラ、+0x9C 差分、+0xA8 元の位置、+0xB8 ハンドル、+0xD8 元の向き、+0xE4 移す先、+0xF0 北
   mov r4, r0
   ldr r0, [r4]
   bl FUN_0031c970            ; 入口のオブジェクト (0 = このマップにない)
@@ -135,45 +138,66 @@ wn_show:
   mov r2, #0
   add r0, sp, #0xb8
   bl FUN_0031c958            ; ハンドル
+  bl FUN_002e592c            ; 乗り物 (乗っていなければ 0)
+  movs r6, r0
+  bne ws_mover
+  bl FUN_00319a6c            ; パーティの先頭
+  movs r6, r0
+  bne ws_mover
+  add r0, sp, #0xb8
+  bl FUN_0031c89c            ; 動かす物がない: メッセージだけ
+  mov r5, #0
+  b ws_message
+ws_mover:
+  ldr r0, [r6, #0x10]        ; 変換ノード: +0x14 位置、+0x2C 向き
+  ldr r1, [r0, #0x14]
+  str r1, [sp, #0xa8]
+  ldr r1, [r0, #0x18]
+  str r1, [sp, #0xac]
+  ldr r1, [r0, #0x1c]
+  str r1, [sp, #0xb0]
+  ldr r1, [r0, #0x2c]
+  str r1, [sp, #0xd8]
+  ldr r1, [r0, #0x30]
+  str r1, [sp, #0xdc]
+  ldr r1, [r0, #0x34]
+  str r1, [sp, #0xe0]
+  bl ws_fade_out
   mov r0, sp
   mov r1, #0
   mov r2, #1
   bl FUN_0031b1b4            ; カメラ
   mov r0, sp
   bl FUN_003179b8
-  mov r0, sp
-  bl FUN_00301f80            ; 今の視点・注視点を覚える
   add r0, sp, #0xb8
   bl FUN_0031c948            ; 入口の位置
   mov r1, #0
-  str r1, [sp, #0xa8]
-  str r1, [sp, #0xb0]
-  ldr r1, =0x42480000        ; + (0, 50, 0): 注視点
-  str r1, [sp, #0xac]
-  add r1, sp, #0xa8
-  add r2, sp, #0xe0
-  bl FUN_00338450
-  add r0, sp, #0xb8
-  bl FUN_0031c948
-  mov r1, #0
   str r1, [sp, #0x9c]
-  ldr r1, =0x44947000        ; + (0, 1187.5, 1300): 視点
   str r1, [sp, #0xa0]
-  ldr r1, =0x44A28000
+  ldr r1, =0x43960000        ; + (0, 0, 300): 3 マス南
   str r1, [sp, #0xa4]
   add r1, sp, #0x9c
-  add r2, sp, #0xd4
+  add r2, sp, #0xe4
   bl FUN_00338450
-  ldr r0, =0x3FC00000        ; 1.5 秒
-  vmov s0, r0
-  mov r0, sp
-  add r1, sp, #0xd4
-  add r2, sp, #0xe0
-  mov r3, #3
-  bl FUN_00317210            ; カメラを入口へ
-  mov r0, sp
-  bl FUN_00301d9c            ; 動き終わるまで待つ
+  ldr r1, [sp, #0xac]        ; 高さは今のまま
+  str r1, [sp, #0xe8]
+  mov r0, r6
+  add r1, sp, #0xe4
+  bl FUN_0031b408            ; 位置
+  mov r1, #0
+  str r1, [sp, #0xf0]
+  str r1, [sp, #0xf8]
+  ldr r1, =0x40490FDB        ; π: 北を向く
+  str r1, [sp, #0xf4]
+  mov r0, r6
+  add r1, sp, #0xf0
+  bl FUN_00331ca8            ; 向き
+  bl ws_fade_in
 ws_message:
+  vldr s0, =0.3
+  bl FUN_00300854
+  mov r0, #0x2f
+  bl FUN_00317524            ; 効果音
   ldr r1, =0x3E4CCCCD        ; 0.2 (FUN_001c0630 と同じ)
   vmov s0, r1
   ldr r0, [r4, #0x14]        ; メッセージ
@@ -181,33 +205,52 @@ ws_message:
   mov r2, #0
   mov r3, #0
   bl FUN_0030cc48            ; 地の文の窓 (閉じるまで待つ)
+  vldr s0, =0.3
+  bl FUN_003007c0
   cmp r5, #0
   beq ws_out
-  ldr r0, =0x3E99999A        ; 0.3
-  vmov s0, r0
-  bl FUN_00300854
-  mov r0, #0x2f
-  bl FUN_00317524            ; 効果音
-  ldr r0, =0x3FC00000        ; 1.5 秒
-  vmov s0, r0
-  mov r0, sp
-  mov r1, #3
-  mov r2, #0
-  bl FUN_00301a44            ; カメラを戻す
-  mov r0, sp
-  bl FUN_00301d9c
-  ldr r0, =0x3E99999A
-  vmov s0, r0
-  bl FUN_003007c0
-  mov r0, sp
-  bl FUN_00301888
+  bl ws_fade_out
+  mov r0, r6
+  add r1, sp, #0xa8
+  bl FUN_0031b408            ; 元の位置
+  mov r0, r6
+  add r1, sp, #0xd8
+  bl FUN_00331ca8            ; 元の向き
+  bl ws_fade_in
   mov r0, sp
   bl FUN_00301764            ; カメラの後始末
   add r0, sp, #0xb8
   bl FUN_0031c89c            ; ハンドルを解放
 ws_out:
-  add sp, sp, #0xf0
+  add sp, sp, #0x100
   pop {r4, r5, r6, pc}
+; 黒へ 1 秒でフェードアウトし、終わるまで待つ
+ws_fade_out:
+  push {r4, lr}
+  mov r0, #0
+  mov r1, #0
+  mov r2, #0
+  mov r3, #2
+  bl FUN_003174e8            ; フェードの色
+  vldr s0, =1.0
+  bl FUN_00300dbc
+  pop {r4, pc}
+; (呼び元の sp + 8 のカメラ) を移した先へすぐ合わせ、1 秒待って 1 秒でフェードインする
+ws_fade_in:
+  push {r4, lr}
+  add r4, sp, #8             ; 呼び元のカメラ
+  mov r0, r4
+  vldr s0, =0.0
+  bl FUN_002fc19c            ; カメラを追従に (すぐ)
+  mov r0, r4
+  bl FUN_00301888
+  vldr s0, =1.0
+  bl FUN_003086e4            ; 1 秒待つ
+  mov r0, #2
+  vldr s0, =1.0
+  bl FUN_0031745c            ; フェードイン
+  bl FUN_0031747c            ; 終わるまで待つ
+  pop {r4, pc}
 ; 出すべき告知があるか
 wn_pending:
   push {r4, lr}
