@@ -3,12 +3,14 @@
 import { useState, type ReactNode } from 'react';
 import { setStageCommands, stageCommands } from '../game/boss';
 import { ACTOR_HERO, ACTOR_NONE, ACTOR_PARTY, OP, type Command } from '../game/cutscene';
-import { LAYOUTS, recCellPos, recEventRow } from '../game/sections';
+import { recEventRow } from '../game/sections';
 import type { Session } from '../session';
 import { MessagePicker } from '../ui/MessagePicker';
 import { MessageEditor } from '../ui/message';
 import { Num } from './fields';
 import { hexId } from './message';
+import { eventChoices } from './events';
+import { PlacedPickButton } from './objectpick';
 
 const OPS: { op: number; label: string; help: string }[] = [
   { op: OP.MSG, label: 'セリフ', help: '話者に話すアニメをさせてメッセージを出します (ボタンで閉じる)。主人公の既定は話す 0x1F → 立ち 1。ほかのキャラは指定したときだけ (町の人: 話す 0x5B / 立ち 0x58)' },
@@ -67,19 +69,17 @@ export function ScriptEditor({ session, row, n }: { session: Session; row: numbe
   };
   // actors: the characters (section 5) on this map, by their event row
   const doc = st.current;
-  const actors = [...new Map((doc?.recs[5] ?? []).map((r) => {
-    const evRow = recEventRow(5, r.raw);
-    const [cx, cy] = recCellPos(r, LAYOUTS[5]!);
-    return [evRow, `イベント #${evRow} (区画 5、セル ${cx.toFixed(1)}, ${cy.toFixed(1)})`] as const;
-  })).entries()].sort((a, b) => a[0] - b[0]);
+  const actorRows = [...new Set((doc?.recs[5] ?? []).map((r) => recEventRow(5, r.raw)))].filter((r) => ev.has(r)).sort((a, b) => a - b);
+  const actorChoices = doc ? eventChoices(st, actorRows) : [];
   const actorSelect = (c: Command, i: number, allowNone: boolean, allowParty: boolean): ReactNode => (
-    <select value={c.actor} title="役者" onChange={(e) => set(i, { actor: Number(e.target.value) })}>
-      {allowNone && <option value={ACTOR_NONE}>{c.op === OP.CAMERA ? '(位置を映す)' : '(話者なし)'}</option>}
-      <option value={ACTOR_HERO}>主人公</option>
-      {allowParty && <option value={ACTOR_PARTY}>パーティ全員</option>}
-      {actors.map(([r, label]) => <option key={r} value={r}>{label}</option>)}
-      {![ACTOR_NONE, ACTOR_HERO, ACTOR_PARTY].includes(c.actor) && !actors.some(([r]) => r === c.actor) && <option value={c.actor}>{`イベント #${c.actor} (このマップにいない)`}</option>}
-    </select>
+    <PlacedPickButton title="役者を選ぶ (このマップの区画 5 のキャラ)" value={c.actor} choices={actorChoices}
+      extra={[
+        ...(allowNone ? [{ value: ACTOR_NONE, label: c.op === OP.CAMERA ? '(位置を映す)' : '(話者なし)' }] : []),
+        { value: ACTOR_HERO, label: '主人公' },
+        ...(allowParty ? [{ value: ACTOR_PARTY, label: 'パーティ全員' }] : []),
+      ]}
+      missing={(v) => `イベント #${v} (このマップにいない)`}
+      onChange={(v) => set(i, { actor: v })} />
   );
   const pos = (c: Command, i: number): ReactNode => (
     <span className="row" title="位置 (細かい単位: 1 = 1/5 セル、マップの x / y と同じ)">
@@ -180,7 +180,7 @@ export function ScriptEditor({ session, row, n }: { session: Session; row: numbe
     <div className="scene-box">
       <div className="muted small">
         上から順に動きます。話者はゲームのセリフの関数には指定がないので、話者に話すアニメをさせ、必要ならカメラやマークで示します。
-        役者に選べるのは、このマップの区画 5 に置いたキャラ (イベントの行) です。始めると操作が止まり、終わるとカメラ・フェード・操作が元に戻ります。
+        役者に選べるのは、このマップの区画 5 に置いたキャラです。始めると操作が止まり、終わるとカメラ・フェード・操作が元に戻ります。
       </div>
       <ol className="scene-list">
         {cmds.map((c, i) => (
@@ -203,7 +203,7 @@ export function ScriptEditor({ session, row, n }: { session: Session; row: numbe
         <button className="small" onClick={() => save([...cmds, newCommand(adding)])}>命令を足す</button>
       </div>
       <div className="muted small">{OPS.find((o) => o.op === adding)?.help}</div>
-      {cmds.some((c) => WITH_ACTOR.has(c.op) && c.actor !== ACTOR_NONE && c.actor !== ACTOR_HERO && c.actor !== ACTOR_PARTY && !actors.some(([r]) => r === c.actor)) && (
+      {cmds.some((c) => WITH_ACTOR.has(c.op) && c.actor !== ACTOR_NONE && c.actor !== ACTOR_HERO && c.actor !== ACTOR_PARTY && !actorRows.includes(c.actor)) && (
         <div className="error">このマップにいない役者の命令は何もしません。</div>
       )}
       {error && <div className="error">{error}</div>}

@@ -5,7 +5,7 @@ import { hex8, u32, w32 } from '../util/bytes';
 import { norm } from './controller';
 import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt } from './state';
-import { mapLabel, pointLabel, worldHref } from './labels';
+import { mapLabel, worldHref } from './labels';
 import { TreasureEditor } from './treasure';
 import { EventListDialog, EventPanel } from './events';
 import { BossPanel } from './boss';
@@ -21,6 +21,7 @@ import { SECTION1_KIND, isIndoor, objectCategory, recordObjectRow, OBJ_INVISIBLE
 import { ENT, parseEntrances } from '../game/worldmap';
 import { MapButton } from '../ui/MapPicker';
 import { useEditorState } from '../ui/useEditorState';
+import { entranceRef, objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
 
 const Dot = ({ k }: { k: number }): ReactNode => <span className="dot" style={{ background: SECTION_COLORS[k] }} />;
 
@@ -144,13 +145,13 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
       )}
       {k === 2 && (
         <>
-          <Field label="オブジェクト = mapObject の行 (+0)"><Num value={u32(r.raw, 0)} min={0} onChange={setU32(0)} /></Field>
+          <Field label="置物のモデル (+0、mapObject 番号)"><Num value={u32(r.raw, 0)} min={0} onChange={setU32(0)} /></Field>
           <Field label="向き (+8)"><Num value={r.raw[8]!} min={0} max={3} onChange={setByte(8)} /></Field>
         </>
       )}
       {(k === 4 || k === 5 || k === 8) && (
         <>
-          <Field label="イベントの行 (+0)"><Num value={u32(r.raw, 0)} min={0} onChange={setU32(0)} /></Field>
+          <Field label="イベント番号 (+0)"><Num value={u32(r.raw, 0)} min={0} onChange={setU32(0)} /></Field>
           {k === 4 && (
             <>
               <Field label="向き (+8)"><Num value={r.raw[8]!} min={0} max={3} onChange={setByte(8)} /></Field>
@@ -197,7 +198,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
               <Num value={ev.model(evRow)} min={0} onChange={(v) => st.editTables(() => ev.setModel(evRow, v & 0xffff))} />
             </Field>
           )}
-          {ev && !ev.has(evRow) && <div className="error">{`イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`}</div>}
+          {ev && !ev.has(evRow) && <div className="error">{`イベント #${evRow} はこのダンジョンのイベント表 (${ev.rows} 件) にありません`}</div>}
         </>
       )}
       {k === 8 && ev?.has(evRow) && ev.kind(evRow) === KIND_BOSS && <BossPanel session={editor.session} row={evRow} />}
@@ -225,7 +226,7 @@ function WallDoorFields({ editor, r, setU32, setByte }: {
   return (
     <>
       <Field label="地点 ID (+0x00)"><HexInput value={P7.id(r.raw)} onChange={setU32(0)} /></Field>
-      <Field label="イベントの行 (+0x04、扉。0 = なし)"><Num value={P7.door(r.raw)} onChange={setU32(4)} /></Field>
+      <Field label="イベント番号 (+0x04、扉。0 = なし)"><Num value={P7.door(r.raw)} onChange={setU32(4)} /></Field>
       <DestFields editor={editor} r={r} setU32={setU32} offMap={8} offPoint={0x0c} />
       <Field label="種類 (+0x14、0 = 扉、それ以外 = 出口)"><Num value={P7.kind(r.raw)} min={0} max={255} onChange={setByte(0x14)} /></Field>
       <Field label="向き (+0x16、0〜3。R で回す)"><Num value={P7.dir(r.raw)} min={0} max={3} onChange={setByte(0x16)} /></Field>
@@ -251,24 +252,39 @@ function DestFields({ editor, r, setU32, offMap, offPoint }: {
   if (destInfo) {
     const dd = st.docs.get(destMap) ?? loadDoc(game.db, destInfo);
     // exits lead to section 3 points or to the doors on walls (section 7) of the other map
-    const ids = [
-      ...(dd.recs[3] ?? []).map((p) => ({ id: P3.id(p.raw), label: pointLabel(p.raw, p.x, p.y) })),
-      ...(dd.recs[7] ?? []).map((p) => ({ id: P7.id(p.raw), label: `${P7.visible(p.raw) ? '壁の扉' : '壁の出口'} (${(p.x / CELL).toFixed(1)}, ${(p.y / CELL).toFixed(1)})` })),
-    ];
+    const ctx = { master: game.master, events: st.events.get(destInfo.dungeon) ?? null, indoor: isIndoor(dd) };
+    const choices: PlacedChoice[] = ([3, 7] as const).flatMap((k) => (dd.recs[k] ?? []).map((p) => {
+      const [x, y] = recCellPos(p, LAYOUTS[k]!);
+      const id = k === 3 ? P3.id(p.raw) : P7.id(p.raw);
+      return {
+        value: id,
+        name: k === 3 ? pointKindLabel(P3.kind(p.raw)) : P7.visible(p.raw) ? '壁の扉' : '壁の出口 (見えない)',
+        sub: `セル (${x.toFixed(1)}, ${y.toFixed(1)})  ID ${hex8(id)}`,
+        model: objectRef(game, recordObjectRow(k, p, ctx)),
+        badge: '⇲',
+        where: { doc: dd, x, y },
+        category: LAYOUTS[k]!.label,
+        keywords: hex8(id),
+      };
+    }));
     pointSel = (
-      <select value={destPoint} onChange={(e) => setU32(offPoint)(Number(e.target.value))}>
-        {!ids.some((p) => p.id === destPoint) && <option value={destPoint}>{`${hex8(destPoint)} (行き先にない)`}</option>}
-        {ids.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-      </select>
+      <PlacedPickButton title={`行き先の地点を選ぶ (${destInfo.name})`} value={destPoint} choices={choices}
+        missing={(v) => `${hex8(v)} (行き先にない)`} onChange={setU32(offPoint)} />
     );
   } else if (world) {
     // Leaving to the world map: the point is the ID of one of its entrances (docs/worldmap.md §6).
     const ents = parseEntrances(game.db.get(world.sections[2]!));
+    const choices: PlacedChoice[] = ents.map((e) => ({
+      value: ENT.id(e),
+      name: `入口 → ${mapLabel(game, ENT.destMap(e))}`,
+      sub: `位置 (${ENT.x(e)}, ${ENT.y(e)})  ID ${hex8(ENT.id(e))}`,
+      model: entranceRef(game, ENT.model(e), ENT.part(e)),
+      badge: '⌂',
+      keywords: hex8(ENT.id(e)),
+    }));
     pointSel = (
-      <select value={destPoint} onChange={(e) => setU32(offPoint)(Number(e.target.value))}>
-        {!ents.some((e) => ENT.id(e) === destPoint) && <option value={destPoint}>{`${hex8(destPoint)} (ワールドマップにない)`}</option>}
-        {ents.map((e) => <option key={ENT.id(e)} value={ENT.id(e)}>{`入口 ${hex8(ENT.id(e))} (${ENT.x(e)}, ${ENT.y(e)}) → ${mapLabel(game, ENT.destMap(e))}`}</option>)}
-      </select>
+      <PlacedPickButton title="ワールドマップの入口を選ぶ" value={destPoint} choices={choices}
+        missing={(v) => `${hex8(v)} (ワールドマップにない)`} onChange={setU32(offPoint)} />
     );
   } else pointSel = <HexInput value={destPoint} onChange={setU32(offPoint)} />;
   return (
@@ -292,7 +308,7 @@ function PointFields({ editor, r, setU32, setByte }: {
     <>
       <Field label="地点 ID (+0x00)"><HexInput value={P3.id(r.raw)} onChange={setU32(0)} /></Field>
       <DestFields editor={editor} r={r} setU32={setU32} offMap={4} offPoint={8} />
-      <Field label="イベントの行 (+0x0C、扉・ワープなど。0 = なし)"><Num value={P3.door(r.raw)} onChange={setU32(0x0c)} /></Field>
+      <Field label="イベント番号 (+0x0C、扉・ワープなど。0 = なし)"><Num value={P3.door(r.raw)} onChange={setU32(0x0c)} /></Field>
       <Field label={`種類 (+0x14) ${pointKindLabel(kind)}`}><Num value={kind} min={0} max={255} onChange={setByte(0x14)} /></Field>
       <Field label="補助 (+0x15)"><Num value={P3.aux(r.raw)} min={0} max={255} onChange={setByte(0x15)} /></Field>
       <Field label="セル内の位置 (+0x19、3×3: 0 = 左上、4 = 中央、8 = 右下)"><Num value={P3.slot(r.raw)} min={0} max={8} onChange={setByte(0x19)} /></Field>
@@ -322,7 +338,7 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
           <tr><td>6 敵が出ないセル</td><td>{doc.cells6.length}</td>{mark(6)}</tr>
         </tbody>
       </table>
-      {st.currentEvents && <button onClick={() => setListing(true)}>{`イベントの一覧… (${st.currentEvents.rows} 行)`}</button>}
+      {st.currentEvents && <button onClick={() => setListing(true)}>{`イベントの一覧… (${st.currentEvents.rows} 件)`}</button>}
       {changed.length
         ? <button className="danger" onClick={() => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash)}>このマップの変更を元に戻す</button>
         : <div className="muted">変更なし</div>}
