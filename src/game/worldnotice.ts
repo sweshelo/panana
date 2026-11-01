@@ -1,7 +1,8 @@
 // "〇〇が出現した！" on W01: when the world map loads and an entrance that Panana marked has just become visible (its
-// W01_EventObject row's conditions hold and the row's state is still 0), a message is shown once and the row's
-// state is set to 1. It also shows for a save that already met the conditions, on the first load after the MOD is
-// put in. docs/integrations/panana/world-notice.md.
+// W01_EventObject row's conditions hold and the row's state is still 0), the party is warped next to it, the message
+// is shown once, the row's state is set to 1 and the party is warped back to where it stood. It also shows for a
+// save that already met the conditions, on the first load after the MOD is put in.
+// docs/integrations/panana/world-notice.md.
 //
 // The game has the place for it: every field load queues pseudo-row 0x1000000 ("on entering the map",
 // FUN_00198450), and FUN_0019aa88 makes its action per dungeon; W01's branch tail-calls FUN_0017e08c at 0x19ABA0,
@@ -11,6 +12,7 @@
 import type { CodePatch } from './patch';
 import type { EventTable } from './events';
 import { u32, w32 } from '../util/bytes';
+import { ENT } from './worldmap';
 
 /** mapGroup row of W01: the only world map with the hook (FUN_0019aa88's branch at 0x19ABA0). */
 export const NOTICE_DUNGEON = 0x34;
@@ -28,6 +30,16 @@ export const NOTICE_TEMPLATE = 0x1bf6;
 export const NOTICE_PATCH_ID = 'world-notice';
 export const NOTICE_PATCH_TITLE = 'ワールドマップの出現の告知';
 
+/** W01's map hash (the destination of FUN_00308d44). */
+const W01_MAP = 0xa8654391;
+/**
+ * Where the notice keeps its state across the two loads it warps through: the unused end of .bss's last page
+ * (.bss is 0x5E5D3C..0x63F4B4; nothing in code.bin points past it). Not cleared at boot, hence the mark.
+ * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59).
+ */
+export const NOTICE_STATE = 0x63ff00;
+const NOTICE_MARK = 0x4e574e50; // 'PNWN'
+
 export interface Notice {
   row: number;
   message: number;
@@ -37,6 +49,8 @@ export interface Notice {
   show: [number, number];
   /** +0x4C and its value +0x04 (gone when it holds). */
   hide: [number, number];
+  /** ID of the W01 entrance with this row (+0x10): the party is warped next to it. */
+  entrance: number;
 }
 
 export const noticeMessage = (row: Uint8Array): number => u32(row, NOTICE_FIELD);
@@ -48,36 +62,40 @@ export function setNoticeSound(row: Uint8Array, sound: number): void {
   w32(row, NOTICE_SOUND_FIELD, sound);
 }
 
-/** The rows of W01's table that have a notice. */
-export function notices(events: EventTable | null | undefined): Notice[] {
+/** The rows of W01's table that have a notice and an entrance (section 2 of W01) to show. */
+export function notices(events: EventTable | null | undefined, entrances: readonly Uint8Array[]): Notice[] {
   if (!events || events.dungeon !== NOTICE_DUNGEON) return [];
   const out: Notice[] = [];
   for (let row = 1; row < events.rows && row < events.capacity; row++) {
     const r = events.table.row(row);
     const message = noticeMessage(r);
-    if (message) out.push({ row, message, sound: noticeSound(r), show: [r[0x4b]!, u32(r, 0x00)], hide: [r[0x4c]!, u32(r, 0x04)] });
+    const entrance = entrances.find((e) => ENT.event(e) === row);
+    if (message && entrance) out.push({ row, message, sound: noticeSound(r), show: [r[0x4b]!, u32(r, 0x00)], hide: [r[0x4c]!, u32(r, 0x04)], entrance: ENT.id(entrance) });
   }
   return out;
 }
 
 /**
- * The patch with the notices in a table of 7 words each {row, +0x4B, +0x00, +0x4C, +0x04, message, sound} ended by row 0.
+ * The patch with the notices in a table of 8 words each {row, +0x4B, +0x00, +0x4C, +0x04, message, sound, entrance}
+ * ended by row 0.
  * - 0x19ABA0 (`b 0x17e08c`, after FUN_0019aa88's pop): to the cave, which calls FUN_0017e08c (r0 = handler, r1 = 4
- *   are still set) and returns its action; when it is 0 and a notice is due, a notice action (0x10 bytes,
- *   FUN_0031b170(obj, 0x1000000), the vtable of 0x4FB8C8 with our [2]).
+ *   are still set) and returns its action; when it is 0, a notice action (0x10 bytes, FUN_0031b170(obj, 0x1000000),
+ *   the vtable of 0x4FB8C8 with our [2]) when a notice is due (not on a vehicle: its place is kept apart,
+ *   FUN_002e85f0) or the party was just warped next to an entrance.
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
- * - [2]: for each due notice, a fade to black; the party lined up 3 cells south of the entrance facing north
- *   (FUN_0030150c, like 黄泉の門's scene; on a vehicle, the vehicle moved like the moving island's FUN_002c4d98); the
- *   camera put on the entrance at once (FUN_00317210, s0 = 0; the entrance's object FUN_0031c970(row): entrances
- *   keep their row at +0x5E); 1 s in black for the map to load, a fade in, the sound (FUN_00317524) and
- *   FUN_0030cc48(message, 0, 0, 0) (s0 = 0.2, like FUN_001c0630); then the party put back, the camera back to
- *   following (FUN_00301888), a fade in, and FUN_003048f8(0x34, row, 1). Only the camera turned to a far place
- *   leaves the map there unloaded. No object (not on this map) = the message only. [4] (0x31713C) writes nothing
- *   for the pseudo-row.
+ * - [2], first load: keeps the row, the place (0x58, FUN_003039fc) and the angle (0x59, FUN_00430e20) at
+ *   NOTICE_STATE, fades to black and warps next to the entrance like 黄泉の門's scene (FUN_00226064):
+ *   FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0) (s0 = *0x4D07CC). The map is
+ *   built at a load, so turning the camera or moving the party far does not show the place there.
+ * - [2], next to the entrance: black at once, the camera on the entrance (FUN_00317210, s0 = 0), a fade in, the
+ *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black, 0x58 /
+ *   0x59 written back (FUN_003012dc / FUN_003012b0, like FUN_001db864) and a warp to point 0 of W01, where
+ *   FUN_004326a8 places the party at 0x58.
+ * - Back where it was: the phase is cleared; [4] (0x31713C) writes nothing for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
   const hex = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
-  const table = list.flatMap((n) => [`  .word ${n.row}                 ; 行`, ...[n.show[0], n.show[1], n.hide[0], n.hide[1], n.message, n.sound].map((v) => `  .word ${hex(v)}`)]);
+  const table = list.flatMap((n) => [`  .word ${n.row}                 ; 行`, ...[n.show[0], n.show[1], n.hide[0], n.hide[1], n.message, n.sound, n.entrance].map((v) => `  .word ${hex(v)}`)]);
   return `; ワールドマップの出現の告知 (W01)。docs/integrations/panana/world-notice.md
 ; FUN_0019aa88 の W01 の分岐 (pop のあとの末尾呼び出し)
 @0x19ABA0
@@ -88,9 +106,24 @@ wn_hook:
   bl 0x17E08C                ; ゲームのワールドマップの演出
   cmp r0, #0
   bne wh_out
+  bl wn_phase
+  cmp r0, #1
+  beq wh_make                ; 入口の隣に来た
+  cmp r0, #2
+  bne wh_check
+  ldr r1, =${hex(NOTICE_STATE)}     ; 元の場所に戻った
+  mov r0, #0
+  str r0, [r1, #4]
+  b wh_out
+wh_check:
+  bl FUN_002e592c            ; 乗り物 (乗っている間は出さない)
+  cmp r0, #0
+  movne r0, #0
+  bne wh_out
   bl wn_pending
   cmp r0, #0
   beq wh_out
+wh_make:
   mov r0, #0x10
   bl FUN_0033d690            ; 確保
   cmp r0, #0
@@ -112,116 +145,159 @@ wn_vtable:
   .word 0x43C2CC
   .word 0
   .word 0
-; 告知を順に出す (キューのコルーチンの中)
+; 段階 (目印がなければ 0)
+wn_phase:
+  ldr r1, =${hex(NOTICE_STATE)}
+  ldr r0, [r1]
+  ldr r2, =${hex(NOTICE_MARK)}
+  cmp r0, r2
+  movne r0, #0
+  ldreq r0, [r1, #4]
+  bx lr
+; キューのコルーチンの中: 1 回目は入口の隣へワープ、2 回目は告知して元の場所へワープ
 wn_run:
-  push {r4, lr}
+  push {r4, r5, r6, lr}
+  ldr r5, =${hex(NOTICE_STATE)}
+  bl wn_phase
+  cmp r0, #1
+  beq wr_there
   ldr r4, =wn_table
-wr_loop:
+wr_find:
   ldr r0, [r4]
   cmp r0, #0
-  beq wr_done
+  beq wr_out
   mov r0, r4
   bl wn_due
   cmp r0, #0
-  beq wr_next
+  bne wr_go
+  add r4, r4, #0x20
+  b wr_find
+wr_go:
+  ldr r0, =${hex(NOTICE_MARK)}
+  str r0, [r5]
+  ldr r0, [r4]
+  str r0, [r5, #8]           ; 行
+  add r0, r5, #0xc
+  bl FUN_003039fc            ; 今の位置 (0x58)
+  bl wn_save
+  bl FUN_00430e20            ; 今の角度 (0x59)、s0
+  vstr s0, [r5, #0x18]
+  mov r0, #1
+  str r0, [r5, #4]
+  bl wn_black_out
+  bl wn_save
+  ldr r1, =${hex(W01_MAP)}
+  ldr r2, [r4, #0x1c]        ; 入口の ID: その隣に出る
+  bl FUN_00308d44            ; ワープ
+  bl wn_switch
+  b wr_out
+wr_there:
+  ldr r4, =wn_table
+wr_row:
+  ldr r0, [r4]
+  cmp r0, #0
+  beq wr_reset               ; 表にない (MOD が変わった)
+  ldr r1, [r5, #8]
+  cmp r0, r1
+  beq wr_found
+  add r4, r4, #0x20
+  b wr_row
+wr_found:
+  mov r0, r4
+  bl wn_due
+  cmp r0, #0
+  beq wr_back
   mov r0, r4
   bl wn_show                 ; カメラを入口へ向けてメッセージ
   mov r0, #0x34
   ldr r1, [r4]
   mov r2, #1
   bl FUN_003048f8            ; 告知済み
-wr_next:
-  add r4, r4, #0x1c
-  b wr_loop
-wr_done:
+wr_back:
+  bl wn_black_out
+  bl FUN_003008dc
+  bl wn_save
+  mov r6, r0
+  add r1, r5, #0xc
+  bl FUN_003012dc            ; 0x58 = 元の位置
+  vldr s0, [r5, #0x18]
+  mov r0, r6
+  bl FUN_003012b0            ; 0x59 = 元の角度
+  mov r0, #0
+  bl FUN_00300678
+  mov r0, r6
+  ldr r1, =${hex(W01_MAP)}
+  mov r2, #0                 ; 地点 0: 0x58 に出る
+  bl FUN_00308d44            ; ワープ
+  mov r0, #2
+  str r0, [r5, #4]
+  bl wn_switch
+  b wr_out
+wr_reset:
+  mov r0, #0
+  str r0, [r5, #4]
+wr_out:
+  pop {r4, r5, r6, pc}
+; r0 = *0x564638 + 0x404 (セーブ)
+wn_save:
+  ldr r0, =0x564638
+  ldr r0, [r0]
+  add r0, r0, #0x400
+  add r0, r0, #4
+  bx lr
+; シーンを切り替える (黄泉の門の FUN_00226064 と同じ)
+wn_switch:
+  push {r4, lr}
+  mov r0, #4                 ; フィールド
+  mov r1, #0
+  bl FUN_003014f0
+  ldr r0, =0x4D07CC          ; 0.3 秒
+  vldr s0, [r0]
+  mov r0, #0
+  mov r1, #0
+  bl FUN_00308bac
   pop {r4, pc}
-; r0 = 表の 1 件: 暗転してパーティを入口の 3 マス南へ北向きに並べ (FUN_0030150c、黄泉の門の演出と同じ)、カメラを入口へ
-; すぐ向け (FUN_00317210、s0 = 0)、黒いまま 1 秒待って (地形が読み込まれる) フェードインし、効果音とメッセージを出す。
-; また暗転してパーティを元の位置と向きに戻し、カメラを追従に戻してフェードインする。乗り物に乗っていれば乗り物を
-; 動かす (動く島の演出 FUN_002c4d98 と同じ)。遠くの場所へカメラだけを向けると地形が読み込まれない
+; 黒へ 0.5 秒でフェードアウトし、終わるまで待つ
+wn_black_out:
+  push {r4, lr}
+  mov r0, #0
+  mov r1, #0
+  mov r2, #0
+  mov r3, #2
+  bl FUN_003174e8            ; フェードの色
+  vldr s0, =0.5
+  bl FUN_00300dbc
+  pop {r4, pc}
+; r0 = 表の 1 件 (入口の隣に来たところ): すぐ黒にし、カメラを入口へ向け、フェードインして効果音とメッセージを出す
 wn_show:
-  push {r4, r5, r6, r7, r8, lr}
-  sub sp, sp, #0x120         ; +0 カメラ、+0x9C 差分、+0xA8 元の位置、+0xB8 ハンドル、+0xD8 視点、+0xE4 移す先、+0xF0 北、+0x100 元の向き、+0x110 注視点
+  push {r4, r5, r6, lr}
+  sub sp, sp, #0xf0          ; +0 カメラ、+0x9C 差分、+0xB8 ハンドル、+0xD8 視点、+0xE4 注視点
   mov r4, r0
+  mov r0, #0
+  mov r1, #0
+  mov r2, #0
+  mov r3, #2
+  bl FUN_003174e8
+  vldr s0, =0.0
+  mov r0, #2
+  bl FUN_003174c8            ; すぐ黒
   ldr r0, [r4]
-  bl FUN_0031c970            ; 入口のオブジェクト (0 = このマップにない)
+  bl FUN_0031c970            ; 入口のオブジェクト (0 = ない)
   movs r5, r0
-  beq ws_message
+  beq ws_in
   mov r1, r5
   mov r2, #0
   add r0, sp, #0xb8
   bl FUN_0031c958            ; ハンドル
-  mov r8, #0
-  bl FUN_002e592c            ; 乗り物 (乗っていなければ 0)
-  movs r6, r0
-  bne ws_mover
-  mov r8, #1                 ; パーティ (仲間ごと並べる)
-  bl FUN_00319a6c            ; パーティの先頭
-  movs r6, r0
-  bne ws_mover
-  add r0, sp, #0xb8
-  bl FUN_0031c89c            ; 動かす物がない: メッセージだけ
-  mov r5, #0
-  b ws_message
-ws_mover:
-  ldr r0, [r6, #0x10]        ; 変換ノード: +0x14 位置、+0x2C 向き
-  ldr r1, [r0, #0x14]
-  str r1, [sp, #0xa8]
-  ldr r1, [r0, #0x18]
-  str r1, [sp, #0xac]
-  ldr r1, [r0, #0x1c]
-  str r1, [sp, #0xb0]
-  ldr r1, [r0, #0x10]
-  and r7, r1, #8             ; 8 = 向きが四元数 (+0x38 の 4 語)、0 = オイラー角 (+0x2C の 3 語)
-  add r1, r0, #0x2c
-  cmp r7, #0
-  addne r1, r0, #0x38
-  ldr r2, [r1]
-  str r2, [sp, #0x100]
-  ldr r2, [r1, #4]
-  str r2, [sp, #0x104]
-  ldr r2, [r1, #8]
-  str r2, [sp, #0x108]
-  ldr r2, [r1, #12]
-  str r2, [sp, #0x10c]
-  bl ws_fade_out
   mov r0, sp
   mov r1, #0
   mov r2, #1
   bl FUN_0031b1b4            ; カメラ
   mov r0, sp
   bl FUN_003179b8            ; 制御を取る
-  mov r1, #0                 ; + (0, 0, 300): 3 マス南
-  ldr r2, =0x43960000
-  add r3, sp, #0xe4
-  bl ws_entrance_plus
-  ldr r1, [sp, #0xac]        ; 高さは今のまま
-  str r1, [sp, #0xe8]
-  cmp r8, #0
-  beq ws_vehicle
-  add r0, sp, #0xe4
-  mov r1, #3                 ; 先頭が北を向き、仲間がその南に並ぶ
-  mov r2, #1
-  mov r3, #1
-  vldr s0, =100.0
-  bl FUN_0030150c            ; パーティを並べる
-  b ws_placed
-ws_vehicle:
-  mov r0, r6
-  add r1, sp, #0xe4
-  bl FUN_0031b408            ; 位置
-  mov r1, #0
-  str r1, [sp, #0xf0]
-  str r1, [sp, #0xf8]
-  ldr r1, =0x40490FDB        ; π: 北を向く
-  str r1, [sp, #0xf4]
-  mov r0, r6
-  add r1, sp, #0xf0
-  bl FUN_00331ca8            ; 向き
-ws_placed:
   ldr r1, =0x42480000        ; 注視点 = 入口 + (0, 50, 0)
   mov r2, #0
-  add r3, sp, #0x110
+  add r3, sp, #0xe4
   bl ws_entrance_plus
   ldr r1, =0x44947000        ; 視点 = 入口 + (0, 1187.5, 1300)
   ldr r2, =0x44A28000
@@ -230,11 +306,16 @@ ws_placed:
   vldr s0, =0.0              ; すぐ
   mov r0, sp
   add r1, sp, #0xd8
-  add r2, sp, #0x110
+  add r2, sp, #0xe4
   mov r3, #3
   bl FUN_00317210            ; カメラを入口へ
-  bl ws_fade_in
-ws_message:
+ws_in:
+  vldr s0, =0.5
+  bl FUN_003086e4            ; 少し待つ
+  mov r0, #2
+  vldr s0, =1.0
+  bl FUN_0031745c            ; フェードイン
+  bl FUN_0031747c            ; 終わるまで待つ
   vldr s0, =0.3
   bl FUN_00300854
   ldr r0, [r4, #0x18]        ; 効果音 (soundData の行、0 = 鳴らさない)
@@ -251,41 +332,15 @@ ws_message:
   bl FUN_003007c0
   cmp r5, #0
   beq ws_out
-  bl ws_fade_out
-  cmp r8, #0
-  beq ws_vehicle_back
-  add r0, sp, #0xa8
-  mov r1, #3
-  mov r2, #1
-  mov r3, #0                 ; 向きは下で戻す
-  vldr s0, =100.0
-  bl FUN_0030150c            ; 元の位置へ
-  b ws_turn_back
-ws_vehicle_back:
-  mov r0, r6
-  add r1, sp, #0xa8
-  bl FUN_0031b408            ; 元の位置
-ws_turn_back:
-  add r1, sp, #0x100
-  cmp r7, #0
-  bne ws_quat
-  mov r0, r6
-  bl FUN_00331ca8            ; 元の向き
-  b ws_turned
-ws_quat:
-  ldr r0, [r6, #0x10]
-  bl FUN_0032e6bc            ; 元の向き (四元数、変換ノードに)
-ws_turned:
   mov r0, sp
   bl FUN_00301888            ; カメラを追従に戻す
-  bl ws_fade_in
   mov r0, sp
   bl FUN_00301764            ; カメラの後始末
   add r0, sp, #0xb8
   bl FUN_0031c89c            ; ハンドルを解放
 ws_out:
-  add sp, sp, #0x120
-  pop {r4, r5, r6, r7, r8, pc}
+  add sp, sp, #0xf0
+  pop {r4, r5, r6, pc}
 ; 入口の位置 + (0, r1, r2) (float のビット) を r3 に書く。入口は呼び元の sp + 0xB8 のハンドル
 ws_entrance_plus:
   push {r4, r5, r6, lr}
@@ -302,27 +357,6 @@ ws_entrance_plus:
   bl FUN_00338450
   add sp, sp, #0x10
   pop {r4, r5, r6, pc}
-; 黒へ 1 秒でフェードアウトし、終わるまで待つ
-ws_fade_out:
-  push {r4, lr}
-  mov r0, #0
-  mov r1, #0
-  mov r2, #0
-  mov r3, #2
-  bl FUN_003174e8            ; フェードの色
-  vldr s0, =1.0
-  bl FUN_00300dbc
-  pop {r4, pc}
-; 黒いまま 1 秒待って (地形とカメラが追いつく) 1 秒でフェードインする
-ws_fade_in:
-  push {r4, lr}
-  vldr s0, =1.0
-  bl FUN_003086e4            ; 1 秒待つ
-  mov r0, #2
-  vldr s0, =1.0
-  bl FUN_0031745c            ; フェードイン
-  bl FUN_0031747c            ; 終わるまで待つ
-  pop {r4, pc}
 ; 出すべき告知があるか
 wn_pending:
   push {r4, lr}
@@ -335,7 +369,7 @@ wp_loop:
   bl wn_due
   cmp r0, #0
   bne wp_out
-  add r4, r4, #0x1c
+  add r4, r4, #0x20
   b wp_loop
 wp_out:
   pop {r4, pc}
@@ -377,8 +411,8 @@ ${table.join('\n')}
 `;
 }
 
-/** The notice patch for the notices of W01's table, or null when there are none. */
-export function noticePatch(events: EventTable | null | undefined): CodePatch | null {
-  const list = notices(events);
+/** The notice patch for the notices of W01's table (with W01's entrances), or null when there are none. */
+export function noticePatch(events: EventTable | null | undefined, entrances: readonly Uint8Array[]): CodePatch | null {
+  const list = notices(events, entrances);
   return list.length ? { id: NOTICE_PATCH_ID, title: NOTICE_PATCH_TITLE, source: noticePatchSource(list), enabled: true } : null;
 }
