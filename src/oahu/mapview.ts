@@ -95,7 +95,15 @@ export class OahuMapView {
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
-    this.grid.pointer = pointer;
+    // A click in 2D also brings what it picked to the middle of the 3D view.
+    this.grid.pointer = {
+      ...pointer,
+      down: (cx, cy, e) => {
+        pointer.down(cx, cy, e);
+        const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
+        if (f) this.scene.centerOn(f[0], f[1]);
+      },
+    };
     this.scene.pointer = pointer;
     this.ctl.onHover = () => {
       this.grid.draw();

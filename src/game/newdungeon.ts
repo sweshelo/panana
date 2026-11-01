@@ -106,7 +106,9 @@ export function rowLabel(game: Game, row: number): string | null {
 /** Every dungeon code in use: the dungeon table's, the mapGroup labels (but `except`'s own) and the new dungeons'. */
 export function takenCodes(game: Game, except = -1): Set<string> {
   const out = new Set<string>();
-  for (const m of game.code.maps) if (m.dungeonCode) out.add(m.dungeonCode.toUpperCase());
+  // A new dungeon's own code (and its maps') is not taken for itself (renaming it, game/newdungeon.ts renameDungeon).
+  const ownNew = game.code.dungeons.some((d) => d.dungeon === except);
+  for (const m of game.code.maps) if (m.dungeonCode && !(ownNew && m.dungeon === except)) out.add(m.dungeonCode.toUpperCase());
   for (const d of dungeonRows(game.dump.code)) {
     let s = '';
     for (let a = d.name - 0x100000; a >= 0 && game.dump.code[a]; a++) s += String.fromCharCode(game.dump.code[a]!);
@@ -116,7 +118,7 @@ export function takenCodes(game: Game, except = -1): Set<string> {
   rowLabels(game.master.mapGroup).forEach((l, i) => {
     if (l && !(own !== null && i === except - 1)) out.add(l.toUpperCase());
   });
-  for (const d of game.code.dungeons) out.add(d.code.toUpperCase());
+  for (const d of game.code.dungeons) if (d.dungeon !== except) out.add(d.code.toUpperCase());
   return out;
 }
 
@@ -297,10 +299,56 @@ export async function makeDungeon(
     if (ev) ev.capacity = donorSlots;
   }
   // The row's label in the table header ("E00" for row 11) becomes the code, when the labels are in row order.
-  if (rowLabel(game, spec.dungeon) !== null) {
-    const o = 0x30 + (spec.dungeon - 1) * 4;
-    mg.data.fill(0, o, o + 4);
-    for (let k = 0; k < 3; k++) mg.data[o + k] = code.charCodeAt(k);
-  }
+  setRowLabel(game, spec.dungeon, code);
   return { dungeon: spec.dungeon, code, archiveName: hex8(hash), archive, ranges, nameId, donor, donorSlots };
+}
+
+/** The mapGroup row's label in the table header ("E00" for row 11) becomes `code`, when the labels are in row order. */
+function setRowLabel(game: Game, dungeon: number, code: string): void {
+  if (rowLabel(game, dungeon) === null) return;
+  const mg = game.master.mapGroup;
+  const o = 0x30 + (dungeon - 1) * 4;
+  mg.data.fill(0, o, o + 4);
+  for (let k = 0; k < 3; k++) mg.data[o + k] = code.charCodeAt(k);
+}
+
+/** A map code with the dungeon code `from` at its start changed to `to` ("D11B01001" -> "D12B01001"). */
+export function recodeMapName(name: string, from: string, to: string): string {
+  return name.toUpperCase().startsWith(from.toUpperCase()) ? to + name.slice(from.length) : name;
+}
+
+/**
+ * Change a new dungeon's name (its message) and code. The code is the prefix of its maps' codes, so they are renamed
+ * too (their hashes stay: nothing refers to a map by its code). Throws without changing anything on a bad value.
+ */
+export function renameDungeon(game: Game, dungeon: number, change: { name?: string; code?: string }): void {
+  const d = game.code.dungeons.find((x) => x.dungeon === dungeon);
+  if (!d) throw new Error(`ダンジョン ${dungeon} はエディタで追加したものではありません`);
+  const mg = game.master.mapGroup;
+  const name = change.name?.trim();
+  if (change.name !== undefined && !name) throw new Error('ダンジョンの名前を入れてください');
+  const code = change.code?.trim().toUpperCase();
+  const maps = game.code.maps.filter((m) => m.dungeon === dungeon);
+  const renames: [typeof maps[number], string][] = [];
+  if (code !== undefined && code !== d.code) {
+    const problem = codeProblem(game, code, dungeon);
+    if (problem) throw new Error(problem);
+    const others = new Set(game.code.maps.filter((m) => m.dungeon !== dungeon).map((m) => m.name.toUpperCase()));
+    for (const m of maps) {
+      if (!m.added) throw new Error(`${m.name} はゲームのマップなので、コードを変えられません`);
+      const n = recodeMapName(m.name, d.code, code);
+      if (others.has(n)) throw new Error(`マップのコード ${n} はもう使われています`);
+      if (!/^[A-Z0-9]{1,15}$/.test(n)) throw new Error(`マップのコード ${n} は英数字 15 文字までにしてください`);
+      renames.push([m, n]);
+    }
+  }
+  if (name !== undefined) game.master.texts.setText(u16(mg.row(dungeon), MG.name), name);
+  if (code !== undefined && code !== d.code) {
+    for (const [m, n] of renames) {
+      m.name = n;
+      m.dungeonCode = code;
+    }
+    d.code = code;
+    setRowLabel(game, dungeon, code);
+  }
 }

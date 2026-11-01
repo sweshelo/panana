@@ -7,6 +7,7 @@ import { MAX_MAP_SOUND, SOUND_SLOTS, soundUses, mapDataUsers, type SoundKind, ty
 import type { Session } from '../session';
 import { SoundSlotsBox } from '../ui/SoundSlots';
 import { BGM_FIELD } from '../game/bgmext';
+import { linkSignature } from './mapdata';
 
 const SLOT_KIND: Record<string, SoundKind> = { bgm: 'bgm', battle: 'bgm', steps: 'se' };
 
@@ -16,7 +17,8 @@ export function MapSoundPanel({ session, sounds }: { session: Session; sounds: S
   const row = master.mapDataRow(st.ref!);
   const s = master.sounds(st.ref!);
   // The maps of each mapData row (by the documents as they are now; rebuilt when another map is opened).
-  const users = useMemo(() => mapDataUsers(game, session.docOf), [game, session, st.ref]);
+  const sig = linkSignature(session);
+  const users = useMemo(() => mapDataUsers(game, session.docOf), [game, session, st.ref, sig]);
   const shared = users.get(row) ?? [];
   const uses = soundUses(game);
   const usage = (r: number): string => {
@@ -39,7 +41,7 @@ export function MapSoundPanel({ session, sounds }: { session: Session; sounds: S
       note={
         <>
           {`mapData 行 ${row} の [4] / [5] / [6]。`}
-          {shared.length > 1 ? `同じ行を使う ${shared.length} 個のマップの音がまとめて変わります。` : ''}
+          {shared.length > 1 ? `同じ行を使う ${shared.length} 個のマップの音がまとめて変わります (上の「専用の行を作る」で分けられます)。` : ''}
           {row === 0 ? '行 0 は自分の行を持たないマップ (町など) のもので、BGM の決まり方は未解析です。変えても鳴る音が変わらないかもしれません。' : ''}
           {changed ? ' 変更済み。' : ''}
         </>

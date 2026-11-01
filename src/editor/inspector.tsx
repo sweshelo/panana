@@ -12,6 +12,7 @@ import { BossPanel } from './boss';
 import { KIND_BOSS } from '../game/boss';
 import { RANGE_MODE_AT, RANGE_SHAPE_AT, RANGE_SIZE_AT, RANGE_SIZES } from '../game/cutscene';
 import { EncounterPanel } from './encounters';
+import { MapDataPanel } from './mapdata';
 import { MapSoundPanel } from './sounds';
 import { Field, HexInput, Num, RawBytes } from './fields';
 import type { MapEditor } from './mapeditor';
@@ -305,21 +306,12 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
   const game = st.game;
   const info = st.info!;
   const changed = st.changedSections(doc);
-  const def = game.master.tileset(st.ref!);
   const [listing, setListing] = useState(false);
   const mark = (k: number): ReactNode => <td>{changed.includes(k) ? '変更' : ''}</td>;
   return (
     <>
       <h3>{mapTitle(info, game.code.maps, game.master)}</h3>
       <div className="muted">{`${doc.name}  ダンジョン ${info.dungeon} (${info.dungeonCode})  ハッシュ ${hex8(doc.hash)}`}</div>
-      <Field label="タイルセット (表示のみ)">
-        <select value={st.tileset} onChange={(e) => {
-          st.tileset = Number(e.target.value);
-          st.emit('map');
-        }}>
-          {Array.from({ length: 12 }, (_, t) => <option key={t} value={t}>{`${t}${t === def ? ' (既定)' : ''}`}</option>)}
-        </select>
-      </Field>
       <table className="sections">
         <tbody>
           <tr><th>区画</th><th>件数</th><th></th></tr>
@@ -334,6 +326,7 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
       {changed.length
         ? <button className="danger" onClick={() => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash)}>このマップの変更を元に戻す</button>
         : <div className="muted">変更なし</div>}
+      <MapDataPanel session={session} />
       <MapSoundPanel session={session} sounds={session.sounds} />
       <EncounterPanel session={session} st={st} book={session.book} />
       {listing && st.currentEvents && (
