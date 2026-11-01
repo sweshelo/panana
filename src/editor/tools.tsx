@@ -40,10 +40,13 @@ export function ToolIcon({ tool }: { tool: Tool }): ReactNode {
 }
 
 /** Switching placement modes retains the selected brush and stamp, including keyboard tool changes. */
-export function MapToolbox({ st, tiles, parts, onDelete }: { st: MapEditState; tiles: ReactNode; parts: ReactNode; onDelete?: () => void }): ReactNode {
+export function MapToolbox({ st, tiles, parts, onDelete, onDuplicate, tileTools=TOOLS }: {
+  st: MapEditState; tiles: ReactNode; parts: ReactNode; onDelete?: () => void; onDuplicate?: () => void; tileTools?: typeof TOOLS;
+}): ReactNode {
   useEditorState(st);
+  if(st.readOnly) return null;
   const isTiles = st.placementMode === 'tiles';
-  const tools: [Tool,string,string][] = isTiles ? TOOLS : [['select','選択・移動','V'],['place','パーツを置く',''],['rect','範囲選択','M']];
+  const tools: [Tool,string,string][] = isTiles ? tileTools : [['select','選択・移動','V'],['place','パーツを置く',''],['rect','範囲選択','M']];
   return <div className="map-toolbox">
     <div className="map-toolbox-head">
       <div className="placement-modes" role="group" aria-label="配置するもの">
@@ -52,6 +55,8 @@ export function MapToolbox({ st, tiles, parts, onDelete }: { st: MapEditState; t
       </div>
       <div className="map-toolbox-actions">
         <Tools st={st} tools={tools} compact />
+        {!isTiles && onDuplicate && <button className="part-delete" title="選んだパーツを複製 (Ctrl+D)" aria-label="選んだパーツを複製"
+          disabled={st.selection.type !== 'rec'} onClick={onDuplicate}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M8 8h13v13H8ZM3 16V3h13" /></svg></button>}
         {!isTiles && onDelete && <button className="part-delete" title="選んだパーツを削除 (Delete)" aria-label="選んだパーツを削除"
           disabled={st.selection.type !== 'rec'} onClick={onDelete}><ToolIcon tool="erase" /></button>}
       </div>

@@ -37,7 +37,7 @@ export interface PickerChoice {
  * Every entry as a picture with its name. `sections` come first, each under its heading, then every entry (under
  * "すべて" when there are sections or choices); `current` is highlighted and scrolled into view.
  */
-export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, groupByCategory = false, placeholder = '名前か番号で絞り込み', onPick, onClose }: {
+export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, groupByCategory = false, placeholder = '名前か番号で絞り込み', controls, onPick, onClose }: {
   title: string;
   entries: GridEntry[];
   current?: number;
@@ -49,6 +49,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   categories?: Record<number, string>;
   /** Show category headings as nonduplicated regions instead of one flat "all" grid. */
   groupByCategory?: boolean;
+  controls?: ReactNode;
   placeholder?: string;
   onPick: (id: number) => void;
   onClose: () => void;
@@ -88,6 +89,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
           </select>
         )}
       </div>
+      {controls}
       <div className="picker-list" ref={grid}>
         {shownChoices.length > 0 && choicesLabel && <h4 className="picker-heading">{choicesLabel}</h4>}
         {shownChoices.length > 0 && (

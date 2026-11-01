@@ -721,3 +721,7 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .part-directions { display: flex; gap: 4px; }
 .part-directions button { flex: 1; }
 .picker-category-heading { position: sticky; top: 0; z-index: 1; margin: 0; padding: 8px; border-block: 1px solid var(--border); background: var(--panel2); font-weight: 600; }
+
+.part-number-picker { margin: 0 0 8px; font-size: 12px; }
+.part-number-picker > summary { cursor: pointer; color: var(--muted); }
+.part-number-picker input[type='number'] { width: 112px; }

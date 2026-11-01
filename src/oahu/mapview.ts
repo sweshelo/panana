@@ -21,6 +21,7 @@ import { OahuDenpaModels } from './denpaModels';
 import { OAHU_POINT_SECTIONS, type OahuEditState } from './mapedit';
 import { OAHU_LAYOUTS, oahuExitKind, type OahuMapInfo } from './maps';
 import { oahuObjectModels, oahuTileModels } from './mapModels';
+import { PartThumbnails } from '../editor/part-thumbnails';
 import { OAHU_WALL_HEIGHT, oahuRecordLook, type OahuRecordLook, type OahuRecordModel } from './mapObjects';
 
 /** Whether a record's event is placed in the preview state (story.ts OahuConditions.placed). */
@@ -111,6 +112,7 @@ export class OahuMapView {
   }
 
   dispose(): void {
+    this.partImages.dispose();
     this.disposed = true;
     this.unsubscribe();
     this.factory?.dispose();
@@ -218,11 +220,15 @@ export class OahuMapView {
   look(section: number, index: number): OahuRecordLook | null {
     const rec = this.doc.recs[section]?.[index];
     if (!rec) return null;
+    return this.partLook(section,rec.raw);
+  }
+
+  partLook(section: number, raw: Uint8Array): OahuRecordLook | null {
     const maps = this.st.maps;
     const d = maps.dungeonOf(this.info);
     const events = d ? maps.loadedEventTable(d) : null;
     const { master } = maps;
-    return oahuRecordLook(section, rec.raw, {
+    return oahuRecordLook(section, raw, {
       events,
       mapChara: master.table('mapChara.bin'),
       mapObject: master.table('mapObject.bin'),
@@ -230,6 +236,11 @@ export class OahuMapView {
       map: this.info.hash,
       wallDoor: maps.tileSource(this.info, this.doc).wallDoor,
     });
+  }
+
+  private readonly partImages = new PartThumbnails<OahuRecordModel>(model => this.loadModel(model));
+  partThumb(model: OahuRecordModel | null): Promise<string | null> {
+    return model ? this.partImages.get(JSON.stringify(model),model) : Promise.resolve(null);
   }
 
   /** The file name of a loaded model ("npc_22"), '' while it is loading or when there is none. */

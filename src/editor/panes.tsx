@@ -14,6 +14,7 @@ import { NewMapDialog } from './newmapdialog';
 import { Palette } from './palette';
 import { IssueList, MapToolbox } from './tools';
 import { InfoTip } from '../ui/InfoTip';
+import { MapSettings } from './partpalette';
 
 export function MapEditorUi({ editor }: { editor: MapEditor }): ReactNode {
   return (
@@ -64,8 +65,8 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
 function LeftPane({ editor }: { editor: MapEditor }): ReactNode {
   return (
     <aside className="left">
-      <MapToolbox st={editor.st} tiles={<FactoryPalette editor={editor} />} parts={<AddPanel editor={editor} />} onDelete={() => editor.ctl.deleteSelection()} />
-      <details className="map-display-settings"><summary>表示設定</summary><Layers editor={editor} /></details>
+      <MapToolbox st={editor.st} tiles={<FactoryPalette editor={editor} />} parts={<AddPanel editor={editor} />} onDelete={() => editor.ctl.deleteSelection()} onDuplicate={()=>editor.ctl.duplicateRec()} />
+      <MapSettings><Layers editor={editor} /></MapSettings>
     </aside>
   );
 }

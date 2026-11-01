@@ -266,6 +266,8 @@ export class View3D {
     return url;
   }
 
+  partThumb(row: number): Promise<string | null> { return row>0 ? this.objectThumb(row) : Promise.resolve(null); }
+
   /** Idle-posed monster models by MonsterDesign row (a template to clone; null = none / loading). */
   private readonly bossModels = new Map<number, THREE.Object3D | null>();
   private readonly bossRequest = new Set<number>();

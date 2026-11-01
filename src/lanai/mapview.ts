@@ -21,6 +21,7 @@ import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
 import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
 import { lanaiObjectModels, lanaiTileModels } from './mapModels';
+import { PartThumbnails } from '../editor/part-thumbnails';
 import { LANAI_EFFECT_NAMES, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
 import { lanaiMonsterModel } from './monsterModels';
 import { lanaiMonsterDesign } from './monsters';
@@ -112,6 +113,7 @@ export class LanaiMapView {
   }
 
   dispose(): void {
+    this.partImages.dispose();
     this.disposed = true;
     this.unsubscribe();
     this.factory?.dispose();
@@ -228,13 +230,22 @@ export class LanaiMapView {
   look(section: number, index: number): LanaiRecordLook | null {
     const rec = this.doc.recs[section]?.[index];
     if (!rec) return null;
+    return this.partLook(section,rec.raw);
+  }
+
+  partLook(section: number, raw: Uint8Array): LanaiRecordLook | null {
     const maps = this.maps;
-    return lanaiRecordLook(section, rec.raw, {
+    return lanaiRecordLook(section, raw, {
       mapObject: maps.session.table('MapObject'),
       mapChara: maps.contentTable('MapChara'),
       events: maps.eventTable(this.info.dungeon),
       indoor: isIndoor(this.doc),
     });
+  }
+
+  private readonly partImages = new PartThumbnails<LanaiRecordModel>(model => this.loadModel(model));
+  partThumb(model: LanaiRecordModel | null): Promise<string | null> {
+    return model ? this.partImages.get(JSON.stringify(model),model) : Promise.resolve(null);
   }
 
   /** The name of a loaded model ("obj_box_01") or of an effect ("fx_bg_repair_point.ptcl"), '' while it is loading or when there is none. */

@@ -1,3 +1,6 @@
+import { RecordPartPanel } from '../editor/recordparts';
+import { MapSettings } from '../editor/partpalette';
+import { InfoTip } from '../ui/InfoTip';
 // The maps of 電波人間のRPG FREE! (#/maps/<content>.<name>; naauao lanai/map.md), the same page as RPG3's map page
 // (oahu/MapPage.tsx) on the shared parts: the frame, header controls, layers, checks and status bar
 // (editor/mappage.tsx), the editing model and tools (editor/model.ts, editor/controller.ts; lanai: mapedit.ts
@@ -14,7 +17,7 @@ import { kindName, ROT_ARROW } from '../editor/legend';
 import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
-import { Tools, TOOLS } from '../editor/tools';
+import { MapToolbox, TOOLS } from '../editor/tools';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';
@@ -25,7 +28,7 @@ import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
-import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiStampLabel, lanaiValidate, type LanaiEditState, type LanaiStamp } from './mapedit';
+import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiValidate, type LanaiEditState } from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
   LANAI_EVENT_APPEAR,
@@ -51,7 +54,7 @@ import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSel
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
-import { LANAI_CHARA_KIND, lanaiCharaKind, type LanaiRecordLook } from './mapObjects';
+import { LANAI_CHARA_KIND, lanaiCharaKind, lanaiObjectRef, type LanaiRecordLook } from './mapObjects';
 import { lanaiMonsters } from './monsters';
 import { LanaiMapView } from './mapview';
 import type { LanaiSession } from './session';
@@ -230,14 +233,13 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
       ) : undefined}
       left={open && (
         <>
-          <Tools st={st} tools={LANAI_TOOLS} />
-          <AddPanel st={st} view={view} />
-          <EnemyPanel st={st} />
-          <BattlePanel st={st} />
-          <TilePalette st={st} view={view} />
-          <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
+          <MapToolbox st={st} tileTools={LANAI_TOOLS} tiles={st.tool==='room'?<EnemyPanel st={st} />:<TilePalette st={st} view={view} />}
+            parts={<AddPanel st={st} view={view} />} onDelete={()=>view.ctl.deleteSelection()} onDuplicate={()=>view.ctl.duplicateRec()} />
+          {st.tool!=='room' && <MapSettings title="敵の設定"><EnemyPanel st={st} /></MapSettings>}
+          <MapSettings title="音・戦闘背景"><BattlePanel st={st} /></MapSettings>
+          <MapSettings><MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
             <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
-          </MapLayers>
+          </MapLayers></MapSettings>
         </>
       )}
       right={open && (
@@ -362,71 +364,15 @@ const FACING_LABELS = ['↓ 南 (4)', '← 西 (2)', '↑ 北 (1)', '→ 東 (8)
 
 /** Adding records: props (section 2) and copies of the group's records; copying and removing the selected one. */
 function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): ReactNode {
-  useEditorState(st);
-  const [dir, setDir] = useState(0);
-  const props = useMemo(() => st.props(), [st, st.info]);
-  const [propRow, setPropRow] = useState(() => props[0] ?? 0);
-  const templates = useMemo(() => st.templates(), [st, st.info]);
-  const active = st.tool === 'place' && st.stamp ? st.stamp : null;
-  const use = (stamp: LanaiStamp): void => {
-    st.stamp = stamp;
-    st.setTool('place');
-  };
-  const sel = st.selection;
-  return (
-    <div className="add-panel">
-      <h3>追加</h3>
-      <h4>置物 (区画 2)</h4>
-      <div className="row">
-        <span className="muted small">向き</span>
-        {FACING_LABELS.map((l, i) => (
-          <button key={i} className={dir === i ? 'active' : ''} title={l} onClick={() => {
-            setDir(i);
-            if (active?.type === 'prop') use({ ...active, dir: i });
-          }}>{l.slice(0, 1)}</button>
-        ))}
-      </div>
-      <div className="row">
-        <label className="small">{'MapObject の行 '}<NumberInput value={propRow} min={0} max={0xffff} onCommit={setPropRow} /></label>
-        <button className={active?.type === 'prop' && active.row === propRow ? 'active' : ''} onClick={() => use({ type: 'prop', row: propRow, dir })}>置く</button>
-      </div>
-      <details className="obj-group">
-        <summary>{`このコンテンツの置物 (${props.length})`}</summary>
-        <div className="pal-items obj-items">
-          {props.map((row) => (
-            <button key={row} className={'pal-item obj-item' + (active?.type === 'prop' && active.row === row ? ' active' : '')} title={`MapObject #${row}`} onClick={() => { setPropRow(row); use({ type: 'prop', row, dir }); }}>
-              <span className="pal-label">{`#${row}`}</span>
-            </button>
-          ))}
-        </div>
-      </details>
-      <h4>この MapGroup のレコードの写し</h4>
-      {([[3, '出入口・扉 (区画 3)'], [4, '宝箱 (区画 4)'], [5, 'キャラ・オブジェクト (区画 5)'], [8, 'イベントの範囲 (区画 8)'], [1, '床のギミック (区画 1)'], [9, '地点 (区画 9)']] as const).map(([k, label]) => {
-        const ts = templates.filter((t) => t.section === k);
-        if (!ts.length) return null;
-        return (
-          <details key={k} className="obj-group" open={active?.type === 'template' && active.t.section === k}>
-            <summary>{`${label} (${ts.length})`}</summary>
-            <div className="template-list">
-              {ts.map((t, i) => (
-                <button key={i} className={active?.type === 'template' && active.t === t ? 'active' : ''} title={`${t.source} のレコードの写し`} onClick={() => use({ type: 'template', t })}>{t.label}</button>
-              ))}
-            </div>
-          </details>
-        );
-      })}
-      {active && <div className="place-hint">{`置くもの: ${lanaiStampLabel(active)}。マップをクリックして置く (Esc で終わる)`}</div>}
-      {sel.type === 'rec' && (
-        <div className="row">
-          <button title="複製 (Ctrl+D)" onClick={() => view.ctl.duplicateRec()}>選んだレコードを複製</button>
-          <button title="削除 (Delete)" onClick={() => view.ctl.deleteSelection()}>削除</button>
-        </div>
-      )}
-      <p className="muted small">
-        写したレコードには EventObject の行の写し (表の末尾に足し、空いている状態の枠を付ける) を付けるので、宝箱の中身や「開けた」状態は元と別になります。出入口には新しい地点 ID を付けます。
-      </p>
-    </div>
-  );
+  const revision=useMaps(st.maps);
+  const templates=useMemo(()=>st.templates(),[st,st.info,revision]);
+  const props=useMemo(()=>st.props(),[st,st.info,revision]);
+  const objects=st.maps.session.table('MapObject');
+  const all=useMemo(()=>Array.from({length:objects?.rows??0},(_,i)=>i).filter(row=>!!lanaiObjectRef(objects,row)),[objects]);
+  return <RecordPartPanel st={st} source={view} templates={templates} rows={all} usedRows={props} maxRow={0xffff}
+    validRow={row=>!!lanaiObjectRef(objects,row)} directions={FACING_LABELS}
+    modelForProp={row=>({type:'object' as const,row})} modelForTemplate={t=>view.partLook(t.section,t.raw)?.model??null}
+    help="マップをクリックして配置、Esc で選択に戻ります。レコードの写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。" />;
 }
 
 /** Fields of a section's records besides the position and the facing (map.md §5). */
@@ -597,10 +543,7 @@ function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
               st.setTool('room');
             }} />
           </label>
-          <p className="muted small">
-            {`G (敵の群れのセル) でマスをクリックすると、その群れのセルを足す / 消す。セル ${doc.cells6.length} 個。`}
-            {'群れはこのコンテンツの MonsterGroup の行 ID から選ぶ (表にない値はゲームで行 0 の群れになる)。'}
-          </p>
+          <InfoTip text={"G でクリックすると選んだ群れのセルを足す／消す。セル "+doc.cells6.length+" 個。群れはこのコンテンツから選びます。"} />
           {[...counts].map(([v, n]) => (
             <div key={v} className="row small"><span className="muted">{`セル ${n} 個:`}</span><MonsterGroupLine maps={maps} value={v} /></div>
           ))}
