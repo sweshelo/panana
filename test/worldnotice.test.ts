@@ -77,7 +77,7 @@ const F = {
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
 const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x3174c8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0, 0x301888, 0x301764, 0x31c948, 0x338450,
-  0x430e20, 0x3008dc, 0x300678, F.release, F.camera, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch, F.writePlace, F.writeAngle];
+  0x430e20, 0x300678, F.release, F.camera, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch, F.writePlace, F.writeAngle];
 const SAVE = 0x6000000;
 const PLACE = [0x44fa0000, 0xc2c80000, 0x45610000]; // where the party stood (0x58), as float bits
 
@@ -174,6 +174,7 @@ describe('notice patch (blank code.bin)', () => {
     expect(b.written).toEqual([[NOTICE_DUNGEON, 29, 1]]);
     expect(b.places).toEqual([PLACE]);
     expect(b.warps).toEqual([[SAVE + 0x404, W01, 0]]);
+    expect(m.calls.some((c) => c.target === 0x3008dc)).toBe(false); // FUN_003008dc heals the party
     states.set(29, 1);
     // 3rd load (back): nothing, the phase cleared
     const c = load(m, built, {});

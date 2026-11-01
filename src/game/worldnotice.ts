@@ -87,7 +87,7 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  *   NOTICE_STATE, fades to black and warps next to the entrance like 黄泉の門's scene (FUN_00226064):
  *   FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0) (s0 = *0x4D07CC). The map is
  *   built at a load, so turning the camera or moving the party far does not show the place there.
- * - [2], next to the entrance: black at once, the camera on the entrance (FUN_00317210, s0 = 0), a fade in, the
+ * - [2], next to the entrance (FUN_001db864's warp without its FUN_003008dc, which heals the party): black at once, the camera on the entrance (FUN_00317210, s0 = 0), a fade in, the
  *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black, 0x58 /
  *   0x59 written back (FUN_003012dc / FUN_003012b0, like FUN_001db864) and a warp to point 0 of W01, where
  *   FUN_004326a8 places the party at 0x58.
@@ -215,8 +215,7 @@ wr_found:
   bl FUN_003048f8            ; 告知済み
 wr_back:
   bl wn_black_out
-  bl FUN_003008dc
-  bl wn_save
+  bl wn_save                 ; (FUN_001db864 は先に FUN_003008dc を呼ぶが、それはパーティの回復なので呼ばない)
   mov r6, r0
   add r1, r5, #0xc
   bl FUN_003012dc            ; 0x58 = 元の位置
