@@ -72,7 +72,7 @@ describe('entrance conditions', () => {
 const BLANK = new Uint8Array(0x420000);
 const F = {
   w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8,
-  vehicle: 0x303c70, leader: 0x319a6c, toEuler: 0x3063bc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, setVar: 0x3129bc,
+  vehicle: 0x303c70, leader: 0x319a6c, toEuler: 0x3063bc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, move: 0x30150c, turn: 0x331ca8,
   hide: 0x31c580, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
@@ -100,7 +100,7 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
   }
   const calls = m.calls.slice();
   const vars = (VARS.get(m) ?? []).splice(0);
-  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.hide, 'hide'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.setVar, 'place']]);
+  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.hide, 'hide'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.move, 'place']]);
   return {
     action, made, hook,
     first: hook.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2)),
@@ -110,9 +110,8 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
     sounds: calls.filter((c) => c.target === F.sound).map((c) => c.args[0]!),
     written: calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3)),
     euler: calls.filter((c) => c.target === F.toEuler).map((c) => c.args[1]! - c.args[0]!),
-    places: vars.filter((v) => v[0] === 0x5a && v[1] === 0).map((v) => v.slice(2)),
-    angles: vars.filter((v) => v[0] === 0x5b).map((v) => [v[1]!, v[2]!]),
-    members: vars.filter((v) => v[0] === 0x5a && v[1]! > 0).map((v) => [v[1]!, ...v.slice(2)]),
+    moves: vars.filter((v) => v[0] === F.move).map((v) => v.slice(1)),
+    turns: vars.filter((v) => v[0] === F.turn).map((v) => v.slice(2)),
     ship: calls.some((c) => c.target === 0x3012dc || c.target === 0x3012b0),
   };
 }
@@ -121,11 +120,8 @@ function machine(code: Uint8Array, o: { game?: number; state: (row: number) => n
   const stubs = new Map<number, (m: ArmMachine) => number>([
     ...OTHERS.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
     [F.vehicle, () => (o.vehicle ? 0x7000000 : 0)],
-    [F.setVar, (m) => {
-      const n = m.r[1] === 0x5a ? 3 : 1;
-      VARS.get(m)!.push([m.r[1]!, m.r[2]!, ...Array.from({ length: n }, (_, i) => m.read(m.r[3]! + i * 4, 4) >>> 0)]);
-      return 0;
-    }],
+    [F.move, (m) => (VARS.get(m)!.push([F.move, m.r[1]!, m.r[2]!, m.r[3]!, ...[0, 4, 8].map((i) => m.read(m.r[0]! + i, 4) >>> 0)]), 0)],
+    [F.turn, (m) => (VARS.get(m)!.push([F.turn, m.r[0]!, ...[0, 4, 8].map((i) => m.read(m.r[1]! + i, 4) >>> 0)]), 0)],
     [F.leader, (m) => {
       if (o.noLeader) return 0;
       // the party's leader: its transform T at +0x10, position T+0x14, angle T+0x30, T+0x10 bit 3 = quaternion
@@ -191,13 +187,13 @@ describe('notice patch (blank code.bin)', () => {
     // 2nd load (next to the entrance): the camera, the sound and the message, recorded, then back to point 0
     const b = load(m, built, {});
     expect(b.made).toBe(true);
-    expect(b.order).toEqual(['hide', 'in', 'sound', 'message', 'done', 'out', ...Array<string>(9).fill('place'), 'warp']);
+    expect(b.order).toEqual(['hide', 'in', 'sound', 'message', 'done', 'out', 'place', 'warp']);
     expect(b.shown).toEqual([0x2c00]);
     expect(b.sounds).toEqual([0x2f]);
     expect(b.written).toEqual([[NOTICE_DUNGEON, 29, 1]]);
-    expect(b.places).toEqual([PLACE]); // 0x5A[0]: the walking party, not 0x58 (the ship's)
-    expect(b.angles).toEqual([[0, ANGLE]]);
-    expect(b.members).toEqual([1, 2, 3, 4, 5, 6, 7].map((i) => [i, 0, 0, 0]));
+    // the party itself is moved back (the teardown saves it to 0x5A / 0x5B), not 0x58 (the ship's)
+    expect(b.moves).toEqual([[3, 1, 0, ...PLACE]]);
+    expect(b.turns).toEqual([[0, ANGLE, 0]]);
     expect(b.ship).toBe(false);
     expect(m.read(SAVE + 0x404, 1)).toBe(1); // as after loading a save on W01, so 0x5A[0] is kept
     expect(b.warps).toEqual([[SAVE + 0x404, W01, 0]]);
@@ -218,7 +214,7 @@ describe('notice patch (blank code.bin)', () => {
     expect(a.euler).toEqual([0x38 - 0x2c]);
     expect([0xc, 0x10, 0x14, 0x18].map((o) => m.read(NOTICE_STATE + o, 4) >>> 0)).toEqual([...PLACE, ANGLE]);
     expect(a.warps).toEqual([[SAVE + 0x404, 0xa8654391, 0xd3e36ef0]]);
-    expect(load(m, built, {}).places).toEqual([PLACE]);
+    expect(load(m, built, {}).moves).toEqual([[3, 1, 0, ...PLACE]]);
   });
 
   test('no leader: nothing shown', () => {
