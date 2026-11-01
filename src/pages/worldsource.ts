@@ -25,6 +25,8 @@ export const rgbHex = ([r, g, b]: [number, number, number]): string => `#${((1 <
 interface Snapshot {
   entrances: Uint8Array[];
   ground: Ground | null;
+  /** The world map's EventObject table (the entrances' conditions), when loaded. */
+  events: Uint8Array | null;
 }
 
 export class KaharaWorldSource implements WorldSource {
@@ -124,12 +126,14 @@ export class KaharaWorldSource implements WorldSource {
 
   snapshot(): Snapshot {
     const g = this.ground();
-    return { entrances: this.session.entrancesOf(this.world).map((r) => r.slice()), ground: g && copyGround(g) };
+    const events = this.session.st.events.get(this.world.dungeon);
+    return { entrances: this.session.entrancesOf(this.world).map((r) => r.slice()), ground: g && copyGround(g), events: events ? events.data.slice() : null };
   }
   restore(s: unknown): void {
     const snap = s as Snapshot;
     this.session.setEntrances(this.world, snap.entrances);
     if (snap.ground && this.editable) this.session.setGround(this.world, snap.ground);
+    if (snap.events) this.session.st.events.get(this.world.dungeon)?.restore(snap.events);
     this.changed();
   }
 
