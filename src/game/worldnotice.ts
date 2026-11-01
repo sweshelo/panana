@@ -39,7 +39,7 @@ const W01_MAP = 0xa8654391;
 /**
  * Where the notice keeps its state across the two loads it warps through: the unused end of .bss's last page
  * (.bss is 0x5E5D3C..0x63F4B4; nothing in code.bin points past it). Not cleared at boot, hence the mark.
- * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59).
+ * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC the leader's position, +0x18 its angle (written back to 0x5A[0] / 0x5B[0]).
  */
 export const NOTICE_STATE = 0x63ff00;
 const NOTICE_MARK = 0x4e574e50; // 'PNWN'
@@ -111,16 +111,18 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
  * - [2], first load: keeps the row and where the party's leader stands (FUN_00319a6c → T = obj+0x10: position
  *   T+0x14, angle T+0x30 after FUN_003063bc(T+0x2C, T+0x38) when T+0x10 bit 3 says quaternion) at NOTICE_STATE.
- *   Save 0x58 / 0x59 are only written by walking (FUN_0043281c; a new game starts at -1000) and 0x51 is 0 after
- *   leaving a town, so neither tells where the party is. Then it fades to black and warps next to the entrance like
+ *   Save 0x58 / 0x59 are the ship's and 0x51 is 0 after leaving a town, so neither tells where the party is. Then it fades to black and warps next to the entrance like
  *   黄泉の門's scene (FUN_00226064): FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0)
  *   (s0 = *0x4D07CC). The map is built at a load, so turning the camera or moving the party far does not show it.
  * - [2], next to the entrance: black at once, the party hidden like FUN_001c0630 does (FUN_0031ba8c(h,
  *   FUN_00319a6c()), FUN_0031c580 / FUN_0031c4bc / FUN_00301500(h, 0)), the follow camera kept (it shows the
  *   entrance's side; a camera pulled back 13 tiles shows tiles past the loaded area), 1 s to load, a fade in, the
- *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black, the kept
- *   place written to 0x58 / 0x59 (FUN_003012dc / FUN_003012b0, like FUN_001db864 without its FUN_003008dc, which
- *   heals the party) and a warp to point 0 of W01, where FUN_004326a8 places the party at 0x58.
+ *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black and back:
+ *   the kept place written to 0x5A[0] / 0x5B[0] and 0x5A[1..7] = 0 (FUN_003129bc(save, var, i, &v); the walking
+ *   party is placed from them by FUN_00401568, members at 0 next to the leader), FUN_00308d44(save+0x404, W01, 0)
+ *   and then the byte save+0x404 = 1, as after loading a save on W01 (FUN_00308d44 clears it, and with 0
+ *   FUN_001e1fc4 overwrites 0x5A[0] with the default place). 0x58 / 0x59 are the ship's (FUN_004326a8 /
+ *   FUN_0043281c) and are left alone.
  * - Back where it was: the phase is cleared; [4] (0x31713C) writes nothing for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
@@ -212,7 +214,7 @@ wr_go:
   addne r0, r6, #0x2c
   addne r1, r6, #0x38
   blne FUN_003063bc
-  ldr r0, [r6, #0x14]        ; 今の位置 (0x58 は歩いたときしか書かれず、町から出た直後は古い)
+  ldr r0, [r6, #0x14]        ; 今の位置 (セーブの 0x58 は船の位置)
   str r0, [r5, #0xc]
   ldr r0, [r6, #0x18]
   str r0, [r5, #0x10]
@@ -257,19 +259,42 @@ wr_found:
   bl FUN_003048f8            ; 告知済み
 wr_back:
   bl wn_black_out
-  bl wn_save                 ; (FUN_001db864 は先に FUN_003008dc を呼ぶが、それはパーティの回復なので呼ばない)
-  mov r6, r0
-  add r1, r5, #0xc
-  bl FUN_003012dc            ; 0x58 = 元の位置
-  vldr s0, [r5, #0x18]
+  ldr r0, =0x564638
+  ldr r6, [r0]               ; セーブ
   mov r0, r6
-  bl FUN_003012b0            ; 0x59 = 元の角度
+  mov r1, #0x5a              ; 0x5A[0] = 先頭の位置 (歩くパーティ。0x58 / 0x59 は船なので触らない)
+  mov r2, #0
+  add r3, r5, #0xc
+  bl FUN_003129bc
+  mov r0, r6
+  mov r1, #0x5b              ; 0x5B[0] = 先頭の向き
+  mov r2, #0
+  add r3, r5, #0x18
+  bl FUN_003129bc
+  sub sp, sp, #0x10
   mov r0, #0
-  bl FUN_00300678
+  str r0, [sp]
+  str r0, [sp, #4]
+  str r0, [sp, #8]
+  mov r4, #1
+wb_members:
   mov r0, r6
+  mov r1, #0x5a              ; 0x5A[1..7] = 0: 仲間は先頭の位置に置かれる (FUN_00401568)
+  mov r2, r4
+  mov r3, sp
+  bl FUN_003129bc
+  add r4, r4, #1
+  cmp r4, #8
+  blt wb_members
+  add sp, sp, #0x10
+  add r4, r6, #0x400
+  add r4, r4, #4
+  mov r0, r4
   ldr r1, =${hex(W01_MAP)}
-  mov r2, #0                 ; 地点 0: 0x58 に出る
-  bl FUN_00308d44            ; ワープ
+  mov r2, #0                 ; 地点 0
+  bl FUN_00308d44            ; ワープ (セーブ +0x404 のバイトを 0 にする)
+  mov r0, #1
+  strb r0, [r4]              ; 1 = セーブを読み込んだときと同じく 0x5A に置く (0 だと FUN_001e1fc4 が既定の場所で上書き)
   mov r0, #2
   str r0, [r5, #4]
   bl wn_switch
