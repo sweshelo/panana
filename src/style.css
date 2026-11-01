@@ -734,3 +734,9 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .scene-list { padding-left: 1.6em; margin: 0.4em 0; }
 .scene-cmd { margin: 0.3em 0; }
 .scene-fields { display: flex; flex-wrap: wrap; gap: 0.3em 0.6em; align-items: center; margin-top: 0.15em; }
+
+/* Pickers of things placed on a map (editor/objectpick.tsx): the model and where it is. */
+.placed-icons { display: inline-flex; gap: 4px; align-items: center; }
+.map-spot { width: 64px; height: 64px; background: var(--bg); border-radius: 4px; }
+.placed-button .photo, .placed-button .photo img { width: 32px; height: 32px; }
+.placed-button .photo.stamp-badge { font-size: 16px; }

@@ -1,7 +1,8 @@
 // Event (EventObject row) UI: kind-specific fields in the inspector, links between switches and their
 // targets, and a list of the dungeon's events.
 import { useMemo, useState, type ReactNode } from 'react';
-import { KIND_BOSS } from '../game/boss';
+import { charaMonsterDesign, fixGroup, KIND_BOSS, readStages } from '../game/boss';
+import type { MonsterBook } from '../game/monsters';
 import { EVENT_KINDS, KIND_SWITCH, SCRIPT_LINKS, SWITCH_PRESETS, kindName } from '../game/eventkinds';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recCellPos, recEventRow, type MapDoc, type Rec } from '../game/sections';
 import { mapShortTitle } from '../game/names';
@@ -13,6 +14,8 @@ import type { EventLink } from './model';
 import type { EditorState } from './state';
 import { MESSAGE_HELP } from './message';
 import { useEditorState } from '../ui/useEditorState';
+import { designModelRef, monsterModelRef, objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
+import { isIndoor, recordObjectRow } from '../game/objects';
 
 /** EventObject row a record refers to (0 = none). */
 export function eventRowOf(section: number, rec: Rec): number {
@@ -65,20 +68,57 @@ export function eventLinks(st: EditorState): EventLink[] {
   return out;
 }
 
-/** Label of an event row in the current map: "イベント #13: 動作なし — 区画 3 (13, 10)". */
+/** Label of an event row in the current map: "イベント #13: 動作なし — 出入口 (13.5, 10.5)". */
 function rowLabel(st: EditorState, row: number): string {
   const ev = st.currentEvents!;
   const where = st.current ? recordsOfRow(st.current, row).map((r) => {
     const [x, y] = recCellPos(r.rec, LAYOUTS[r.section]!);
-    return `区画 ${r.section} (${x.toFixed(1)}, ${y.toFixed(1)})`;
+    return `${LAYOUTS[r.section]!.label} (${x.toFixed(1)}, ${y.toFixed(1)})`;
   }) : [];
   return `イベント #${row}: ${kindName(ev.kind(row))}${where.length ? ` — ${where.join(', ')}` : ' (このマップにない)'}`;
+}
+
+/**
+ * Event rows of the current map as picker choices: each with the model of its first record on the map and where that
+ * record is.
+ */
+export function eventChoices(st: EditorState, rows: number[], book: MonsterBook | null): PlacedChoice[] {
+  const ev = st.currentEvents!;
+  const doc = st.current!;
+  const indoor = isIndoor(doc);
+  const master = st.game.master;
+  return rows.map((row) => {
+    const recs = recordsOfRow(doc, row);
+    const first = recs[0];
+    const [x, y] = first ? recCellPos(first.rec, LAYOUTS[first.section]!) : [0, 0];
+    const obj = first ? recordObjectRow(first.section, first.rec, { master, events: ev, indoor }) : 0;
+    // A boss battle shows its first enemy; a character showing a monster (the boss placed with it) shows that monster.
+    let model = objectRef(st.game, obj);
+    if (!model && ev.kind(row) === KIND_BOSS) {
+      const monster = fixGroup(master, readStages(ev.table.row(row)).find((s) => s.fix)?.fix ?? 0)?.slots[0]?.monster ?? 0;
+      model = monsterModelRef(st.game, book, monster);
+    }
+    if (!model && first?.section === 5 && first.rec.raw[8] === 0) {
+      const design = charaMonsterDesign(master, ev.model(row));
+      if (design !== null) model = designModelRef(st.game, book, design);
+    }
+    return {
+      value: row,
+      name: `イベント #${row} ${kindName(ev.kind(row))}`,
+      sub: first ? `${LAYOUTS[first.section]!.label}  セル (${x.toFixed(1)}, ${y.toFixed(1)})${recs.length > 1 ? ` ほか ${recs.length - 1} か所` : ''}` : 'このマップにない',
+      model,
+      badge: ev.kind(row) === KIND_BOSS ? '⚔' : first?.section === 8 ? '▷' : first?.section === 5 ? '☺' : '◇',
+      where: first ? { doc, x, y } : undefined,
+      category: first ? LAYOUTS[first.section]!.label : 'このマップにない',
+      keywords: String(row),
+    };
+  });
 }
 
 const hex2 = (v: number): string => `0x${v.toString(16).toUpperCase().padStart(2, '0')}`;
 
 /** Inspector block for the EventObject row of a record. */
-export function EventPanel({ st, row }: { st: EditorState; row: number }): ReactNode {
+export function EventPanel({ st, row, book = null }: { st: EditorState; row: number; book?: MonsterBook | null }): ReactNode {
   const ev = st.currentEvents!;
   const game = st.game;
   const r = ev.table.row(row);
@@ -113,7 +153,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
       {!!msgOffs.length && (
         <div className="muted small">{MESSAGE_HELP} <a href={`#/messages/${st.current!.dungeon}.${row}`}>メッセージの一覧で開く</a></div>
       )}
-      {kind === KIND_SWITCH && <SwitchFields st={st} row={row} />}
+      {kind === KIND_SWITCH && <SwitchFields st={st} row={row} book={book} />}
       {kind === 0x24 && <ScriptTargets st={st} row={row} />}
       <div className="muted small">{`状態の枠 (+0x44) = ${ev.slot(row)}、モデル (+0x46) = ${u16(r, 0x46)}`}</div>
       <Field label="生データ (0x50 バイト)">
@@ -124,7 +164,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
 }
 
 /** The generic switch: the rows it opens (+0x08 / +0x0C) and how they open. */
-function SwitchFields({ st, row }: { st: EditorState; row: number }): ReactNode {
+function SwitchFields({ st, row, book }: { st: EditorState; row: number; book: MonsterBook | null }): ReactNode {
   const ev = st.currentEvents!;
   const r = ev.table.row(row);
   const apply = (f: () => void): void => st.editTables(f);
@@ -142,11 +182,10 @@ function SwitchFields({ st, row }: { st: EditorState; row: number }): ReactNode 
         const cur = u32(r, off);
         return (
           <Field key={off} label={`開ける対象 ${i} (+0x${off.toString(16).toUpperCase()})`}>
-            <select value={cur} onChange={(e) => apply(() => w32(ev.table.row(row), off, Number(e.target.value)))}>
-              <option value={0}>(なし)</option>
-              {candidates.map((c) => <option key={c} value={c}>{rowLabel(st, c)}</option>)}
-              {!!cur && !candidates.includes(cur) && <option value={cur}>{rowLabel(st, cur)}</option>}
-            </select>
+            <PlacedPickButton title={`スイッチが開ける対象 ${i} を選ぶ`} value={cur}
+              choices={eventChoices(st, !!cur && !candidates.includes(cur) && ev.has(cur) ? [...candidates, cur] : candidates, book)}
+              extra={[{ value: 0, label: '(なし)' }]} missing={(v) => `イベント #${v} (表にない)`}
+              onChange={(v) => apply(() => w32(ev.table.row(row), off, v))} />
           </Field>
         );
       })}
@@ -173,7 +212,7 @@ function SwitchFields({ st, row }: { st: EditorState; row: number }): ReactNode 
 function ScriptTargets({ st, row }: { st: EditorState; row: number }): ReactNode {
   const t = switchTargets(st, row);
   if (!t.rows.length) return null;
-  return <div className="muted small">{`この行のスクリプトが開ける行: ${t.rows.map((x) => rowLabel(st, x)).join('、')} (コードに書かれているので、行番号を変えるとつながりが切れます)`}</div>;
+  return <div className="muted small">{`このイベントのスクリプトが開けるもの: ${t.rows.map((x) => rowLabel(st, x)).join('、')} (コードに書かれているので、イベント番号を変えるとつながりが切れます)`}</div>;
 }
 
 /** "空き" in the kind filter of the event list. */
