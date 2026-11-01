@@ -74,6 +74,8 @@ export interface WorldSource {
   palette(): WorldPaletteRow[];
   partFlags(part: number): number;
   partColor(part: number): string;
+  /** A picture of a part's model for the palette (null: not loaded yet, or none). */
+  partThumb?(part: number): string | null;
   /** Put a part (0 = none) at a cell; false when nothing changed. */
   paint(x: number, y: number, part: number, rot: number): boolean;
   entrances(): WorldPin[];
@@ -101,7 +103,14 @@ export interface WorldSource {
   dispose(): void;
 }
 
-export type WorldTool = 'select' | 'paint';
+/** Select / move, paint the terrain, erase it (paint part 0), and put the part the page chose ("パーツ"). */
+export type WorldTool = 'select' | 'paint' | 'erase' | 'place';
+/** What the "パーツ" mode puts: the page's choice, put by `place` at a clicked cell. */
+export interface WorldStamp {
+  label: string;
+  /** Puts it at (x, y) facing `rot`; returns what to select afterwards (null: nothing was put). */
+  place(x: number, y: number, rot: number): WorldSelection | null;
+}
 export type WorldSelection =
   | { type: 'none' }
   | { type: 'entrance'; index: number }
@@ -124,7 +133,12 @@ export class WorldView {
   /** Emitted when the hovered cell changes (the status bar). */
   readonly hoverSignal = new Signal();
   tool: WorldTool = 'select';
+  /** "チップ" (the terrain) or "パーツ" (entrances, buildings …), as in the dungeon map editor. */
+  placementMode: 'tiles' | 'parts' = 'tiles';
   brush = { part: 0, rot: 0 };
+  /** What "パーツを置く" puts (set by the page), and which way it faces. */
+  stamp: WorldStamp | null = null;
+  stampRot = 0;
   sel: WorldSelection = { type: 'none' };
   /** terrain, entrances, returns and the keys of the source's ranges, points and overlays. */
   readonly layers: Record<string, boolean>;
@@ -242,9 +256,29 @@ export class WorldView {
   }
 
   setTool(t: WorldTool): void {
+    if ((t === 'paint' || t === 'erase') && !this.src.ground()) return;
+    if (t === 'place' && !this.stamp) return;
     this.tool = t;
+    if (t === 'place') this.placementMode = 'parts';
+    else if (t !== 'select') this.placementMode = 'tiles';
     this.signal.emit();
     this.grid.draw();
+  }
+
+  setPlacementMode(mode: 'tiles' | 'parts'): void {
+    this.placementMode = mode;
+    if (mode === 'tiles' && this.tool === 'place') this.tool = 'select';
+    if (mode === 'parts' && (this.tool === 'paint' || this.tool === 'erase')) this.tool = this.stamp ? 'place' : 'select';
+    this.signal.emit();
+    this.grid.draw();
+  }
+
+  /** Choose what "パーツを置く" puts (null: nothing) and switch to that tool. */
+  setStamp(stamp: WorldStamp | null): void {
+    this.stamp = stamp;
+    if (stamp) this.setTool('place');
+    else if (this.tool === 'place') this.setTool('select');
+    else this.signal.emit();
   }
 
   rangeSet(key: string): WorldRangeSet | undefined {
@@ -340,7 +374,7 @@ export class WorldView {
   private down(cx: number, cy: number, e: { shiftKey: boolean; altKey?: boolean; button: number }): void {
     if (e.button !== 0) return;
     const x = Math.floor(cx), y = Math.floor(cy);
-    if (this.tool === 'paint' && this.src.ground()) {
+    if ((this.tool === 'paint' || this.tool === 'erase') && this.src.ground()) {
       if (e.altKey) {
         this.pick(x, y);
         return;
@@ -348,6 +382,15 @@ export class WorldView {
       this.mark();
       this.drag = { kind: 'paint' };
       this.paintAt(x, y);
+      return;
+    }
+    if (this.tool === 'place' && this.stamp) {
+      const N = this.src.size;
+      if (x < 0 || y < 0 || x >= N || y >= N) return;
+      this.mark();
+      const sel = this.stamp.place(x, y, this.stampRot);
+      if (sel) this.select(sel);
+      else this.undoStack.pop();
       return;
     }
     const ent = this.hitEntrance(cx, cy);
@@ -412,7 +455,7 @@ export class WorldView {
 
   private paintAt(x: number, y: number): void {
     const N = this.src.size;
-    this.src.paint(((x % N) + N) % N, ((y % N) + N) % N, this.brush.part, this.brush.rot);
+    this.src.paint(((x % N) + N) % N, ((y % N) + N) % N, this.tool === 'erase' ? 0 : this.brush.part, this.brush.rot);
   }
 
   /** Take the brush from a cell (the part covering it). */
@@ -421,6 +464,7 @@ export class WorldView {
     if (!g || x < 0 || y < 0 || x >= N || y >= N) return;
     const c = this.coveredCells()[y * N + x]!;
     this.brush = c >= 0 ? { part: g.parts[c]!, rot: g.rots[c]! } : { part: 0, rot: 0 };
+    if (this.tool === 'erase' && this.brush.part) this.tool = 'paint';
     this.signal.emit();
   }
 
@@ -431,8 +475,21 @@ export class WorldView {
   }
 
   rotateBrush(step = 1): void {
+    if (this.placementMode === 'parts') {
+      this.setStampRot((this.stampRot + step + 4) & 3);
+      return;
+    }
     this.setBrush({ ...this.brush, rot: (this.brush.rot + step + 4) & 3 });
   }
+
+  setStampRot(rot: number): void {
+    this.stampRot = rot & 3;
+    this.signal.emit();
+  }
+
+  /** Called by Delete / Ctrl+D with the selection (the page decides what can be removed or copied). */
+  onDelete: (() => void) | null = null;
+  onDuplicate: (() => void) | null = null;
 
   /** Keyboard shortcuts; true when the key was used. */
   key(e: KeyboardEvent): boolean {
@@ -447,9 +504,15 @@ export class WorldView {
       this.redo();
       return true;
     }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && this.onDuplicate) {
+      this.onDuplicate();
+      return true;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     if (e.key === 'v' || e.key === 'Escape') this.setTool('select');
     else if (e.key === 'b' && this.src.ground()) this.setTool('paint');
+    else if (e.key === 'e' && this.src.ground()) this.setTool('erase');
+    else if ((e.key === 'Delete' || e.key === 'Backspace') && this.onDelete) this.onDelete();
     else if (e.key === 'r') this.rotateBrush(e.shiftKey ? -1 : 1);
     else if (e.key === 'f') this.focus();
     else if (this.sel.type === 'entrance' && e.key.startsWith('Arrow')) {
@@ -626,8 +689,20 @@ export class WorldView {
     // the hovered cell (and what the brush would cover)
     const h = this.hover;
     if (h) {
-      g.strokeStyle = this.tool === 'paint' ? '#ffeb3b' : 'rgba(255,255,255,0.6)';
+      g.strokeStyle = this.tool === 'paint' ? '#ffeb3b' : this.tool === 'erase' ? '#ff7070' : this.tool === 'place' ? '#7fd3ff' : 'rgba(255,255,255,0.6)';
       g.lineWidth = 1;
+      if (this.tool === 'place') {
+        // where the part would go (an entrance stands in the middle of its cell), and which way it faces
+        const cx = (h[0] + 0.5) * s, cy = (h[1] + 0.5) * s, rad = Math.max(3.5, s * 0.45);
+        g.beginPath();
+        g.arc(cx, cy, rad, 0, Math.PI * 2);
+        g.stroke();
+        const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][this.stampRot]!;
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.lineTo(cx + dx! * (rad + 4), cy + dy! * (rad + 4));
+        g.stroke();
+      }
       const f = this.tool === 'paint' ? src.partFlags(this.brush.part) : 0;
       const wCells = f & PART_2X2 || (f & PART_2 && !(this.brush.rot & 1)) ? 2 : 1;
       const hCells = f & PART_2X2 || (f & PART_2 && this.brush.rot & 1) ? 2 : 1;

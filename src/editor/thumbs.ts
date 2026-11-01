@@ -16,6 +16,22 @@ export function renderThumb(factory: ModelFactory, hash: number): string | null 
 }
 
 /**
+ * Thumbnail of a terrain part of a world map in the same slightly tilted top view, framed to the model's size (a world
+ * cell is 100 units, much smaller than a dungeon tile).
+ */
+export function renderPartThumb(factory: ModelFactory, model: THREE.Object3D): string | null {
+  const box = new THREE.Box3().setFromObject(model);
+  if (box.isEmpty()) return null;
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const r = Math.max(size.x, size.z, size.y * 0.8, 1) * 0.62;
+  const cam = new THREE.OrthographicCamera(-r, r, r, -r, 1, r * 20);
+  cam.position.set(center.x, center.y + r * 5, center.z + r * 1.45);
+  cam.lookAt(center);
+  return render(factory, model, cam);
+}
+
+/**
  * Thumbnail of an object (prop, gimmick) seen from the front and above, framed to its size. `dir` is the
  * direction from the model to the camera instead (e.g. straight at a board model).
  */
