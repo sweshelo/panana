@@ -99,6 +99,30 @@ export class MapScene {
     this.draw();
   }
 
+  /**
+   * Move the camera so that cell coordinates (cx, cy) on the ground come to the middle of the view, keeping its angle
+   * and distance (a short glide).
+   */
+  centerOn(cx: number, cy: number): void {
+    const t = this.controls.target;
+    const to = new THREE.Vector3(cx * CELL, 0, cy * CELL);
+    const from = t.clone();
+    if (from.distanceTo(to) < 1) return;
+    const start = performance.now(), ms = 220;
+    cancelAnimationFrame(this.glide);
+    const step = (): void => {
+      const k = Math.min(1, (performance.now() - start) / ms);
+      const e = 1 - (1 - k) ** 3;
+      const p = from.clone().lerp(to, e);
+      this.camera.position.add(p.clone().sub(t));
+      t.copy(p);
+      this.controls.update();
+      if (k < 1) this.glide = requestAnimationFrame(step);
+    };
+    this.glide = requestAnimationFrame(step);
+  }
+  private glide = 0;
+
   /** Top-down camera. */
   topView(): void {
     const t = this.controls.target;
@@ -117,6 +141,7 @@ export class MapScene {
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.glide);
     this.controls.dispose();
     this.renderer.dispose();
   }

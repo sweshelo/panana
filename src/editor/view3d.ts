@@ -109,6 +109,11 @@ export class View3D {
     this.view.topView();
   }
 
+  /** Bring cell coordinates (x, y) to the middle of the view. */
+  centerOn(x: number, y: number): void {
+    this.view.centerOn(x, y);
+  }
+
   draw(): void {
     this.view.draw();
   }

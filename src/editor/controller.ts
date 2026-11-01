@@ -56,6 +56,23 @@ export class Controller {
     return best;
   }
 
+  /**
+   * Where the 3D view should look after a click at (cx, cy) in the 2D view: the record the select tool picked, else the
+   * clicked cell when it selected tiles; null for the other tools and an empty click.
+   */
+  clickFocus(cx: number, cy: number): [number, number] | null {
+    const st = this.st;
+    const doc = st.current;
+    if (!doc || st.tool !== 'select') return null;
+    const s = st.selection;
+    if (s.type === 'rec') {
+      const r = doc.recs[s.section]?.[s.index];
+      return r ? recCellPos(r, st.layouts[s.section]!) : null;
+    }
+    if (s.type === 'tiles') return [Math.floor(cx) + 0.5, Math.floor(cy) + 0.5];
+    return null;
+  }
+
   down(cx: number, cy: number, e: { shiftKey: boolean; button: number }): void {
     const st = this.st;
     const doc = st.current;

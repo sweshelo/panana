@@ -329,6 +329,10 @@ details.fold[open] > summary { background: #2d4a7a; border-color: var(--accent);
 .monster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 6px; }
 .monster-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px; font-size: 12px; }
 .monster-cell.current { background: #2d4a7a; }
+.monster-grid.wide { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.monster-grid.wide .monster-cell .small { white-space: pre-line; text-align: center; }
+.tileset-button { display: inline-flex; align-items: center; gap: 6px; text-align: left; }
+.tileset-button .photo, .tileset-button .photo img { width: 32px; height: 32px; flex: none; }
 .picker-heading { margin: 8px 8px 0; font-size: 12px; color: var(--muted); font-weight: normal; }
 .picker-none { display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border); border-radius: 4px; }
 .photo.photo-lg, .photo.photo-lg img { width: 64px; height: 64px; }
@@ -725,3 +729,8 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .part-number-picker { margin: 0 0 8px; font-size: 12px; }
 .part-number-picker > summary { cursor: pointer; color: var(--muted); }
 .part-number-picker input[type='number'] { width: 112px; }
+
+/* 演出 (editor/cutscene.tsx) */
+.scene-list { padding-left: 1.6em; margin: 0.4em 0; }
+.scene-cmd { margin: 0.3em 0; }
+.scene-fields { display: flex; flex-wrap: wrap; gap: 0.3em 0.6em; align-items: center; margin-top: 0.15em; }

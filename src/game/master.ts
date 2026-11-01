@@ -78,7 +78,7 @@ export class Master {
       if (!f) throw new Error(`マスター (56562135) に ${name} がありません`);
       return new GsTable(f.body);
     };
-    this.mapGroup = table('mapGroup.bin');
+    this.mapGroup = this.table('mapGroup.bin'); // edits (new dungeons, game/newdungeon.ts) are exported
     this.mapResource = table('mapResource.bin');
     this.mapParts = table('mapParts.bin');
     this.mapObject = table('mapObject.bin');
@@ -272,14 +272,79 @@ export class Master {
    * then the map's own mapData key wins.
    */
   mapDataRow(map: MapRef): number {
-    let row = this.designedMapData().get(map.hash) ?? this.dungeonMapDataRow(map.dungeon, map.indoor);
+    return this.mapDataSource(map).row;
+  }
+
+  /**
+   * The mapData row of a map and what picks it: the map's own key ('key'), designedMap ('designed'), or its dungeon's
+   * mapGroup +0x26 ('dungeon') / +0x27 ('indoor').
+   */
+  mapDataSource(map: MapRef): { row: number; from: 'key' | 'designed' | 'dungeon' | 'indoor' } {
+    const designed = this.designedMapData().get(map.hash);
+    let from: 'key' | 'designed' | 'dungeon' | 'indoor' = designed !== undefined ? 'designed' : map.indoor ? 'indoor' : 'dungeon';
+    let row = designed ?? this.dungeonMapDataRow(map.dungeon, map.indoor);
     if (map.mapDataKey) {
-      this.mapDataIndex ??= this.mapData.hashIndex();
-      row = this.mapDataIndex.get(map.mapDataKey) ?? row;
+      const k = this.mapDataKeys().get(map.mapDataKey);
+      if (k !== undefined) [row, from] = [k, 'key'];
     }
-    return row < this.mapData.rows ? row : 0;
+    return { row: row < this.mapData.rows ? row : 0, from };
+  }
+
+  /** mapData key (hash index) -> row, rebuilt when the table's bytes are replaced (a row added, undo). */
+  private mapDataKeys(): Map<number, number> {
+    if (this.mapDataIndexOf !== this.mapData.data) {
+      this.mapDataIndexOf = this.mapData.data;
+      this.mapDataIndex = this.mapData.hashIndex();
+    }
+    return this.mapDataIndex!;
   }
   private mapDataIndex?: Map<number, number>;
+  private mapDataIndexOf?: Uint8Array;
+
+  /** The key (hash index entry) of a mapData row; 0 = none. */
+  mapDataKey(row: number): number {
+    for (const [h, r] of this.mapDataKeys()) if (r === row) return h;
+    return 0;
+  }
+
+  /** Point a dungeon's maps (+0x26) or its indoor maps (+0x27) at a mapData row. */
+  setDungeonMapDataRow(dungeon: number, indoor: boolean, row: number): void {
+    if (dungeon <= 0 || dungeon >= this.mapGroup.rows) throw new Error(`ダンジョン ${dungeon} はありません`);
+    if (row < 0 || row >= this.mapData.rows || row > 0xff) throw new Error(`mapData の行 ${row} はありません`);
+    this.mapGroup.row(dungeon)[indoor ? 0x27 : 0x26] = row;
+  }
+
+  /** Append a copy of a mapData row with a key of its own (its index entry); returns the new row. */
+  addMapData(copyOf: number): number {
+    if (this.mapData.rows > 0xff) throw new Error('mapData の行はもう増やせません (ダンジョンの欄は 1 バイト)');
+    const keys = this.mapDataKeys();
+    let hash = (0x7e610000 + this.mapData.rows) >>> 0;
+    while (keys.has(hash)) hash = (hash + 0x10001) >>> 0;
+    return this.mapData.append(this.mapData.row(copyOf).slice(), hash);
+  }
+
+  /**
+   * Give a mapData row another tileset ([0]); its models ([1] mapResource, [2] / [3]) come from the first row that
+   * has the tileset (as {@link tilesetResource}), the sounds ([4]-[6]) stay.
+   */
+  setTileset(row: number, tileset: number): void {
+    const r = this.mapData.row(row);
+    if (r[0] === tileset) return;
+    const from = this.tilesetRow(tileset);
+    if (from < 0) throw new Error(`タイルセット ${tileset} のモデルを持つ mapData の行がありません`);
+    r.set(this.mapData.row(from).subarray(1, 4), 1);
+    r[0] = tileset;
+  }
+
+  /** The first mapData row (from 1) with a tileset and a model archive; -1 = none. */
+  tilesetRow(tileset: number): number {
+    if (tileset < 0 || tileset >= TILESETS) return -1;
+    for (let i = 1; i < this.mapData.rows; i++) {
+      const o = this.mapData.row(i);
+      if (o[0] === tileset && o[1]! < this.mapResource.rows && this.modelArchive(o[1]!)) return i;
+    }
+    return -1;
+  }
 
   private designedMapData(): Map<number, number> {
     if (!this.designed) {

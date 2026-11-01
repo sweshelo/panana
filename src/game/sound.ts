@@ -4,6 +4,7 @@ import { u16, u32 } from '../util/bytes';
 import type { MapInfo } from './codebin';
 import type { Game } from './game';
 import type { SoundRenderer } from '../sound/render';
+import { bgmRow } from './bgmext';
 import type { MapDoc } from './sections';
 
 export const BCSAR_PATH = 'sound/sound.bcsar';
@@ -47,6 +48,14 @@ export type SoundSlot = (typeof SOUND_SLOTS)[number][0];
 /** Largest soundData row a mapData byte can hold. */
 export const MAX_MAP_SOUND = 0xff;
 
+/** A sound field whose values are not soundData rows (RPG2's BGM fields with the added rows, game/bgmext.ts). */
+export interface SoundField {
+  /** soundData row of a value. */
+  row(value: number): number;
+  /** Value for a soundData row, or null when the field cannot hold it. */
+  value(row: number): number | null;
+}
+
 /** What plays the sounds of a soundData row (Game for RPG2, OahuSession for RPG3). */
 export interface SoundSource {
   soundRenderer(): Promise<SoundRenderer>;
@@ -55,28 +64,43 @@ export interface SoundSource {
 export type SoundKind = 'bgm' | 'me' | 'se' | 'other';
 export const SOUND_KIND: Record<SoundKind, string> = { bgm: 'BGM', me: 'ME (短い曲)', se: '効果音', other: 'その他' };
 
+/** soundData read as it is now (RPG2's, whose rows an edit can point at another sound). */
+export interface SoundRows {
+  readonly count: number;
+  item(row: number): number;
+  volume(row: number): number;
+}
+
 export class SoundNames {
+  private readonly table: SoundRows;
   constructor(
-    /** soundData rows: item IDs (+0). */
-    private readonly items: number[],
+    /** soundData rows: item IDs (+0), or the table itself. */
+    items: number[] | SoundRows,
     /** Sound names by index, or null when the dump has no sound archive. */
-    private readonly names: string[] | null,
+    private names: string[] | null,
     /** soundData rows: volume (+8). */
-    private readonly volumes: number[] = [],
-  ) {}
+    volumes: number[] = [],
+  ) {
+    this.table = Array.isArray(items) ? { count: items.length, item: (r) => items[r] ?? 0, volume: (r) => volumes[r] ?? 0 } : items;
+  }
 
   /** Rows of soundData (row 0 = none). */
   get rows(): number {
-    return this.items.length;
+    return this.table.count;
   }
 
   /** Sound archive item ID of a row (0x01nnnnnn = sound nnnnnn). */
   item(row: number): number {
-    return this.items[row] ?? 0;
+    return row >= 0 && row < this.table.count ? this.table.item(row) : 0;
   }
 
   volume(row: number): number {
-    return this.volumes[row] ?? 0;
+    return row >= 0 && row < this.table.count ? this.table.volume(row) : 0;
+  }
+
+  /** The names of the sounds (when sounds were added to the archive). */
+  setNames(names: string[] | null): void {
+    this.names = names;
   }
 
   /** The names come from sound.bcsar (false: rows are only numbered). */
@@ -86,7 +110,7 @@ export class SoundNames {
 
   /** Index of the sound in sound.bcsar, or null when the row is not a sound. */
   index(row: number): number | null {
-    const id = this.items[row];
+    const id = this.item(row);
     return row && id && id >>> 24 === 1 ? id & 0xffffff : null;
   }
 
@@ -99,9 +123,14 @@ export class SoundNames {
 
   /** Name of a soundData row ("BGM_CAVE"), or "" when unknown. */
   name(row: number): string {
-    const id = this.items[row];
+    const id = this.item(row);
     if (!id || id >>> 24 !== 1 || !this.names) return '';
     return this.names[id & 0xffffff] ?? '';
+  }
+
+  /** Name of sound `index` of sound.bcsar. */
+  soundName(index: number): string {
+    return this.names?.[index] ?? '';
   }
 
   /** "BGM_CAVE (18)" or "サウンド 18". */
@@ -127,14 +156,14 @@ export interface SoundUse {
   slot: SoundSlot;
 }
 
-/** soundData row -> the mapData rows (and slots) that pick it. */
+/** soundData row -> the mapData rows (and slots) that pick it (the BGM fields read 0x80- as the added rows, bgmext.ts). */
 export function soundUses(game: Game): Map<number, SoundUse[]> {
   const out = new Map<number, SoundUse[]>();
   const t = game.master.mapData;
   for (let r = 0; r < t.rows; r++) {
     const row = t.row(r);
     for (const [slot, , o] of SOUND_SLOTS) {
-      const s = row[o]!;
+      const s = slot === 'steps' ? row[o]! : bgmRow(row[o]!);
       if (s) out.set(s, [...(out.get(s) ?? []), { mapDataRow: r, slot }]);
     }
   }

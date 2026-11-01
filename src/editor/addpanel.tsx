@@ -51,7 +51,7 @@ function PartPicker({ editor, dir, onPick, onBoss, onClose }: { editor: MapEdito
   const dungeon=st.current?.dungeon ?? -1;
   const templates=useAsync(() => gimmickTemplates(st.game,dungeon),[st.game,dungeon]);
   const room=st.currentEvents?.roomLeft() ?? 0;
-  const stamps=new Map<number,Stamp>([[1,{type:'chest'}],[2,{type:'floor',kind:0}],[3,{type:'floor',kind:1}],[4,{type:'switchgate'}]]);
+  const stamps=new Map<number,Stamp>([[1,{type:'chest'}],[2,{type:'floor',kind:0}],[3,{type:'floor',kind:1}],[4,{type:'switchgate'}],[6,{type:'scene'}]]);
   const badge=(label:string):ReactNode => <span className="photo photo-lg stamp-badge" aria-hidden="true">{label}</span>;
   const categories: Record<number,string> = {1:'基本パーツ',20:'ギミック',21:'出入口・扉・穴'};
   const entries: GridEntry[] = [
@@ -60,9 +60,10 @@ function PartPicker({ editor, dir, onPick, onBoss, onClose }: { editor: MapEdito
     {id:3,name:'凍った床',icon:<ObjectPhoto editor={editor} row={st.current ? stampObjectRow({type:'floor',kind:1},st.current) : 0} />,category:1},
     {id:4,name:'スイッチと柵',icon:badge('⊞'),category:1,unavailable:!st.game.switchVersion?'汎用スイッチ入りの土台 MOD を読み込むと使えます':room<2?'イベントに2行の空きが必要です':null,title:'最初に柵、次にスイッチを配置します。'},
     {id:5,name:'ボス戦',icon:badge('⚔'),category:1,unavailable:!editor.session.book?'モンスターを読み込めませんでした':room<2?'イベントに2行の空きが必要です':null,title:'敵を選んで戦闘範囲を配置。敵や戦闘条件は右ペインで編集できます。'},
+    {id:6,name:'イベントを置く',icon:badge('▷'),category:20,unavailable:room<2?'イベントに2行の空きが必要です':null,title:'範囲に入ると演出。セリフ・話者・歩く動き・カメラなどを右ペインで設定できます。'},
   ];
   const selected=st.stamp;
-  let current = selected?.type==='chest'?1:selected?.type==='floor'?selected.kind===1?3:2:selected?.type==='switchgate'?4:selected?.type==='boss'?5:undefined;
+  let current = selected?.type==='chest'?1:selected?.type==='floor'?selected.kind===1?3:2:selected?.type==='switchgate'?4:selected?.type==='boss'?5:selected?.type==='scene'?6:undefined;
   if (templates instanceof Error) entries.push({id:-1,name:'ギミックを読み込めませんでした',icon:badge('!'),unavailable:templates.message});
   else if (!templates) entries.push({id:-1,name:'ギミックを読み込み中…',icon:badge('…'),unavailable:'読み込み中'});
   else templates.forEach((template,index) => {

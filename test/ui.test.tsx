@@ -28,6 +28,7 @@ import { SoundNames, soundUses } from '../src/game/sound';
 import { SoundPicker } from '../src/ui/SoundPicker';
 import { MapUses, SoundView } from '../src/pages/sounds';
 import { ItemListControls, ItemSources, rarityMatches, sortItems } from '../src/ui/ItemSources';
+import { LevelStealthOption } from '../src/ui/LevelStealthOption';
 
 function action(row: number, w0: number, name: string): Action {
   const raw = new Uint8Array(0x3c);
@@ -35,6 +36,20 @@ function action(row: number, w0: number, name: string): Action {
   raw.set([40, 0, 30, 0], 0x18);
   return { ...decodeAction(raw), row, name, raw };
 }
+
+describe('the code MOD "レベルステルス" in the export dialog', () => {
+  test('off: a switch and the default difference; on: the difference to edit; a problem is shown', () => {
+    const off = renderToString(<LevelStealthOption diff={0} problem={null} onChange={() => {}} />);
+    expect(off).toContain('レベルステルス');
+    expect(off).not.toContain('type="number"');
+    expect(off).toContain('10 以上高い');
+    const on = renderToString(<LevelStealthOption diff={25} problem={null} onChange={() => {}} />);
+    expect(on).toContain('type="number"');
+    expect(on).toContain('value="25"');
+    expect(on).toContain('25 以上高い');
+    expect(renderToString(<LevelStealthOption diff={0} problem="別の版" onChange={() => {}} />)).toContain('別の版');
+  });
+});
 
 describe('action page', () => {
   const actions = [action(0, 1 << 1, 'たいあたり'), action(1, ((2 << 1) | (1 << 29)) >>> 0, 'やくそう')];

@@ -2,6 +2,8 @@
 //   - section table: FUN_002d9b18's "not found" path (0x2D9B70) jumps to a hook that searches an extra table.
 //   - dungeon table: the rows of a dungeon that gets new maps are copied to a new array with the new rows appended,
 //     and the dungeon's count / pointer (0x4C3AFC) are changed. No hook.
+//   - new dungeons (a vacant mapGroup row, game/newdungeon.ts): a row of the dungeon table without maps (W01-W99) is
+//     given the dungeon's ID, code and maps. The table keeps its 56 rows (FUN_002f8e1c & co. loop over 0x38 rows).
 // Everything is written into the zero padding at the end of .rodata (0x510490-0x511000), behind the header "PNMP";
 // dungeon arrays that do not fit go into copies of the mapData key array that nothing reads (SPILL).
 import { u32, w32 } from '../util/bytes';
@@ -10,8 +12,11 @@ import { BASE, MAP_DATA_KEYS, MAP_DATA_NONE, MAP_ROWS, MAP_SECTIONS_ROWS, MAP_TA
 export const EXT_HEADER = 0x510490;
 export const EXT_END = 0x511000;
 export const EXT_MAGIC = 0x504d4e50; // "PNMP"
-export const EXT_VERSION = 1;
-const HEADER_SIZE = 0x18;
+/** 1: maps only. 2: + the rows of the dungeon table given to new dungeons (+0x18 count, +0x1C records). */
+export const EXT_VERSION = 2;
+const HEADER_SIZE = 0x20;
+/** A dungeon table row given to a new dungeon: {u32 table row, u32 dungeon, u32 x 4 the row as it was}. */
+const RECORD_SIZE = 0x18;
 
 /** `mvn r0, #0` of FUN_002d9b18 (section lookup: map not found). */
 export const HOOK_SITE = 0x2d9b70;
@@ -59,6 +64,8 @@ export interface DungeonRow {
   /** Row in the dungeon table (0x4C3AFC). */
   index: number;
   dungeon: number;
+  /** Address of the dungeon code ("D01"). */
+  name: number;
   count: number;
   /** Address of the map rows. */
   array: number;
@@ -67,8 +74,18 @@ export interface DungeonRow {
 export function dungeonRows(code: Uint8Array): DungeonRow[] {
   return Array.from({ length: MAP_TABLE_ROWS }, (_, index) => {
     const o = MAP_TABLE - BASE + index * 16;
-    return { index, dungeon: u32(code, o), count: u32(code, o + 8), array: u32(code, o + 12) };
+    return { index, dungeon: u32(code, o), name: u32(code, o + 4), count: u32(code, o + 8), array: u32(code, o + 12) };
   });
+}
+
+/** A row of the dungeon table that the extension gave to a new dungeon. */
+export interface DungeonRecord {
+  /** Row of the dungeon table (0x4C3AFC). */
+  tableRow: number;
+  /** The new dungeon (mapGroup row). */
+  dungeon: number;
+  /** The row before (ID, code, count 0, array), written back when the dungeon goes. */
+  original: Omit<DungeonRow, 'index'>;
 }
 
 export interface Extension {
@@ -76,6 +93,8 @@ export interface Extension {
   sections: number[][];
   /** Addresses of the added map rows. */
   rows: number[];
+  /** Rows of the dungeon table given to new dungeons (version 2). */
+  dungeons: DungeonRecord[];
 }
 
 /** The PNMP extension of a (patched) code.bin, or null. */
@@ -85,10 +104,42 @@ export function readExtension(code: Uint8Array): Extension | null {
   const inCode = (a: number, size: number): boolean => a >= BASE && a + size <= BASE + code.length;
   const n = u32(code, h + 8), sp = u32(code, h + 0xc);
   const m = u32(code, h + 0x10), rp = u32(code, h + 0x14);
-  if (!inCode(sp, n * 40) || !inCode(rp, m * 4)) throw new Error('code.bin の新しいマップの表 (PNMP) が壊れています');
+  const version = u32(code, h + 4);
+  const d = version >= 2 ? u32(code, h + 0x18) : 0, dp = version >= 2 ? u32(code, h + 0x1c) : 0;
+  if (!inCode(sp, n * 40) || !inCode(rp, m * 4) || (d && !inCode(dp, d * RECORD_SIZE)) || d > MAP_TABLE_ROWS)
+    throw new Error('code.bin の新しいマップの表 (PNMP) が壊れています');
   const sections = Array.from({ length: n }, (_, i) => Array.from({ length: 10 }, (_, k) => u32(code, sp - BASE + i * 40 + k * 4)));
   const rows = Array.from({ length: m }, (_, i) => u32(code, rp - BASE + i * 4));
-  return { sections, rows };
+  const dungeons = Array.from({ length: d }, (_, i): DungeonRecord => {
+    const o = dp - BASE + i * RECORD_SIZE;
+    return {
+      tableRow: u32(code, o),
+      dungeon: u32(code, o + 4),
+      original: { dungeon: u32(code, o + 8), name: u32(code, o + 0xc), count: u32(code, o + 0x10), array: u32(code, o + 0x14) },
+    };
+  });
+  return { sections, rows, dungeons };
+}
+
+/** A dungeon added by the editor (game/newdungeon.ts): what goes into the dungeon table. */
+export interface AddedDungeon {
+  /** Dungeon ID (= mapGroup row; a vacant one below 0x3A). */
+  dungeon: number;
+  /** Dungeon code ("D11"), the name of its row in the dungeon table. */
+  code: string;
+}
+
+/**
+ * Rows of the dungeon table that can be given to a new dungeon: the ones without maps (W01 / W02 / W98 / W99; the
+ * three lookups only compare map hashes, so these rows are never read), last first. Rows given away by the
+ * extension of `code` count as they were.
+ */
+export function freeTableRows(code: Uint8Array): number[] {
+  const prev = new Map((readExtension(code)?.dungeons ?? []).map((r) => [r.tableRow, r]));
+  return dungeonRows(code)
+    .filter((d) => (prev.get(d.index)?.original.count ?? d.count) === 0)
+    .map((d) => d.index)
+    .reverse();
 }
 
 /** A map added by the editor: what goes into its section row and map row. */
@@ -148,7 +199,7 @@ class Allocator {
  * with the base MOD's code.ips, which may already have an older PNMP extension: it is rebuilt from scratch, and
  * with no maps the tables are restored).
  */
-export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
+export function buildMapPatch(code: Uint8Array, maps: AddedMap[], dungeons: AddedDungeon[] = []): Patch {
   const at = (a: number): number => a - BASE;
   const records: [number, Uint8Array][] = [];
   const word = (a: number, v: number): void => {
@@ -166,6 +217,8 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
   maps.forEach((m, i) => m.sections.forEach((h, k) => w32(sectBytes, i * 40 + k * 4, h)));
   const sectTable = maps.length ? alloc.put(sectBytes, true) : 0;
   const rowPtrs = maps.length ? alloc.put(new Uint8Array(maps.length * 4), true) : 0;
+  const nRecords = new Set(dungeons.filter((d) => maps.some((m) => m.dungeon === d.dungeon)).map((d) => d.dungeon)).size;
+  const recordTable = nRecords ? alloc.put(new Uint8Array(nRecords * RECORD_SIZE), true) : 0;
 
   const names = new Map<string, number>();
   const nameAddr = (s: string): number => {
@@ -179,9 +232,50 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
     return a;
   };
 
+  // Rows of the dungeon table for the new dungeons that have maps (the row they had before when there is one).
+  const prev = new Map((readExtension(code)?.dungeons ?? []).map((r) => [r.tableRow, r]));
+  const table = dungeonRows(code);
+  const free = freeTableRows(code);
+  const given = new Map<number, AddedDungeon>(); // table row -> dungeon
+  const dungeonRecords: DungeonRecord[] = [];
+  for (const nd of dungeons) {
+    if (!maps.some((m) => m.dungeon === nd.dungeon)) continue;
+    if (!/^[A-Z][0-9]{2}$/.test(nd.code)) throw new Error(`ダンジョンのコード ${nd.code} は英大文字 1 つと数字 2 つにしてください`);
+    const native = table.find((d) => !prev.has(d.index) && d.dungeon === nd.dungeon && d.count > 0);
+    if (native) throw new Error(`ダンジョン ${nd.dungeon} はもう表にあります`);
+    const again = free.find((i) => !given.has(i) && prev.get(i)?.dungeon === nd.dungeon);
+    const row = again ?? free.find((i) => !given.has(i) && !dungeons.some((x) => x !== nd && prev.get(i)?.dungeon === x.dungeon));
+    if (row === undefined) throw new Error('ダンジョンの表に空いている行がありません');
+    given.set(row, nd);
+  }
+  const writeRow = (arr: Uint8Array, o: number, m: AddedMap): void => {
+    w32(arr, o, m.hash);
+    w32(arr, o + 4, m.floor);
+    w32(arr, o + 0x10, m.mapDataKey || none);
+    w32(arr, o + 0x14, m.extra);
+    w32(arr, o + 0x18, nameAddr(m.name));
+  };
   const rowAddr = new Map<number, number>();
   const dungeonEdits: [DungeonRow, number, number][] = []; // row, new count, new array
-  for (const d of dungeonRows(code)) {
+  const fullEdits: [number, DungeonRow][] = []; // table row -> the whole row (given to a dungeon, or given back)
+  for (const d of table) {
+    const nd = given.get(d.index);
+    const p = prev.get(d.index);
+    if (nd) {
+      const mine = maps.filter((m) => m.dungeon === nd.dungeon);
+      const arr = new Uint8Array(mine.length * ROW_SIZE);
+      mine.forEach((m, j) => writeRow(arr, j * ROW_SIZE, m));
+      const a = alloc.put(arr);
+      mine.forEach((m, j) => rowAddr.set(m.hash, a + j * ROW_SIZE));
+      const original = p?.original ?? { dungeon: d.dungeon, name: d.name, count: d.count, array: d.array };
+      dungeonRecords.push({ tableRow: d.index, dungeon: nd.dungeon, original });
+      fullEdits.push([d.index, { index: d.index, dungeon: nd.dungeon, name: nameAddr(nd.code), count: mine.length, array: a }]);
+      continue;
+    }
+    if (p) {
+      fullEdits.push([d.index, { index: d.index, ...p.original }]);
+      continue;
+    }
     const mine = maps.filter((m) => m.dungeon === d.dungeon);
     const relocated = d.count > 0 && (d.array < MAP_ROWS || d.array >= MAP_ROWS + MAP_SECTIONS_ROWS * ROW_SIZE);
     if (!mine.length && !relocated) continue;
@@ -205,14 +299,7 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
     }
     const arr = new Uint8Array((orig.length + mine.length) * ROW_SIZE);
     orig.forEach((r, j) => arr.set(r, j * ROW_SIZE));
-    mine.forEach((m, j) => {
-      const o = (orig.length + j) * ROW_SIZE;
-      w32(arr, o, m.hash);
-      w32(arr, o + 4, m.floor);
-      w32(arr, o + 0x10, m.mapDataKey || none);
-      w32(arr, o + 0x14, m.extra);
-      w32(arr, o + 0x18, nameAddr(m.name));
-    });
+    mine.forEach((m, j) => writeRow(arr, (orig.length + j) * ROW_SIZE, m));
     const a = alloc.put(arr);
     mine.forEach((m, j) => rowAddr.set(m.hash, a + (orig.length + j) * ROW_SIZE));
     dungeonEdits.push([d, orig.length + mine.length, a]);
@@ -231,6 +318,12 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
     put32(header + 0x10, maps.length);
     put32(header + 0x14, rowPtrs);
     maps.forEach((m, i) => put32(rowPtrs + i * 4, rowAddr.get(m.hash)!));
+    put32(header + 0x18, dungeonRecords.length);
+    put32(header + 0x1c, recordTable);
+    dungeonRecords.forEach((r, i) => {
+      const o = recordTable + i * RECORD_SIZE;
+      [r.tableRow, r.dungeon, r.original.dungeon, r.original.name, r.original.count, r.original.array].forEach((v, k) => put32(o + k * 4, v));
+    });
   }
 
   // Regions: the whole .rodata padding (zeros when empty), used spill regions, and spill regions to restore.
@@ -250,6 +343,11 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[]): Patch {
     w32(b, 0, count);
     w32(b, 4, array);
     records.push([at(MAP_TABLE) + d.index * 16 + 8, b]);
+  }
+  for (const [i, d] of fullEdits) {
+    const b = new Uint8Array(16);
+    [d.dungeon, d.name, d.count, d.array].forEach((v, k) => w32(b, k * 4, v));
+    records.push([at(MAP_TABLE) + i * 16, b]);
   }
   return { records };
 }

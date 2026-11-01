@@ -1,7 +1,7 @@
 // A box of sound fields (RPG2's map BGM and footsteps, first): a heading with a "shared" badge, one row per field with
 // the play button and the picker (SoundButton), and a note. The map inspectors of all three games use it.
 import type { ReactNode } from 'react';
-import type { SoundKind, SoundNames, SoundSource } from '../game/sound';
+import type { SoundField, SoundKind, SoundNames, SoundSource } from '../game/sound';
 import { SoundButton } from './SoundPicker';
 
 export interface SoundSlot {
@@ -12,6 +12,8 @@ export interface SoundSlot {
   kind: SoundKind;
   /** Largest row the field holds (one byte in RPG2 / RPG3's mapData). */
   max?: number;
+  /** How the field reads its value (RPG2's BGM fields). */
+  field?: SoundField;
   /** Shown when the label is hovered. */
   note?: string;
   onChange: (row: number) => void;
@@ -42,7 +44,7 @@ export function SoundSlotsBox({ title, shared, game, sounds, slots, usage, note,
         <div key={s.key} className="field" title={s.note}>
           <span>{s.label}</span>
           {sounds
-            ? <SoundButton game={game} sounds={sounds} value={s.value} kind={s.kind} max={s.max} usage={usage} title={`${s.label} を選ぶ`} onChange={s.onChange} />
+            ? <SoundButton game={game} sounds={sounds} value={s.value} kind={s.kind} max={s.max} field={s.field} usage={usage} title={`${s.label} を選ぶ`} onChange={s.onChange} />
             : <span>{`サウンド ${s.value}`}</span>}
         </div>
       ))}

@@ -11,6 +11,8 @@ import { Inspector } from './inspector';
 import { SECTION_COLORS } from './legend';
 import type { MapEditor, ViewMode } from './mapeditor';
 import { NewMapDialog } from './newmapdialog';
+import { NewDungeonDialog } from './newdungeondialog';
+import { EditDungeonDialog } from './editdungeondialog';
 import { Palette } from './palette';
 import { IssueList, MapToolbox } from './tools';
 import { InfoTip } from '../ui/InfoTip';
@@ -35,12 +37,16 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
   useEditorState(st);
   useSignal(editor.ui);
   const [adding, setAdding] = useState(false);
+  const [addingDungeon, setAddingDungeon] = useState(false);
+  const [editingDungeon, setEditingDungeon] = useState(false);
   return (
     <header>
       {st.info && (
         <MapButton game={game} value={st.info.hash} className="map-select" modified={editor.modifiedMaps()} onChange={(h) => void editor.openMap(h)} />
       )}
       <button title="既存のダンジョンに新しいマップ (階) を足す" onClick={() => setAdding(true)}>＋ マップを追加</button>
+      <button title="新しいダンジョンを足す (最初のマップと一緒に)" onClick={() => setAddingDungeon(true)}>＋ ダンジョンを追加</button>
+      {game.code.dungeons.length > 0 && <button title="追加したダンジョンの名前・コードを変える" onClick={() => setEditingDungeon(true)}>ダンジョンの設定…</button>}
       <div className="seg">
         {MODES.map(([m, label]) => <button key={m} className={editor.mode === m ? 'active' : ''} onClick={() => editor.setMode(m)}>{label}</button>)}
       </div>
@@ -58,6 +64,11 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
         <NewMapDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setAdding(false)}
           onCreated={(m) => { setAdding(false); void editor.openMap(m.hash); }} />
       )}
+      {addingDungeon && (
+        <NewDungeonDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setAddingDungeon(false)}
+          onCreated={(m) => { setAddingDungeon(false); void editor.openMap(m.hash); }} />
+      )}
+      {editingDungeon && <EditDungeonDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setEditingDungeon(false)} />}
     </header>
   );
 }
