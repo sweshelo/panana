@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { mapLabel, pointLabel, worldHref, worldLabel } from '../editor/labels';
 import { validateWorld, type WorldIssue } from '../editor/validate';
 import { useWorldView, WorldFrame } from '../editor/worldpage';
+import { PartPicker, PartSelection, type PartChoice } from '../editor/partpalette';
+import type { WorldStamp, WorldView as WorldViews } from '../editor/worldview';
+import { objectCategory } from '../game/objects';
 import { CONDITION_FIELDS } from '../game/conditions';
 import { kindName } from '../game/eventkinds';
 import { conditionTypes } from '../game/eventlist';
@@ -97,6 +100,21 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
     setSelId(l[Math.min(i, l.length - 1)] ? ENT.id(l[Math.min(i, l.length - 1)]!) : 0);
     edited();
   };
+  /** A copy of the selected entrance one cell east (a new ID, always shown, no section-3 point). */
+  const duplicateEntrance = (): void => {
+    if (!sel) return;
+    view?.mark();
+    const r = newEntrance(sel, freeEntranceId(list), ENT.x(sel) + 1, ENT.y(sel));
+    session.setEntrances(world, [...list, r]);
+    src?.changed();
+    setSelId(ENT.id(r));
+    history.replaceState(null, '', worldHref(world.code, ENT.id(r)));
+    edited();
+  };
+  if (view) {
+    view.onDelete = index >= original.length ? () => removeEntrance(index) : null;
+    view.onDuplicate = sel ? duplicateEntrance : null;
+  }
   const q = query.trim();
   const rows = list
     .map((r, i) => ({ r, i }))
@@ -128,13 +146,15 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
           </select>
         </div>
       }
+      parts={view && <WorldParts session={session} world={world} view={view} edited={() => { src?.changed(); edited(); }} />}
+      canEditPart={view?.sel.type === 'entrance' && !!sel}
       list={
         <div className="world-entrances">
           <ListFilter query={query} setQuery={setQuery} placeholder="行き先のマップ・入口 ID で検索" filter={filter} setFilter={setFilter}
             options={[['all', 'すべて'], ['changed', '変更した'], ['issues', '問題あり']]} />
           <div className="row">
             <Count shown={rows.length} total={list.length} unit="入口" />
-            <button className="small" title="2D の地図の真ん中に、選んでいる入口と同じ種類・見た目・行き先の入口を置きます" onClick={addEntrance}>入口を追加</button>
+            <button className="small" title="2D の地図の真ん中に、選んでいる入口と同じ種類・見た目・行き先の入口を置きます。好きな場所に置くには左上の「パーツ」から" onClick={addEntrance}>入口を追加</button>
             {index >= original.length && <button className="small" onClick={() => removeEntrance(index)}>この入口を消す</button>}
           </div>
           <table className="book-table world-entrance-table">
@@ -174,6 +194,127 @@ function WorldView({ session, world, worlds, routeId }: { session: Session; worl
       }}
     />
   );
+}
+
+/** A kind of entrance to put with "パーツを置く": copied from `base` (its kind +0x00 and destination), with a model. */
+interface EntranceKind {
+  key: string;
+  name: string;
+  sub?: string;
+  base: Uint8Array;
+  /** mapObject row for +0x18 (0: the kind's own model). */
+  model: number;
+  /** The model shown (the row the game draws). */
+  shown: number;
+}
+
+interface EntranceStamp extends WorldStamp {
+  kind: EntranceKind;
+  /** The destination of the entrances put next (null: the same as the kind's entrance). */
+  dest: number | null;
+}
+
+/**
+ * The "パーツ" mode of a world: new entrances (towns, buildings, dungeon entrances; section 2) put where the map is
+ * clicked. A kind is the look of one of the world's entrances, or any building model of the world map (mapObject
+ * 237..262, or any other row); the destination is chosen here or later in the inspector.
+ */
+function WorldParts({ session, world, view, edited }: { session: Session; world: WorldInfo; view: WorldViews; edited: () => void }): ReactNode {
+  const { game } = session;
+  useSignal(view.signal);
+  const [open, setOpen] = useState<'parts' | 'models' | null>(null);
+  // kept in the view's stamp, so that it stays while the toolbox shows "チップ"
+  const stamp = view.stamp as EntranceStamp | null;
+  const kind = stamp?.kind ?? null;
+  const dest = stamp?.dest ?? null;
+  const setDest = (d: number | null): void => {
+    if (!stamp) return;
+    stamp.dest = d;
+    view.signal.emit();
+  };
+  const list = session.entrancesOf(world);
+  const parts = game.worldParts();
+  const shownOf = (r: Uint8Array): number => ENT.model(r) || (parts[ENT.part(r)]?.object ?? 0);
+
+  // the kinds: the looks the world's entrances have, then the world map's other building models
+  const kinds: EntranceKind[] = [];
+  const seen = new Set<number>();
+  for (const r of list) {
+    const shown = shownOf(r);
+    if (!shown || seen.has(shown)) continue;
+    seen.add(shown);
+    kinds.push({ key: `ent/${shown}`, name: `${mapLabel(game, ENT.destMap(r))} と同じ`, sub: `${objectCategory(shown)} #${shown}`, base: r, model: ENT.model(r), shown });
+  }
+  // the base of a new model: an entrance whose look comes from +0x18 (its kind has no model of its own)
+  const modelBase = list.find((r) => ENT.model(r)) ?? list[0];
+  const withModel = (row: number): EntranceKind | null => (modelBase ? { key: `obj/${row}`, name: `${objectCategory(row)} #${row}`, sub: '新しい見た目', base: modelBase, model: row, shown: row } : null);
+  for (let row = 1; row < game.master.mapObject.rows; row++) {
+    if (seen.has(row) || objectCategory(row) !== 'ワールドマップ' || !game.master.objectModel(row)) continue;
+    const k = withModel(row);
+    if (k) kinds.push(k);
+  }
+
+  const choose = (k: EntranceKind): void => {
+    setOpen(null);
+    const next: EntranceStamp = {
+      label: k.name,
+      kind: k,
+      dest: stamp?.dest ?? null,
+      place: (x, y, rot) => {
+        const now = session.entrancesOf(world);
+        let r = newEntrance(k.base, freeEntranceId(now), x, y);
+        r = setEntranceU32(r, 0x18, k.model);
+        r = moveEntrance(r, x, y, rot);
+        const d = next.dest;
+        if (d !== null && d !== ENT.destMap(r)) r = setEntranceU32(setEntranceU32(r, 0x08, d), 0x0c, entryPoint(session, world, d));
+        session.setEntrances(world, [...now, r]);
+        edited();
+        return { type: 'entrance', index: now.length };
+      },
+    };
+    view.setStamp(next);
+  };
+
+  const choices: PartChoice[] = kinds.map((k) => ({
+    key: k.key, name: k.name, sub: k.sub,
+    category: k.key.startsWith('ent/') ? 'いまある入口と同じ見た目' : '建物・入口のモデル',
+    icon: <Photo model={objectModelRef(game, k.shown)} className="photo photo-lg" />,
+  }));
+  const shownDest = dest ?? (kind ? ENT.destMap(kind.base) : 0);
+  return (
+    <div className="add-panel compact-add-panel world-parts-panel">
+      <PartSelection label={kind ? kind.name : '置くものを選ぶ…'} onChoose={() => setOpen('parts')}
+        icon={kind ? <Photo model={objectModelRef(game, kind.shown)} className="photo photo-lg" /> : undefined}
+        help={'町・建物・ダンジョンの入口を選び、地図をクリックして置きます (区画 2 の入口が増えます)。Esc で選択に戻ります。\n行き先・出現条件・見た目は、置いたあと右ペインでも変えられます。'}
+        directions={kind ? { labels: ['↑ 北', '→ 東', '↓ 南', '← 西'], value: view.stampRot, onChange: (r) => view.setStampRot(r) } : undefined} />
+      {kind && (
+        <div className="field">
+          <span className="muted small">置く入口の行き先</span>
+          <MapButton game={game} value={shownDest} worlds title="置く入口の行き先のマップを選ぶ" onChange={setDest} />
+          {dest !== null && <button type="button" className="link small" onClick={() => setDest(null)}>{`写し元 (${mapLabel(game, ENT.destMap(kind.base))}) と同じにする`}</button>}
+        </div>
+      )}
+      {open === 'parts' && (
+        <PartPicker choices={choices} current={kind?.key} onClose={() => setOpen(null)}
+          onPick={(key) => { const k = kinds.find((x) => x.key === key); if (k) choose(k); }}
+          controls={<button type="button" className="small" onClick={() => setOpen('models')}>ほかのモデルから選ぶ…</button>} />
+      )}
+      {open === 'models' && (
+        <ObjectPicker game={game} title="入口のモデルを選ぶ" current={kind?.shown}
+          used={list.map(shownOf).filter((m) => m)}
+          onPick={(row) => { const k = withModel(row); if (k) choose(k); else setOpen(null); }} onClose={() => setOpen(null)} />
+      )}
+    </div>
+  );
+}
+
+/** The point of `map` an entrance leading there should name: one that leads out to this world, else the first. */
+function entryPoint(session: Session, world: WorldInfo, map: number): number {
+  const info = session.game.code.byHash(map);
+  if (!info) return 0;
+  const pts = session.docOf(info).recs[3] ?? [];
+  const out = pts.find((p) => P3.destMap(p.raw) === world.hash) ?? pts[0];
+  return out ? P3.id(out.raw) : 0;
 }
 
 /** The fields of one entrance, and whether the map it leads to leads back to it. */
