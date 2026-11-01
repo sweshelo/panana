@@ -557,7 +557,7 @@ function EntranceNotice({ session, events, row, r, added, write }: {
       {message > 0 && (
         <div className="muted small">
           <a href={`#/messages/${hexId(message)}`}>{texts.preview(message, true) ?? `メッセージ ${hexId(message)}`}</a>
-          {' '}— ワールドマップに入ったとき、条件が成り立っていて行の状態が 0 なら一度だけ、この入口の隣へワープして出し、元の場所へワープで戻して、状態を 1 にします (乗り物に乗っている間は出しません) (書き出しの code.ips に告知のパッチが入ります)。
+          {' '}— ワールドマップに入ったとき、条件が成り立っていて行の状態が 0 なら一度だけ、この入口の隣へワープし、パーティを隠して出し、元の場所 (町などから出たときはその入口の隣) へワープで戻して、状態を 1 にします (乗り物に乗っている間は出しません) (書き出しの code.ips に告知のパッチが入ります)。
         </div>
       )}
       {message > 0 && (

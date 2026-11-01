@@ -39,7 +39,8 @@ const W01_MAP = 0xa8654391;
 /**
  * Where the notice keeps its state across the two loads it warps through: the unused end of .bss's last page
  * (.bss is 0x5E5D3C..0x63F4B4; nothing in code.bin points past it). Not cleared at boot, hence the mark.
- * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59).
+ * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59),
+ * +0x1C the entrance the party arrived by (0x51, FUN_002ff4b4; 0 = loaded on the map).
  */
 export const NOTICE_STATE = 0x63ff00;
 const NOTICE_MARK = 0x4e574e50; // 'PNWN'
@@ -109,14 +110,19 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  *   are still set) and returns its action; when it is 0, a notice action (0x10 bytes, FUN_0031b170(obj, 0x1000000),
  *   the vtable of 0x4FB8C8 with our [2]) when a notice is due (not while riding: FUN_00303c70, save 0x57 != 0; FUN_002e592c only says a ship is owned) or the party was just warped next to an entrance.
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
- * - [2], first load: keeps the row, the place (0x58, FUN_003039fc) and the angle (0x59, FUN_00430e20) at
- *   NOTICE_STATE, fades to black and warps next to the entrance like 黄泉の門's scene (FUN_00226064):
- *   FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0) (s0 = *0x4D07CC). The map is
- *   built at a load, so turning the camera or moving the party far does not show the place there.
- * - [2], next to the entrance (FUN_001db864's warp without its FUN_003008dc, which heals the party): black at once, the camera on the entrance (FUN_00317210, s0 = 0), a fade in, the
- *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black, 0x58 /
- *   0x59 written back (FUN_003012dc / FUN_003012b0, like FUN_001db864) and a warp to point 0 of W01, where
- *   FUN_004326a8 places the party at 0x58.
+ * - [2], first load: keeps the row, the entrance the party arrived by (0x51, FUN_002ff4b4), the place (0x58,
+ *   FUN_003039fc) and the angle (0x59, FUN_00430e20) at NOTICE_STATE, fades to black and warps next to the entrance
+ *   like 黄泉の門's scene (FUN_00226064): FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0)
+ *   (s0 = *0x4D07CC). The map is built at a load, so turning the camera or moving the party far does not show the
+ *   place there. 0x58 is only rewritten by walking (FUN_0043281c; new games start at (-1000, -1000, -1000)), so
+ *   with no entrance and 0x58 still that, nothing is shown (there would be nowhere to go back to).
+ * - [2], next to the entrance: black at once, the party hidden like FUN_001c0630 does (FUN_0031ba8c(h,
+ *   FUN_00319a6c()), FUN_0031c580 / FUN_0031c4bc / FUN_00301500(h, 0)), the follow camera kept (it shows the
+ *   entrance's side; a camera pulled back 13 tiles shows tiles past the loaded area), 1 s to load, a fade in, the
+ *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black and back:
+ *   next to the entrance the party arrived by, or (loaded on the map) 0x58 / 0x59 written back (FUN_003012dc /
+ *   FUN_003012b0, like FUN_001db864 without its FUN_003008dc, which heals the party) and a warp to point 0 of W01,
+ *   where FUN_004326a8 places the party at 0x58.
  * - Back where it was: the phase is cleared; [4] (0x31713C) writes nothing for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
@@ -199,15 +205,24 @@ wr_find:
   add r4, r4, #0x20
   b wr_find
 wr_go:
+  bl FUN_002ff4b4            ; 着いた入口の ID (0x51、0 = ワールドマップで読み込んだ)
+  str r0, [r5, #0x1c]
+  add r0, r5, #0xc
+  bl FUN_003039fc            ; 今の位置 (0x58)
+  ldr r0, [r5, #0x1c]
+  cmp r0, #0
+  bne wr_keep
+  ldr r0, [r5, #0xc]         ; 0x58 が初期値 (-1000, …) のまま (W01 を歩いていない) なら戻れないので出さない
+  cmp r0, #0
+  blt wr_out
+wr_keep:
+  bl wn_save
+  bl FUN_00430e20            ; 今の角度 (0x59)、s0
+  vstr s0, [r5, #0x18]
   ldr r0, =${hex(NOTICE_MARK)}
   str r0, [r5]
   ldr r0, [r4]
   str r0, [r5, #8]           ; 行
-  add r0, r5, #0xc
-  bl FUN_003039fc            ; 今の位置 (0x58)
-  bl wn_save
-  bl FUN_00430e20            ; 今の角度 (0x59)、s0
-  vstr s0, [r5, #0x18]
   mov r0, #1
   str r0, [r5, #4]
   bl wn_black_out
@@ -243,6 +258,9 @@ wr_back:
   bl wn_black_out
   bl wn_save                 ; (FUN_001db864 は先に FUN_003008dc を呼ぶが、それはパーティの回復なので呼ばない)
   mov r6, r0
+  ldr r2, [r5, #0x1c]        ; 入口から着いていたら、その入口の隣へ戻る
+  cmp r2, #0
+  bne wr_warp
   add r1, r5, #0xc
   bl FUN_003012dc            ; 0x58 = 元の位置
   vldr s0, [r5, #0x18]
@@ -250,9 +268,10 @@ wr_back:
   bl FUN_003012b0            ; 0x59 = 元の角度
   mov r0, #0
   bl FUN_00300678
+  mov r2, #0                 ; 地点 0: 0x58 に出る
+wr_warp:
   mov r0, r6
   ldr r1, =${hex(W01_MAP)}
-  mov r2, #0                 ; 地点 0: 0x58 に出る
   bl FUN_00308d44            ; ワープ
   mov r0, #2
   str r0, [r5, #4]
@@ -293,10 +312,11 @@ wn_black_out:
   vldr s0, =0.5
   bl FUN_00300dbc
   pop {r4, pc}
-; r0 = 表の 1 件 (入口の隣に来たところ): すぐ黒にし、カメラを入口へ向け、フェードインして効果音とメッセージを出す
+; r0 = 表の 1 件 (入口の隣に来たところ): すぐ黒にし、パーティを隠し (黄泉の門の FUN_001c0630 と同じ)、追従カメラの
+; まま (入口の隣を写す) 待ってからフェードインして効果音とメッセージを出す。このあと元の場所へワープするので戻さない
 wn_show:
   push {r4, r5, r6, lr}
-  sub sp, sp, #0xf0          ; +0 カメラ、+0x9C 差分、+0xB8 ハンドル、+0xD8 視点、+0xE4 注視点
+  sub sp, sp, #0x30          ; +0 パーティのハンドル (0x2C)
   mov r4, r0
   mov r0, #0
   mov r1, #0
@@ -306,37 +326,23 @@ wn_show:
   vldr s0, =0.0
   mov r0, #2
   bl FUN_003174c8            ; すぐ黒
-  ldr r0, [r4]
-  bl FUN_0031c970            ; 入口のオブジェクト (0 = ない)
-  movs r5, r0
-  beq ws_in
-  mov r1, r5
-  mov r2, #0
-  add r0, sp, #0xb8
-  bl FUN_0031c958            ; ハンドル
+  bl FUN_00319a6c            ; パーティ
+  mov r1, r0
+  mov r0, sp
+  bl FUN_0031ba8c            ; ハンドル
   mov r0, sp
   mov r1, #0
-  mov r2, #1
-  bl FUN_0031b1b4            ; カメラ
+  bl FUN_0031c580            ; 隠す
   mov r0, sp
-  bl FUN_003179b8            ; 制御を取る
-  ldr r1, =0x42480000        ; 注視点 = 入口 + (0, 50, 0)
-  mov r2, #0
-  add r3, sp, #0xe4
-  bl ws_entrance_plus
-  ldr r1, =0x44947000        ; 視点 = 入口 + (0, 1187.5, 1300)
-  ldr r2, =0x44A28000
-  add r3, sp, #0xd8
-  bl ws_entrance_plus
-  vldr s0, =0.0              ; すぐ
+  mov r1, #0
+  bl FUN_0031c4bc
   mov r0, sp
-  add r1, sp, #0xd8
-  add r2, sp, #0xe4
-  mov r3, #3
-  bl FUN_00317210            ; カメラを入口へ
-ws_in:
-  vldr s0, =0.5
-  bl FUN_003086e4            ; 少し待つ
+  mov r1, #0
+  bl FUN_00301500
+  mov r0, sp
+  bl FUN_0031b67c            ; ハンドルを解放
+  vldr s0, =1.0
+  bl FUN_003086e4            ; 地形の読み込みを待つ (黄泉の門は 0.5 秒)
   mov r0, #2
   vldr s0, =1.0
   bl FUN_0031745c            ; フェードイン
@@ -355,32 +361,7 @@ ws_in:
   bl FUN_0030cc48            ; 地の文の窓 (閉じるまで待つ)
   vldr s0, =0.3
   bl FUN_003007c0
-  cmp r5, #0
-  beq ws_out
-  mov r0, sp
-  bl FUN_00301888            ; カメラを追従に戻す
-  mov r0, sp
-  bl FUN_00301764            ; カメラの後始末
-  add r0, sp, #0xb8
-  bl FUN_0031c89c            ; ハンドルを解放
-ws_out:
-  add sp, sp, #0xf0
-  pop {r4, r5, r6, pc}
-; 入口の位置 + (0, r1, r2) (float のビット) を r3 に書く。入口は呼び元の sp + 0xB8 のハンドル
-ws_entrance_plus:
-  push {r4, r5, r6, lr}
-  sub sp, sp, #0x10
-  str r1, [sp, #4]
-  str r2, [sp, #8]
-  mov r1, #0
-  str r1, [sp]
-  mov r6, r3
-  add r0, sp, #0xd8          ; 0x10 (push) + 0x10 + 0xB8
-  bl FUN_0031c948            ; 入口の位置
-  mov r1, sp
-  mov r2, r6
-  bl FUN_00338450
-  add sp, sp, #0x10
+  add sp, sp, #0x30
   pop {r4, r5, r6, pc}
 ; 出すべき告知があるか
 wn_pending:

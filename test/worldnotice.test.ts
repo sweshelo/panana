@@ -71,13 +71,13 @@ describe('entrance conditions', () => {
 // a blank code.bin: the patch only needs the cave and the hook's address
 const BLANK = new Uint8Array(0x420000);
 const F = {
-  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970,
+  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8,
   vehicle: 0x303c70, readPlace: 0x3039fc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, writePlace: 0x3012dc, writeAngle: 0x3012b0,
-  camera: 0x317210, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
+  hide: 0x31c580, arrived: 0x2ff4b4, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
-const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x3174c8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0, 0x301888, 0x301764, 0x31c948, 0x338450,
-  0x430e20, 0x300678, F.release, F.camera, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch, F.writePlace, F.writeAngle];
+const OTHERS = [0x319a6c, 0x31ba8c, 0x31c4bc, 0x301500, 0x31b67c, 0x3174e8, 0x3174c8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0,
+  0x430e20, 0x300678, F.hide, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch, F.writePlace, F.writeAngle];
 const SAVE = 0x6000000;
 const PLACE = [0x44fa0000, 0xc2c80000, 0x45610000]; // where the party stood (0x58), as float bits
 
@@ -95,7 +95,7 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
     m.run(m.read(vtable + 8, 4), [action]);
   }
   const calls = m.calls.slice();
-  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.camera, 'camera'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.writePlace, 'place']]);
+  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.hide, 'hide'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.writePlace, 'place']]);
   return {
     action, made, hook,
     first: hook.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2)),
@@ -108,12 +108,12 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
   };
 }
 
-function machine(code: Uint8Array, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean; vehicle?: boolean }) {
+function machine(code: Uint8Array, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; vehicle?: boolean; arrived?: number; place?: number[] }) {
   const stubs = new Map<number, (m: ArmMachine) => number>([
     ...OTHERS.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
-    [F.object, (m) => ((o.placed ?? (() => true))(m.r[0]!) ? 0x9000000 + m.r[0]! : 0)],
     [F.vehicle, () => (o.vehicle ? 0x7000000 : 0)],
-    [F.readPlace, (m) => (PLACE.forEach((v, i) => m.write(m.r[0]! + i * 4, v, 4)), 0)],
+    [F.arrived, () => o.arrived ?? 0],
+    [F.readPlace, (m) => ((o.place ?? PLACE).forEach((v, i) => m.write(m.r[0]! + i * 4, v, 4)), 0)],
     [F.w01, () => o.game ?? 0],
     [F.alloc, (m) => m.alloc(0x10)],
     [F.base, (m) => m.r[0]!],
@@ -168,7 +168,7 @@ describe('notice patch (blank code.bin)', () => {
     // 2nd load (next to the entrance): the camera, the sound and the message, recorded, then back to point 0
     const b = load(m, built, {});
     expect(b.made).toBe(true);
-    expect(b.order).toEqual(['camera', 'in', 'sound', 'message', 'done', 'out', 'place', 'warp']);
+    expect(b.order).toEqual(['hide', 'in', 'sound', 'message', 'done', 'out', 'place', 'warp']);
     expect(b.shown).toEqual([0x2c00]);
     expect(b.sounds).toEqual([0x2f]);
     expect(b.written).toEqual([[NOTICE_DUNGEON, 29, 1]]);
@@ -185,11 +185,21 @@ describe('notice patch (blank code.bin)', () => {
     expect(d.warps).toEqual([[SAVE + 0x404, W01, 0x1234]]);
   });
 
-  test('next to an entrance without its object: the message only, still back', () => {
-    const m = machine(code, { state: () => 0, holds: (_row, type) => type === 0x18, placed: () => false });
-    load(m, built, {});
+  test('arrived by an entrance (out of a town): back next to that entrance, 0x58 left alone', () => {
+    const m = machine(code, { state: () => 0, holds: (_row, type) => type === 0x18, arrived: 0xbeef, place: [0xc47a0000, 0xc47a0000, 0xc47a0000] });
+    expect(load(m, built, {}).warps).toEqual([[SAVE + 0x404, 0xa8654391, 0xd3e36ef0]]);
+    expect(m.read(NOTICE_STATE + 0x1c, 4)).toBe(0xbeef);
     const b = load(m, built, {});
-    expect(b.order).toEqual(['in', 'sound', 'message', 'done', 'out', 'place', 'warp']);
+    expect(b.order).toEqual(['hide', 'in', 'sound', 'message', 'done', 'out', 'warp']);
+    expect(b.warps).toEqual([[SAVE + 0x404, 0xa8654391, 0xbeef]]);
+  });
+
+  test('loaded on the map with 0x58 never set (-1000, …): no warp, nothing shown', () => {
+    const m = machine(code, { state: () => 0, holds: (_row, type) => type === 0x18, place: [0xc47a0000, 0xc47a0000, 0xc47a0000] });
+    const a = load(m, built, {});
+    expect(a.warps).toEqual([]);
+    expect(a.shown).toEqual([]);
+    expect(m.read(NOTICE_STATE + 4, 4)).toBe(0);
   });
 
   test('nothing on a vehicle, once shown, or when nothing holds; a stale state without the mark is ignored', () => {
