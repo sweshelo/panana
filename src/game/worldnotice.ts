@@ -39,8 +39,7 @@ const W01_MAP = 0xa8654391;
 /**
  * Where the notice keeps its state across the two loads it warps through: the unused end of .bss's last page
  * (.bss is 0x5E5D3C..0x63F4B4; nothing in code.bin points past it). Not cleared at boot, hence the mark.
- * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59),
- * +0x1C the entrance the party arrived by (0x51, FUN_002ff4b4; 0 = loaded on the map).
+ * +0 mark, +4 phase (1 = warped next to the entrance, 2 = warped back), +8 row, +0xC position (0x58), +0x18 angle (0x59).
  */
 export const NOTICE_STATE = 0x63ff00;
 const NOTICE_MARK = 0x4e574e50; // 'PNWN'
@@ -110,19 +109,18 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  *   are still set) and returns its action; when it is 0, a notice action (0x10 bytes, FUN_0031b170(obj, 0x1000000),
  *   the vtable of 0x4FB8C8 with our [2]) when a notice is due (not while riding: FUN_00303c70, save 0x57 != 0; FUN_002e592c only says a ship is owned) or the party was just warped next to an entrance.
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
- * - [2], first load: keeps the row, the entrance the party arrived by (0x51, FUN_002ff4b4), the place (0x58,
- *   FUN_003039fc) and the angle (0x59, FUN_00430e20) at NOTICE_STATE, fades to black and warps next to the entrance
- *   like 黄泉の門's scene (FUN_00226064): FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0)
- *   (s0 = *0x4D07CC). The map is built at a load, so turning the camera or moving the party far does not show the
- *   place there. 0x58 is only rewritten by walking (FUN_0043281c; new games start at (-1000, -1000, -1000)), so
- *   with no entrance and 0x58 still that, nothing is shown (there would be nowhere to go back to).
+ * - [2], first load: keeps the row and where the party's leader stands (FUN_00319a6c → T = obj+0x10: position
+ *   T+0x14, angle T+0x30 after FUN_003063bc(T+0x2C, T+0x38) when T+0x10 bit 3 says quaternion) at NOTICE_STATE.
+ *   Save 0x58 / 0x59 are only written by walking (FUN_0043281c; a new game starts at -1000) and 0x51 is 0 after
+ *   leaving a town, so neither tells where the party is. Then it fades to black and warps next to the entrance like
+ *   黄泉の門's scene (FUN_00226064): FUN_00308d44(save, W01, entrance) → FUN_003014f0(4, 0) → FUN_00308bac(0, 0)
+ *   (s0 = *0x4D07CC). The map is built at a load, so turning the camera or moving the party far does not show it.
  * - [2], next to the entrance: black at once, the party hidden like FUN_001c0630 does (FUN_0031ba8c(h,
  *   FUN_00319a6c()), FUN_0031c580 / FUN_0031c4bc / FUN_00301500(h, 0)), the follow camera kept (it shows the
  *   entrance's side; a camera pulled back 13 tiles shows tiles past the loaded area), 1 s to load, a fade in, the
- *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black and back:
- *   next to the entrance the party arrived by, or (loaded on the map) 0x58 / 0x59 written back (FUN_003012dc /
- *   FUN_003012b0, like FUN_001db864 without its FUN_003008dc, which heals the party) and a warp to point 0 of W01,
- *   where FUN_004326a8 places the party at 0x58.
+ *   sound and FUN_0030cc48(message) (s0 = 0.2, like FUN_001c0630), FUN_003048f8(0x34, row, 1); then black, the kept
+ *   place written to 0x58 / 0x59 (FUN_003012dc / FUN_003012b0, like FUN_001db864 without its FUN_003008dc, which
+ *   heals the party) and a warp to point 0 of W01, where FUN_004326a8 places the party at 0x58.
  * - Back where it was: the phase is cleared; [4] (0x31713C) writes nothing for the pseudo-row.
  */
 export function noticePatchSource(list: Notice[]): string {
@@ -205,20 +203,23 @@ wr_find:
   add r4, r4, #0x20
   b wr_find
 wr_go:
-  bl FUN_002ff4b4            ; 着いた入口の ID (0x51、0 = ワールドマップで読み込んだ)
-  str r0, [r5, #0x1c]
-  add r0, r5, #0xc
-  bl FUN_003039fc            ; 今の位置 (0x58)
-  ldr r0, [r5, #0x1c]
+  bl FUN_00319a6c            ; パーティの先頭 (もう着地点にいる)
   cmp r0, #0
-  bne wr_keep
-  ldr r0, [r5, #0xc]         ; 0x58 が初期値 (-1000, …) のまま (W01 を歩いていない) なら戻れないので出さない
-  cmp r0, #0
-  blt wr_out
-wr_keep:
-  bl wn_save
-  bl FUN_00430e20            ; 今の角度 (0x59)、s0
-  vstr s0, [r5, #0x18]
+  beq wr_out
+  ldr r6, [r0, #0x10]        ; 変換 T
+  ldr r0, [r6, #0x10]
+  tst r0, #8                 ; 四元数なら角度に直す (FUN_0043281c が 0x59 を書く前と同じ)
+  addne r0, r6, #0x2c
+  addne r1, r6, #0x38
+  blne FUN_003063bc
+  ldr r0, [r6, #0x14]        ; 今の位置 (0x58 は歩いたときしか書かれず、町から出た直後は古い)
+  str r0, [r5, #0xc]
+  ldr r0, [r6, #0x18]
+  str r0, [r5, #0x10]
+  ldr r0, [r6, #0x1c]
+  str r0, [r5, #0x14]
+  ldr r0, [r6, #0x30]        ; 今の角度 (y)
+  str r0, [r5, #0x18]
   ldr r0, =${hex(NOTICE_MARK)}
   str r0, [r5]
   ldr r0, [r4]
@@ -258,9 +259,6 @@ wr_back:
   bl wn_black_out
   bl wn_save                 ; (FUN_001db864 は先に FUN_003008dc を呼ぶが、それはパーティの回復なので呼ばない)
   mov r6, r0
-  ldr r2, [r5, #0x1c]        ; 入口から着いていたら、その入口の隣へ戻る
-  cmp r2, #0
-  bne wr_warp
   add r1, r5, #0xc
   bl FUN_003012dc            ; 0x58 = 元の位置
   vldr s0, [r5, #0x18]
@@ -268,10 +266,9 @@ wr_back:
   bl FUN_003012b0            ; 0x59 = 元の角度
   mov r0, #0
   bl FUN_00300678
-  mov r2, #0                 ; 地点 0: 0x58 に出る
-wr_warp:
   mov r0, r6
   ldr r1, =${hex(W01_MAP)}
+  mov r2, #0                 ; 地点 0: 0x58 に出る
   bl FUN_00308d44            ; ワープ
   mov r0, #2
   str r0, [r5, #4]
