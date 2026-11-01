@@ -180,7 +180,7 @@ export function ScriptEditor({ session, row, n }: { session: Session; row: numbe
     <div className="scene-box">
       <div className="muted small">
         上から順に動きます。話者はゲームのセリフの関数には指定がないので、話者に話すアニメをさせ、必要ならカメラやマークで示します。
-        役者に選べるのは、このマップの区画 5 に置いたキャラ (イベントの行) です。始めると操作が止まり、終わるとカメラ・フェード・操作が元に戻ります。
+        役者に選べるのは、このマップの区画 5 に置いたキャラ (イベント番号のあるもの) です。始めると操作が止まり、終わるとカメラ・フェード・操作が元に戻ります。
       </div>
       <ol className="scene-list">
         {cmds.map((c, i) => (

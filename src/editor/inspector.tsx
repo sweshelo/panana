@@ -7,7 +7,7 @@ import { kindName, ROT_ARROW, SECTION_COLORS } from './legend';
 import { tileAt } from './state';
 import { mapLabel, pointLabel, worldHref } from './labels';
 import { TreasureEditor } from './treasure';
-import { EventListDialog, EventPanel } from './events';
+import { EventListDialog, EventPanel, EventRowField } from './events';
 import { BossPanel } from './boss';
 import { KIND_BOSS } from '../game/boss';
 import { RANGE_MODE_AT, RANGE_SHAPE_AT, RANGE_SIZE_AT, RANGE_SIZES } from '../game/cutscene';
@@ -150,7 +150,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
       )}
       {(k === 4 || k === 5 || k === 8) && (
         <>
-          <Field label="イベントの行 (+0)"><Num value={u32(r.raw, 0)} min={0} onChange={setU32(0)} /></Field>
+          <EventRowField st={st} label="イベント番号 (+0)" value={u32(r.raw, 0)} allowNone={false} onChange={setU32(0)} />
           {k === 4 && (
             <>
               <Field label="向き (+8)"><Num value={r.raw[8]!} min={0} max={3} onChange={setByte(8)} /></Field>
@@ -197,7 +197,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
               <Num value={ev.model(evRow)} min={0} onChange={(v) => st.editTables(() => ev.setModel(evRow, v & 0xffff))} />
             </Field>
           )}
-          {ev && !ev.has(evRow) && <div className="error">{`イベントの行 ${evRow} はこのダンジョンの表 (${ev.rows} 行) にありません`}</div>}
+          {ev && !ev.has(evRow) && <div className="error">{`イベント #${evRow} はこのダンジョンの表 (#${ev.rows - 1} まで) にありません`}</div>}
         </>
       )}
       {k === 8 && ev?.has(evRow) && ev.kind(evRow) === KIND_BOSS && <BossPanel session={editor.session} row={evRow} />}
@@ -225,7 +225,7 @@ function WallDoorFields({ editor, r, setU32, setByte }: {
   return (
     <>
       <Field label="地点 ID (+0x00)"><HexInput value={P7.id(r.raw)} onChange={setU32(0)} /></Field>
-      <Field label="イベントの行 (+0x04、扉。0 = なし)"><Num value={P7.door(r.raw)} onChange={setU32(4)} /></Field>
+      <EventRowField st={editor.st} label="イベント番号 (+0x04、扉。なし = 0)" value={P7.door(r.raw)} allowNone onChange={setU32(4)} />
       <DestFields editor={editor} r={r} setU32={setU32} offMap={8} offPoint={0x0c} />
       <Field label="種類 (+0x14、0 = 扉、それ以外 = 出口)"><Num value={P7.kind(r.raw)} min={0} max={255} onChange={setByte(0x14)} /></Field>
       <Field label="向き (+0x16、0〜3。R で回す)"><Num value={P7.dir(r.raw)} min={0} max={3} onChange={setByte(0x16)} /></Field>
@@ -292,7 +292,7 @@ function PointFields({ editor, r, setU32, setByte }: {
     <>
       <Field label="地点 ID (+0x00)"><HexInput value={P3.id(r.raw)} onChange={setU32(0)} /></Field>
       <DestFields editor={editor} r={r} setU32={setU32} offMap={4} offPoint={8} />
-      <Field label="イベントの行 (+0x0C、扉・ワープなど。0 = なし)"><Num value={P3.door(r.raw)} onChange={setU32(0x0c)} /></Field>
+      <EventRowField st={editor.st} label="イベント番号 (+0x0C、扉・ワープなど。なし = 0)" value={P3.door(r.raw)} allowNone onChange={setU32(0x0c)} />
       <Field label={`種類 (+0x14) ${pointKindLabel(kind)}`}><Num value={kind} min={0} max={255} onChange={setByte(0x14)} /></Field>
       <Field label="補助 (+0x15)"><Num value={P3.aux(r.raw)} min={0} max={255} onChange={setByte(0x15)} /></Field>
       <Field label="セル内の位置 (+0x19、3×3: 0 = 左上、4 = 中央、8 = 右下)"><Num value={P3.slot(r.raw)} min={0} max={8} onChange={setByte(0x19)} /></Field>
@@ -322,7 +322,7 @@ function MapProps({ editor, doc }: { editor: MapEditor; doc: MapDoc }): ReactNod
           <tr><td>6 敵が出ないセル</td><td>{doc.cells6.length}</td>{mark(6)}</tr>
         </tbody>
       </table>
-      {st.currentEvents && <button onClick={() => setListing(true)}>{`イベントの一覧… (${st.currentEvents.rows} 行)`}</button>}
+      {st.currentEvents && <button onClick={() => setListing(true)}>{`イベントの一覧… (#${st.currentEvents.rows - 1} まで)`}</button>}
       {changed.length
         ? <button className="danger" onClick={() => confirm(`${doc.name} の変更をすべて取り消しますか?`) && st.revert(doc.hash)}>このマップの変更を元に戻す</button>
         : <div className="muted">変更なし</div>}

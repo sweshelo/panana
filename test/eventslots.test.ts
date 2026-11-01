@@ -103,4 +103,12 @@ describe('releasing rows', () => {
     expect(ev.rows).toBe(3);
     expect(isBlankRow(ev.table.row(2))).toBe(true);
   });
+
+  test('a game row deleted by hand (blanked) is free from then on', () => {
+    const ev = events([0, CHEST, CHEST]);
+    const live = liveRows(ev, [1], 1);
+    expect(freeRows(ev, live, new Set())).toEqual([]); // row 2: unused, but the code may use it
+    releaseRows(ev, [2]);
+    expect(freeRows(ev, live, new Set())).toEqual([2]);
+  });
 });

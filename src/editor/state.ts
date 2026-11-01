@@ -86,10 +86,10 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     return refs;
   }
 
-  /** Free rows of dungeon `d`'s table now (game/eventslots.ts), lowest first. */
-  freeEventRows(d: number): number[] {
+  /** Rows of dungeon `d`'s table in use and free now (game/eventslots.ts); free rows lowest first. */
+  eventRowUse(d: number): { live: Set<number>; free: number[] } {
     const ev = this.events.get(d);
-    if (!ev) return [];
+    if (!ev) return { live: new Set(), free: [] };
     const refs = new Set<number>(), rom = new Set<number>();
     const seen = new Set<number>();
     for (const m of this.game.editableMaps()) {
@@ -102,7 +102,28 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
       else r.forEach((x) => refs.add(x));
     }
     for (const doc of this.docs.values()) if (doc.dungeon === d && !seen.has(doc.hash)) docRefs(doc, refs);
-    return freeRows(ev, liveRows(ev, refs, d), rom);
+    const live = liveRows(ev, refs, d);
+    return { live, free: freeRows(ev, live, rom) };
+  }
+
+  /** Free rows of dungeon `d`'s table now, lowest first. */
+  freeEventRows(d: number): number[] {
+    return this.eventRowUse(d).free;
+  }
+
+  /**
+   * Delete event row `row` of dungeon `d` by hand (the event list's trash button): it is blanked, so it is free from
+   * now on, even a row of the game that the game's maps did not use. Rows in use are refused.
+   */
+  deleteEventRow(d: number, row: number): void {
+    const ev = this.events.get(d);
+    if (!ev || row <= 0 || !ev.has(row)) return;
+    if (this.eventRowUse(d).live.has(row)) throw new Error(`イベント #${row} は使われているので削除できません`);
+    this.editTables(() => {
+      releaseRows(ev, [row]);
+      releaseRows(ev, this.freeEventRows(d));
+      this.freeCache.delete(d);
+    });
   }
 
   /**
