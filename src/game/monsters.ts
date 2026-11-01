@@ -5,6 +5,7 @@ import { findByName, parseArchive, rebuildArchive, type Archive, type ArcEntry }
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
 import { decodeFix, FIX_TABLE } from './boss';
+import { CHASE, type ChaseKey } from './chase';
 import type { Master } from './master';
 import { effectTable, type EffectTable } from './performance';
 import type { CodePatch } from './patch';
@@ -732,6 +733,22 @@ export class MonsterBook {
   }
   restoreDesign(bytes: Uint8Array): void {
     this.design.data = bytes.slice();
+  }
+
+  /** A field of how a design's symbol moves on the map (game/chase.ts), as edited. */
+  chaseGet(design: number, key: ChaseKey): number {
+    return getField(this.design.row(design), CHASE[key]);
+  }
+
+  /** A movement field as in the archive (a design added by an edit: its current value). */
+  chaseOriginal(design: number, key: ChaseKey): number {
+    const orig = new GsTable(this.designOriginal);
+    return getField(design < orig.rows ? orig.row(design) : this.design.row(design), CHASE[key]);
+  }
+
+  /** Set a movement field of a design (every monster showing the design changes; see designUsers). */
+  chaseSet(design: number, key: ChaseKey, value: number): void {
+    setField(this.design.row(design), CHASE[key], value);
   }
 
 

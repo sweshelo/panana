@@ -105,6 +105,10 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   }
 
   open(info: LanaiMapInfo): void {
+    if(this.stamp?.type==='template' && this.info?.dungeon!==info.dungeon) {
+      this.stamp=null;
+      if(this.tool==='place') this.tool='select';
+    }
     this.info = info;
     this.reopen();
     if (this.stamp?.type === 'template' && this.tool === 'place') this.tool = 'select';

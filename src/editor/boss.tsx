@@ -1,7 +1,7 @@
 // Inspector block of a boss battle (EventObject kind 0x31, game/boss.ts): its stages, each with the monsters
 // (a monsterFixGroup row), the battle BGM, what a win does, and the messages shown before the battle.
 import { useState, type ReactNode } from 'react';
-import { addBossChara, addFixGroup, bossCharaRows, clearState, newBossCharaRecord, syncBossCharas, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
+import { addBossChara, addFixGroup, bossCharaRows, clearStageScript, clearState, newBossCharaRecord, setStageCommands, syncBossCharas, BOSS_BGM_DEFAULT, FIX_FLAGS_BOSS, FIX_SLOTS, FIX_TABLE, fixGroup, KIND_BOSS, MAX_STAGES, readStages, setFixGroup, writeStages, type BossStage, type FixGroup } from '../game/boss';
 import { countLabel, type MonsterBook } from '../game/monsters';
 import { BGM_FIELD } from '../game/bgmext';
 import { MonsterPicker } from '../ui/MonsterPicker';
@@ -14,6 +14,8 @@ import { SoundButton } from '../ui/SoundPicker';
 import { Field, Num } from './fields';
 import { hexId, MESSAGE_HELP } from './message';
 import { MessagePicker } from '../ui/MessagePicker';
+import { ScriptEditor } from './cutscene';
+import { ACTOR_NONE, OP } from '../game/cutscene';
 
 /** Boss rows of the loaded event tables that use a monsterFixGroup row ("dungeon.row"). */
 function fixUsers(session: Session, fix: number): string[] {
@@ -52,15 +54,15 @@ export function BossPanel({ session, row }: { session: Session; row: number }): 
     const last = stages[stages.length - 1]!;
     apply(() => {
       const g = fixGroup(game.master, last.fix) ?? { flags: FIX_FLAGS_BOSS, slots: [] };
-      const fix = addFixGroup(game.master, g);
-      writeStages(ev.table.row(row), [...stages, { ...last, fix, messages: [0, 0, 0] }]);
+      const fix = last.fix ? addFixGroup(game.master, g) : 0;
+      writeStages(ev.table.row(row), [...stages, { ...last, fix, messages: [0, 0, 0], script: null }]);
     });
   };
   return (
     <div className="event-box boss-box">
-      <h3>ボス戦</h3>
+      <h3>ボス戦・イベント</h3>
       <div className="muted small">
-        範囲に入ると、メッセージのあとに決まった敵との戦闘になります。勝つとイベントの状態が進み、次に入ったときは次の段階の戦闘 (なければ何も起きない) になります。
+        範囲に入ると、メッセージか演出 (セリフ・歩く・カメラなど) のあとに決まった敵との戦闘になります。敵を「なし」にすると戦闘のないイベントになり、終わると状態が進みます。勝つとイベントの状態が進み、次に入ったときは次の段階の戦闘 (なければ何も起きない) になります。
         負けたとき・逃げたときは進みません。「何度でも」の段階は勝っても進まず、入るたびに戦闘になります。
       </div>
       {stages.map((s, n) => (
@@ -114,7 +116,16 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
         <span className="muted small">{` (状態 ${n})`}</span>
         {remove && <button className="small danger" onClick={remove}>この段階を消す</button>}
       </h4>
-      <Field label={`敵 (monsterFixGroup の行、1〜${rows - 1})`}>
+      <Field label="戦闘">
+        <select value={s.fix ? 1 : 0} onChange={(e) => {
+          if (e.target.value === '0') set({ fix: 0 });
+          else apply(() => set({ fix: addFixGroup(master, { flags: FIX_FLAGS_BOSS, slots: [] }) }));
+        }}>
+          <option value={1}>あり (決まった敵と戦う)</option>
+          <option value={0}>なし (イベントだけ)</option>
+        </select>
+      </Field>
+      {!!s.fix && <><Field label={`敵 (monsterFixGroup の行、1〜${rows - 1})`}>
         <span className="row">
           <Num value={s.fix} min={1} max={Math.min(255, rows - 1)} onChange={(v) => set({ fix: v })} />
           <button className="small" title="今の敵を写した新しい行にします (ほかと共有しない)"
@@ -159,14 +170,30 @@ function StageFields({ session, book, row, n, s, last, set, remove }: {
         {sounds
           ? <SoundButton game={game} sounds={sounds} value={s.bgm || BOSS_BGM_DEFAULT} kind="bgm" field={BGM_FIELD} title="戦闘の BGM を選ぶ" onChange={(v) => set({ bgm: v })} />
           : <Num value={s.bgm || BOSS_BGM_DEFAULT} min={1} max={255} onChange={(v) => set({ bgm: v })} />}
-      </div>
-      <Field label="勝ったら">
+      </div></>}
+      <Field label={s.fix ? '勝ったら' : '終わったら'}>
         <select value={s.repeat ? 1 : 0} onChange={(e) => set({ repeat: e.target.value === '1' })}>
           <option value={0}>{last ? 'おしまい (二度と起きない)' : `段階 ${n + 2} へ進む`}</option>
-          <option value={1}>進まない (入るたびに戦闘)</option>
+          <option value={1}>{s.fix ? '進まない (入るたびに戦闘)' : '進まない (マップに入り直すたびに起きる)'}</option>
         </select>
       </Field>
-      {s.messages.map((id, i) => {
+      <Field label={s.fix ? '戦闘の前' : '中身'}>
+        <select value={s.script ? 1 : 0} onChange={(e) => {
+          try {
+            if (e.target.value === '1') {
+              const lines = s.messages.filter((id) => id).map((id) => ({ op: OP.MSG, arg: 0, actor: ACTOR_NONE, p: id, q: 0 }));
+              apply(() => setStageCommands(ev, row, n, lines));
+            } else apply(() => clearStageScript(ev, row, n));
+          } catch (err) {
+            alert((err as Error).message);
+          }
+        }}>
+          <option value={0}>メッセージ (3 つまで)</option>
+          <option value={1}>演出 (話者・動き・カメラ)</option>
+        </select>
+      </Field>
+      {s.script && <ScriptEditor session={session} row={row} n={n} />}
+      {!s.script && s.messages.map((id, i) => {
         const setMsg = (v: number): void => set({ messages: s.messages.map((x, j) => (j === i ? v : x)) as BossStage['messages'] });
         return (
           <div key={i} className="boss-msg">

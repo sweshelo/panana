@@ -136,6 +136,9 @@ export class MapEditor {
       });
 
     this.unsubscribe = st.on((what) => this.refresh(what));
+    this.v2.onFocus = (x, y) => {
+      if (this.mode !== '2d') this.v3.centerOn(x, y);
+    };
     this.ctl.onHover = () => {
       this.v2.draw();
       if (this.mode !== '2d') this.v3.syncOverlayOnly();
@@ -204,7 +207,7 @@ export class MapEditor {
     this.v3.fit();
   }
 
-  /** Tile models of the open map's current tileset (reloaded when the tileset is switched in the inspector). */
+  /** Tile models of the open map's tileset (reloaded when its mapData row changes). */
   private loadModels(): Promise<void> {
     const { game, st } = this;
     const doc = st.current;
@@ -244,6 +247,8 @@ export class MapEditor {
       this.v3.setFactory(this.factory);
       void this.loadModels();
     }
+    // The tileset follows the tables (an edit of the map's mapData row, its dungeon's row or its tiles, undo).
+    if (what === 'doc' && st.syncRef()) void this.loadModels();
     if (what === 'doc' || what === 'map') {
       this.v3.sync();
       this.session.scheduleSave();

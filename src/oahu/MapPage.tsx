@@ -1,3 +1,5 @@
+import { RecordPartPanel } from '../editor/recordparts';
+import { MapSettings } from '../editor/partpalette';
 // RPG3's maps (#/maps/NAME; naauao oahu/map.md), edited with the parts of RPG2's map editor: the editing model and
 // tools (editor/state.ts, editor/controller.ts), the views (editor/gridcanvas.ts, editor/mapscene.ts), the tool
 // buttons, palette and checks (editor/panes.tsx, editor/palette.tsx), the map picker dialog (ui/MapPicker.tsx).
@@ -11,7 +13,7 @@ import { editorKey } from '../editor/controller';
 import { kindName } from '../editor/legend';
 import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
 import { Palette } from '../editor/palette';
-import { Tools } from '../editor/tools';
+import { MapToolbox } from '../editor/tools';
 import { tileAt } from '../editor/state';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
@@ -19,7 +21,7 @@ import { useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32 } from '../util/bytes';
 import { conditionNames, EventObjectEditor } from './EventObjectEditor';
 import { OAHU_LAYOUTS, oahuFloorLabel, oahuRecEventRow, type OahuMapInfo, type OahuMaps } from './maps';
-import { OAHU_POINT_SECTIONS, oahuEditState, oahuRecLabel, oahuStampLabel, oahuValidate, type OahuEditState, type OahuStamp } from './mapedit';
+import { OAHU_POINT_SECTIONS, oahuEditState, oahuRecLabel, oahuValidate, type OahuEditState } from './mapedit';
 import { OahuMapView, type Placement } from './mapview';
 import { CharaInfo, EncounterPanel, ModelLine, TreasureEditor } from './MapParts';
 import { OahuMapBattlePanel } from './BattleParts';
@@ -125,12 +127,11 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
       placeholder={info.world ? <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) は区画の形が別 (naauao oahu/worldmap.md) なので、<a href="#/world">ワールドマップのページ</a>で表示・編集します。</p> : undefined}
       left={open && (
         <>
-          <Tools st={st} />
-          <AddPanel st={st} view={view} />
-          <TilePalette st={st} view={view} />
-          <MapLayers st={st} view={view} sections={OAHU_POINT_SECTIONS} layouts={OAHU_LAYOUTS}>
+          <MapToolbox st={st} tiles={<TilePalette st={st} view={view} />} parts={<AddPanel st={st} view={view} />}
+            onDelete={()=>view.ctl.deleteSelection()} onDuplicate={()=>view.ctl.duplicateRec()} />
+          <MapSettings><MapLayers st={st} view={view} sections={OAHU_POINT_SECTIONS} layouts={OAHU_LAYOUTS}>
             <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
-          </MapLayers>
+          </MapLayers></MapSettings>
         </>
       )}
       right={open && (
@@ -206,85 +207,23 @@ function Checks({ st, info }: { st: OahuEditState; info: OahuMapInfo }): ReactNo
 
 /** Adding records: props (section 2) and copies of the dungeon's records, each with its own EventObject row. */
 function AddPanel({ st, view }: { st: OahuEditState; view: OahuMapView }): ReactNode {
-  useEditorState(st);
-  useMaps(st.maps);
-  const [dir, setDir] = useState(0);
-  const [propRow, setPropRow] = useState(1);
-  const dungeon = st.dungeon;
-  const table = dungeon ? st.maps.loadedEventTable(dungeon) : null;
-  useEffect(() => {
-    if (dungeon && !table) void st.maps.eventTable(dungeon).catch(() => null);
-  }, [st, dungeon, table]);
-  const templates = useMemo(() => (table ? st.templates() : []), [st, table, st.info]);
-  const active = st.tool === 'place' && st.stamp ? st.stamp : null;
-  const use = (stamp: OahuStamp): void => {
-    st.stamp = stamp;
-    st.setTool('place');
-  };
-  // props of the dungeon's maps, most used first
-  const props = useMemo(() => {
-    const n = new Map<number, number>();
-    for (const m of st.maps.maps) if (m.dungeon === st.info?.dungeon && !m.world) for (const r of st.maps.doc(m).recs[2] ?? []) n.set(r.raw[0]! | (r.raw[1]! << 8), (n.get(r.raw[0]! | (r.raw[1]! << 8)) ?? 0) + 1);
-    return [...n].sort((a, b) => b[1] - a[1]).map(([row]) => row).filter((row) => st.maps.objectModel(row));
-  }, [st, st.info]);
-  const sel = st.selection;
-  const added = table && dungeon ? table.rows - st.maps.originalEventRows(dungeon) : 0;
-  return (
-    <div className="add-panel">
-      <h3>追加</h3>
-      <div className="muted small">{!dungeon?.archive ? 'このダンジョンにはイベントの表がありません' : table ? `EventObject: ${table.rows} 行${added ? ` (うち追加 ${added} 行)` : ''}` : 'イベントの表を読み込み中…'}</div>
-      <h4>置物 (区画 2)</h4>
-      <div className="row">
-        <span className="muted small">向き</span>
-        {['↑', '→', '↓', '←'].map((l, i) => (
-          <button key={i} className={dir === i ? 'active' : ''} title={`${i * 90}°`} onClick={() => {
-            setDir(i);
-            if (active?.type === 'prop') use({ ...active, dir: i });
-          }}>{l}</button>
-        ))}
-      </div>
-      <div className="row">
-        <label className="small">{'mapObject の行 '}<NumberInput value={propRow} min={1} max={st.maps.objectRows - 1} onCommit={setPropRow} /></label>
-        <button className={active?.type === 'prop' && active.row === propRow ? 'active' : ''} disabled={!st.maps.objectModel(propRow)} onClick={() => use({ type: 'prop', row: propRow, dir })}>置く</button>
-      </div>
-      <details className="obj-group">
-        <summary>{`このダンジョンの置物 (${props.length})`}</summary>
-        <div className="pal-items obj-items">
-          {props.map((row) => (
-            <button key={row} className={'pal-item obj-item' + (active?.type === 'prop' && active.row === row ? ' active' : '')} title={`mapObject #${row}`} onClick={() => { setPropRow(row); use({ type: 'prop', row, dir }); }}>
-              <span className="pal-label">{`#${row}`}</span>
-            </button>
-          ))}
-        </div>
-      </details>
-      <h4>このダンジョンのレコードの写し</h4>
-      {!table ? <div className="muted small">{dungeon?.archive ? '読み込み中…' : 'イベントの表がないので写せません'}</div>
-        : ([[3, '出入口・扉 (区画 3)'], [4, '宝箱 (区画 4)'], [5, 'キャラ・オブジェクト (区画 5)'], [8, 'イベントの範囲 (区画 8)'], [1, '床のギミック (区画 1)'], [9, '地点 (区画 9)']] as const).map(([k, label]) => {
-            const ts = templates.filter((t) => t.section === k);
-            if (!ts.length) return null;
-            return (
-              <details key={k} className="obj-group" open={active?.type === 'template' && active.t.section === k}>
-                <summary>{`${label} (${ts.length})`}</summary>
-                <div className="template-list">
-                  {ts.map((t, i) => (
-                    <button key={i} className={active?.type === 'template' && active.t === t ? 'active' : ''} title={`${t.source} のレコードの写し`} onClick={() => use({ type: 'template', t })}>{t.label}</button>
-                  ))}
-                </div>
-              </details>
-            );
-          })}
-      {active && <div className="place-hint">{`置くもの: ${oahuStampLabel(active)}。マップをクリックして置く (Esc で終わる)`}</div>}
-      {sel.type === 'rec' && (
-        <div className="row">
-          <button title="複製 (Ctrl+D)" onClick={() => view.ctl.duplicateRec()}>選んだレコードを複製</button>
-          <button title="削除 (Delete)" onClick={() => view.ctl.deleteSelection()}>削除</button>
-        </div>
-      )}
-      <p className="muted small">
-        EventObject の行を持つレコード (出入口・宝箱・キャラ・範囲) を写すと、行も写して新しい行にします (状態の枠が 0xFFFF の行は、新しい行番号の枠を使います)。出入口には新しい地点 ID を付けます。
-      </p>
-    </div>
-  );
+  const revision=useMaps(st.maps);
+  const dungeon=st.dungeon;
+  const table=dungeon?st.maps.loadedEventTable(dungeon):null;
+  useEffect(()=>{if(dungeon&&!table) void st.maps.eventTable(dungeon).catch(()=>null);},[st,dungeon,table]);
+  const templates=useMemo(()=>table?st.templates():[],[st,st.info,table,revision]);
+  const props=useMemo(()=>{
+    const rows=new Set<number>();
+    for(const map of st.maps.maps) if(map.dungeon===st.info?.dungeon&&!map.world)
+      for(const rec of st.maps.doc(map).recs[2]??[]) rows.add(rec.raw[0]!|(rec.raw[1]!<<8));
+    return [...rows];
+  },[st,st.info,revision]);
+  const all=useMemo(()=>Array.from({length:st.maps.objectRows},(_,i)=>i).filter(row=>!!st.maps.objectModel(row)),[st.maps]);
+  return <RecordPartPanel st={st} source={view} templates={templates} rows={all} usedRows={props} maxRow={st.maps.objectRows-1}
+    validRow={row=>!!st.maps.objectModel(row)} directions={['↓ 南','← 西','↑ 北','→ 東']}
+    modelForProp={row=>({type:'object' as const,row})} modelForTemplate={t=>view.partLook(t.section,t.raw)?.model??null}
+    status={!table?(dungeon?.archive?'イベントの表を読み込み中…':'この地域にはイベントの表がありません'):undefined}
+    help="マップをクリックして配置、Esc で選択に戻ります。出入口・宝箱・キャラ・範囲の写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。" />;
 }
 
 /** Fields of a section's records besides the position (§3). */

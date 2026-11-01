@@ -9,7 +9,7 @@ import { buildMapPatch, dungeonRows, freeTableRows, readExtension } from '../src
 import { makeMap } from '../src/game/newmap';
 import {
   DUNGEON_LIMIT, MG, SAVE_FLAGS, SAVE_STATES, SAVE_VALUES, codeProblem, dungeonRoom, freeRange, makeDungeon, rowLabel, rowLabels,
-  saveSize, slotsNeeded, stateDonor, suggestCode, usedRanges, vacantDungeons,
+  recodeMapName, renameDungeon, saveSize, slotsNeeded, stateDonor, suggestCode, takenCodes, usedRanges, vacantDungeons,
 } from '../src/game/newdungeon';
 import { buildModFiles, codeIps, modPackage } from '../src/export/pack';
 import { applyIps, buildIps } from '../src/rom/ips';
@@ -189,6 +189,92 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       game.addedFiles.clear();
       game.forgetEvents(11);
       game.master.restoreTable('mapGroup.bin', mg0);
+      game.master.texts.restore(texts0);
+      for (let d = 0; d < game.master.mapGroup.rows; d++) game.forgetEvents(d);
+    }
+  });
+  test('a new dungeon can be renamed and get mapData rows of its own (tileset, BGM), and the export keeps them', async () => {
+    const mg0 = game.master.mapGroup.data.slice();
+    const md0 = game.master.mapData.data.slice();
+    const texts0 = game.master.texts.saved();
+    const tmpl = game.code.byName('D01B02001')!;
+    try {
+      const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), (d) => game.eventTable(d), () => 0.37);
+      game.addedFiles.set(nd.archiveName, nd.archive);
+      game.forgetEvents(11);
+      game.code.addDungeon({ dungeon: 11, code: nd.code });
+      const first = makeMap(game, { dungeon: 11, floor: -1, name: 'D11B01001', template: tmpl, templateDoc: game.doc(tmpl), copyTiles: true, newDungeonCode: 'D11' });
+      game.code.addMap(first.info);
+      const second = makeMap(game, { dungeon: 11, floor: -2, name: 'D11B02001', template: game.code.byHash(first.info.hash)!, templateDoc: first.doc, copyTiles: true });
+      game.code.addMap(second.info);
+      const a = game.code.byHash(first.info.hash)!, b = game.code.byHash(second.info.hash)!;
+
+      // Rename: the message, the code, the maps' codes (their hashes stay) and the mapGroup label
+      expect(recodeMapName('D11B01001', 'D11', 'D12')).toBe('D12B01001');
+      expect(takenCodes(game, 11).has('D11')).toBe(false);
+      expect(() => renameDungeon(game, 11, { code: 'D01' })).toThrow();
+      expect(() => renameDungeon(game, 1, { name: 'x' })).toThrow();
+      renameDungeon(game, 11, { name: '風のどうくつ', code: 'd12' });
+      expect(game.master.dungeonName(11)).toBe('風のどうくつ');
+      expect(game.code.dungeons).toEqual([{ dungeon: 11, code: 'D12' }]);
+      expect([a.name, b.name, a.dungeonCode, b.hash]).toEqual(['D12B01001', 'D12B02001', 'D12', second.info.hash]);
+      expect(rowLabel(game, 11)).toBe('D12');
+
+      // The template's mapData row is shared with D01; a row of the dungeon's own stops that
+      const m = game.master;
+      const ref = (i: typeof a) => game.mapRef(i, i === a ? first.doc : second.doc);
+      const shared = m.mapDataSource(ref(a));
+      expect(shared).toEqual({ row: m.dungeonMapDataRow(1), from: 'dungeon' });
+      const rows0 = m.mapData.rows;
+      const own = m.addMapData(shared.row);
+      expect(own).toBe(rows0);
+      expect(m.mapDataKey(own)).not.toBe(0);
+      expect(equalBytes(m.mapData.row(own), m.mapData.row(shared.row))).toBe(true);
+      m.setDungeonMapDataRow(11, false, own);
+      expect(m.mapDataRow(ref(a))).toBe(own);
+      expect(m.mapDataRow(game.mapRef(tmpl))).toBe(shared.row);
+      m.setSound(own, 'bgm', 7);
+      expect(m.sounds(ref(b)).bgm).toBe(7);
+      expect(m.sounds(game.mapRef(tmpl)).bgm).toBe(md0[new GsTable(md0).offset + shared.row * 7 + 4]!);
+      // ... and a map of its own: the added map's key picks the new row
+      const own2 = m.addMapData(own);
+      b.mapDataKey = m.mapDataKey(own2);
+      expect(m.mapDataSource(ref(b))).toEqual({ row: own2, from: 'key' });
+      expect(m.mapDataRow(ref(a))).toBe(own);
+      // The tileset: [0] and the models of a row that has it; the sounds stay
+      const other = m.mapData.row(m.dungeonMapDataRow(3));
+      m.setTileset(own2, other[0]!);
+      expect([...m.mapData.row(own2).subarray(0, 4)]).toEqual([...m.mapData.row(m.tilesetRow(other[0]!)).subarray(0, 4)]);
+      expect(m.tileset(ref(b))).toBe(other[0]!);
+      expect(m.tileset(ref(a))).toBe(m.mapData.row(shared.row)[0]!);
+      expect(m.mapData.row(own2)[4]).toBe(7);
+
+      // Export and load back as the base MOD: the names, the rows and the key survive
+      const pkg = modPackage(game, buildModFiles(game, [first.doc, second.doc], [], game.master.changed()));
+      const mod = baseModFromFiles('export', [
+        { name: 'code.ips', bytes: pkg.get('exefs/code.ips')! },
+        { name: MASTER_ARCHIVE, bytes: pkg.get(`romfs/${MASTER_ARCHIVE}`)! },
+        { name: MAPDB_ARCHIVE, bytes: pkg.get(`romfs/${MAPDB_ARCHIVE}`)! },
+        { name: nd.archiveName, bytes: pkg.get(`romfs/${nd.archiveName}`)! },
+      ]);
+      const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'), mod);
+      expect(g2.code.dungeons).toEqual([{ dungeon: 11, code: 'D12' }]);
+      expect(g2.master.dungeonName(11)).toBe('風のどうくつ');
+      const a2 = g2.code.byName('D12B01001')!, b2 = g2.code.byName('D12B02001')!;
+      expect([a2.hash, b2.hash]).toEqual([a.hash, b.hash]);
+      expect(g2.master.mapData.rows).toBe(rows0 + 2);
+      expect(g2.master.mapDataRow(g2.mapRef(a2))).toBe(own);
+      expect(g2.master.mapDataRow(g2.mapRef(b2))).toBe(own2);
+      expect(g2.master.sounds(g2.mapRef(a2)).bgm).toBe(7);
+      expect(g2.master.tileset(g2.mapRef(b2))).toBe(other[0]!);
+      expect(g2.master.mapDataRow(g2.mapRef(g2.code.byName('D01B02001')!))).toBe(shared.row);
+    } finally {
+      game.code.removeMaps(game.code.addedMaps().map((x) => x.hash));
+      game.code.removeDungeon(11);
+      game.addedFiles.clear();
+      game.forgetEvents(11);
+      game.master.restoreTable('mapGroup.bin', mg0);
+      game.master.restoreTable('mapData.bin', md0);
       game.master.texts.restore(texts0);
       for (let d = 0; d < game.master.mapGroup.rows; d++) game.forgetEvents(d);
     }

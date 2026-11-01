@@ -7,6 +7,7 @@ import type { Master } from './master';
 import { u16, u32, w16, w32 } from '../util/bytes';
 import type { CodePatch } from './patch';
 import type { EventTable } from './events';
+import { addDataRows, CUTSCENE_SOURCE, readCommands, rowsFor, writeCommands, type Command } from './cutscene';
 
 export const KIND_BOSS = 0x31;
 /** monsterFixGroup (56562135): +0 u32 flags, +4 5 x {u16 monster, u8 count code, u8 (0xD0)}. */
@@ -24,24 +25,40 @@ export const STAGE_ARGS = [0x08, 0x1c, 0x30];
 export const MAX_STAGES = 3;
 /** Stage flags (args +2). */
 export const STAGE_REPEAT = 1;
+/** The stage runs a script (game/cutscene.ts): +4 u16 first data row, +6 u16 data rows (instead of the messages). */
+export const STAGE_SCRIPT = 2;
+
+/** Data rows of a stage's script. */
+export interface StageScript {
+  first: number;
+  rows: number;
+}
 
 /** Arguments of a stage (0x14 bytes at STAGE_ARGS[n]). */
 export interface BossStage {
-  /** monsterFixGroup row (1..255). */
+  /** monsterFixGroup row (1..255; 0 = no battle: the event ends after its messages / script). */
   fix: number;
   /** soundData row of the battle BGM (0 = BOSS_BGM_DEFAULT). */
   bgm: number;
   /** Don't record the win: the stage comes back every time. */
   repeat: boolean;
-  /** Messages shown before the battle (0 = none). */
+  /** Messages shown before the battle (0 = none). Unused (0) when the stage has a script. */
   messages: [number, number, number];
+  /** The script run before the battle (replaces the messages), or null. */
+  script?: StageScript | null;
 }
 
 export function readStages(row: Uint8Array): BossStage[] {
   const out: BossStage[] = [];
   for (let n = 0; n < MAX_STAGES && row[STAGE_KIND[n]!] === KIND_BOSS; n++) {
     const a = STAGE_ARGS[n]!;
-    out.push({ fix: row[a]!, bgm: row[a + 1]!, repeat: !!(row[a + 2]! & STAGE_REPEAT), messages: [u32(row, a + 4), u32(row, a + 8), u32(row, a + 12)] });
+    const flags = row[a + 2]!;
+    const script = flags & STAGE_SCRIPT ? { first: u16(row, a + 4), rows: u16(row, a + 6) } : null;
+    out.push({
+      fix: row[a]!, bgm: row[a + 1]!, repeat: !!(flags & STAGE_REPEAT),
+      messages: script ? [0, 0, 0] : [u32(row, a + 4), u32(row, a + 8), u32(row, a + 12)],
+      ...(script ? { script } : {}),
+    });
   }
   return out;
 }
@@ -57,8 +74,11 @@ export function writeStages(row: Uint8Array, stages: BossStage[]): void {
     if (!s) continue;
     row[a] = s.fix & 0xff;
     row[a + 1] = s.bgm & 0xff;
-    row[a + 2] = s.repeat ? STAGE_REPEAT : 0;
-    s.messages.forEach((m, i) => w32(row, a + 4 + i * 4, m));
+    row[a + 2] = (s.repeat ? STAGE_REPEAT : 0) | (s.script ? STAGE_SCRIPT : 0);
+    if (s.script) {
+      w16(row, a + 4, s.script.first);
+      w16(row, a + 6, s.script.rows);
+    } else s.messages.forEach((m, i) => w32(row, a + 4 + i * 4, m));
   }
 }
 
@@ -138,7 +158,7 @@ export function addFixGroup(master: Master, g: FixGroup): number {
 // The code patch ------------------------------------------------------------------------------------------------
 
 export const BOSS_PATCH_ID = 'boss';
-export const BOSS_PATCH_TITLE = 'ボス戦 (種類 0x31)';
+export const BOSS_PATCH_TITLE = 'ボス戦と演出 (種類 0x31)';
 
 /**
  * - FUN_001f41c8 (makes the actions of a section-8 range from +0x4D / +0x4E / +0x4F): kind 0x31 -> a boss action
@@ -160,7 +180,7 @@ export const BOSS_PATCH_SOURCE = `; ボス戦 (issue #43, docs/events.md §8)。
   cmp r1, #0xb
   b 0x1F41E0
 bm_make:
-  mov r0, #0x18
+  mov r0, #0x1c
   bl FUN_0033d690            ; 確保
   cmp r0, #0
   beq bm_out
@@ -171,6 +191,7 @@ bm_make:
   str r1, [r6]
   str r5, [r6, #0x10]        ; 引数 (行 +0x08 / +0x1C / +0x30)
   ldr r2, [r4, #8]
+  str r2, [r6, #0x18]        ; 行の先頭 (演出の行を探すため)
   sub r2, r5, r2
   mov r1, #0
   cmp r2, #0x1c
@@ -200,12 +221,21 @@ boss_run:
   cmp r0, r6
   bhi br_done                ; この段階は勝った
   ldr r5, [r4, #0x10]
+  ldrb r1, [r5, #2]
+  tst r1, #2
+  beq br_msgs
+@@SCRIPT@@
+br_msgs:
   ldr r0, [r5, #4]
   bl boss_msg
   ldr r0, [r5, #8]
   bl boss_msg
   ldr r0, [r5, #0xc]
   bl boss_msg
+br_after:
+  ldrb r0, [r5]
+  cmp r0, #0
+  beq br_talk                ; 敵なし: 戦闘をしないイベント
   ldrb r1, [r5, #2]
   tst r1, #1
   bne br_fight               ; くり返す段階: 勝っても記録しない
@@ -225,6 +255,19 @@ br_fight:
   pop {r4, r5, r6, lr}
   b FUN_002fc790             ; 固定の戦闘
 br_done:
+  pop {r4, r5, r6, pc}
+; 戦闘のないイベントの終わり: 状態を段階 + 1 に (くり返すなら進めない)、範囲はマップを読み直すまで止める
+br_talk:
+  ldrb r1, [r5, #2]
+  tst r1, #1
+  bne bt_off
+  ldr r0, [r4, #4]
+  add r1, r6, #1
+  bl FUN_0031b0d8            ; 行の状態を書く
+bt_off:
+  ldr r0, [r4, #4]
+  mov r1, #0
+  bl FUN_00317f68            ; 範囲を止める
   pop {r4, r5, r6, pc}
 boss_msg:
   cmp r0, #0
@@ -268,7 +311,31 @@ bw_done:
 `;
 
 /** The boss patch: exported in code.ips whenever an event table has a boss row (it is Panana's, not in the patch list). */
-export const BOSS_PATCH: CodePatch = { id: BOSS_PATCH_ID, title: BOSS_PATCH_TITLE, source: BOSS_PATCH_SOURCE, enabled: true };
+const SCRIPT_CALL = `  mov r0, r4
+  mov r1, r5
+  bl cs_run                  ; 演出
+  b br_after`;
+const NO_SCRIPT = `  b br_after                 ; 演出のパッチなし (演出の段階はメッセージなしで戦闘)`;
+
+export const BOSS_PATCH: CodePatch = { id: BOSS_PATCH_ID, title: BOSS_PATCH_TITLE, source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', NO_SCRIPT), enabled: true };
+/**
+ * The boss patch with the script interpreter (game/cutscene.ts, about 2 KB of the code cave): exported instead of
+ * BOSS_PATCH when a stage has a script.
+ */
+export const BOSS_SCRIPT_PATCH: CodePatch = { ...BOSS_PATCH, source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', SCRIPT_CALL) + CUTSCENE_SOURCE };
+
+/** The patch the tables need: none, the boss patch, or the boss patch with scripts. */
+export function bossPatchFor(tables: Iterable<EventTable>): CodePatch | null {
+  let boss = false;
+  for (const t of tables)
+    for (let row = 0; row < t.rows; row++) {
+      const r = t.table.row(row);
+      if (!STAGE_KIND.some((o) => r[o] === KIND_BOSS)) continue;
+      if (readStages(r).some((s) => s.script)) return BOSS_SCRIPT_PATCH;
+      boss = true;
+    }
+  return boss ? BOSS_PATCH : null;
+}
 
 /** A boss row in any of the tables (kind 0x31 in +0x4D / +0x4E / +0x4F). */
 export function usesBoss(tables: Iterable<EventTable>): boolean {
@@ -386,4 +453,64 @@ export function addBossChara(master: Master, events: EventTable, bossRow: number
   const row = events.addRow(newBossCharaRow(events.table.rowSize, 0, chara, clearState(stages)));
   w16(events.table.row(row), 0x44, events.slot(bossRow)); // addRow gave it a slot of its own
   return row;
+}
+
+// Scripts of stages (game/cutscene.ts) ----------------------------------------------------------------------------
+
+/** The commands of stage `n` of a boss row (empty when it has no script). */
+export function stageCommands(events: EventTable, bossRow: number, n: number): Command[] {
+  const s = readStages(events.table.row(bossRow))[n];
+  return s?.script ? readCommands(events, s.script.first, s.script.rows) : [];
+}
+
+/**
+ * Give stage `n` a script with these commands (it replaces the stage's messages). Its data rows are kept when they
+ * are enough, grown when they are the last rows of the table, else new rows are added (the old ones stay unused).
+ * Throws when the dungeon has no room for the rows.
+ */
+export function setStageCommands(events: EventTable, bossRow: number, n: number, cmds: Command[]): void {
+  const stages = readStages(events.table.row(bossRow));
+  const s = stages[n];
+  if (!s) throw new Error(`段階 ${n + 1} がありません`);
+  const slot = events.slot(bossRow);
+  const need = rowsFor(cmds.length);
+  let sc = s.script ?? null;
+  if (!sc || sc.rows < need) {
+    if (sc && sc.first + sc.rows === events.rows) {
+      addDataRows(events, need - sc.rows, slot);
+      sc = { first: sc.first, rows: need };
+    } else sc = { first: addDataRows(events, need, slot), rows: need };
+  }
+  writeCommands(events, sc.first, sc.rows, cmds, slot);
+  stages[n] = { ...s, messages: [0, 0, 0], script: sc };
+  writeStages(events.table.row(bossRow), stages);
+}
+
+/** Back to messages: the stage's lines (no speaker) become its messages (the first three). */
+export function clearStageScript(events: EventTable, bossRow: number, n: number): void {
+  const stages = readStages(events.table.row(bossRow));
+  const s = stages[n];
+  if (!s?.script) return;
+  const lines = stageCommands(events, bossRow, n).filter((c) => c.op === 1).map((c) => c.p);
+  stages[n] = { ...s, script: null, messages: [lines[0] ?? 0, lines[1] ?? 0, lines[2] ?? 0] };
+  writeStages(events.table.row(bossRow), stages);
+}
+
+/**
+ * A new event row of a scene without a battle: one stage with a script in a data row of its own. The range is like
+ * the game's talk ranges ({9, 2, 0, 1, 1}: a 200-unit square, entered).
+ */
+export function addSceneRow(events: EventTable): number {
+  const row = new Uint8Array(events.table.rowSize);
+  writeStages(row, [{ fix: 0, bgm: 0, repeat: false, messages: [0, 0, 0] }]);
+  const r = events.addRow(row);
+  setStageCommands(events, r, 0, []);
+  return r;
+}
+
+export function newSceneRecord(row: number): Uint8Array {
+  const raw = new Uint8Array(16);
+  w32(raw, 0, row);
+  raw.set([9, 2, 0, 1, 1], 8);
+  return raw;
 }

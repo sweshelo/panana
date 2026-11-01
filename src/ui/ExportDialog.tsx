@@ -6,7 +6,7 @@ import { PortStore } from '../port/store';
 import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
-import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { bossPatchFor } from '../game/boss';
 import { NOTICE_DUNGEON, noticePatch } from '../game/worldnotice';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
@@ -15,6 +15,7 @@ import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
+import { CHASE_PATCH_ID, chaseSpeedPatch, chaseSpeedProblem } from '../game/chase';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
 import { TITLE_ID } from '../rom/dump';
@@ -48,9 +49,14 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
-    const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
+    const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
       ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON))].filter((p) => !!p)];
+    // the speeds of the map symbols (game/chase.ts), when changed on the monster page
+    const chase = chaseSpeedPatch(game.chaseSpeeds);
+    const chaseProblem = chase && chaseSpeedProblem(game.dump.code);
+    if (chaseProblem) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `${chaseProblem} (このパッチは書き出しません)`, key: `patch:${CHASE_PATCH_ID}` } });
+    else if (chase) extra.push(chase);
     const patches = exportedPatches(game, extra);
     if (patches.length) {
       const built = buildPatches(game.dump.code, patches);

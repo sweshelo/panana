@@ -182,7 +182,15 @@ export class WorldView {
         this.hoverSignal.emit();
       },
     };
-    this.grid.pointer = pointer;
+    // A click in 2D also brings what it picked to the middle of the 3D view.
+    this.grid.pointer = {
+      ...pointer,
+      down: (cx, cy, e) => {
+        pointer.down(cx, cy, e);
+        const c = e.button === 0 && this.tool === 'select' ? this.selCell() : null;
+        if (c) this.world3d.focus(c[0], c[1]);
+      },
+    };
     this.scene.pointer = pointer;
     this.unsubscribe = src.on(() => this.refresh());
     void this.load3d();

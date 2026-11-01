@@ -24,7 +24,7 @@ import { Photo } from '../ui/Photo';
 import { InfoTip } from '../ui/InfoTip';
 import { ResistCharts } from '../ui/MonsterSlots';
 import { ActionBook } from '../game/actions';
-import { BossEditor, DropEditor, NameEditor, SkillEditor, StatEditor } from './monsteredit';
+import { BossEditor, ChaseEditor, DropEditor, NameEditor, SkillEditor, StatEditor } from './monsteredit';
 
 export interface Appearance {
   map: MapInfo;
@@ -141,6 +141,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         <DropEditor session={session} {...p} />
         <SkillEditor session={session} actions={actions} {...p} />
         <BossEditor session={session} actions={actions} {...p} />
+        <ChaseEditor session={session} {...p} />
       </div>
       <h3 className="with-info">耐性<InfoTip text={RESIST_INFO} /></h3>
       <ResistEditor book={book} m={m} edited={edited} />
