@@ -6,13 +6,32 @@ import { duplicateRecord, placeStamp, type PlaceContext, type Stamp } from './pl
 import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
 import { FIX_TABLE } from '../game/boss';
-import { LAYOUTS, POINT_SECTIONS, sectionBytes, type MapDoc, type Rec } from '../game/sections';
+import { EVENT_SECTIONS, LAYOUTS, POINT_SECTIONS, loadDoc, recEventRow, sectionBytes, type MapDoc, type Rec } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 import { MapEditState } from './model';
 import { KAHARA_AUTO } from '../game/autotile';
 import { letterByte, letterIndex } from '../game/sections';
 import type { AutoProfile } from './autotile';
 import { isIndoor } from '../game/objects';
+import { freeRows, liveRows, releaseRows } from '../game/eventslots';
+import { WORLD_DUNGEON } from '../game/worldmap';
+
+/** Event tables by dungeon; the dungeons' own tables get their free rows from the editor (game/eventslots.ts). */
+class EventTables extends Map<number, EventTable> {
+  attach: (dungeon: number, t: EventTable) => void = () => {};
+  override set(dungeon: number, t: EventTable): this {
+    this.attach(dungeon, t);
+    return super.set(dungeon, t);
+  }
+}
+
+/** Event rows the records of a map point at. */
+function docRefs(doc: MapDoc, out: Set<number>): void {
+  for (const section of EVENT_SECTIONS) for (const rec of doc.recs[section] ?? []) {
+    const row = recEventRow(section, rec.raw);
+    if (row) out.add(row);
+  }
+}
 
 export * from './model';
 
@@ -34,7 +53,11 @@ interface KaharaTables {
 
 export class EditorState extends MapEditState<Stamp, KaharaTables> {
   /** EventObject tables of the dungeons opened so far (edited in place). */
-  readonly events = new Map<number, EventTable>();
+  readonly events = new EventTables();
+  /** Event rows the game's maps point at, by map (the maps not opened yet still point at these). */
+  private readonly romRefs = new Map<number, Set<number>>();
+  /** Free rows by dungeon, for the revision they were found at. */
+  private readonly freeCache = new Map<number, { revision: number; rows: number[] }>();
   info: MapInfo | null = null;
   /** mapData row source of the open map (indoor flag from its tiles when opened). */
   ref: MapRef | null = null;
@@ -43,6 +66,63 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
 
   constructor(readonly game: Game) {
     super();
+    this.events.attach = (d, t) => {
+      // world maps' tables (entrance conditions) are not tied to dungeon maps: they keep growing only
+      if (d < WORLD_DUNGEON) t.freeRows = () => this.cachedFreeRows(d);
+    };
+  }
+
+  private romRefsOf(info: MapInfo): Set<number> {
+    let refs = this.romRefs.get(info.hash);
+    if (!refs) {
+      refs = new Set();
+      try {
+        docRefs(loadDoc(this.game.db, info), refs);
+      } catch {
+        // an added map with no data in the ROM points at nothing there
+      }
+      this.romRefs.set(info.hash, refs);
+    }
+    return refs;
+  }
+
+  /** Free rows of dungeon `d`'s table now (game/eventslots.ts), lowest first. */
+  freeEventRows(d: number): number[] {
+    const ev = this.events.get(d);
+    if (!ev) return [];
+    const refs = new Set<number>(), rom = new Set<number>();
+    const seen = new Set<number>();
+    for (const m of this.game.editableMaps()) {
+      if (m.dungeon !== d) continue;
+      seen.add(m.hash);
+      const r = this.romRefsOf(m);
+      r.forEach((x) => rom.add(x));
+      const doc = this.docs.get(m.hash);
+      if (doc) docRefs(doc, refs);
+      else r.forEach((x) => refs.add(x));
+    }
+    for (const doc of this.docs.values()) if (doc.dungeon === d && !seen.has(doc.hash)) docRefs(doc, refs);
+    return freeRows(ev, liveRows(ev, refs, d), rom);
+  }
+
+  /**
+   * The same, found once per revision: addRow takes rows out of the list, so the rows an edit adds (not pointed at by
+   * a record until the edit ends) are not handed out twice; every edit ends with a new revision.
+   */
+  private cachedFreeRows(d: number): number[] {
+    const c = this.freeCache.get(d);
+    if (c && c.revision === this.revision) return c.rows;
+    const rows = this.freeEventRows(d);
+    this.freeCache.set(d, { revision: this.revision, rows });
+    return rows;
+  }
+
+  /** A deleted chest / gimmick gives its event row back when nothing else points at it. */
+  override recordRemoved(doc: MapDoc, section: number, rec: Rec): void {
+    const ev = this.events.get(doc.dungeon);
+    if (!ev || !recEventRow(section, rec.raw)) return;
+    releaseRows(ev, this.freeEventRows(doc.dungeon));
+    this.freeCache.delete(doc.dungeon);
   }
 
   open(info: MapInfo): void {

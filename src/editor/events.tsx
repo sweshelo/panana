@@ -64,14 +64,14 @@ export function eventLinks(st: EditorState): EventLink[] {
   return out;
 }
 
-/** Label of an event row in the current map: "行 13: 動作なし (区画 3 (13, 10))". */
+/** Label of an event row in the current map: "イベント #13: 動作なし — 区画 3 (13, 10)". */
 function rowLabel(st: EditorState, row: number): string {
   const ev = st.currentEvents!;
   const where = st.current ? recordsOfRow(st.current, row).map((r) => {
     const [x, y] = recCellPos(r.rec, LAYOUTS[r.section]!);
     return `区画 ${r.section} (${x.toFixed(1)}, ${y.toFixed(1)})`;
   }) : [];
-  return `行 ${row}: ${kindName(ev.kind(row))}${where.length ? ` — ${where.join(', ')}` : ' (このマップにない)'}`;
+  return `イベント #${row}: ${kindName(ev.kind(row))}${where.length ? ` — ${where.join(', ')}` : ' (このマップにない)'}`;
 }
 
 const hex2 = (v: number): string => `0x${v.toString(16).toUpperCase().padStart(2, '0')}`;
@@ -175,7 +175,10 @@ function ScriptTargets({ st, row }: { st: EditorState; row: number }): ReactNode
   return <div className="muted small">{`この行のスクリプトが開ける行: ${t.rows.map((x) => rowLabel(st, x)).join('、')} (コードに書かれているので、行番号を変えるとつながりが切れます)`}</div>;
 }
 
-/** Every event row of the current dungeon, with the maps that use it; clicking one goes to its first record. */
+/** "空き" in the kind filter of the event list. */
+const FREE = -2;
+
+/** Every event row of the current dungeon, with the maps that use it (or 空き); clicking one goes to its first record. */
 export function EventListDialog({ st, onPick, onClose }: {
   st: EditorState; onPick: (map: number, section: number, index: number) => void; onClose: () => void;
 }): ReactNode {
@@ -197,23 +200,34 @@ export function EventListDialog({ st, onPick, onClose }: {
     }
     return out;
   }, [st, game, doc]);
+  const free = useMemo(() => new Set(st.freeEventRows(doc.dungeon)), [st, doc, st.revision]);
   const kinds = [...new Set(Array.from({ length: ev.rows }, (_, i) => ev.kind(i)))].sort((a, b) => a - b);
-  const rows = Array.from({ length: ev.rows }, (_, i) => i).filter((row) => kind < 0 || ev.kind(row) === kind);
+  const rows = Array.from({ length: ev.rows }, (_, i) => i).filter((row) => kind === FREE ? free.has(row) : kind < 0 || (!free.has(row) && ev.kind(row) === kind));
   return (
-    <Dialog title={`イベントの一覧 (${game.master.dungeonName(doc.dungeon)}: ${ev.rows} 行 / 枠 ${ev.capacity})`} onClose={onClose}>
+    <Dialog title={`イベントの一覧 (${game.master.dungeonName(doc.dungeon)}: ${ev.rows - free.size} 個を使用、空き ${free.size} 個 / 上限 ${ev.capacity} 個)`} onClose={onClose}>
       <div className="row">
         <select value={kind} onChange={(e) => setKind(Number(e.target.value))}>
           <option value={-1}>すべての種類</option>
+          {free.size > 0 && <option value={FREE}>空き</option>}
           {kinds.map((k) => <option key={k} value={k}>{kindName(k)}</option>)}
         </select>
-        <span className="muted small">クリックでその行を使うレコードへ移動</span>
+        <span className="muted small">クリックでそのイベントを使う物へ移動。宝箱やギミックを削除して、ほかに使う物がなくなった番号は「空き」になり、次に置く物が使います。</span>
       </div>
       <div className="picker-list">
         <table className="picker-table">
-          <thead><tr><th>行</th><th>種類</th><th>枠</th><th>使っている場所</th><th>つながり</th></tr></thead>
+          <thead><tr><th>番号</th><th>種類</th><th>枠</th><th>使っている場所</th><th>つながり</th></tr></thead>
           <tbody>
             {rows.map((row) => {
               const u = uses.get(row) ?? [];
+              if (free.has(row)) return (
+                <tr key={row} className="muted">
+                  <td className="num">{row}</td>
+                  <td>空き</td>
+                  <td />
+                  <td>次に置く宝箱やギミックが使います</td>
+                  <td />
+                </tr>
+              );
               const targets = switchTargets(st, row).rows;
               return (
                 <tr key={row} className={u.length ? 'pick' : ''} onClick={() => u[0] && onPick(u[0].map, u[0].section, u[0].index)}>
@@ -221,7 +235,7 @@ export function EventListDialog({ st, onPick, onClose }: {
                   <td>{kindName(ev.kind(row))}</td>
                   <td className="num muted">{ev.slot(row)}</td>
                   <td>{u.map((x, i) => <div key={i}>{x.label}</div>)}</td>
-                  <td className="muted">{targets.length ? `→ 行 ${targets.join(', ')}` : ''}</td>
+                  <td className="muted">{targets.length ? `→ イベント #${targets.join(', #')}` : ''}</td>
                 </tr>
               );
             })}

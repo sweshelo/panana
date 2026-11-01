@@ -24,7 +24,8 @@ export function AddPanel({ editor }: { editor: MapEditor }): ReactNode {
   const book = editor.session.book;
   const boss = selected?.type === 'boss' ? selected.monster : book?.monsters.find(m => m.boss)?.row ?? book?.monsters[0]?.row ?? 1;
   const events = st.currentEvents;
-  const capacity = events ? `イベントの行: あと ${events.roomLeft()} 行 (${events.rows} / ${events.capacity})` : 'このダンジョンにはイベントの表がありません';
+  const spare = events?.freeRows().length ?? 0;
+  const capacity = events ? `イベント番号: あと ${events.roomLeft()} 個 (${events.rows} / ${events.capacity}${spare ? `、削除で空いた番号 ${spare} 個を含む` : ''})` : 'このダンジョンにはイベントの表がありません';
   const selectedLabel = selected?.type === 'boss' ? `ボス戦: ${book?.monster(selected.monster)?.name ?? '敵'}`
     : selected?.type === 'prop' ? `${objectCategory(selected.row)} #${selected.row}`
     : selected?.type === 'switchgate' ? selected.gate === undefined ? '柵を置く' : 'スイッチを置く'
