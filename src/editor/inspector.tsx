@@ -202,7 +202,7 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
         </>
       )}
       {k === 8 && ev?.has(evRow) && ev.kind(evRow) === KIND_BOSS && <BossPanel session={editor.session} row={evRow} />}
-      {(evRow || k === 4 || k === 5 || k === 8) && ev?.has(evRow) ? <EventPanel st={st} row={evRow} /> : null}
+      {(evRow || k === 4 || k === 5 || k === 8) && ev?.has(evRow) ? <EventPanel st={st} row={evRow} book={session.book} /> : null}
       {/* raw bytes (x / y are overwritten from the fields above) */}
       <Field label={`生データ (${L.size} バイト)`}>
         <RawBytes bytes={r.raw} rows={3} onChange={(b) => upd((rec) => {

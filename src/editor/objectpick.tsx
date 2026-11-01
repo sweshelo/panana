@@ -1,7 +1,8 @@
 // Picking one thing placed on a map (an event's record, an exit, a world map entrance) from a dialog that shows each
 // candidate's model and where it is on the map, instead of a <select> of numbers and coordinates.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { loadObjectModels, objKey } from '../cgfx/loader';
+import { loadComposite, loadObjectModels, objKey } from '../cgfx/loader';
+import { MONSTER_MODEL_ARCHIVE, type MonsterBook } from '../game/monsters';
 import type { Game } from '../game/game';
 import { OBJ_INVISIBLE } from '../game/objects';
 import type { MapDoc } from '../game/sections';
@@ -24,6 +25,23 @@ export function objectRef(game: Game, row: number): ModelRef | null {
       return set?.models.has(ref.entry) ? { set, hash: ref.entry } : null;
     },
   };
+}
+
+/** The model of a monster (a MonsterParameter row, 1-based as in the book) as a photo source. */
+export function monsterModelRef(game: Game, book: MonsterBook | null, monster: number): ModelRef | null {
+  const m = book?.monster(monster);
+  const x = m ? book!.modelOf(m) : null;
+  if (!x) return null;
+  return {
+    key: `monster/${hex8(x.model)}/${hex8(x.texture)}`,
+    load: async () => ({ set: await loadComposite(game, MONSTER_MODEL_ARCHIVE, x.model, x.texture), hash: x.model }),
+  };
+}
+
+/** The monster showing a MonsterDesign row (the first one in the book), as a photo source. */
+export function designModelRef(game: Game, book: MonsterBook | null, design: number): ModelRef | null {
+  const m = book?.monsters.find((x) => x.design === design);
+  return m ? monsterModelRef(game, book, m.row) : null;
 }
 
 /** The model of a world map entrance: its own mapObject row, else its worldmapParts row's model. */

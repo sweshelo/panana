@@ -1,7 +1,8 @@
 // Event (EventObject row) UI: kind-specific fields in the inspector, links between switches and their
 // targets, and a list of the dungeon's events.
 import { useMemo, useState, type ReactNode } from 'react';
-import { KIND_BOSS } from '../game/boss';
+import { charaMonsterDesign, fixGroup, KIND_BOSS, readStages } from '../game/boss';
+import type { MonsterBook } from '../game/monsters';
 import { EVENT_KINDS, KIND_SWITCH, SCRIPT_LINKS, SWITCH_PRESETS, kindName } from '../game/eventkinds';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recCellPos, recEventRow, type MapDoc, type Rec } from '../game/sections';
 import { mapShortTitle } from '../game/names';
@@ -12,7 +13,7 @@ import { Field, Num, RawBytes } from './fields';
 import type { EventLink } from './model';
 import type { EditorState } from './state';
 import { MESSAGE_HELP } from './message';
-import { objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
+import { designModelRef, monsterModelRef, objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
 import { isIndoor, recordObjectRow } from '../game/objects';
 
 /** EventObject row a record refers to (0 = none). */
@@ -80,21 +81,32 @@ function rowLabel(st: EditorState, row: number): string {
  * Event rows of the current map as picker choices: each with the model of its first record on the map and where that
  * record is.
  */
-export function eventChoices(st: EditorState, rows: number[]): PlacedChoice[] {
+export function eventChoices(st: EditorState, rows: number[], book: MonsterBook | null): PlacedChoice[] {
   const ev = st.currentEvents!;
   const doc = st.current!;
   const indoor = isIndoor(doc);
+  const master = st.game.master;
   return rows.map((row) => {
     const recs = recordsOfRow(doc, row);
     const first = recs[0];
     const [x, y] = first ? recCellPos(first.rec, LAYOUTS[first.section]!) : [0, 0];
-    const obj = first ? recordObjectRow(first.section, first.rec, { master: st.game.master, events: ev, indoor }) : 0;
+    const obj = first ? recordObjectRow(first.section, first.rec, { master, events: ev, indoor }) : 0;
+    // A boss battle shows its first enemy; a character showing a monster (the boss placed with it) shows that monster.
+    let model = objectRef(st.game, obj);
+    if (!model && ev.kind(row) === KIND_BOSS) {
+      const monster = fixGroup(master, readStages(ev.table.row(row)).find((s) => s.fix)?.fix ?? 0)?.slots[0]?.monster ?? 0;
+      model = monsterModelRef(st.game, book, monster);
+    }
+    if (!model && first?.section === 5 && first.rec.raw[8] === 0) {
+      const design = charaMonsterDesign(master, ev.model(row));
+      if (design !== null) model = designModelRef(st.game, book, design);
+    }
     return {
       value: row,
       name: `イベント #${row} ${kindName(ev.kind(row))}`,
       sub: first ? `${LAYOUTS[first.section]!.label}  セル (${x.toFixed(1)}, ${y.toFixed(1)})${recs.length > 1 ? ` ほか ${recs.length - 1} か所` : ''}` : 'このマップにない',
-      model: objectRef(st.game, obj),
-      badge: first?.section === 8 ? '▷' : first?.section === 5 ? '☺' : '◇',
+      model,
+      badge: ev.kind(row) === KIND_BOSS ? '⚔' : first?.section === 8 ? '▷' : first?.section === 5 ? '☺' : '◇',
       where: first ? { doc, x, y } : undefined,
       category: first ? LAYOUTS[first.section]!.label : 'このマップにない',
       keywords: String(row),
@@ -105,7 +117,7 @@ export function eventChoices(st: EditorState, rows: number[]): PlacedChoice[] {
 const hex2 = (v: number): string => `0x${v.toString(16).toUpperCase().padStart(2, '0')}`;
 
 /** Inspector block for the EventObject row of a record. */
-export function EventPanel({ st, row }: { st: EditorState; row: number }): ReactNode {
+export function EventPanel({ st, row, book = null }: { st: EditorState; row: number; book?: MonsterBook | null }): ReactNode {
   const ev = st.currentEvents!;
   const game = st.game;
   const r = ev.table.row(row);
@@ -140,7 +152,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
       {!!msgOffs.length && (
         <div className="muted small">{MESSAGE_HELP} <a href={`#/messages/${st.current!.dungeon}.${row}`}>メッセージの一覧で開く</a></div>
       )}
-      {kind === KIND_SWITCH && <SwitchFields st={st} row={row} />}
+      {kind === KIND_SWITCH && <SwitchFields st={st} row={row} book={book} />}
       {kind === 0x24 && <ScriptTargets st={st} row={row} />}
       <div className="muted small">{`状態の枠 (+0x44) = ${ev.slot(row)}、モデル (+0x46) = ${u16(r, 0x46)}`}</div>
       <Field label="生データ (0x50 バイト)">
@@ -151,7 +163,7 @@ export function EventPanel({ st, row }: { st: EditorState; row: number }): React
 }
 
 /** The generic switch: the rows it opens (+0x08 / +0x0C) and how they open. */
-function SwitchFields({ st, row }: { st: EditorState; row: number }): ReactNode {
+function SwitchFields({ st, row, book }: { st: EditorState; row: number; book: MonsterBook | null }): ReactNode {
   const ev = st.currentEvents!;
   const r = ev.table.row(row);
   const apply = (f: () => void): void => st.editTables(f);
@@ -170,7 +182,7 @@ function SwitchFields({ st, row }: { st: EditorState; row: number }): ReactNode 
         return (
           <Field key={off} label={`開ける対象 ${i} (+0x${off.toString(16).toUpperCase()})`}>
             <PlacedPickButton title={`スイッチが開ける対象 ${i} を選ぶ`} value={cur}
-              choices={eventChoices(st, !!cur && !candidates.includes(cur) && ev.has(cur) ? [...candidates, cur] : candidates)}
+              choices={eventChoices(st, !!cur && !candidates.includes(cur) && ev.has(cur) ? [...candidates, cur] : candidates, book)}
               extra={[{ value: 0, label: '(なし)' }]} missing={(v) => `イベント #${v} (表にない)`}
               onChange={(v) => apply(() => w32(ev.table.row(row), off, v))} />
           </Field>

@@ -70,7 +70,7 @@ export function ScriptEditor({ session, row, n }: { session: Session; row: numbe
   // actors: the characters (section 5) on this map, by their event row
   const doc = st.current;
   const actorRows = [...new Set((doc?.recs[5] ?? []).map((r) => recEventRow(5, r.raw)))].filter((r) => ev.has(r)).sort((a, b) => a - b);
-  const actorChoices = doc ? eventChoices(st, actorRows) : [];
+  const actorChoices = doc ? eventChoices(st, actorRows, session.book) : [];
   const actorSelect = (c: Command, i: number, allowNone: boolean, allowParty: boolean): ReactNode => (
     <PlacedPickButton title="役者を選ぶ (このマップの区画 5 のキャラ)" value={c.actor} choices={actorChoices}
       extra={[
