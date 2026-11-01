@@ -10,6 +10,7 @@ import { TreasureEditor } from './treasure';
 import { EventListDialog, EventPanel } from './events';
 import { BossPanel } from './boss';
 import { KIND_BOSS } from '../game/boss';
+import { RANGE_MODE_AT, RANGE_SHAPE_AT, RANGE_SIZE_AT, RANGE_SIZES } from '../game/cutscene';
 import { EncounterPanel } from './encounters';
 import { MapSoundPanel } from './sounds';
 import { Field, HexInput, Num, RawBytes } from './fields';
@@ -166,7 +167,30 @@ function RecordProps({ editor, doc, k, i }: { editor: MapEditor; doc: MapDoc; k:
                 : <Field label="向き (+9、1〜4。0 は 3 と同じ)"><Num value={r.raw[9]!} min={0} max={4} onChange={setByte(9)} /></Field>}
             </>
           )}
-          {k === 8 && <div className="muted">イベントの範囲 (モデルなし)</div>}
+          {k === 8 && (
+            <>
+              <div className="muted">イベントの範囲 (モデルなし)</div>
+              <Field label="大きさ (+0x0A)">
+                <select value={r.raw[RANGE_SIZE_AT]} onChange={(e) => setByte(RANGE_SIZE_AT)(Number(e.target.value))}>
+                  {RANGE_SIZES.map((v, n) => <option key={n} value={n}>{`${v} (${(v / CELL).toFixed(1)} セル)`}</option>)}
+                  {!(r.raw[RANGE_SIZE_AT]! < RANGE_SIZES.length) && <option value={r.raw[RANGE_SIZE_AT]}>{`${r.raw[RANGE_SIZE_AT]} (発火しない)`}</option>}
+                </select>
+              </Field>
+              <Field label="形 (+0x0C)">
+                <select value={r.raw[RANGE_SHAPE_AT] ? 1 : 0} onChange={(e) => setByte(RANGE_SHAPE_AT)(Number(e.target.value))}>
+                  <option value={0}>円 (直径 = 大きさ)</option>
+                  <option value={1}>正方形 (一辺 = 大きさ)</option>
+                </select>
+              </Field>
+              <Field label="始まり (+0x0B)">
+                <select value={r.raw[RANGE_MODE_AT] === 1 ? 1 : 0} onChange={(e) => setByte(RANGE_MODE_AT)(Number(e.target.value))}>
+                  <option value={1}>主人公が入ったとき</option>
+                  <option value={0}>主人公が調べたとき (A ボタン、前方 80)</option>
+                </select>
+              </Field>
+              <div className="muted small">ゲームの台詞の範囲は 200 の正方形・入ったとき、戦闘の範囲は 400 の円・入ったとき、お店は 200 の円・調べたとき。イベントの実行中はどの範囲も調べません。</div>
+            </>
+          )}
           {ev && (k === 4 || k === 5) && (
             <Field label={`モデルの上書き (イベント #${evRow} +0x46、0 = 既定)`}>
               <Num value={ev.model(evRow)} min={0} onChange={(v) => st.editTables(() => ev.setModel(evRow, v & 0xffff))} />

@@ -1,6 +1,7 @@
 // Top-down 2D view on a canvas: tiles, section 6 cells, points; pan (right / middle drag), zoom (wheel).
 import { LAYOUTS, P3, P7, POINT_SECTIONS, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import type { Controller } from './controller';
+import { rangeInfo } from '../game/cutscene';
 import { drawHover, drawRoomCells, drawSelection, drawTiles } from './draw2d';
 import { SECTION_COLORS } from './legend';
 import { GridCanvas } from './gridcanvas';
@@ -108,6 +109,22 @@ export class View2D {
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
         g.lineWidth = selected ? 2.5 : 1;
         const rad = Math.max(3, s * (k === 3 ? 0.3 : 0.16));
+        if (k === 8) {
+          // the range itself (docs/kahara/cutscene.md §1): a circle of diameter = size, or a square of side = size
+          const info = rangeInfo(r.raw);
+          const half = (info.size / 2 / 500) * s;
+          if (half > 0) {
+            g.save();
+            g.strokeStyle = SECTION_COLORS[8]!;
+            g.globalAlpha = selected ? 0.9 : 0.5;
+            g.setLineDash(info.step ? [] : [4, 3]);
+            g.beginPath();
+            if (info.square) g.rect(x - half, y - half, half * 2, half * 2);
+            else g.arc(x, y, half, 0, Math.PI * 2);
+            g.stroke();
+            g.restore();
+          }
+        }
         g.beginPath();
         if (k === 3) {
           // exits: a square (doors) or a diamond (stairs / warp)

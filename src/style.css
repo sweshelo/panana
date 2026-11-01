@@ -690,3 +690,8 @@ button.edited, label.edited-label { border-color: var(--warn); color: var(--warn
 .world-entrance .num-input { width: 72px; }
 .world-exits { padding-left: 16px; }
 .world-dest-maps table { font-size: 12px; }
+
+/* 演出 (editor/cutscene.tsx) */
+.scene-list { padding-left: 1.6em; margin: 0.4em 0; }
+.scene-cmd { margin: 0.3em 0; }
+.scene-fields { display: flex; flex-wrap: wrap; gap: 0.3em 0.6em; align-items: center; margin-top: 0.15em; }

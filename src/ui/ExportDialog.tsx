@@ -6,7 +6,7 @@ import { PortStore } from '../port/store';
 import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
-import { BOSS_PATCH, usesBoss } from '../game/boss';
+import { bossPatchFor } from '../game/boss';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
@@ -48,7 +48,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
-    const extra = [...(usesBoss(st.events.values()) ? [BOSS_PATCH] : []), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
+    const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
       ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : [])];
     // the speeds of the map symbols (game/chase.ts), when changed on the monster page
