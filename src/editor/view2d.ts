@@ -6,6 +6,7 @@ import { drawHover, drawRoomCells, drawSelection, drawTiles } from './draw2d';
 import { SECTION_COLORS } from './legend';
 import { GridCanvas } from './gridcanvas';
 import { GRID, tileAt, type EventLink, type MapEditState } from './model';
+import { drawTerrainMinimap } from './minimap';
 
 export type Style2D = 'symbols' | 'minimap';
 
@@ -64,6 +65,11 @@ export class View2D {
 
   /** In-game minimap style: floor cells, room outlines, corridors. */
   private drawMinimap(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {
+    if (!this.ctl.layers.tiles) return;
+    if (this.st.mapTopology) {
+      drawTerrainMinimap(g,s,doc.tiles,this.st.mapTopology);
+      return;
+    }
     const room = new Set(doc.cells6.map((c) => `${c.x},${c.y}`));
     for (const t of doc.tiles) {
       if (t.kind === 0 || t.kind === 6) continue;

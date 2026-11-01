@@ -14,7 +14,9 @@ import { NewMapDialog } from './newmapdialog';
 import { NewDungeonDialog } from './newdungeondialog';
 import { EditDungeonDialog } from './editdungeondialog';
 import { Palette } from './palette';
-import { IssueList, Tools } from './tools';
+import { IssueList, MapToolbox } from './tools';
+import { InfoTip } from '../ui/InfoTip';
+import { MapSettings } from './partpalette';
 
 export function MapEditorUi({ editor }: { editor: MapEditor }): ReactNode {
   return (
@@ -74,10 +76,8 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
 function LeftPane({ editor }: { editor: MapEditor }): ReactNode {
   return (
     <aside className="left">
-      <Tools st={editor.st} />
-      <AddPanel editor={editor} />
-      <FactoryPalette editor={editor} />
-      <Layers editor={editor} />
+      <MapToolbox st={editor.st} tiles={<FactoryPalette editor={editor} />} parts={<AddPanel editor={editor} />} onDelete={() => editor.ctl.deleteSelection()} onDuplicate={()=>editor.ctl.duplicateRec()} />
+      <MapSettings><Layers editor={editor} /></MapSettings>
     </aside>
   );
 }
@@ -127,7 +127,7 @@ function Layers({ editor }: { editor: MapEditor }): ReactNode {
         <button onClick={() => v3.topView()}>真上</button>
       </div>
       {box('オブジェクトのモデル (階段・扉・宝箱・NPC など)', v3.showObjects, (v) => (v3.showObjects = v))}
-      <p className="muted small">3D: 右ドラッグで回転、中ドラッグで移動、ホイールで拡大。2D: 右 / 中ドラッグで移動。</p>
+      <InfoTip text="3D: 右ドラッグで回転、中ドラッグで移動、ホイールで拡大。2D: 右 / 中ドラッグで移動。" />
     </div>
   );
 }
@@ -161,4 +161,3 @@ function StatusBar({ editor }: { editor: MapEditor }): ReactNode {
   if (editor.errorMsg) parts.push(`⚠ ${editor.errorMsg}`);
   return <div className="status">{parts.join('   ')}</div>;
 }
-

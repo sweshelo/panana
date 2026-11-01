@@ -92,12 +92,22 @@ export interface ObjectContext {
   indoor: boolean;
 }
 
+/** Shared by record rendering and the placement palette previews. */
+export function floorObjectRow(kind: number): number {
+  return kind === 1 ? 0x44 : 0x2d;
+}
+
+export function defaultChestObjectRow(indoor: boolean, dir = 0): number {
+  const set = indoor ? [0x18,0x1a,0x19] : [0x15,0x17,0x16];
+  return set[dir] ?? set[0]!;
+}
+
 /** mapObject row for a record, 0 = no model (or unknown). */
 export function recordObjectRow(section: number, rec: Rec, ctx: ObjectContext): number {
   const r = rec.raw;
   switch (section) {
     case 1:
-      return r[5] === 1 ? 0x44 : 0x2d; // frozen floor / damage floor
+      return floorObjectRow(r[5]!);
     case 2: {
       const id = u32(r, 0);
       return id > 0 && id < ctx.master.mapObject.rows ? id : 0;
@@ -109,9 +119,7 @@ export function recordObjectRow(section: number, rec: Rec, ctx: ObjectContext): 
     case 4: {
       const m = ctx.events?.model(u32(r, 0)) ?? 0;
       if (m) return m;
-      const dir = r[8]!;
-      const set = ctx.indoor ? [0x18, 0x1a, 0x19] : [0x15, 0x17, 0x16];
-      return set[dir] ?? set[0]!;
+      return defaultChestObjectRow(ctx.indoor,r[8]!);
     }
     case 5: {
       const m = ctx.events?.model(u32(r, 0)) ?? 0;

@@ -39,7 +39,7 @@ export interface PickerChoice {
  * Every entry as a picture with its name. `sections` come first, each under its heading, then every entry (under
  * "すべて" when there are sections or choices); `current` is highlighted and scrolled into view.
  */
-export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, placeholder = '名前か番号で絞り込み', wide = false, onPick, onClose }: {
+export function GridPicker({ title, entries, current, sections = [], choices = [], choicesLabel = '', categories, groupByCategory = false, placeholder = '名前か番号で絞り込み', controls, wide = false, onPick, onClose }: {
   title: string;
   entries: GridEntry[];
   current?: number;
@@ -49,6 +49,9 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   choicesLabel?: string;
   /** Category filter: value → label. */
   categories?: Record<number, string>;
+  /** Show category headings as nonduplicated regions instead of one flat "all" grid. */
+  groupByCategory?: boolean;
+  controls?: ReactNode;
   placeholder?: string;
   /** Wider cells for entries with several lines of text (`sub` keeps its line breaks). */
   wide?: boolean;
@@ -58,7 +61,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('');
   const grid = useRef<HTMLDivElement>(null);
-  useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, []);
+  useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [current]);
   const q = query.trim();
   const c = cat ? Number(cat) : 0;
   const match = (e: GridEntry): boolean => (!c || e.category === c) && (!q || e.name.includes(q) || String(e.id) === q || !!e.keywords?.includes(q));
@@ -73,7 +76,10 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
   );
   const shown = [
     ...sections.map((s) => ({ label: s.label, list: s.ids.map((id) => byId.get(id)).filter((e): e is GridEntry => !!e && match(e)) })),
-    { label: sections.length || choices.length ? 'すべて' : '', list: entries.filter(match) },
+    ...(groupByCategory && categories ? [
+      ...Object.entries(categories).map(([id,label]) => ({label,list:entries.filter(entry => entry.category === Number(id) && match(entry))})),
+      {label:'その他',list:entries.filter(entry => (!entry.category || !categories[entry.category]) && match(entry))},
+    ] : [{ label: sections.length || choices.length ? 'すべて' : '', list: entries.filter(match) }]),
   ].filter((s) => s.list.length);
   const shownChoices = choices.filter((x) => !q || x.label.includes(q) || !!x.keywords?.includes(q));
   return (
@@ -81,12 +87,13 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
       <div className="row">
         <input type="search" placeholder={placeholder} className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
         {categories && (
-          <select value={cat} onChange={(e) => setCat(e.target.value)}>
+          <select aria-label="分類" value={cat} onChange={(e) => setCat(e.target.value)}>
             <option value="">すべての分類</option>
             {Object.entries(categories).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         )}
       </div>
+      {controls}
       <div className="picker-list" ref={grid}>
         {shownChoices.length > 0 && choicesLabel && <h4 className="picker-heading">{choicesLabel}</h4>}
         {shownChoices.length > 0 && (
@@ -102,7 +109,7 @@ export function GridPicker({ title, entries, current, sections = [], choices = [
         )}
         {shown.map((s, i) => (
           <section key={i}>
-            {s.label && <h4 className="picker-heading">{s.label}</h4>}
+            {s.label && <h4 className={'picker-heading' + (groupByCategory ? ' picker-category-heading' : '')}>{s.label}</h4>}
             <div className={`monster-grid${wide ? ' wide' : ''}`}>{s.list.map((e) => cell(e, `${i}:${e.id}`))}</div>
           </section>
         ))}

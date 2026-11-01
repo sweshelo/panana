@@ -9,6 +9,10 @@ import { FIX_TABLE } from '../game/boss';
 import { LAYOUTS, POINT_SECTIONS, sectionBytes, type MapDoc, type Rec } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 import { MapEditState } from './model';
+import { KAHARA_AUTO } from '../game/autotile';
+import { letterByte, letterIndex } from '../game/sections';
+import type { AutoProfile } from './autotile';
+import { isIndoor } from '../game/objects';
 
 export * from './model';
 
@@ -51,8 +55,28 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.info = info;
     this.ref = this.game.mapRef(info, doc);
     this.tileset = this.game.master.tileset(this.ref);
+    if (this.brush.auto && !this.autoProfile) this.brush = {...this.brush, auto: false};
     this.selection = { type: 'none' };
     this.emit('map');
+  }
+
+  override get autoProfile(): AutoProfile | undefined {
+    if (!this.mapTopology) return undefined;
+    const palette = this.game.master.palette(this.tileset);
+    return KAHARA_AUTO.parts.every(p => palette.has(p.kind)) ? KAHARA_AUTO : undefined;
+  }
+
+  override get mapTopology(): AutoProfile | undefined {
+    return this.current && !isIndoor(this.current) ? KAHARA_AUTO : undefined;
+  }
+
+  override autoLetter(kind: number, preferred: number): number {
+    const letters = this.game.master.palette(this.tileset).get(kind) ?? [0];
+    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : letters[0]!);
+  }
+
+  override autoVariantLetters(kind: number): readonly number[] {
+    return this.game.master.palette(this.tileset).get(kind) ?? [0];
   }
 
   /**
@@ -154,4 +178,3 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.emit('doc');
   }
 }
-
