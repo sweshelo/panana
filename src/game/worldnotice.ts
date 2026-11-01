@@ -339,8 +339,6 @@ wn_show:
   mov r0, sp
   mov r1, #0
   bl FUN_00301500
-  mov r0, sp
-  bl FUN_0031b67c            ; ハンドルを解放
   vldr s0, =1.0
   bl FUN_003086e4            ; 地形の読み込みを待つ (黄泉の門は 0.5 秒)
   mov r0, #2
@@ -361,6 +359,8 @@ wn_show:
   bl FUN_0030cc48            ; 地の文の窓 (閉じるまで待つ)
   vldr s0, =0.3
   bl FUN_003007c0
+  mov r0, sp
+  bl FUN_0031b67c            ; ハンドルを解放 (FUN_001c0630 と同じく最後に。表示は戻さない)
   add sp, sp, #0x30
   pop {r4, r5, r6, pc}
 ; 出すべき告知があるか
