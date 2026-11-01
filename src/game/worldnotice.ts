@@ -11,7 +11,7 @@
 // FUN_0030cc48 (the narration window; waits until closed) can be called for each notice in turn.
 import type { CodePatch } from './patch';
 import type { EventTable } from './events';
-import { u32, w32 } from '../util/bytes';
+import { u16, u32, w32 } from '../util/bytes';
 import { ENT } from './worldmap';
 
 /** mapGroup row of W01: the only world map with the hook (FUN_0019aa88's branch at 0x19ABA0). */
@@ -20,8 +20,12 @@ export const NOTICE_DUNGEON = 0x34;
 export const KIND_ENTRANCE = 0x11;
 /** Row field Panana keeps the notice's message ID in (0 = no notice; kind 0x11 rows leave it 0). */
 export const NOTICE_FIELD = 0x40;
-/** Row field Panana keeps the notice's sound in (a soundData row for FUN_00317524; 0 = none). */
-export const NOTICE_SOUND_FIELD = 0x44;
+/**
+ * Row field Panana keeps the notice's sound in (a soundData row for FUN_00317524; 0 = none). Kind 0x11 rows leave
+ * +0x08..+0x43 unused; +0x44 is the row's state slot (it was kept there before, which broke the notice).
+ */
+export const NOTICE_SOUND_FIELD = 0x3c;
+const OLD_SOUND_FIELD = 0x44;
 /** The sound new notices get: ME_GIMMICK, the jingle of "[黄泉の門]が開いた！" (FUN_001c0630). */
 export const NOTICE_SOUND_DEFAULT = 0x2f;
 /** "[黄泉の門]が開いた！": the game's own narration of a world-map change (FUN_001c0630); new notices copy its kind. */
@@ -62,6 +66,29 @@ export function setNoticeSound(row: Uint8Array, sound: number): void {
   w32(row, NOTICE_SOUND_FIELD, sound);
 }
 
+/**
+ * Rows added before the sound moved to +0x3C had it written over their state slot (+0x44) and model (+0x46): the
+ * slot then pointed past the table or at another row's state, so the notice never counted as due. Moves the sound
+ * to +0x3C and gives the row a free slot again. Returns the rows fixed.
+ */
+export function repairNotices(events: EventTable | null | undefined): number[] {
+  if (!events || events.dungeon !== NOTICE_DUNGEON) return [];
+  const fixed: number[] = [];
+  for (let row = 1; row < events.rows; row++) {
+    const r = events.table.row(row);
+    if (events.originalRow(row) || !noticeMessage(r) || u32(r, NOTICE_SOUND_FIELD)) continue;
+    const slot = events.slot(row);
+    const shared = Array.from({ length: events.rows }, (_, i) => i).some((i) => i !== row && events.slot(i) === slot);
+    if (slot < events.capacity && !shared) continue;
+    const free = events.freeSlot();
+    if (free < 0) continue;
+    w32(r, NOTICE_SOUND_FIELD, u16(r, OLD_SOUND_FIELD));
+    w32(r, OLD_SOUND_FIELD, free); // the slot and model 0
+    fixed.push(row);
+  }
+  return fixed;
+}
+
 /** The rows of W01's table that have a notice and an entrance (section 2 of W01) to show. */
 export function notices(events: EventTable | null | undefined, entrances: readonly Uint8Array[]): Notice[] {
   if (!events || events.dungeon !== NOTICE_DUNGEON) return [];
@@ -80,8 +107,7 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  * ended by row 0.
  * - 0x19ABA0 (`b 0x17e08c`, after FUN_0019aa88's pop): to the cave, which calls FUN_0017e08c (r0 = handler, r1 = 4
  *   are still set) and returns its action; when it is 0, a notice action (0x10 bytes, FUN_0031b170(obj, 0x1000000),
- *   the vtable of 0x4FB8C8 with our [2]) when a notice is due (not on a vehicle: its place is kept apart,
- *   FUN_002e85f0) or the party was just warped next to an entrance.
+ *   the vtable of 0x4FB8C8 with our [2]) when a notice is due (not while riding: FUN_00303c70, save 0x57 != 0; FUN_002e592c only says a ship is owned) or the party was just warped next to an entrance.
  * - Due: FUN_0031bff4(0x34, row) == 0, and the row's conditions let it be placed (FUN_0030b8a4 like FUN_001e2ac4).
  * - [2], first load: keeps the row, the place (0x58, FUN_003039fc) and the angle (0x59, FUN_00430e20) at
  *   NOTICE_STATE, fades to black and warps next to the entrance like 黄泉の門's scene (FUN_00226064):
@@ -116,7 +142,7 @@ wn_hook:
   str r0, [r1, #4]
   b wh_out
 wh_check:
-  bl FUN_002e592c            ; 乗り物 (乗っている間は出さない)
+  bl FUN_00303c70            ; 乗り物に乗っている (0x57 != 0) 間は出さない
   cmp r0, #0
   movne r0, #0
   bne wh_out

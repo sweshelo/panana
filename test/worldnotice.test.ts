@@ -7,12 +7,12 @@ import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
 import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } from '../src/game/worldconditions';
-import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_STATE, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, setNoticeMessage, type Notice } from '../src/game/worldnotice';
+import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_STATE, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, repairNotices, setNoticeMessage, setNoticeSound, type Notice } from '../src/game/worldnotice';
 import { ENT, ENTRANCE_SIZE, freeEntranceId, newEntrance, parseEntrances, setEntranceU32 } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
 import { readConditionTypes } from '../src/game/conditions';
 import { STORY_CONDITIONS } from '../src/game/storyconditions';
-import { u32, w32 } from '../src/util/bytes';
+import { u16, u32, w16, w32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
 
 describe('entrance conditions', () => {
@@ -72,7 +72,7 @@ describe('entrance conditions', () => {
 const BLANK = new Uint8Array(0x420000);
 const F = {
   w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970,
-  vehicle: 0x2e592c, readPlace: 0x3039fc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, writePlace: 0x3012dc, writeAngle: 0x3012b0,
+  vehicle: 0x303c70, readPlace: 0x3039fc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, writePlace: 0x3012dc, writeAngle: 0x3012b0,
   camera: 0x317210, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
@@ -217,6 +217,43 @@ describe('notices of the W01 table', () => {
     expect(notices({ ...events!, dungeon: 5 } as typeof events, [ent])).toEqual([]);
     setNoticeMessage(rows[29]!, 0);
     expect(noticePatch(events, [ent])).toBeNull();
+  });
+});
+
+describe('the sound and the state slot', () => {
+  const table = (rows: Uint8Array[], original: number) => {
+    const slot = (i: number) => (u16(rows[i]!, 0x44) === 0xffff ? i : u16(rows[i]!, 0x44));
+    return {
+      dungeon: NOTICE_DUNGEON, rows: rows.length, capacity: 39, table: { row: (i: number) => rows[i]! }, slot,
+      originalRow: (i: number) => (i < original ? rows[i] : undefined),
+      freeSlot: () => { const used = new Set(rows.map((_, i) => slot(i))); for (let s = 0; s < 39; s++) if (!used.has(s)) return s; return -1; },
+    } as unknown as Parameters<typeof repairNotices>[0];
+  };
+
+  test('the sound is kept apart from the state slot (+0x44) and model (+0x46)', () => {
+    const r = new Uint8Array(0x50);
+    w16(r, 0x44, 28);
+    w16(r, 0x46, 7);
+    setNoticeSound(r, 0x2f);
+    expect([u16(r, 0x44), u16(r, 0x46), u32(r, 0x3c)]).toEqual([28, 7, 0x2f]);
+  });
+
+  test('rows whose slot the old sound overwrote get a free slot and the sound at +0x3C', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => { const r = new Uint8Array(0x50); w16(r, 0x44, i); return r; });
+    setNoticeMessage(rows[29]!, 0x2c00);
+    w32(rows[29]!, 0x44, 0x2f); // the old setNoticeSound: slot 47 is past the table
+    rows.push(new Uint8Array(0x50));
+    setNoticeMessage(rows[30]!, 0x2c01);
+    w32(rows[30]!, 0x44, 5); // slot 5 is row 5's
+    rows.push(new Uint8Array(0x50));
+    setNoticeMessage(rows[31]!, 0x2c02);
+    w16(rows[31]!, 0x44, 31); // fine
+    const t = table(rows, 29);
+    expect(repairNotices(t)).toEqual([29, 30]);
+    expect([u16(rows[29]!, 0x44), u32(rows[29]!, 0x3c)]).toEqual([29, 0x2f]);
+    expect([u16(rows[30]!, 0x44), u32(rows[30]!, 0x3c)]).toEqual([30, 5]);
+    expect(u16(rows[31]!, 0x44)).toBe(31);
+    expect(repairNotices(t)).toEqual([]);
   });
 });
 

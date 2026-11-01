@@ -7,7 +7,7 @@ import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { bossPatchFor } from '../game/boss';
-import { NOTICE_DUNGEON, noticePatch } from '../game/worldnotice';
+import { NOTICE_DUNGEON, noticePatch, repairNotices } from '../game/worldnotice';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
@@ -31,6 +31,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   // What is exported is fixed when the dialog opens (like the summary shown in it).
   const [what] = useState(() => {
     session.flushGrounds();
+    repairNotices(st.events.get(NOTICE_DUNGEON));
     const docs = st.modifiedDocs();
     const events = [...st.events.values()].filter((t) => t.changed());
     const issues: { map: string; issue: Issue }[] = [];
