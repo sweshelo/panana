@@ -27,14 +27,23 @@ export interface CodeLayout {
   /** End of the area only @cave may write ([caveStart, reservedEnd)); RPG2's new-map hook sits above the cave. */
   reservedEnd: number;
   writableEnd: number;
+  /**
+   * Zero padding after .rodata that `@emu` blocks may fill (top down), or none. The segment is read-only: Azahar runs
+   * code there, the 3DS does not (its pages are never executable), so only code that is meant for the emulator goes
+   * there (Panana's debug mode).
+   */
+  emu?: { start: number; end: number };
 }
 
 /** The code cave of RPG2 (elpulse mod/build_code.py), up to the new-map hook. */
 export const CAVE_START = 0x4bf020;
 export const CAVE_END = HOOK_ADDR;
 
+/** RPG2's .rodata ends at 0x510484 (exheader: ro 0x4C0000 + 0x50484); its last page is zero up to .data (0x511000). */
+export const KAHARA_EMU_AREA = { start: 0x510490, end: 0x511000 };
+
 /** RPG2 (v1.1.0). */
-export const KAHARA_LAYOUT: CodeLayout = { caveStart: CAVE_START, caveEnd: CAVE_END, reservedEnd: 0x4c0000, writableEnd: 0x511000 };
+export const KAHARA_LAYOUT: CodeLayout = { caveStart: CAVE_START, caveEnd: CAVE_END, reservedEnd: 0x4c0000, writableEnd: 0x511000, emu: KAHARA_EMU_AREA };
 
 export interface CodePatch {
   id: string;
@@ -59,6 +68,8 @@ export interface PatchBlock {
   kind: 'at' | 'cave';
   addr: number;
   label?: string;
+  /** A cave block placed in the layout's `emu` area (`@emu`) instead of the code cave. */
+  emu?: boolean;
   lines: PatchLine[];
 }
 
@@ -79,6 +90,7 @@ interface RawBlock {
   kind: 'at' | 'cave';
   addr: number;
   label?: string;
+  emu?: boolean;
   line: number;
   items: { line: number; text: string; label?: string }[];
 }
@@ -92,9 +104,11 @@ function parse(source: string, errors: PatchError[]): RawBlock[] {
     let text = raw.replace(/;.*$/, '').replace(/\/\/.*$/, '').trim();
     if (!text) return;
     const at = /^@\s*(0x[0-9a-f]+)$/i.exec(text);
-    const cave = /^@\s*cave(?:\s+([A-Za-z_]\w*))?$/i.exec(text);
+    const cave = /^@\s*(cave|emu)(?:\s+([A-Za-z_]\w*))?$/i.exec(text);
     if (at || cave) {
-      cur = at ? { kind: 'at', addr: Number(at[1]), line, items: [] } : { kind: 'cave', addr: 0, label: cave![1], line, items: [] };
+      cur = at
+        ? { kind: 'at', addr: Number(at[1]), line, items: [] }
+        : { kind: 'cave', addr: 0, label: cave![2], line, items: [], ...(cave![1]!.toLowerCase() === 'emu' ? { emu: true } : {}) };
       blocks.push(cur);
       return;
     }
@@ -136,13 +150,15 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
   const out = new Map<string, BuiltPatch>();
   let top = layout.caveEnd;
   const floor = caveFreeStart(code, layout);
+  let emuTop = layout.emu?.end ?? 0;
   const written = new Map<number, string>(); // address -> patch id
   for (const p of patches) {
     const errors: PatchError[] = [];
     const raws = parse(p.source, errors);
     const labels = new Map<string, number>();
     // pass 1: sizes and addresses
-    const caveBlocks = raws.filter((b) => b.kind === 'cave');
+    const caveBlocks = raws.filter((b) => b.kind === 'cave' && !b.emu);
+    const emuBlocks = raws.filter((b) => b.kind === 'cave' && b.emu);
     const sizeOf = (b: RawBlock): number => {
       const lits = new Set(b.items.filter((it) => it.text && isLiteral(it.text)).map((it) => it.text.split('=')[1]!.trim()));
       return (b.items.filter((it) => it.text).length + lits.size) * 4;
@@ -160,6 +176,19 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
       }
       top = start;
     }
+    const emuSize = emuBlocks.reduce((n, b) => n + sizeOf(b), 0);
+    if (emuSize) {
+      const area = layout.emu;
+      const start = (emuTop - emuSize) & ~3;
+      if (!area) errors.push({ line: emuBlocks[0]!.line, message: '@emu の領域はこの作品にはありません' });
+      else if (start < area.start) errors.push({ line: emuBlocks[0]!.line, message: `@emu の領域が足りません (${emuSize} バイト要り、空きは ${Math.max(0, emuTop - area.start)} バイト)` });
+      let a = start;
+      for (const b of emuBlocks) {
+        b.addr = a;
+        a += sizeOf(b);
+      }
+      emuTop = start;
+    }
     for (const b of raws) {
       if (b.label) labels.set(b.label, b.addr);
       let a = b.addr;
@@ -176,7 +205,7 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
     // pass 2: assemble
     const blocks: PatchBlock[] = [];
     for (const b of raws) {
-      const block: PatchBlock = { kind: b.kind, addr: b.addr, label: b.label, lines: [] };
+      const block: PatchBlock = { kind: b.kind, addr: b.addr, label: b.label, ...(b.emu ? { emu: true } : {}), lines: [] };
       if (b.kind === 'at') {
         if (b.addr & 3) errors.push({ line: b.line, message: 'アドレスは 4 の倍数にしてください' });
         if (b.addr < BASE || b.addr >= layout.writableEnd) errors.push({ line: b.line, message: '.text / .rodata の外です' });
