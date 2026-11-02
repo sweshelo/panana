@@ -22,6 +22,9 @@ import { TITLE_ID } from '../rom/dump';
 import { tableLabel, type Session } from '../session';
 import { CodeModOption } from './CodeModOption';
 import { LevelStealthOption } from './LevelStealthOption';
+import { DebugModeOption } from './DebugModeOption';
+import { DEBUG_MODE_ID, DEBUG_MODE_TITLE, DEBUG_SHOP, debugModePatch, debugModeProblem, debugShopItems } from '../game/debugmode';
+import { ShopStock } from '../game/shops';
 import { download } from './download';
 
 
@@ -86,14 +89,20 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const [stealth, setStealth] = useState(game.levelStealth);
   const stealthProblem = useState(() => levelStealthProblem(game.dump.code))[0];
   const stealthOn = stealth > 0 && !stealthProblem;
-  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : []), ...(stealthOn ? [levelStealthPatch(stealth)] : [])];
-  const built = dropCap || stealthOn ? buildPatches(game.dump.code, exportedPatches(game, extra)) : null;
+  // Panana's debug mode (game/debugmode.ts; Azahar only) and its shop
+  const [debug, setDebug] = useState(game.debugMode);
+  const debugProblem = useState(() => debugModeProblem(game.dump.code))[0];
+  const debugOn = debug && !debugProblem;
+  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : []), ...(stealthOn ? [levelStealthPatch(stealth)] : []), ...(debugOn ? [debugModePatch()] : [])];
+  const built = dropCap || stealthOn || debugOn ? buildPatches(game.dump.code, exportedPatches(game, extra)) : null;
   const capError = dropCap && !capProblem ? built?.get(DROP_CAP_ID)?.errors[0] : undefined;
   const stealthError = stealthOn ? built?.get(LEVEL_STEALTH_ID)?.errors[0] : undefined;
+  const debugError = debugOn ? built?.get(DEBUG_MODE_ID)?.errors[0] : undefined;
   // models ported from other games (#100): the archives that hold them
   const ported = useAsync(async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()], []);
   const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []),
-    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
+    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []),
+    ...(debugOn ? [`「${DEBUG_MODE_TITLE}」 (exefs/code.ips と、全アイテムの店 ${DEBUG_SHOP} の ShopItem)`] : []), ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = async (): Promise<Map<string, Uint8Array> | null> => {
@@ -102,7 +111,10 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
       // BGMs ported from other games: sound.bcsar and their streams
       for (const [name, bytes] of await (await SoundPortStore.of()).files()) files.set(name, bytes);
-      for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
+      // the debug mode's shop: every item, after the shops' lists
+      const debugShop = debugOn ? new Map([[DEBUG_SHOP, debugShopItems(game.master.itemData, (id) => game.master.itemName(id))]]) : new Map<number, number[]>();
+      const stock = what.shops ?? (debugOn ? await ShopStock.load(game) : null);
+      for (const [name, bytes] of stock?.buildArchives(debugShop) ?? []) files.set(name, bytes);
       if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, extra);
       setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
@@ -152,6 +164,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
         <LevelStealthOption diff={stealth} problem={stealthProblem ?? (stealthError ? `${stealthError.line} 行目: ${stealthError.message} (書き出しません)` : null)} onChange={(d) => {
           game.levelStealth = d;
           setStealth(d);
+          session.scheduleSave();
+        }} />
+        <DebugModeOption on={debug} problem={debugProblem ?? (debugError ? `${debugError.line} 行目: ${debugError.message} (書き出しません)` : null)} onChange={(on) => {
+          game.debugMode = on;
+          setDebug(on);
           session.scheduleSave();
         }} />
         {errors > 0 && <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>}
