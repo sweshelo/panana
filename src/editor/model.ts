@@ -120,6 +120,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   }
   /** Turn a record by a quarter (`R`; sections where canRotate). */
   rotateRecord(_rec: Rec, _section: number, _dir: 1 | -1): void {}
+  /** A record was deleted from `doc` (inside the edit): games release what only it used (RPG2: its event row). */
+  recordRemoved(_doc: MapDoc, _section: number, _rec: Rec): void {}
   /** A document was replaced (undo / redo): games that keep documents elsewhere put it there. */
   protected docReplaced(_doc: MapDoc): void {}
 

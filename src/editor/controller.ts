@@ -307,7 +307,10 @@ export class Controller {
         doc.tiles = doc.tiles.filter((t) => t.x < r.x0 || t.x > r.x1 || t.y < r.y0 || t.y > r.y1);
       });
     } else if (s.type === 'rec') {
-      st.edit((doc) => doc.recs[s.section]!.splice(s.index, 1));
+      st.edit((doc) => {
+        const [rec] = doc.recs[s.section]!.splice(s.index, 1);
+        if (rec) st.recordRemoved(doc, s.section, rec);
+      });
       st.select({ type: 'none' });
       return;
     }

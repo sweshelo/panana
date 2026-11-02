@@ -13,6 +13,7 @@ import { Field, Num, RawBytes } from './fields';
 import type { EventLink } from './model';
 import type { EditorState } from './state';
 import { MESSAGE_HELP } from './message';
+import { useEditorState } from '../ui/useEditorState';
 import { designModelRef, monsterModelRef, objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
 import { isIndoor, recordObjectRow } from '../game/objects';
 
@@ -214,10 +215,26 @@ function ScriptTargets({ st, row }: { st: EditorState; row: number }): ReactNode
   return <div className="muted small">{`このイベントのスクリプトが開けるもの: ${t.rows.map((x) => rowLabel(st, x)).join('、')} (コードに書かれているので、イベント番号を変えるとつながりが切れます)`}</div>;
 }
 
-/** Every event row of the current dungeon, with the maps that use it; clicking one goes to its first record. */
-export function EventListDialog({ st, onPick, onClose }: {
-  st: EditorState; onPick: (map: number, section: number, index: number) => void; onClose: () => void;
+/** "空き" in the kind filter of the event list. */
+const FREE = -2;
+
+/** Choosing the event row of a record from the event list (instead of going to the records). */
+export interface EventChoice {
+  current: number;
+  /** Whether 0 (= none) can be chosen (doors and exits). */
+  allowNone: boolean;
+  onChoose: (row: number) => void;
+}
+
+/**
+ * Every event row of the current dungeon, with the maps that use it (or 空き). Clicking one goes to its first record,
+ * or, with `choose`, picks it for a record (rows other objects use cannot be picked, so two objects do not share one).
+ * The trash button deletes an event nothing uses, so its number is free again.
+ */
+export function EventListDialog({ st, onPick, onClose, choose }: {
+  st: EditorState; onPick?: (map: number, section: number, index: number) => void; onClose: () => void; choose?: EventChoice;
 }): ReactNode {
+  useEditorState(st);
   const ev = st.currentEvents!;
   const doc = st.current!;
   const game = st.game;
@@ -235,32 +252,79 @@ export function EventListDialog({ st, onPick, onClose }: {
         });
     }
     return out;
-  }, [st, game, doc]);
+    // st.revision: records change in place
+  }, [st, game, doc, st.revision]);
+  const { live, free: freeList } = useMemo(() => st.eventRowUse(doc.dungeon), [st, doc, st.revision]);
+  const free = new Set(freeList);
   const kinds = [...new Set(Array.from({ length: ev.rows }, (_, i) => ev.kind(i)))].sort((a, b) => a - b);
-  const rows = Array.from({ length: ev.rows }, (_, i) => i).filter((row) => kind < 0 || ev.kind(row) === kind);
+  const rows = Array.from({ length: ev.rows }, (_, i) => i).filter((row) => row > 0 && (kind === FREE ? free.has(row) : kind < 0 || (!free.has(row) && ev.kind(row) === kind)));
+  const added = ev.originalRows;
+  const remove = (row: number): void => {
+    const game0 = row < added ? '\nゲームにもともとある番号です。ゲームのマップは使っていませんが、ゲームのプログラムが番号で使っているかもしれません。' : '';
+    if (!confirm(`イベント #${row} (${kindName(ev.kind(row))}) を削除して空きにしますか?${game0}`)) return;
+    try {
+      st.deleteEventRow(doc.dungeon, row);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+  /** Why a row cannot be deleted, or '' when it can. */
+  const keep = (row: number, u: unknown[]): string =>
+    u.length ? '置いてある物が使っています。先にその物を削除してください'
+      : live.has(row) ? 'ほかのイベント (スイッチの対象・スクリプト・演出のデータ) が使っています'
+      : '';
   return (
-    <Dialog title={`イベントの一覧 (${game.master.dungeonName(doc.dungeon)}: ${ev.rows} 行 / 枠 ${ev.capacity})`} onClose={onClose}>
+    <Dialog title={`${choose ? 'イベント番号を選ぶ' : 'イベントの一覧'} (${game.master.dungeonName(doc.dungeon)}: ${ev.rows - 1 - free.size} 個を使用、空き ${free.size} 個 / 上限 ${ev.capacity - 1} 個)`} onClose={onClose}>
       <div className="row">
         <select value={kind} onChange={(e) => setKind(Number(e.target.value))}>
           <option value={-1}>すべての種類</option>
+          {free.size > 0 && <option value={FREE}>空き</option>}
           {kinds.map((k) => <option key={k} value={k}>{kindName(k)}</option>)}
         </select>
-        <span className="muted small">クリックでその行を使うレコードへ移動</span>
+        {choose?.allowNone && <button onClick={() => choose.onChoose(0)}>なし (0) にする</button>}
+        <span className="muted small">
+          {choose
+            ? 'クリックでこの物のイベント番号にします。ほかの物が使っている番号は選べません。空きを選ぶと中身のないイベントになるので、種類や欄を右ペインで設定してください。'
+            : 'クリックでそのイベントを使う物へ移動。宝箱やギミックを削除して、ほかに使う物がなくなった番号は「空き」になり、次に置く物が使います。'}
+          {' 🗑 は、置いてある物がないのに残っているイベント (置いていない宝箱など) を削除して空きにします。'}
+        </span>
       </div>
       <div className="picker-list">
         <table className="picker-table">
-          <thead><tr><th>行</th><th>種類</th><th>枠</th><th>使っている場所</th><th>つながり</th></tr></thead>
+          <thead><tr><th>番号</th><th>種類</th><th>枠</th><th>使っている場所</th><th>つながり</th><th /></tr></thead>
           <tbody>
             {rows.map((row) => {
               const u = uses.get(row) ?? [];
+              const isCurrent = choose?.current === row;
+              if (free.has(row)) return (
+                <tr key={row} className={`muted${choose ? ' pick' : ''}${isCurrent ? ' current' : ''}`} onClick={() => choose?.onChoose(row)}>
+                  <td className="num">{row}</td>
+                  <td>空き</td>
+                  <td />
+                  <td>{choose ? '選ぶとこの物が使います' : '次に置く宝箱やギミックが使います'}</td>
+                  <td />
+                  <td />
+                </tr>
+              );
               const targets = switchTargets(st, row).rows;
+              const taken = !!choose && !isCurrent && u.length > 0;
+              const pickable = choose ? !taken : u.length > 0;
+              const why = keep(row, u);
               return (
-                <tr key={row} className={u.length ? 'pick' : ''} onClick={() => u[0] && onPick(u[0].map, u[0].section, u[0].index)}>
+                <tr key={row} className={`${pickable ? 'pick' : ''}${isCurrent ? ' current' : ''}${taken ? ' muted' : ''}`} title={taken ? 'ほかの物が使っている番号です' : ''}
+                  onClick={() => {
+                    if (choose) { if (!taken) choose.onChoose(row); }
+                    else if (u[0]) onPick?.(u[0].map, u[0].section, u[0].index);
+                  }}>
                   <td className="num">{row}</td>
                   <td>{kindName(ev.kind(row))}</td>
                   <td className="num muted">{ev.slot(row)}</td>
-                  <td>{u.map((x, i) => <div key={i}>{x.label}</div>)}</td>
-                  <td className="muted">{targets.length ? `→ 行 ${targets.join(', ')}` : ''}</td>
+                  <td>{u.length ? u.map((x, i) => <div key={i}>{x.label}</div>) : <span className="muted">{live.has(row) ? 'ほかのイベントから使われている' : '置いてある物なし'}</span>}</td>
+                  <td className="muted">{targets.length ? `→ イベント #${targets.join(', #')}` : ''}</td>
+                  <td>
+                    <button className="small danger" disabled={!!why} title={why || 'このイベントを削除して空きにする'} aria-label={`イベント #${row} を削除`}
+                      onClick={(e) => { e.stopPropagation(); remove(row); }}>🗑</button>
+                  </td>
                 </tr>
               );
             })}
@@ -268,5 +332,28 @@ export function EventListDialog({ st, onPick, onClose }: {
         </table>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * The event number of a record: what it is now, and a button that opens the event list to choose another (so the
+ * number is one the table has, and not one another object uses).
+ */
+export function EventRowField({ st, label, value, allowNone, onChange }: {
+  st: EditorState; label: string; value: number; allowNone: boolean; onChange: (row: number) => void;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const ev = st.currentEvents;
+  const text = !value ? 'なし' : !ev ? `イベント #${value}` : ev.has(value) ? `イベント #${value}: ${kindName(ev.kind(value))}` : `イベント #${value} (表にない番号)`;
+  return (
+    <Field label={label}>
+      <div className="row">
+        <span className={ev && value && !ev.has(value) ? 'error' : ''}>{text}</span>
+        <button className="small" disabled={!ev} onClick={() => setOpen(true)}>選ぶ…</button>
+      </div>
+      {open && ev && (
+        <EventListDialog st={st} onClose={() => setOpen(false)} choose={{ current: value, allowNone, onChoose: (row) => { setOpen(false); onChange(row); } }} />
+      )}
+    </Field>
   );
 }

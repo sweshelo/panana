@@ -86,7 +86,7 @@ export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: numb
   const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || stamp.type === 'boss' || stamp.type === 'scene' || (stamp.type === 'template' && !!stamp.t.event);
   const rows = (stamp.type === 'switchgate' && stamp.gate === undefined) || stamp.type === 'boss' || stamp.type === 'scene' ? 2 : 1;
   if (needsRow && (!events || events.roomLeft() < rows))
-    throw new Error(events ? `このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)` : 'このダンジョンにはイベントの表がありません');
+    throw new Error(events ? `このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)` : 'このダンジョンにはイベントの表がありません');
   const add = (section: number, raw: Uint8Array): [number, number] => {
     const L = LAYOUTS[section]!;
     const rec: Rec = { raw, x: 0, y: 0 };
@@ -181,7 +181,7 @@ export const SWITCH_MODEL = 29;
 export function duplicateRecord(ctx: PlaceContext, section: number, rec: Rec): Rec {
   const { events, master } = ctx;
   const ev0 = recEventRow(section, rec.raw);
-  if (ev0 && events?.has(ev0) && events.roomLeft() < 1) throw new Error(`このダンジョンのイベントの行はいっぱいです (${events.capacity} 行まで)`);
+  if (ev0 && events?.has(ev0) && events.roomLeft() < 1) throw new Error(`このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)`);
   const copy: Rec = { raw: rec.raw.slice(), x: rec.x, y: rec.y };
   const r = copy.raw;
   if (section === 3) {

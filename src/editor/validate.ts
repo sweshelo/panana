@@ -55,12 +55,12 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
         const row = recEventRow(k, r.raw);
         if ((k === 3 || k === 7) && !row) return;
         if (!events.has(row))
-          out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} がありません (表は ${events.rows} 行)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
+          out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベント #${row} がありません (表は #${events.rows - 1} まで)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
         if (k === 4) chests.set(row, (chests.get(row) ?? 0) + 1);
         if (events.has(row)) {
           const slot = events.slot(row);
           if (row >= events.capacity || slot >= events.capacity)
-            out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} (状態の枠 ${slot}) がダンジョンの枠 (${events.capacity}) を超えています。状態が別のダンジョンのものと混ざります`, target: { type: 'rec', section: k, index: i }, key: `evcap/${row}/${slot}` });
+            out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベント #${row} (状態の枠 ${slot}) がダンジョンの枠 (${events.capacity}) を超えています。状態が別のダンジョンのものと混ざります`, target: { type: 'rec', section: k, index: i }, key: `evcap/${row}/${slot}` });
           slots.set(slot, [...(slots.get(slot) ?? []), row]);
         }
       });
@@ -127,10 +127,10 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
     for (const [slot, rows] of slots) {
       const distinct = [...new Set(rows)];
       if (distinct.length > 1)
-        out.push({ level: 'warn', msg: `イベントの行 ${distinct.join(', ')} が同じ状態の枠 ${slot} を使っています (開けた・押したなどの状態を共有します)`, key: `slotdup/${slot}/${distinct.join(',')}` });
+        out.push({ level: 'warn', msg: `イベント #${distinct.join(', #')} が同じ状態の枠 ${slot} を使っています (開けた・押したなどの状態を共有します)`, key: `slotdup/${slot}/${distinct.join(',')}` });
     }
     for (const [row, n] of chests)
-      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じイベントの行 ${row} を使っています (中身と「開けた」フラグを共有します)`, key: `chestdup/${row}` });
+      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じイベント #${row} を使っています (中身と「開けた」フラグを共有します)`, key: `chestdup/${row}` });
   }
   const cell = (x: number, y: number): Selection => ({ type: 'tiles', cells: [[x, y]] });
 
