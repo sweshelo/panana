@@ -9,8 +9,9 @@
 //
 // - The key: FUN_003fef90 runs every frame while the party can move on the field (r4 = the field, +0x18 = the
 //   queue of actions). At 0x3FF000 it calls our check; *0x57410C is the pad (+0 held, +4 pressed, +0x58 pressed
-//   with key repeat). On L + R + SELECT the patch clears START / SELECT from this frame's presses (the game often
-//   treats them alike), registers its handler in the queue once per map (pseudo-row 0x1DEB000, FUN_0030cab8) and
+//   with key repeat). With L, R and SELECT all held, one of them pressed this frame (in any order), the patch clears
+//   L / R / START / SELECT from this frame's presses (L is the check button, and the game often treats START and
+//   SELECT alike), registers its handler in the queue once per map (pseudo-row 0x1DEB000, FUN_0030cab8) and
 //   queues it (FUN_0030b7ac). The handler's action runs the menu in the queue's coroutine, like the world-map
 //   notices (game/worldnotice.ts).
 // - The window: FUN_00311384(1) opens the narration window (*0x56CEF8). The text is message 0x17D9 (SystemCommon's
@@ -110,23 +111,25 @@ export function debugModeSource(conditions: StoryCondition[] = STORY_CONDITIONS)
   b dbg_price
 
 @emu debug_mode
-; r4 = フィールド。L + R + SELECT ならデバッグの動作をキューに積む。r0 = 0x51BEBC を返す (上書きした命令)
+; r4 = フィールド。L + R + SELECT (3 つとも押していて、どれかを今押した) ならデバッグの動作をキューに積む。r0 = 0x51BEBC を返す (上書きした命令)
 dbg_key:
   push {r4, r5, r6, lr}
   ldr r3, =0x57410C
   ldr r3, [r3]
-  ldr r1, [r3]               ; 押している
-  and r1, r1, #0x300
-  cmp r1, #0x300
+  ldr r1, [r3]               ; 押している: L + R + SELECT
+  ldr r2, =0x304
+  and r1, r1, r2
+  cmp r1, r2
   bne dk_out
-  ldr r2, [r3, #4]           ; 押した
-  tst r2, #4
+  ldr r1, [r3, #4]           ; 押した: 3 つのどれかがこのフレームで (押す順は問わない)
+  tst r1, r2
   beq dk_out
-  bic r2, r2, #0xC           ; このフレームの START / SELECT を消す
-  str r2, [r3, #4]
-  ldr r2, [r3, #0x58]
-  bic r2, r2, #0xC
-  str r2, [r3, #0x58]
+  ldr r2, =0x30C             ; このフレームの L / R / START / SELECT を消す (L は調べる、START と SELECT は同じ扱いが多い)
+  bic r1, r1, r2
+  str r1, [r3, #4]
+  ldr r1, [r3, #0x58]
+  bic r1, r1, r2
+  str r1, [r3, #0x58]
   ldr r5, [r4, #0x18]        ; 動作のキュー
   mov r0, r5
   bl dbg_handler
