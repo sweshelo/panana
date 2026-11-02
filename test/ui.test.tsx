@@ -156,7 +156,7 @@ describe('world map page', () => {
     rows[29]![0x4b] = 0x18;
     w32(rows[29]!, 0, 3);
     w32(rows[29]!, 0x40, 0x2c00);
-    w32(rows[29]!, 0x44, 0x2f);
+    w32(rows[29]!, 0x3c, 0x2f);
     const events = {
       dungeon: 0x34, rows: 30, capacity: 39, data: new Uint8Array(0), table: { row: (i: number) => rows[i]!, rowSize: 0x50 },
       has: (i: number) => i >= 0 && i < 30, kind: (i: number) => rows[i]![0x4d]!, originalRow: (i: number) => (i < 29 ? rows[i] : undefined),

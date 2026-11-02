@@ -5,6 +5,7 @@ import { mapLabel } from './editor/labels';
 import type { MapInfo } from './game/codebin';
 import type { EventTable } from './game/events';
 import type { CodePatch } from './game/patch';
+import { repairNotices } from './game/worldnotice';
 import { changedSpeeds, type ChaseSpeeds } from './game/chase';
 import type { Game } from './game/game';
 import { ItemBook } from './game/items';
@@ -372,6 +373,7 @@ export class Session {
       const t = await game.eventTable(Number(d));
       if (t) {
         t.restore(bytes);
+        repairNotices(t);
         this.st.events.set(Number(d), t);
       }
     }
