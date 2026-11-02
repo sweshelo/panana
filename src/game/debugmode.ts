@@ -1,6 +1,6 @@
 // Panana's debug mode for RPG2 (kahara), for trying a MOD out in Azahar: on the field, hold L + R for a moment
 // to open a menu (a narration window that the patch writes its own text into):
-// - アイテムを手に入れる: the game's shop (mode 7) as shop 18, which sells every item for 0 G.
+// - アイテムを手に入れる: the game's shop (mode 8) as shop 18, which sells every item for 0 G.
 // - ストーリーを進める: write the save values of the story milestones (game/storyconditions.ts) up to the chosen one.
 // - セーブ変数を書きかえる: read and write any save variable (key, index, value).
 // - ワープする: any row of the jump destinations (mapJumpPoint, visited or not): what the jump does
@@ -21,7 +21,7 @@
 // - Shop 18: the shop takes its number from the mode's argument (*0x574148 +0xC) and turns 18 or more into 0
 //   (0x1D4C44); the patch lets 18 through. The Shop table has 18 rows: row 18 reads as row 0 (FUN_0031cfb8 clamps),
 //   so it talks like shop 0. Its list is added to ShopItem at export. FUN_002ea5b0 (the buying price) returns 0
-//   while the mode (+0x8) is 7 and its argument is 18. Leaving the shop goes back to the field by the game's own
+//   while the mode (+0x8) is 8 and its argument is 18. Leaving the shop goes back to the field by the game's own
 //   way (mode 4), at the place the game last recorded.
 // - The code is in .rodata (`@emu`, patch.ts KAHARA_EMU_AREA: copies of the mapData key array that nothing uses):
 //   Azahar runs it, the 3DS does not (the page is not executable there), so the MOD is for the emulator only.
@@ -137,12 +137,12 @@ dbg_key:
 dk_out:
   ldr r0, =0x51BEBC
   pop {r4, r5, r6, pc}
-; 買値 (r1 = アイテム): 店 (モード 7) の 18 番なら 0
+; 買値 (r1 = アイテム): 店 (モード 8) の 18 番なら 0
 dbg_price:
   ldr r2, =0x574148
   ldr r2, [r2]
   ldr r3, [r2, #8]
-  cmp r3, #7
+  cmp r3, #8
   ldreq r3, [r2, #0xc]
   cmpeq r3, #${DEBUG_SHOP}
   moveq r0, #0
@@ -269,7 +269,7 @@ dr_wait:
   ldr r0, =0x574148
   ldr r0, [r0]
   cmn r5, #1
-  moveq r1, #7               ; 店 (モード 7)
+  moveq r1, #8               ; 店 (モード 8。FUN_00174cb8 の 8 → FUN_0017e63c。7 は電波人間ハウス)
   moveq r2, #${DEBUG_SHOP}
   movne r1, #4               ; 記録した場所からフィールドへ (モード 4)
   movne r2, #0
