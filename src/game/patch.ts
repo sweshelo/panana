@@ -39,8 +39,13 @@ export interface CodeLayout {
 export const CAVE_START = 0x4bf020;
 export const CAVE_END = HOOK_ADDR;
 
-/** RPG2's .rodata ends at 0x510484 (exheader: ro 0x4C0000 + 0x50484); its last page is zero up to .data (0x511000). */
-export const KAHARA_EMU_AREA = { start: 0x510490, end: 0x511000 };
+/**
+ * Code that only Azahar runs (.rodata is not executable on hardware). Five of the copies of the mapData key array
+ * (0x334 B each, back to back) that only their own static initializer reads, writing them into a copy of the map
+ * rows that nothing reads. Not the copies new maps use (mappatch.ts SPILL), nor the .rodata padding (EXT_HEADER).
+ * naauao integrations/panana/debug-mode.md.
+ */
+export const KAHARA_EMU_AREA = { start: 0x4d7180, end: 0x4d8184 };
 
 /** RPG2 (v1.1.0). */
 export const KAHARA_LAYOUT: CodeLayout = { caveStart: CAVE_START, caveEnd: CAVE_END, reservedEnd: 0x4c0000, writableEnd: 0x511000, emu: KAHARA_EMU_AREA };

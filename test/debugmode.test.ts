@@ -1,8 +1,10 @@
-// Panana's debug mode (game/debugmode.ts): the patch assembles into the area after .rodata, its text and tables,
+// Panana's debug mode (game/debugmode.ts): the patch assembles into the @emu area, its text and tables,
 // and on the dump: the places it rewrites, the hook and the shop of every item.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { DEBUG_SHOP, debugModePatch, debugModeProblem, debugModeSource, debugShopItems, milestoneLabel, milestoneWrite } from '../src/game/debugmode';
 import { KAHARA_EMU_AREA, buildPatches, patchRecords, applyRecords } from '../src/game/patch';
+import { EXT_END, EXT_HEADER, SPILL } from '../src/game/mappatch';
+import { MAP_DATA_KEYS } from '../src/game/codeconst';
 import { STORY_CONDITIONS } from '../src/game/storyconditions';
 import { Game } from '../src/game/game';
 import { openImage } from '../src/rom/dump';
@@ -32,10 +34,14 @@ describe('debug mode patch', () => {
     // a string is UTF-16 ended by 0
     const s = built.labels.get('s_cur')! - 0x100000;
     expect([u16(patched, s), u16(patched, s + 2)]).toEqual([0x25b6, 0]);
-    // the story table: key | index << 8 | value << 16, then the label
+    // the story table: key | index << 8 | value << 16; the labels follow one another from s_story0, 4-aligned
     const t = built.labels.get('story_table')! - 0x100000;
     expect(u32(patched, t)).toBe(0x91 | (3 << 8) | (2 << 16));
-    expect(u32(patched, t + 4)).toBe(built.labels.get('s_story0')!);
+    expect(u32(patched, t + 4)).toBe(0x91 | (4 << 8) | (2 << 16));
+    const s0 = built.labels.get('s_story0')!;
+    expect(built.labels.get('s_story1')!).toBe((s0 + (milestoneLabel(STORY_CONDITIONS[0]!).length + 1) * 2 + 3) & ~3);
+    // the menu: shop, story, save variables, warp
+    expect([0, 1, 2, 3].map((i) => u32(patched, built.labels.get('menu_names')! - 0x100000 + i * 4))).toEqual(['s_menu0', 's_menu1', 's_menu2', 's_menu3'].map((l) => built.labels.get(l)!));
   });
 
   test('a @emu block is an error where the game has no such area', () => {
@@ -52,9 +58,15 @@ describe.skipIf(!hasCia)('debug mode on the dump', () => {
     game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
   });
 
-  test('the rewritten words are the game\'s, and .rodata ends before the area', () => {
+  test('the rewritten words are the game\'s, and the area is copies of the mapData key array new maps do not use', () => {
     expect(debugModeProblem(game.dump.code)).toBeNull();
-    for (let a = KAHARA_EMU_AREA.start; a < KAHARA_EMU_AREA.end; a += 4) expect(u32(game.dump.code, a - 0x100000)).toBe(0);
+    const keys = game.dump.code.slice(MAP_DATA_KEYS - 0x100000, MAP_DATA_KEYS - 0x100000 + 0x334);
+    expect((KAHARA_EMU_AREA.end - KAHARA_EMU_AREA.start) % 0x334).toBe(0);
+    for (let a = KAHARA_EMU_AREA.start; a < KAHARA_EMU_AREA.end; a += 0x334) {
+      expect(game.dump.code.slice(a - 0x100000, a - 0x100000 + 0x334)).toEqual(keys);
+      expect(SPILL.some((s) => s < a + 0x334 && a < s + 0x334)).toBe(false);
+    }
+    expect(KAHARA_EMU_AREA.start >= EXT_END || KAHARA_EMU_AREA.end <= EXT_HEADER).toBe(true);
     const built = buildPatches(game.dump.code, [debugModePatch()]).get('panana:debug-mode')!;
     expect(built.errors).toEqual([]);
   });

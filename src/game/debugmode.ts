@@ -3,6 +3,8 @@
 // - アイテムを手に入れる: the game's shop (mode 7) as shop 18, which sells every item for 0 G.
 // - ストーリーを進める: write the save values of the story milestones (game/storyconditions.ts) up to the chosen one.
 // - セーブ変数を書きかえる: read and write any save variable (key, index, value).
+// - ワープする: any row of the jump destinations (mapJumpPoint, visited or not): what the jump does
+//   (FUN_00265e28: save +0x406 bit0, FUN_00308d44(save + 0x404, W01 / W02, entrance)), then mode 4 to the field.
 // (naauao integrations/panana/debug-mode.md)
 //
 // - The key: FUN_003fef90 runs every frame while the party can move on the field (r4 = the field, +0x18 = the
@@ -19,8 +21,8 @@
 //   so it talks like shop 0. Its list is added to ShopItem at export. FUN_002ea5b0 (the buying price) returns 0
 //   while the mode (+0x8) is 7 and its argument is 18. Leaving the shop goes back to the field by the game's own
 //   way (mode 4), at the place the game last recorded.
-// - The code is in the zero page after .rodata (`@emu`): Azahar runs it, the 3DS does not (the page is not
-//   executable there), so the MOD with the debug mode is for the emulator only.
+// - The code is in .rodata (`@emu`, patch.ts KAHARA_EMU_AREA: copies of the mapData key array that nothing uses):
+//   Azahar runs it, the 3DS does not (the page is not executable there), so the MOD is for the emulator only.
 import type { CodePatch } from './patch';
 import { STORY_CONDITIONS, type StoryCondition } from './storyconditions';
 import type { GsTable } from '../archive/gstable';
@@ -29,7 +31,7 @@ import { u32 } from '../util/bytes';
 export const DEBUG_MODE_ID = 'panana:debug-mode';
 export const DEBUG_MODE_TITLE = 'デバッグモード (Azahar 専用)';
 export const DEBUG_MODE_NOTE =
-  'フィールドで L と R を押しながら SELECT を押すと、デバッグメニューが開きます。全アイテムを 0 G で売る店、ストーリーの節目まで進める、セーブ変数の読み書きができます。コードを .rodata の後ろの空きに置くので、Azahar では動きますが実機では止まります。配布する MOD では外してください。';
+  'フィールドで L と R を押しながら SELECT を押すと、デバッグメニューが開きます。全アイテムを 0 G で売る店、ストーリーの節目まで進める、セーブ変数の読み書き、ジャンプの行き先へのワープができます。コードを読み出し専用の領域に置くので、Azahar では動きますが実機では止まります。配布する MOD では外してください。';
 
 /** The shop the menu opens (one past the game's 0..17). */
 export const DEBUG_SHOP = 18;
@@ -71,7 +73,7 @@ const STRINGS: [string, string][] = [
   ['s_menu0', 'アイテムを手に入れる (店)'],
   ['s_menu1', 'ストーリーを進める'],
   ['s_menu2', 'セーブ変数を書きかえる'],
-  ['s_hint_menu', '↑↓:えらぶ　A:決定　B:とじる'],
+  ['s_menu3', 'ワープする'],
   ['s_story', 'ストーリーの節目 '],
   ['s_hint_story', 'A:ここまで進める　B:もどる'],
   ['s_var', 'セーブ変数　今の値 '],
@@ -80,6 +82,9 @@ const STRINGS: [string, string][] = [
   ['s_var2', '　値 '],
   ['s_hint_var', '←→:欄 ↑↓:±1 L/R:±10 A:書く'],
   ['s_done', '書きこみました'],
+  ['s_warp', 'ワープ先 '],
+  ['s_hint_warp', 'A:ワープする　B:もどる'],
+  ['s_hint_menu', '↑↓:えらぶ　A:決定　B:とじる'],
   ['s_cur', '▶'],
   ['s_sp', '　'],
 ];
@@ -90,7 +95,7 @@ export function debugModeSource(conditions: StoryCondition[] = STORY_CONDITIONS)
     return w ? [{ w, label: milestoneLabel(c) }] : [];
   });
   if (story.length > 255) throw new Error('ストーリーの節目が多すぎます');
-  const table = story.map((s, i) => `  .word 0x${(s.w.key | (s.w.index << 8) | (s.w.value << 16)).toString(16).toUpperCase()} ; ${s.label}\n  .word s_story${i}`).join('\n');
+  const table = story.map((s) => `  .word 0x${(s.w.key | (s.w.index << 8) | (s.w.value << 16)).toString(16).toUpperCase()} ; ${s.label}`).join('\n');
   const strings = [...STRINGS, ...story.map((s, i): [string, string] => [`s_story${i}`, s.label])].map(([l, t]) => utf16Words(l, t)).join('\n');
   const n = story.length;
   return `; ${DEBUG_MODE_TITLE}: フィールドで L + R を押しながら SELECT でメニュー。naauao integrations/panana/debug-mode.md
@@ -201,7 +206,7 @@ dbg_hinit:
   str r1, [r0]
   mov r1, #0
   str r1, [r0, #0x10]        ; +0x10 画面、+0x11 メニューの選択、+0x13 欄
-  str r1, [r0, #0x14]        ; +0x16 節目
+  str r1, [r0, #0x14]        ; +0x14 ワープ先、+0x16 節目
   str r1, [r0, #0x18]        ; +0x18 変数、+0x1A 位置
   str r1, [r0, #0x1c]        ; +0x1C 値
   str r1, [r0, #0x20]        ; +0x20 「書きこみました」
@@ -221,7 +226,6 @@ dbg_avt:
   .word 0
   .word 0
 
-@emu debug_menu
 ; 動作 [2]: メニュー (キューのコルーチンの中)
 dbg_run:
   push {r4, r5, r6, lr}
@@ -255,7 +259,7 @@ dr_wait:
   bl dbg_input
   cmp r0, #0
   bgt dr_draw
-  mov r5, r0                 ; 0 = 閉じる、-1 = 閉じて店へ
+  mov r5, r0                 ; 0 = 閉じる、-1 = 閉じて店へ、-2 = 閉じてワープ
   mov r0, #1
   mov r1, #0
   bl FUN_00307da8            ; 窓を閉じる
@@ -263,9 +267,12 @@ dr_wait:
   popeq {r4, r5, r6, pc}
   ldr r0, =0x574148
   ldr r0, [r0]
-  mov r1, #7
-  mov r2, #${DEBUG_SHOP}
-  bl FUN_00308d08            ; 店 (モード 7) へ
+  cmn r5, #1
+  moveq r1, #7               ; 店 (モード 7)
+  moveq r2, #${DEBUG_SHOP}
+  movne r1, #4               ; 記録した場所からフィールドへ (モード 4)
+  movne r2, #0
+  bl FUN_00308d08
   pop {r4, r5, r6, pc}
 ; 1 フレーム待つ
 dbg_frame:
@@ -304,7 +311,7 @@ sh_wait:
 sh_out:
   add sp, sp, #0x14
   pop {r4, r5, pc}
-; r0 = 動作、r1 = ボタン -> r0 = 1 描き直す、0 閉じる、-1 店へ
+; r0 = 動作、r1 = ボタン -> r0 = 1 描き直す、0 閉じる、-1 店へ、-2 ワープ
 dbg_input:
   push {r4, r5, r6, lr}
   mov r4, r0
@@ -325,8 +332,10 @@ in_go:
   beq in_story
   cmp r6, #3
   beq in_var
+  cmp r6, #4
+  beq in_warp
   ldrb r0, [r4, #0x11]       ; メニュー
-  mov r1, #3
+  mov r1, #4
   mov r2, r5
   bl dbg_updown
   strb r0, [r4, #0x11]
@@ -349,7 +358,7 @@ in_story:
   mov r6, #0                 ; 最初の節目から選んだ節目まで書く
 is_loop:
   ldr r1, =story_table
-  ldr r3, [r1, r6, lsl #3]   ; 変数 | 位置 << 8 | 値 << 16
+  ldr r3, [r1, r6, lsl #2]   ; 変数 | 位置 << 8 | 値 << 16
   and r0, r3, #0xFF
   lsr r1, r3, #8
   and r1, r1, #0xFF
@@ -391,6 +400,32 @@ in_var:
   ldrh r1, [r4, #0x1a]
   ldrh r2, [r4, #0x1c]
   bl sv_write
+  b in_done
+in_warp:
+  bl warp_count
+  mov r1, r0
+  ldrh r0, [r4, #0x14]
+  mov r2, r5
+  bl dbg_updown
+  strh r0, [r4, #0x14]
+  tst r5, #1
+  beq in_ok
+  bl warp_row                ; ジャンプと同じ (FUN_00265e28)
+  ldr r1, [r0, #8]
+  tst r1, #1
+  ldrne r1, =0x09A1DA1B      ; W02
+  ldreq r1, =0xA8654391      ; W01
+  ldr r2, [r0, #4]           ; 入口
+  ldr r0, =0x564638
+  ldr r0, [r0]
+  add r0, r0, #0x400
+  add r0, r0, #4
+  ldrb r3, [r0, #2]
+  orr r3, r3, #1
+  strb r3, [r0, #2]
+  bl FUN_00308d44            ; 行き先を記録
+  mvn r0, #1
+  pop {r4, r5, r6, pc}
 in_done:
   mov r0, #1
   strb r0, [r4, #0x20]
@@ -408,6 +443,24 @@ dbg_updown:
   cmp r0, r1
   subge r0, r0, r1
   bx lr
+; ジャンプの行き先 (mapJumpPoint、行 0 は「なし」) の数 -> r0
+warp_count:
+  ldr r0, =0x520448
+  ldr r0, [r0]
+  ldr r0, [r0, #0x6b0]
+  ldr r0, [r0]
+  sub r0, r0, #1
+  bx lr
+; r0 番目の行き先 (行 r0 + 1) -> r0 = 行
+warp_row:
+  push {r4, lr}
+  add r1, r0, #1
+  ldr r0, =0x520448
+  ldr r0, [r0]
+  add r0, r0, #0x400
+  add r0, r0, #0x2ac
+  bl FUN_0031cfb8
+  pop {r4, pc}
 ; セーブ変数 r0 の r1 番目に r2 を書く
 sv_write:
   push {r4, lr}
@@ -437,7 +490,6 @@ sv_read:
   add sp, sp, #8
   pop {r4, pc}
 
-@emu debug_text
 ; 画面の文をメッセージ 0x17D9 (98 文字) に書く。r6 = 書く位置、r7 = 終わり
 dbg_render:
   push {r4, r5, r6, r7, r8, lr}
@@ -456,6 +508,8 @@ dbg_render:
   beq rd_story
   cmp r0, #3
   beq rd_var
+  cmp r0, #4
+  beq rd_warp
   ldr r0, =s_title           ; メニュー
   bl tx_s
   bl tx_nl
@@ -469,25 +523,42 @@ dbg_render:
   ldr r0, =s_hint_menu
   b rd_last
 rd_story:
+  ldrh r1, [r4, #0x16]
+  ldr r3, =s_story0          ; 名前は順に並んでいる (4 バイト境界)
+  mov r0, r1
+rs_skip:
+  subs r0, r0, #1
+  bmi rs_name
+rs_char:
+  ldrh r2, [r3], #2
+  cmp r2, #0
+  bne rs_char
+  add r3, r3, #3
+  bic r3, r3, #3
+  b rs_skip
+rs_name:
   ldr r0, =s_story
-  bl tx_s
-  ldrh r0, [r4, #0x16]
-  add r0, r0, #1
-  bl tx_n
-  mov r0, #0x2F
-  bl tx_c
-  mov r0, #${n}
-  bl tx_n
-  bl tx_nl
-  ldr r0, =s_cur
-  bl tx_s
-  ldrh r0, [r4, #0x16]
-  ldr r1, =story_table
-  add r1, r1, r0, lsl #3
-  ldr r0, [r1, #4]
-  bl tx_s
-  bl tx_nl
+  mov r2, #${n}
+  bl rd_list
   ldr r0, =s_hint_story
+  b rd_last
+rd_warp:
+  ldrh r0, [r4, #0x14]
+  bl warp_row
+  ldr r1, [r0]               ; 名前のメッセージ
+  ldr r0, =0x5742D0
+  ldr r0, [r0]
+  mvn r2, #0
+  bl FUN_00310438
+  movs r5, r0
+  ldreq r5, =s_sp
+  bl warp_count
+  mov r2, r0
+  mov r3, r5
+  ldrh r1, [r4, #0x14]
+  ldr r0, =s_warp
+  bl rd_list
+  ldr r0, =s_hint_warp
   b rd_last
 rd_var:
   ldr r0, =s_var
@@ -524,6 +595,26 @@ rd_last:
   mov r0, #0
   strh r0, [r6]
   pop {r4, r5, r6, r7, r8, pc}
+; 見出し r0、r1 番目 (0 から) / r2 個、選んでいる名前 r3
+rd_list:
+  push {r4, r5, r8, lr}
+  mov r4, r1
+  mov r5, r2
+  mov r8, r3
+  bl tx_s
+  add r0, r4, #1
+  bl tx_n
+  mov r0, #0x2F
+  bl tx_c
+  mov r0, r5
+  bl tx_n
+  bl tx_nl
+  ldr r0, =s_cur
+  bl tx_s
+  mov r0, r8
+  bl tx_s
+  bl tx_nl
+  pop {r4, r5, r8, pc}
 ; 1 文字 (r0)
 tx_c:
   cmp r6, r7
@@ -565,11 +656,11 @@ tn_out:
   add sp, sp, #16
   pop {r4, r5, r8, pc}
 
-@emu debug_data
 menu_names:
   .word s_menu0
   .word s_menu1
   .word s_menu2
+  .word s_menu3
 var_names:
   .word s_var0
   .word s_var1
