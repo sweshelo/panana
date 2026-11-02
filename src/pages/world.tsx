@@ -18,7 +18,8 @@ import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_SOUND_DEFAULT, NOTICE_TEMPLATE, n
 import { SoundButton } from '../ui/SoundPicker';
 import { textToUnits } from '../game/msgtext';
 import { hexId } from '../editor/message';
-import { ENT, WORLD_SIZE, freeEntranceId, moveEntrance, newEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
+import { JP, JUMP_GAME_ROWS, JUMP_MAX_ROWS, JUMP_TABLE, jumpRowOf, jumpWorld, newJumpRow, setJumpFollows } from '../game/jumppoints';
+import { ENT, WORLD_HASHES, WORLD_SIZE, freeEntranceId, moveEntrance, newEntrance, parseWorldPoints, setEntranceU32, type EntranceField, type WorldInfo, type WorldPoint } from '../game/worldmap';
 import type { Session } from '../session';
 import { Count, EditedMark, ListFilter, NumberInput, useEdits, useSticky, type PageProps } from '../ui/book';
 import { ConditionPicker } from '../ui/ConditionPicker';
@@ -398,6 +399,7 @@ function EntranceEditor({ session, world, r, original, points, issues, update, m
           </div>
         )}
         <EntranceCondition session={session} world={world} r={r} edited={differs(0x10)} update={update} mark={mark} changed={edited} />
+        <EntranceJump session={session} world={world} r={r} mark={mark} changed={edited} />
         <label className="field">
           <span>移動先の地点 (+0x14、区画 3)</span>
           <select value={ENT.point(r)} className={cls(0x14)} onChange={(e) => set(0x14)(Number(e.target.value))}>
@@ -570,6 +572,99 @@ function EntranceNotice({ session, events, row, r, added, write }: {
           {sound === 0 && <span className="muted">鳴らさない</span>}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The entrance as a destination of "ジャンプ" (the jump screen of the world map; mapJumpPoint.bin, game/jumppoints.ts):
+ * a row is listed once the player has gone in or out of the entrance. New rows (up to 40) and "listed only while the
+ * entrance is placed" are Panana's patch.
+ */
+function EntranceJump({ session, world, r, mark, changed }: {
+  session: Session;
+  world: WorldInfo;
+  r: Uint8Array;
+  mark: () => void;
+  changed: () => void;
+}): ReactNode {
+  const { game } = session;
+  const { texts } = game.master;
+  const w = jumpWorld(WORLD_HASHES.indexOf(world.hash as (typeof WORLD_HASHES)[number]));
+  let rows: Uint8Array[];
+  try {
+    rows = w < 0 ? [] : session.jumpRows();
+  } catch {
+    rows = [];
+  }
+  if (w < 0 || !rows.length) return null;
+  const table = game.master.table(JUMP_TABLE);
+  const id = ENT.id(r);
+  const n = jumpRowOf(rows, w, id);
+  const original = game.master.originalRows(JUMP_TABLE);
+  const write = (f: () => void): void => {
+    mark();
+    f();
+    session.scheduleSave();
+    changed();
+  };
+  const head = <span>ジャンプの行き先</span>;
+
+  if (n < 0) {
+    const room = rows.length < JUMP_MAX_ROWS;
+    const add = (): void => {
+      const dest = game.code.byHash(ENT.destMap(r));
+      let name = dest && dest.dungeon >= 0 && dest.dungeon < game.master.mapGroup.rows ? u16(game.master.mapGroup.row(dest.dungeon), 0x14) : 0;
+      const tpl = texts.text(JP.name(rows[1]!));
+      if (!name && tpl && texts.canAdd()) name = texts.add(textToUnits({ ...tpl, text: '新しい場所' }));
+      write(() => {
+        table.data = table.withRows([...rows.map((x) => x.slice()), newJumpRow(name, id, w, true)]);
+      });
+    };
+    return (
+      <div className="field entrance-jump">
+        {head}
+        <div className="row">
+          <span className="muted small">ジャンプの一覧に出ません。</span>
+          <button className="small" disabled={!room} title={room ? '' : `ジャンプの行き先は ${JUMP_MAX_ROWS} 件まで (セーブの枠の数) です`} onClick={add}>ジャンプの行き先に足す</button>
+        </div>
+        {!room && <div className="muted small">{`ジャンプの行き先は ${JUMP_MAX_ROWS} 件まで (ゲームの ${JUMP_GAME_ROWS} 件と、セーブに枠のある 2 件) です。`}</div>}
+      </div>
+    );
+  }
+
+  const row = rows[n]!;
+  const name = JP.name(row);
+  const added = n >= original;
+  const conditional = ENT.event(r) !== 0;
+  const removable = added && n === rows.length - 1;
+  return (
+    <div className="field entrance-jump">
+      {head}
+      <div className="row">
+        <span className="small">一覧の名前:</span>
+        <NumberInput value={name} min={0} max={0xffff} className="num-input" title="メッセージ ID" onCommit={(v) => write(() => w32(table.row(n), 0x00, v))} />
+        <a href={`#/messages/${hexId(name)}`} className="small">{texts.preview(name, true) ?? `メッセージ ${hexId(name)}`}</a>
+      </div>
+      {JP.hidden(row) && <div className="muted small">この行き先はゲームが一覧に出さないもの (+0x0C の bit0) です。</div>}
+      <label className="row small">
+        <input type="checkbox" checked={JP.follows(row)} onChange={(e) => write(() => setJumpFollows(table.row(n), e.target.checked))} />
+        入口が出ていない間は一覧に出さない
+      </label>
+      <div className="muted small">
+        {JP.follows(row)
+          ? conditional
+            ? '入口の出現条件 (上の「出る」「消える」) が成り立たない間は、ジャンプの一覧からも消えます (書き出しの code.ips にジャンプのパッチが入ります)。'
+            : 'この入口はいつも出るので、一覧から消えることはありません。消したいときは上で出現条件をつけてください。'
+          : conditional && !ENT.point(r)
+            ? '入口が出ていない間にジャンプすると、入口の隣ではなくセル (26, 204) に着きます。'
+            : ''}
+        {' '}一度この入口に入るか出るかすると一覧に出ます。
+      </div>
+      {removable && (
+        <button className="small" onClick={() => write(() => { table.data = table.withRows(rows.slice(0, -1).map((x) => x.slice())); })}>ジャンプの行き先から外す</button>
+      )}
+      {added && !removable && <div className="muted small">Panana が足した行き先は、最後に足したものから順に外せます (セーブの印が行の番号で決まるため)。</div>}
     </div>
   );
 }

@@ -54,6 +54,10 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
       ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
+    // the jump destinations (game/jumppoints.ts): more rows, rows hidden while their entrance is not placed
+    const jump = session.jumpPatch();
+    if (jump.patch) extra.push(jump.patch);
+    if (jump.missing.length) issues.push({ map: 'ジャンプの行き先', issue: { level: 'error', msg: `行き先 ${jump.missing.join('・')} の入口の出現条件を読めませんでした (ワールドマップを開き直してから書き出してください)。この行き先は条件なしで一覧に出ます`, key: 'jump:missing' } });
     // the speeds of the map symbols (game/chase.ts), when changed on the monster page
     const chase = chaseSpeedPatch(game.chaseSpeeds);
     const chaseProblem = chase && chaseSpeedProblem(game.dump.code);

@@ -17,12 +17,13 @@ import type { AddedDungeon } from './game/mappatch';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
 import type { SoundNames } from './game/sound';
-import { buildEntrances, buildGround, parseEntrances, type Ground, type WorldInfo } from './game/worldmap';
+import { buildEntrances, buildGround, ENT, parseEntrances, type Ground, type WorldInfo } from './game/worldmap';
+import { JP, JUMP_TABLE, jumpPatch } from './game/jumppoints';
 import { findByName, findEntry, unpackEntry, type ArcEntry } from './archive/gsarc';
 import { equalBytes } from './util/bytes';
 import { idbGet, idbSet } from './util/idb';
 
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)', 'actionData.bin': 'アクション (ワザ)', 'mapGroup.bin': 'ダンジョンの設定' };
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)', 'actionData.bin': 'アクション (ワザ)', 'mapGroup.bin': 'ダンジョンの設定', 'mapJumpPoint.bin': 'ジャンプの行き先' };
 export const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 
@@ -75,6 +76,43 @@ export class Session {
   readonly originalEntrances = (w: WorldInfo): Uint8Array[] => parseEntrances(this.game.db.get(w.sections[2]!));
   /** Entrances of a world map as edited so far. */
   readonly entrancesOf = (w: WorldInfo): Uint8Array[] => this.worldEdits.get(w.hash) ?? this.originalEntrances(w);
+
+  /** The rows of mapJumpPoint.bin as edited ("ジャンプ" destinations; game/jumppoints.ts). */
+  jumpRows(): Uint8Array[] {
+    const t = this.game.master.table(JUMP_TABLE);
+    return Array.from({ length: t.rows }, (_, i) => t.row(i));
+  }
+
+  /**
+   * The jump patch for the edited table (more rows, rows that follow their entrance), and the rows whose world map's
+   * event table is not loaded yet (see {@link loadJumpEvents}).
+   */
+  jumpPatch(): ReturnType<typeof jumpPatch> {
+    const worlds = this.game.worldMaps();
+    return jumpPatch(
+      this.jumpRows(),
+      (w, id) => {
+        const r = worlds[w] ? this.entrancesOf(worlds[w]).find((e) => ENT.id(e) === id) : undefined;
+        return r ? { event: ENT.event(r) } : null;
+      },
+      (w, row) => {
+        const t = worlds[w] ? this.st.events.get(worlds[w].dungeon) : undefined;
+        return t && t.has(row) ? t.table.row(row) : null;
+      },
+    );
+  }
+
+  /** Read the event tables of the world maps whose entrances jump rows follow (the patch embeds their conditions). */
+  async loadJumpEvents(): Promise<void> {
+    const worlds = this.game.worldMaps();
+    const want = new Set(this.jumpRows().filter(JP.follows).map(JP.world));
+    for (const w of want) {
+      const d = worlds[w]?.dungeon;
+      if (d === undefined || this.st.events.has(d)) continue;
+      const t = await this.game.eventTable(d);
+      if (t && !this.st.events.has(d)) this.st.events.set(d, t);
+    }
+  }
 
   setEntrances(w: WorldInfo, list: Uint8Array[]): void {
     this.worldEdits.set(w.hash, list);
@@ -354,5 +392,6 @@ export class Session {
       stock?.restore(edits.shops!);
       if (stock) items.setShops(stock.lists);
     }
+    await this.loadJumpEvents().catch((err) => console.warn('jump events', err));
   }
 }
