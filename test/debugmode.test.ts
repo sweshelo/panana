@@ -33,7 +33,7 @@ describe('debug mode patch', () => {
     expect(0x3ff000 + 8 + ((bl << 8) >> 6)).toBe(built.labels.get('dbg_key')!);
     // a string is UTF-16 ended by 0
     const s = built.labels.get('s_cur')! - 0x100000;
-    expect([u16(patched, s), u16(patched, s + 2)]).toEqual([0x25b6, 0]);
+    expect([u16(patched, s), u16(patched, s + 2)]).toEqual([0x2192, 0]);
     // the story table: key | index << 8 | value << 16; the labels follow one another from s_story0, 4-aligned
     const t = built.labels.get('story_table')! - 0x100000;
     expect(u32(patched, t)).toBe(0x91 | (3 << 8) | (2 << 16));

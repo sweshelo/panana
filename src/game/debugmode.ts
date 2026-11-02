@@ -16,7 +16,8 @@
 //   notices (game/worldnotice.ts).
 // - The window: FUN_00311384(1) opens the narration window (*0x56CEF8). The text is message 0x17D9 (SystemCommon's
 //   font test, 98 characters, no reading), rewritten in memory before each FUN_0031cbec; the window's text speed
-//   (+0x399) is set to 0 for that call, as the shop does, so it shows at once.
+//   (+0x399) is set to 0 for that call, as the shop does, so it shows at once. The window shows 2 lines a page (a
+//   third line pages, which Azahar showed as broken text), so each screen is 2 lines. ▶ is not in the font (→ is).
 // - Shop 18: the shop takes its number from the mode's argument (*0x574148 +0xC) and turns 18 or more into 0
 //   (0x1D4C44); the patch lets 18 through. The Shop table has 18 rows: row 18 reads as row 0 (FUN_0031cfb8 clamps),
 //   so it talks like shop 0. Its list is added to ShopItem at export. FUN_002ea5b0 (the buying price) returns 0
@@ -70,23 +71,20 @@ function utf16Words(label: string, text: string): string {
 }
 
 const STRINGS: [string, string][] = [
-  ['s_title', 'デバッグメニュー'],
   ['s_menu0', 'アイテムを手に入れる (店)'],
   ['s_menu1', 'ストーリーを進める'],
   ['s_menu2', 'セーブ変数を書きかえる'],
   ['s_menu3', 'ワープする'],
-  ['s_story', 'ストーリーの節目 '],
   ['s_hint_story', 'A:ここまで進める　B:もどる'],
-  ['s_var', 'セーブ変数　今の値 '],
+  ['s_var', '今の値 '],
   ['s_var0', '変数 '],
-  ['s_var1', '　位置 '],
-  ['s_var2', '　値 '],
-  ['s_hint_var', '←→:欄 ↑↓:±1 L/R:±10 A:書く'],
+  ['s_var1', '位置 '],
+  ['s_var2', '値 '],
+  ['s_hint_var', '　A:書く　B:もどる'],
   ['s_done', '書きこみました'],
-  ['s_warp', 'ワープ先 '],
   ['s_hint_warp', 'A:ワープする　B:もどる'],
-  ['s_hint_menu', '↑↓:えらぶ　A:決定　B:とじる'],
-  ['s_cur', '▶'],
+  ['s_hint_menu', '上下:えらぶ　A:決定　B:とじる'],
+  ['s_cur', '→'],
   ['s_sp', '　'],
 ];
 
@@ -513,10 +511,7 @@ dbg_render:
   beq rd_var
   cmp r0, #4
   beq rd_warp
-  ldr r0, =s_title           ; メニュー
-  bl tx_s
-  bl tx_nl
-  ldr r0, =s_cur
+  ldr r0, =s_cur             ; メニュー (窓は 2 行: 1 行目に選んでいるもの、2 行目に操作)
   bl tx_s
   ldrb r0, [r4, #0x11]
   ldr r1, =menu_names
@@ -540,7 +535,6 @@ rs_char:
   bic r3, r3, #3
   b rs_skip
 rs_name:
-  ldr r0, =s_story
   mov r2, #${n}
   bl rd_list
   ldr r0, =s_hint_story
@@ -559,18 +553,10 @@ rd_warp:
   mov r2, r0
   mov r3, r5
   ldrh r1, [r4, #0x14]
-  ldr r0, =s_warp
   bl rd_list
   ldr r0, =s_hint_warp
   b rd_last
 rd_var:
-  ldr r0, =s_var
-  bl tx_s
-  ldrh r0, [r4, #0x18]
-  ldrh r1, [r4, #0x1a]
-  bl sv_read
-  bl tx_n
-  bl tx_nl
   mov r5, #0
 rv_loop:
   ldrb r0, [r4, #0x13]
@@ -589,6 +575,16 @@ rv_loop:
   cmp r5, #3
   blt rv_loop
   bl tx_nl
+  ldrb r0, [r4, #0x20]
+  cmp r0, #0
+  bne rv_hint                ; 「書きこみました」だけ
+  ldr r0, =s_var
+  bl tx_s
+  ldrh r0, [r4, #0x18]
+  ldrh r1, [r4, #0x1a]
+  bl sv_read
+  bl tx_n
+rv_hint:
   ldr r0, =s_hint_var
 rd_last:
   ldrb r1, [r4, #0x20]
@@ -598,20 +594,18 @@ rd_last:
   mov r0, #0
   strh r0, [r6]
   pop {r4, r5, r6, r7, r8, pc}
-; 見出し r0、r1 番目 (0 から) / r2 個、選んでいる名前 r3
+; 1 行: r1 番目 (0 から) / r2 個、選んでいる名前 r3
 rd_list:
   push {r4, r5, r8, lr}
   mov r4, r1
   mov r5, r2
   mov r8, r3
-  bl tx_s
   add r0, r4, #1
   bl tx_n
   mov r0, #0x2F
   bl tx_c
   mov r0, r5
   bl tx_n
-  bl tx_nl
   ldr r0, =s_cur
   bl tx_s
   mov r0, r8
