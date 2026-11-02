@@ -1,4 +1,4 @@
-// Panana's debug mode for RPG2 (kahara), for trying a MOD out in Azahar: on the field, hold L + R and press SELECT
+// Panana's debug mode for RPG2 (kahara), for trying a MOD out in Azahar: on the field, hold L + R for a moment
 // to open a menu (a narration window that the patch writes its own text into):
 // - アイテムを手に入れる: the game's shop (mode 7) as shop 18, which sells every item for 0 G.
 // - ストーリーを進める: write the save values of the story milestones (game/storyconditions.ts) up to the chosen one.
@@ -9,10 +9,10 @@
 //
 // - The key: FUN_003fef90 runs every frame while the party can move on the field (r4 = the field, +0x18 = the
 //   queue of actions). At 0x3FF000 it calls our check; *0x57410C is the pad (+0 held, +4 pressed, +0x58 pressed
-//   with key repeat). With L, R and SELECT all held, one of them pressed this frame (in any order), the patch clears
-//   L / R / START / SELECT from this frame's presses (L is the check button, and the game often treats START and
-//   SELECT alike), registers its handler in the queue once per map (pseudo-row 0x1DEB000, FUN_0030cab8) and
-//   queues it (FUN_0030b7ac). The handler's action runs the menu in the queue's coroutine, like the world-map
+//   with key repeat). SELECT / START open the suspend / save dialog before the field sees them, so the key is L + R
+//   held: when the key repeat fires for both (+0x58, and not a fresh press at +4, as L alone is the check button),
+//   the patch clears L / R from this frame's repeat, registers its handler in the queue once per map (pseudo-row
+//   0x1DEB000, FUN_0030cab8) and queues it (FUN_0030b7ac). The handler's action runs the menu in the queue's coroutine, like the world-map
 //   notices (game/worldnotice.ts).
 // - The window: FUN_00311384(1) opens the narration window (*0x56CEF8). The text is message 0x17D9 (SystemCommon's
 //   font test, 98 characters, no reading), rewritten in memory before each FUN_0031cbec; the window's text speed
@@ -32,7 +32,7 @@ import { u32 } from '../util/bytes';
 export const DEBUG_MODE_ID = 'panana:debug-mode';
 export const DEBUG_MODE_TITLE = 'デバッグモード (Azahar 専用)';
 export const DEBUG_MODE_NOTE =
-  'フィールドで L と R を押しながら SELECT を押すと、デバッグメニューが開きます。全アイテムを 0 G で売る店、ストーリーの節目まで進める、セーブ変数の読み書き、ジャンプの行き先へのワープができます。コードを読み出し専用の領域に置くので、Azahar では動きますが実機では止まります。配布する MOD では外してください。';
+  'フィールドで立ち止まって L と R を一緒に押し続ける (0.3 秒ほど) と、デバッグメニューが開きます。全アイテムを 0 G で売る店、ストーリーの節目まで進める、セーブ変数の読み書き、ジャンプの行き先へのワープができます。コードを読み出し専用の領域に置くので、Azahar では動きますが実機では止まります。配布する MOD では外してください。';
 
 /** The shop the menu opens (one past the game's 0..17). */
 export const DEBUG_SHOP = 18;
@@ -99,7 +99,7 @@ export function debugModeSource(conditions: StoryCondition[] = STORY_CONDITIONS)
   const table = story.map((s) => `  .word 0x${(s.w.key | (s.w.index << 8) | (s.w.value << 16)).toString(16).toUpperCase()} ; ${s.label}`).join('\n');
   const strings = [...STRINGS, ...story.map((s, i): [string, string] => [`s_story${i}`, s.label])].map(([l, t]) => utf16Words(l, t)).join('\n');
   const n = story.length;
-  return `; ${DEBUG_MODE_TITLE}: フィールドで L + R を押しながら SELECT でメニュー。naauao integrations/panana/debug-mode.md
+  return `; ${DEBUG_MODE_TITLE}: フィールドで L + R を押し続けるとメニュー。naauao integrations/panana/debug-mode.md
 ; フィールドで操作できる間の毎フレーム処理 (FUN_003fef90)
 @0x3FF000
   bl dbg_key                 ; ldr r0, =0x51BEBC
@@ -111,24 +111,24 @@ export function debugModeSource(conditions: StoryCondition[] = STORY_CONDITIONS)
   b dbg_price
 
 @emu debug_mode
-; r4 = フィールド。L + R + SELECT (3 つとも押していて、どれかを今押した) ならデバッグの動作をキューに積む。r0 = 0x51BEBC を返す (上書きした命令)
+; r4 = フィールド。L + R を押し続けたら (連続入力が出たら) デバッグの動作をキューに積む。SELECT / START は中断セーブに取られる。r0 = 0x51BEBC を返す (上書きした命令)
 dbg_key:
   push {r4, r5, r6, lr}
   ldr r3, =0x57410C
   ldr r3, [r3]
-  ldr r1, [r3]               ; 押している: L + R + SELECT
-  ldr r2, =0x304
-  and r1, r1, r2
-  cmp r1, r2
+  ldr r1, [r3]               ; 押している: L + R
+  and r1, r1, #0x300
+  cmp r1, #0x300
   bne dk_out
-  ldr r1, [r3, #4]           ; 押した: 3 つのどれかがこのフレームで (押す順は問わない)
-  tst r1, r2
-  beq dk_out
-  ldr r2, =0x30C             ; このフレームの L / R / START / SELECT を消す (L は調べる、START と SELECT は同じ扱いが多い)
-  bic r1, r1, r2
-  str r1, [r3, #4]
-  ldr r1, [r3, #0x58]
-  bic r1, r1, r2
+  ldr r1, [r3, #0x58]        ; 連続入力: 同じボタンを押し続けると、少し待ってから出る
+  and r1, r1, #0x300
+  cmp r1, #0x300
+  bne dk_out
+  ldr r1, [r3, #4]           ; 押した瞬間ではない (L は調べる)
+  tst r1, #0x300
+  bne dk_out
+  ldr r1, [r3, #0x58]        ; このフレームの連続入力から L / R を消す
+  bic r1, r1, #0x300
   str r1, [r3, #0x58]
   ldr r5, [r4, #0x18]        ; 動作のキュー
   mov r0, r5
