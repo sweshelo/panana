@@ -111,14 +111,16 @@ describe('jump patch (blank code.bin)', () => {
  * `rows`, with `visited` rows' 0x65 bits set and FUN_0030b8a4 answering `holds`.
  */
 function listOf(code: Uint8Array, rows: Uint8Array[], visited: (row: number) => boolean, holds: (type: number, value: number) => boolean): number[][] {
-  // a trampoline at the bottom of the code cave: push {lr}; b 0x265F38, and pop {pc} at 0x266078 (the part
-  // of the function run here has no prologue of its own; its calls change lr)
+  // a trampoline at the bottom of the code cave: push {lr}; sub sp, #0xC (the function's frame: the loop uses [sp] and
+  // [sp + 4]); b 0x265F38, and add sp, #0xC; pop {pc} at 0x266078 (the part run here has no prologue of its own)
   const c = code.slice();
   const put = (a: number, w: number): void => c.set([w & 0xff, (w >>> 8) & 0xff, (w >>> 16) & 0xff, w >>> 24], a - 0x100000);
-  const TRAMP = CAVE_START; // the bottom of the cave (patches fill it from the top)
+  const TRAMP = CAVE_START; // patches fill the cave from the top
   put(TRAMP, 0xe52de004); // push {lr}
-  put(TRAMP + 4, (0xea000000 | (((0x265f38 - (TRAMP + 4 + 8)) >> 2) & 0xffffff)) >>> 0); // b 0x265F38
-  put(0x266078, 0xe49df004); // pop {pc}
+  put(TRAMP + 4, 0xe24dd00c); // sub sp, sp, #0xC
+  put(TRAMP + 8, (0xea000000 | (((0x265f38 - (TRAMP + 8 + 8)) >> 2) & 0xffffff)) >>> 0); // b 0x265F38
+  put(0x266078, 0xe28dd00c); // add sp, sp, #0xC
+  put(0x26607c, 0xe49df004); // pop {pc}
   let header = 0;
   let table = 0;
   const stubs = new Map<number, (m: ArmMachine) => number>([
