@@ -32,16 +32,20 @@ describe('debug mode patch', () => {
     expect(bl >>> 24).toBe(0xeb);
     expect(0x3ff000 + 8 + ((bl << 8) >> 6)).toBe(built.labels.get('dbg_key')!);
     // a string is UTF-16 ended by 0
-    const s = built.labels.get('s_cur')! - 0x100000;
-    expect([u16(patched, s), u16(patched, s + 2)]).toEqual([0x2192, 0]);
+    const s = built.labels.get('s_q_until')! - 0x100000;
+    expect([u16(patched, s), u16(patched, s + 2)]).toEqual([0x307e, 0x3067]);
+    // a word whose upper unit is 0x8000 or more (？ U+FF1F) is written whole
+    const q = built.labels.get('s_q_story')!;
+    expect(Array.from({ length: 30 }, (_, i) => u16(patched, q - 0x100000 + i * 2))).toContain(0xff1f);
     // the story table: key | index << 8 | value << 16; the labels follow one another from s_story0, 4-aligned
     const t = built.labels.get('story_table')! - 0x100000;
     expect(u32(patched, t)).toBe(0x91 | (3 << 8) | (2 << 16));
     expect(u32(patched, t + 4)).toBe(0x91 | (4 << 8) | (2 << 16));
     const s0 = built.labels.get('s_story0')!;
     expect(built.labels.get('s_story1')!).toBe((s0 + (milestoneLabel(STORY_CONDITIONS[0]!).length + 1) * 2 + 3) & ~3);
-    // the menu: shop, story, save variables, warp
-    expect([0, 1, 2, 3].map((i) => u32(patched, built.labels.get('menu_names')! - 0x100000 + i * 4))).toEqual(['s_menu0', 's_menu1', 's_menu2', 's_menu3'].map((l) => built.labels.get(l)!));
+    // the questions call the game's yes / no window and the jump screen
+    expect(debugModeSource()).toContain('bl FUN_0030873c');
+    expect(debugModeSource()).toContain('mov r1, #0x23');
   });
 
   test('a @emu block is an error where the game has no such area', () => {
