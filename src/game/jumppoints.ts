@@ -12,8 +12,10 @@ export const JUMP_ROW_SIZE = 0x10;
 export const JUMP_GAME_ROWS = 38;
 /** Rows save value 0x65 has a bit for (1 bit x 40): what the table can grow to without moving the save. */
 export const JUMP_MAX_ROWS = 40;
-/** +0x0D bit0 (Panana; the game reads +0x0C bit0 only): not listed while the entrance is not placed. */
+/** +0x0D bit0 (Panana; the game reads +0x0C bit0 only, +0x0D-0x0F are padding 0xD0): not listed while the entrance is not placed. */
 export const JUMP_FOLLOW = 0x0d;
+/** The padding of +0x0D-0x0F in the game's rows (bit0 clear). */
+export const JUMP_PAD = 0xd0;
 
 export const JP = {
   /** Message ID of the name shown in the list. */
@@ -42,7 +44,8 @@ export function newJumpRow(name: number, id: number, world: number, follows: boo
   w32(r, 0x00, name);
   w32(r, 0x04, id);
   w32(r, 0x08, world & 1);
-  if (follows) r[JUMP_FOLLOW] = 1;
+  r.fill(JUMP_PAD, 0x0d); // the game's rows pad +0x0D-0x0F with 0xD0
+  if (follows) r[JUMP_FOLLOW] = JUMP_PAD | 1;
   return r;
 }
 

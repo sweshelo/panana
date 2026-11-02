@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
-import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
+import { CAVE_START, applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import {
   JP, JUMP_GAME_ROWS, JUMP_MAX_ROWS, JUMP_PATCH_ID, JUMP_ROW_SIZE, JUMP_TABLE, NEVER, jumpChecks, jumpPatch, jumpPatchSource, jumpRowOf, newJumpRow, setJumpFollows, type JumpCheck,
 } from '../src/game/jumppoints';
@@ -25,7 +25,7 @@ describe('jump rows', () => {
     expect([JP.name(r), JP.id(r), JP.world(r), JP.hidden(r), JP.follows(r)]).toEqual([94, 0x13befa50, 1, false, true]);
     setJumpFollows(r, false);
     expect(JP.follows(r)).toBe(false);
-    expect(r.subarray(0x0c).every((b) => b === 0)).toBe(true); // the game's +0x0C is left alone
+    expect([...r.subarray(0x0c)]).toEqual([0, 0xd0, 0xd0, 0xd0]); // +0x0C clear, the padding as in the game's rows
   });
 
   test('the row of an entrance (row 0 is "なし"; W01 and W02 apart)', () => {
@@ -111,8 +111,14 @@ describe('jump patch (blank code.bin)', () => {
  * `rows`, with `visited` rows' 0x65 bits set and FUN_0030b8a4 answering `holds`.
  */
 function listOf(code: Uint8Array, rows: Uint8Array[], visited: (row: number) => boolean, holds: (type: number, value: number) => boolean): number[][] {
+  // a trampoline at the bottom of the code cave: push {lr}; b 0x265F38, and pop {pc} at 0x266078 (the part
+  // of the function run here has no prologue of its own; its calls change lr)
   const c = code.slice();
-  c.set([0x1e, 0xff, 0x2f, 0xe1], 0x266078 - 0x100000); // bx lr
+  const put = (a: number, w: number): void => c.set([w & 0xff, (w >>> 8) & 0xff, (w >>> 16) & 0xff, w >>> 24], a - 0x100000);
+  const TRAMP = CAVE_START; // the bottom of the cave (patches fill it from the top)
+  put(TRAMP, 0xe52de004); // push {lr}
+  put(TRAMP + 4, (0xea000000 | (((0x265f38 - (TRAMP + 4 + 8)) >> 2) & 0xffffff)) >>> 0); // b 0x265F38
+  put(0x266078, 0xe49df004); // pop {pc}
   let header = 0;
   let table = 0;
   const stubs = new Map<number, (m: ArmMachine) => number>([
@@ -132,7 +138,7 @@ function listOf(code: Uint8Array, rows: Uint8Array[], visited: (row: number) => 
   m.write(0x520448, master, 4);
   m.write(master + 0x6b0, table, 4);
   m.write(0x564638, m.alloc(0x10), 4);
-  m.run(0x265f38, []);
+  m.run(TRAMP, []);
   const n = m.read(header, 4);
   const list = m.read(header + 4, 4);
   return Array.from({ length: n }, (_, i) => [0, 4, 8].map((o) => m.read(list + i * 12 + o, 4)));
@@ -156,8 +162,9 @@ describe.skipIf(!hasCia)('jump patch on code.bin', () => {
     expect(at(code, 0x3047c8).text).toMatch(/cmp r5, #(0x26|38)\b/i);
     expect(at(code, 0x26600c).text).toMatch(/^beq/);
     expect(at(code, 0x26600c).target).toBe(0x26606c);
-    // no row uses the bytes Panana keeps its flag in
-    expect(rows.every((r) => r[0x0d] === 0 && r[0x0e] === 0 && r[0x0f] === 0)).toBe(true);
+    // +0x0D-0x0F are padding (0xD0): bit0 of +0x0D, Panana's flag, is clear in every row
+    expect(rows.every((r) => r[0x0d] === 0xd0 && r[0x0e] === 0xd0 && r[0x0f] === 0xd0)).toBe(true);
+    expect(rows.some(JP.follows)).toBe(false);
   });
 
   test('the rows lead to the entrances of W01 / W02', () => {
