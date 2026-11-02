@@ -7,7 +7,7 @@ import { SoundPortStore } from '../port/sounds';
 import { useAsync } from './useAsync';
 import { buildModFiles, buildModZip, exportedPatches, modPackage } from '../export/pack';
 import { bossPatchFor } from '../game/boss';
-import { NOTICE_DUNGEON, noticePatch } from '../game/worldnotice';
+import { NOTICE_DUNGEON, noticePatch, repairNotices } from '../game/worldnotice';
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
@@ -31,6 +31,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   // What is exported is fixed when the dialog opens (like the summary shown in it).
   const [what] = useState(() => {
     session.flushGrounds();
+    repairNotices(st.events.get(NOTICE_DUNGEON));
     const docs = st.modifiedDocs();
     const events = [...st.events.values()].filter((t) => t.changed());
     const issues: { map: string; issue: Issue }[] = [];
@@ -49,9 +50,14 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
+    const w01 = game.worldMaps().find((w) => w.dungeon === NOTICE_DUNGEON);
     const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
-      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON))].filter((p) => !!p)];
+      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
+    // the jump destinations (game/jumppoints.ts): more rows, rows hidden while their entrance is not placed
+    const jump = session.jumpPatch();
+    if (jump.patch) extra.push(jump.patch);
+    if (jump.missing.length) issues.push({ map: 'ジャンプの行き先', issue: { level: 'error', msg: `行き先 ${jump.missing.join('・')} の入口の出現条件を読めませんでした (ワールドマップを開き直してから書き出してください)。この行き先は条件なしで一覧に出ます`, key: 'jump:missing' } });
     // the speeds of the map symbols (game/chase.ts), when changed on the monster page
     const chase = chaseSpeedPatch(game.chaseSpeeds);
     const chaseProblem = chase && chaseSpeedProblem(game.dump.code);

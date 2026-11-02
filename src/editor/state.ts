@@ -6,6 +6,7 @@ import { duplicateRecord, placeStamp, type PlaceContext, type Stamp } from './pl
 import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
 import { FIX_TABLE } from '../game/boss';
+import { JUMP_TABLE } from '../game/jumppoints';
 import { EVENT_SECTIONS, LAYOUTS, POINT_SECTIONS, loadDoc, recEventRow, sectionBytes, type MapDoc, type Rec } from '../game/sections';
 import { equalBytes } from '../util/bytes';
 import { MapEditState } from './model';
@@ -49,6 +50,8 @@ interface KaharaTables {
   /** mapChara (the monsters shown for boss battles). */
   chara: Uint8Array;
   messages: [number, Uint16Array][];
+  /** mapJumpPoint ("ジャンプ" destinations, edited on the world map page). */
+  jump?: Uint8Array;
 }
 
 export class EditorState extends MapEditState<Stamp, KaharaTables> {
@@ -205,6 +208,15 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     return this.current ? this.events.get(this.current.dungeon) ?? null : null;
   }
 
+  /** mapJumpPoint's bytes (undefined when the master has no such table, as in some tests). */
+  private jumpBytes(): Uint8Array | undefined {
+    try {
+      return this.game.master.table(JUMP_TABLE).data.slice();
+    } catch {
+      return undefined;
+    }
+  }
+
   protected saveTables(): KaharaTables {
     return {
       events: [...this.events].map(([d, t]) => [d, t.data.slice()]),
@@ -215,6 +227,7 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
       fix: this.game.master.table(FIX_TABLE).data.slice(),
       chara: this.game.master.mapChara.data.slice(),
       messages: this.game.master.texts.saved(),
+      jump: this.jumpBytes(),
     };
   }
 
@@ -231,6 +244,7 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.game.master.restoreTable(FIX_TABLE, s.fix);
     this.game.master.restoreTable('mapChara.bin', s.chara);
     this.game.master.texts.restore(s.messages, true);
+    if (s.jump) this.game.master.restoreTable(JUMP_TABLE, s.jump);
   }
 
   placeContext(doc: MapDoc): PlaceContext {

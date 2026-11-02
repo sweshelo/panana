@@ -7,12 +7,12 @@ import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
 import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } from '../src/game/worldconditions';
-import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, setNoticeMessage, type Notice } from '../src/game/worldnotice';
+import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_STATE, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, repairNotices, setNoticeMessage, setNoticeSound, type Notice } from '../src/game/worldnotice';
 import { ENT, ENTRANCE_SIZE, freeEntranceId, newEntrance, parseEntrances, setEntranceU32 } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
 import { readConditionTypes } from '../src/game/conditions';
 import { STORY_CONDITIONS } from '../src/game/storyconditions';
-import { u32, w32 } from '../src/util/bytes';
+import { u16, u32, w16, w32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
 
 describe('entrance conditions', () => {
@@ -71,51 +71,67 @@ describe('entrance conditions', () => {
 // a blank code.bin: the patch only needs the cave and the hook's address
 const BLANK = new Uint8Array(0x420000);
 const F = {
-  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8, object: 0x31c970,
-  vehicle: 0x2e592c, party: 0x319a6c, place: 0x31c948, add: 0x338450, move: 0x31b408, line: 0x30150c, camera: 0x317210, sound: 0x317524, follow: 0x301888, turn: 0x331ca8, quat: 0x32e6bc, fadeOut: 0x300dbc, fadeIn: 0x31745c, release: 0x31c89c,
+  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8,
+  vehicle: 0x303c70, leader: 0x319a6c, toEuler: 0x3063bc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, move: 0x30150c, turn: 0x331ca8,
+  hide: 0x31c580, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
-const OTHERS = [0x31c958, 0x31b1b4, 0x3179b8, 0x3174e8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0, 0x301764, F.release, F.turn, F.follow, F.sound];
-const f32 = (v: number): number => new Uint32Array(new Float32Array([v]).buffer)[0]!;
-const fromF32 = (v: number): number => new Float32Array(new Uint32Array([v]).buffer)[0]!;
-/** Where the party stands (x, y, z) and the entrances' objects' place. */
-const PARTY = [1250, -3, 4050];
-const ENTRANCE_AT = [8150, 0, 2350];
+const OTHERS = [0x31ba8c, 0x31c4bc, 0x301500, 0x31b67c, 0x3174e8, 0x3174c8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0,
+  F.hide, F.toEuler, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch];
+const SAVE = 0x6000000;
+const PLACE = [0x44fa0000, 0xc2c80000, 0x45610000]; // where the party's leader stands, as float bits
+const ANGLE = 0x3fc90fdb; // π/2
 
-/** Run the hook (FUN_0019aa88's W01 branch) and, when it made the notice action, its [2]. */
-function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; placed?: (row: number) => boolean; vehicle?: boolean; quat?: boolean }) {
-  const vec = (m: ArmMachine, a: number): number[] => [0, 4, 8].map((i) => Math.round(fromF32(m.read(a + i, 4))));
-  const nodes: number[] = [];
-  const mover = (m: ArmMachine): number => {
-    const obj = m.alloc(0x20);
-    const node = m.alloc(0x40);
-    m.write(obj + 0x10, node, 4);
-    if (o.quat) m.write(node + 0x10, 8, 4);
-    nodes.push(node);
-    PARTY.forEach((v, i) => m.write(node + 0x14 + i * 4, f32(v), 4));
-    return obj;
+/** One load of W01: the hook (FUN_0019aa88's W01 branch) and, when it made the notice action, its [2], on `m`. */
+/** FUN_003129bc(save, var, i, &v) calls of each machine, as [var, i, v...] read when called. */
+const VARS = new WeakMap<ArmMachine, number[][]>();
+
+function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: boolean }) {
+  m.calls.length = 0;
+  const action = m.run(built.labels.get('wn_hook')!, [0x123456, 4]) >>> 0;
+  const made = action !== 0 && action !== o.game;
+  const hook = m.calls.slice();
+  m.calls.length = 0;
+  if (made) {
+    expect(hook.find((c) => c.target === F.base)?.args[1]).toBe(0x1000000);
+    const vtable = m.read(action, 4);
+    expect(vtable).toBe(built.labels.get('wn_vtable')!);
+    m.run(m.read(vtable + 8, 4), [action]);
+  }
+  const calls = m.calls.slice();
+  const vars = (VARS.get(m) ?? []).splice(0);
+  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.hide, 'hide'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.move, 'place']]);
+  return {
+    action, made, hook,
+    first: hook.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2)),
+    order: calls.filter((c) => names.has(c.target)).map((c) => names.get(c.target)!),
+    warps: calls.filter((c) => c.target === F.warp).map((c) => [c.args[0]!, c.args[1]! >>> 0, c.args[2]! >>> 0]),
+    shown: calls.filter((c) => c.target === F.narrate).map((c) => c.args[0]!),
+    sounds: calls.filter((c) => c.target === F.sound).map((c) => c.args[0]!),
+    written: calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3)),
+    euler: calls.filter((c) => c.target === F.toEuler).map((c) => c.args[1]! - c.args[0]!),
+    moves: vars.filter((v) => v[0] === F.move).map((v) => v.slice(1)),
+    turns: vars.filter((v) => v[0] === F.turn).map((v) => v.slice(2)),
+    ship: calls.some((c) => c.target === 0x3012dc || c.target === 0x3012b0),
   };
+}
+
+function machine(code: Uint8Array, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; vehicle?: boolean; noLeader?: boolean; quaternion?: boolean }) {
   const stubs = new Map<number, (m: ArmMachine) => number>([
     ...OTHERS.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
-    [F.object, (m) => ((o.placed ?? (() => true))(m.r[0]!) ? 0x9000000 + m.r[0]! : 0)],
-    [F.vehicle, (m) => (o.vehicle ? mover(m) : 0)],
-    [F.party, (m) => mover(m)],
-    [F.place, (m) => {
-      const a = m.alloc(12);
-      ENTRANCE_AT.forEach((v, i) => m.write(a + i * 4, f32(v), 4));
-      return a;
+    [F.vehicle, () => (o.vehicle ? 0x7000000 : 0)],
+    [F.move, (m) => (VARS.get(m)!.push([F.move, m.r[1]!, m.r[2]!, m.r[3]!, ...[0, 4, 8].map((i) => m.read(m.r[0]! + i, 4) >>> 0)]), 0)],
+    [F.turn, (m) => (VARS.get(m)!.push([F.turn, m.r[0]!, ...[0, 4, 8].map((i) => m.read(m.r[1]! + i, 4) >>> 0)]), 0)],
+    [F.leader, (m) => {
+      if (o.noLeader) return 0;
+      // the party's leader: its transform T at +0x10, position T+0x14, angle T+0x30, T+0x10 bit 3 = quaternion
+      const obj = m.alloc(0x20), t = m.alloc(0x60);
+      m.write(obj + 0x10, t, 4);
+      m.write(t + 0x10, o.quaternion ? 8 : 0, 4);
+      PLACE.forEach((v, i) => m.write(t + 0x14 + i * 4, v, 4));
+      m.write(t + 0x30, ANGLE, 4);
+      return obj;
     }],
-    [F.add, (m) => {
-      const [a, b, out] = [m.r[0]!, m.r[1]!, m.r[2]!];
-      for (let i = 0; i < 12; i += 4) m.write(out + i, f32(fromF32(m.read(a + i, 4)) + fromF32(m.read(b + i, 4))), 4);
-      return out;
-    }],
-    [F.move, () => 0],
-    [F.line, () => 0],
-    [F.camera, () => 0],
-    [F.quat, () => 0],
-    [F.fadeOut, () => 0],
-    [F.fadeIn, () => 0],
     [F.w01, () => o.game ?? 0],
     [F.alloc, (m) => m.alloc(0x10)],
     [F.base, (m) => m.r[0]!],
@@ -125,48 +141,16 @@ function run(code: Uint8Array, built: BuiltPatch, o: { game?: number; state: (ro
     [F.setState, () => 0],
   ]);
   const m = new ArmMachine(code, { stubs, maxDepth: 6 });
-  const action = m.run(built.labels.get('wn_hook')!, [0x123456, 4]) >>> 0;
-  const made = action !== 0 && action !== o.game;
-  const first = m.calls.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2));
-  let shown: number[] = [];
-  let written: number[][] = [];
-  let order: string[] = [];
-  let moves: number[][] = [];
-  let turns: [string, number][] = [];
-  let camera: number[][] = [];
-  let sounds: number[] = [];
-  if (made) {
-    const vtable = m.read(action, 4);
-    const m2 = new ArmMachine(code, { stubs, maxDepth: 6 });
-    // the places the mover is put at (FUN_0031b408 / FUN_0030150c), the camera's eye and target, read when called
-    const at: number[][] = [];
-    const cam: number[][] = [];
-    stubs.set(F.move, (mm) => (at.push(vec(mm, mm.r[1]!)), 0));
-    stubs.set(F.line, (mm) => (at.push(vec(mm, mm.r[0]!)), 0));
-    stubs.set(F.camera, (mm) => (cam.push(vec(mm, mm.r[1]!), vec(mm, mm.r[2]!)), 0));
-    m2.run(m2.read(vtable + 8, 4), [action]);
-    stubs.set(F.move, () => 0);
-    stubs.set(F.line, () => 0);
-    stubs.set(F.camera, () => 0);
-    moves = at;
-    camera = cam;
-    sounds = m2.calls.filter((c) => c.target === F.sound).map((c) => c.args[0]!);
-    turns = m2.calls.filter((c) => c.target === F.turn || c.target === F.quat).map((c) => [c.target === F.turn ? 'euler' : 'quat', c.args[0]!] as [string, number]);
-    shown = m2.calls.filter((c) => c.target === F.narrate).map((c) => c.args[0]!);
-    written = m2.calls.filter((c) => c.target === F.setState).map((c) => c.args.slice(0, 3));
-    const names = new Map([[F.fadeOut, 'out'], [F.move, 'move'], [F.line, 'line'], [F.camera, 'camera'], [F.follow, 'follow'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.release, 'release'], [F.setState, 'done']]);
-    order = m2.calls.filter((c) => names.has(c.target)).map((c) => names.get(c.target)!);
-    expect(m.calls.find((c) => c.target === F.base)?.args[1]).toBe(0x1000000);
-    expect(vtable).toBe(built.labels.get('wn_vtable')!);
-  }
-  return { action, made, first, shown, written, order, moves, turns, nodes, camera, sounds };
+  VARS.set(m, []);
+  m.write(0x564638, SAVE, 4);
+  return m;
 }
 
 describe('notice patch (blank code.bin)', () => {
   const list: Notice[] = [
-    { row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0] },
-    { row: 30, message: 0x2c01, sound: 0, show: [0, 0], hide: [0x37, 1] },
-    { row: 31, message: 0x2c02, sound: 0x58, show: [0xaf, 1], hide: [0, 0] },
+    { row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0], entrance: 0xd3e36ef0 },
+    { row: 30, message: 0x2c01, sound: 0, show: [0, 0], hide: [0x37, 1], entrance: 0x1234 },
+    { row: 31, message: 0x2c02, sound: 0x58, show: [0xaf, 1], hide: [0, 0], entrance: 0x5678 },
   ];
   let built: BuiltPatch;
   let code: Uint8Array;
@@ -182,66 +166,126 @@ describe('notice patch (blank code.bin)', () => {
   });
 
   test("the game's own scene comes first", () => {
-    const r = run(code, built, { game: 0x8000000, state: () => 0, holds: () => true });
+    const m = machine(code, { game: 0x8000000, state: () => 0, holds: () => true });
+    const r = load(m, built, { game: 0x8000000 });
     expect(r.action).toBe(0x8000000);
     expect(r.first).toEqual([[0x123456, 4]]);
   });
 
-  test('due notices are shown in order and recorded; the others are not', () => {
+  test('a due notice: warp next to its entrance, the message there, then warp back to where the party stood', () => {
     // 29: progress holds; 30: no show condition, its hide condition does not hold; 31: 0x91[1] is not 1
-    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18 });
-    expect(r.made).toBe(true);
-    expect(r.shown).toEqual([0x2c00, 0x2c01]);
-    expect(r.written).toEqual([[NOTICE_DUNGEON, 29, 1], [NOTICE_DUNGEON, 30, 1]]);
+    const states = new Map<number, number>();
+    const m = machine(code, { state: (row) => states.get(row) ?? 0, holds: (_row, type) => type === 0x18 });
+    const W01 = 0xa8654391;
+    // 1st load: keeps the place, warps next to entrance of row 29
+    const a = load(m, built, {});
+    expect(a.made).toBe(true);
+    expect(a.order).toEqual(['out', 'warp']);
+    expect(a.warps).toEqual([[SAVE + 0x404, W01, 0xd3e36ef0]]);
+    expect(m.read(NOTICE_STATE, 4)).toBe(0x4e574e50);
+    expect([4, 8].map((o) => m.read(NOTICE_STATE + o, 4))).toEqual([1, 29]);
+    // 2nd load (next to the entrance): the camera, the sound and the message, recorded, then back to point 0
+    const b = load(m, built, {});
+    expect(b.made).toBe(true);
+    expect(b.order).toEqual(['hide', 'in', 'sound', 'message', 'done', 'out', 'place', 'warp']);
+    expect(b.shown).toEqual([0x2c00]);
+    expect(b.sounds).toEqual([0x2f]);
+    expect(b.written).toEqual([[NOTICE_DUNGEON, 29, 1]]);
+    // the party itself is moved back (the teardown saves it to 0x5A / 0x5B), not 0x58 (the ship's)
+    expect(b.moves).toEqual([[3, 1, 0, ...PLACE]]);
+    expect(b.turns).toEqual([[0, ANGLE, 0]]);
+    expect(b.ship).toBe(false);
+    expect(m.read(SAVE + 0x404, 1)).toBe(1); // as after loading a save on W01, so 0x5A[0] is kept
+    expect(b.warps).toEqual([[SAVE + 0x404, W01, 0]]);
+    expect(m.calls.some((c) => c.target === 0x3008dc)).toBe(false); // FUN_003008dc heals the party
+    states.set(29, 1);
+    // 3rd load (back): nothing, the phase cleared
+    const c = load(m, built, {});
+    expect(c.made).toBe(false);
+    expect(m.read(NOTICE_STATE + 4, 4)).toBe(0);
+    // 4th load: row 30 is still due
+    const d = load(m, built, {});
+    expect(d.warps).toEqual([[SAVE + 0x404, W01, 0x1234]]);
   });
 
-  test('a fade, the party 3 cells south of the entrance, the camera on the entrance, the message, and back; without its object, the message only', () => {
-    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29 });
-    expect(r.order).toEqual(['out', 'line', 'camera', 'in', 'sound', 'message', 'out', 'line', 'follow', 'in', 'release', 'done', 'message', 'done']);
-    // the height kept, then the place it was at
-    expect(r.moves).toEqual([[ENTRANCE_AT[0]!, PARTY[1]!, ENTRANCE_AT[2]! + 300], PARTY]);
-    // eye and target around the entrance (s0 = 0: at once)
-    const [x, y, z] = ENTRANCE_AT as [number, number, number];
-    expect(r.camera).toEqual([[x, Math.round(y + 1187.5), z + 1300], [x, y + 50, z]]);
-    // row 29's sound; row 30 has none
-    expect(r.sounds).toEqual([0x2f]);
+  test("the place kept is the leader's own (0x58 is stale out of a town); a quaternion is turned to angles first", () => {
+    const m = machine(code, { state: () => 0, holds: (_row, type) => type === 0x18, quaternion: true });
+    const a = load(m, built, {});
+    expect(a.euler).toEqual([0x38 - 0x2c]);
+    expect([0xc, 0x10, 0x14, 0x18].map((o) => m.read(NOTICE_STATE + o, 4) >>> 0)).toEqual([...PLACE, ANGLE]);
+    expect(a.warps).toEqual([[SAVE + 0x404, 0xa8654391, 0xd3e36ef0]]);
+    expect(load(m, built, {}).moves).toEqual([[3, 1, 0, ...PLACE]]);
   });
 
-  test('on a vehicle, the vehicle is moved', () => {
-    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, vehicle: true });
-    expect(r.order.slice(0, 6)).toEqual(['out', 'move', 'camera', 'in', 'sound', 'message']);
-    expect(r.moves.length).toBe(2);
+  test('no leader: nothing shown', () => {
+    const m = machine(code, { state: () => 0, holds: (_row, type) => type === 0x18, noLeader: true });
+    const a = load(m, built, {});
+    expect(a.warps).toEqual([]);
+    expect(m.read(NOTICE_STATE + 4, 4)).toBe(0);
   });
 
-  test('a turn kept as a quaternion is put back on the node', () => {
-    const r = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, quat: true });
-    // the party is turned north by FUN_0030150c; only the way back turns it
-    expect(r.turns.map((t) => t[0])).toEqual(['quat']);
-    expect(r.turns[0]![1]).toBe(r.nodes.at(-1)!);
-    const e = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29 });
-    expect(e.turns.map((t) => t[0])).toEqual(['euler']);
-    const v = run(code, built, { state: () => 0, holds: (_row, type) => type === 0x18, placed: (row) => row === 29, vehicle: true, quat: true });
-    expect(v.turns.map((t) => t[0])).toEqual(['euler', 'quat']);
-  });
-
-  test('nothing is made once shown, or when nothing holds', () => {
-    expect(run(code, built, { state: () => 1, holds: () => true }).action).toBe(0);
-    expect(run(code, built, { state: () => 0, holds: (_r, type) => type === 0x37 }).action).toBe(0);
+  test('nothing on a vehicle, once shown, or when nothing holds; a stale state without the mark is ignored', () => {
+    expect(load(machine(code, { state: () => 0, holds: () => true, vehicle: true }), built, {}).action).toBe(0);
+    expect(load(machine(code, { state: () => 1, holds: () => true }), built, {}).action).toBe(0);
+    expect(load(machine(code, { state: () => 0, holds: (_r, type) => type === 0x37 }), built, {}).action).toBe(0);
+    const m = machine(code, { state: () => 1, holds: () => true });
+    m.write(NOTICE_STATE + 4, 1, 4); // phase 1 but no mark (memory left from before)
+    expect(load(m, built, {}).action).toBe(0);
   });
 });
 
 describe('notices of the W01 table', () => {
-  test('rows with a message in +0x40', () => {
+  test('rows with a message in +0x40 and an entrance', () => {
     const rows = Array.from({ length: 31 }, () => new Uint8Array(0x50));
     rows[29]![0x4b] = 0x18;
     w32(rows[29]!, 0, 2);
     setNoticeMessage(rows[29]!, 0x2c05);
     const events = { dungeon: NOTICE_DUNGEON, rows: rows.length, capacity: 39, table: { row: (i: number) => rows[i]! } } as unknown as Parameters<typeof notices>[0];
-    expect(notices(events)).toEqual([{ row: 29, message: 0x2c05, sound: 0, show: [0x18, 2], hide: [0, 0] }]);
-    expect(noticePatch(events)?.source).toContain('.word 0x2C05');
-    expect(notices({ ...events!, dungeon: 5 } as typeof events)).toEqual([]);
+    const ent = setEntranceU32(new Uint8Array(ENTRANCE_SIZE), 0x10, 29);
+    w32(ent, 0x04, 0xabcd);
+    expect(notices(events, [ent])).toEqual([{ row: 29, message: 0x2c05, sound: 0, show: [0x18, 2], hide: [0, 0], entrance: 0xabcd }]);
+    expect(notices(events, [])).toEqual([]);
+    expect(noticePatch(events, [ent])?.source).toContain('.word 0x2C05');
+    expect(notices({ ...events!, dungeon: 5 } as typeof events, [ent])).toEqual([]);
     setNoticeMessage(rows[29]!, 0);
-    expect(noticePatch(events)).toBeNull();
+    expect(noticePatch(events, [ent])).toBeNull();
+  });
+});
+
+describe('the sound and the state slot', () => {
+  const table = (rows: Uint8Array[], original: number) => {
+    const slot = (i: number) => (u16(rows[i]!, 0x44) === 0xffff ? i : u16(rows[i]!, 0x44));
+    return {
+      dungeon: NOTICE_DUNGEON, rows: rows.length, capacity: 39, table: { row: (i: number) => rows[i]! }, slot,
+      originalRow: (i: number) => (i < original ? rows[i] : undefined),
+      freeSlot: () => { const used = new Set(rows.map((_, i) => slot(i))); for (let s = 0; s < 39; s++) if (!used.has(s)) return s; return -1; },
+    } as unknown as Parameters<typeof repairNotices>[0];
+  };
+
+  test('the sound is kept apart from the state slot (+0x44) and model (+0x46)', () => {
+    const r = new Uint8Array(0x50);
+    w16(r, 0x44, 28);
+    w16(r, 0x46, 7);
+    setNoticeSound(r, 0x2f);
+    expect([u16(r, 0x44), u16(r, 0x46), u32(r, 0x3c)]).toEqual([28, 7, 0x2f]);
+  });
+
+  test('rows whose slot the old sound overwrote get a free slot and the sound at +0x3C', () => {
+    const rows = Array.from({ length: 30 }, (_, i) => { const r = new Uint8Array(0x50); w16(r, 0x44, i); return r; });
+    setNoticeMessage(rows[29]!, 0x2c00);
+    w32(rows[29]!, 0x44, 0x2f); // the old setNoticeSound: slot 47 is past the table
+    rows.push(new Uint8Array(0x50));
+    setNoticeMessage(rows[30]!, 0x2c01);
+    w32(rows[30]!, 0x44, 5); // slot 5 is row 5's
+    rows.push(new Uint8Array(0x50));
+    setNoticeMessage(rows[31]!, 0x2c02);
+    w16(rows[31]!, 0x44, 31); // fine
+    const t = table(rows, 29);
+    expect(repairNotices(t)).toEqual([29, 30]);
+    expect([u16(rows[29]!, 0x44), u32(rows[29]!, 0x3c)]).toEqual([29, 0x2f]);
+    expect([u16(rows[30]!, 0x44), u32(rows[30]!, 0x3c)]).toEqual([30, 5]);
+    expect(u16(rows[31]!, 0x44)).toBe(31);
+    expect(repairNotices(t)).toEqual([]);
   });
 });
 
@@ -256,13 +300,29 @@ describe.skipIf(!hasCia)('notice patch on code.bin', () => {
     const before = disassemble(u32(code, 0x19aba0 - 0x100000), 0x19aba0);
     expect(before.target).toBe(F.w01);
     expect(before.call).toBeFalsy();
-    const list: Notice[] = [{ row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0] }];
+    const list: Notice[] = [{ row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0], entrance: 0xd3e36ef0 }];
     const built = buildPatches(code, [{ id: NOTICE_PATCH_ID, title: '', source: noticePatchSource(list), enabled: true }]).get(NOTICE_PATCH_ID)!;
     expect(built.errors).toEqual([]);
     const patched = applyRecords(code, patchRecords([built]));
-    const r = run(patched, built, { state: () => 0, holds: () => true });
+    const m = machine(patched, { state: () => 0, holds: () => true });
+    expect(load(m, built, {}).warps.map((w) => w[2])).toEqual([0xd3e36ef0]);
+    const r = load(m, built, {});
     expect(r.shown).toEqual([0x2c00]);
     expect(r.written).toEqual([[NOTICE_DUNGEON, 29, 1]]);
+    expect(r.warps.map((w) => w[2])).toEqual([0]);
+  });
+
+  test("the notice's state is past everything code.bin points at (the end of .bss's last page)", () => {
+    const code = game.dump.code;
+    // .bss ends at 0x63F4B4 (crt0's bound, the only word in [0x63F4B4, 0x640000))
+    const inside: number[] = [];
+    for (let o = 0; o + 4 <= code.length; o += 4) {
+      const w = u32(code, o);
+      if (w >= 0x63f4b4 && w < 0x640000) inside.push(w);
+    }
+    expect(inside).toEqual([0x63f4b4]);
+    expect(NOTICE_STATE).toBeGreaterThan(0x63f4b4);
+    expect(NOTICE_STATE + 0x20).toBeLessThanOrEqual(0x640000);
   });
 
   test('W01: its table has room for notices, the template message is narration', async () => {
@@ -273,7 +333,7 @@ describe.skipIf(!hasCia)('notice patch on code.bin', () => {
     const w01 = game.worldMaps().find((w) => w.code === 'W01')!;
     const ents = parseEntrances(game.db.get(w01.sections[2]!));
     // the vanilla entrances with a row: none has a notice
-    expect(notices(ev)).toEqual([]);
+    expect(notices(ev, ents)).toEqual([]);
     expect(ents.filter((r) => ENT.event(r)).length).toBe(7);
   });
 
