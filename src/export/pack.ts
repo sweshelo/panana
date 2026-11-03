@@ -13,6 +13,7 @@ import { MASTER_ARCHIVE } from '../game/master';
 import { sectionBytes, type MapDoc } from '../game/sections';
 import { TITLE_ID } from '../rom/dump';
 import { equalBytes } from '../util/bytes';
+import { SAVE_PATCH, SAVE_PATCH_ID, savePatchProblem } from '../game/savepatch';
 
 /** Map DB entries replaced as they are: [hash, bytes] (the edited sections of the world maps). */
 export type DbEntries = [number, Uint8Array][];
@@ -92,17 +93,25 @@ export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: Co
  * patches, e.g. game/boss.ts BOSS_PATCH).
  */
 export function codeIps(game: Game, extra: CodePatch[] = []): Uint8Array | null {
+  const patches = exportedPatches(game, extra);
+  if (patches.some(p => p.id === SAVE_PATCH_ID)) {
+    const problem = savePatchProblem(game.dump.code, patches);
+    if (problem) throw new Error(`ExtData セーブのパッチを書き出せません: ${problem}`);
+  }
   let ips = game.baseMod?.ips ?? null;
   const added = game.code.addedMaps();
   if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap), game.code.dungeons).records, game.dump.code);
   // code patches (the event page); ones with errors are left out
-  const records = patchRecords(buildPatches(game.dump.code, exportedPatches(game, extra)).values());
+  const records = patchRecords(buildPatches(game.dump.code, patches).values());
   if (records.length) ips = appendIps(ips, records, game.dump.code);
   return ips;
 }
 
 /** The code patches written to code.ips: the enabled ones of the patch list, then `extra`. */
-export const exportedPatches = (game: Game, extra: CodePatch[] = []): CodePatch[] => [...game.codePatches.filter((p) => p.enabled), ...extra];
+export const exportedPatches = (game: Game, extra: CodePatch[] = []): CodePatch[] => {
+  const patches = [...game.codePatches.filter((p) => p.enabled), ...extra, ...(game.extSave ? [SAVE_PATCH] : [])];
+  return patches.filter((p, i) => patches.findIndex(other => other.id === p.id) === i);
+};
 
 const addedMap = (m: MapInfo): AddedMap => ({
   hash: m.hash,
