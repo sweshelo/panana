@@ -54,6 +54,8 @@ export class Game {
   chaseSpeeds: ChaseSpeeds = {};
   /** The Lv difference of Panana's code MOD "レベルステルス" (game/levelstealth.ts) written to code.ips, or 0 when it is off. */
   levelStealth = 0;
+  /** #201: migrate the game's save into checked ExtData generations at startup. */
+  extSave = false;
   readonly dbArchive: Archive;
   readonly dbEntry: ArcEntry;
   readonly dbBytes: Uint8Array;
