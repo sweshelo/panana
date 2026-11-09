@@ -15,8 +15,8 @@ import { ABILITY_RANGES, ACTION_DIRECTION, ACTION_SLOTS, PERF, performanceUses, 
  */
 export const PERFORMANCE_TABLE = 0x92124c00;
 
-/** Item effect by actionData type (kind 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD. */
-export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)' };
+/** Item effect by actionData type (kind 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD (game/itemeffects.ts). */
+export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)', 6: '全員を固定化 (MOD・デバッグ)', 7: '全員を QR 由来に戻す (MOD・デバッグ)' };
 /** Kind (category) of an action (w0 bit1-2; elpulse docs/battle.md §8). */
 export const ACTION_KIND: Record<number, string> = { 0: '状態', 1: '攻撃・とくぎ', 2: 'アイテム', 3: '特殊' };
 /**

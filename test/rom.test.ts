@@ -786,6 +786,8 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     const built = buildPatches(g2.dump.code, [ITEM_ACTION_PATCH]).get(ITEM_ACTION_PATCH_ID)!;
     expect(built.errors).toEqual([]);
     expect(built.blocks[0]!.lines.map((l) => l.before)).toEqual([0xe3500035, 0x23a00000, 0xe92d4010, 0x2a00000d]);
+    // and the battle keeps the added item actions (FUN_00288634: cmp r2, #0x2A0)
+    expect(built.blocks[1]!.lines.map((l) => [l.addr, l.before])).toEqual([[0x28863c, 0xe3520e2a]]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
     const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
     const i2 = new ItemBook(again, new Map());

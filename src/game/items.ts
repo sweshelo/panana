@@ -4,6 +4,7 @@ import { GsTable } from '../archive/gstable';
 import { findEntry, unpackEntry } from '../archive/gsarc';
 import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
 import { ActionEdits, cleanActionName, decodeAction, ELEMENT, itemEffect } from './actions';
+import { assignModEffect, modEffectOf, type ModEffectKey } from './itemeffects';
 import type { CodePatch } from './patch';
 import type { Game } from './game';
 import type { Master } from './master';
@@ -172,7 +173,9 @@ export const ITEM_ACTION_PATCH_TITLE = '追加したアイテムのアクショ�
 /**
  * FUN_002f4c54 (the item an item action uses up = its +0x14) answers 0 outside the rows 0xB2〜0xE6, so a copy of an
  * item's action (appended past the vanilla rows) would use up nothing. This reads +0x14 of every row from 0xB2 on:
- * the vanilla rows past 0xE6 all have 0 there, so they still answer 0.
+ * the vanilla rows past 0xE6 all have 0 there, so they still answer 0. The battle also dropped item actions past
+ * the vanilla rows (FUN_00288634 stores 0 = 「なし」 for 0x2A0 and up: "…は使っても効果がないので使うのをやめた";
+ * elpulse mod/build_code.py raises the bound).
  */
 export const ITEM_ACTION_PATCH_SOURCE = `; 追加したアイテムのアクション: 使ったアイテムを減らすのに読む +0x14 を、行 0xB2 以降のすべてで読む。
 ; 元は 0xB2〜0xE6 だけ (それ以外は 0)。元のデータの 0xE7 以降の行は +0x14 が 0 なので、結果は変わらない。
@@ -181,6 +184,8 @@ export const ITEM_ACTION_PATCH_SOURCE = `; 追加したアイテムのアクシ�
   movlo r0, #0
   push {r4, lr}
   blo 0x2F4CA0
+@0x28863C                    ; FUN_00288634 (戦闘のコマンドの枠): 行 0x2A0 以上のアクションを 0 (「なし」) にしていた
+  cmp r2, #0x800             ; cmp r2, #0x2A0 -> アクションの番号の上限 (11 ビット)
 `;
 /** Whether a tool has an action past the rows the game reads +0x14 of, naming an item there (see ITEM_ACTION_PATCH). */
 export function needsItemActionPatch(master: Master): boolean {
@@ -238,11 +243,33 @@ export class ItemBook {
       categoryByte: cat,
       category: categoryLabel(cat),
       flags: u32(r, 8),
-      effect: (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows ? itemEffect(decodeAction(actions.row(fields.action)))
+      effect: (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows ? this.toolEffect(fields.action)
         : (cat & 0xf) === 3 ? this.equipEffects(fields).join('、') : '',
       model: u32(r, 0x20),
       shops: this.soldAt.get(id) ?? [],
     };
+  }
+
+  /** The use effect of a tool's action: the vanilla effect, or a MOD effect (itemeffects.ts) by its name. */
+  private toolEffect(action: number): string {
+    const f = decodeAction(this.master.table('actionData.bin').row(action));
+    const mod = modEffectOf(this.master, action);
+    if (mod?.key === 'teleporter-plus') return `${mod.label} (MOD)${f.scenes.length ? ` (${f.scenes.join('・')})` : ''}`;
+    return itemEffect(f);
+  }
+
+  /** The MOD effect of an item's action (itemeffects.ts), or null. */
+  modEffect(id: number): ReturnType<typeof modEffectOf> {
+    const it = this.byId.get(id);
+    return it && (it.categoryByte & 0xf) === 1 ? modEffectOf(this.master, it.action) : null;
+  }
+
+  /** Give a tool a MOD effect (a new action of its own; itemeffects.ts assignModEffect). Returns the action row. */
+  setModEffect(id: number, key: ModEffectKey): number {
+    if (!this.byId.has(id)) throw new Error(`アイテム #${id} はありません`);
+    const row = assignModEffect(this.master, id, key);
+    this.refresh(id);
+    return row;
   }
 
   /** The states an equipment gives, as text (FUN_0030a3d0 reads them; FUN_0030a420 adds them to the unit). */

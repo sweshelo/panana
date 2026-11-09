@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
+import { MOD_EFFECTS, type ModEffectKey } from '../game/itemeffects';
 import { COMBINE, ITEM_CATEGORY, STATE_ACTION, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
 import { dropClass, type MonsterBook } from '../game/monsters';
 import { mapTitle } from '../game/names';
@@ -200,7 +201,8 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
 const COPY_INFO = [
   'このアイテムを itemData の空きの行 (分類ごとの予約の行) に写して、新しいアイテムを作ります。名前と説明は同じ本文の新しいメッセージになり、元と別に書き換えられます。',
   '道具は、使うと減るアイテムがアクションの +0x14 で決まります。写した道具にはアクションの写しが付き、+0x14 が新しいアイテムになります。',
-  'そのアクションは表の後ろに足すので、書き出しに code.ips のパッチ「追加したアイテムのアクション」が入ります (元のゲームは +0x14 を行 178〜230 でしか読みません)。',
+  'そのアクションは表の後ろに足すので、書き出しに code.ips のパッチ「追加したアイテムのアクション」が入ります (元のゲームは +0x14 を行 178〜230 でしか読まず、戦闘では行 672 以降のアクションを「なし」にします)。',
+  'テレポーターを写すと テレポーター+ (ワープホールを残して脱出する elpulse の効果) になります。',
   'お店・宝箱・モンスターのドロップに入れると、ゲームで手に入ります。モデルは「モデルを選ぶ…」で、この作品やほかの作品のアイテムから選び直せます。',
 ].join('\n');
 
@@ -250,6 +252,13 @@ function usesUpWarning(items: ItemBook, it: Item): string {
   return `使うと ${items.item(u)?.name ?? `#${u}`} が減ります (アクションの +0x14)。このアイテム用のアクションが必要です`;
 }
 
+const MOD_EFFECT_INFO = [
+  '「elpulse の効果」を選ぶと、その効果のアクションをこのアイテム用に作ってアイテムに付けます (アクションの表の後ろに足す。このアイテムだけが使う追加のアクションなら、それを書き換えます)。',
+  '効果のコードは elpulse の MOD (mod/build_code.py) から切り出したもので、使っている効果のパッチだけが書き出しの code.ips に入ります (code cave を使う量が減ります)。',
+  '量・範囲・使える場面・演出は、アクションのページで変えられます。テレポーター+ は、テレポーターを写したアイテムがそのまま テレポーター+ になります。',
+  '土台の MOD の code.ips に elpulse のパッチが入っているときは、その分は入れません (土台のほうが使われます)。',
+].join('\n');
+
 /** Prices, stars, stack limit, use effect (tools) and the item that replaces it at the limit. */
 function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit: () => void }): ReactNode {
   const orig = items.original(it.id);
@@ -267,6 +276,7 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
     <label className="stat"><span className="muted">{label}</span><span>{input}{suffix}</span></label>
   );
   const choices = items.itemActions();
+  const mod = items.modEffect(it.id);
   const chainName = (id: number): string => (id ? items.item(id)?.name ?? `#${id}` : 'なし');
   return (
     <div className="item-fields">
@@ -279,14 +289,25 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
       {(it.categoryByte & 0xf) === 1 && (
         <div className="model-line">
           {'効果: '}
-          <select {...mark('action', (v) => `#${v}`)} value={it.action} onChange={(e) => set({ action: Number(e.target.value) })}>
+          <select {...mark('action', (v) => `#${v}`)} value={it.action} onChange={(e) => {
+            const v = e.target.value;
+            if (v.startsWith('mod:')) {
+              items.setModEffect(it.id, v.slice(4) as ModEffectKey);
+              onEdit();
+            } else set({ action: Number(v) });
+          }}>
             <option value={0}>なし</option>
-            {!!it.action && !choices.some((c) => c.row === it.action) && <option value={it.action}>{`#${it.action} (アイテム以外のアクション)`}</option>}
+            {!!it.action && !choices.some((c) => c.row === it.action) && <option value={it.action}>{`#${it.action} ${mod ? `— ${it.effect}` : '(アイテム以外のアクション)'}`}</option>}
             {choices.map((c) => <option key={c.row} value={c.row}>{`#${c.row} ${c.name || '(名前なし)'} — ${c.effect}`}</option>)}
+            <optgroup label="elpulse の効果 (このアイテム用のアクションを作る)">
+              {MOD_EFFECTS.map((e) => <option key={e.key} value={`mod:${e.key}`}>{e.label}</option>)}
+            </optgroup>
           </select>
           {' '}
+          <InfoTip text={MOD_EFFECT_INFO} />
           {!!it.action && <a href={`#/actions/${it.action}`} title="アクションで開く">↗</a>}
           {it.effect && <span className="muted">{` ${it.effect}`}</span>}
+          {mod && <div className="muted small">{`${mod.note} 書き出しの code.ips にこの効果のパッチが入ります。`}</div>}
           {usesUpWarning(items, it) && <div className="issue warn">{`⚠ ${usesUpWarning(items, it)}`}</div>}
         </div>
       )}
