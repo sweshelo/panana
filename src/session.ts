@@ -12,7 +12,7 @@ import { ItemBook } from './game/items';
 import { MapDb } from './game/mapdb';
 import type { MonsterBook } from './game/monsters';
 import { makeMap, type NewMapSpec } from './game/newmap';
-import { makeDungeon, renameDungeon, type NewDungeonSpec } from './game/newdungeon';
+import { AREA_TABLE, makeDungeon, ownPlaces, renameDungeon, type NewDungeonSpec } from './game/newdungeon';
 import type { AddedDungeon } from './game/mappatch';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
@@ -207,12 +207,15 @@ export class Session {
     const game = this.game;
     const mg = game.master.mapGroup;
     const before = mg.data.slice();
+    const area = game.master.table(AREA_TABLE);
+    const areaBefore = area.data.slice();
     const nd = await makeDungeon(game, spec, new Set([...game.dump.names(), ...game.addedFiles.keys()]), this.eventsOf);
     let map: { info: MapInfo; doc: MapDoc };
     try {
       map = makeMap(game, { ...first, dungeon: nd.dungeon, newDungeonCode: nd.code });
     } catch (e) {
       mg.data = before;
+      area.data = areaBefore;
       game.master.texts.removeAdded(nd.nameId);
       if (nd.donor >= 0) game.forgetEvents(nd.donor);
       const t = nd.donor >= 0 ? this.st.events.get(nd.donor) : undefined;
@@ -384,6 +387,8 @@ export class Session {
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
     if (edits.messages) game.master.texts.restore(edits.messages);
+    // new dungeons saved before they got a place of their own (the museum showed the template's name)
+    if (dungeons.length) ownPlaces(game);
     if (direct) this.book!.restoreDirect(direct);
     if (edits.design) this.book?.restoreDesign(edits.design);
     if (tables.length || edits.design || nMessages) this.book?.reload();
