@@ -358,7 +358,7 @@ export function renameDungeon(game: Game, dungeon: number, change: { name?: stri
   }
 }
 
-// ---- The place of a new dungeon (docs/integrations/panana/new-dungeon-place.md)
+// ---- The place of a new dungeon (docs/kahara/museum.md §4)
 // Entering a dungeon puts its mapGroup +0x28 into the place byte (FUN_00401568 -> FUN_002e59bc, which turns values
 // from 0x4E on into 0). Beating a monster keeps that place in save values 0x6D / 0x6E (FUN_003fc2cc), getting an item
 // in 0x71 / 0x72 (FUN_003fb94c), and the museum shows the message of areaInfoData row `place` (+0x00). A new dungeon

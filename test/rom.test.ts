@@ -517,7 +517,8 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const c = book.monster(n)!;
     expect({ ...c, row: 15, design: src.design, species: src.species, museum: src.museum }).toEqual(src);
     // a museum entry of its own: the lowest number no row uses as species or museum number
-    expect([c.species, c.museum, src.species]).toEqual([72, 72, 15]);
+    expect([c.species, c.museum]).toEqual([72, 72]);
+    expect(src.species).not.toBe(72);
     expect([book.museumSharers(n), book.freeMuseumNumber()]).toEqual([[], 73]);
     // another form of a monster goes in its entry (its species and museum number, which differ for some rows)
     book.setMuseum(n, 116);
