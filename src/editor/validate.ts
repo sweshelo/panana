@@ -4,7 +4,7 @@ import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
 import { fixGroup, KIND_BOSS, readStages, stageCommands } from '../game/boss';
 import { ACTOR_HERO, ACTOR_NONE, ACTOR_PARTY, OP } from '../game/cutscene';
 import type { Game } from '../game/game';
-import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
+import { AUTOMAP_LIMIT, automapGroup, automapMaps } from '../game/automap';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
@@ -243,9 +243,9 @@ function validateNewMap(game: Game, doc: MapDoc, docs: Map<number, MapDoc>): Iss
     });
   if (nd && !game.code.maps.some((m) => m.dungeon === nd.dungeon && game.code.worlds.some((w) => game.entrances(w).some((r) => ENT.destMap(r) === m.hash))))
     out.push({ level: 'warn', msg: `新しいダンジョン ${nd.code} に入るワールドマップの入口がありません (ワールドマップのページで入口の行き先をこのダンジョンのマップにしてください)`, key: 'new/world' });
-  const n = game.code.maps.filter((m) => m.dungeon === doc.dungeon).length;
-  if (hasAutomap(doc.dungeon) && n > AUTOMAP_LIMIT)
-    out.push({ level: 'warn', msg: `このダンジョンのマップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
+  const n = automapMaps(game, doc.dungeon);
+  if (n !== null && n > AUTOMAP_LIMIT)
+    out.push({ level: 'warn', msg: `${automapShare(game, doc.dungeon)}マップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
   return out;
 }
 
@@ -290,4 +290,10 @@ export function validateWorld(game: Game, world: number, list: Uint8Array[], ori
       });
   });
   return out;
+}
+
+/** "このダンジョンの" or, when the automap records are shared (a new dungeon), "このダンジョンと D01 の". */
+function automapShare(game: Game, dungeon: number): string {
+  const others = (automapGroup(game, dungeon) ?? []).slice(1).map((d) => game.master.dungeonName(d) || `ID ${d}`);
+  return others.length ? `このダンジョンと、オートマップの記録を分け合う ${others.join('・')} の` : 'このダンジョンの';
 }
