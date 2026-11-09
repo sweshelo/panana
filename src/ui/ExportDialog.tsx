@@ -11,6 +11,7 @@ import { NOTICE_DUNGEON, noticePatch, repairNotices } from '../game/worldnotice'
 import { DROP_CAP_ID, DROP_CAP_TITLE, dropCapPatch, dropCapProblem } from '../game/dropcap';
 import { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH } from '../game/monsters';
 import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
+import { modEffectPatches } from '../game/itemeffects';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
@@ -54,6 +55,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
       ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
+    // the item effects cut out of elpulse (game/itemeffects.ts), for the ones the items use
+    const mod = modEffectPatches(game.master, game.dump.code);
+    extra.push(...mod.patches);
+    for (const w of mod.warnings) issues.push({ map: 'アイテムの効果', issue: { level: 'warn', msg: w, key: `elp:${w}` } });
+    if (mod.inBase.length) changes.push(`${mod.inBase.map((t) => `「${t}」`).join('・')} は土台の MOD の code.ips のものを使います`);
     // the jump destinations (game/jumppoints.ts): more rows, rows hidden while their entrance is not placed
     const jump = session.jumpPatch();
     if (jump.patch) extra.push(jump.patch);
