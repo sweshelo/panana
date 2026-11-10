@@ -21,6 +21,9 @@ const textOffset = (key: ActionTextKey): number => ACTION_TEXTS.find((x) => x.ke
 /** UseItemInfo +0x04: the ActionData row a tool does (0 = none: the boosts, the keys, ヒロビーロ). */
 export const USE_ITEM_ACTION = 0x04;
 
+/** The kinds whose ItemDataCore +0x00 is a UseItemInfo row (0x1x tools, 0x02 ふくぶくろ, 0x37; naauao lanai/items.md §4). */
+export const usesItemInfo = (kind: number): boolean => (kind & 0xf0) === 0x10 || kind === 0x02 || kind === 0x37;
+
 /** An action of the book. */
 export interface LanaiBattleAction extends LanaiAction {
   /** The name it is listed by: its text without the user, else the item using it, else "アクション N". */
@@ -68,7 +71,7 @@ function build(session: LanaiSession): { list: LanaiBattleAction[]; refs: LanaiA
       for (const e of lanaiEffects(ref)) if (isAutoEffect(e.kind)) add(e.value, { item: it.row, name: it.name, how: `装備・${LANAI_AUTO_EFFECTS[e.kind]}` });
       continue;
     }
-    const u = use ? use.find(core.u32(it.core, 0x00)) : -1;
+    const u = use && usesItemInfo(it.kind) ? use.find(core.u32(it.core, 0x00)) : -1;
     if (use && u > 0) add(use.u32(u, USE_ITEM_ACTION), { item: it.row, name: it.name, how: '使う' });
   }
   const list: LanaiBattleAction[] = [];
@@ -91,9 +94,9 @@ export const lanaiBattleActions = (session: LanaiSession): LanaiBattleAction[] =
 export const lanaiActionRefs = (session: LanaiSession): LanaiActionRefs => build(session).refs;
 
 /** The ActionData row a tool does (UseItemInfo +0x04), or 0. */
-export function lanaiItemUseAction(session: LanaiSession, it: { core: number }): number {
+export function lanaiItemUseAction(session: LanaiSession, it: { kind: number; core: number }): number {
   const use = session.table('UseItemInfo');
-  const u = use ? use.find(session.need('ItemDataCore').u32(it.core, 0x00)) : -1;
+  const u = use && usesItemInfo(it.kind) ? use.find(session.need('ItemDataCore').u32(it.core, 0x00)) : -1;
   return use && u > 0 ? use.u32(u, USE_ITEM_ACTION) : 0;
 }
 
