@@ -5,7 +5,7 @@
 ```bash
 git submodule update --init docs   # 解析資料 (naauao)
 bun install
-bun run check      # Lefthook: 全ファイルの lint・format・型チェック・テスト
+bun run check      # 全ファイルの lint・format チェック・型チェック・テスト（変更・ステージしない）
 bun run format     # Oxfmt で整形。ファイルのパスを付ければ対象を限定できる
 bun run dev        # http://localhost:5173/
 bun run build      # tsc --noEmit と vite build。dist/ に静的ファイルを出す
@@ -14,8 +14,10 @@ bun run deploy     # build のあと wrangler deploy
 ```
 
 `bun install` の prepare で Lefthook の Git hook をインストールします。必要なら `bun run hooks:install` で再設定できます。
-`git commit` の前に、ステージしたファイルの Oxlint・Oxfmt チェックと、全体の型チェック・`bun test` を並列に実行します。
-整形は自動でステージせず、不一致があればコミットを止めます。`bun run format <path>` で整形して差分を確認し、再度 `git add` してください。
+`git commit` の前に、ステージしたファイルを Oxfmt で整形し、整形結果を自動ステージします。その後、Oxlint・全体の型チェック・`bun test` を並列に実行します。
+部分的にステージしたファイルの未ステージ変更は Lefthook が一時退避し、最後に復元します。競合があればコミットを止めます。
+後続チェックが失敗しても整形済みの差分が残ることがあります。コミット前に整形結果を確認したい場合は `bun run format <path>` を使ってからステージしてください。
+`bun run check` は変更・ステージをせず、全ファイルを検証します。自動ステージする pre-commit の `--all-files` 実行で代用しないでください。
 成功したチェックのログは非表示です。失敗時は `scripts/quiet-check.ts` が標準出力・標準エラーの診断と失敗コードを保持します。
 Windows では Git for Windows と Bun が PATH から実行できるようにしてください。MSYS2 Git も入っている場合は `scripts/lefthook.ts` が Git for Windows を優先します。ユーザーの PATH 設定自体は変更しません。
 

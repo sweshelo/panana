@@ -4,15 +4,20 @@ output:
   - failure
 
 pre-commit:
-  parallel: true
-  commands:
-    lint:
-      glob: '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'
-      run: bun scripts/quiet-check.ts lint {staged_files}
-    format:
+  piped: true
+  jobs:
+    - name: format
       glob: '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,json,jsonc,css,html,md,yml,yaml}'
-      run: bun scripts/quiet-check.ts format:check {staged_files}
-    typecheck:
-      run: bun scripts/quiet-check.ts typecheck
-    test:
-      run: bun scripts/quiet-check.ts test
+      run: bun scripts/quiet-check.ts format {staged_files}
+      stage_fixed: true
+    - name: checks
+      group:
+        parallel: true
+        jobs:
+          - name: lint
+            glob: '*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'
+            run: bun scripts/quiet-check.ts lint {staged_files}
+          - name: typecheck
+            run: bun scripts/quiet-check.ts typecheck
+          - name: test
+            run: bun scripts/quiet-check.ts test

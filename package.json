@@ -27,7 +27,7 @@
   "scripts": {
     "prepare": "bun scripts/lefthook.ts install",
     "hooks:install": "bun scripts/lefthook.ts install",
-    "check": "bun scripts/lefthook.ts run pre-commit --all-files",
+    "check": "bun scripts/quiet-check.ts lint && bun scripts/quiet-check.ts format:check && bun scripts/quiet-check.ts typecheck && bun scripts/quiet-check.ts test",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix --deny-warnings",
     "format": "oxfmt --write",
