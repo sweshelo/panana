@@ -6,11 +6,6 @@ import { dungeonRows, newHash } from './mappatch';
 import { loadDoc, type MapDoc } from './sections';
 import { MapDb } from './mapdb';
 
-/** Automap records per dungeon (save +0x410: 14 x 0x9C, found by map hash; docs/new-map.md §3). */
-export const AUTOMAP_LIMIT = 14;
-/** Dungeons with an automap (FUN_002f8de0): D01-D10, K01-K04, and IDs 0x1C / 0x1D. */
-export const hasAutomap = (dungeon: number): boolean =>
-  (dungeon >= 1 && dungeon <= 10) || (dungeon >= 0x0f && dungeon <= 0x12) || dungeon === 0x1c || dungeon === 0x1d;
 
 export interface DungeonChoice {
   dungeon: number;

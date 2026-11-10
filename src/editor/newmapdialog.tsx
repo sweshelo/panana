@@ -2,7 +2,8 @@
 import { useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import { mapTitle } from '../game/names';
-import { AUTOMAP_LIMIT, addableDungeons, hasAutomap, suggestName } from '../game/newmap';
+import { addableDungeons, suggestName } from '../game/newmap';
+import { AUTOMAP_LIMIT, automapGroup, automapMaps } from '../game/automap';
 import type { Session } from '../session';
 import { Dialog } from '../ui/Dialog';
 import { Field } from './fields';
@@ -23,7 +24,8 @@ export function NewMapDialog({ session, currentDungeon, onCreated, onClose }: {
   if (!d) return <Dialog title="マップを追加" wide={false} onClose={onClose}><div className="error">マップを足せるダンジョンがありません。</div></Dialog>;
   const code = name ?? suggestName(game, d.code, Number(floor) || 0);
   const tmpl = d.maps.find((m) => m.hash === template) ?? d.maps[0]!;
-  const n = d.maps.length + 1;
+  const n = (automapMaps(game, d.dungeon) ?? 0) + 1;
+  const sharedWith = (automapGroup(game, d.dungeon) ?? []).slice(1).map((x) => game.master.dungeonName(x) || `ID ${x}`);
   const create = (): void => {
     setError('');
     try {
@@ -55,10 +57,10 @@ export function NewMapDialog({ session, currentDungeon, onCreated, onClose }: {
       <p className="muted small" style={{ whiteSpace: 'pre-line' }}>
         {[
           '見た目 (タイルセット・BGM・敵) はこのダンジョンのものです。写す元のマップから、敵の出現の見出し (区画 6) と mapData の指定を写します。',
-          hasAutomap(d.dungeon)
-            ? n > AUTOMAP_LIMIT
+          automapGroup(game, d.dungeon)
+            ? (n > AUTOMAP_LIMIT
               ? `このダンジョンは ${n} 枚になり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません。`
-              : `オートマップ: ${n} / ${AUTOMAP_LIMIT} 枚。`
+              : `オートマップ: ${n} / ${AUTOMAP_LIMIT} 枚。`) + (sharedWith.length ? ` (${sharedWith.join('・')} とオートマップの記録を分け合います)` : '')
             : 'このダンジョンにはもともとオートマップがありません。',
           '作ったあと、ほかのマップの出入口 (区画 3) の行き先をこのマップにし、このマップにも出入口を置いてください。書き出すと code.ips (マップの表) とマップ DB に入ります。',
         ].join('\n')}

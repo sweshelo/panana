@@ -16,6 +16,7 @@ import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
+import { automapPatch, automapProblem } from '../game/automap';
 import { CHASE_PATCH_ID, chaseSpeedPatch, chaseSpeedProblem } from '../game/chase';
 import { MASTER_ARCHIVE } from '../game/master';
 import { mapTitle } from '../game/names';
@@ -64,6 +65,11 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const jump = session.jumpPatch();
     if (jump.patch) extra.push(jump.patch);
     if (jump.missing.length) issues.push({ map: 'ジャンプの行き先', issue: { level: 'error', msg: `行き先 ${jump.missing.join('・')} の入口の出現条件を読めませんでした (ワールドマップを開き直してから書き出してください)。この行き先は条件なしで一覧に出ます`, key: 'jump:missing' } });
+    // the automap (lower screen minimap) of the new dungeons (game/automap.ts): they share a slot of another dungeon
+    const automap = automapPatch(game);
+    const automapErr = automap && automapProblem(game.dump.code);
+    if (automapErr) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `${automapErr} (このパッチは書き出しません。新しいダンジョンにはオートマップが付きません)`, key: `patch:${automap.id}` } });
+    else if (automap) extra.push(automap);
     // the speeds of the map symbols (game/chase.ts), when changed on the monster page
     const chase = chaseSpeedPatch(game.chaseSpeeds);
     const chaseProblem = chase && chaseSpeedProblem(game.dump.code);
