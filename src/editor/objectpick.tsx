@@ -78,6 +78,7 @@ export interface PlacedChoice {
   where?: { doc: MapDoc; x: number; y: number };
   category?: string;
   keywords?: string;
+  unavailable?: string | null;
 }
 
 /** A small top-down picture of a map's tiles with a marker on one cell. */
@@ -162,6 +163,7 @@ export function PlacedPickButton({
     sub: c.sub,
     icon: <ChoiceIcon c={c} />,
     keywords: `${c.keywords ?? ''} ${c.sub ?? ''}`,
+    unavailable: c.unavailable,
     category: c.category ? cats.get(c.category) : undefined,
   }));
   const categories = cats.size > 1 ? Object.fromEntries([...cats].map(([k, v]) => [v, k])) : undefined;
@@ -171,7 +173,7 @@ export function PlacedPickButton({
     <>
       <button
         type="button"
-        className="tileset-button placed-button"
+        className="loot-item placed-button"
         title={cur?.sub ?? curExtra?.sub ?? ''}
         aria-haspopup="dialog"
         onClick={() => setOpen(true)}

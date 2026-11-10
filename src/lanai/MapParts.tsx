@@ -37,7 +37,7 @@ export const lanaiGroupHref = (content: number, row?: number): string =>
   `#/groups/${content}${row !== undefined ? `.${row}` : ''}`;
 
 /** Row 0 (row ID 0x80000000): the game's default group, where values the table does not have go (map.md §5.7). */
-export const DEFAULT_GROUP_LABEL = '既定 (行 0: 敵なし相当)';
+export const DEFAULT_GROUP_LABEL = '既定 (番号 0: 敵なし相当)';
 
 /** "いちごおばけ・おおくちばし": the monsters of a MonsterGroup row. */
 function monsterGroupNames(maps: LanaiMaps, row: number): string {
@@ -63,7 +63,7 @@ const groupChanged = (maps: LanaiMaps, row: number): boolean =>
 /** A group at a glance: its row and the photos of its monsters ("既定" for row 0, a warning for a value not in the table). */
 export function MonsterGroupLine({ maps, value }: { maps: LanaiMaps; value: number }): ReactNode {
   const row = maps.monsterGroupRow(value);
-  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 行 0 になる)`}</span>;
+  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 番号 0 になる)`}</span>;
   if (row === 0) return <span className="muted">{DEFAULT_GROUP_LABEL}</span>;
   const g = maps.monsterGroups()[row]!;
   return (
@@ -105,7 +105,7 @@ function LanaiGroupPicker({
   return (
     <Dialog title="群れを選ぶ" onClose={onClose}>
       <p className="muted small">
-        「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは行 0
+        「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは番号 0
         の群れになります。群れの中身は<a href={lanaiGroupHref(maps.content.index)}>「群れ」のページ</a>で編集できます
         (共有している群れを変えると、使っているマップ全部に効きます)。
       </p>
@@ -141,7 +141,7 @@ function LanaiGroupPicker({
           {row < 0 && (
             <tr className="active">
               <td></td>
-              <td className="muted">{`${hex8(current).toUpperCase()} (表にない: 行 0 になる)`}</td>
+              <td className="muted">{`${hex8(current).toUpperCase()} (表にない: 番号 0 になる)`}</td>
               <td></td>
             </tr>
           )}
@@ -172,7 +172,7 @@ export function MonsterGroupSelect({
       <div className="row group-pick-row">
         <button
           className="group-pick"
-          title={`群れを選び直す (行 ID ${hex8(value).toUpperCase()})`}
+          title={`群れを選び直す (ID ${hex8(value).toUpperCase()})`}
           onClick={() => setPicking(true)}
         >
           <MonsterGroupLine maps={maps} value={value} />
@@ -213,11 +213,11 @@ export function MonsterGroupRowSelect({
   return (
     <>
       <div className="row group-pick-row">
-        <button className="group-pick" title={`群れを選び直す (行 ${value})`} onClick={() => setPicking(true)}>
+        <button className="group-pick" title={`群れを選び直す (番号 ${value})`} onClick={() => setPicking(true)}>
           {g ? (
             <MonsterGroupLine maps={maps} value={g.id} />
           ) : (
-            <span className="muted">{`行 ${value} (表は ${maps.monsterGroups().length} 行: 表の外)`}</span>
+            <span className="muted">{`番号 ${value} (表は ${maps.monsterGroups().length} 件: 表の外)`}</span>
           )}
         </button>
         {g && (
@@ -253,11 +253,13 @@ export function ContentSelect({
   value,
   onChange,
   allowNone,
+  checking = false,
 }: {
   maps: LanaiMaps;
   value: number;
   onChange: (v: number) => void;
   allowNone?: boolean;
+  checking?: boolean;
 }): ReactNode {
   const list = useMemo(() => lanaiContents(maps.session), [maps.session]);
   const own = maps.content.index;
@@ -274,7 +276,11 @@ export function ContentSelect({
         ))}
       </select>
       {value !== own && !(allowNone && value === 0) && (
-        <span className="muted small">{`このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}</span>
+        <span className="muted small">
+          {checking
+            ? '別のコンテンツのクリア状態を判定します。'
+            : `このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}
+        </span>
       )}
     </>
   );
@@ -353,7 +359,7 @@ function TreasureRowPicker({
       <div className="row">
         <input
           type="search"
-          placeholder="アイテム名か行番号で絞り込み"
+          placeholder="アイテム名か番号で絞り込み"
           className="picker-search"
           autoFocus
           value={query}
@@ -361,20 +367,20 @@ function TreasureRowPicker({
         />
         <label className="layer">
           <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} />{' '}
-          どの宝箱も使っていない行だけ
+          どの宝箱も使っていない中身だけ
         </label>
         <button className="primary" onClick={onNew}>
-          今の中身を写して新しい行を作る
+          今の中身を写して新しい中身を作る
         </button>
       </div>
       <p className="muted small">
-        「使っている宝箱」は、このコンテンツのマップの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。
+        「使っている宝箱」は、このコンテンツのマップの宝箱のうちこの中身を指す数。共有している中身を変えると、それらの宝箱も全部変わります。
       </p>
       <div className="picker-list" ref={list}>
         <table className="picker-table">
           <thead>
             <tr>
-              <th>行</th>
+              <th>番号</th>
               <th>中身</th>
               <th>使っている宝箱</th>
             </tr>
@@ -508,7 +514,7 @@ function TreasureStage({
       <h3>{`宝箱の中身 (${LANAI_CHEST_ACTIONS[events.u32(event, field - 4)]}${heading ? `、${heading}` : ''})`}</h3>
       <div className="row">
         <span className="grow">
-          {`中身の表 TreasureGroup #${row}${added ? ' (追加した行)' : ''}`}
+          {`中身の表 TreasureGroup #${row}${added ? ' (追加した中身)' : ''}`}
           {users.length > 1 && (
             <span className="badge" title={users.map(userLabel).join('、')}>{`${users.length} 個の宝箱で共有`}</span>
           )}
@@ -517,10 +523,10 @@ function TreasureStage({
       </div>
       {users.length > 1 && (
         <div className="row">
-          <button onClick={separate}>この宝箱専用の行にする</button>
+          <button onClick={separate}>この宝箱専用の中身にする</button>
         </div>
       )}
-      {!valid && <div className="error">{`中身の表 (TreasureGroup) に行 ${row} がありません`}</div>}
+      {!valid && <div className="error">{`中身の表 (TreasureGroup) に番号 ${row} がありません`}</div>}
       {valid && (
         <>
           <div className="loot">

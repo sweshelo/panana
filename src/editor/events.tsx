@@ -16,6 +16,8 @@ import { MESSAGE_HELP } from './message';
 import { useEditorState } from '../ui/useEditorState';
 import { designModelRef, monsterModelRef, objectRef, PlacedPickButton, type PlacedChoice } from './objectpick';
 import { isIndoor, recordObjectRow } from '../game/objects';
+import { GridPicker } from '../ui/GridPicker';
+import { Photo } from '../ui/Photo';
 
 /** EventObject row a record refers to (0 = none). */
 export function eventRowOf(section: number, rec: Rec): number {
@@ -356,6 +358,40 @@ export function EventListDialog({
       : live.has(row)
         ? 'ほかのイベント (スイッチの対象・スクリプト・演出のデータ) が使っています'
         : '';
+  const picker = choose && (
+    <GridPicker
+      title="イベントを選ぶ"
+      current={choose.current}
+      entries={eventChoices(
+        st,
+        Array.from({ length: ev.rows - 1 }, (_, i) => i + 1),
+        null,
+      ).map((c) => ({
+        id: c.value,
+        name: free.has(c.value) ? `イベント #${c.value}: 空き` : c.name,
+        icon: c.model ? (
+          <Photo model={c.model} className="photo photo-lg" />
+        ) : (
+          <span className="photo photo-lg stamp-badge">{c.badge}</span>
+        ),
+        sub:
+          (uses.get(c.value) ?? []).map((u) => u.label).join('\n') ||
+          (free.has(c.value) ? '選ぶとこの物が使います' : '置いてある物なし'),
+        unavailable:
+          c.value !== choose.current && (uses.get(c.value)?.length ?? 0) > 0
+            ? 'ほかの物が使っているイベントです'
+            : null,
+        category: free.has(c.value) ? 1 : ev.kind(c.value) + 2,
+        keywords: `${c.sub ?? ''} ${(uses.get(c.value) ?? []).map((u) => u.label).join(' ')}`,
+      }))}
+      categories={{ 1: '空き', ...Object.fromEntries(kinds.map((k) => [k + 2, kindName(k)])) }}
+      choices={choose.allowNone ? [{ value: 0, label: 'なし' }] : []}
+      wide
+      onPick={choose.onChoose}
+      onClose={onClose}
+    />
+  );
+  if (picker) return picker;
   return (
     <Dialog
       title={`${choose ? 'イベント番号を選ぶ' : 'イベントの一覧'} (${game.master.dungeonName(doc.dungeon)}: ${ev.rows - 1 - free.size} 個を使用、空き ${free.size} 個 / 上限 ${ev.capacity - 1} 個)`}
@@ -481,6 +517,7 @@ export function EventRowField({
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const ev = st.currentEvents;
+  const current = ev?.has(value) && st.current ? eventChoices(st, [value], null)[0] : undefined;
   const text = !value
     ? 'なし'
     : !ev
@@ -490,12 +527,17 @@ export function EventRowField({
         : `イベント #${value} (表にない番号)`;
   return (
     <Field label={label}>
-      <div className="row">
+      <button type="button" className="loot-item" disabled={!ev} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        {current?.model ? (
+          <Photo model={current.model} />
+        ) : (
+          <span className="photo stamp-badge" aria-hidden="true">
+            {current?.badge ?? '◇'}
+          </span>
+        )}
         <span className={ev && value && !ev.has(value) ? 'error' : ''}>{text}</span>
-        <button className="small" disabled={!ev} onClick={() => setOpen(true)}>
-          選ぶ…
-        </button>
-      </div>
+        <span className="muted"> ▾</span>
+      </button>
       {open && ev && (
         <EventListDialog
           st={st}

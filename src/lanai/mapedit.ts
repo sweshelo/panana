@@ -354,7 +354,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
   if (src.mapData !== before.mapData)
     out.push({
       level: 'warn',
-      msg: `屋内のタイル (種類 15〜27) の有無が変わったので、MapData が行 ${before.mapData} → ${src.mapData} (タイルセット ${before.partsName || before.tileset} → ${src.partsName || src.tileset}) になります。ほかのタイルのモデルも変わります`,
+      msg: `屋内のタイル (種類 15〜27) の有無が変わったので、MapData が #${before.mapData} → ${src.mapData} (タイルセット ${before.partsName || before.tileset} → ${src.partsName || src.tileset}) になります。ほかのタイルのモデルも変わります`,
       key: `mapdata/${src.mapData}`,
     });
 
@@ -426,7 +426,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (table && row >= table.rows)
         out.push({
           level: 'error',
-          msg: `${LANAI_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`,
+          msg: `${LANAI_LAYOUTS[k]!.label} #${i}: イベント番号 ${row} がありません (表は ${table.rows} 件)`,
           target: rec(k, i),
           key: `evrow/${k}/${row}`,
         });
@@ -443,7 +443,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
           if (row >= treasure.rows)
             out.push({
               level: 'error',
-              msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`,
+              msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に番号 ${row} がありません (表は ${treasure.rows} 件)`,
               target: rec(k, i),
               key: `treasure/${k}/${row}`,
             });
@@ -453,7 +453,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     if (n > 1)
       out.push({
         level: 'warn',
-        msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`,
+        msg: `${n} 個のレコードが同じ イベント番号 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`,
         key: `evshare/${row}/${n}`,
       });
 
@@ -467,7 +467,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (slot >= group.stateCount) {
         out.push({
           level: 'warn',
-          msg: `EventObject の行 ${row}: 状態の枠 ${slot} が MapGroup の枠の数 ${group.stateCount} 以上なので、状態 (開けた、など) が保存されません`,
+          msg: `イベント番号 ${row}: 状態の枠 ${slot} が MapGroup の枠の数 ${group.stateCount} 以上なので、状態 (開けた、など) が保存されません`,
           key: `evslot/${row}/${slot}`,
         });
         continue;
@@ -483,7 +483,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (rows.length > 1)
         out.push({
           level: 'warn',
-          msg: `EventObject の行 ${rows.join(', ')} が同じ状態の枠 ${slot} を使っています (状態を共有します)`,
+          msg: `イベント番号 ${rows.join(', ')} が同じ状態の枠 ${slot} を使っています (状態を共有します)`,
           key: `evslotshare/${slot}/${rows.join(',')}`,
         });
   }
@@ -523,7 +523,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     if (maps.monsterGroup && maps.monsterGroupRow(c.value) < 0)
       out.push({
         level: 'error',
-        msg: `区画 6 のセル (${c.x}, ${c.y}): ${hex8(c.value).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`,
+        msg: `区画 6 のセル (${c.x}, ${c.y}): ${hex8(c.value).toUpperCase()} はこのコンテンツの MonsterGroup にありません (番号 0 の群れになります)`,
         target: cell(c.x, c.y),
         key: `s6id/${c.x},${c.y}/${hex8(c.value)}`,
       });
@@ -531,7 +531,7 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
   if (doc.sec6Header.length >= 4 && maps.monsterGroup && maps.monsterGroupRow(u32(doc.sec6Header, 0)) < 0)
     out.push({
       level: 'error',
-      msg: `区画 6 のヘッダーの群れ ${hex8(u32(doc.sec6Header, 0)).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`,
+      msg: `区画 6 のヘッダーの群れ ${hex8(u32(doc.sec6Header, 0)).toUpperCase()} はこのコンテンツの MonsterGroup にありません (番号 0 の群れになります)`,
       key: `s6head/${hex8(u32(doc.sec6Header, 0))}`,
     });
   return out;
