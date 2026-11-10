@@ -7,14 +7,18 @@ import type { MapDb } from '../game/mapdb';
 import { LANAI_ROT_CODEC, loadDoc, sectionBytes, type MapDoc, type MapFormat, type RecordLayout } from '../game/sections';
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
-import type { LanaiSession } from './session';
+import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
 /** Entries of a content's archive: the map database and the map table (MapDataResource rows 0 / 1). */
 export const LANAI_MAPDB_ENTRY = 0xc9f79000;
 export const LANAI_MAP_TABLE_ENTRY = 0x131c5000;
-const MAP_ROW = 0x4c;
-const NAME_OFFSET = 0x40;
+export const LANAI_MAP_ROW = 0x4c;
+const MAP_ROW = LANAI_MAP_ROW;
+export const LANAI_MAP_NAME_OFFSET = 0x40;
+const NAME_OFFSET = LANAI_MAP_NAME_OFFSET;
+/** The longest map name (+0x40, 12 bytes with its terminator). */
+export const LANAI_MAP_NAME_MAX = 11;
 
 /** Slot of the map table row that holds section k (section k = slot k; section 7 has no data, 8 / 9 moved up). */
 export const LANAI_SECTION_SLOT = [0, 1, 2, 3, 4, 5, 6, -1, 7, 8] as const;
@@ -98,6 +102,8 @@ export interface LanaiMapInfo {
   floor: number;
   /** The world map (W01): its sections have another shape, it is shown read-only. */
   world: boolean;
+  /** Added by an edit (mapadd.ts): its row follows the ROM's rows of the map table. */
+  added: boolean;
 }
 
 /** The tile models of a map: MapData row, its tileset (MapPartsType row) and MapParts table, its MapResource row. */
@@ -194,9 +200,9 @@ export function loadedLanaiMaps(session: LanaiSession, content: number): LanaiMa
 const tableNamed =(tables: { table: LanaiTable }[], name: string): LanaiTable | undefined => tables.find((t) => t.table.name === name)?.table;
 
 export class LanaiMaps {
-  readonly maps: LanaiMapInfo[];
+  readonly maps: LanaiMapInfo[] = [];
   readonly db: MapDb;
-  readonly groups: LanaiMapGroup[];
+  readonly groups: LanaiMapGroup[] = [];
   private readonly byHash = new Map<number, LanaiMapInfo>();
   private readonly byName = new Map<string, LanaiMapInfo>();
   private readonly docs = new Map<number, MapDoc>();
@@ -206,21 +212,58 @@ export class LanaiMaps {
     readonly session: LanaiSession,
     readonly content: LanaiContent,
     readonly archive: Archive,
-    /** The content's map database, shared with the session (it saves and exports it). */
-    db: MapDb,
+    /** The content's map database and map table, shared with the session (it saves and exports them). */
+    readonly store: LanaiMapDb,
     private readonly mapData: LanaiTable | undefined,
-    private readonly mapGroup: LanaiTable | undefined,
+    /** The content's MapGroup (mapadd.ts adds rows to it). */
+    readonly mapGroup: LanaiTable | undefined,
     private readonly partsType: LanaiTable | undefined,
     private readonly mapResource: LanaiTable | undefined,
     parts: { entry: number; table: LanaiTable }[],
     /** The content's tables (the EventObject tables of the groups among them). */
     private readonly tables: { entry: number; table: LanaiTable }[],
   ) {
-    const tableEntry = findEntry(archive, LANAI_MAP_TABLE_ENTRY);
-    if (!tableEntry) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ表がありません`);
-    this.db = db;
-    const t = unpackEntry(archive, tableEntry).body;
-    this.maps = [];
+    if (!store.table) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ表がありません`);
+    this.db = store.db;
+    this.read();
+    for (const p of parts) this.partsByEntry.set(p.entry, p.table);
+    // sections put back or reverted by the session: read the documents (and the map table) again
+    session.onMapReset((a) => {
+      if (a !== content.archive.toUpperCase()) return;
+      this.docs.clear();
+      // the tables the session took out (added ones, reverted) leave the content's tables
+      for (let i = this.tables.length - 1; i >= 0; i--) if (!session.refOf(this.tables[i]!.table)) this.tables.splice(i, 1);
+      this.read();
+      this.changed();
+    });
+  }
+
+  /** The bytes of the map table (as edited). */
+  get tableBytes(): Uint8Array {
+    return this.store.table!.data;
+  }
+
+  /** Puts new bytes of the map table in place (rows added or names written) and reads the maps and groups again. */
+  setTableBytes(bytes: Uint8Array): void {
+    if (bytes.length % MAP_ROW) throw new Error('マップ表の大きさが行 (0x4C) の倍数ではありません');
+    const t = this.store.table!;
+    t.data = equalBytes(bytes, t.original) ? t.original : bytes;
+    this.read();
+    this.changed();
+  }
+
+  /** Rows of the map table as read from the ROM (the rows after them were added). */
+  get originalMapRows(): number {
+    return this.store.table!.original.length / MAP_ROW;
+  }
+
+  /** Reads the map table and the MapGroup rows (again). */
+  read(): void {
+    const t = this.tableBytes;
+    const rom = this.originalMapRows;
+    this.maps.length = 0;
+    this.byHash.clear();
+    this.byName.clear();
     for (let i = 0; i + MAP_ROW <= t.length; i += MAP_ROW) {
       const slots = Array.from({ length: 10 }, (_, k) => u32(t, i + k * 4));
       const name = cstr(t.subarray(i + NAME_OFFSET, i + MAP_ROW), 0);
@@ -234,21 +277,37 @@ export class LanaiMaps {
         encounterLevel: s32(t, i + 0x30),
         floor: s32(t, i + 0x34),
         world: name.startsWith('W'),
+        added: i / MAP_ROW >= rom,
       };
       this.maps.push(info);
       this.byHash.set(info.hash, info);
       this.byName.set(name, info);
     }
-    this.groups = [];
+    this.readGroups();
+  }
+
+  /** Reads the MapGroup rows (again, after rows were added or changed). */
+  readGroups(): void {
+    const mapGroup = this.mapGroup;
+    this.groups.length = 0;
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
       this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), talkEntry: mapGroup.u32(r, 0x24), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
-    for (const p of parts) this.partsByEntry.set(p.entry, p.table);
-    // sections put back or reverted by the session: read the documents again
-    session.onMapReset((a) => {
-      if (a !== content.archive.toUpperCase()) return;
-      this.docs.clear();
-      this.changed();
-    });
+  }
+
+  /** The content's tables (the EventObject tables of the groups and the tables added to the archive among them). */
+  get contentTables(): { entry: number; table: LanaiTable }[] {
+    return this.tables;
+  }
+
+  /** Puts a table the session added to the archive among the content's tables (a new group's EventObject table). */
+  addContentTable(entry: number, table: LanaiTable): void {
+    this.tables.push({ entry, table });
+  }
+
+  /** Takes out a table addContentTable put in. */
+  removeContentTable(entry: number): void {
+    const i = this.tables.findIndex((t) => t.entry === entry);
+    if (i >= 0) this.tables.splice(i, 1);
   }
 
   /** The maps of a content (reads its archive when first asked for). */
@@ -259,7 +318,7 @@ export class LanaiMaps {
     const tables = await session.tablesIn(content.archive);
     // MapParts<name>: the type 11 tables of the content, by entry
     const parts = tables.filter((t) => t.table.name.startsWith('MapParts') && t.table.name !== 'MapPartsType').map((t) => ({ entry: t.entry, table: t.table }));
-    return new LanaiMaps(session, content, archive, mapDb.db, tableNamed(tables, 'MapData'), tableNamed(tables, 'MapGroup'), tableNamed(tables, 'MapPartsType'), tableNamed(tables, 'MapResource'), parts, tables.map((t) => ({ entry: t.entry, table: t.table })));
+    return new LanaiMaps(session, content, archive, mapDb, tableNamed(tables, 'MapData'), tableNamed(tables, 'MapGroup'), tableNamed(tables, 'MapPartsType'), tableNamed(tables, 'MapResource'), parts, tables.map((t) => ({ entry: t.entry, table: t.table })));
   }
 
   // ---- change notices (the map page redraws on them)
@@ -300,8 +359,9 @@ export class LanaiMaps {
     return loadDoc({ get: (h) => this.db.original(h) }, info, LANAI_MAP_FORMAT);
   }
 
-  /** Whether a map's sections differ from the ROM's. */
+  /** Whether a map's sections differ from the ROM's (an added map is not: it has no ROM's sections to go back to). */
   isChanged(info: LanaiMapInfo): boolean {
+    if (info.added) return false;
     return info.sections.some((h) => h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)));
   }
 
@@ -319,9 +379,14 @@ export class LanaiMaps {
     if (!d || info.world) return;
     for (let k = 0; k < 10; k++) {
       const h = info.sections[k]!;
-      if (k === 7 || !h || !this.db.has(h)) continue;
+      if (k === 7 || !h) continue;
       const b = sectionBytes(d, k, LANAI_MAP_FORMAT);
-      if (equalBytes(b, this.db.original(h))) this.db.revert(h);
+      // a section the database does not have (empty in the ROM, or of an added map) is added once it has bytes
+      if (!this.db.has(h)) {
+        if (b.length) this.db.add(h, b);
+      } else if (this.db.isAdded(h)) {
+        if (!equalBytes(b, this.db.get(h))) this.db.set(h, b);
+      } else if (equalBytes(b, this.db.original(h))) this.db.revert(h);
       else if (!equalBytes(b, this.db.get(h))) this.db.set(h, b);
     }
     this.changed();
@@ -333,9 +398,12 @@ export class LanaiMaps {
     this.commit(info);
   }
 
-  /** Put a map back as it is in the ROM. */
+  /** Put a map back as it is in the ROM (the sections the ROM did not have are taken out). */
   revert(info: LanaiMapInfo): void {
-    for (const h of info.sections) if (h && this.db.has(h)) this.db.revert(h);
+    for (const h of info.sections) if (h && this.db.has(h)) {
+      if (this.db.isAdded(h)) this.db.remove(h);
+      else this.db.revert(h);
+    }
     this.docs.delete(info.hash);
     this.changed();
   }
