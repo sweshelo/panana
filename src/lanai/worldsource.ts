@@ -7,7 +7,8 @@ import { renderPartThumb } from '../editor/thumbs';
 import type { WorldOverlay, WorldPin, WorldPointSet, WorldPaletteRow, WorldRangeSet, WorldSource } from '../editor/worldview';
 import type { Ground } from '../game/worldmap';
 import { oahuWorldModels } from '../oahu/mapModels';
-import { entranceCell, grid2, moveEntrance, parseEventRanges, parseProps, partColor, worldObjectAngle } from '../oahu/worldmap';
+import { entranceCell, grid2, moveEntrance, parseEventRanges, parseProps, partColor } from '../oahu/worldmap';
+import { oahuPropAngle } from '../oahu/mapObjects';
 import { findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef, lanaiObjectScale } from './mapObjects';
@@ -51,7 +52,7 @@ export class LanaiWorldSource implements WorldSource {
         list: () => parseProps(w.section(LW.props)),
         mark3d: (i) => {
           const p = parseProps(w.section(LW.props))[i];
-          return p ? { make: () => this.objectModel(p.value), angle: worldObjectAngle(Math.max(0, LANAI_ROT_CODEC.decode(p.dir ?? 0))), scale: lanaiObjectScale(mo(), p.value) } : null;
+          return p ? { make: () => this.objectModel(p.value), angle: oahuPropAngle(Math.max(0, LANAI_ROT_CODEC.decode(p.dir ?? 0))), scale: lanaiObjectScale(mo(), p.value) } : null;
         },
       },
       {
@@ -159,8 +160,8 @@ export class LanaiWorldSource implements WorldSource {
     const r = this.world.entrances()[i];
     if (!r) return null;
     const row = this.world.entranceObject(r);
-    // the angle of the facing (1 / 2 / 4 / 8 → turn 0..3) as RPG3's entrances (推定)
-    return row ? { make: () => this.objectModel(row), angle: worldObjectAngle(entranceTurn(r)), scale: lanaiObjectScale(this.world.maps.session.table('MapObject'), row) } : null;
+    // RPG FREE! uses the dungeon prop angles, without RPG3's extra 180° world-map turn.
+    return row ? { make: () => this.objectModel(row), angle: oahuPropAngle(entranceTurn(r)), scale: lanaiObjectScale(this.world.maps.session.table('MapObject'), row) } : null;
   }
 
   private objectModel(row: number): THREE.Object3D | null {
