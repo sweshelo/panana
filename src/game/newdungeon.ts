@@ -14,6 +14,8 @@ import { hex8, u16, u32, w16, w32 } from '../util/bytes';
 import type { EventTable } from './events';
 import type { Game } from './game';
 import { dungeonRows, freeTableRows, newHash } from './mappatch';
+import { freeHash } from './monsters';
+import type { CodePatch } from './patch';
 import { WORLD_DUNGEON } from './worldmap';
 
 /** Dungeon IDs are checked against this (the number of mapGroup rows of the game). */
@@ -34,6 +36,8 @@ export const MG = {
   /** u16 first flag in 0x92 and u8 the number. */
   flags: 0x22,
   flagCount: 0x24,
+  /** u8 place: the areaInfoData row whose message the museum shows as where a monster was met / an item found. */
+  place: 0x28,
 } as const;
 
 /** Save values (flagData.bin rows) the ranges are in. */
@@ -300,6 +304,7 @@ export async function makeDungeon(
   }
   // The row's label in the table header ("E00" for row 11) becomes the code, when the labels are in row order.
   setRowLabel(game, spec.dungeon, code);
+  ownPlace(game, spec.dungeon);
   return { dungeon: spec.dungeon, code, archiveName: hex8(hash), archive, ranges, nameId, donor, donorSlots };
 }
 
@@ -352,3 +357,58 @@ export function renameDungeon(game: Game, dungeon: number, change: { name?: stri
     setRowLabel(game, dungeon, code);
   }
 }
+
+// ---- The place of a new dungeon (docs/kahara/museum.md §4)
+// Entering a dungeon puts its mapGroup +0x28 into the place byte (FUN_00401568 -> FUN_002e59bc, which turns values
+// from 0x4E on into 0). Beating a monster keeps that place in save values 0x6D / 0x6E (FUN_003fc2cc), getting an item
+// in 0x71 / 0x72 (FUN_003fb94c), and the museum shows the message of areaInfoData row `place` (+0x00). A new dungeon
+// copies its template's row, so it took the template's place; it gets an areaInfoData row of its own instead.
+
+export const AREA_TABLE = 'areaInfoData.bin';
+/** Places the game takes (the setter's `cmp r1, #0x4E`): the 78 rows of areaInfoData. */
+export const VANILLA_PLACES = 0x4e;
+/** Places a save can hold: 0x6D / 0x6E / 0x71 / 0x72 are 8 bits with a maximum of 150 (flagData +0x00). */
+export const PLACE_LIMIT = 151;
+
+/**
+ * Give a new dungeon a place of its own: an areaInfoData row (a copy of the template's, as it sat in the row) whose
+ * message is the dungeon's name message, so a rename follows. A row it already has alone is kept (its message is
+ * set again). Does nothing when the table is full (the dungeon keeps the place it has).
+ */
+export function ownPlace(game: Game, dungeon: number): void {
+  const mg = game.master.mapGroup;
+  const row = mg.row(dungeon);
+  const nameId = u16(row, MG.name);
+  const t = game.master.table(AREA_TABLE);
+  const place = row[MG.place]!;
+  const original = game.master.originalRows(AREA_TABLE);
+  const shared = Array.from({ length: mg.rows }, (_, r) => r).some((r) => r !== dungeon && mg.row(r)[MG.place] === place);
+  if (place >= original && place < t.rows && !shared) {
+    w32(t.row(place), 0, nameId);
+    return;
+  }
+  if (t.rows >= PLACE_LIMIT) return;
+  const copy = (place < t.rows ? t.row(place) : t.row(0)).slice();
+  w32(copy, 0, nameId);
+  row[MG.place] = t.append(copy, freeHash(t, 0x6d600000));
+}
+
+/** {@link ownPlace} for every new dungeon (saved edits made before new dungeons had a place of their own). */
+export function ownPlaces(game: Game): void {
+  for (const d of game.code.dungeons) ownPlace(game, d.dungeon);
+}
+
+/** Whether there are places past the game's (the export then needs {@link PLACE_PATCH}). */
+export function needsPlacePatch(game: Game): boolean {
+  return game.master.table(AREA_TABLE).rows > VANILLA_PLACES;
+}
+
+export const PLACE_PATCH_ID = 'dungeon-places';
+export const PLACE_PATCH_TITLE = '追加したダンジョンの場所';
+export const PLACE_PATCH_SOURCE = `; 追加したダンジョンの場所: いる場所の番号を 0x4E (78) 以上なら 0 にする比較を 0x97 (151) にする。
+; 番号は areaInfoData の行。図鑑の「そうぐうしたばしょ」(セーブ 0x6D / 0x6E) とアイテムを手に入れた場所 (0x71 / 0x72) は
+; 最大 150 なので 150 まで。図鑑が引くときは表の行数とも比べる。
+@0x2E59BC                    ; FUN_002e59bc (いる場所を入れる)
+  cmp r1, #0x97
+`;
+export const PLACE_PATCH: CodePatch = { id: PLACE_PATCH_ID, title: PLACE_PATCH_TITLE, source: PLACE_PATCH_SOURCE, enabled: true };

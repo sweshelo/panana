@@ -8,10 +8,11 @@ import { BASE, MAP_TABLE, MAP_TABLE_ROWS } from '../src/game/codeconst';
 import { buildMapPatch, dungeonRows, freeTableRows, readExtension } from '../src/game/mappatch';
 import { makeMap } from '../src/game/newmap';
 import {
-  DUNGEON_LIMIT, MG, SAVE_FLAGS, SAVE_STATES, SAVE_VALUES, codeProblem, dungeonRoom, freeRange, makeDungeon, rowLabel, rowLabels,
+  AREA_TABLE, DUNGEON_LIMIT, MG, PLACE_LIMIT, PLACE_PATCH, PLACE_PATCH_ID, VANILLA_PLACES, needsPlacePatch, ownPlace, ownPlaces, SAVE_FLAGS, SAVE_STATES, SAVE_VALUES, codeProblem, dungeonRoom, freeRange, makeDungeon, rowLabel, rowLabels,
   recodeMapName, renameDungeon, saveSize, slotsNeeded, stateDonor, suggestCode, takenCodes, usedRanges, vacantDungeons,
 } from '../src/game/newdungeon';
 import { buildModFiles, codeIps, modPackage } from '../src/export/pack';
+import { buildPatches } from '../src/game/patch';
 import { applyIps, buildIps } from '../src/rom/ips';
 import { baseModFromFiles, openImage } from '../src/rom/dump';
 import { equalBytes, hex8, u16, u32 } from '../src/util/bytes';
@@ -95,6 +96,7 @@ describe.skipIf(!hasCia)('new dungeons', () => {
 
   test('makeDungeon + first map + export: the game finds the map in dungeon 11; read back as a base MOD', async () => {
     const mg0 = game.master.mapGroup.data.slice();
+    const area0 = game.master.table(AREA_TABLE).data.slice();
     const texts0 = game.master.texts.saved();
     const tmpl = game.code.byName('D01B02001')!;
     const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), (d) => game.eventTable(d), () => 0.37);
@@ -103,13 +105,19 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       const r11 = game.master.mapGroup.row(11), r1 = game.master.mapGroup.row(1);
       for (let o = 0; o < 0x2c; o++) {
         if ((o >= MG.archive && o < MG.archive + 4) || o === MG.name || o === MG.name + 1) continue;
-        if ([MG.states, MG.states + 1, MG.stateCount, MG.values, MG.values + 1, MG.valueCount, MG.flags, MG.flags + 1, MG.flagCount].includes(o as never)) continue;
+        if ([MG.states, MG.states + 1, MG.stateCount, MG.values, MG.values + 1, MG.valueCount, MG.flags, MG.flags + 1, MG.flagCount, MG.place].includes(o as never)) continue;
         expect(r11[o]).toBe(r1[o]!);
       }
       expect(hex8(u32(r11, MG.archive))).toBe(nd.archiveName);
       expect(game.dump.names().map((n) => n.toUpperCase())).not.toContain(nd.archiveName);
       expect(game.master.dungeonName(11)).toBe('テストのどうくつ');
       expect(u16(r11, MG.name)).toBe(nd.nameId);
+      // a place of its own: a new areaInfoData row (a copy of D01's, place 41) naming the new dungeon
+      const area = game.master.table(AREA_TABLE);
+      expect([r1[MG.place], r11[MG.place], area.rows]).toEqual([41, VANILLA_PLACES, VANILLA_PLACES + 1]);
+      expect(u32(area.row(VANILLA_PLACES), 0)).toBe(nd.nameId);
+      expect(u16(area.row(VANILLA_PLACES), 4)).toBe(u16(area.row(41), 4));
+      expect(needsPlacePatch(game)).toBe(true);
       // 0x8E: the donor's unused tail (the donor keeps what its rows use); no 0x91 / 0x92
       expect(nd.donor).toBeGreaterThan(0);
       const dRow = game.master.mapGroup.row(nd.donor), dOrig = mg0.subarray(game.master.mapGroup.offset + nd.donor * 0x2c);
@@ -189,10 +197,46 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       game.addedFiles.clear();
       game.forgetEvents(11);
       game.master.restoreTable('mapGroup.bin', mg0);
+      game.master.restoreTable(AREA_TABLE, area0);
       game.master.texts.restore(texts0);
       for (let d = 0; d < game.master.mapGroup.rows; d++) game.forgetEvents(d);
     }
   });
+
+  test('places: mapGroup +0x28 names an areaInfoData row; the setter takes 0..0x4D; ownPlace mends a dungeon that took its template\'s place', () => {
+    const mg = game.master.mapGroup, area = game.master.table(AREA_TABLE);
+    expect([area.rows, area.rowSize]).toEqual([VANILLA_PLACES, 8]);
+    // a dungeon's place shows its name (some places have a name of their own, e.g. rows 12-14 and 41-44)
+    for (const r of [1, 2, 10, 19, 57]) expect(u32(area.row(mg.row(r)[MG.place]!), 0)).toBe(u16(mg.row(r), MG.name));
+    // FUN_002e59bc: cmp r1, #0x4E; movhs r1, #0; strb r1, [r0, #0xA47]
+    expect([u32(game.dump.code, at(0x2e59bc)), u32(game.dump.code, at(0x2e59c4))]).toEqual([0xe351004e, 0xe5c01a47]);
+    const built = buildPatches(game.dump.code, [PLACE_PATCH]).get(PLACE_PATCH_ID)!;
+    expect(built.errors).toEqual([]);
+    expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe351004e]);
+    expect(built.blocks[0]!.lines[0]!.word).toBe(0xe3510097);
+    const mg0 = mg.data.slice(), area0 = area.data.slice();
+    try {
+      // a dungeon saved before places: row 11 as a copy of row 2 (its place 42 and its name)
+      mg.row(11).set(mg.row(2));
+      game.code.addDungeon({ dungeon: 11, code: 'D11' });
+      ownPlaces(game);
+      expect([mg.row(11)[MG.place], area.rows, mg.row(2)[MG.place]]).toEqual([VANILLA_PLACES, VANILLA_PLACES + 1, 42]);
+      expect(u32(area.row(VANILLA_PLACES), 0)).toBe(u16(mg.row(11), MG.name));
+      // again: it keeps its row
+      ownPlaces(game);
+      expect([mg.row(11)[MG.place], area.rows]).toEqual([VANILLA_PLACES, VANILLA_PLACES + 1]);
+      // the table is full at PLACE_LIMIT rows: the dungeon keeps what it has
+      mg.row(11)[MG.place] = 2;
+      while (area.rows < PLACE_LIMIT) area.append(area.row(0).slice(), area.rows + 0x6d700000);
+      ownPlace(game, 11);
+      expect(mg.row(11)[MG.place]).toBe(2);
+    } finally {
+      game.code.removeDungeon(11);
+      game.master.restoreTable('mapGroup.bin', mg0);
+      game.master.restoreTable(AREA_TABLE, area0);
+    }
+  });
+
   test('a new dungeon can be renamed and get mapData rows of its own (tileset, BGM), and the export keeps them', async () => {
     const mg0 = game.master.mapGroup.data.slice();
     const md0 = game.master.mapData.data.slice();

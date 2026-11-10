@@ -515,7 +515,16 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(n).toBe(VANILLA_MONSTER_ROWS);
     expect(book.monsters.length).toBe(185);
     const c = book.monster(n)!;
-    expect({ ...c, row: 15, design: src.design }).toEqual(src);
+    expect({ ...c, row: 15, design: src.design, species: src.species, museum: src.museum }).toEqual(src);
+    // a museum entry of its own: the lowest number no row uses as species or museum number
+    expect([c.species, c.museum]).toEqual([72, 72]);
+    expect(src.species).not.toBe(72);
+    expect([book.museumSharers(n), book.freeMuseumNumber()]).toEqual([[], 73]);
+    // another form of a monster goes in its entry (its species and museum number, which differ for some rows)
+    book.setMuseum(n, 116);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([book.monster(116)!.species, book.monster(116)!.museum, [116]]);
+    book.setMuseum(n);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([72, 72, []]);
     // its own design row and name message: renaming it leaves the original alone
     expect(c.design).not.toBe(src.design);
     expect(book.nameId(n)).toBe(g2.master.texts.addedBase);
@@ -536,7 +545,7 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
       label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()]]), ips: null,
     });
     const b2 = await again.monsters();
-    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual(['コピーおう', src.name, 1234, false]);
+    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n), b2.monster(n)!.species, b2.monster(n)!.museum]).toEqual(['コピーおう', src.name, 1234, false, 72, 72]);
     expect(b2.monster(n)!.description).toBe(src.description);
     const nameId = book.nameId(n);
     book.removeMonster(n);

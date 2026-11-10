@@ -14,6 +14,7 @@ import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { modEffectPatches } from '../game/itemeffects';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
+import { PLACE_PATCH, needsPlacePatch } from '../game/newdungeon';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
 import { automapPatch, automapProblem } from '../game/automap';
@@ -55,7 +56,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const w01 = game.worldMaps().find((w) => w.dungeon === NOTICE_DUNGEON);
     const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
       ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
-      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
+      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...(needsPlacePatch(game) ? [PLACE_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
     // the item effects cut out of elpulse (game/itemeffects.ts), for the ones the items use
     const mod = modEffectPatches(game.master, game.dump.code);
     extra.push(...mod.patches);

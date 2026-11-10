@@ -125,6 +125,7 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
         <PortLookButton target="kahara" row={m.row} onDone={edited} />
       </div>
+      {book.added(m.row) && <MuseumEditor {...p} />}
       <div className="book-top">
         <div>
           <NameEditor session={session} {...p} />
@@ -168,8 +169,40 @@ const REPLACE_INFO = [
   'ほかのモンスターと同じデザインの行を使っているときは、このモンスターに新しいデザインの行を作ります (元に戻すと元の見た目に戻ります)。',
 ].join('\n');
 
+const MUSEUM_INFO = [
+  'ゲームは種族 (w0 の下位 8 ビット) が同じモンスターを図鑑の 1 項目にまとめ、図鑑の番号 (+0x4A) で倒した記録・ドロップ・「そうぐうしたばしょ」を残します。',
+  '写したモンスターは空いている番号 (1〜209) を種族と図鑑の番号の両方に使うので、倒すと自分の項目に載ります。',
+  'ボスの別の形態のように 1 体のモンスターとして載せたいときは、「同じ図鑑にする」でそのモンスターの項目に入れます。',
+].join('\n');
+
+/** The museum entry of an added monster: its own, or another monster's (for another form of it). */
+function MuseumEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
+  const sharers = book.museumSharers(m.row);
+  const others = new Map<number, Monster>();
+  for (const x of book.monsters) if (x.row !== m.row && x.species !== m.species && !others.has(x.species)) others.set(x.species, x);
+  const act = (f: () => void): void => {
+    try {
+      f();
+      edited();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+  return (
+    <div className="row">
+      <span className="with-info">{`図鑑 No.${m.species}`}<InfoTip text={MUSEUM_INFO} /></span>
+      {sharers.length > 0 && <span className="warn-mark">{`${sharers.map((r) => book.monster(r)?.name ?? `#${r}`).filter((n, i, a) => a.indexOf(n) === i).join('・')} と同じ項目です (倒すとその項目に載ります)`}</span>}
+      {sharers.length > 0 && <button onClick={() => act(() => book.setMuseum(m.row))} disabled={!book.freeMuseumNumber()}>図鑑を別にする</button>}
+      <select value="" onChange={(e) => e.target.value && act(() => book.setMuseum(m.row, Number(e.target.value)))}>
+        <option value="">同じ図鑑にする…</option>
+        {[...others.values()].sort((a, b) => a.species - b.species).map((x) => <option key={x.row} value={x.row}>{`No.${x.species} ${x.name}`}</option>)}
+      </select>
+    </div>
+  );
+}
+
 const COPY_INFO = [
-  'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',
+  'この行を写した新しいモンスターを表の最後に作ります。見た目は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。図鑑には空いている番号で別の項目として載ります。',
   '見た目は「見た目を選ぶ…」で、この作品やほかの作品のモンスターから選び直せます。',
   '群れ・ボス戦の敵・次の形態で選べます。',
   'ゲームは行 185 以降を弾くので、追加した行があると書き出しに code.ips のパッチ「追加したモンスター」が入ります。行は 255 まで。',

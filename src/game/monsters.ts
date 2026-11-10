@@ -351,6 +351,17 @@ export const VANILLA_MONSTER_ROWS = 0xb9;
 /** A vanilla line (+0x38) whose type code a new line takes: 0x1B4F「くくく、ここからが本番だ！」. */
 const LINE_TEMPLATE = 0x1b4f;
 export const MONSTER_ROWS_MAX = 0x100;
+/**
+ * Species (w0 bit0-7) and museum numbers (+0x4A bit4-11) are below this: the species -> row array at +0xA48 and the
+ * save values 0x6B (beaten) / 0x6C (drops seen) / 0x6D / 0x6E (places) / 0x6F have 210 slots (docs/kahara/battle.md §9).
+ */
+export const MUSEUM_LIMIT = 0xd2;
+
+/** Write a MonsterParameter row's species and museum number. */
+function writeMuseum(r: Uint8Array, species: number, museum: number): void {
+  r[0] = species;
+  w16(r, 0x4a, (u16(r, 0x4a) & ~0xff0) | (museum << 4));
+}
 
 export const MONSTER_ROWS_PATCH_ID = 'monster-rows';
 export const MONSTER_ROWS_PATCH_TITLE = '追加したモンスター (行 185 以降)';
@@ -628,9 +639,51 @@ export class MonsterBook {
     const t = this.params;
     if (!this.canCopy()) throw new Error(`モンスターは行 ${MONSTER_ROWS_MAX - 1} までです`);
     const n = t.append(t.row(row).slice(), freeHash(t, 0x6d500000));
+    // a museum entry of its own, so beating it records it and not the original (none left: it stays shared)
+    const no = this.freeMuseumNumber();
+    if (no) writeMuseum(t.row(n), no, no);
     if (this.canOwnDesign()) this.ownDesign(n);
     else this.reload();
     return n;
+  }
+
+  /**
+   * The lowest number 1..{@link MUSEUM_LIMIT}-1 that no row uses as its species or museum number (0 = none left).
+   * A new monster takes it as both, so the game's lookups by species (the museum list, FUN_002be36c) and by museum
+   * number (the defeat record FUN_003fc2cc, the places 0x6D / 0x6E) both find it.
+   */
+  freeMuseumNumber(): number {
+    const t = this.params;
+    const used = new Set<number>();
+    for (let i = 0; i < t.rows; i++) {
+      const r = t.row(i);
+      used.add(r[0]!).add(bits(u16(r, 0x4a), 4, 8));
+    }
+    for (let k = 1; k < MUSEUM_LIMIT; k++) if (!used.has(k)) return k;
+    return 0;
+  }
+
+  /** Other rows in the same museum entry (the same species: the game shows and records them as one monster). */
+  museumSharers(row: number): number[] {
+    const m = this.monster(row);
+    return m ? this.monsters.filter((x) => x.row !== row && x.species === m.species).map((x) => x.row) : [];
+  }
+
+  /**
+   * Give a row a museum entry of its own (a free number as its species and museum number), or put it in the entry of
+   * monster `like` (its species and museum number; for another form of the same monster).
+   */
+  setMuseum(row: number, like?: number): void {
+    const r = this.params.row(row);
+    if (like === undefined) {
+      const no = this.freeMuseumNumber();
+      if (!no) throw new Error(`図鑑の番号に空きがありません (${MUSEUM_LIMIT - 1} まで)`);
+      writeMuseum(r, no, no);
+    } else {
+      const o = this.params.row(like);
+      writeMuseum(r, o[0]!, bits(u16(o, 0x4a), 4, 8));
+    }
+    this.reload();
   }
 
   /** MonsterParameter rows showing a MonsterDesign row. */
@@ -857,7 +910,7 @@ export class MonsterBook {
 }
 
 /** A hash not in a table's index yet (0 when the table has no index). */
-function freeHash(t: GsTable, start: number): number {
+export function freeHash(t: GsTable, start: number): number {
   if (!t.indexOffset) return 0;
   const used = t.hashes();
   let hash = (start + t.rows) >>> 0;
