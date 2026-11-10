@@ -81,7 +81,7 @@ export class View3D {
     this.view.scene.add(this.tileLayer.group, this.markerGroup, this.overlay);
     this.view.pointer = {
       down: (cx, cy, e) => this.ctl.down(cx, cy, e),
-      move: (cx, cy) => this.ctl.move(cx, cy),
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 0.15 }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };

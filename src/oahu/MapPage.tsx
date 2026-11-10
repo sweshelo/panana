@@ -1,3 +1,4 @@
+import { RecPositionFields } from '../editor/recposition';
 import { RecordPartPanel } from '../editor/recordparts';
 import { MapSettings } from '../editor/partpalette';
 // RPG3's maps (#/maps/NAME; naauao oahu/map.md), edited with the parts of RPG2's map editor: the editing model and
@@ -498,40 +499,12 @@ function RecFields({
   }, [maps, dungeon, table]);
   const evRow = oahuRecEventRow(section, rec.raw);
   const hasEvent = [3, 4, 5, 8].includes(section) && !(section === 8 && readField(rec.raw, REC_FIELDS[8]![0]!) >= 100);
-  const max = L.unit === 'cell' ? 29 : 299;
   return (
     <>
       <h3>{`${L.label} #${index}`}</h3>
       <p className="muted small">{oahuRecLabel(section, rec.raw)}</p>
       <ModelLine view={view} look={view.look(section, index)} />
-      <div className="row">
-        <label className="field">
-          <span>{`x (${L.unit === 'cell' ? 'マス' : L.unit === 'quarter' ? '1/4 マス' : '1/5 マス'})`}</span>
-          <NumberInput
-            value={rec.x}
-            min={0}
-            max={max}
-            onCommit={(v) =>
-              st.edit(() => {
-                rec.x = v;
-              })
-            }
-          />
-        </label>
-        <label className="field">
-          <span>y</span>
-          <NumberInput
-            value={rec.y}
-            min={0}
-            max={max}
-            onCommit={(v) =>
-              st.edit(() => {
-                rec.y = v;
-              })
-            }
-          />
-        </label>
-      </div>
+      <RecPositionFields st={st} rec={rec} L={L} />
       {(REC_FIELDS[section] ?? []).map((f) => (
         <label key={f.key} className="field">
           <span>{f.label}</span>

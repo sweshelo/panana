@@ -2,7 +2,7 @@
 import { LAYOUTS, P3, P7, POINT_SECTIONS, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import type { Controller } from './controller';
 import { rangeInfo } from '../game/cutscene';
-import { drawHover, drawRoomCells, drawSelection, drawTiles } from './draw2d';
+import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from './draw2d';
 import { SECTION_COLORS } from './legend';
 import { GridCanvas } from './gridcanvas';
 import { GRID, tileAt, type EventLink, type MapEditState } from './model';
@@ -34,7 +34,7 @@ export class View2D {
         const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
         if (f) this.onFocus(f[0], f[1]);
       },
-      move: (cx, cy) => this.ctl.move(cx, cy),
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 8 / this.gc.scale }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
@@ -59,6 +59,7 @@ export class View2D {
     if (this.ctl.layers.room) drawRoomCells(g, s, doc);
     this.drawLinks(g, s);
     this.drawPoints(doc, g, s);
+    drawSnap(g, s, this.st, this.ctl);
     drawSelection(g, s, this.st);
     drawHover(g, s, this.st, this.ctl.hover);
   }

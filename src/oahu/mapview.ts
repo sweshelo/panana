@@ -7,7 +7,7 @@ import { AnimatedModel, animationKey } from '../cgfx/player';
 import type { TilesetModels } from '../cgfx/tileset';
 import { ModelFactory } from '../cgfx/three';
 import { Controller } from '../editor/controller';
-import { drawHover, drawRoomCells, drawSelection, drawTiles } from '../editor/draw2d';
+import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from '../editor/draw2d';
 import { GridCanvas } from '../editor/gridcanvas';
 import { kindColor, SECTION_COLORS } from '../editor/legend';
 import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
@@ -97,13 +97,14 @@ export class OahuMapView {
     this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group);
     const pointer = {
       down: (cx: number, cy: number, e: { shiftKey: boolean; button: number }) => this.ctl.down(cx, cy, e),
-      move: (cx: number, cy: number) => this.ctl.move(cx, cy),
+      move: (cx: number, cy: number, e: { altKey: boolean }) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 0.15 }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
     // A click in 2D also brings what it picked to the middle of the 3D view.
     this.grid.pointer = {
       ...pointer,
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 8 / this.grid.scale }),
       down: (cx, cy, e) => {
         pointer.down(cx, cy, e);
         const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
@@ -204,6 +205,7 @@ export class OahuMapView {
         }
       });
     }
+    drawSnap(g, s, st, this.ctl);
     drawSelection(g, s, st);
     drawHover(g, s, st, this.ctl.hover);
   }

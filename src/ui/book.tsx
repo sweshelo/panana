@@ -167,6 +167,7 @@ export function NumberInput({
   max,
   className = 'num-input',
   title,
+  step,
   onCommit,
 }: {
   value: number;
@@ -174,27 +175,32 @@ export function NumberInput({
   max: number;
   className?: string;
   title?: string;
+  /** Allow fractions in multiples of `step` (e.g. 0.01); whole numbers when left out. */
+  step?: number;
   onCommit: (v: number) => void;
 }): ReactNode {
   const ref = useRef<HTMLInputElement>(null);
+  const decimals = step ? Math.max(0, Math.ceil(-Math.log10(step) - 1e-9)) : 0;
+  const shown = (v: number): string => (step ? String(Number(v.toFixed(decimals))) : String(v));
   // the value last applied: the box may tell the same change twice (change, then blur) before the new value comes back
   const last = useRef(value);
   last.current = value;
   const commit = (el: HTMLInputElement): void => {
-    const v = Math.round(Number(el.value));
+    const n = Number(el.value);
+    const v = step ? Number((Math.round(n / step) * step).toFixed(decimals)) : Math.round(n);
     if (el.value !== '' && Number.isFinite(v) && v >= min && v <= max) {
-      if (v !== last.current) {
+      if (step ? Math.abs(v - last.current) > step / 2 : v !== last.current) {
         last.current = v;
         onCommit(v);
       }
-    } else el.value = String(last.current);
+    } else el.value = shown(last.current);
   };
   const commitRef = useRef(commit);
   commitRef.current = commit;
   // follow the value from outside (undo, another pane) unless the box is being typed in
   useEffect(() => {
     const el = ref.current;
-    if (el && document.activeElement !== el) el.value = String(value);
+    if (el && document.activeElement !== el) el.value = shown(value);
   }, [value]);
   // The DOM's change event (React's onChange is the input event): the spinner buttons, the arrow keys and the wheel
   // fire it at each step, typing only when the box is left or Enter is pressed, so a half-typed number is not applied.
@@ -212,7 +218,8 @@ export function NumberInput({
       type="number"
       min={min}
       max={max}
-      defaultValue={value}
+      step={step}
+      defaultValue={shown(value)}
       className={className}
       title={title}
       onBlur={(e) => commit(e.currentTarget)}
