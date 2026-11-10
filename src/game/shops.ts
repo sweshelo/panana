@@ -146,16 +146,16 @@ export class ShopStock {
     for (const [s, items] of saved) this.set(s, items);
   }
 
-  /** The ShopItem table with the current lists. */
-  build(): Uint8Array {
-    return this.table.withRows(shopItemRows(this.lists));
+  /** The ShopItem table with the current lists, and `extra` shops after them (game/debugmode.ts's shop 18). */
+  build(extra: Map<number, number[]> = new Map()): Uint8Array {
+    return this.table.withRows(shopItemRows(new Map([...this.lists, ...extra])));
   }
 
-  /** Archive name -> rebuilt archive (empty when nothing changed). */
-  buildArchives(): Map<string, Uint8Array> {
+  /** Archive name -> rebuilt archive (empty when nothing changed and there are no `extra` shops). */
+  buildArchives(extra: Map<number, number[]> = new Map()): Map<string, Uint8Array> {
     const out = new Map<string, Uint8Array>();
-    if (!this.changed()) return out;
-    const data = this.build();
+    if (!this.changed() && !extra.size) return out;
+    const data = this.build(extra);
     for (const s of this.sources) out.set(s.name, rebuildArchive(s.archive, new Map([[s.entry.index, data]])));
     return out;
   }
