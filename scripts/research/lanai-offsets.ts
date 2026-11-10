@@ -20,7 +20,8 @@ const SCALES = [50, 100, 250, 500];
 const onGrid = new Map<string, number>();
 const examples: string[] = [];
 const inc = <K>(m: Map<K, number>, k: K, n = 1): void => void m.set(k, (m.get(k) ?? 0) + n);
-const base0 = (unit: string, v: number): number => (unit === 'cell' ? 250 + v * 500 : 50 + v * 100);
+const base0 = (L: { unit: string; base?: number }, v: number): number =>
+  L.unit === 'cell' ? 250 + v * 500 : (L.base ?? 50) + v * 100;
 
 for (const c of lanaiContents(s)) {
   let m: LanaiMaps;
@@ -43,8 +44,8 @@ for (const c of lanaiContents(s)) {
         if (!values.has(sec)) values.set(sec, new Map());
         for (const d of [dx, dy]) inc(values.get(sec)!, String(Math.round(d * 1000) / 1000));
         for (const sc of SCALES) {
-          const wx = base0(L.unit, r.x) + dx * sc,
-            wy = base0(L.unit, r.y) + dy * sc;
+          const wx = base0(L, r.x) + dx * sc,
+            wy = base0(L, r.y) + dy * sc;
           for (const g of [50, 100, 250])
             if (Math.abs(wx / g - Math.round(wx / g)) < 1e-3 && Math.abs(wy / g - Math.round(wy / g)) < 1e-3)
               inc(onGrid, `${sec}/x${sc}/${g}`);
@@ -55,7 +56,7 @@ for (const c of lanaiContents(s)) {
         }
         if ((dx || dy) && examples.length < 40)
           examples.push(
-            `c${c.index} ${info.name} s${sec} raw (${r.x}, ${r.y}) d (${dx}, ${dy}) -> cell x100 (${((base0(L.unit, r.x) + dx * 100) / 500).toFixed(3)}, ${((base0(L.unit, r.y) + dy * 100) / 500).toFixed(3)})`,
+            `c${c.index} ${info.name} s${sec} raw (${r.x}, ${r.y}) d (${dx}, ${dy}) -> cell x100 (${((base0(L, r.x) + dx * 100) / 500).toFixed(3)}, ${((base0(L, r.y) + dy * 100) / 500).toFixed(3)})`,
           );
       }
     }
