@@ -71,8 +71,8 @@ function BattleFieldRowEditor({ session, sounds, t, row, edit, users }: {
             return <option key={k} value={k}>{lanaiBackgroundName(b.archive, b.entry)}</option>;
           })}
         </select>
-        <ModelPreviewButton model={lanaiBattleBackgroundRef(session, archive, entry)} name={lanaiBackgroundName(archive, entry)}
-          note="モデルだけを表示しています。戦闘のカメラの位置は再現していません。" />
+        <ModelPreviewButton model={lanaiBattleBackgroundRef(session, archive, entry)} name={lanaiBackgroundName(archive, entry)} inside
+          note="モデルの中心から見回しています (ドラッグで向き、ホイールで画角)。戦闘のカメラの位置は再現していません。" />
       </label>
       <div className="field">
         <span>戦闘の BGM (+0x08)</span>

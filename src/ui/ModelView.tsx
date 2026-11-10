@@ -3,9 +3,10 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { ModelViewer, type ModelRef } from '../pages/modelview';
 import { Dom } from './mount';
 
-export function ModelView({ model, name, motionHints }: { model: ModelRef | null; name: string; motionHints?: Record<string, string> }): ReactNode {
+/** @param inside Look around from the middle of the model (battle backgrounds) instead of turning it. */
+export function ModelView({ model, name, motionHints, inside = false }: { model: ModelRef | null; name: string; motionHints?: Record<string, string>; inside?: boolean }): ReactNode {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- one viewer (WebGL context) for the page's lifetime
-  const viewer = useMemo(() => new ModelViewer(motionHints), []);
+  const viewer = useMemo(() => new ModelViewer(motionHints, inside), []);
   const key = model?.key ?? '';
   useEffect(() => {
     viewer.show(model, name);
