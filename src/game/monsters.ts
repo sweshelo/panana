@@ -4,7 +4,7 @@ import { GsTable } from '../archive/gstable';
 import { findByName, parseArchive, rebuildArchive, type Archive, type ArcEntry } from '../archive/gsarc';
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
 import { cleanActionName } from './actions';
-import { decodeFix, FIX_TABLE } from './boss';
+import { addFixGroup, decodeFix, fixGroup, setFixGroup, FIX_FLAGS_BOSS, FIX_TABLE, type FixSlot } from './boss';
 import type { Master } from './master';
 import { effectTable, type EffectTable } from './performance';
 import type { CodePatch } from './patch';
@@ -301,9 +301,11 @@ export interface MonsterGroup {
   leads: GroupSlot[];
   /** Candidates of the 2nd and 4th monsters (+0x14). */
   mates: GroupSlot[];
-  /** +0x28..+0x2D (not analysed: maybe weights of the party size). */
+  /** +0x28..+0x2C: weights of fixed / 1..4 candidate slots; +0x2D: monsterFixGroup row. */
   extra: number[];
 }
+
+export const GROUP_PATTERNS = ['固定編成', '候補 1 枠', '候補 2 枠', '候補 3 枠', '候補 4 枠'];
 
 /** Count of a group slot's count code (FUN_0030f4c0): 0-3 = 1-4, 4 = 8, 5 = 1-2, 6 = 1-3, ... */
 export function countLabel(code: number): string {
@@ -379,6 +381,8 @@ export class MonsterBook {
   monsters: Monster[] = [];
   readonly groups: MonsterGroup[] = [];
   private readonly groupByHash = new Map<number, MonsterGroup>();
+  /** Fixed rows created here, so subsequent edits can reuse this group's private copy. */
+  private readonly privateGroupFixes = new Map<number, number>();
   private readonly design: GsTable;
   private readonly designEntry: ArcEntry;
   private readonly designOriginal: Uint8Array;
@@ -512,6 +516,43 @@ export class MonsterBook {
   setGroupSlots(row: number, leads: GroupSlot[], mates: GroupSlot[]): void {
     encodeGroupSlots(this.master.table('monsterGroup.bin').row(row), leads, mates);
     this.loadGroups();
+  }
+
+  /** Change formation weights and the fixed-table reference, preserving the candidates. */
+  setGroupFormation(row: number, weights: number[], fix: number): void {
+    if (weights.length !== 5 || weights.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) throw new Error('編成方式の重みは 0〜255 です');
+    if (!Number.isInteger(fix) || fix < 0 || fix >= this.master.table(FIX_TABLE).rows || fix > 255) throw new Error('固定編成の番号が範囲外です');
+    const r = this.master.table('monsterGroup.bin').row(row);
+    r.set(weights, 0x28);
+    r[0x2d] = fix;
+    this.loadGroups();
+  }
+
+  groupFix(g: MonsterGroup) {
+    return fixGroup(this.master, g.extra[5] ?? 0);
+  }
+
+  /** Isolate edits from vanilla bosses and other groups that share a fixed row. */
+  setGroupFixSlots(row: number, slots: FixSlot[]): void {
+    const g = this.groups[row]!;
+    const current = g.extra[5] ?? 0;
+    const next = { flags: this.groupFix(g)?.flags ?? FIX_FLAGS_BOSS, slots };
+    let fix = current;
+    if (!fix || this.privateGroupFixes.get(row) !== fix || this.groups.some((other) => other.row !== row && other.extra[5] === fix)) {
+      fix = addFixGroup(this.master, next);
+      this.privateGroupFixes.set(row, fix);
+    } else setFixGroup(this.master, fix, next);
+    this.setGroupFormation(row, g.extra.slice(0, 5), fix);
+  }
+
+  groupFixRoom(g: MonsterGroup): boolean {
+    const fix = g.extra[5] ?? 0;
+    return (!!fix && this.privateGroupFixes.get(g.row) === fix && !this.groups.some((other) => other.row !== g.row && other.extra[5] === fix)) || this.master.table(FIX_TABLE).rows < 0x100;
+  }
+
+  groupFixChoices(): { row: number; slots: FixSlot[] }[] {
+    const table = this.master.table(FIX_TABLE);
+    return Array.from({ length: Math.min(table.rows, 256) - 1 }, (_, i) => ({ row: i + 1, slots: decodeFix(table.row(i + 1)).slots }));
   }
 
   /** Append a copy of a group as a new row (with a new hash in the index). Returns the new row number. */
@@ -823,7 +864,8 @@ export class MonsterBook {
 
   /** Monster rows of a group (leads first), without duplicates. */
   groupMonsters(g: MonsterGroup): number[] {
-    return [...new Set([...g.leads, ...g.mates].map((s) => s.monster))];
+    const fixed = g.extra[0] ? this.groupFix(g)?.slots ?? [] : [];
+    return [...new Set([...g.leads, ...g.mates, ...fixed].map((s) => s.monster))];
   }
 }
 
