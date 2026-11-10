@@ -15,7 +15,7 @@ import type { OahuSession } from './session';
 import { OAHU_SECTIONS } from './code';
 import { oahuMapDataDungeons, oahuSoundUses } from './sound';
 
-const BG_PREVIEW_NOTE = 'モデルの中心から見回しています (ドラッグで向き、ホイールで画角)。戦闘のカメラの位置・地面のテクスチャ (mapResource +0x04 / +0x08 を戦闘で貼る) は再現していません。';
+const BG_PREVIEW_NOTE = '地面 (原点) の少し上から見回しています (ドラッグで向き、ホイールで画角)。戦闘のカメラの位置・地面のテクスチャ (mapResource +0x04 / +0x08 を戦闘で貼る) は再現していません。';
 const TEXT_END = OAHU_SECTIONS.text[0] + OAHU_SECTIONS.text[1];
 
 export function OahuMapBattlePanel({ session, st, info }: { session: OahuSession; st: OahuEditState; info: OahuMapInfo }): ReactNode {

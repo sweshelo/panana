@@ -67,6 +67,12 @@ const MAX_PITCH = 1.56;
 const INSIDE_FOV = 60;
 const INSIDE_FOV_MIN = 15;
 const INSIDE_FOV_MAX = 110;
+/**
+ * Where the inside view stands: above the origin, where the battle field's ground is (y = 0 in every RPG3 and
+ * RPG FREE! background; the props on it reach about 250). The middle of the box is half way up the sky dome, or
+ * below the ground where the sky is a whole sphere (opnforest, flat, snow).
+ */
+const INSIDE_EYE = new THREE.Vector3(0, 200, 0);
 
 const photos = new Map<string, Promise<string | null>>();
 /** Thumbnails are made one at a time so the list stays responsive. */
@@ -128,8 +134,8 @@ export class ModelViewer {
 
   /**
    * @param motionHints What a motion is used for, by the first 4 characters of its name ("001_").
-   * @param inside Put the camera at the middle of the model and look around from there, for models seen
-   *   from within (battle backgrounds: a sky dome around the field). Dragging turns the view, the wheel
+   * @param inside Put the camera on the ground at the origin (INSIDE_EYE) and look around from there, for
+   *   models seen from within (battle backgrounds: a sky dome around the field). Dragging turns the view, the wheel
    *   narrows or widens it.
    */
   constructor(private readonly motionHints: Record<string, string> = {}, private readonly inside = false) {
@@ -308,17 +314,18 @@ export class ModelViewer {
     this.renderer.setSize(w, hgt, false);
     this.camera.aspect = w / hgt;
     if (this.inside) {
-      // At the middle, looking out along (yaw, pitch): the opposite of the outside view's direction to the camera.
+      // Standing on the field, looking out along (yaw, pitch): the opposite of the outside view's direction to the camera.
       const cp = Math.cos(this.pitch);
+      const eye = INSIDE_EYE;
       this.camera.fov = INSIDE_FOV * this.zoom;
-      this.camera.position.copy(this.center);
+      this.camera.position.copy(eye);
       this.camera.near = this.radius / 1000;
       this.camera.far = this.radius * 10;
       this.camera.updateProjectionMatrix();
       this.camera.lookAt(
-        this.center.x - Math.sin(this.yaw) * cp,
-        this.center.y - Math.sin(this.pitch),
-        this.center.z - Math.cos(this.yaw) * cp);
+        eye.x - Math.sin(this.yaw) * cp,
+        eye.y - Math.sin(this.pitch),
+        eye.z - Math.cos(this.yaw) * cp);
       this.renderer.render(this.scene, this.camera);
       return;
     }

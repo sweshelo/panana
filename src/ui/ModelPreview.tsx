@@ -5,7 +5,7 @@ import type { ModelRef } from '../pages/modelview';
 import { Dialog } from './Dialog';
 import { ModelView } from './ModelView';
 
-/** @param inside Look around from the middle of the model (a battle background's sky dome) instead of turning it. */
+/** @param inside Look around from the ground of the model (a battle background's sky dome) instead of turning it. */
 export function ModelPreviewButton({ model, name, label = '3D で見る', note, inside = false }: { model: ModelRef | null; name: string; label?: string; note?: ReactNode; inside?: boolean }): ReactNode {
   const [open, setOpen] = useState(false);
   return (
