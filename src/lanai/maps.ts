@@ -499,7 +499,7 @@ export class LanaiMaps {
   addEventRow(group: number, from: number): number {
     const t = this.eventTable(group);
     if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
-    if (from <= 0 || from >= t.rows) throw new RangeError(`EventObject の行 ${from} は写せません (表は ${t.rows} 行)`);
+    if (from <= 0 || from >= t.rows) throw new RangeError(`イベント番号 ${from} は写せません (表は ${t.rows} 件)`);
     const row = t.addRow(from);
     const used = new Set(Array.from({ length: row }, (_, r) => lanaiEventSlot(t, r)));
     const count = this.groups[group]?.stateCount ?? 0;

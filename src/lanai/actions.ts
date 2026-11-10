@@ -52,12 +52,12 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   },
   0x8000000c: {
     name: 'ボス戦 (範囲に入ると戦う)',
-    args: { 0: 'MonsterGroup の行番号', 1: '勝つと立つフラグ', 2: '未解析' },
+    args: { 0: 'MonsterGroup の番号', 1: '勝つと立つフラグ', 2: '未解析' },
     pick: { 0: 'monsterGroupRow' },
     note: '区画 8 の範囲。入ると引数 1 の群れと戦い、勝つと引数 2 のフラグが立つ (naauao lanai/key-objects.md §1)',
   },
-  0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の行' } },
-  0x80000010: { name: '宝箱 (見た目 1)', args: { 0: 'TreasureGroup の行' } },
+  0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の番号' } },
+  0x80000010: { name: '宝箱 (見た目 1)', args: { 0: 'TreasureGroup の番号' } },
   0x8000000d: {
     name: '村の端からワールドへ (推定)',
     args: {
@@ -95,7 +95,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
     talk: [2],
     zeroIsNone: true,
     args: {
-      0: 'TreasureGroup の行',
+      0: 'TreasureGroup の番号',
       1: 'クリアにするコンテンツ (0 = なし)',
       3: 'モーション (推定)',
       4: '未解析 (1 / 0x0E)',
@@ -124,7 +124,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   0x80000032: {
     name: '店の人',
     talk: [0],
-    note: '引数 1 の台詞のあと店を開く。どの店かは引数になく、コンテンツの Shop の行 0 と推定 (店の人がいるコンテンツは店が 1 つだけ。ショップのページ)',
+    note: '引数 1 の台詞のあと店を開く。どの店かは引数になく、コンテンツの Shop の番号 0 と推定 (店の人がいるコンテンツは店が 1 つだけ。ショップのページ)',
   },
   0x80000037: {
     name: '会話 (台詞 4 つ)',
