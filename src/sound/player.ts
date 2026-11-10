@@ -72,7 +72,11 @@ class SoundPlayer {
       if (!prepared) {
         const pcm = await render();
         if (my !== this.seq) return;
-        const buffer = ctx.createBuffer(Math.max(1, pcm.channels.length), Math.max(1, pcm.channels[0]?.length ?? 0), pcm.rate);
+        const buffer = ctx.createBuffer(
+          Math.max(1, pcm.channels.length),
+          Math.max(1, pcm.channels[0]?.length ?? 0),
+          pcm.rate,
+        );
         pcm.channels.forEach((c, i) => buffer.copyToChannel(c as Float32Array<ArrayBuffer>, i));
         prepared = { buffer, loop: pcm.loop ? [pcm.loopStart / pcm.rate, pcm.loopEnd / pcm.rate] : null };
         if (cacheable) {
@@ -108,5 +112,9 @@ class SoundPlayer {
 export const soundPlayer = new SoundPlayer();
 
 export function usePlayer(): PlayerState {
-  return useSyncExternalStore(soundPlayer.subscribe, () => soundPlayer.state, () => soundPlayer.state);
+  return useSyncExternalStore(
+    soundPlayer.subscribe,
+    () => soundPlayer.state,
+    () => soundPlayer.state,
+  );
 }

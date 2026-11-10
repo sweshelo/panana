@@ -26,12 +26,18 @@ export function BchView({ body }: FormatViewProps): ReactNode {
       <div className="row">
         <span className="muted">{`H3D 0x${h.backward.toString(16)} (変換 ${h.converter})`}</span>
         <span className="muted">{`モデル ${file.models.length}、テクスチャ ${file.textures.length}、骨格アニメーション ${summary.skeletalAnimations.length}、材質アニメーション ${summary.materialAnimations.length}`}</span>
-        {bchOffset(body) > 0 && <span className="muted">{`BCH は +0x${bchOffset(body).toString(16).toUpperCase()} から`}</span>}
+        {bchOffset(body) > 0 && (
+          <span className="muted">{`BCH は +0x${bchOffset(body).toString(16).toUpperCase()} から`}</span>
+        )}
       </div>
       {file.models.length > 1 && (
         <div className="row">
           <select value={model} onChange={(e) => setModel(Number(e.target.value))}>
-            {file.models.map((x, i) => <option key={i} value={i}>{x.name || `モデル ${i}`}</option>)}
+            {file.models.map((x, i) => (
+              <option key={i} value={i}>
+                {x.name || `モデル ${i}`}
+              </option>
+            ))}
           </select>
         </div>
       )}
@@ -43,13 +49,23 @@ export function BchView({ body }: FormatViewProps): ReactNode {
           </div>
         </>
       )}
-      {file.textures.length > 0 && <div className="bch-textures">{file.textures.map((t) => <TextureThumb key={t.name} t={t} />)}</div>}
+      {file.textures.length > 0 && (
+        <div className="bch-textures">
+          {file.textures.map((t) => (
+            <TextureThumb key={t.name} t={t} />
+          ))}
+        </div>
+      )}
       {summary.skeletalAnimations.length + summary.materialAnimations.length > 0 && (
         <details className="bch-anims">
           <summary>アニメーション</summary>
           <ul className="mono small">
-            {summary.skeletalAnimations.map((n) => <li key={`s/${n}`}>{n}</li>)}
-            {summary.materialAnimations.map((n) => <li key={`m/${n}`}>{`${n} (材質)`}</li>)}
+            {summary.skeletalAnimations.map((n) => (
+              <li key={`s/${n}`}>{n}</li>
+            ))}
+            {summary.materialAnimations.map((n) => (
+              <li key={`m/${n}`}>{`${n} (材質)`}</li>
+            ))}
           </ul>
         </details>
       )}

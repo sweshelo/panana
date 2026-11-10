@@ -49,19 +49,51 @@ export interface PierStage {
  * 2 _Big (telescope_01, about 108), 3 hides the frame (naauao worldmap.md §4.1; the radii are measured on the pictures).
  */
 export const PIER_STAGES: PierStage[] = [
-  { stage: 1, label: 'いかだ (船 0〜1)', x: 'x1', y: 'y1', stages: [0, 1], scope: { x: 0, y: 4, r: 81 }, telescope: 'telescope_02' },
-  { stage: 2, label: 'ふね (船 2)', x: 'x2', y: 'y2', stages: [2], scope: { x: 0, y: 4, r: 108 }, telescope: 'telescope_01' },
+  {
+    stage: 1,
+    label: 'いかだ (船 0〜1)',
+    x: 'x1',
+    y: 'y1',
+    stages: [0, 1],
+    scope: { x: 0, y: 4, r: 81 },
+    telescope: 'telescope_02',
+  },
+  {
+    stage: 2,
+    label: 'ふね (船 2)',
+    x: 'x2',
+    y: 'y2',
+    stages: [2],
+    scope: { x: 0, y: 4, r: 108 },
+    telescope: 'telescope_01',
+  },
   { stage: 3, label: 'クルーザー (船 3)', x: 'x3', y: 'y3', stages: [3] },
 ];
 
 /** The stage whose position a ship stage uses (0 and 1 share the first). */
-export const pierStageOf = (ship: number): PierStage => PIER_STAGES.find((s) => s.stages.includes(ship)) ?? PIER_STAGES[0]!;
+export const pierStageOf = (ship: number): PierStage =>
+  PIER_STAGES.find((s) => s.stages.includes(ship)) ?? PIER_STAGES[0]!;
 
 /** An icon's size on the screen (island_* layouts: 32 × 32, last 32 × 48). */
-export const pierIconSize = (icon: number): { width: number; height: number } => ({ width: 32, height: HONOLULU_PIER_ICONS[icon] === 'last' ? 48 : 32 });
+export const pierIconSize = (icon: number): { width: number; height: number } => ({
+  width: 32,
+  height: HONOLULU_PIER_ICONS[icon] === 'last' ? 48 : 32,
+});
 
 /** The progress value of each dungeon (dungeonData's row) at which its icon gets the star: fixed in the code (0x2C2468). */
-export const PIER_STAR_PROGRESS: Record<number, number> = { 1: 5, 2: 5, 3: 5, 4: 5, 5: 5, 6: 4, 7: 5, 8: 5, 9: 5, 10: 7, 11: 15 };
+export const PIER_STAR_PROGRESS: Record<number, number> = {
+  1: 5,
+  2: 5,
+  3: 5,
+  4: 5,
+  5: 5,
+  6: 4,
+  7: 5,
+  8: 5,
+  9: 5,
+  10: 7,
+  11: 15,
+};
 
 /** The dungeon the middle island (デンパ島, not a row) goes to (FUN_001FD330(…, 0xD)). */
 export const PIER_HOME_DUNGEON = 13;
@@ -134,17 +166,22 @@ export class HonoluluWorldmap {
   static problems(island: PierIsland, dungeons: number): string[] {
     const out: string[] = [];
     const { width, height } = pierIconSize(island.icon);
-    if (!(island.icon in HONOLULU_PIER_ICONS)) out.push(`アイコン ${island.icon} は島のレイアウト (58〜64) ではありません。`);
-    if (island.dungeon < 1 || island.dungeon >= dungeons) out.push(`行き先 ${island.dungeon} は dungeonData にないダンジョンです。`);
-    else if (!(island.dungeon in PIER_STAR_PROGRESS)) out.push('この行き先にはクリアの星が付きません (星の条件はダンジョン 1〜11 だけ)。');
+    if (!(island.icon in HONOLULU_PIER_ICONS))
+      out.push(`アイコン ${island.icon} は島のレイアウト (58〜64) ではありません。`);
+    if (island.dungeon < 1 || island.dungeon >= dungeons)
+      out.push(`行き先 ${island.dungeon} は dungeonData にないダンジョンです。`);
+    else if (!(island.dungeon in PIER_STAR_PROGRESS))
+      out.push('この行き先にはクリアの星が付きません (星の条件はダンジョン 1〜11 だけ)。');
     if (island.ship > 3) out.push('要る船の段階が 3 を超えているので、島が出ません。');
     if (island.ship === 0) out.push('要る船の段階 0 (船がなくても出る) はゲームで確かめていません。');
     for (const [i, s] of PIER_STAGES.entries()) {
       // a stage the island never shows at does not matter
       if (Math.max(...s.stages) < island.ship) continue;
       const [x, y] = island.at[i]!;
-      if (Math.abs(x) + width / 2 > PIER_SCREEN.width / 2 || Math.abs(y) + height / 2 > PIER_SCREEN.height / 2) out.push(`${s.label}: 画面の外にはみ出ています。`);
-      else if (s.scope && Math.hypot(x - s.scope.x, y - s.scope.y) > s.scope.r) out.push(`${s.label}: 望遠鏡の穴 (半径 約 ${s.scope.r}) の外なので、枠に隠れると推定されます。`);
+      if (Math.abs(x) + width / 2 > PIER_SCREEN.width / 2 || Math.abs(y) + height / 2 > PIER_SCREEN.height / 2)
+        out.push(`${s.label}: 画面の外にはみ出ています。`);
+      else if (s.scope && Math.hypot(x - s.scope.x, y - s.scope.y) > s.scope.r)
+        out.push(`${s.label}: 望遠鏡の穴 (半径 約 ${s.scope.r}) の外なので、枠に隠れると推定されます。`);
     }
     return out;
   }
@@ -170,7 +207,8 @@ export class PierImages {
   get(name: string): Bclim | undefined {
     const im = this.images.get(name);
     if (!im) return undefined;
-    if (name === 'pier_btm_bg' || name.startsWith('telescope_')) return crop(im, 0, 0, PIER_SCREEN.width, PIER_SCREEN.height);
+    if (name === 'pier_btm_bg' || name.startsWith('telescope_'))
+      return crop(im, 0, 0, PIER_SCREEN.width, PIER_SCREEN.height);
     if (name === 'island_last') return crop(im, 0, im.height - 48, 32, 48);
     // デンパ島: a 64 × 64 picture whose island is in the top left corner (the pane is 32 × 32; the UVs are not read)
     if (name === 'island_main') return crop(im, 0, 0, 32, 36);
@@ -188,6 +226,7 @@ function crop(im: Bclim, x: number, y: number, width: number, height: number): B
   const w = Math.min(width, im.width - x);
   const h = Math.min(height, im.height - y);
   const rgba = new Uint8Array(w * h * 4);
-  for (let r = 0; r < h; r++) rgba.set(im.rgba.subarray(((y + r) * im.width + x) * 4, ((y + r) * im.width + x + w) * 4), r * w * 4);
+  for (let r = 0; r < h; r++)
+    rgba.set(im.rgba.subarray(((y + r) * im.width + x) * 4, ((y + r) * im.width + x + w) * 4), r * w * 4);
   return { width: w, height: h, rgba };
 }

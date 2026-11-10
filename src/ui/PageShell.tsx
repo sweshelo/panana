@@ -43,7 +43,21 @@ export interface PageShellProps<P extends string> {
   children?: ReactNode;
 }
 
-export function PageShell<P extends string>({ pages, titles, fallback, brand, titleSuffix = '', romLabel, actions, render, isDetail, backHref, onRoute, outside, children }: PageShellProps<P>): ReactNode {
+export function PageShell<P extends string>({
+  pages,
+  titles,
+  fallback,
+  brand,
+  titleSuffix = '',
+  romLabel,
+  actions,
+  render,
+  isDetail,
+  backHref,
+  onRoute,
+  outside,
+  children,
+}: PageShellProps<P>): ReactNode {
   const ws = useWorkspace();
   const ids = pages.map(([id]) => id);
   const { page, arg, hash } = useHashRoute(ids, fallback);
@@ -71,27 +85,48 @@ export function PageShell<P extends string>({ pages, titles, fallback, brand, ti
   return (
     <div className="shell" data-page={page} data-detail={detail || undefined}>
       <nav className={menu ? 'topnav open' : 'topnav'}>
-        <button className="nav-toggle" aria-label="メニュー" aria-expanded={menu} onClick={() => setMenu(!menu)}>☰</button>
-        <b className="brand">Panana<span className="brand-sub">{` - ${brand}`}</span></b>
+        <button className="nav-toggle" aria-label="メニュー" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          ☰
+        </button>
+        <b className="brand">
+          Panana<span className="brand-sub">{` - ${brand}`}</span>
+        </b>
         <span className="nav-title">{titles[page]}</span>
         <div className="nav-items">
           {pages.map(([id, label]) => (
-            <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>{label}</a>
+            <a key={id} className={id === page ? 'tab active' : 'tab'} data-page={id} href={`#/${id}`}>
+              {label}
+            </a>
           ))}
           <span className="grow" />
           {actions(closeMenu)}
-          {ws && <RomButton label={romLabel} count={openedKeys(ws.opened).length} onClick={() => { closeMenu(); ws.showRoms(); }} />}
+          {ws && (
+            <RomButton
+              label={romLabel}
+              count={openedKeys(ws.opened).length}
+              onClick={() => {
+                closeMenu();
+                ws.showRoms();
+              }}
+            />
+          )}
         </div>
       </nav>
       {menu && <div className="nav-backdrop" onClick={closeMenu} />}
-      {detail && <a className="back-bar" href={backHref ? backHref(page, arg!) : `#/${page}`}>{`← ${titles[page]}の一覧`}</a>}
+      {detail && (
+        <a className="back-bar" href={backHref ? backHref(page, arg!) : `#/${page}`}>{`← ${titles[page]}の一覧`}</a>
+      )}
       {outside}
       <InfoTooltip />
       {pages.map(([id]) => {
         const v = visits.current.get(id);
         const content = v && render(id, v);
         if (content === undefined || content === null) return null;
-        return <div key={id} className={`page page-${id}`}>{content}</div>;
+        return (
+          <div key={id} className={`page page-${id}`}>
+            {content}
+          </div>
+        );
       })}
       {children}
     </div>

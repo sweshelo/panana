@@ -7,11 +7,19 @@ import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
 import { FIX_TABLE } from '../game/boss';
 import { JUMP_TABLE } from '../game/jumppoints';
-import { EVENT_SECTIONS, LAYOUTS, POINT_SECTIONS, loadDoc, recEventRow, sectionBytes, type MapDoc, type Rec } from '../game/sections';
+import {
+  EVENT_SECTIONS,
+  LAYOUTS,
+  POINT_SECTIONS,
+  loadDoc,
+  recEventRow,
+  sectionBytes,
+  type MapDoc,
+  type Rec,
+} from '../game/sections';
 import { equalBytes } from '../util/bytes';
 import { MapEditState } from './model';
 import { KAHARA_AUTO } from '../game/autotile';
-import { letterByte, letterIndex } from '../game/sections';
 import type { AutoProfile } from './autotile';
 import { isIndoor } from '../game/objects';
 import { freeRows, liveRows, releaseRows } from '../game/eventslots';
@@ -28,10 +36,11 @@ class EventTables extends Map<number, EventTable> {
 
 /** Event rows the records of a map point at. */
 function docRefs(doc: MapDoc, out: Set<number>): void {
-  for (const section of EVENT_SECTIONS) for (const rec of doc.recs[section] ?? []) {
-    const row = recEventRow(section, rec.raw);
-    if (row) out.add(row);
-  }
+  for (const section of EVENT_SECTIONS)
+    for (const rec of doc.recs[section] ?? []) {
+      const row = recEventRow(section, rec.raw);
+      if (row) out.add(row);
+    }
 }
 
 export * from './model';
@@ -93,7 +102,8 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
   eventRowUse(d: number): { live: Set<number>; free: number[] } {
     const ev = this.events.get(d);
     if (!ev) return { live: new Set(), free: [] };
-    const refs = new Set<number>(), rom = new Set<number>();
+    const refs = new Set<number>(),
+      rom = new Set<number>();
     const seen = new Set<number>();
     for (const m of this.game.editableMaps()) {
       if (m.dungeon !== d) continue;
@@ -159,28 +169,17 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.info = info;
     this.ref = this.game.mapRef(info, doc);
     this.tileset = this.game.master.tileset(this.ref);
-    if (this.brush.auto && !this.autoProfile) this.brush = {...this.brush, auto: false};
+    if (this.brush.auto && !this.autoProfile) this.brush = { ...this.brush, auto: false };
     this.selection = { type: 'none' };
     this.emit('map');
-  }
-
-  override get autoProfile(): AutoProfile | undefined {
-    if (!this.mapTopology) return undefined;
-    const palette = this.game.master.palette(this.tileset);
-    return KAHARA_AUTO.parts.every(p => palette.has(p.kind)) ? KAHARA_AUTO : undefined;
   }
 
   override get mapTopology(): AutoProfile | undefined {
     return this.current && !isIndoor(this.current) ? KAHARA_AUTO : undefined;
   }
 
-  override autoLetter(kind: number, preferred: number): number {
-    const letters = this.game.master.palette(this.tileset).get(kind) ?? [0];
-    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : letters[0]!);
-  }
-
-  override autoVariantLetters(kind: number): readonly number[] {
-    return this.game.master.palette(this.tileset).get(kind) ?? [0];
+  protected override autoPalette(): ReadonlyMap<number, readonly number[]> {
+    return this.game.master.palette(this.tileset);
   }
 
   /**
@@ -189,8 +188,16 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
    */
   syncRef(): boolean {
     if (!this.info || !this.current) return false;
-    const ref = this.game.mapRef(this.info, this.current), o = this.ref;
-    if (!o || o.hash !== ref.hash || o.mapDataKey !== ref.mapDataKey || o.indoor !== ref.indoor || o.dungeon !== ref.dungeon) this.ref = ref;
+    const ref = this.game.mapRef(this.info, this.current),
+      o = this.ref;
+    if (
+      !o ||
+      o.hash !== ref.hash ||
+      o.mapDataKey !== ref.mapDataKey ||
+      o.indoor !== ref.indoor ||
+      o.dungeon !== ref.dungeon
+    )
+      this.ref = ref;
     const t = this.game.master.tileset(this.ref ?? ref);
     if (t === this.tileset) return false;
     this.tileset = t;
@@ -205,7 +212,7 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
   }
 
   get currentEvents(): EventTable | null {
-    return this.current ? this.events.get(this.current.dungeon) ?? null : null;
+    return this.current ? (this.events.get(this.current.dungeon) ?? null) : null;
   }
 
   /** mapJumpPoint's bytes (undefined when the master has no such table, as in some tests). */
@@ -236,7 +243,8 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
     this.game.master.restoreTreasure(s.treasure);
     this.game.master.restoreTable('mapData.bin', s.mapData);
     const mg = this.game.master.mapGroup;
-    for (let r = 0; r < mg.rows && r * 2 + 1 < s.dungeonRows.length; r++) mg.row(r).set(s.dungeonRows.subarray(r * 2, r * 2 + 2), 0x26);
+    for (let r = 0; r < mg.rows && r * 2 + 1 < s.dungeonRows.length; r++)
+      mg.row(r).set(s.dungeonRows.subarray(r * 2, r * 2 + 2), 0x26);
     for (const [h, k] of s.keys) {
       const m = this.game.code.byHash(h);
       if (m?.added) m.mapDataKey = k;

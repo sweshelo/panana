@@ -56,14 +56,28 @@ const models = new Map<string, Promise<{ factory: ModelFactory; hash: number } |
 function factoryOf(ref: ModelRef): Promise<{ factory: ModelFactory; hash: number } | null> {
   let p = models.get(ref.key);
   if (!p) {
-    p = ref.load().then((r) => (r && r.set.models.has(r.hash) ? { factory: new ModelFactory(r.set), hash: r.hash } : null)).catch(() => null);
+    p = ref
+      .load()
+      .then((r) => (r && r.set.models.has(r.hash) ? { factory: new ModelFactory(r.set), hash: r.hash } : null))
+      .catch(() => null);
     models.set(ref.key, p);
   }
   return p;
 }
 
 /** Heights (fractions of the stand-in) of the bones the effects use, for the stand-in without a skeleton. */
-const STAND_IN_BONES: Record<string, number> = { head: 0.9, mouth: 0.85, neck: 0.8, jaw: 0.85, spine1: 0.65, spine: 0.6, waist: 0.5, hip: 0.5, body: 0.55, model: 0 };
+const STAND_IN_BONES: Record<string, number> = {
+  head: 0.9,
+  mouth: 0.85,
+  neck: 0.8,
+  jaw: 0.85,
+  spine1: 0.65,
+  spine: 0.6,
+  waist: 0.5,
+  hip: 0.5,
+  body: 0.55,
+  model: 0,
+};
 const STAND_IN_HEIGHT = 100;
 
 export class PerformanceViewer {
@@ -73,7 +87,11 @@ export class PerformanceViewer {
   private readonly effectsLabel = h('div', { class: 'perf-effects small' });
   private readonly phaseLabel = h('span', { class: 'small' });
   private readonly frameLabel = h('span', { class: 'viewer-frame small' });
-  private readonly playButton = h('button', { title: '最初から再生 / 止める', onclick: () => (this.playing ? this.stop() : this.play()) }, '▶');
+  private readonly playButton = h(
+    'button',
+    { title: '最初から再生 / 止める', onclick: () => (this.playing ? this.stop() : this.play()) },
+    '▶',
+  );
   private renderer: THREE.WebGLRenderer | null = null;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(30, 1, 1, 100000);
@@ -91,8 +109,12 @@ export class PerformanceViewer {
   onFrame: (phase: number, frame: number) => void = () => {};
 
   constructor() {
-    this.el.append(this.canvas, this.note, this.effectsLabel,
-      h('div', { class: 'viewer-anim' }, this.playButton, this.phaseLabel, this.frameLabel));
+    this.el.append(
+      this.canvas,
+      this.note,
+      this.effectsLabel,
+      h('div', { class: 'viewer-anim' }, this.playButton, this.phaseLabel, this.frameLabel),
+    );
     this.el.classList.add('animated');
     this.scene.add(this.markers);
     new ResizeObserver(() => this.render()).observe(this.el);
@@ -129,7 +151,9 @@ export class PerformanceViewer {
     let animated: AnimatedModel | null = null;
     let note = '';
     if (f) {
-      const hasMotions = !!f.factory.set.models.get(f.hash)?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
+      const hasMotions = !!f.factory.set.models
+        .get(f.hash)
+        ?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
       animated = hasMotions ? new AnimatedModel(f.factory, f.hash) : null;
       object = animated?.group ?? f.factory.instance(f.hash);
     }
@@ -143,7 +167,10 @@ export class PerformanceViewer {
     if (!object) {
       // A stand-in: a capsule as tall as a person.
       const g = new THREE.Group();
-      const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(18, STAND_IN_HEIGHT - 36, 4, 12), new THREE.MeshBasicMaterial({ color: 0x5a6b85, wireframe: true }));
+      const mesh = new THREE.Mesh(
+        new THREE.CapsuleGeometry(18, STAND_IN_HEIGHT - 36, 4, 12),
+        new THREE.MeshBasicMaterial({ color: 0x5a6b85, wireframe: true }),
+      );
       mesh.position.y = STAND_IN_HEIGHT / 2;
       g.add(mesh);
       object = g;
@@ -186,8 +213,10 @@ export class PerformanceViewer {
     for (const e of out) {
       const pos = this.effectPosition(l, e);
       const t = (frame - tl.effect) / Math.max(e.length, 1);
-      const m = new THREE.Mesh(new THREE.SphereGeometry(l.radius * 0.08 * (1 + 0.5 * Math.sin(t * Math.PI)), 16, 12),
-        new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.75, depthTest: false }));
+      const m = new THREE.Mesh(
+        new THREE.SphereGeometry(l.radius * 0.08 * (1 + 0.5 * Math.sin(t * Math.PI)), 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.75, depthTest: false }),
+      );
       m.position.copy(pos);
       m.renderOrder = 10;
       this.markers.add(m);
@@ -203,7 +232,8 @@ export class PerformanceViewer {
     const off = new THREE.Vector3(...e.offset);
     const m = e.bone && l.animated ? l.animated.boneMatrix(e.bone) : null;
     if (m) return new THREE.Vector3().setFromMatrixPosition(m).add(off);
-    if (!l.animated && e.bone) return new THREE.Vector3(0, (STAND_IN_BONES[e.bone] ?? 0.5) * STAND_IN_HEIGHT, 0).add(off);
+    if (!l.animated && e.bone)
+      return new THREE.Vector3(0, (STAND_IN_BONES[e.bone] ?? 0.5) * STAND_IN_HEIGHT, 0).add(off);
     return off; // the unit's position (or a bone the model does not have)
   }
 
@@ -250,7 +280,8 @@ export class PerformanceViewer {
   }
 
   private render(): void {
-    const w = this.el.clientWidth, hgt = this.canvas.clientHeight;
+    const w = this.el.clientWidth,
+      hgt = this.canvas.clientHeight;
     if (!w || !hgt) return;
     if (!this.renderer) {
       this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
@@ -264,8 +295,13 @@ export class PerformanceViewer {
     const radius = l?.radius ?? 100;
     this.camera.aspect = w / hgt;
     const d = radius / Math.sin(THREE.MathUtils.degToRad(15));
-    const yaw = 0.6, pitch = 0.25;
-    this.camera.position.set(center.x + Math.sin(yaw) * Math.cos(pitch) * d, center.y + Math.sin(pitch) * d, center.z + Math.cos(yaw) * Math.cos(pitch) * d);
+    const yaw = 0.6,
+      pitch = 0.25;
+    this.camera.position.set(
+      center.x + Math.sin(yaw) * Math.cos(pitch) * d,
+      center.y + Math.sin(pitch) * d,
+      center.z + Math.cos(yaw) * Math.cos(pitch) * d,
+    );
     this.camera.near = d / 100;
     this.camera.far = d * 10;
     this.camera.updateProjectionMatrix();

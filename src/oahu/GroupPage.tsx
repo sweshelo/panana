@@ -17,14 +17,20 @@ import { OAHU_BATTLE_BGM, OAHU_BOSS_BGM_BIT } from './sound';
 import { OAHU_MONSTER_GROUP } from './tables';
 
 /** Monster rows of a group: candidates (leads first), then the fixed formation, each once. */
-const groupMonsters = (g: OahuGroup): number[] => [...new Set([...g.leads, ...g.mates].map((s) => s.monster).concat(g.fixed))];
+const groupMonsters = (g: OahuGroup): number[] => [
+  ...new Set([...g.leads, ...g.mates].map((s) => s.monster).concat(g.fixed)),
+];
 
 export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { battle } = session;
   const [edits, edited] = useEdits();
   const detail = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => battle.groupList(), [battle, edits]);
-  const selected = useSticky(Number(arg) || undefined, (r) => r > 0 && r < battle.groups.rows, () => 1);
+  const selected = useSticky(
+    Number(arg) || undefined,
+    (r) => r > 0 && r < battle.groups.rows,
+    () => 1,
+  );
   useScrollTop(detail, selected);
   const onEdit = (): void => {
     edited();
@@ -34,15 +40,30 @@ export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: str
   return (
     <div className="book">
       <div className="book-side">
-        <NewRecordButton copy={oahuGroupCopy(battle)} current={selected} onEdit={onEdit} picker={(p) => (
-          <Dialog title={p.title} onClose={p.onClose}>
-            <div className="group-picker">
-              <GroupListView groups={groups} monsters={groupMonsters} name={(r) => battle.monsterName(r)}
-                icon={(r, i) => <Fragment key={i}>{oahuMonsterIcon(battle, r)}</Fragment>} changed={(g) => battle.groups.changed(g.row)}
-                filters={[['used', 'モンスターのいる群れ', used], ['all', 'すべて', () => true]]} selected={p.current} onSelect={(g) => p.onPick(g.row)} />
-            </div>
-          </Dialog>
-        )} />
+        <NewRecordButton
+          copy={oahuGroupCopy(battle)}
+          current={selected}
+          onEdit={onEdit}
+          picker={(p) => (
+            <Dialog title={p.title} onClose={p.onClose}>
+              <div className="group-picker">
+                <GroupListView
+                  groups={groups}
+                  monsters={groupMonsters}
+                  name={(r) => battle.monsterName(r)}
+                  icon={(r, i) => <Fragment key={i}>{oahuMonsterIcon(battle, r)}</Fragment>}
+                  changed={(g) => battle.groups.changed(g.row)}
+                  filters={[
+                    ['used', 'モンスターのいる群れ', used],
+                    ['all', 'すべて', () => true],
+                  ]}
+                  selected={p.current}
+                  onSelect={(g) => p.onPick(g.row)}
+                />
+              </div>
+            </Dialog>
+          )}
+        />
         <GroupListView
           groups={groups}
           monsters={groupMonsters}
@@ -69,7 +90,10 @@ export function OahuGroupPage({ session, arg }: { session: OahuSession; arg: str
 /** Copying a group to a new row (the buttons of a group and the list's "＋ 新しい群れ"). */
 function oahuGroupCopy(battle: OahuBattle): CopySpec {
   return {
-    noun: '群れ', can: true, href: oahuGroupHref, copy: (row) => battle.copyGroup(row),
+    noun: '群れ',
+    can: true,
+    href: oahuGroupHref,
+    copy: (row) => battle.copyGroup(row),
     info: 'この群れを monsterGroup の最後に新しい行として写します (索引のハッシュは新しく付けます)。マップや宝箱の戦闘から使うには、その欄で選び直してください。',
   };
 }
@@ -88,35 +112,74 @@ function GroupDetail({ battle, row, onEdit }: { battle: OahuBattle; row: number;
     for (const x of battle.groupList()) for (const s of [...x.leads, ...x.mates]) seen.add(s.count);
     return [...seen].sort((a, b) => a - b);
   }, [battle]);
-  const set = (side: 'leads' | 'mates') => (next: OahuGroup['leads']): void => {
-    battle.setGroupSlots(row, side === 'leads' ? next : g.leads, side === 'mates' ? next : g.mates);
-    onEdit();
-  };
-  const picker = (current: number, pick: (r: number) => void, close: () => void): ReactNode => <OahuMonsterPicker battle={battle} current={current} onPick={pick} onClose={close} />;
+  const set =
+    (side: 'leads' | 'mates') =>
+    (next: OahuGroup['leads']): void => {
+      battle.setGroupSlots(row, side === 'leads' ? next : g.leads, side === 'mates' ? next : g.mates);
+      onEdit();
+    };
+  const picker = (current: number, pick: (r: number) => void, close: () => void): ReactNode => (
+    <OahuMonsterPicker battle={battle} current={current} onPick={pick} onClose={close} />
+  );
   return (
     <>
       <div className="book-head">
         <h2>{`群れ #${row}`}</h2>
         <span className="muted">{`monsterGroup の行${rows.added(row) ? '  (追加した行)' : ''}`}</span>
-        <CopyRemoveButtons copy={oahuGroupCopy(battle)} from={row} onEdit={onEdit} remove={rows.added(row) ? {
-          used: battle.groupUsers(row),
-          why: battle.canRemoveGroup(row) ? undefined : '消せるのは最後に追加した群れだけです',
-          remove: () => battle.removeGroup(row), next: oahuGroupHref(row - 1),
-        } : undefined} />
-        {rows.changed(row) && !rows.added(row) && <button onClick={() => { rows.revert(row); onEdit(); }}>この群れの変更を元に戻す</button>}
+        <CopyRemoveButtons
+          copy={oahuGroupCopy(battle)}
+          from={row}
+          onEdit={onEdit}
+          remove={
+            rows.added(row)
+              ? {
+                  used: battle.groupUsers(row),
+                  why: battle.canRemoveGroup(row) ? undefined : '消せるのは最後に追加した群れだけです',
+                  remove: () => battle.removeGroup(row),
+                  next: oahuGroupHref(row - 1),
+                }
+              : undefined
+          }
+        />
+        {rows.changed(row) && !rows.added(row) && (
+          <button
+            onClick={() => {
+              rows.revert(row);
+              onEdit();
+            }}
+          >
+            この群れの変更を元に戻す
+          </button>
+        )}
       </div>
-      <p className="muted small book-desc">候補は 5 個まで。変更はマスター (21350000) の monsterGroup.bin として書き出されます。</p>
+      <p className="muted small book-desc">
+        候補は 5 個まで。変更はマスター (21350000) の monsterGroup.bin として書き出されます。
+      </p>
       <div className="book-cols group-cols">
         {(['leads', 'mates'] as const).map((side) => (
-          <GroupSlotEditor key={side} title={side === 'leads' ? '先頭 (マップで見える敵)・3 体目' : '仲間 (2・4 体目)'} info={side === 'leads' ? SLOT_INFO : undefined}
-            slots={g[side]} max={GROUP_SLOTS} monster={monster} counts={() => codes.map((c): [number, string] => [c, String(c)])} set={set(side)} picker={picker} />
+          <GroupSlotEditor
+            key={side}
+            title={side === 'leads' ? '先頭 (マップで見える敵)・3 体目' : '仲間 (2・4 体目)'}
+            info={side === 'leads' ? SLOT_INFO : undefined}
+            slots={g[side]}
+            max={GROUP_SLOTS}
+            monster={monster}
+            counts={() => codes.map((c): [number, string] => [c, String(c)])}
+            set={set(side)}
+            picker={picker}
+          />
         ))}
         <FixedEditor battle={battle} g={g} onEdit={onEdit} />
       </div>
       <BattleSettings battle={battle} row={row} onEdit={onEdit} />
       <details className="row-fields-box">
         <summary>{`monsterGroup の行 ${row} のすべての欄`}</summary>
-        <RowFields def={OAHU_MONSTER_GROUP} row={rows.row(row)} original={rows.originalRow(row)} context={battleContext(battle)} />
+        <RowFields
+          def={OAHU_MONSTER_GROUP}
+          row={rows.row(row)}
+          original={rows.originalRow(row)}
+          context={battleContext(battle)}
+        />
       </details>
     </>
   );
@@ -136,9 +199,19 @@ function BattleSettings({ battle, row, onEdit }: { battle: OahuBattle; row: numb
   const edited = !!(battle.groups.original(row, 'flags') & OAHU_BOSS_BGM_BIT) !== on;
   return (
     <section>
-      <h3 className="with-info">戦闘の BGM<InfoTip text={BOSS_BGM_INFO} /></h3>
+      <h3 className="with-info">
+        戦闘の BGM
+        <InfoTip text={BOSS_BGM_INFO} />
+      </h3>
       <label className={`layer${edited ? ' edited' : ''}`}>
-        <input type="checkbox" checked={on} onChange={(e) => { battle.groups.set(row, 'flags', e.target.checked ? flags | OAHU_BOSS_BGM_BIT : flags & ~OAHU_BOSS_BGM_BIT); onEdit(); }} />
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => {
+            battle.groups.set(row, 'flags', e.target.checked ? flags | OAHU_BOSS_BGM_BIT : flags & ~OAHU_BOSS_BGM_BIT);
+            onEdit();
+          }}
+        />
         {` ボスの曲 (+0x32 bit2): BGM 指定なしの決まった戦闘で ${on ? 'BGM_BATTLE_2' : 'BGM_BATTLE_1'} が鳴る`}
       </label>
     </section>
@@ -154,23 +227,48 @@ function FixedEditor({ battle, g, onEdit }: { battle: OahuBattle; g: OahuGroup; 
   };
   return (
     <section>
-      <h3 className="with-info">決まった並び<InfoTip text="+0x28 から 5 体。ボス・宝箱の群れはこれだけを持ちます。ふつうの群れにある並びがいつ使われるかは未確認です。" /></h3>
+      <h3 className="with-info">
+        決まった並び
+        <InfoTip text="+0x28 から 5 体。ボス・宝箱の群れはこれだけを持ちます。ふつうの群れにある並びがいつ使われるかは未確認です。" />
+      </h3>
       <div className="slot-list">
         {g.fixed.map((m, i) => {
           const name = battle.monsterName(m);
           return (
             <div key={i} className="slot-row">
-              <Board icon={oahuMonsterIcon(battle, m)} name={name} sub={`Lv${battle.monsters.get(m, 'level')}`} id={m} href={oahuMonsterHref(m)}
-                edited={battle.groups.original(g.row, `fixed${i + 1}`) !== m} title="モンスターを選び直す" onClick={() => setPicking(i)} />
-              <button className="small slot-remove" title="外す" onClick={() => set(g.fixed.filter((_, j) => j !== i))}>×</button>
+              <Board
+                icon={oahuMonsterIcon(battle, m)}
+                name={name}
+                sub={`Lv${battle.monsters.get(m, 'level')}`}
+                id={m}
+                href={oahuMonsterHref(m)}
+                edited={battle.groups.original(g.row, `fixed${i + 1}`) !== m}
+                title="モンスターを選び直す"
+                onClick={() => setPicking(i)}
+              />
+              <button className="small slot-remove" title="外す" onClick={() => set(g.fixed.filter((_, j) => j !== i))}>
+                ×
+              </button>
             </div>
           );
         })}
-        {g.fixed.length < 5 && <div className="slot-row"><EmptyBoard label="＋ 追加" onClick={() => setPicking(-1)} /></div>}
+        {g.fixed.length < 5 && (
+          <div className="slot-row">
+            <EmptyBoard label="＋ 追加" onClick={() => setPicking(-1)} />
+          </div>
+        )}
       </div>
       {picking !== null && (
-        <OahuMonsterPicker battle={battle} current={picking < 0 ? 0 : g.fixed[picking]!} onClose={() => setPicking(null)}
-          onPick={(m) => { const i = picking; setPicking(null); set(i < 0 ? [...g.fixed, m] : g.fixed.map((x, j) => (j === i ? m : x))); }} />
+        <OahuMonsterPicker
+          battle={battle}
+          current={picking < 0 ? 0 : g.fixed[picking]!}
+          onClose={() => setPicking(null)}
+          onPick={(m) => {
+            const i = picking;
+            setPicking(null);
+            set(i < 0 ? [...g.fixed, m] : g.fixed.map((x, j) => (j === i ? m : x)));
+          }}
+        />
       )}
     </section>
   );

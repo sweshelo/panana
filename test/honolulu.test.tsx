@@ -51,10 +51,27 @@ describe('telling the first game apart (no ROM)', () => {
 
   test('a folder with exheader.bin is told by its title ID, before the root files', async () => {
     // RPG2's root files, the first game's ExHeader
-    const files = [file('code.bin', new Uint8Array(0x100)), file('56562135'), file('49A43B63'), file('302996EB'), file('exheader.bin', exheader('honolulu', HONOLULU.titleId))];
+    const files = [
+      file('code.bin', new Uint8Array(0x100)),
+      file('56562135'),
+      file('49A43B63'),
+      file('302996EB'),
+      file('exheader.bin', exheader('honolulu', HONOLULU.titleId)),
+    ];
     expect((await openFolder(files, 'f')).title).toBe(HONOLULU);
     // an Update's ExHeader (a folder merged with its Update) names its Base's game
-    expect((await openFolder([file('code.bin', new Uint8Array(0x100)), file('56562135'), file('exheader.bin', exheader('oahu', '0004000E000EF000'))], 'f')).title).toBe(OAHU);
+    expect(
+      (
+        await openFolder(
+          [
+            file('code.bin', new Uint8Array(0x100)),
+            file('56562135'),
+            file('exheader.bin', exheader('oahu', '0004000E000EF000')),
+          ],
+          'f',
+        )
+      ).title,
+    ).toBe(OAHU);
     expect((await openFolder(files.slice(0, 4), 'f')).title).toBe(KAHARA);
   });
 
@@ -117,9 +134,13 @@ describe.skipIf(!hasHonolulu)('電波人間のRPG (honolulu) dump', () => {
     expect(tables.length).toBe(53);
     const item = tables.find(({ u }) => u.name === 'itemData.bin')!;
     expect(item).toBeDefined();
-    expect(renderToString(<GsTableView body={item.u.body} name={item.u.name} profile={honoluluRomfsProfile} />)).toContain('298 行 × 0x1C バイト');
+    expect(
+      renderToString(<GsTableView body={item.u.body} name={item.u.name} profile={honoluluRomfsProfile} />),
+    ).toContain('298 行 × 0x1C バイト');
     const shop = tables.find(({ u }) => u.name === 'shopItemGroup.bin')!;
-    expect(renderToString(<GsTableView body={shop.u.body} name={shop.u.name} profile={honoluluRomfsProfile} />)).toContain('12 行 × 0xC バイト');
+    expect(
+      renderToString(<GsTableView body={shop.u.body} name={shop.u.name} profile={honoluluRomfsProfile} />),
+    ).toContain('12 行 × 0xC バイト');
   });
 
   test('pages: the RomFS viewer opens on the master', () => {
@@ -137,6 +158,8 @@ describe.skipIf(!hasHonolulu)('電波人間のRPG (honolulu) dump', () => {
     expect(d.title).toBe(HONOLULU);
     expect(d.code).toEqual(dump.code);
     expect(hex8(parseArchive(await d.readRomfs(HONOLULU.master)).hash)).toBe(HONOLULU.master);
-    expect((await openFolder([code, ...roots, file('exheader.bin', exheader('honolulu', HONOLULU.titleId))], 'f')).title).toBe(HONOLULU);
+    expect(
+      (await openFolder([code, ...roots, file('exheader.bin', exheader('honolulu', HONOLULU.titleId))], 'f')).title,
+    ).toBe(HONOLULU);
   });
 });

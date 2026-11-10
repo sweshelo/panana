@@ -36,7 +36,23 @@ export const LANAI_MG_FLAG_BITS: [bit: number, label: string][] = [
 export const LANAI_MG_MATE_LISTS = ['お供なし', 'B から', 'C から'];
 
 /** Count codes (FUN_002711e0): how many of the monster come, a range being picked evenly. */
-const COUNTS: [number, number][] = [[1, 1], [2, 2], [3, 3], [4, 4], [8, 8], [1, 2], [1, 3], [1, 4], [1, 5], [1, 8], [2, 3], [2, 4], [3, 4], [3, 6], [4, 8]];
+const COUNTS: [number, number][] = [
+  [1, 1],
+  [2, 2],
+  [3, 3],
+  [4, 4],
+  [8, 8],
+  [1, 2],
+  [1, 3],
+  [1, 4],
+  [1, 5],
+  [1, 8],
+  [2, 3],
+  [2, 4],
+  [3, 4],
+  [3, 6],
+  [4, 8],
+];
 export const LANAI_MG_COUNT_CODES = COUNTS.length;
 
 /** "1〜3 体" for a count code (codes the game does not know give 1). */

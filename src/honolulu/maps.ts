@@ -10,7 +10,14 @@
 import { findByName, findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
 import { MapDb, MAPDB_ARCHIVE, MAPDB_ENTRY } from '../game/mapdb';
-import { loadDoc, type MapDoc, type MapFormat, type RecordLayout, type RotCodec, type TileLayout } from '../game/sections';
+import {
+  loadDoc,
+  type MapDoc,
+  type MapFormat,
+  type RecordLayout,
+  type RotCodec,
+  type TileLayout,
+} from '../game/sections';
 import type { Dump } from '../rom/dump';
 import { hex8, s16, u16, u32 } from '../util/bytes';
 import type { HonoluluMaster } from './master';
@@ -87,7 +94,8 @@ export const HONOLULU_ROT_CODEC: RotCodec = {
   decode: (b) => FACING_BYTES.indexOf(b as 0x4e),
   encode: (r) => FACING_BYTES[r & 3]!,
 };
-export const facingLetter = (b: number): string => (FACING_BYTES.includes(b as 0x4e) ? String.fromCharCode(b) : `0x${b.toString(16)}`);
+export const facingLetter = (b: number): string =>
+  FACING_BYTES.includes(b as 0x4e) ? String.fromCharCode(b) : `0x${b.toString(16)}`;
 
 /** Tiles (map.md §3.1): {u32 kind, s16 x, s16 y, u16 0xFE4E, u16 0x0028}; +0x08 is 'N' on every tile of the ROM. */
 export const HONOLULU_TILE: TileLayout = { size: 12, rot: 8, letter: 9, pad: 10, rotCodec: HONOLULU_ROT_CODEC };
@@ -111,7 +119,14 @@ export const HONOLULU_LAYOUTS: Record<number, RecordLayout> = {
   [HONOLULU_NPC_SECTION]: { size: 12, xo: 8, yo: 0x0a, unit: 'cell', label: '人物 (階の定義)' },
   [HONOLULU_MONSTER_SECTION]: { size: 12, xo: 8, yo: 0x0a, unit: 'cell', label: '置かれた敵の群れ (階の定義)' },
 };
-export const HONOLULU_POINT_SECTIONS = [HONOLULU_EXIT_SECTION, HONOLULU_CHEST_SECTION, HONOLULU_CHEST2_SECTION, HONOLULU_NPC_SECTION, HONOLULU_MONSTER_SECTION, HONOLULU_OBJECT_SECTION] as const;
+export const HONOLULU_POINT_SECTIONS = [
+  HONOLULU_EXIT_SECTION,
+  HONOLULU_CHEST_SECTION,
+  HONOLULU_CHEST2_SECTION,
+  HONOLULU_NPC_SECTION,
+  HONOLULU_MONSTER_SECTION,
+  HONOLULU_OBJECT_SECTION,
+] as const;
 export const HONOLULU_MAP_FORMAT: MapFormat = { tile: HONOLULU_TILE, layouts: HONOLULU_LAYOUTS };
 
 /** The cells of the grid (x is 0〜49, y 0〜33 in the ROM). */
@@ -244,7 +259,14 @@ export class HonoluluMaps {
       if (body.length >= 8 && u32(body, 0) === FLOORS_MAGIC) floors.set(e.hash, body);
       else if (e.hash === PARTS_ENTRY) parts = parsePartNames(body);
     }
-    return new HonoluluMaps(new MapDb(unpackEntry(archive, db).body), new GsTable(csv.body), dump.code, floors, master, parts);
+    return new HonoluluMaps(
+      new MapDb(unpackEntry(archive, db).body),
+      new GsTable(csv.body),
+      dump.code,
+      floors,
+      master,
+      parts,
+    );
   }
 
   map(hash: number): HonoluluMapInfo | undefined {
@@ -255,9 +277,16 @@ export class HonoluluMaps {
   doc(info: HonoluluMapInfo): MapDoc {
     let d = this.docs.get(info.hash);
     if (!d) {
-      const sections = Array.from({ length: 10 }, (_, k) => (k === 0 ? info.hash : k === HONOLULU_OBJECT_SECTION ? info.objects : 0));
-      d = loadDoc(this.db, { hash: info.hash, name: mapCode(info), dungeon: info.dungeons[0] ?? 0, floor: 0, sections }, HONOLULU_MAP_FORMAT);
-      for (const k of Object.keys(d.raw).map(Number)) if (!d.raw[k]!.length || k === HONOLULU_OBJECT_SECTION) delete d.raw[k];
+      const sections = Array.from({ length: 10 }, (_, k) =>
+        k === 0 ? info.hash : k === HONOLULU_OBJECT_SECTION ? info.objects : 0,
+      );
+      d = loadDoc(
+        this.db,
+        { hash: info.hash, name: mapCode(info), dungeon: info.dungeons[0] ?? 0, floor: 0, sections },
+        HONOLULU_MAP_FORMAT,
+      );
+      for (const k of Object.keys(d.raw).map(Number))
+        if (!d.raw[k]!.length || k === HONOLULU_OBJECT_SECTION) delete d.raw[k];
       this.docs.set(info.hash, d);
     }
     return d;
@@ -270,7 +299,9 @@ export class HonoluluMaps {
     d.dungeon = floor.dungeon;
     d.floor = floor.floor;
     const put = (k: number, points: FloorPoint[]): void => {
-      d.recs[k] = points.filter((p) => p.x !== RANDOM_POS && p.y !== RANDOM_POS).map((p) => ({ raw: p.raw, x: p.x + FLOOR_CELL_OFFSET, y: p.y + FLOOR_CELL_OFFSET }));
+      d.recs[k] = points
+        .filter((p) => p.x !== RANDOM_POS && p.y !== RANDOM_POS)
+        .map((p) => ({ raw: p.raw, x: p.x + FLOOR_CELL_OFFSET, y: p.y + FLOOR_CELL_OFFSET }));
     };
     put(HONOLULU_EXIT_SECTION, floor.exits);
     put(HONOLULU_CHEST_SECTION, floor.chests);
@@ -283,7 +314,11 @@ export class HonoluluMaps {
   /** The tile models of a floor of the map (null: a map no floor uses; shown with mapData row 1). */
   tileSource(floor: HonoluluFloor | null): HonoluluTileSource {
     const m = this.master;
-    const mapData = !floor ? -1 : floor.mapDataKey ? (m.table('mapData.bin').hashIndex().get(floor.mapDataKey) ?? -1) : m.rows('dungeonData.bin').get(floor.dungeon, 'mapData');
+    const mapData = !floor
+      ? -1
+      : floor.mapDataKey
+        ? (m.table('mapData.bin').hashIndex().get(floor.mapDataKey) ?? -1)
+        : m.rows('dungeonData.bin').get(floor.dungeon, 'mapData');
     const md = m.rows('mapData.bin');
     const mdRow = mapData > 0 && mapData < md.rows ? mapData : 1;
     const resource = md.get(mdRow, 'resource');
@@ -325,7 +360,8 @@ export class HonoluluMaps {
   objectModel(kind: number): { archive: number; entry: number; scale: number } | null {
     const t = this.master.rows('mapObject.bin');
     if (kind <= 0 || kind >= t.rows) return null;
-    const archive = t.get(kind, 'archive'), entry = t.get(kind, 'model');
+    const archive = t.get(kind, 'archive'),
+      entry = t.get(kind, 'model');
     if (!archive || !entry) return null;
     const scale = t.get(kind, 'scale');
     return { archive, entry, scale: scale > 0 && scale < 10 ? scale : 1 };
@@ -350,7 +386,8 @@ export class HonoluluMaps {
     const out: { floor: HonoluluFloor; placed: boolean }[] = [];
     for (const f of this.dungeons.flatMap((d) => d.records)) {
       if (f.monsterGroup && this.monsterGroupRow(f.monsterGroup) === row) out.push({ floor: f, placed: false });
-      else if (f.monsters.some((g) => this.monsterGroupRow(u32(g.raw, 0)) === row)) out.push({ floor: f, placed: true });
+      else if (f.monsters.some((g) => this.monsterGroupRow(u32(g.raw, 0)) === row))
+        out.push({ floor: f, placed: true });
     }
     return out;
   }
@@ -391,10 +428,25 @@ export function parseFloors(file: Uint8Array, dungeon: number): HonoluluFloor[] 
       o += count * size;
       return a;
     });
-    const at = (xo: number) => (raw: Uint8Array): FloorPoint => ({ x: s16(raw, xo), y: s16(raw, xo + 2), raw });
+    const at =
+      (xo: number) =>
+      (raw: Uint8Array): FloorPoint => ({ x: s16(raw, xo), y: s16(raw, xo + 2), raw });
     out.push({
-      dungeon, index, id: u32(h, 0), map: u32(h, 4), monsterGroup: u32(h, 8), itemGroup: u32(h, 0x0c), floor: s16(h, 0x18), mapDataKey: u32(h, 0x14), designedKey: u32(h, 0x4c),
-      exits: arrays[0]!.map(at(0x10)), npcs: arrays[1]!.map(at(8)), chests2: arrays[2]!.map(at(8)), chests: arrays[3]!.map(at(8)), monsters: arrays[7]!.map(at(8)), arrays,
+      dungeon,
+      index,
+      id: u32(h, 0),
+      map: u32(h, 4),
+      monsterGroup: u32(h, 8),
+      itemGroup: u32(h, 0x0c),
+      floor: s16(h, 0x18),
+      mapDataKey: u32(h, 0x14),
+      designedKey: u32(h, 0x4c),
+      exits: arrays[0]!.map(at(0x10)),
+      npcs: arrays[1]!.map(at(8)),
+      chests2: arrays[2]!.map(at(8)),
+      chests: arrays[3]!.map(at(8)),
+      monsters: arrays[7]!.map(at(8)),
+      arrays,
     });
   }
   return out;

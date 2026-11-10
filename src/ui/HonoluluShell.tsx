@@ -19,11 +19,34 @@ import type { BaseMod } from '../rom/dump';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
-export const HONOLULU_PAGES = [['monsters', 'モンスター'], ['items', 'アイテム'], ['actions', 'アクション'], ['shops', 'ショップ'], ['maps', 'マップ'], ['world', 'ワールドマップ'], ['messages', 'メッセージ'], ['sounds', 'BGM・効果音'], ['romfs', 'RomFS']] as const;
+export const HONOLULU_PAGES = [
+  ['monsters', 'モンスター'],
+  ['items', 'アイテム'],
+  ['actions', 'アクション'],
+  ['shops', 'ショップ'],
+  ['maps', 'マップ'],
+  ['world', 'ワールドマップ'],
+  ['messages', 'メッセージ'],
+  ['sounds', 'BGM・効果音'],
+  ['romfs', 'RomFS'],
+] as const;
 type HonoluluPage = (typeof HONOLULU_PAGES)[number][0];
-const TITLES: Record<HonoluluPage, string> = { monsters: 'モンスター', items: 'アイテム', actions: 'アクション', shops: 'ショップ', maps: 'マップ', world: 'ワールドマップ', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS' };
+const TITLES: Record<HonoluluPage, string> = {
+  monsters: 'モンスター',
+  items: 'アイテム',
+  actions: 'アクション',
+  shops: 'ショップ',
+  maps: 'マップ',
+  world: 'ワールドマップ',
+  messages: 'メッセージ',
+  sounds: 'BGM・効果音',
+  romfs: 'RomFS',
+};
 
-export function HonoluluShell({ session, onBaseMod }: {
+export function HonoluluShell({
+  session,
+  onBaseMod,
+}: {
   session: HonoluluSession;
   /** Reopens the dump on another base MOD (null: none), keeping the edits. */
   onBaseMod: (mod: BaseMod | null) => Promise<void>;
@@ -32,24 +55,50 @@ export function HonoluluShell({ session, onBaseMod }: {
   const [exporting, setExporting] = useState(false);
   const context = useMemo(() => session.master.context(), [session]);
   return (
-    <PageShell pages={HONOLULU_PAGES} titles={TITLES} fallback="maps" brand="電波人間のRPG エディタ" titleSuffix=" (RPG)" romLabel={dump.label}
+    <PageShell
+      pages={HONOLULU_PAGES}
+      titles={TITLES}
+      fallback="maps"
+      brand="電波人間のRPG エディタ"
+      titleSuffix=" (RPG)"
+      romLabel={dump.label}
       actions={(closeMenu) => (
         <>
-          <button className="primary" title="変更した表・メッセージを LayeredFS 用の MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
+          <button
+            className="primary"
+            title="変更した表・メッセージを LayeredFS 用の MOD として書き出します"
+            onClick={() => {
+              closeMenu();
+              setExporting(true);
+            }}
+          >
+            書き出し…
+          </button>
           <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
-      render={(id, { arg: a }) => (
-        id === 'monsters' ? <HonoluluMonsterPage session={session} arg={a} />
-          : id === 'items' ? <HonoluluItemPage session={session} arg={a} />
-          : id === 'actions' ? <HonoluluActionPage session={session} arg={a} />
-          : id === 'shops' ? <HonoluluShopPage master={session.master} shop={session.shop} arg={a} edited={() => session.edited()} />
-          : id === 'maps' ? <HonoluluMapPage session={session} arg={a} />
-          : id === 'world' ? <HonoluluWorldmapPage session={session} arg={a} />
-          : id === 'messages' ? <HonoluluMessagePage session={session} arg={a} />
-          : id === 'sounds' ? <HonoluluSoundPage session={session} arg={a} />
-          : <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={a} context={context} />
-      )}>
+      render={(id, { arg: a }) =>
+        id === 'monsters' ? (
+          <HonoluluMonsterPage session={session} arg={a} />
+        ) : id === 'items' ? (
+          <HonoluluItemPage session={session} arg={a} />
+        ) : id === 'actions' ? (
+          <HonoluluActionPage session={session} arg={a} />
+        ) : id === 'shops' ? (
+          <HonoluluShopPage master={session.master} shop={session.shop} arg={a} edited={() => session.edited()} />
+        ) : id === 'maps' ? (
+          <HonoluluMapPage session={session} arg={a} />
+        ) : id === 'world' ? (
+          <HonoluluWorldmapPage session={session} arg={a} />
+        ) : id === 'messages' ? (
+          <HonoluluMessagePage session={session} arg={a} />
+        ) : id === 'sounds' ? (
+          <HonoluluSoundPage session={session} arg={a} />
+        ) : (
+          <RomfsPage dump={dump} profile={honoluluRomfsProfile} arg={a} context={context} />
+        )
+      }
+    >
       {exporting && <HonoluluExportDialog session={session} onClose={() => setExporting(false)} />}
     </PageShell>
   );

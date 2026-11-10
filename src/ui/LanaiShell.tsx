@@ -1,6 +1,7 @@
 // The pages of a 電波人間のRPG FREE! (lanai) dump: the stages (contents), the maps, the talks, the strings of the tables, the
-// monsters, the items, the shops, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
+// monsters, the items, the actions, the shops, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useMemo, useState, type ReactNode } from 'react';
+import { LanaiActionPage } from '../lanai/ActionPage';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
@@ -21,9 +22,35 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['world', 'ワールド'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [
+  ['stages', 'ステージ'],
+  ['maps', 'マップ'],
+  ['world', 'ワールド'],
+  ['talks', 'セリフ'],
+  ['messages', 'メッセージ'],
+  ['monsters', 'モンスター'],
+  ['groups', '群れ'],
+  ['items', 'アイテム'],
+  ['actions', 'アクション'],
+  ['shops', 'ショップ'],
+  ['codes', 'コード・配信'],
+  ['romfs', 'RomFS'],
+] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', world: 'ワールドマップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', groups: '群れ', items: 'アイテム', shops: 'ショップ', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = {
+  stages: 'ステージ',
+  maps: 'マップ',
+  world: 'ワールドマップ',
+  talks: 'セリフ',
+  messages: 'メッセージ',
+  monsters: 'モンスター',
+  groups: '群れ',
+  items: 'アイテム',
+  actions: 'アクション',
+  shops: 'ショップ',
+  codes: 'コード入力・チェックイン',
+  romfs: 'RomFS',
+};
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -43,7 +70,11 @@ function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): voi
   input.click();
 }
 
-export function LanaiShell({ session, onSession, onBaseMod }: {
+export function LanaiShell({
+  session,
+  onSession,
+  onBaseMod,
+}: {
   session: LanaiSession;
   /** The session reopened with the Update. */
   onSession: (s: LanaiSession) => void;
@@ -60,28 +91,69 @@ export function LanaiShell({ session, onSession, onBaseMod }: {
   }, [session]);
   const u = dump.update;
   return (
-    <PageShell pages={LANAI_PAGES} titles={TITLES} fallback="maps" brand="電波人間のRPG FREE! エディタ" titleSuffix=" (RPG FREE!)" romLabel={dump.label}
+    <PageShell
+      pages={LANAI_PAGES}
+      titles={TITLES}
+      fallback="maps"
+      brand="電波人間のRPG FREE! エディタ"
+      titleSuffix=" (RPG FREE!)"
+      romLabel={dump.label}
       actions={(closeMenu) => (
         <>
-          {u ? <span className="muted small" title={`patchList.bin: ${u.patched.length} 個`}>{`Update v${u.titleVersion ?? '?'}`}</span>
-            : <button title="ゲームが実際に読むのは Update のアーカイブです (資料のアドレスや行も Update が基準)" onClick={() => pickUpdate(session, onSession)}>Update を追加…</button>}
-          <button className="primary" title="変更した表・マップを LayeredFS 用の MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
+          {u ? (
+            <span
+              className="muted small"
+              title={`patchList.bin: ${u.patched.length} 個`}
+            >{`Update v${u.titleVersion ?? '?'}`}</span>
+          ) : (
+            <button
+              title="ゲームが実際に読むのは Update のアーカイブです (資料のアドレスや行も Update が基準)"
+              onClick={() => pickUpdate(session, onSession)}
+            >
+              Update を追加…
+            </button>
+          )}
+          <button
+            className="primary"
+            title="変更した表・マップを LayeredFS 用の MOD として書き出します"
+            onClick={() => {
+              closeMenu();
+              setExporting(true);
+            }}
+          >
+            書き出し…
+          </button>
           <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
-      render={(id, { arg: a }) => (
-        id === 'stages' ? <LanaiStagePage session={session} arg={a} />
-          : id === 'maps' ? <LanaiMapPage session={session} arg={a} />
-          : id === 'world' ? <LanaiWorldPage session={session} arg={a} />
-          : id === 'talks' ? <LanaiTalkPage session={session} arg={a} />
-          : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
-          : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
-          : id === 'groups' ? <LanaiGroupPage session={session} arg={a} />
-          : id === 'items' ? <LanaiItemPage session={session} arg={a} />
-          : id === 'shops' ? <LanaiShopPage session={session} arg={a} />
-          : id === 'codes' ? <LanaiCodePage session={session} arg={a} />
-          : <RomfsPage dump={dump} profile={profile} arg={a} />
-      )}>
+      render={(id, { arg: a }) =>
+        id === 'stages' ? (
+          <LanaiStagePage session={session} arg={a} />
+        ) : id === 'maps' ? (
+          <LanaiMapPage session={session} arg={a} />
+        ) : id === 'world' ? (
+          <LanaiWorldPage session={session} arg={a} />
+        ) : id === 'talks' ? (
+          <LanaiTalkPage session={session} arg={a} />
+        ) : id === 'messages' ? (
+          <LanaiMessagePage session={session} arg={a} />
+        ) : id === 'monsters' ? (
+          <LanaiMonsterPage session={session} arg={a} />
+        ) : id === 'groups' ? (
+          <LanaiGroupPage session={session} arg={a} />
+        ) : id === 'items' ? (
+          <LanaiItemPage session={session} arg={a} />
+        ) : id === 'actions' ? (
+          <LanaiActionPage session={session} arg={a} />
+        ) : id === 'shops' ? (
+          <LanaiShopPage session={session} arg={a} />
+        ) : id === 'codes' ? (
+          <LanaiCodePage session={session} arg={a} />
+        ) : (
+          <RomfsPage dump={dump} profile={profile} arg={a} />
+        )
+      }
+    >
       {exporting && <LanaiExportDialog session={session} onClose={() => setExporting(false)} />}
     </PageShell>
   );

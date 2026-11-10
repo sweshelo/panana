@@ -78,7 +78,9 @@ export async function askClaude({ system, prompt, onText, signal, fetch: fetchFn
       thinking: { type: 'adaptive' },
       output_config: { effort: 'high' },
       // Opus 5 / Fable 5.1: a declined request is re-run on a fallback model chosen by the server
-      ...(FALLBACK_MODELS.has(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
+      ...(FALLBACK_MODELS.has(model)
+        ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+        : {}),
       system: [
         { type: 'text', text: INSTRUCTIONS },
         { type: 'text', text: system, cache_control: { type: 'ephemeral' } },
@@ -104,7 +106,8 @@ export async function askClaude({ system, prompt, onText, signal, fetch: fetchFn
 export function errorText(e: unknown): string {
   if (e instanceof Anthropic.AuthenticationError) return 'API キーが正しくありません (401)';
   if (e instanceof Anthropic.PermissionDeniedError) return 'この API キーではこのモデルを使えません (403)';
-  if (e instanceof Anthropic.RateLimitError) return '利用の上限に達しました。少し待ってからもう一度試してください (429)';
+  if (e instanceof Anthropic.RateLimitError)
+    return '利用の上限に達しました。少し待ってからもう一度試してください (429)';
   if (e instanceof Anthropic.BadRequestError) return `リクエストが受け付けられませんでした: ${e.message}`;
   if (e instanceof Anthropic.APIUserAbortError) return '中止しました';
   if (e instanceof Anthropic.APIConnectionError) return 'Anthropic に接続できませんでした';

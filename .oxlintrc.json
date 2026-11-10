@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true }],
+    "no-irregular-whitespace": ["error", { "skipStrings": true, "skipTemplates": true, "skipComments": true }]
+  },
+  "ignorePatterns": ["docs/**", "roms/**", "dist/**", ".wrangler/**", ".claude/**", ".task-clones/**"]
+}

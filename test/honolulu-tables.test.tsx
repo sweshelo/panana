@@ -4,7 +4,16 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { findByName, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { GsTable } from '../src/archive/gstable';
-import { field, fieldSize, rawFields, rawTableDef, readField, rowDef, withRawFields, type TableDef } from '../src/game/tabledef';
+import {
+  field,
+  fieldSize,
+  rawFields,
+  rawTableDef,
+  readField,
+  rowDef,
+  withRawFields,
+  type TableDef,
+} from '../src/game/tabledef';
 import { HonoluluMaster, HONOLULU_MASTER } from '../src/honolulu/master';
 import { HONOLULU_ITEM_DATA, HONOLULU_TABLES } from '../src/honolulu/tables';
 import { openImage, type Dump } from '../src/rom/dump';
@@ -29,8 +38,19 @@ function coverage(def: TableDef): number[] {
 
 describe('raw fields', () => {
   test('u32 where aligned, u16 / u8 at the odd ends', () => {
-    expect(rawFields(0, 0x16).map((f) => [f.offset, f.type])).toEqual([[0, 'u32'], [4, 'u32'], [8, 'u32'], [0xc, 'u32'], [0x10, 'u32'], [0x14, 'u16']]);
-    expect(rawFields(1, 8).map((f) => [f.offset, f.type])).toEqual([[1, 'u8'], [2, 'u16'], [4, 'u32']]);
+    expect(rawFields(0, 0x16).map((f) => [f.offset, f.type])).toEqual([
+      [0, 'u32'],
+      [4, 'u32'],
+      [8, 'u32'],
+      [0xc, 'u32'],
+      [0x10, 'u32'],
+      [0x14, 'u16'],
+    ]);
+    expect(rawFields(1, 8).map((f) => [f.offset, f.type])).toEqual([
+      [1, 'u8'],
+      [2, 'u16'],
+      [4, 'u32'],
+    ]);
     expect(rawFields(0, 3).map((f) => f.type)).toEqual(['u16', 'u8']);
     expect(rawFields(0, 4).every((f) => f.unsure && f.hex)).toBe(true);
   });
@@ -44,7 +64,20 @@ describe('raw fields', () => {
   test('a definition keeps its fields in place and gets raw fields over the bytes it leaves out', () => {
     const d = withRawFields(HONOLULU_ITEM_DATA);
     expect(coverage(d).every((n) => n === 1)).toBe(true);
-    expect(d.fields.map((f) => f.key)).toEqual(['name', 'desc', 'shopDesc', 'price', 'sell', 'kind', 'raw15', 'raw16', 'used', 'sub', 'category', 'raw1b']);
+    expect(d.fields.map((f) => f.key)).toEqual([
+      'name',
+      'desc',
+      'shopDesc',
+      'price',
+      'sell',
+      'kind',
+      'raw15',
+      'raw16',
+      'used',
+      'sub',
+      'category',
+      'raw1b',
+    ]);
     // a complete definition is left as it is
     const full: TableDef = { file: 'x.bin', rowSize: 4, fields: [{ key: 'a', offset: 0, type: 'u32', label: 'a' }] };
     expect(withRawFields(full)).toBe(full);
@@ -73,7 +106,8 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
 
   beforeAll(async () => {
     dump = await openImage(Bun.file(HONOLULU_BASE), 'honolulu-base.cia');
-    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038', '49C917B7']) roots.set(name, await dump.readRomfs(name));
+    for (const name of [HONOLULU_MASTER, '2713402F', 'A90C8038', '49C917B7'])
+      roots.set(name, await dump.readRomfs(name));
     bytes = roots.get(HONOLULU_MASTER)!;
   });
 
@@ -92,8 +126,14 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
   };
 
   test('every definition has the row size of its table in the ROM', () => {
-    const all = new Map([...tables(HONOLULU_MASTER), ...tables('2713402F'), ...tables('A90C8038'), ...tables('49C917B7')]);
-    for (const d of Object.values(HONOLULU_TABLES)) expect([d.file, all.get(d.file)?.rowSize]).toEqual([d.file, d.rowSize]);
+    const all = new Map([
+      ...tables(HONOLULU_MASTER),
+      ...tables('2713402F'),
+      ...tables('A90C8038'),
+      ...tables('49C917B7'),
+    ]);
+    for (const d of Object.values(HONOLULU_TABLES))
+      expect([d.file, all.get(d.file)?.rowSize]).toEqual([d.file, d.rowSize]);
   });
 
   test('every table of the master is shown by RowFields: by its fields, or as raw fields', () => {
@@ -103,12 +143,16 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     expect(files.length).toBeGreaterThanOrEqual(45);
     for (const file of files) {
       const rows = m.rows(file);
-      const html = renderToString(<RowFields def={rows.def} row={rows.row(Math.min(1, rows.rows - 1))} context={ctx} />);
+      const html = renderToString(
+        <RowFields def={rows.def} row={rows.row(Math.min(1, rows.rows - 1))} context={ctx} />,
+      );
       expect(html).toContain('+0x00');
       expect(coverage(rows.def).every((n) => n === 1)).toBe(true);
     }
     // a table without a definition: hex only
-    const group = renderToString(<RowFields def={m.rows('monsterGroup.bin').def} row={m.rows('monsterGroup.bin').row(1)} />);
+    const group = renderToString(
+      <RowFields def={m.rows('monsterGroup.bin').def} row={m.rows('monsterGroup.bin').row(1)} />,
+    );
     expect(group).toContain('+0x2C');
   });
 
@@ -116,17 +160,34 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     const m = new HonoluluMaster(bytes);
     const items = m.rows('itemData.bin');
     expect(items.rows).toBe(298);
-    expect([items.get(1, 'name'), m.message(items.get(1, 'name')), items.get(1, 'price'), items.get(1, 'category')]).toEqual([661, 'キズぐすり', 20, 1]);
+    expect([
+      items.get(1, 'name'),
+      m.message(items.get(1, 'name')),
+      items.get(1, 'price'),
+      items.get(1, 'category'),
+    ]).toEqual([661, 'キズぐすり', 20, 1]);
     let used = 0;
     for (let r = 0; r < items.rows; r++) used += items.get(r, 'used');
     expect(used).toBe(235);
     // equipData +0x08 and itemData +0x19 name each other
     const equip = m.rows('equipData.bin');
-    for (let r = 0; r < items.rows; r++) if (items.get(r, 'category') === 3) expect(equip.get(items.get(r, 'sub'), 'item')).toBe(r);
+    for (let r = 0; r < items.rows; r++)
+      if (items.get(r, 'category') === 3) expect(equip.get(items.get(r, 'sub'), 'item')).toBe(r);
 
     const stages = m.rows('shopItemGroup.bin');
     expect(stages.rows).toBe(12);
-    expect([0, 1, 11].map((s) => [stages.get(s, 'first'), stages.get(s, 'last'), stages.get(s, 'dungeon'), stages.get(s, 'progress')])).toEqual([[0, 5, 0, 0], [6, 18, 1, 5], [616, 752, 11, 15]]);
+    expect(
+      [0, 1, 11].map((s) => [
+        stages.get(s, 'first'),
+        stages.get(s, 'last'),
+        stages.get(s, 'dungeon'),
+        stages.get(s, 'progress'),
+      ]),
+    ).toEqual([
+      [0, 5, 0, 0],
+      [6, 18, 1, 5],
+      [616, 752, 11, 15],
+    ]);
     const ctx = m.context();
     expect(ctx.rowName!('dungeonData.bin', stages.get(1, 'dungeon'))).toBe('デンパ島のどうくつ');
     const stock = m.rows('shopItemData.bin');
@@ -134,7 +195,9 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     expect(m.message(m.rows('skillData.bin').get(0, 'name'))).toBe('アンテナなし');
 
     const monsters = new GsTable(findByName(parseArchive(roots.get('2713402F')!), 'monsterData.bin')!.body);
-    expect(m.message(readField(monsters.row(1), field(HONOLULU_TABLES['monsterData.bin']!, 'name')))).toBe('きばコウモリ');
+    expect(m.message(readField(monsters.row(1), field(HONOLULU_TABLES['monsterData.bin']!, 'name')))).toBe(
+      'きばコウモリ',
+    );
   });
 
   test('the master comes out as it was when nothing is edited, and an edit is exported and reverted', () => {
@@ -161,13 +224,31 @@ describe.skipIf(!hasHonolulu)('初代 master (ROM)', () => {
     const ctx = session.master.context();
     const arc = parseArchive(bytes);
     const body = (file: string) => findByName(arc, file)!.body;
-    const items = renderToString(<GsTableView body={body('itemData.bin')} name="itemData.bin" profile={honoluluRomfsProfile} context={ctx} />);
+    const items = renderToString(
+      <GsTableView body={body('itemData.bin')} name="itemData.bin" profile={honoluluRomfsProfile} context={ctx} />,
+    );
     expect(items).toContain('欄ごと');
     expect(items).toContain('キズぐすり');
     expect(items).toContain('店員の説明');
-    const stock = renderToString(<GsTableView body={body('shopItemData.bin')} name="shopItemData.bin" profile={honoluluRomfsProfile} context={ctx} />);
+    const stock = renderToString(
+      <GsTableView
+        body={body('shopItemData.bin')}
+        name="shopItemData.bin"
+        profile={honoluluRomfsProfile}
+        context={ctx}
+      />,
+    );
     expect(stock).toContain('#1 キズぐすり');
     // no definition: hex columns only
-    expect(renderToString(<GsTableView body={body('monsterFieldData.bin')} name="monsterFieldData.bin" profile={honoluluRomfsProfile} context={ctx} />)).not.toContain('欄ごと');
+    expect(
+      renderToString(
+        <GsTableView
+          body={body('monsterFieldData.bin')}
+          name="monsterFieldData.bin"
+          profile={honoluluRomfsProfile}
+          context={ctx}
+        />,
+      ),
+    ).not.toContain('欄ごと');
   });
 });

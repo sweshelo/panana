@@ -63,6 +63,16 @@ const DEFAULT_YAW = 0.6;
 const DEFAULT_PITCH = 0.25;
 /** Highest pitch (just short of straight down, where the camera's up would be undefined). */
 const MAX_PITCH = 1.56;
+/** Field of view (degrees) of the inside view, and its range for the wheel. */
+const INSIDE_FOV = 60;
+const INSIDE_FOV_MIN = 15;
+const INSIDE_FOV_MAX = 110;
+/**
+ * Where the inside view stands: above the origin, where the battle field's ground is (y = 0 in every RPG3 and
+ * RPG FREE! background; the props on it reach about 250). The middle of the box is half way up the sky dome, or
+ * below the ground where the sky is a whole sphere (opnforest, flat, snow).
+ */
+const INSIDE_EYE = new THREE.Vector3(0, 200, 0);
 
 const photos = new Map<string, Promise<string | null>>();
 /** Thumbnails are made one at a time so the list stays responsive. */
@@ -116,24 +126,64 @@ export class ModelViewer {
   private frame = 0;
   private playing = false;
   private lastTime = 0;
-  private readonly motionSelect = h('select', { title: 'モーション', onchange: () => this.selectMotion(this.motionSelect.value || null) });
-  private readonly playButton = h('button', { title: '再生 / 一時停止', onclick: () => this.setPlaying(!this.playing) }, '⏸');
-  private readonly slider = h('input', { type: 'range', min: 0, max: 0, step: 1, title: 'フレーム', oninput: () => this.seek(Number(this.slider.value)) });
+  private readonly motionSelect = h('select', {
+    title: 'モーション',
+    onchange: () => this.selectMotion(this.motionSelect.value || null),
+  });
+  private readonly playButton = h(
+    'button',
+    { title: '再生 / 一時停止', onclick: () => this.setPlaying(!this.playing) },
+    '⏸',
+  );
+  private readonly slider = h('input', {
+    type: 'range',
+    min: 0,
+    max: 0,
+    step: 1,
+    title: 'フレーム',
+    oninput: () => this.seek(Number(this.slider.value)),
+  });
   private readonly frameLabel = h('span', { class: 'viewer-frame small' });
-  private readonly animBar = h('div', { class: 'viewer-anim' }, this.motionSelect, this.playButton, this.slider, this.frameLabel);
+  private readonly animBar = h(
+    'div',
+    { class: 'viewer-anim' },
+    this.motionSelect,
+    this.playButton,
+    this.slider,
+    this.frameLabel,
+  );
 
-  /** @param motionHints What a motion is used for, by the first 4 characters of its name ("001_"). */
-  constructor(private readonly motionHints: Record<string, string> = {}) {
-    this.el.append(this.canvas, this.picture, this.note, this.animBar,
-      h('div', { class: 'viewer-bar' },
+  /**
+   * @param motionHints What a motion is used for, by the first 4 characters of its name ("001_").
+   * @param inside Put the camera on the ground at the origin (INSIDE_EYE) and look around from there, for
+   *   models seen from within (battle backgrounds: a sky dome around the field). Dragging turns the view, the wheel
+   *   narrows or widens it.
+   */
+  constructor(
+    private readonly motionHints: Record<string, string> = {},
+    private readonly inside = false,
+  ) {
+    this.el.append(
+      this.canvas,
+      this.picture,
+      this.note,
+      this.animBar,
+      h(
+        'div',
+        { class: 'viewer-bar' },
         h('button', { title: '向きと大きさを戻す', onclick: () => this.reset() }, '正面'),
-        h('button', { title: 'PNG で保存', onclick: () => this.save() }, '写真を保存')));
+        h('button', { title: 'PNG で保存', onclick: () => this.save() }, '写真を保存'),
+      ),
+    );
     this.canvas.addEventListener('pointerdown', (e) => {
       this.canvas.setPointerCapture(e.pointerId);
-      let x = e.clientX, y = e.clientY;
+      let x = e.clientX,
+        y = e.clientY;
       const move = (ev: PointerEvent): void => {
-        this.yaw -= (ev.clientX - x) * 0.01;
-        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + (ev.clientY - y) * 0.01));
+        // Inside, the view follows the pointer as if the scene were grabbed (slower: the angle is the view's own).
+        const k = this.inside ? -0.005 * this.zoom : 0.01;
+        this.yaw -= (ev.clientX - x) * k;
+        this.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, this.pitch + (ev.clientY - y) * k));
         x = ev.clientX;
         y = ev.clientY;
         this.render();
@@ -145,11 +195,16 @@ export class ModelViewer {
       this.canvas.addEventListener('pointermove', move);
       this.canvas.addEventListener('pointerup', up);
     });
-    this.canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      this.zoom = Math.max(0.3, Math.min(4, this.zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
-      this.render();
-    }, { passive: false });
+    this.canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const [lo, hi] = this.inside ? [INSIDE_FOV_MIN / INSIDE_FOV, INSIDE_FOV_MAX / INSIDE_FOV] : [0.3, 4];
+        this.zoom = Math.max(lo, Math.min(hi, this.zoom * (e.deltaY > 0 ? 1.1 : 0.9)));
+        this.render();
+      },
+      { passive: false },
+    );
     new ResizeObserver(() => this.render()).observe(this.el);
   }
 
@@ -174,7 +229,9 @@ export class ModelViewer {
       this.note.textContent = `${f.name} (テクスチャ)`;
       return;
     }
-    const hasMotions = !!f?.factory.set.models.get(f.hash)?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
+    const hasMotions = !!f?.factory.set.models
+      .get(f.hash)
+      ?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
     const animated = f && hasMotions ? new AnimatedModel(f.factory, f.hash) : null;
     const m = animated?.group ?? f?.factory.instance(f.hash) ?? null;
     if (!f || !m) {
@@ -188,8 +245,15 @@ export class ModelViewer {
     this.center = box.getCenter(new THREE.Vector3());
     this.radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 1);
     const cp = Math.cos(DEFAULT_PITCH);
-    const n = animated ? null : boardFacing(m, [Math.sin(DEFAULT_YAW) * cp, Math.sin(DEFAULT_PITCH), Math.cos(DEFAULT_YAW) * cp]);
-    if (n) this.front = [Math.atan2(n.x, n.z), Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.asin(Math.max(-1, Math.min(1, n.y)))))];
+    const n =
+      animated || this.inside
+        ? null
+        : boardFacing(m, [Math.sin(DEFAULT_YAW) * cp, Math.sin(DEFAULT_PITCH), Math.cos(DEFAULT_YAW) * cp]);
+    if (n)
+      this.front = [
+        Math.atan2(n.x, n.z),
+        Math.max(-MAX_PITCH, Math.min(MAX_PITCH, Math.asin(Math.max(-1, Math.min(1, n.y))))),
+      ];
     if (animated) this.showMotions(animated);
     this.reset();
   }
@@ -203,7 +267,9 @@ export class ModelViewer {
     const motions = animated.motions;
     for (const a of motions) {
       const hint = this.motionHints[animationKey(a.name)];
-      this.motionSelect.append(h('option', { value: a.name, title: hint ?? '' }, motionLabel(a.name) + (hint ? ` (${hint})` : '')));
+      this.motionSelect.append(
+        h('option', { value: a.name, title: hint ?? '' }, motionLabel(a.name) + (hint ? ` (${hint})` : '')),
+      );
     }
     const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions[0];
     this.motionSelect.value = first?.name ?? '';
@@ -276,18 +342,24 @@ export class ModelViewer {
     requestAnimationFrame(tick);
   }
 
-  /** Default angle, or straight at the front of a board model. */
+  /** Default angle, or straight at the front of a board model (inside: level, toward -z like the outside view's default). */
   private reset(): void {
-    [this.yaw, this.pitch] = this.front ?? [DEFAULT_YAW, DEFAULT_PITCH];
+    [this.yaw, this.pitch] = this.inside ? [0, 0] : (this.front ?? [DEFAULT_YAW, DEFAULT_PITCH]);
     this.zoom = 1;
     this.render();
   }
 
   private render(): void {
-    const w = this.el.clientWidth, hgt = this.canvas.clientHeight;
+    const w = this.el.clientWidth,
+      hgt = this.canvas.clientHeight;
     if (!w || !hgt) return;
     if (!this.renderer) {
-      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: this.canvas,
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
       this.renderer.localClippingEnabled = true;
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.setClearColor(0x000000, 0);
@@ -295,11 +367,29 @@ export class ModelViewer {
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(w, hgt, false);
     this.camera.aspect = w / hgt;
+    if (this.inside) {
+      // Standing on the field, looking out along (yaw, pitch): the opposite of the outside view's direction to the camera.
+      const cp = Math.cos(this.pitch);
+      const eye = INSIDE_EYE;
+      this.camera.fov = INSIDE_FOV * this.zoom;
+      this.camera.position.copy(eye);
+      this.camera.near = this.radius / 1000;
+      this.camera.far = this.radius * 10;
+      this.camera.updateProjectionMatrix();
+      this.camera.lookAt(
+        eye.x - Math.sin(this.yaw) * cp,
+        eye.y - Math.sin(this.pitch),
+        eye.z - Math.cos(this.yaw) * cp,
+      );
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
     const d = (this.radius / Math.sin(THREE.MathUtils.degToRad(15))) * this.zoom;
     this.camera.position.set(
       this.center.x + Math.sin(this.yaw) * Math.cos(this.pitch) * d,
       this.center.y + Math.sin(this.pitch) * d,
-      this.center.z + Math.cos(this.yaw) * Math.cos(this.pitch) * d);
+      this.center.z + Math.cos(this.yaw) * Math.cos(this.pitch) * d,
+    );
     this.camera.near = d / 100;
     this.camera.far = d * 10;
     this.camera.updateProjectionMatrix();

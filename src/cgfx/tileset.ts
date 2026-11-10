@@ -12,7 +12,11 @@ export interface TilesetModels {
   errors: string[];
 }
 
-export function buildTileset(modelArchive: Uint8Array, textureArchive: Uint8Array | null, textureEntry: number): TilesetModels {
+export function buildTileset(
+  modelArchive: Uint8Array,
+  textureArchive: Uint8Array | null,
+  textureEntry: number,
+): TilesetModels {
   const out: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
   if (textureArchive && textureEntry) {
     try {
@@ -76,7 +80,12 @@ const isCgfx = (b: Uint8Array): boolean => b[0] === 0x43 && b[1] === 0x47 && b[2
  * bodies have priority 0 and its eyes (no depth writes) 1〜20, so in RPG2's order the bodies covered the eyes.
  */
 export function lowerPriorityFirst(set: TilesetModels): TilesetModels {
-  const models = new Map([...set.models].map(([h, m]): [number, CgfxModel] => [h, { ...m, meshes: m.meshes.map((me) => ({ ...me, drawOrder: 255 - me.drawOrder })) }]));
+  const models = new Map(
+    [...set.models].map(([h, m]): [number, CgfxModel] => [
+      h,
+      { ...m, meshes: m.meshes.map((me) => ({ ...me, drawOrder: 255 - me.drawOrder })) },
+    ]),
+  );
   return { ...set, models };
 }
 
@@ -92,7 +101,9 @@ export function buildComposite(arc: Archive, model: number, texture: number): Ti
     const f = parseCgfx(unpackEntry(arc, e).body);
     for (const t of f.textures) set.textures.set(t.name, t);
     const te = texture ? findEntry(arc, texture) : undefined;
-    if (te) for (const t of parseCgfx(unpackEntry(arc, te).body).textures) if (t.name !== 'dummy') set.textures.set(t.name, t);
+    if (te)
+      for (const t of parseCgfx(unpackEntry(arc, te).body).textures)
+        if (t.name !== 'dummy') set.textures.set(t.name, t);
     const m = f.models[0];
     if (m) {
       set.models.set(model, m);
@@ -112,14 +123,25 @@ export function transferables(t: TilesetModels): ArrayBuffer[] {
   };
   for (const m of t.models.values())
     for (const me of m.meshes) {
-      add(me.positions); add(me.normals); add(me.uvs); add(me.uvs1); add(me.uvs2); add(me.colors); add(me.indices);
-      add(me.skinIndices); add(me.skinWeights);
+      add(me.positions);
+      add(me.normals);
+      add(me.uvs);
+      add(me.uvs1);
+      add(me.uvs2);
+      add(me.colors);
+      add(me.indices);
+      add(me.skinIndices);
+      add(me.skinWeights);
     }
   for (const m of t.models.values())
     for (const a of m.animations) {
       for (const tr of a.skeletal) {
         for (const c of tr.channels ?? []) if (c && typeof c === 'object') add(c.keys);
-        if (tr.baked) { add(tr.baked.rotation); add(tr.baked.translation); add(tr.baked.scale); }
+        if (tr.baked) {
+          add(tr.baked.rotation);
+          add(tr.baked.translation);
+          add(tr.baked.scale);
+        }
       }
       for (const tr of a.material) for (const c of tr.channels) if (c && typeof c === 'object') add(c.keys);
     }

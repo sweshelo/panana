@@ -5,7 +5,17 @@ import { TITLES, type TitleKey } from '../rom/titles';
 import { Dialog } from './Dialog';
 import { openedBaseMod, openedDump, openedKeys, type Opened } from './workspace';
 
-export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnload, onAdd, onStart }: {
+export function RomDialog({
+  opened,
+  active,
+  busy,
+  error,
+  onShow,
+  onClose,
+  onUnload,
+  onAdd,
+  onStart,
+}: {
   opened: Opened;
   active: TitleKey;
   /** What is being read, while adding. */
@@ -22,7 +32,9 @@ export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnlo
   const keys = openedKeys(opened);
   return (
     <Dialog title="開いている ROM" wide={false} onClose={onClose}>
-      <p className="muted small">複数の作品を同時に開いておくと、モンスターやアイテムを選ぶときに別の作品のものも選べます。</p>
+      <p className="muted small">
+        複数の作品を同時に開いておくと、モンスターやアイテムを選ぶときに別の作品のものも選べます。
+      </p>
       <table className="rom-list">
         <tbody>
           {TITLES.map((t) => {
@@ -37,20 +49,46 @@ export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnlo
                 <td>
                   {dump ? (
                     <>
-                      <div className="rom-files">{dump.label.split(' + ').map((f, i) => <div key={i}>{f}</div>)}</div>
+                      <div className="rom-files">
+                        {dump.label.split(' + ').map((f, i) => (
+                          <div key={i}>{f}</div>
+                        ))}
+                      </div>
                       <div className="muted small">
                         {[
                           dump.titleVersion !== undefined ? `Base v${dump.titleVersion}` : '',
-                          t.updateTitleId ? (dump.update ? `Update v${dump.update.titleVersion ?? '?'}` : 'Update なし') : '',
+                          t.updateTitleId
+                            ? dump.update
+                              ? `Update v${dump.update.titleVersion ?? '?'}`
+                              : 'Update なし'
+                            : '',
                           `土台の MOD: ${openedBaseMod(opened, t.key)?.label ?? 'なし'}`,
-                        ].filter(Boolean).join(' / ')}
+                        ]
+                          .filter(Boolean)
+                          .join(' / ')}
                       </div>
                     </>
-                  ) : <span className="muted">開いていません</span>}
+                  ) : (
+                    <span className="muted">開いていません</span>
+                  )}
                 </td>
                 <td className="rom-actions">
-                  {dump && (shown ? <span className="badge">表示中</span> : <button className="primary" onClick={() => onShow(t.key)}>表示する</button>)}
-                  {dump && <button title="この作品のダンプを閉じます (編集はこの端末に保存されていて、次に開いたときに読み込めます)" onClick={() => onUnload(t.key)}>閉じる</button>}
+                  {dump &&
+                    (shown ? (
+                      <span className="badge">表示中</span>
+                    ) : (
+                      <button className="primary" onClick={() => onShow(t.key)}>
+                        表示する
+                      </button>
+                    ))}
+                  {dump && (
+                    <button
+                      title="この作品のダンプを閉じます (編集はこの端末に保存されていて、次に開いたときに読み込めます)"
+                      onClick={() => onUnload(t.key)}
+                    >
+                      閉じる
+                    </button>
+                  )}
                 </td>
               </tr>
             );
@@ -58,10 +96,15 @@ export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnlo
         </tbody>
       </table>
       {error && <div className="error">{error}</div>}
-      {busy ? <p>{busy}</p> : (
+      {busy ? (
+        <p>{busy}</p>
+      ) : (
         <div
           className={over ? 'drop over' : 'drop'}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setOver(true);
+          }}
           onDragLeave={() => setOver(false)}
           onDrop={(e) => {
             e.preventDefault();
@@ -73,11 +116,17 @@ export function RomDialog({ opened, active, busy, error, onShow, onClose, onUnlo
           <div>ここに .cia / .cxi をドロップ (複数の作品・Base と Update をまとめて)</div>
           <label className="button-like">
             ファイルを選ぶ…
-            <input type="file" multiple accept=".cia,.cxi,.app,.bin" hidden onChange={(e) => {
-              const fs = [...(e.target.files ?? [])];
-              e.target.value = '';
-              if (fs.length) onAdd(fs);
-            }} />
+            <input
+              type="file"
+              multiple
+              accept=".cia,.cxi,.app,.bin"
+              hidden
+              onChange={(e) => {
+                const fs = [...(e.target.files ?? [])];
+                e.target.value = '';
+                if (fs.length) onAdd(fs);
+              }}
+            />
           </label>
           <div className="muted small">すでに開いている作品を選ぶと、その作品のダンプを置き換えます。</div>
         </div>
@@ -100,7 +149,17 @@ export function RomButton({ label, count, onClick }: { label: string; count: num
 }
 
 /** After the dumps of several games were opened at once: which game's pages to show first. */
-export function TitleChoiceDialog({ opened, keys, onPick, onClose }: { opened: Opened; keys: TitleKey[]; onPick: (key: TitleKey) => void; onClose: () => void }): ReactNode {
+export function TitleChoiceDialog({
+  opened,
+  keys,
+  onPick,
+  onClose,
+}: {
+  opened: Opened;
+  keys: TitleKey[];
+  onPick: (key: TitleKey) => void;
+  onClose: () => void;
+}): ReactNode {
   return (
     <Dialog title="どの作品を閲覧しますか？" wide={false} onClose={onClose}>
       <p className="muted small">ほかの作品も開いたままです。上のバーの「ROM」からいつでも切り替えられます。</p>
@@ -113,7 +172,11 @@ export function TitleChoiceDialog({ opened, keys, onPick, onClose }: { opened: O
                 <div className="muted small">{`${t.key} (${t.titleId})`}</div>
               </th>
               <td className="rom-files">{openedDump(opened, t.key)?.label ?? ''}</td>
-              <td className="rom-actions"><button className="primary" onClick={() => onPick(t.key)}>閲覧する</button></td>
+              <td className="rom-actions">
+                <button className="primary" onClick={() => onPick(t.key)}>
+                  閲覧する
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

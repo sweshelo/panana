@@ -25,18 +25,32 @@ export function replaceGfxTexture(body: Uint8Array, name: string, image: Texture
   const t = gfx.textures.find((x) => x.name === name);
   if (!t) return null;
   if (t.kind !== 'image' || !t.image) throw new Error(`${name} はキューブマップなので差し替えられません`);
-  if (image.width !== t.width || image.height !== t.height) throw new Error(`画像の大きさ ${image.width}×${image.height} がテクスチャ (${t.width}×${t.height}) と違います`);
-  t.image.rawBuffer = encodeTextureLevels(image.rgba, t.width, t.height, t.hwFormat, t.mipmapSize, t.image.rawBuffer.length);
+  if (image.width !== t.width || image.height !== t.height)
+    throw new Error(`画像の大きさ ${image.width}×${image.height} がテクスチャ (${t.width}×${t.height}) と違います`);
+  t.image.rawBuffer = encodeTextureLevels(
+    image.rgba,
+    t.width,
+    t.height,
+    t.hwFormat,
+    t.mipmapSize,
+    t.image.rawBuffer.length,
+  );
   return writeGfx(gfx);
 }
 
 /** Replaces texture `name` of monster `row` (RPG2) with `image`; returns the monster's design row. */
-export async function replaceMonsterTexture(s: Session, row: number, name: string, image: TextureImage): Promise<number> {
+export async function replaceMonsterTexture(
+  s: Session,
+  row: number,
+  name: string,
+  image: TextureImage,
+): Promise<number> {
   const book = s.book;
   const m = book?.monster(row);
   if (!book || !m) throw new Error('モンスターを読めていません');
   const design = book.designBytes(m.design);
-  const model = u32(design, 0x10), colour = u32(design, 0x14);
+  const model = u32(design, 0x10),
+    colour = u32(design, 0x14);
   const read = (n: string): Promise<Uint8Array> => s.game.dump.readRomfs(n);
   const arc = parseArchive(await read(MONSTER_MODEL_ARCHIVE));
   const body = (hash: number): Uint8Array | null => {
@@ -65,7 +79,10 @@ export async function replaceMonsterTexture(s: Session, row: number, name: strin
     if (at === 0x10 && colour === model) w32(r, 0x14, hash);
   });
   // an entry an earlier replacement (or port) added and no design row names any more
-  const used = (h: number): boolean => Array.from({ length: book.designRows }, (_, i) => book.designBytes(i)).some((r) => u32(r, 0x10) === h || u32(r, 0x14) === h);
+  const used = (h: number): boolean =>
+    Array.from({ length: book.designRows }, (_, i) => book.designBytes(i)).some(
+      (r) => u32(r, 0x10) === h || u32(r, 0x14) === h,
+    );
   if (store.has(MONSTER_MODEL_ARCHIVE, old) && !used(old)) store.remove(MONSTER_MODEL_ARCHIVE, [old]);
   s.saveNow();
   return d;

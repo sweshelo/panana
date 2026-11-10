@@ -10,7 +10,12 @@ import { Dialog } from './Dialog';
 
 type Show = 'free' | 'all';
 
-export function MessagePicker({ session, current, onPick, onClose }: {
+export function MessagePicker({
+  session,
+  current,
+  onPick,
+  onClose,
+}: {
   session: Session;
   current: number;
   onPick: (id: number) => void;
@@ -35,7 +40,8 @@ export function MessagePicker({ session, current, onPick, onClose }: {
     const out = new Map<number, string[]>();
     if (!file) return out;
     const add = (id: number, who: string): void => void out.set(id, [...(out.get(id) ?? []), who]);
-    for (const g of storyGroups(game.code.code, file.gmsg.first, file.gmsg.last)) for (const id of g.ids) add(id, `コード ${fnName(g.fn)}`);
+    for (const g of storyGroups(game.code.code, file.gmsg.first, file.gmsg.last))
+      for (const id of g.ids) add(id, `コード ${fnName(g.fn)}`);
     for (const u of users ?? []) for (const s of u.slots) if (s.id) add(s.id, `イベント ${u.dungeon}.${u.row}`);
     return out;
   }, [game, file, users]);
@@ -45,18 +51,29 @@ export function MessagePicker({ session, current, onPick, onClose }: {
     for (let id = file.gmsg.first; id <= file.gmsg.last; id++) if (file.gmsg.has(id)) out.push(id);
     return out;
   }, [file]);
-  useEffect(() => { list.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [users]);
+  useEffect(() => {
+    list.current?.querySelector('.current')?.scrollIntoView({ block: 'center' });
+  }, [users]);
   const q = query.trim();
   const shown = ids.filter((id) => {
     if (id === current) return true;
     if (show === 'free' && (usedBy.get(id)?.length ?? 0) > 0) return false;
     if (!q) return true;
-    return (texts.preview(id, true) ?? '').includes(q) || hexId(id).toLowerCase() === q.toLowerCase() || String(id) === q;
+    return (
+      (texts.preview(id, true) ?? '').includes(q) || hexId(id).toLowerCase() === q.toLowerCase() || String(id) === q
+    );
   });
   return (
     <Dialog title="メッセージを選ぶ" onClose={onClose}>
       <div className="row">
-        <input type="search" placeholder="本文か ID で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input
+          type="search"
+          placeholder="本文か ID で絞り込み"
+          className="picker-search"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <select value={show} onChange={(e) => setShow(e.target.value as Show)}>
           <option value="free">使われていないもの</option>
           <option value="all">すべて</option>
@@ -78,11 +95,17 @@ export function MessagePicker({ session, current, onPick, onClose }: {
                     {texts.preview(id, true) || <span className="muted">(空)</span>}
                     {texts.isEdited(id) && <b className="edited"> · 変更あり</b>}
                   </td>
-                  <td className="muted small" title={who.join('\n')}>{who.length ? `使用中: ${who[0]}${who.length > 1 ? ` ほか ${who.length - 1}` : ''}` : ''}</td>
+                  <td className="muted small" title={who.join('\n')}>
+                    {who.length ? `使用中: ${who[0]}${who.length > 1 ? ` ほか ${who.length - 1}` : ''}` : ''}
+                  </td>
                 </tr>
               );
             })}
-            {!shown.length && <tr><td className="muted">見つかりません</td></tr>}
+            {!shown.length && (
+              <tr>
+                <td className="muted">見つかりません</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

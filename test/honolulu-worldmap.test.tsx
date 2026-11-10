@@ -8,7 +8,14 @@ import { GsTable } from '../src/archive/gstable';
 import { HonoluluMaster } from '../src/honolulu/master';
 import { HonoluluSession } from '../src/honolulu/session';
 import { HonoluluWorldmapPage } from '../src/honolulu/WorldmapPage';
-import { HONOLULU_PIER_ARCHIVE, HonoluluWorldmap, PIER_STAGES, PierImages, pierStageOf, type PierIsland } from '../src/honolulu/worldmap';
+import {
+  HONOLULU_PIER_ARCHIVE,
+  HonoluluWorldmap,
+  PIER_STAGES,
+  PierImages,
+  pierStageOf,
+  type PierIsland,
+} from '../src/honolulu/worldmap';
 import { readDarc } from '../src/layout/darc';
 import { openImage } from '../src/rom/dump';
 import { equalBytes } from '../src/util/bytes';
@@ -16,11 +23,30 @@ import { hasHonolulu, HONOLULU_BASE } from './env';
 
 /** The ROM's islands (naauao worldmap.md §3): row → dungeon, icon, position (the same at every stage), ship. */
 const ROM: [number, number, [number, number], number][] = [
-  [2, 59, [28, 30], 1], [3, 58, [-33, -23], 1], [4, 60, [33, -23], 1], [5, 59, [-63, -50], 2], [6, 63, [-50, 42], 2],
-  [7, 62, [70, -45], 2], [8, 61, [-80, 5], 2], [9, 63, [-125, -70], 3], [10, 59, [125, -70], 3], [11, 64, [125, 75], 3],
+  [2, 59, [28, 30], 1],
+  [3, 58, [-33, -23], 1],
+  [4, 60, [33, -23], 1],
+  [5, 59, [-63, -50], 2],
+  [6, 63, [-50, 42], 2],
+  [7, 62, [70, -45], 2],
+  [8, 61, [-80, 5], 2],
+  [9, 63, [-125, -70], 3],
+  [10, 59, [125, -70], 3],
+  [11, 64, [125, 75], 3],
 ];
 
-const island = (more: Partial<PierIsland>): PierIsland => ({ row: 0, dungeon: 2, icon: 59, at: [[0, 0], [0, 0], [0, 0]], ship: 1, ...more });
+const island = (more: Partial<PierIsland>): PierIsland => ({
+  row: 0,
+  dungeon: 2,
+  icon: 59,
+  at: [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ],
+  ship: 1,
+  ...more,
+});
 
 describe('初代のワールドマップ (ROM なし)', () => {
   test('the positions of the ship stages', () => {
@@ -28,12 +54,58 @@ describe('初代のワールドマップ (ROM なし)', () => {
   });
 
   test('problems: off the screen, outside the telescope, a dungeon without the star', () => {
-    expect(HonoluluWorldmap.problems(island({ at: [[28, 30], [28, 30], [28, 30]] }), 18)).toEqual([]);
+    expect(
+      HonoluluWorldmap.problems(
+        island({
+          at: [
+            [28, 30],
+            [28, 30],
+            [28, 30],
+          ],
+        }),
+        18,
+      ),
+    ).toEqual([]);
     // outside the hole of stage 1 (radius 81), inside stage 2's (108)
-    expect(HonoluluWorldmap.problems(island({ at: [[90, 0], [90, 0], [90, 0]] }), 18)).toEqual([expect.stringContaining('望遠鏡の穴 (半径 約 81)')]);
+    expect(
+      HonoluluWorldmap.problems(
+        island({
+          at: [
+            [90, 0],
+            [90, 0],
+            [90, 0],
+          ],
+        }),
+        18,
+      ),
+    ).toEqual([expect.stringContaining('望遠鏡の穴 (半径 約 81)')]);
     // an island of stage 3 only: stages 1 and 2 do not matter
-    expect(HonoluluWorldmap.problems(island({ ship: 3, at: [[0, 0], [0, 0], [125, 75]] }), 18)).toEqual([]);
-    expect(HonoluluWorldmap.problems(island({ ship: 3, at: [[0, 0], [0, 0], [150, 0]] }), 18)).toEqual([expect.stringContaining('画面の外')]);
+    expect(
+      HonoluluWorldmap.problems(
+        island({
+          ship: 3,
+          at: [
+            [0, 0],
+            [0, 0],
+            [125, 75],
+          ],
+        }),
+        18,
+      ),
+    ).toEqual([]);
+    expect(
+      HonoluluWorldmap.problems(
+        island({
+          ship: 3,
+          at: [
+            [0, 0],
+            [0, 0],
+            [150, 0],
+          ],
+        }),
+        18,
+      ),
+    ).toEqual([expect.stringContaining('画面の外')]);
     expect(HonoluluWorldmap.problems(island({ dungeon: 13 }), 18)).toEqual([expect.stringContaining('星が付きません')]);
     expect(HonoluluWorldmap.problems(island({ icon: 70 }), 18)).toEqual([expect.stringContaining('アイコン 70')]);
   });
@@ -53,7 +125,8 @@ describe.skipIf(!hasHonolulu)('初代のワールドマップ (ROM)', () => {
     expect(islands.map((it) => [it.dungeon, it.icon, it.at[0], it.ship])).toEqual(ROM);
     for (const it of islands) expect(it.at).toEqual([it.at[0]!, it.at[0]!, it.at[0]!]);
     // every island of the ROM is where it shows
-    for (const it of islands) expect(HonoluluWorldmap.problems(it, session.master.rows('dungeonData.bin').rows)).toEqual([]);
+    for (const it of islands)
+      expect(HonoluluWorldmap.problems(it, session.master.rows('dungeonData.bin').rows)).toEqual([]);
   });
 
   test('the pictures of the pier (darc → BCLIM)', () => {
@@ -80,7 +153,17 @@ describe.skipIf(!hasHonolulu)('初代のワールドマップ (ROM)', () => {
     wm.set(3, 'icon', 61);
     wm.set(3, 'ship', 3);
     wm.move(3, 1, -100, 60);
-    expect(wm.island(3)).toEqual({ row: 3, dungeon: 9, icon: 61, at: [[-63, -50], [-100, 60], [-63, -50]], ship: 3 });
+    expect(wm.island(3)).toEqual({
+      row: 3,
+      dungeon: 9,
+      icon: 61,
+      at: [
+        [-63, -50],
+        [-100, 60],
+        [-63, -50],
+      ],
+      ship: 3,
+    });
     expect(wm.changed(3)).toBe(true);
     expect(session.changed()).toBe(true);
     const files = session.modFiles();
@@ -95,7 +178,9 @@ describe.skipIf(!hasHonolulu)('初代のワールドマップ (ROM)', () => {
     expect(pier.rows).toBe(10);
     expect(pier.row(3)).toEqual(wm.rows.row(3));
     // and read back
-    const again = new HonoluluWorldmap(new HonoluluMaster(files.get(HONOLULU_PIER_ARCHIVE)!, session.messages.texts, HONOLULU_PIER_ARCHIVE));
+    const again = new HonoluluWorldmap(
+      new HonoluluMaster(files.get(HONOLULU_PIER_ARCHIVE)!, session.messages.texts, HONOLULU_PIER_ARCHIVE),
+    );
     expect(again.island(3)).toEqual(wm.island(3));
     expect(again.island(4)).toEqual(wm.island(4, true));
     // the saved rows put back on a fresh copy

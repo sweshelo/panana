@@ -79,7 +79,11 @@ export type EventRowOf = (world: number, row: number) => Uint8Array | null;
  * The checks of the followed rows. A row whose entrance is not on its world map is never listed; one whose entrance
  * is always placed needs no check. `missing`: the rows whose event table was not loaded (their check cannot be made).
  */
-export function jumpChecks(rows: Uint8Array[], entrance: EntranceOf, eventRow: EventRowOf): { checks: JumpCheck[]; missing: number[] } {
+export function jumpChecks(
+  rows: Uint8Array[],
+  entrance: EntranceOf,
+  eventRow: EventRowOf,
+): { checks: JumpCheck[]; missing: number[] } {
   const checks: JumpCheck[] = [];
   const missing: number[] = [];
   for (let i = 1; i < rows.length; i++) {
@@ -178,14 +182,21 @@ export function jumpPatchSource(rows: number, checks: JumpCheck[]): string | nul
       '  pop {r4, r5, r6, pc}',
       '; {行き先の行, +0x4B, +0x00, +0x4C, +0x04} (0xFF = 入口がない)',
       'jp_table:',
-      ...checks.flatMap((c) => [`  .word ${c.row}                 ; 行き先の行`, ...[c.show[0], c.show[1], c.hide[0], c.hide[1]].map((v) => `  .word ${hex(v)}`)]),
+      ...checks.flatMap((c) => [
+        `  .word ${c.row}                 ; 行き先の行`,
+        ...[c.show[0], c.show[1], c.hide[0], c.hide[1]].map((v) => `  .word ${hex(v)}`),
+      ]),
       '  .word 0',
     );
   }
   return out.join('\n') + '\n';
 }
 
-export function jumpPatch(rows: Uint8Array[], entrance: EntranceOf, eventRow: EventRowOf): { patch: CodePatch | null; missing: number[] } {
+export function jumpPatch(
+  rows: Uint8Array[],
+  entrance: EntranceOf,
+  eventRow: EventRowOf,
+): { patch: CodePatch | null; missing: number[] } {
   const { checks, missing } = jumpChecks(rows, entrance, eventRow);
   const source = jumpPatchSource(rows.length, checks);
   return { patch: source ? { id: JUMP_PATCH_ID, title: JUMP_PATCH_TITLE, source, enabled: true } : null, missing };

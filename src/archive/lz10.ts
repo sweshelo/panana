@@ -65,7 +65,9 @@ export function lz10Compress(data: Uint8Array): Uint8Array {
       const maxlen = Math.min(18, n - pos);
       if (maxlen >= 3) {
         insertUpTo(pos); // candidates p <= pos - 1
-        const a = data[pos]!, b = data[pos + 1]!, c = data[pos + 2]!;
+        const a = data[pos]!,
+          b = data[pos + 1]!,
+          c = data[pos + 2]!;
         for (let p = head[hash(pos)]!; p >= start; p = prev[p]!) {
           if (data[p] !== a || data[p + 1] !== b || data[p + 2] !== c) continue;
           let l = 3;

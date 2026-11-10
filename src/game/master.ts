@@ -46,6 +46,7 @@ export class GmsgFile {
       else s += '\u0001';
     }
     // "[0001]'base[0001](ruby[0001])" -> base; drop the leading type code and other control codes.
+    // oxlint-disable-next-line no-control-regex -- GMSG uses U+0001 as its formatting marker.
     return s.replace(/\u0001'(.*?)\u0001\((.*?)\u0001\)/g, '$1').replace(/\u0001/g, '');
   }
 }
@@ -231,7 +232,8 @@ export class Master {
 
   treasureRowChanged(row: number): boolean {
     const o = this.treasureGroup.offset + row * this.treasureGroup.rowSize;
-    if (o + this.treasureGroup.rowSize > this.treasureOriginal.length || row >= u32(this.treasureOriginal, 0)) return true;
+    if (o + this.treasureGroup.rowSize > this.treasureOriginal.length || row >= u32(this.treasureOriginal, 0))
+      return true;
     return !equalBytes(this.treasureGroup.row(row), this.treasureOriginal.subarray(o, o + this.treasureGroup.rowSize));
   }
 
@@ -244,7 +246,11 @@ export class Master {
     // new messages: a message file of their own, packed like the archive's other message files
     const add = this.texts.newFile();
     const like = this.archive.entries[this.texts.files[0]?.entryIndex ?? -1];
-    return rebuildArchive(this.archive, repl, add && like ? [{ hash: add.hash, name: add.name, body: add.bytes, like }] : []);
+    return rebuildArchive(
+      this.archive,
+      repl,
+      add && like ? [{ hash: add.hash, name: add.name, body: add.bytes, like }] : [],
+    );
   }
 
   itemName(id: number): string {
@@ -281,7 +287,8 @@ export class Master {
    */
   mapDataSource(map: MapRef): { row: number; from: 'key' | 'designed' | 'dungeon' | 'indoor' } {
     const designed = this.designedMapData().get(map.hash);
-    let from: 'key' | 'designed' | 'dungeon' | 'indoor' = designed !== undefined ? 'designed' : map.indoor ? 'indoor' : 'dungeon';
+    let from: 'key' | 'designed' | 'dungeon' | 'indoor' =
+      designed !== undefined ? 'designed' : map.indoor ? 'indoor' : 'dungeon';
     let row = designed ?? this.dungeonMapDataRow(map.dungeon, map.indoor);
     if (map.mapDataKey) {
       const k = this.mapDataKeys().get(map.mapDataKey);

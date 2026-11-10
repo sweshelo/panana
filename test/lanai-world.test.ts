@@ -6,7 +6,17 @@ import { lanaiContents } from '../src/lanai/contents';
 import { LanaiMaps, type LanaiMapInfo } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
-import { LANAI_WORLD_CONTENTS, LANAI_WORLD_ENTER, LANAI_WORLD_PARTS, LanaiWorld, lanaiWorldParts, LW, parseWorldObjects, WE, type LanaiWorldPart } from '../src/lanai/worldmap';
+import {
+  LANAI_WORLD_CONTENTS,
+  LANAI_WORLD_ENTER,
+  LANAI_WORLD_PARTS,
+  LanaiWorld,
+  lanaiWorldParts,
+  LW,
+  parseWorldObjects,
+  WE,
+  type LanaiWorldPart,
+} from '../src/lanai/worldmap';
 import { LanaiWorldSource } from '../src/lanai/worldsource';
 import { oahuGroundPools, parseOahuGround } from '../src/oahu/worldmap';
 import { openImages } from '../src/rom/dump';
@@ -67,7 +77,12 @@ function entrance(part: number, id: number, event: number, x: number, y: number,
 function eventTable(rows: Uint8Array[]): LanaiTable {
   // only the parts of a table the world uses
   const t = { rows: rows.length, rowSize: 100, data: rows } as unknown as LanaiTable;
-  const fake = t as unknown as { u32: (r: number, o: number) => number; u16: (r: number, o: number) => number; setU32: (r: number, o: number, v: number) => void; addRow: (from: number) => number };
+  const fake = t as unknown as {
+    u32: (r: number, o: number) => number;
+    u16: (r: number, o: number) => number;
+    setU32: (r: number, o: number, v: number) => void;
+    addRow: (from: number) => number;
+  };
   fake.u32 = (r, o) => u32(rows[r]!, o);
   fake.u16 = (r, o) => rows[r]![o]! | (rows[r]![o + 1]! << 8);
   fake.setU32 = (r, o, v) => w32(rows[r]!, o, v);
@@ -80,10 +95,26 @@ function eventTable(rows: Uint8Array[]): LanaiTable {
 }
 
 describe('lanai world (no ROM)', () => {
-  const W = 0xa8654391, D = 0x11112222;
-  const slots = [W, 0xa235f6d5, 0x904b269e, 0x1d9cb94d, 0x751f7483, 0x6de5d537, 0xdb09782b, 0x1cb64240, 0x903e6dd3, 0xe400feef];
+  const W = 0xa8654391,
+    D = 0x11112222;
+  const slots = [
+    W,
+    0xa235f6d5,
+    0x904b269e,
+    0x1d9cb94d,
+    0x751f7483,
+    0x6de5d537,
+    0xdb09782b,
+    0x1cb64240,
+    0x903e6dd3,
+    0xe400feef,
+  ];
   const make = (): { world: LanaiWorld; database: MapDb; events: Uint8Array[] } => {
-    const ground = groundBytes([[10, 10, 5], [11, 10, 5], [12, 12, 7]]);
+    const ground = groundBytes([
+      [10, 10, 5],
+      [11, 10, 5],
+      [12, 12, 7],
+    ]);
     const ents = new Uint8Array(64);
     ents.set(entrance(88, 0xaaaa0001, 1, 10, 11, 4), 0);
     ents.set(entrance(90, 0xaaaa0002, 2, 20, 21, 1), 32);
@@ -97,7 +128,18 @@ describe('lanai world (no ROM)', () => {
     w32(objects, 0, 5);
     w16(objects, 8, 7);
     w16(objects, 10, 8);
-    const database = db([[W, new Uint8Array(0)], [slots[1]!, new Uint8Array(22500)], [slots[2]!, ents], [slots[3]!, range], [slots[4]!, new Uint8Array(0)], [slots[5]!, new Uint8Array(0)], [slots[6]!, new Uint8Array(0)], [slots[7]!, new Uint8Array(22500)], [slots[8]!, objects], [slots[9]!, ground]]);
+    const database = db([
+      [W, new Uint8Array(0)],
+      [slots[1]!, new Uint8Array(22500)],
+      [slots[2]!, ents],
+      [slots[3]!, range],
+      [slots[4]!, new Uint8Array(0)],
+      [slots[5]!, new Uint8Array(0)],
+      [slots[6]!, new Uint8Array(0)],
+      [slots[7]!, new Uint8Array(22500)],
+      [slots[8]!, objects],
+      [slots[9]!, ground],
+    ]);
     const events = [0, 1, 2].map(() => new Uint8Array(100));
     w32(events[1]!, 0x10, LANAI_WORLD_ENTER);
     w32(events[1]!, 0x14, D);
@@ -106,10 +148,36 @@ describe('lanai world (no ROM)', () => {
     events[1]![0x5b] = 0x02;
     w32(events[2]!, 0x10, 0x8000002d);
     const table = eventTable(events);
-    const info = { index: 0, hash: W, name: 'W01', sections: [], slots, mapDataId: 0, dungeon: 0, encounterLevel: 3, floor: 0, world: true } as LanaiMapInfo;
-    const dest = { index: 1, hash: D, name: 'D01001F01', sections: [], slots: [], mapDataId: 0, dungeon: 1, encounterLevel: 0, floor: 1, world: false } as LanaiMapInfo;
+    const info = {
+      index: 0,
+      hash: W,
+      name: 'W01',
+      sections: [],
+      slots,
+      mapDataId: 0,
+      dungeon: 0,
+      encounterLevel: 3,
+      floor: 0,
+      world: true,
+      added: false,
+    } as LanaiMapInfo;
+    const dest = {
+      index: 1,
+      hash: D,
+      name: 'D01001F01',
+      sections: [],
+      slots: [],
+      mapDataId: 0,
+      dungeon: 1,
+      encounterLevel: 0,
+      floor: 1,
+      world: false,
+      added: false,
+    } as LanaiMapInfo;
     const maps = {
-      db: database, maps: [info, dest], session: { edited: () => {}, table: () => undefined },
+      db: database,
+      maps: [info, dest],
+      session: { edited: () => {}, table: () => undefined },
       changed: () => {},
       on: () => () => {},
       map: (h: number) => (h === D ? dest : h === W ? info : undefined),
@@ -124,7 +192,14 @@ describe('lanai world (no ROM)', () => {
       doc: () => ({ recs: { 3: [] } }),
       contentTable: () => undefined,
     } as unknown as LanaiMaps;
-    const parts: LanaiWorldPart[] = Array.from({ length: 95 }, (_, row) => ({ row, model: row >= 2 && row <= 86 ? 0x1000 + row : 0, flags: row === 7 ? 0x10 : 0, battle: 4, object: row === 88 ? 534 : row === 90 ? 533 : 0, name: '' }));
+    const parts: LanaiWorldPart[] = Array.from({ length: 95 }, (_, row) => ({
+      row,
+      model: row >= 2 && row <= 86 ? 0x1000 + row : 0,
+      flags: row === 7 ? 0x10 : 0,
+      battle: 4,
+      object: row === 88 ? 534 : row === 90 ? 533 : 0,
+      name: '',
+    }));
     return { world: new LanaiWorld(maps, info, parts), database, events };
   };
 
@@ -133,7 +208,12 @@ describe('lanai world (no ROM)', () => {
     expect(world.ground!.parts[10 * N + 10]).toBe(5);
     expect(world.entrances().length).toBe(2);
     const d = world.dest(world.entrances()[0]!);
-    expect(d).toMatchObject({ row: 1, action: 0x10, mapHash: D, points: [0x77770000, 0x77770001, 0x77770002, 0x77770003] });
+    expect(d).toMatchObject({
+      row: 1,
+      action: 0x10,
+      mapHash: D,
+      points: [0x77770000, 0x77770001, 0x77770002, 0x77770003],
+    });
     expect(d.map?.name).toBe('D01001F01');
     // a script entrance has no destination action
     expect(world.dest(world.entrances()[1]!).action).toBe(-1);
@@ -182,7 +262,7 @@ describe('lanai world (no ROM)', () => {
     expect(world.isChanged()).toBe(false);
   });
 
-  test('Panana-added entrances can be removed, the ROM\'s cannot', () => {
+  test("Panana-added entrances can be removed, the ROM's cannot", () => {
     const { world } = make();
     world.addEntrance(1, 60, 60);
     expect(world.removeEntrance(2)).toBe(true);
@@ -195,7 +275,10 @@ describe.skipIf(!hasLanai)('RPG FREE! world maps', () => {
   let s: LanaiSession;
   const worlds: { content: number; maps: LanaiMaps; info: LanaiMapInfo }[] = [];
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump);
     for (const c of lanaiContents(s)) {
       if (!(LANAI_WORLD_CONTENTS as readonly number[]).includes(c.index)) continue;
@@ -212,7 +295,7 @@ describe.skipIf(!hasLanai)('RPG FREE! world maps', () => {
     expect(parts[88]!.object).toBe(534);
   });
 
-  test('the terrain is slot 9 (oahu\'s W01_ground.bin) and its pools are what the grid needs', () => {
+  test("the terrain is slot 9 (oahu's W01_ground.bin) and its pools are what the grid needs", () => {
     const parts = lanaiWorldParts(s.table(LANAI_WORLD_PARTS));
     for (const { maps, info } of worlds) {
       const w = new LanaiWorld(maps, info, parts);
@@ -240,11 +323,12 @@ describe.skipIf(!hasLanai)('RPG FREE! world maps', () => {
     expect(n).toBeGreaterThan(20);
   });
 
-  test('painting and putting it back leaves the database as the ROM\'s; the source draws it', () => {
+  test("painting and putting it back leaves the database as the ROM's; the source draws it", () => {
     const { maps, info } = worlds[0]!;
     const w = new LanaiWorld(maps, info, lanaiWorldParts(s.table(LANAI_WORLD_PARTS)));
     const [x, y] = [WE.x(w.entrances()[0]!) + 2, WE.y(w.entrances()[0]!) + 2];
-    const before = w.ground!.parts[y * N + x]!, rot = w.ground!.rots[y * N + x]!;
+    const before = w.ground!.parts[y * N + x]!,
+      rot = w.ground!.rots[y * N + x]!;
     expect(w.paint(x, y, before === 9 ? 10 : 9, 0)).toBe(true);
     expect(maps.db.changedHashes()).toContain(w.hash(LW.ground));
     w.paint(x, y, before, rot);

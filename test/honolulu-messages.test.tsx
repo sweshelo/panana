@@ -17,19 +17,55 @@ const units = (...parts: (string | number[])[]): Uint16Array =>
 
 describe('初代の tags (no ROM)', () => {
   // 「{10D}ここは{ref 90}、{良|よ}く{page}⏎…」: a voice, an inserted message, ruby and a page break
-  const m = units([5, 1, 0x10d], 'ここは', [2, 0x24, 90, 0], '、', [1, 0x25], '良', [1, 0x26], 'よ', [1, 0x27], 'く', [1, 0x0e, 0x0a], 'まあ', [2, 0x28, 20, 0], [1, 0x104, 1, 0x105, 1, 0x10], [0]);
+  const m = units(
+    [5, 1, 0x10d],
+    'ここは',
+    [2, 0x24, 90, 0],
+    '、',
+    [1, 0x25],
+    '良',
+    [1, 0x26],
+    'よ',
+    [1, 0x27],
+    'く',
+    [1, 0x0e, 0x0a],
+    'まあ',
+    [2, 0x28, 20, 0],
+    [1, 0x104, 1, 0x105, 1, 0x10],
+    [0],
+  );
 
   test('ruby 0x25-0x27, the inserted message 0x0002 0x0024, page break 0x0E', () => {
-    expect(parseBody(m, HONOLULU_SYNTAX).tokens.map((t) => t.t)).toEqual(['tag', 'text', 'ref', 'text', 'ruby', 'text', 'tag', 'br', 'text', 'call', 'tag', 'tag', 'tag']);
+    expect(parseBody(m, HONOLULU_SYNTAX).tokens.map((t) => t.t)).toEqual([
+      'tag',
+      'text',
+      'ref',
+      'text',
+      'ruby',
+      'text',
+      'tag',
+      'br',
+      'text',
+      'call',
+      'tag',
+      'tag',
+      'tag',
+    ]);
     const t = unitsToText(m, HONOLULU_SYNTAX);
     expect(t.kind).toBe(5);
-    expect(t.text).toBe('{tag:010D}ここは{msg:005A}、{ruby:良|よ}く{page}\nまあ{call:0028,0014}{tag:0104}{tag:0105}{tag:0010}');
+    expect(t.text).toBe(
+      '{tag:010D}ここは{msg:005A}、{ruby:良|よ}く{page}\nまあ{call:0028,0014}{tag:0104}{tag:0105}{tag:0010}',
+    );
     expect([...textToUnits(t, HONOLULU_SYNTAX)]).toEqual([...m]);
   });
 
   test('the preview: the page break eats its line break, names and numbers as 〈…〉, the voice and the call are not drawn', () => {
-    expect(previewText(m, (id) => (id === 90 ? 'デンパ島' : undefined), 0, HONOLULU_SYNTAX)).toBe('ここはデンパ島、良く\nまあ〈モンスター〉〈A〜Z〉〈数値〉');
-    const html = renderToString(<MessagePreview texts={{ syntax: HONOLULU_SYNTAX, units: () => undefined } as never} units={m} />);
+    expect(previewText(m, (id) => (id === 90 ? 'デンパ島' : undefined), 0, HONOLULU_SYNTAX)).toBe(
+      'ここはデンパ島、良く\nまあ〈モンスター〉〈A〜Z〉〈数値〉',
+    );
+    const html = renderToString(
+      <MessagePreview texts={{ syntax: HONOLULU_SYNTAX, units: () => undefined } as never} units={m} />,
+    );
     expect(html).toContain('<ruby>良<rp>(</rp><rt>よ</rt>');
     expect(html).toContain('声: です調 (精霊など)');
     expect(html).toContain('制御 0028 (未解析)');
@@ -37,9 +73,13 @@ describe('初代の tags (no ROM)', () => {
   });
 
   test('RPG2 reads the same units as before (0x0002 0x0028 is not a call there)', () => {
-    expect(parseBody(m, KAHARA_SYNTAX).tokens.some((t) => t.t === 'call' || t.t === 'ruby' || t.t === 'ref')).toBe(false);
+    expect(parseBody(m, KAHARA_SYNTAX).tokens.some((t) => t.t === 'call' || t.t === 'ruby' || t.t === 'ref')).toBe(
+      false,
+    );
     expect([...textToUnits(unitsToText(m, KAHARA_SYNTAX), KAHARA_SYNTAX)]).toEqual([...m]);
-    expect(() => textToUnits({ kind: 1, text: '{call:0028}', tail: new Uint16Array() }, HONOLULU_SYNTAX)).toThrow('2 つの値');
+    expect(() => textToUnits({ kind: 1, text: '{call:0028}', tail: new Uint16Array() }, HONOLULU_SYNTAX)).toThrow(
+      '2 つの値',
+    );
   });
 });
 
@@ -78,7 +118,14 @@ describe.skipIf(!hasHonolulu)('初代の messages (ROM)', () => {
         const { tokens, end } = parseBody(u, HONOLULU_SYNTAX);
         expect(tokens.filter((t) => t.t === 'raw')).toEqual([]);
         // only the test message 2437 has tags not known; 2916 has a line break in a ruby's base (its tags stay tags)
-        if (id !== 2437) expect(tokens.filter((t) => t.t === 'tag' && HONOLULU_SYNTAX.kind(t.x) === 'other' && !HONOLULU_SYNTAX.ruby.includes(t.x)).map((t) => [id, t])).toEqual([]);
+        if (id !== 2437)
+          expect(
+            tokens
+              .filter(
+                (t) => t.t === 'tag' && HONOLULU_SYNTAX.kind(t.x) === 'other' && !HONOLULU_SYNTAX.ruby.includes(t.x),
+              )
+              .map((t) => [id, t]),
+          ).toEqual([]);
         expect(u.subarray(end).every((c) => c === 0)).toBe(true);
       }
     expect(n).toBe(5359);
@@ -106,8 +153,13 @@ describe.skipIf(!hasHonolulu)('初代の messages (ROM)', () => {
       expect([...changed.keys()].sort()).toEqual(['56562135', '90EACC05']);
       for (const bytes of changed.values()) {
         const arc = parseArchive(bytes);
-        const files = arc.entries.filter((e) => e.type === 6).map((e) => new Gmsg(unpackEntry(arc, e).body)).filter((g) => g.has(3305));
-        expect(files.map((g) => g.reading || unitsToText(g.units(3305)!, HONOLULU_SYNTAX).text.endsWith('！'))).toEqual([true, true]);
+        const files = arc.entries
+          .filter((e) => e.type === 6)
+          .map((e) => new Gmsg(unpackEntry(arc, e).body))
+          .filter((g) => g.has(3305));
+        expect(files.map((g) => g.reading || unitsToText(g.units(3305)!, HONOLULU_SYNTAX).text.endsWith('！'))).toEqual(
+          [true, true],
+        );
       }
       expect(session.master.message(3305)).toEndWith('！');
     } finally {

@@ -72,13 +72,29 @@ function groupRuby(ts: MessageToken[], syn: MessageSyntax): MessageToken[] {
 
 function tokenUnits(t: MessageToken, syn: MessageSyntax): number[] {
   switch (t.t) {
-    case 'text': return Array.from({ length: t.s.length }, (_, k) => t.s.charCodeAt(k));
-    case 'br': return [0x0a];
-    case 'tag': return [TAG, t.x, ...t.args];
-    case 'ruby': return [TAG, syn.ruby[0], ...tokenUnits({ t: 'text', s: t.base }, syn), TAG, syn.ruby[1], ...tokenUnits({ t: 'text', s: t.reading }, syn), TAG, syn.ruby[2]];
-    case 'ref': return [REF, syn.ref, t.id, 0];
-    case 'call': return [REF, t.x, t.arg, 0];
-    case 'raw': return [t.c];
+    case 'text':
+      return Array.from({ length: t.s.length }, (_, k) => t.s.charCodeAt(k));
+    case 'br':
+      return [0x0a];
+    case 'tag':
+      return [TAG, t.x, ...t.args];
+    case 'ruby':
+      return [
+        TAG,
+        syn.ruby[0],
+        ...tokenUnits({ t: 'text', s: t.base }, syn),
+        TAG,
+        syn.ruby[1],
+        ...tokenUnits({ t: 'text', s: t.reading }, syn),
+        TAG,
+        syn.ruby[2],
+      ];
+    case 'ref':
+      return [REF, syn.ref, t.id, 0];
+    case 'call':
+      return [REF, t.x, t.arg, 0];
+    case 'raw':
+      return [t.c];
   }
 }
 
@@ -98,17 +114,30 @@ export interface MessageText {
 export function unitsToText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): MessageText {
   if (!u.length) return { kind: 0, text: '', tail: new Uint16Array() };
   const { tokens, end } = parseBody(u, syn);
-  const text = tokens.map((t) => {
-    switch (t.t) {
-      case 'text': return t.s.replace(/[{}|]/g, (ch) => `{${hex4(ch.charCodeAt(0))}}`);
-      case 'br': return '\n';
-      case 'tag': return t.x === syn.page && !t.args.length ? '{page}' : `{tag:${[t.x, ...t.args].map(hex4).join(',')}}`;
-      case 'ruby': return /[{}|]/.test(t.base + t.reading) ? tokenUnits(t, syn).map((c) => (c < 0x20 ? `{${hex4(c)}}` : String.fromCharCode(c))).join('') : `{ruby:${t.base}|${t.reading}}`;
-      case 'ref': return `{msg:${hex4(t.id)}}`;
-      case 'call': return `{call:${hex4(t.x)},${hex4(t.arg)}}`;
-      case 'raw': return `{${hex4(t.c)}}`;
-    }
-  }).join('');
+  const text = tokens
+    .map((t) => {
+      switch (t.t) {
+        case 'text':
+          return t.s.replace(/[{}|]/g, (ch) => `{${hex4(ch.charCodeAt(0))}}`);
+        case 'br':
+          return '\n';
+        case 'tag':
+          return t.x === syn.page && !t.args.length ? '{page}' : `{tag:${[t.x, ...t.args].map(hex4).join(',')}}`;
+        case 'ruby':
+          return /[{}|]/.test(t.base + t.reading)
+            ? tokenUnits(t, syn)
+                .map((c) => (c < 0x20 ? `{${hex4(c)}}` : String.fromCharCode(c)))
+                .join('')
+            : `{ruby:${t.base}|${t.reading}}`;
+        case 'ref':
+          return `{msg:${hex4(t.id)}}`;
+        case 'call':
+          return `{call:${hex4(t.x)},${hex4(t.arg)}}`;
+        case 'raw':
+          return `{${hex4(t.c)}}`;
+      }
+    })
+    .join('');
   return { kind: u[0]!, text, tail: u.slice(end) };
 }
 
@@ -127,7 +156,9 @@ export function textToUnits(m: MessageText, syn: MessageSyntax = KAHARA_SYNTAX):
       if (close < 0) throw new Error(`「{」を閉じる「}」がありません (${i + 1} 文字目)`);
       const body = s.slice(i + 1, close);
       const at = i + 1;
-      const [name, arg] = body.includes(':') ? [body.slice(0, body.indexOf(':')), body.slice(body.indexOf(':') + 1)] : [body, ''];
+      const [name, arg] = body.includes(':')
+        ? [body.slice(0, body.indexOf(':')), body.slice(body.indexOf(':') + 1)]
+        : [body, ''];
       if (name === 'page' && !arg) out.push(TAG, syn.page);
       else if (name === 'ruby') {
         const [base, reading] = arg.split('|');
@@ -144,9 +175,11 @@ export function textToUnits(m: MessageText, syn: MessageSyntax = KAHARA_SYNTAX):
         const vs = arg.split(',').map((v) => hex(v.trim(), at));
         if (vs.length !== 2) throw new Error(`{call:XXXX,AAAA} は 2 つの値で書きます (${at} 文字目)`);
         out.push(REF, vs[0]!, vs[1]!, 0);
-      }
-      else if (!arg && /^[0-9A-Fa-f]{1,4}$/.test(name)) out.push(parseInt(name, 16));
-      else throw new Error(`「{${body}}」は分かりません。{ruby:親字|よみ}、{page}、{tag:XXXX}、{msg:XXXX}、{XXXX} が使えます (${at} 文字目)`);
+      } else if (!arg && /^[0-9A-Fa-f]{1,4}$/.test(name)) out.push(parseInt(name, 16));
+      else
+        throw new Error(
+          `「{${body}}」は分かりません。{ruby:親字|よみ}、{page}、{tag:XXXX}、{msg:XXXX}、{XXXX} が使えます (${at} 文字目)`,
+        );
       i = close;
     } else if (c === 0x7d) throw new Error(`対応する「{」のない「}」があります (${i + 1} 文字目)`);
     else if (c === 0x7c) throw new Error(`「|」は {007C} と書いてください (${i + 1} 文字目)`);
@@ -185,25 +218,44 @@ export const NAME_TAGS: Record<number, string> = {
 };
 
 /** Tags replaced by a fixed name: the message it comes from (0x10A-0x10C = $heroine$ / $child01$ / $child02$). */
-export const FIXED_NAMES: Record<number, number> = { 0x10a: 0x176a, 0x10b: 0x176b, 0x10c: 0x176c, 0x110: 0x1772, 0x111: 0x1773 };
+export const FIXED_NAMES: Record<number, number> = {
+  0x10a: 0x176a,
+  0x10b: 0x176b,
+  0x10c: 0x176c,
+  0x110: 0x1772,
+  0x111: 0x1773,
+};
 
 const FIXED_ROLES: Record<number, string> = { 0x10a: 'ヒロイン', 0x10b: '子供1', 0x10c: '子供2' };
 
 /** Voice tags: the sound of the text (FUN_00190660: 0x44 / 0x43 / 0x42). */
-export const VOICE_TAGS: Record<number, string> = { 0x10d: 'č その他の口調', 0x10e: 'Ď 地底人の片言', 0x10f: 'ď です調' };
+export const VOICE_TAGS: Record<number, string> = {
+  0x10d: 'č その他の口調',
+  0x10e: 'Ď 地底人の片言',
+  0x10f: 'ď です調',
+};
 
 /** Short label of a tag for previews. */
 export function tagLabel(x: number): string {
   switch (tagKind(x)) {
-    case 'page': return 'ページ送り';
-    case 'number': return '数値';
-    case 'name': return NAME_TAGS[x] ?? `名前など ${hex4(x)}`;
-    case 'fixed': return FIXED_ROLES[x] ?? `名前 ${hex4(x)}`;
-    case 'voice': return `声: ${VOICE_TAGS[x]}`;
-    case 'emotion': return `感情${x - 0x121}`;
-    case 'colour': return x === 0x11f ? '色を戻す' : `文字色 ${x - 0x113 + 0x20}`;
-    case 'deco': return '色つきの ●';
-    default: return `タグ ${hex4(x)}`;
+    case 'page':
+      return 'ページ送り';
+    case 'number':
+      return '数値';
+    case 'name':
+      return NAME_TAGS[x] ?? `名前など ${hex4(x)}`;
+    case 'fixed':
+      return FIXED_ROLES[x] ?? `名前 ${hex4(x)}`;
+    case 'voice':
+      return `声: ${VOICE_TAGS[x]}`;
+    case 'emotion':
+      return `感情${x - 0x121}`;
+    case 'colour':
+      return x === 0x11f ? '色を戻す' : `文字色 ${x - 0x113 + 0x20}`;
+    case 'deco':
+      return '色つきの ●';
+    default:
+      return `タグ ${hex4(x)}`;
   }
 }
 
@@ -213,38 +265,56 @@ export function tagLabel(x: number): string {
  * spaces.
  */
 export function plainText(u: Uint16Array, syn: MessageSyntax = KAHARA_SYNTAX): string {
-  return parseBody(u, syn).tokens.map((t) => {
-    switch (t.t) {
-      case 'text': return t.s;
-      case 'br': return ' ';
-      case 'ruby': return t.base;
-      case 'tag': {
-        const k = syn.kind(t.x);
-        return k === 'name' || k === 'fixed' || k === 'deco' || t.x === 0x100 ? String.fromCharCode(t.x) : '';
+  return parseBody(u, syn)
+    .tokens.map((t) => {
+      switch (t.t) {
+        case 'text':
+          return t.s;
+        case 'br':
+          return ' ';
+        case 'ruby':
+          return t.base;
+        case 'tag': {
+          const k = syn.kind(t.x);
+          return k === 'name' || k === 'fixed' || k === 'deco' || t.x === 0x100 ? String.fromCharCode(t.x) : '';
+        }
+        default:
+          return '';
       }
-      default: return '';
-    }
-  }).join('');
+    })
+    .join('');
 }
 
 /** Text as a reader would see it (lists): references and fixed names expanded, names as 〈…〉, formatting dropped. */
-export function previewText(u: Uint16Array, lookup: (id: number) => string | undefined, depth = 0, syn: MessageSyntax = KAHARA_SYNTAX): string {
+export function previewText(
+  u: Uint16Array,
+  lookup: (id: number) => string | undefined,
+  depth = 0,
+  syn: MessageSyntax = KAHARA_SYNTAX,
+): string {
   const tokens = parseBody(u, syn).tokens;
-  return tokens.map((t, i) => {
-    switch (t.t) {
-      case 'text': return t.s;
-      case 'br': return tokens[i - 1]?.t === 'tag' && (tokens[i - 1] as { x: number }).x === syn.page ? '' : '\n';
-      case 'ruby': return t.base;
-      case 'ref': return (depth < 2 ? lookup(t.id) : undefined) ?? `〈メッセージ ${hex4(t.id)}〉`;
-      case 'tag': {
-        const k = syn.kind(t.x);
-        if (k === 'fixed') return (depth < 2 ? lookup(syn.fixedNames[t.x]!) : undefined) ?? `〈${syn.label(t.x)}〉`;
-        if (k === 'page') return '\n';
-        return k === 'name' || k === 'number' ? `〈${syn.label(t.x)}〉` : '';
+  return tokens
+    .map((t, i) => {
+      switch (t.t) {
+        case 'text':
+          return t.s;
+        case 'br':
+          return tokens[i - 1]?.t === 'tag' && (tokens[i - 1] as { x: number }).x === syn.page ? '' : '\n';
+        case 'ruby':
+          return t.base;
+        case 'ref':
+          return (depth < 2 ? lookup(t.id) : undefined) ?? `〈メッセージ ${hex4(t.id)}〉`;
+        case 'tag': {
+          const k = syn.kind(t.x);
+          if (k === 'fixed') return (depth < 2 ? lookup(syn.fixedNames[t.x]!) : undefined) ?? `〈${syn.label(t.x)}〉`;
+          if (k === 'page') return '\n';
+          return k === 'name' || k === 'number' ? `〈${syn.label(t.x)}〉` : '';
+        }
+        default:
+          return '';
       }
-      default: return '';
-    }
-  }).join('');
+    })
+    .join('');
 }
 
 /** Type codes (the first unit) seen in RPG2's data (another game's are its syntax's `kinds`). */
@@ -322,15 +392,24 @@ function honoluluTagKind(x: number): TagKind {
 }
 
 const HONOLULU_STORY_NAMES: Record<number, string> = { 0x10a: 'さらわれた人', 0x10e: '女王の妹' };
-const HONOLULU_VOICES: Record<number, string> = { 0x10b: '魔王の口調', 0x10c: '片言 (店員など)', 0x10d: 'です調 (精霊など)' };
+const HONOLULU_VOICES: Record<number, string> = {
+  0x10b: '魔王の口調',
+  0x10c: '片言 (店員など)',
+  0x10d: 'です調 (精霊など)',
+};
 
 function honoluluTagLabel(x: number): string {
   switch (honoluluTagKind(x)) {
-    case 'page': return 'ページ送り';
-    case 'number': return '数値';
-    case 'name': return NAME_TAGS[x] ?? HONOLULU_STORY_NAMES[x]!;
-    case 'voice': return `声: ${HONOLULU_VOICES[x]}`;
-    default: return `タグ ${hex4(x)}`;
+    case 'page':
+      return 'ページ送り';
+    case 'number':
+      return '数値';
+    case 'name':
+      return NAME_TAGS[x] ?? HONOLULU_STORY_NAMES[x]!;
+    case 'voice':
+      return `声: ${HONOLULU_VOICES[x]}`;
+    default:
+      return `タグ ${hex4(x)}`;
   }
 }
 
@@ -345,5 +424,10 @@ export const HONOLULU_SYNTAX: MessageSyntax = {
   // once, in 3295 before a page break (a wait or a sound; not analysed)
   calls: { 0x28: '制御 0028 (未解析)' },
   // by where they are used: 0 battle and the names of monsters, 1 menus and the names of items, 5 talk, 6 yes / no
-  kinds: { 0x0000: '戦闘・モンスター名', 0x0001: 'メニュー・名前・説明', 0x0005: '会話', 0x0006: '問いかけ (はい・いいえ)' },
+  kinds: {
+    0x0000: '戦闘・モンスター名',
+    0x0001: 'メニュー・名前・説明',
+    0x0005: '会話',
+    0x0006: '問いかけ (はい・いいえ)',
+  },
 };

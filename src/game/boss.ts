@@ -55,7 +55,9 @@ export function readStages(row: Uint8Array): BossStage[] {
     const flags = row[a + 2]!;
     const script = flags & STAGE_SCRIPT ? { first: u16(row, a + 4), rows: u16(row, a + 6) } : null;
     out.push({
-      fix: row[a]!, bgm: row[a + 1]!, repeat: !!(flags & STAGE_REPEAT),
+      fix: row[a]!,
+      bgm: row[a + 1]!,
+      repeat: !!(flags & STAGE_REPEAT),
       messages: script ? [0, 0, 0] : [u32(row, a + 4), u32(row, a + 8), u32(row, a + 12)],
       ...(script ? { script } : {}),
     });
@@ -317,12 +319,20 @@ const SCRIPT_CALL = `  mov r0, r4
   b br_after`;
 const NO_SCRIPT = `  b br_after                 ; 演出のパッチなし (演出の段階はメッセージなしで戦闘)`;
 
-export const BOSS_PATCH: CodePatch = { id: BOSS_PATCH_ID, title: BOSS_PATCH_TITLE, source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', NO_SCRIPT), enabled: true };
+export const BOSS_PATCH: CodePatch = {
+  id: BOSS_PATCH_ID,
+  title: BOSS_PATCH_TITLE,
+  source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', NO_SCRIPT),
+  enabled: true,
+};
 /**
  * The boss patch with the script interpreter (game/cutscene.ts, about 2 KB of the code cave): exported instead of
  * BOSS_PATCH when a stage has a script.
  */
-export const BOSS_SCRIPT_PATCH: CodePatch = { ...BOSS_PATCH, source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', SCRIPT_CALL) + CUTSCENE_SOURCE };
+export const BOSS_SCRIPT_PATCH: CodePatch = {
+  ...BOSS_PATCH,
+  source: BOSS_PATCH_SOURCE.replace('@@SCRIPT@@', SCRIPT_CALL) + CUTSCENE_SOURCE,
+};
 
 /** The patch the tables need: none, the boss patch, or the boss patch with scripts. */
 export function bossPatchFor(tables: Iterable<EventTable>): CodePatch | null {
@@ -421,7 +431,13 @@ export function bossCharaRows(master: Master, events: EventTable, bossRow: numbe
   const out: number[] = [];
   const slot = events.slot(bossRow);
   for (let row = 0; row < events.rows; row++)
-    if (row !== bossRow && events.kind(row) === 0 && events.slot(row) === slot && charaMonsterDesign(master, events.model(row)) !== null) out.push(row);
+    if (
+      row !== bossRow &&
+      events.kind(row) === 0 &&
+      events.slot(row) === slot &&
+      charaMonsterDesign(master, events.model(row)) !== null
+    )
+      out.push(row);
   return out;
 }
 
@@ -441,7 +457,8 @@ export function syncBossCharas(master: Master, events: EventTable, bossRow: numb
     if (charaMonsterDesign(master, chara) === design) continue;
     let users = 0;
     for (let i = 0; i < events.rows; i++) if (events.model(i) === chara && events.kind(i) === 0) users++;
-    if (users === 1 && chara >= master.originalRows('mapChara.bin')) for (const o of [0x08, 0x0a, 0x0c]) w16(master.mapChara.row(chara), o, design);
+    if (users === 1 && chara >= master.originalRows('mapChara.bin'))
+      for (const o of [0x08, 0x0a, 0x0c]) w16(master.mapChara.row(chara), o, design);
     else w16(r, 0x46, addMonsterChara(master, design));
   }
 }
@@ -491,7 +508,9 @@ export function clearStageScript(events: EventTable, bossRow: number, n: number)
   const stages = readStages(events.table.row(bossRow));
   const s = stages[n];
   if (!s?.script) return;
-  const lines = stageCommands(events, bossRow, n).filter((c) => c.op === 1).map((c) => c.p);
+  const lines = stageCommands(events, bossRow, n)
+    .filter((c) => c.op === 1)
+    .map((c) => c.p);
   stages[n] = { ...s, script: null, messages: [lines[0] ?? 0, lines[1] ?? 0, lines[2] ?? 0] };
   writeStages(events.table.row(bossRow), stages);
 }

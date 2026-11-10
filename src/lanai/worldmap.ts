@@ -5,7 +5,16 @@
 // models EventObject +0x5A (else WorldmapParts +0x0C), their facings 1 / 2 / 4 / 8 as the dungeons'.
 import { LANAI_ROT_CODEC } from '../game/sections';
 import { equalBytes, s16, u32, w32 } from '../util/bytes';
-import { parseOahuGround, ENTRANCE_SIZE, parseRanges, buildRanges, WE, oahuCoveredBy, type OahuGround, type OahuWorldRange } from '../oahu/worldmap';
+import {
+  parseOahuGround,
+  ENTRANCE_SIZE,
+  parseRanges,
+  buildRanges,
+  WE,
+  oahuCoveredBy,
+  type OahuGround,
+  type OahuWorldRange,
+} from '../oahu/worldmap';
 import { LANAI_EVENT_ACTIONS, type LanaiMapInfo, type LanaiMaps } from './maps';
 import type { LanaiTable } from './table';
 
@@ -16,9 +25,29 @@ export type { OahuWorldRange as LanaiWorldRange };
 export const LANAI_WORLD_CONTENTS = [2, 3, 12, 33, 69, 71, 101, 124, 126] as const;
 export const LANAI_WORLD_SIZE = 300;
 /** Slots of a world's map table row (FUN_002b164c reads slot k of the row; FUN_001fc200 sets the world up). */
-export const LW = { tiles: 0, dark: 1, entrances: 2, land: 3, sea: 4, events: 5, props: 6, explored: 7, objects: 8, ground: 9 } as const;
+export const LW = {
+  tiles: 0,
+  dark: 1,
+  entrances: 2,
+  land: 3,
+  sea: 4,
+  events: 5,
+  props: 6,
+  explored: 7,
+  objects: 8,
+  ground: 9,
+} as const;
 export const LANAI_WORLD_SLOT_LABEL: Record<number, string> = {
-  0: 'タイル (空)', 1: '暗い海', 2: '入口', 3: 'エンカウントの範囲 (陸)', 4: 'エンカウントの範囲 (海)', 5: 'イベントの範囲', 6: '置物', 7: '区画 7 (2 bit)', 8: '置物・扉 (12 B)', 9: '地形',
+  0: 'タイル (空)',
+  1: '暗い海',
+  2: '入口',
+  3: 'エンカウントの範囲 (陸)',
+  4: 'エンカウントの範囲 (海)',
+  5: 'イベントの範囲',
+  6: '置物',
+  7: '区画 7 (2 bit)',
+  8: '置物・扉 (12 B)',
+  9: '地形',
 };
 /** The action that takes the player from the world into a map: +0x14 the map, +0x18 / +0x1C / +0x20 / +0x24 four point IDs. */
 export const LANAI_WORLD_ENTER = 0x8000001f;
@@ -48,7 +77,15 @@ export interface LanaiWorldPart {
 
 export function lanaiWorldParts(t: LanaiTable | undefined): LanaiWorldPart[] {
   const out: LanaiWorldPart[] = [];
-  for (let r = 0; t && r < t.rows; r++) out.push({ row: r, model: t.u32(r, 0), flags: t.u8(r, 4), battle: t.u32(r, 8), object: t.rowSize >= 0x0e ? t.u16(r, 0x0c) : 0, name: '' });
+  for (let r = 0; t && r < t.rows; r++)
+    out.push({
+      row: r,
+      model: t.u32(r, 0),
+      flags: t.u8(r, 4),
+      battle: t.u32(r, 8),
+      object: t.rowSize >= 0x0e ? t.u16(r, 0x0c) : 0,
+      name: '',
+    });
   return out;
 }
 
@@ -59,14 +96,20 @@ const GRID_AT = 0x14;
 
 /** Where the pools are (header +0x08) and how many (up to the list at +0x0C). */
 function poolSpan(b: Uint8Array): [at: number, count: number] {
-  const at = u32(b, 8), end = u32(b, 12);
+  const at = u32(b, 8),
+    end = u32(b, 12);
   return [at, Math.max(0, Math.min(Math.floor((end - at) / 4), Math.floor((b.length - at) / 4)))];
 }
 
 /** The pools of the parts in the four 2 x 2 blocks around cell i that `part` would need (oahuGroundPools for those blocks). */
 function blockNeed(parts: Uint8Array, x: number, y: number, part: number): number {
   let best = 0;
-  for (const [bx, by] of [[x - 1, y - 1], [x, y - 1], [x - 1, y], [x, y]] as const) {
+  for (const [bx, by] of [
+    [x - 1, y - 1],
+    [x, y - 1],
+    [x - 1, y],
+    [x, y],
+  ] as const) {
     if (bx < 0 || by < 0 || bx + 1 >= N || by + 1 >= N) continue;
     const i = by * N + bx;
     const n = [parts[i], parts[i + 1], parts[i + N], parts[i + N + 1]].filter((p) => p === part).length;
@@ -88,7 +131,8 @@ export interface LanaiWorldPoint {
 
 export function parseWorldObjects(b: Uint8Array): LanaiWorldPoint[] {
   const out: LanaiWorldPoint[] = [];
-  for (let o = 0; o + 12 <= b.length; o += 12) out.push({ value: u32(b, o), kind: u32(b, o + 4), x: s16(b, o + 8) + 0.5, y: s16(b, o + 10) + 0.5 });
+  for (let o = 0; o + 12 <= b.length; o += 12)
+    out.push({ value: u32(b, o), kind: u32(b, o + 4), x: s16(b, o + 8) + 0.5, y: s16(b, o + 10) + 0.5 });
   return out;
 }
 
@@ -159,7 +203,8 @@ export class LanaiWorld {
   }
 
   private readGround(): void {
-    const g = this.ground, b = this.section(LW.ground);
+    const g = this.ground,
+      b = this.section(LW.ground);
     if (!g || b.length < GRID_AT + N * N * 2) return;
     for (let i = 0; i < N * N; i++) {
       g.parts[i] = b[GRID_AT + i * 2]!;
@@ -220,9 +265,11 @@ export class LanaiWorld {
    * change when the terrain is the ROM's again.
    */
   normalize(): void {
-    const h = this.hash(LW.ground), g = this.ground;
+    const h = this.hash(LW.ground),
+      g = this.ground;
     if (!g || !h || !this.maps.db.has(h)) return;
-    const orig = this.maps.db.original(h), cur = this.maps.db.get(h);
+    const orig = this.maps.db.original(h),
+      cur = this.maps.db.get(h);
     if (cur !== this.groundOwn) return;
     const [at, count] = poolSpan(orig);
     const need = new Array<number>(count).fill(0);
@@ -287,7 +334,11 @@ export class LanaiWorld {
     const action = LANAI_EVENT_ACTIONS.find((o) => t.u32(row, o) === LANAI_WORLD_ENTER) ?? -1;
     const mapHash = action >= 0 ? t.u32(row, action + 4) : 0;
     return {
-      row, action, type: t.u32(row, LANAI_EVENT_ACTIONS[0]), mapHash, map: mapHash ? this.maps.map(mapHash) : undefined,
+      row,
+      action,
+      type: t.u32(row, LANAI_EVENT_ACTIONS[0]),
+      mapHash,
+      map: mapHash ? this.maps.map(mapHash) : undefined,
       points: action >= 0 ? [0, 1, 2, 3].map((k) => t.u32(row, action + 8 + k * 4)) : [],
     };
   }
@@ -354,7 +405,8 @@ export class LanaiWorld {
         (this.maps.doc(m).recs[section] ?? []).forEach((e, index) => {
           const row = u32(e.raw, 4);
           if (!row || row >= t.rows) return;
-          for (const o of LANAI_EVENT_ACTIONS) if (t.u32(row, o + 4) === this.info.hash) out.push({ map: m, section, index, point: t.u32(row, o + 8) });
+          for (const o of LANAI_EVENT_ACTIONS)
+            if (t.u32(row, o + 4) === this.info.hash) out.push({ map: m, section, index, point: t.u32(row, o + 8) });
         });
       }
     }
@@ -379,7 +431,11 @@ export class LanaiWorld {
   /** The AreaInfo row IDs of a kind (1 land, 2 sea). */
   areaInfoIds(kind: number): number[] {
     const t = this.maps.contentTable('AreaInfo');
-    return t ? Array.from({ length: t.rows }, (_, r) => r).filter((r) => t.u8(r, 8) === kind && t.u32(r, 4)).map((r) => t.rowId(r)) : [];
+    return t
+      ? Array.from({ length: t.rows }, (_, r) => r)
+          .filter((r) => t.u8(r, 8) === kind && t.u32(r, 4))
+          .map((r) => t.rowId(r))
+      : [];
   }
 
   // ---- undo and changes
@@ -387,7 +443,10 @@ export class LanaiWorld {
   snapshot(): Snapshot {
     this.normalize();
     return {
-      sections: [LW.entrances, LW.land, LW.sea, LW.ground].map((k): [number, Uint8Array] => [k, this.section(k).slice()]),
+      sections: [LW.entrances, LW.land, LW.sea, LW.ground].map((k): [number, Uint8Array] => [
+        k,
+        this.section(k).slice(),
+      ]),
       events: this.maps.eventRows(this.info.dungeon),
     };
   }
@@ -399,7 +458,9 @@ export class LanaiWorld {
 
   /** Slots whose bytes differ from the ROM's. */
   changedSlots(): number[] {
-    return this.info.slots.flatMap((h, k) => (h && this.maps.db.has(h) && !equalBytes(this.maps.db.get(h), this.maps.db.original(h)) ? [k] : []));
+    return this.info.slots.flatMap((h, k) =>
+      h && this.maps.db.has(h) && !equalBytes(this.maps.db.get(h), this.maps.db.original(h)) ? [k] : [],
+    );
   }
   isChanged(): boolean {
     return this.changedSlots().length > 0;
@@ -417,4 +478,3 @@ function records(b: Uint8Array): Uint8Array[] {
   for (let o = 0; o + ENTRANCE_SIZE <= b.length; o += ENTRANCE_SIZE) out.push(b.slice(o, o + ENTRANCE_SIZE));
   return out;
 }
-

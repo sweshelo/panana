@@ -10,7 +10,6 @@
 import { entryBlob } from '../archive/gsarc';
 import { BchEntryIndex, type BchIndexEntry } from '../bch/models';
 import { zipEntryName } from '../archive/zip';
-import { u32 } from '../util/bytes';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -57,7 +56,14 @@ export function lanaiMonsters(session: LanaiSession): LanaiMonster[] {
     const d = session.need('MonsterDesign');
     out = Array.from({ length: t.rows }, (_, row): LanaiMonster => {
       const look = (t.u32(row, 0x00) >>> 20) & 0x3ff;
-      return { row, id: t.rowId(row), name: session.plain(t, row, 'name'), group: session.plain(t, row, 'group_name'), design: t.u32(row, 0x10), designRow: look < d.rows ? look : -1 };
+      return {
+        row,
+        id: t.rowId(row),
+        name: session.plain(t, row, 'name'),
+        group: session.plain(t, row, 'group_name'),
+        design: t.u32(row, 0x10),
+        designRow: look < d.rows ? look : -1,
+      };
     });
     lists.set(session, out);
   }
@@ -84,17 +90,29 @@ export function lanaiVoice(t: LanaiTable, row: number): { bytes: number[]; text:
   const o = t.stringOffset(row, 0x08);
   const bytes: number[] = [];
   if (o >= 0) for (let p = o; p < t.data.length && t.data[p] !== 0 && bytes.length < 256; p++) bytes.push(t.data[p]!);
-  const text = bytes.map((b) => (b >= 0xa1 && b <= 0xdf ? String.fromCharCode(0xff61 + b - 0xa1) : b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, '0')}`)).join('');
+  const text = bytes
+    .map((b) =>
+      b >= 0xa1 && b <= 0xdf
+        ? String.fromCharCode(0xff61 + b - 0xa1)
+        : b >= 0x20 && b < 0x7f
+          ? String.fromCharCode(b)
+          : `\\x${b.toString(16).padStart(2, '0')}`,
+    )
+    .join('');
   return { bytes, text };
 }
 
 /** The entries of the model archives by hash, with their file names (from their ZIPs, nothing unpacked). */
 export class LanaiModelIndex extends BchEntryIndex<LanaiModelEntry> {
   static async open(session: LanaiSession): Promise<LanaiModelIndex> {
-    const [archives, entries] = await BchEntryIndex.read(LANAI_MONSTER_MODEL_ARCHIVES, (n) => session.archive(n), (e, arc): LanaiModelEntry => ({
-      ...e,
-      name: (e.entry.comp === 1 ? zipEntryName(entryBlob(arc, e.entry)) : null) ?? '',
-    }));
+    const [archives, entries] = await BchEntryIndex.read(
+      LANAI_MONSTER_MODEL_ARCHIVES,
+      (n) => session.archive(n),
+      (e, arc): LanaiModelEntry => ({
+        ...e,
+        name: (e.entry.comp === 1 ? zipEntryName(entryBlob(arc, e.entry)) : null) ?? '',
+      }),
+    );
     return new LanaiModelIndex(archives, entries);
   }
 

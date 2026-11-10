@@ -2,7 +2,16 @@
 // redo (MapEditState), and the tile helpers. It imports only the map format (game/sections: MapDoc, records, layouts),
 // so the views and the controller can be used with any game. A game extends MapEditState (state.ts EditorState for
 // RPG2, src/oahu/mapedit.ts OahuEditState for RPG3). state.ts re-exports everything here.
-import { cloneDoc, LETTER_DEFAULT, type MapDoc, type Rec, type RecordLayout, type Tile } from '../game/sections';
+import {
+  cloneDoc,
+  LETTER_DEFAULT,
+  letterByte,
+  letterIndex,
+  type MapDoc,
+  type Rec,
+  type RecordLayout,
+  type Tile,
+} from '../game/sections';
 import { autoTiles, cellKey, type AutoProfile } from './autotile';
 
 export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
@@ -87,20 +96,38 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   /** A view-only map (初代's map page): edit, touch, editTables and checkpoint do nothing, so dragging in the views moves nothing. */
   readonly readOnly: boolean = false;
 
-  /** Games opt in with a verified vocabulary. */
-  get autoProfile(): AutoProfile | undefined { return undefined; }
-  /** Verified geometry for display, even when a palette lacks automatic brush parts. */
-  get mapTopology(): AutoProfile | undefined { return this.autoProfile; }
-  autoLetter(_kind: number, preferred: number): number { return preferred; }
-  autoVariantLetters(_kind: number): readonly number[] { return [0]; }
+  /** Verified geometry of the open map (games opt in with their vocabulary), even when its palette lacks parts. */
+  get mapTopology(): AutoProfile | undefined {
+    return undefined;
+  }
+  /** The open tileset's palette (kind -> letter indices with a model); undefined: the game has no automatic brush. */
+  protected autoPalette(): ReadonlyMap<number, readonly number[]> | undefined {
+    return undefined;
+  }
+  /** The automatic brush: the map's topology, when the tileset has a model for every one of its parts. */
+  get autoProfile(): AutoProfile | undefined {
+    const profile = this.mapTopology,
+      palette = profile && this.autoPalette();
+    return profile && palette && profile.parts.every((p) => palette.has(p.kind)) ? profile : undefined;
+  }
+  /** The preferred letter byte when the tileset has that variant, else the kind's first one (no palette: as preferred). */
+  autoLetter(kind: number, preferred: number): number {
+    const palette = this.autoPalette();
+    if (!palette) return preferred;
+    const letters = palette.get(kind) ?? [0];
+    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : (letters[0] ?? 0));
+  }
+  autoVariantLetters(kind: number): readonly number[] {
+    return this.autoPalette()?.get(kind) ?? [0];
+  }
 
   /** The actual automatic tile under the pointer, shared by both views. */
   brushAt(x: number, y: number): Brush | undefined {
     if (!this.brush.auto) return this.brush;
     const profile = this.autoProfile;
     if (!this.current || !profile) return undefined;
-    const tile = autoTiles(this.current.tiles, new Set([cellKey(x,y)]), profile).find(t => t.x === x && t.y === y);
-    return tile && {...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT)};
+    const tile = autoTiles(this.current.tiles, new Set([cellKey(x, y)]), profile).find((t) => t.x === x && t.y === y);
+    return tile && { ...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT) };
   }
 
   /** Record layouts of the sections, by RPG2's section numbers. */

@@ -84,14 +84,28 @@ export const CHASE_SPEEDS: ChaseSpeed[] = [
   { key: 'fastWorld', addr: 0x1eda10, label: '速い (ワールドマップ)', vanilla: 680, unit: 'speed', kinds: [0] },
   { key: 'fastDungeon', addr: 0x1eda14, label: '速い (ダンジョン)', vanilla: 620, unit: 'speed', kinds: [0] },
   { key: 'normalWorld', addr: 0x1eda18, label: 'ふつう (ワールドマップ)', vanilla: 600, unit: 'speed', kinds: [1] },
-  { key: 'normalDungeon', addr: 0x1eda0c, label: 'ふつう (ダンジョン)・壁ごし', vanilla: 520, unit: 'speed', kinds: [1, 6] },
+  {
+    key: 'normalDungeon',
+    addr: 0x1eda0c,
+    label: 'ふつう (ダンジョン)・壁ごし',
+    vanilla: 520,
+    unit: 'speed',
+    kinds: [1, 6],
+  },
   { key: 'slowWorld', addr: 0x1eda1c, label: '遅い (ワールドマップ)', vanilla: 420, unit: 'speed', kinds: [2] },
   { key: 'slowDungeon', addr: 0x1eda20, label: '遅い (ダンジョン)', vanilla: 400, unit: 'speed', kinds: [2] },
   { key: 'chargeSpeed', addr: 0x1eda28, label: '突進の速さ', vanilla: 750, unit: 'speed', kinds: [3] },
   { key: 'chargeTime', addr: 0x1eda24, label: '突進の時間', vanilla: 4, unit: 'time', kinds: [3] },
   { key: 'fleeSpeed', addr: 0x1eda30, label: '逃げる速さ', vanilla: 250, unit: 'speed', kinds: [4] },
   { key: 'fleeTime', addr: 0x1eda2c, label: '逃げる時間', vanilla: 1.7, unit: 'time', kinds: [4] },
-  { key: 'walk', addr: 0x1ee238, label: '歩き回る速さ (気づく前)', vanilla: 150, unit: 'speed', kinds: [0, 1, 2, 3, 4, 5, 6] },
+  {
+    key: 'walk',
+    addr: 0x1ee238,
+    label: '歩き回る速さ (気づく前)',
+    vanilla: 150,
+    unit: 'speed',
+    kinds: [0, 1, 2, 3, 4, 5, 6],
+  },
 ];
 
 /** Changed speeds by key (the export writes them; the others stay as in the game). */
@@ -117,18 +131,27 @@ export function changedSpeeds(speeds: ChaseSpeeds): ChaseSpeed[] {
 
 /** Why the speeds cannot be patched in this code.bin (another version, or a base MOD rewrote the words), or null. */
 export function chaseSpeedProblem(code: Uint8Array): string | null {
-  const bad = CHASE_SPEEDS.filter((s) => s.addr - BASE + 4 > code.length || u32(code, s.addr - BASE) !== floatWord(s.vanilla));
-  return bad.length ? `code.bin の 0x${bad.map((s) => s.addr.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${CHASE_PATCH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)` : null;
+  const bad = CHASE_SPEEDS.filter(
+    (s) => s.addr - BASE + 4 > code.length || u32(code, s.addr - BASE) !== floatWord(s.vanilla),
+  );
+  return bad.length
+    ? `code.bin の 0x${bad.map((s) => s.addr.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${CHASE_PATCH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)`
+    : null;
 }
 
 /** The patch writing the changed speeds, or null when none changed. */
 export function chaseSpeedPatch(speeds: ChaseSpeeds): CodePatch | null {
   const changed = changedSpeeds(speeds);
   if (!changed.length) return null;
-  const lines = [`; ${CHASE_PATCH_TITLE}: マップのシンボルの敵の速さ・時間 (FUN_001ed820 / FUN_001ee088 のリテラル。どれも 1 命令だけが読む)`];
+  const lines = [
+    `; ${CHASE_PATCH_TITLE}: マップのシンボルの敵の速さ・時間 (FUN_001ed820 / FUN_001ee088 のリテラル。どれも 1 命令だけが読む)`,
+  ];
   for (const s of changed) {
     const v = speeds[s.key]!;
-    lines.push(`@0x${s.addr.toString(16).toUpperCase()}`, `  .word 0x${floatWord(v).toString(16).padStart(8, '0')} ; ${s.label} ${s.vanilla} -> ${v}`);
+    lines.push(
+      `@0x${s.addr.toString(16).toUpperCase()}`,
+      `  .word 0x${floatWord(v).toString(16).padStart(8, '0')} ; ${s.label} ${s.vanilla} -> ${v}`,
+    );
   }
   return { id: CHASE_PATCH_ID, title: CHASE_PATCH_TITLE, source: lines.join('\n'), enabled: true };
 }

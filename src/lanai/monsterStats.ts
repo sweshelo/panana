@@ -32,7 +32,8 @@ export function lanaiStatsOf(session: LanaiSession, monster: number): LanaiStats
 export function lanaiStatsSharers(session: LanaiSession, ref: Pick<LanaiStatsRef, 'kind' | 'row'>): number[] {
   const p = session.need('MonsterParameter');
   const out: number[] = [];
-  for (let m = 0; m < p.rows; m++) if (Math.max(1, p.u16(m, 0x16) & 7) === ref.kind && p.u16(m, 0x14) === ref.row) out.push(m);
+  for (let m = 0; m < p.rows; m++)
+    if (Math.max(1, p.u16(m, 0x16) & 7) === ref.kind && p.u16(m, 0x14) === ref.row) out.push(m);
   return out;
 }
 
@@ -76,7 +77,20 @@ function dropUnused(t: LanaiTable, used: (row: number) => boolean): void {
 
 // ---- actions
 
-export const ACTION_SLOT_KEYS = ['actBattle', 'actDefault', 'actTurnStart', 'actHit1', 'actHit2', 'actTurnEnd', 'skill1', 'skill2', 'skill3', 'skill4', 'skill5', 'skill6'] as const;
+export const ACTION_SLOT_KEYS = [
+  'actBattle',
+  'actDefault',
+  'actTurnStart',
+  'actHit1',
+  'actHit2',
+  'actTurnEnd',
+  'skill1',
+  'skill2',
+  'skill3',
+  'skill4',
+  'skill5',
+  'skill6',
+] as const;
 /** Offsets of the action slots of an ability row (the keys above, in order). */
 export const ACTION_SLOT_OFFSETS = [0x38, 0x3c, 0x40, 0x44, 0x48, 0x4c, 0x54, 0x58, 0x5c, 0x60, 0x64, 0x68];
 
@@ -91,16 +105,52 @@ export interface LanaiAction {
   target: number;
   /** The battle text (MessageAction `individual` of +0x0C). */
   message: string;
+  /** The text of the result (MessageAction `individual` of +0x10: "〈name〉に　〈value〉ダメージ与えた" …). */
+  result: string;
 }
 
 export const isTransform = (a: LanaiAction | null): boolean => !!a && (a.system === 29 || a.system === 30);
+
+/**
+ * The MessageAction row of a message ID. The language archive 3E42000A has two MessageAction tables (3531 and 37
+ * rows); an ID not in the first is looked up in the second.
+ */
+export function lanaiActionMessageAt(session: LanaiSession, id: number): { table: LanaiTable; row: number } | null {
+  if (!id || id === 0x80000000) return null;
+  let tables = messageTables.get(session);
+  if (!tables)
+    messageTables.set(
+      session,
+      (tables = session.tables.filter((t) => t.table.name === 'MessageAction').map((t) => t.table)),
+    );
+  for (const table of tables) {
+    const row = table.find(id);
+    if (row > 0) return { table, row };
+  }
+  return null;
+}
+const messageTables = new WeakMap<LanaiSession, LanaiTable[]>();
+
+/** The text (`individual`) of a MessageAction ID, '' when none. */
+export function lanaiActionMessageText(session: LanaiSession, id: number): string {
+  const m = lanaiActionMessageAt(session, id);
+  return m ? session.plain(m.table, m.row, 'individual') : '';
+}
 
 export function lanaiAction(session: LanaiSession, id: number): LanaiAction | null {
   const t = session.need('ActionData');
   const row = t.find(id);
   if (row < 0) return null;
   const head = t.u32(row, 0x14);
-  return { row, id: t.rowId(row), system: (head >>> 4) & 0xff, kind: head & 0xf, target: t.u32(row, 0x00), message: session.insert('MessageAction', t.u32(row, 0x0c), 'individual') ?? '' };
+  return {
+    row,
+    id: t.rowId(row),
+    system: (head >>> 4) & 0xff,
+    kind: head & 0xf,
+    target: t.u32(row, 0x00),
+    message: lanaiActionMessageText(session, t.u32(row, 0x0c)),
+    result: lanaiActionMessageText(session, t.u32(row, 0x10)),
+  };
 }
 
 /** The action IDs an ability row names (its slots). */
@@ -114,14 +164,17 @@ export function lanaiActionUsers(session: LanaiSession, id: number): { table: La
   const out: { table: LanaiStatsTable; row: number }[] = [];
   for (const table of LANAI_STATS_TABLES) {
     const t = session.need(table);
-    for (let r = 0; r < t.rows; r++) if (ACTION_SLOT_OFFSETS.some((o) => t.u32(r, o) === id)) out.push({ table, row: r });
+    for (let r = 0; r < t.rows; r++)
+      if (ACTION_SLOT_OFFSETS.some((o) => t.u32(r, o) === id)) out.push({ table, row: r });
   }
   return out;
 }
 
 /** The monsters whose ability rows name an action. */
 export function lanaiActionMonsters(session: LanaiSession, id: number): number[] {
-  const users = new Set(lanaiActionUsers(session, id).map((u) => `${LANAI_STATS_TABLES.indexOf(u.table) + 1}:${u.row}`));
+  const users = new Set(
+    lanaiActionUsers(session, id).map((u) => `${LANAI_STATS_TABLES.indexOf(u.table) + 1}:${u.row}`),
+  );
   const p = session.need('MonsterParameter');
   const out: number[] = [];
   for (let m = 0; m < p.rows; m++) if (users.has(`${Math.max(1, p.u16(m, 0x16) & 7)}:${p.u16(m, 0x14)}`)) out.push(m);
@@ -129,7 +182,12 @@ export function lanaiActionMonsters(session: LanaiSession, id: number): number[]
 }
 
 /** Copies an action to a new ActionData row (a new row ID) and puts it in the slot at `offset` of an ability row; returns the new ID. */
-export function lanaiCopyActionInto(session: LanaiSession, id: number, ref: Pick<LanaiStatsRef, 'table' | 'row'>, offset: number): number {
+export function lanaiCopyActionInto(
+  session: LanaiSession,
+  id: number,
+  ref: Pick<LanaiStatsRef, 'table' | 'row'>,
+  offset: number,
+): number {
   const a = session.need('ActionData');
   const row = a.find(id);
   if (row < 0) throw new Error(`アクション ${id.toString(16)} がありません`);
@@ -143,7 +201,12 @@ export function lanaiCopyActionInto(session: LanaiSession, id: number, ref: Pick
  * Sets the monster an action turns into. For system 30 the ability row's +0x50 (read at the start of the battle) is
  * moved along when it named the old target.
  */
-export function lanaiSetTransformTarget(session: LanaiSession, actionId: number, monster: number, ref?: Pick<LanaiStatsRef, 'table' | 'row'>): void {
+export function lanaiSetTransformTarget(
+  session: LanaiSession,
+  actionId: number,
+  monster: number,
+  ref?: Pick<LanaiStatsRef, 'table' | 'row'>,
+): void {
   const act = lanaiAction(session, actionId);
   if (!act) return;
   const id = session.need('MonsterParameter').rowId(monster);

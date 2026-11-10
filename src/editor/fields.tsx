@@ -15,8 +15,18 @@ export function Field({ label, children }: { label: ReactNode; children: ReactNo
 }
 
 /** An integer box (any 32-bit value unless min / max are given). */
-export function Num({ value, onChange, min = -0x80000000, max = 0xffffffff, title }: {
-  value: number; onChange: (v: number) => void; min?: number; max?: number; title?: string;
+export function Num({
+  value,
+  onChange,
+  min = -0x80000000,
+  max = 0xffffffff,
+  title,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  title?: string;
 }): ReactNode {
   return <NumberInput value={value} min={min} max={max} className="" title={title} onCommit={onChange} />;
 }
@@ -27,17 +37,39 @@ export function HexInput({ value, onChange }: { value: number; onChange: (v: num
 }
 
 /** The raw bytes of a record or row as hex; applied only when the length is `size`. */
-export function RawBytes({ bytes, rows, onChange }: { bytes: Uint8Array; rows: number; onChange: (b: Uint8Array) => void }): ReactNode {
+export function RawBytes({
+  bytes,
+  rows,
+  onChange,
+}: {
+  bytes: Uint8Array;
+  rows: number;
+  onChange: (b: Uint8Array) => void;
+}): ReactNode {
   const text = bytesToHex(bytes);
   const parse = (s: string): Uint8Array | null => {
     const b = hexToBytes(s);
     return b && b.length === bytes.length ? b : null;
   };
-  return <TextCommit key={text} multiline rows={rows} className="raw" initial={text} parse={parse} onCommit={onChange} />;
+  return (
+    <TextCommit key={text} multiline rows={rows} className="raw" initial={text} parse={parse} onCommit={onChange} />
+  );
 }
 
-function TextCommit<T>({ initial, parse, onCommit, className, multiline = false, rows }: {
-  initial: string; parse: (s: string) => T | null; onCommit: (v: T) => void; className: string; multiline?: boolean; rows?: number;
+function TextCommit<T>({
+  initial,
+  parse,
+  onCommit,
+  className,
+  multiline = false,
+  rows,
+}: {
+  initial: string;
+  parse: (s: string) => T | null;
+  onCommit: (v: T) => void;
+  className: string;
+  multiline?: boolean;
+  rows?: number;
 }): ReactNode {
   const [text, setText] = useState(initial);
   const [bad, setBad] = useState(false);
@@ -48,7 +80,16 @@ function TextCommit<T>({ initial, parse, onCommit, className, multiline = false,
     if (v !== null) onCommit(v);
   };
   const cls = className + (bad ? ' bad' : '');
-  return multiline
-    ? <textarea className={cls} rows={rows} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
-    : <input type="text" className={cls} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
+  return multiline ? (
+    <textarea className={cls} rows={rows} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
+  ) : (
+    <input
+      type="text"
+      className={cls}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
+  );
 }

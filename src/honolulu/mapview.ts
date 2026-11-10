@@ -21,8 +21,19 @@ import type { Dump } from '../rom/dump';
 import { hex8, u32 } from '../util/bytes';
 import { Signal } from '../ui/useEditorState';
 import {
-  HONOLULU_CHEST2_SECTION, HONOLULU_CHEST_SECTION, HONOLULU_DESIGNED_ROOMS, HONOLULU_EXIT_SECTION, HONOLULU_GRID, HONOLULU_LAYOUTS, HONOLULU_OBJECT_SECTION, HONOLULU_POINT_SECTIONS, HONOLULU_ROT_CODEC,
-  HONOLULU_TILE_TEXTURES, type HonoluluFloor, type HonoluluMaps, type HonoluluTileSource,
+  HONOLULU_CHEST2_SECTION,
+  HONOLULU_CHEST_SECTION,
+  HONOLULU_DESIGNED_ROOMS,
+  HONOLULU_EXIT_SECTION,
+  HONOLULU_GRID,
+  HONOLULU_LAYOUTS,
+  HONOLULU_OBJECT_SECTION,
+  HONOLULU_POINT_SECTIONS,
+  HONOLULU_ROT_CODEC,
+  HONOLULU_TILE_TEXTURES,
+  type HonoluluFloor,
+  type HonoluluMaps,
+  type HonoluluTileSource,
 } from './maps';
 
 /** The open map (read only: the page does not edit 初代's maps yet). */
@@ -198,7 +209,11 @@ export class HonoluluMapView implements MapPageView {
     this.status = 'タイルのモデルを読み込み中…';
     this.signal.emit();
     try {
-      const set = await loadTileset({ dump: this.dump }, { modelArchive: src.modelArchive, textureArchive: HONOLULU_TILE_TEXTURES, textureEntry: src.textureEntry }, SCOPE);
+      const set = await loadTileset(
+        { dump: this.dump },
+        { modelArchive: src.modelArchive, textureArchive: HONOLULU_TILE_TEXTURES, textureEntry: src.textureEntry },
+        SCOPE,
+      );
       if (this.disposed || key !== this.loadedFor) return;
       // 初代 draws the lower render priority first (as for the monsters)
       this.factory = new ModelFactory(lowerPriorityFirst(set));
@@ -214,18 +229,25 @@ export class HonoluluMapView implements MapPageView {
    * An instance of an object file's model (a prop, a room); starts loading it the first time (redrawn when it is there).
    * `textures` (by name) fill in the ones the file does not hold: a designed room uses its tileset's (469B3DC6).
    */
-  private objectModel(archive: number, entry: number, textures?: { key: string; byName: TilesetModels['textures'] }): THREE.Object3D | null {
+  private objectModel(
+    archive: number,
+    entry: number,
+    textures?: { key: string; byName: TilesetModels['textures'] },
+  ): THREE.Object3D | null {
     const key = `${hex8(archive)}/${hex8(entry)}${textures ? `/${textures.key}` : ''}`;
     if (!this.objects.has(key)) {
       this.objects.set(key, null);
-      void loadObjectModels({ dump: this.dump }, [{ archive, entry }], SCOPE).then((sets) => {
-        const set = sets.get(objKey(archive, entry, SCOPE));
-        if (this.disposed || !set?.models.size) return;
-        const full = textures ? { ...set, textures: new Map([...textures.byName, ...set.textures]) } : set;
-        this.objects.set(key, { factory: new ModelFactory(lowerPriorityFirst(full)), hash: entry });
-        this.sync3d();
-        this.signal.emit();
-      }, () => {});
+      void loadObjectModels({ dump: this.dump }, [{ archive, entry }], SCOPE).then(
+        (sets) => {
+          const set = sets.get(objKey(archive, entry, SCOPE));
+          if (this.disposed || !set?.models.size) return;
+          const full = textures ? { ...set, textures: new Map([...textures.byName, ...set.textures]) } : set;
+          this.objects.set(key, { factory: new ModelFactory(lowerPriorityFirst(full)), hash: entry });
+          this.sync3d();
+          this.signal.emit();
+        },
+        () => {},
+      );
       return null;
     }
     const o = this.objects.get(key);
@@ -237,13 +259,16 @@ export class HonoluluMapView implements MapPageView {
   private paint(g: CanvasRenderingContext2D, s: number): void {
     const doc = this.st.current;
     if (!doc) return;
-    const layers = this.ctl.layers, sel = this.st.selection;
-    if (layers.tiles) for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, honoluluKindColor(t.kind), -1, String(t.kind));
+    const layers = this.ctl.layers,
+      sel = this.st.selection;
+    if (layers.tiles)
+      for (const t of doc.tiles) drawTileGlyph(g, s, t.x, t.y, honoluluKindColor(t.kind), -1, String(t.kind));
     for (const k of [...HONOLULU_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, HONOLULU_LAYOUTS[k]!);
-        const x = px * s, y = py * s;
+        const x = px * s,
+          y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         const rad = Math.max(3, s * (k === HONOLULU_OBJECT_SECTION ? 0.3 : 0.2));
         g.fillStyle = SECTION_COLORS[k]!;
@@ -254,12 +279,18 @@ export class HonoluluMapView implements MapPageView {
         if (dir >= 0) {
           // a triangle pointing the way the prop faces (0 = up)
           const a = (dir * Math.PI) / 2;
-          for (const [dx, dy] of [[0, -1], [0.8, 0.7], [-0.8, 0.7]] as const) {
-            const rx = dx * Math.cos(a) - dy * Math.sin(a), ry = dx * Math.sin(a) + dy * Math.cos(a);
+          for (const [dx, dy] of [
+            [0, -1],
+            [0.8, 0.7],
+            [-0.8, 0.7],
+          ] as const) {
+            const rx = dx * Math.cos(a) - dy * Math.sin(a),
+              ry = dx * Math.sin(a) + dy * Math.cos(a);
             g.lineTo(x + rx * rad, y + ry * rad);
           }
           g.closePath();
-        } else if (k === HONOLULU_CHEST_SECTION || k === HONOLULU_CHEST2_SECTION) g.rect(x - rad, y - rad, rad * 2, rad * 2);
+        } else if (k === HONOLULU_CHEST_SECTION || k === HONOLULU_CHEST2_SECTION)
+          g.rect(x - rad, y - rad, rad * 2, rad * 2);
         else if (k === HONOLULU_EXIT_SECTION) {
           g.moveTo(x, y - rad);
           g.lineTo(x + rad, y);
@@ -280,17 +311,26 @@ export class HonoluluMapView implements MapPageView {
   private sync3d(): void {
     const doc = this.st.current;
     if (!doc || this.disposed) return;
-    const f = this.factory, layers = this.ctl.layers;
+    const f = this.factory,
+      layers = this.ctl.layers;
     const ts = this.source?.tileset ?? -1;
     this.room.clear();
     const src = this.source;
     if (this.showModels && layers.tiles && src?.designedModel && f) {
       // the rooms hold only their own textures; the ground and walls are the tileset's (else drawn untextured)
-      const m = this.objectModel(parseInt(HONOLULU_DESIGNED_ROOMS, 16), src.designedModel, { key: this.loadedFor, byName: f.set.textures });
+      const m = this.objectModel(parseInt(HONOLULU_DESIGNED_ROOMS, 16), src.designedModel, {
+        key: this.loadedFor,
+        byName: f.set.textures,
+      });
       if (m && doc.tiles.length) {
         // the room is centred on the middle of the map's tiles (estimated: so its walls meet the tiles')
-        const xs = doc.tiles.map((t) => t.x), ys = doc.tiles.map((t) => t.y);
-        m.position.set(((Math.min(...xs) + Math.max(...xs) + 1) / 2) * CELL, 0, ((Math.min(...ys) + Math.max(...ys) + 1) / 2) * CELL);
+        const xs = doc.tiles.map((t) => t.x),
+          ys = doc.tiles.map((t) => t.y);
+        m.position.set(
+          ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * CELL,
+          0,
+          ((Math.min(...ys) + Math.max(...ys) + 1) / 2) * CELL,
+        );
         this.room.add(m);
       }
     }

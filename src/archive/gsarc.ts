@@ -95,11 +95,16 @@ export interface NewEntry {
  * Same as gsarc.rebuild: replaced entries are re-packed, others are copied verbatim. `added` entries go where their
  * hash sorts when the archive's entries are in hash order (so a lookup that bisects still finds them), else last.
  */
-export function rebuildArchive(arc: Archive, replacements: Map<number, Uint8Array>, added: NewEntry[] = []): Uint8Array {
+export function rebuildArchive(
+  arc: Archive,
+  replacements: Map<number, Uint8Array>,
+  added: NewEntry[] = [],
+): Uint8Array {
   const sorted = arc.entries.every((e, i) => i === 0 || arc.entries[i - 1]!.hash < e.hash);
   const list: { e: ArcEntry; add?: NewEntry }[] = arc.entries.map((e) => ({ e }));
   for (const a of added) {
-    if (arc.entries.some((e) => e.hash === a.hash)) throw new Error(`アーカイブにはハッシュ ${a.hash.toString(16)} のエントリがすでにあります`);
+    if (arc.entries.some((e) => e.hash === a.hash))
+      throw new Error(`アーカイブにはハッシュ ${a.hash.toString(16)} のエントリがすでにあります`);
     const at = sorted ? list.findIndex((x) => x.e.hash > a.hash) : -1;
     const item = { e: { ...a.like, hash: a.hash }, add: a };
     if (at < 0) list.push(item);

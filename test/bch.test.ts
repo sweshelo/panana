@@ -21,7 +21,9 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
 
   test('every BCH of the Base (types 2, 5, 8, 10) is version 8 and reads', async () => {
     const byType = new Map<number, number>();
-    let models = 0, textures = 0, motions = 0;
+    let models = 0,
+      textures = 0,
+      motions = 0;
     for (const n of dump.names()) {
       const a = asArchive(await dump.readRomfs(n), n);
       if (!a) continue;
@@ -62,10 +64,18 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
     expect(m.materials[0]!.tev).toHaveLength(6);
     // Smooth skinning on the body: weights per vertex sum to 1.
     const w = m.meshes[0]!.skinWeights!;
-    for (let i = 0; i < w.length; i += 4) expect(Math.abs(w[i]! + w[i + 1]! + w[i + 2]! + w[i + 3]! - 1)).toBeLessThan(1e-3);
-    expect(f.textures.map((t) => [t.name, t.width, t.height])).toEqual([['enemy_03_body', 512, 512], ['enemy_03_eye', 128, 128]]);
+    for (let i = 0; i < w.length; i += 4)
+      expect(Math.abs(w[i]! + w[i + 1]! + w[i + 2]! + w[i + 3]! - 1)).toBeLessThan(1e-3);
+    expect(f.textures.map((t) => [t.name, t.width, t.height])).toEqual([
+      ['enemy_03_body', 512, 512],
+      ['enemy_03_eye', 128, 128],
+    ]);
     const motions = m.animations.filter((a) => a.kind === 'skeletal');
-    expect(motions.map((a) => [a.name, a.frames, a.loop])).toEqual([['001_E03_wait', 120, true], ['003_E03_walk', 60, true], ['004_E03_run', 44, true]]);
+    expect(motions.map((a) => [a.name, a.frames, a.loop])).toEqual([
+      ['001_E03_wait', 120, true],
+      ['003_E03_walk', 60, true],
+      ['004_E03_run', 44, true],
+    ]);
     expect(motions[0]!.skeletal.every((t) => m.bones.some((b) => b.name === t.bone))).toBe(true);
     expect(bchModelSet(body).models.get(0)?.name).toBe('enemy_03_01');
   });
@@ -77,7 +87,9 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
     // t0 = the eye (scrolled by 001_E04_eyes), t1 = the mask; the game blends src alpha / one minus src alpha and
     // writes the alpha with one / zero.
     expect(eye.units.map((u) => u.name)).toEqual(['enemy_04_eye', 'enemy_04_eye_alpha', null]);
-    expect(m.animations.find((a) => a.name === '001_E04_eyes')!.material.map((t) => [t.material, t.coordinator, t.target])).toEqual([['M_enemy_04_01_eye', 0, 'translate']]);
+    expect(
+      m.animations.find((a) => a.name === '001_E04_eyes')!.material.map((t) => [t.material, t.coordinator, t.target]),
+    ).toEqual([['M_enemy_04_01_eye', 0, 'translate']]);
     expect([eye.blendFunc!.srcA, eye.blendFunc!.dstA]).toEqual([1, 0]);
     const mat = tevMaterial(eye, { maps: [null, null, null] }, []);
     expect([mat.blendSrc, mat.blendDst]).toEqual([THREE.SrcAlphaFactor, THREE.OneMinusSrcAlphaFactor]);
@@ -113,7 +125,12 @@ describe.skipIf(!hasOahuBase)('RPG3 BCH', () => {
         for (const mat of model.materials) for (const t of mat.textures) if (t) expect(set.textures.has(t)).toBe(true);
     }
     expect(Object.fromEntries(kinds)).toEqual({
-      '838B0000 model': 239, '96EB0000 model': 229, 'D4270000 model': 142, '982C0000 model': 10, '980C0000 texture': 95, '21350000 texture': 89,
+      '838B0000 model': 239,
+      '96EB0000 model': 229,
+      'D4270000 model': 142,
+      '982C0000 model': 10,
+      '980C0000 texture': 95,
+      '21350000 texture': 89,
     });
     const potion = (await s.itemModels.model(s.items.item(1)!.model))!;
     expect(potion.kind === 'model' && (await potion.ref.load())!.set.models.get(0)!.name).toBe('item');

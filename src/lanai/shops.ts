@@ -92,12 +92,16 @@ const rowOf = (item: number, bytes: Uint8Array): LanaiShopRow => ({ item, bytes 
 /** The rows of a table as they are now, or as read (`original`; rows an edit added are left out). */
 function tableRows(t: LanaiTable, original: boolean): Uint8Array[] {
   const out: Uint8Array[] = [];
-  for (let i = 0; i < (original ? t.originalRows : t.rows); i++) out.push((original ? t.originalRow(i) : t.row(i))?.slice() ?? new Uint8Array(t.rowSize));
+  for (let i = 0; i < (original ? t.originalRows : t.rows); i++)
+    out.push((original ? t.originalRow(i) : t.row(i))?.slice() ?? new Uint8Array(t.rowSize));
   return out;
 }
 
 /** The head rows of a list of ShopItem rows, each with the rows of its stock. */
-function segments(rows: Uint8Array[]): { prefix: Uint8Array[]; heads: { at: number; head: Uint8Array; stock: Uint8Array[] }[] } {
+function segments(rows: Uint8Array[]): {
+  prefix: Uint8Array[];
+  heads: { at: number; head: Uint8Array; stock: Uint8Array[] }[];
+} {
   const prefix: Uint8Array[] = [];
   const heads: { at: number; head: Uint8Array; stock: Uint8Array[] }[] = [];
   rows.forEach((b, at) => {
@@ -137,7 +141,9 @@ export class LanaiContentShops {
 
   /** Shop +0x00 now / as read. */
   headRef(shop: number, original = false): number {
-    return original ? u32(this.shopTable.originalRow(shop) ?? this.shopTable.row(shop), 0) : this.shopTable.u32(shop, 0);
+    return original
+      ? u32(this.shopTable.originalRow(shop) ?? this.shopTable.row(shop), 0)
+      : this.shopTable.u32(shop, 0);
   }
 
   private stockIn(rows: Uint8Array[], shop: number, original: boolean): LanaiShopRow[] {
@@ -187,7 +193,8 @@ export class LanaiContentShops {
   /** The lowest slot number no row of the content's ShopItem uses (the save keeps one item per number: 1〜99). */
   nextSlot(): number {
     const used = new Set<number>();
-    for (let i = 0; i < this.items.rows; i++) if (lanaiShopSlotKind(this.items.row(i)) >= 0) used.add(this.items.u8(i, SHOP_SLOT));
+    for (let i = 0; i < this.items.rows; i++)
+      if (lanaiShopSlotKind(this.items.row(i)) >= 0) used.add(this.items.u8(i, SHOP_SLOT));
     let n = 1;
     while (used.has(n) && n < LANAI_SHOP_SLOTS) n++;
     return n;
@@ -227,7 +234,8 @@ export class LanaiContentShops {
       const at = placed[seg]!;
       const id = t.rowId(at);
       const was = this.headRef(s.row, true);
-      const next = findIn(t, was, t.rows) === at ? was : isRowId(id) && t.rowIds.filter((x) => x === id).length === 1 ? id : at;
+      const next =
+        findIn(t, was, t.rows) === at ? was : isRowId(id) && t.rowIds.filter((x) => x === id).length === 1 ? id : at;
       if (next !== this.headRef(s.row)) this.shopTable.setU32(s.row, 0, next);
     });
   }
@@ -276,7 +284,8 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
     if (!t) continue;
     for (let event = 1; event < t.rows; event++)
       for (const action of LANAI_EVENT_ACTIONS)
-        if (t.u32(event, action) === LANAI_SHOP_ACTION) out.push({ group, event, action, talk: t.u32(event, action + 4), places: [] });
+        if (t.u32(event, action) === LANAI_SHOP_ACTION)
+          out.push({ group, event, action, talk: t.u32(event, action + 4), places: [] });
   }
   if (!out.length) return out;
   for (const m of maps.maps) {
@@ -285,7 +294,8 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
     for (const section of LANAI_EVENT_SECTIONS)
       (doc.recs[section] ?? []).forEach((r, index) => {
         const event = u32(r.raw, 4);
-        for (const c of out) if (c.group === m.dungeon && c.event === event) c.places.push({ map: m.name, section, index });
+        for (const c of out)
+          if (c.group === m.dungeon && c.event === event) c.places.push({ map: m.name, section, index });
       });
   }
   return out;
@@ -294,7 +304,6 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
 /** The Shop row a content's clerks open: row 0 (assumed; naauao lanai/shops.md §4). */
 export const LANAI_CLERK_SHOP = 0;
 
-
 /** The random slots the save keeps (FlagData 0x97: 100 values; number 0 is no slot). */
 export const LANAI_SHOP_SLOTS = 99;
 
@@ -302,7 +311,8 @@ export const LANAI_SHOP_SLOTS = 99;
 export const LANAI_SLOT_POOL_BIT = 1;
 
 /** Whether an item is in the pool of the random slots of its kind. */
-export const lanaiInSlotPool = (session: LanaiSession, it: LanaiItem): boolean => !!(session.need('ItemDataCore').u8(it.core, 0x30) & LANAI_SLOT_POOL_BIT);
+export const lanaiInSlotPool = (session: LanaiSession, it: LanaiItem): boolean =>
+  !!(session.need('ItemDataCore').u8(it.core, 0x30) & LANAI_SLOT_POOL_BIT);
 
 /** Puts an item in (or out of) the pool of the random slots of its kind (ItemDataCore +0x30 bit 0; shared by every item of the same ItemDataCore row). */
 export function lanaiSetSlotPool(session: LanaiSession, it: LanaiItem, on: boolean): void {

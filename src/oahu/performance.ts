@@ -4,7 +4,16 @@
 // their timing. The monsters' skill motions are in a BCH of their own (monsterDesign +0x14; monsterModels.ts).
 import { findByName, parseArchive, type ArcEntry } from '../archive/gsarc';
 import { GsTable } from '../archive/gstable';
-import { EffectTable, effectModelNames, writePerfField, type EffectLayout, type EffectModel, type PerfField, type PerfLayout, type Performance } from '../game/performance';
+import {
+  EffectTable,
+  effectModelNames,
+  writePerfField,
+  type EffectLayout,
+  type EffectModel,
+  type PerfField,
+  type PerfLayout,
+  type Performance,
+} from '../game/performance';
 import type { Dump } from '../rom/dump';
 import { equalBytes, s16, u16 } from '../util/bytes';
 import type { OahuRows } from './rows';
@@ -27,12 +36,48 @@ export interface OahuPerfSlot {
 }
 
 export const OAHU_PERF_SLOTS: OahuPerfSlot[] = [
-  { key: 'perfUser', offset: 0x1e, label: '使用者', on: 'user', info: '+0x1E。使う側の演出 (モーション・エフェクト・SE)。0 なら使う側は何もしない (@0x2199F0)。' },
-  { key: 'perfUser2', offset: 0x20, label: '使用者 2', on: 'user', info: '+0x20。+0x1E と同時に使う側に重ねる演出 (@0x219A54)。' },
-  { key: 'perfTarget', offset: 0x22, label: '対象', on: 'target', info: '+0x22。対象ごとの演出 (被弾のモーションと着弾のエフェクト、@0x21903C)。' },
-  { key: 'perfTarget2', offset: 0x24, label: '対象 2', on: 'target', info: '+0x24。+0x22 と同時に対象に重ねる演出 (@0x219058)。' },
-  { key: 'perfField', offset: 0x26, label: '場', on: 'field', info: '+0x26。対象の側に 1 回だけ出す演出 (ファイアビームの帯など、@0x218FF8)。' },
-  { key: 'perfSecond', offset: 0x28, label: '2 回目の対象', on: 'second', info: '+0x28。戦闘の +0x408 が立っているときに、別の対象の並びへ +0x22・+0x24 の代わりに出す演出 (@0x21DD6C)。いつ立つかは未確認。' },
+  {
+    key: 'perfUser',
+    offset: 0x1e,
+    label: '使用者',
+    on: 'user',
+    info: '+0x1E。使う側の演出 (モーション・エフェクト・SE)。0 なら使う側は何もしない (@0x2199F0)。',
+  },
+  {
+    key: 'perfUser2',
+    offset: 0x20,
+    label: '使用者 2',
+    on: 'user',
+    info: '+0x20。+0x1E と同時に使う側に重ねる演出 (@0x219A54)。',
+  },
+  {
+    key: 'perfTarget',
+    offset: 0x22,
+    label: '対象',
+    on: 'target',
+    info: '+0x22。対象ごとの演出 (被弾のモーションと着弾のエフェクト、@0x21903C)。',
+  },
+  {
+    key: 'perfTarget2',
+    offset: 0x24,
+    label: '対象 2',
+    on: 'target',
+    info: '+0x24。+0x22 と同時に対象に重ねる演出 (@0x219058)。',
+  },
+  {
+    key: 'perfField',
+    offset: 0x26,
+    label: '場',
+    on: 'field',
+    info: '+0x26。対象の側に 1 回だけ出す演出 (ファイアビームの帯など、@0x218FF8)。',
+  },
+  {
+    key: 'perfSecond',
+    offset: 0x28,
+    label: '2 回目の対象',
+    on: 'second',
+    info: '+0x28。戦闘の +0x408 が立っているときに、別の対象の並びへ +0x22・+0x24 の代わりに出す演出 (@0x21DD6C)。いつ立つかは未確認。',
+  },
 ];
 
 /** A directData row of RPG3, with the fields of RPG2's Performance at their RPG3 places. */
@@ -44,7 +89,16 @@ export interface OahuPerformance extends Performance {
 }
 
 /** Where RPG3's directData row holds the fields the editor changes (RPG2's are in game/performance.ts PERF). */
-export const OAHU_PERF: PerfLayout = { length: 0x04, effect: 0x06, se: 0x08, anim: 0x0c, motionStart: 0x0f, addEffect: 0x10, shakeDelay: 0x14, seDelay: 0x15 };
+export const OAHU_PERF: PerfLayout = {
+  length: 0x04,
+  effect: 0x06,
+  se: 0x08,
+  anim: 0x0c,
+  motionStart: 0x0f,
+  addEffect: 0x10,
+  shakeDelay: 0x14,
+  seDelay: 0x15,
+};
 
 /** The first animData row of the monsters' motions (92 = 001_ wait); the rows before are the 電波人間's. */
 export const OAHU_MONSTER_ANIMS = 92;
@@ -91,19 +145,27 @@ export class OahuPerformances {
   constructor(private readonly dump: Dump) {}
 
   tables(): Promise<OahuPerfTables | null> {
-    this.loaded ??= this.dump.readRomfs(OAHU_PERF_ARCHIVE).then((b) => {
-      const arc = parseArchive(b);
-      const table = (name: string): GsTable | null => {
-        const f = findByName(arc, name);
-        return f ? new GsTable(f.body) : null;
-      };
-      const d = findByName(arc, 'directData.bin');
-      if (!d) return null;
-      const direct = new GsTable(d.body.slice());
-      if (this.pending) direct.data = this.pending.slice();
-      this.current = { direct, effects: new EffectTable(table('effectData.bin'), table('directDataAddEffect.bin'), OAHU_EFFECT_LAYOUT), entry: d.entry, original: d.body };
-      return this.current;
-    }, () => null);
+    this.loaded ??= this.dump.readRomfs(OAHU_PERF_ARCHIVE).then(
+      (b) => {
+        const arc = parseArchive(b);
+        const table = (name: string): GsTable | null => {
+          const f = findByName(arc, name);
+          return f ? new GsTable(f.body) : null;
+        };
+        const d = findByName(arc, 'directData.bin');
+        if (!d) return null;
+        const direct = new GsTable(d.body.slice());
+        if (this.pending) direct.data = this.pending.slice();
+        this.current = {
+          direct,
+          effects: new EffectTable(table('effectData.bin'), table('directDataAddEffect.bin'), OAHU_EFFECT_LAYOUT),
+          entry: d.entry,
+          original: d.body,
+        };
+        return this.current;
+      },
+      () => null,
+    );
     return this.loaded;
   }
 
@@ -149,7 +211,8 @@ export class OahuPerformances {
   static forUnit(direct: GsTable, row: number, monster: boolean): OahuPerformance | null {
     if (row <= 0 || row >= direct.rows) return null;
     const p = decodeOahuPerformance(direct.row(row), row);
-    const other = p.anim && (p.anim >= OAHU_MONSTER_ANIMS) !== monster && p.counterpart > 0 && p.counterpart < direct.rows;
+    const other =
+      p.anim && p.anim >= OAHU_MONSTER_ANIMS !== monster && p.counterpart > 0 && p.counterpart < direct.rows;
     if (!other) return p;
     const c = decodeOahuPerformance(direct.row(p.counterpart), p.counterpart);
     return { ...p, anim: c.anim, face: c.face, next: c.next };

@@ -4,7 +4,14 @@
 import type * as THREE from 'three';
 import { ModelFactory } from '../cgfx/three';
 import { renderPartThumb } from '../editor/thumbs';
-import type { WorldOverlay, WorldPin, WorldPointSet, WorldPaletteRow, WorldRangeSet, WorldSource } from '../editor/worldview';
+import type {
+  WorldOverlay,
+  WorldPin,
+  WorldPointSet,
+  WorldPaletteRow,
+  WorldRangeSet,
+  WorldSource,
+} from '../editor/worldview';
 import type { Ground } from '../game/worldmap';
 import { oahuWorldModels } from '../oahu/mapModels';
 import { entranceCell, grid2, moveEntrance, parseEventRanges, parseProps, partColor } from '../oahu/worldmap';
@@ -12,13 +19,34 @@ import { oahuPropAngle } from '../oahu/mapObjects';
 import { findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef, lanaiObjectScale } from './mapObjects';
-import { entranceTurn, LANAI_EO_MODEL, LANAI_WORLD_MODELS, LANAI_WORLD_SIZE, LANAI_WORLD_TEXTURES, LW, parseWorldObjects, WE, type LanaiWorld } from './worldmap';
+import {
+  entranceTurn,
+  LANAI_EO_MODEL,
+  LANAI_WORLD_MODELS,
+  LANAI_WORLD_SIZE,
+  LANAI_WORLD_TEXTURES,
+  LW,
+  parseWorldObjects,
+  WE,
+  type LanaiWorld,
+} from './worldmap';
 import { LANAI_ROT_CODEC } from '../game/sections';
 
 /** Colours of the entrances by WorldmapParts row (88〜93). */
-export const LANAI_ENTRANCE_COLORS: Record<number, string> = { 88: '#ff9f43', 89: '#ff6b6b', 90: '#48dbfb', 91: '#f368e0', 92: '#feca57', 93: '#1dd1a1' };
+export const LANAI_ENTRANCE_COLORS: Record<number, string> = {
+  88: '#ff9f43',
+  89: '#ff6b6b',
+  90: '#48dbfb',
+  91: '#f368e0',
+  92: '#feca57',
+  93: '#1dd1a1',
+};
 export const LANAI_RANGE_SLOT: Record<string, typeof LW.land | typeof LW.sea> = { land: LW.land, sea: LW.sea };
-export const LANAI_POINT_SLOT: Record<string, typeof LW.events | typeof LW.props | typeof LW.objects> = { events: LW.events, props: LW.props, objects: LW.objects };
+export const LANAI_POINT_SLOT: Record<string, typeof LW.events | typeof LW.props | typeof LW.objects> = {
+  events: LW.events,
+  props: LW.props,
+  objects: LW.objects,
+};
 
 export class LanaiWorldSource implements WorldSource {
   readonly size = LANAI_WORLD_SIZE;
@@ -36,27 +64,48 @@ export class LanaiWorldSource implements WorldSource {
     // the middle of the land (the worlds are small islands in the 300 x 300 grid)
     this.start = landCentre(w);
     const ranges = (key: string, label: string, color: string, fill: string): WorldRangeSet => ({
-      key, label, color, fill, snap: 3,
+      key,
+      label,
+      color,
+      fill,
+      snap: 3,
       list: () => w.ranges(LANAI_RANGE_SLOT[key]!),
       set: (l) => {
         const slot = LANAI_RANGE_SLOT[key]!;
-        w.setRanges(slot, l.map((r, i) => ({ hash: w.ranges(slot)[i]?.hash ?? 0, ...r })));
+        w.setRanges(
+          slot,
+          l.map((r, i) => ({ hash: w.ranges(slot)[i]?.hash ?? 0, ...r })),
+        );
       },
     });
-    this.rangeSets = [ranges('land', 'エンカウントの範囲 (陸)', '#b8f58a', 'rgba(184,245,138,0.10)'), ranges('sea', 'エンカウントの範囲 (海)', '#7fd3ff', 'rgba(127,211,255,0.10)')];
+    this.rangeSets = [
+      ranges('land', 'エンカウントの範囲 (陸)', '#b8f58a', 'rgba(184,245,138,0.10)'),
+      ranges('sea', 'エンカウントの範囲 (海)', '#7fd3ff', 'rgba(127,211,255,0.10)'),
+    ];
     const mo = (): ReturnType<LanaiWorld['maps']['session']['table']> => w.maps.session.table('MapObject');
     this.pointSets = [
       { key: 'events', label: 'イベントの範囲', color: '#b388ff', list: () => parseEventRanges(w.section(LW.events)) },
       {
-        key: 'props', label: '置物', color: '#bdbdbd',
+        key: 'props',
+        label: '置物',
+        color: '#bdbdbd',
         list: () => parseProps(w.section(LW.props)),
         mark3d: (i) => {
           const p = parseProps(w.section(LW.props))[i];
-          return p ? { make: () => this.objectModel(p.value), angle: oahuPropAngle(Math.max(0, LANAI_ROT_CODEC.decode(p.dir ?? 0))), scale: lanaiObjectScale(mo(), p.value) } : null;
+          return p
+            ? {
+                make: () => this.objectModel(p.value),
+                angle: oahuPropAngle(Math.max(0, LANAI_ROT_CODEC.decode(p.dir ?? 0))),
+                scale: lanaiObjectScale(mo(), p.value),
+              }
+            : null;
         },
       },
       {
-        key: 'objects', label: '置物・扉 (区画 8)', color: '#ffd54f', square: true,
+        key: 'objects',
+        label: '置物・扉 (区画 8)',
+        color: '#ffd54f',
+        square: true,
         list: () => parseWorldObjects(w.section(LW.objects)),
         mark3d: (i) => {
           const p = parseWorldObjects(w.section(LW.objects))[i];
@@ -67,7 +116,14 @@ export class LanaiWorldSource implements WorldSource {
       },
     ];
     this.overlays = [
-      { key: 'dark', label: '暗い海 (区画 1。濃いほど暗い)', on: true, colors: ['', 'rgba(0,0,12,0.22)', 'rgba(0,0,12,0.42)', 'rgba(0,0,12,0.62)'], value: (x, y) => grid2(w.section(LW.dark), x, y), steps: 3 },
+      {
+        key: 'dark',
+        label: '暗い海 (区画 1。濃いほど暗い)',
+        on: true,
+        colors: ['', 'rgba(0,0,12,0.22)', 'rgba(0,0,12,0.42)', 'rgba(0,0,12,0.62)'],
+        value: (x, y) => grid2(w.section(LW.dark), x, y),
+        steps: 3,
+      },
     ];
   }
 
@@ -82,7 +138,9 @@ export class LanaiWorldSource implements WorldSource {
   }
   palette(): WorldPaletteRow[] {
     // terrain rows (2〜86 have models; row 1 is the sea under everything, 87〜94 are the entrances' kinds)
-    return this.world.parts.filter((p) => p.row === 0 || (p.model && p.row !== 1)).map((p) => ({ row: p.row, label: p.name.replace(/^bgpt_wld_|\.bch$/g, '') || `行 ${p.row}`, flags: p.flags }));
+    return this.world.parts
+      .filter((p) => p.row === 0 || (p.model && p.row !== 1))
+      .map((p) => ({ row: p.row, label: p.name.replace(/^bgpt_wld_|\.bch$/g, '') || `行 ${p.row}`, flags: p.flags }));
   }
   partFlags(part: number): number {
     return this.world.partFlags(part);
@@ -128,7 +186,12 @@ export class LanaiWorldSource implements WorldSource {
         if (e) p.name = unpackEntry(arc, e).name ?? '';
       }
     }
-    const set = await oahuWorldModels(dump, LANAI_WORLD_MODELS, LANAI_WORLD_TEXTURES, w.parts.map((p) => p.model));
+    const set = await oahuWorldModels(
+      dump,
+      LANAI_WORLD_MODELS,
+      LANAI_WORLD_TEXTURES,
+      w.parts.map((p) => p.model),
+    );
     if (this.disposed) return '';
     this.factory = new ModelFactory(set);
     this.thumbs.clear();
@@ -161,7 +224,13 @@ export class LanaiWorldSource implements WorldSource {
     if (!r) return null;
     const row = this.world.entranceObject(r);
     // RPG FREE! uses the dungeon prop angles, without RPG3's extra 180° world-map turn.
-    return row ? { make: () => this.objectModel(row), angle: oahuPropAngle(entranceTurn(r)), scale: lanaiObjectScale(this.world.maps.session.table('MapObject'), row) } : null;
+    return row
+      ? {
+          make: () => this.objectModel(row),
+          angle: oahuPropAngle(entranceTurn(r)),
+          scale: lanaiObjectScale(this.world.maps.session.table('MapObject'), row),
+        }
+      : null;
   }
 
   private objectModel(row: number): THREE.Object3D | null {
@@ -169,11 +238,14 @@ export class LanaiWorldSource implements WorldSource {
     if (!ref) return null;
     if (!this.objects.has(row)) {
       this.objects.set(row, null);
-      void lanaiObjectModels(this.world.maps.session, ref).then((set) => {
-        if (this.disposed || !set.models.size) return;
-        this.objects.set(row, new ModelFactory(set));
-        this.onModel();
-      }, () => {});
+      void lanaiObjectModels(this.world.maps.session, ref).then(
+        (set) => {
+          if (this.disposed || !set.models.size) return;
+          this.objects.set(row, new ModelFactory(set));
+          this.onModel();
+        },
+        () => {},
+      );
       return null;
     }
     return this.objects.get(row)?.instance(ref.entry) ?? null;
@@ -191,5 +263,8 @@ export class LanaiWorldSource implements WorldSource {
 function landCentre(w: LanaiWorld): [number, number] {
   const list = w.entrances();
   if (!list.length) return [LANAI_WORLD_SIZE / 2, LANAI_WORLD_SIZE / 2];
-  return [Math.round(list.reduce((n, r) => n + WE.x(r), 0) / list.length), Math.round(list.reduce((n, r) => n + WE.y(r), 0) / list.length)];
+  return [
+    Math.round(list.reduce((n, r) => n + WE.x(r), 0) / list.length),
+    Math.round(list.reduce((n, r) => n + WE.y(r), 0) / list.length),
+  ];
 }

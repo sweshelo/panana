@@ -48,7 +48,9 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
 
   test('archive A90C8038 and map DB', async () => {
     expect(sha1(await game.dump.readRomfs('A90C8038'))).toBe(golden.archive.sha1);
-    expect(game.dbArchive.entries.map(({ hash, type, size, comp, raw }) => ({ hash, type, size, comp, raw }))).toEqual(golden.archive.entries);
+    expect(game.dbArchive.entries.map(({ hash, type, size, comp, raw }) => ({ hash, type, size, comp, raw }))).toEqual(
+      golden.archive.entries,
+    );
     expect(sha1(game.dbBytes)).toBe(golden.mapdb.sha1);
     expect(game.db.count).toBe(golden.mapdb.count);
   });
@@ -88,7 +90,8 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
         const L = LAYOUTS[k]!;
         for (const r of doc.recs[k] ?? []) {
           const [x, y] = k === 3 ? [r.x, r.y] : recCellPos(r, L);
-          const ident = k === 3 ? r.raw[0x14] : (r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24)) >>> 0;
+          const ident =
+            k === 3 ? r.raw[0x14] : (r.raw[0]! | (r.raw[1]! << 8) | (r.raw[2]! << 16) | (r.raw[3]! << 24)) >>> 0;
           got.push({ section: k, ident, x, y, raw: Buffer.from(r.raw).toString('hex') });
         }
       }
@@ -161,7 +164,9 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     // a point another map refers to disappears
     const b1 = game.doc(game.code.byName('D01B01001')!);
     b1.recs[3] = [];
-    expect(validate(game, b1, 0, docs).some((i) => i.level === 'error' && i.msg.includes('D01B02001 の出入口'))).toBe(true);
+    expect(validate(game, b1, 0, docs).some((i) => i.level === 'error' && i.msg.includes('D01B02001 の出入口'))).toBe(
+      true,
+    );
   }, 30_000); // every map of the dump: about 2 s alone, slower when the whole suite (all the dumps) runs in one process
   test('names: dungeons (mapGroup +0x14 is u16) and maps', () => {
     const m = game.master;
@@ -197,15 +202,34 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const events = await game.eventTable(info.dungeon);
     const ctx = { master: game.master, events, indoor: isIndoor(doc) };
     const s7 = doc.recs[7]!;
-    expect(s7.map((r) => [r.x, r.y])).toEqual([[3250, 3100], [3750, 3100], [2900, 3750], [3250, 3600], [3750, 3600], [4100, 3750], [3500, 4250]]);
+    expect(s7.map((r) => [r.x, r.y])).toEqual([
+      [3250, 3100],
+      [3750, 3100],
+      [2900, 3750],
+      [3250, 3600],
+      [3750, 3600],
+      [4100, 3750],
+      [3500, 4250],
+    ]);
     // the inn's doors (EventObject 0x14, model +0x46 = gimk_02_door_01 / _03); the last record is an exit
     expect(s7.map((r) => recordObjectRow(7, r, ctx))).toEqual([4, 4, 6, 4, 4, 6, OBJ_INVISIBLE]);
     expect(s7.slice(0, 6).every((r) => events!.kind(recEventRow(7, r.raw)) === 0x14)).toBe(true);
     // FUN_001c6280: y -5, angle from +0x16 (+180° when EventObject +0x48 is set: the rooms on the left mirror
     // the ones on the right), 50 along the wall (+0x15 flips the way)
-    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [Math.round((p.angle * 180) / Math.PI), p.ox, p.oy, p.oz];
+    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [
+      Math.round((p.angle * 180) / Math.PI),
+      p.ox,
+      p.oy,
+      p.oz,
+    ];
     expect(s7.map((p) => r(recordPlacement(7, p, doc, game.master, events)))).toEqual([
-      [90, 0, -5, -50], [-90, 0, -5, -50], [180, 50, -5, 0], [90, 0, -5, -50], [-90, 0, -5, -50], [180, -50, -5, 0], [180, 0, -5, 0],
+      [90, 0, -5, -50],
+      [-90, 0, -5, -50],
+      [180, 50, -5, 0],
+      [90, 0, -5, -50],
+      [-90, 0, -5, -50],
+      [180, -50, -5, 0],
+      [180, 0, -5, 0],
     ]);
   });
 
@@ -218,9 +242,17 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
 
   test('objects: stairs and furniture of S10B01AAA (issue #29)', () => {
     const doc = game.doc(game.code.byName('S10B01AAA')!);
-    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [Math.round((p.angle * 180) / Math.PI), Math.round(p.ox), p.oy, Math.round(p.oz)];
+    const r = (p: { angle: number; ox: number; oy: number; oz: number }) => [
+      Math.round((p.angle * 180) / Math.PI),
+      Math.round(p.ox),
+      p.oy,
+      Math.round(p.oz),
+    ];
     // indoor stairs: slot (+0x19 = 8 / 2) and 50 towards +0x15 = 3 (west)
-    expect(doc.recs[3]!.map((p) => r(recordPlacement(3, p, doc, game.master)))).toEqual([[0, 117, 0, 167], [0, 117, 0, -167]]);
+    expect(doc.recs[3]!.map((p) => r(recordPlacement(3, p, doc, game.master)))).toEqual([
+      [0, 117, 0, 167],
+      [0, 117, 0, -167],
+    ]);
     // furniture: direction 2 -> 0°, 0 -> 180°; mapObject 0xBA moves (+30, -20) for direction 2
     const pl = doc.recs[2]!.map((p) => r(recordPlacement(2, p, doc, game.master)));
     expect(pl[1]).toEqual([0, 30, 0, -20]);
@@ -245,7 +277,8 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const orig = parseArchive(await game.dump.readRomfs('56562135'));
     const re = parseArchive(files.get('56562135')!);
     for (const e of orig.entries) {
-      const a = unpackEntry(orig, e), b = unpackEntry(re, re.entries[e.index]!);
+      const a = unpackEntry(orig, e),
+        b = unpackEntry(re, re.entries[e.index]!);
       if (a.name === 'treasureGroup.bin') {
         const t = new GsTable(b.body);
         expect(t.row(row)[4]! | (t.row(row)[5]! << 8)).toBe(28);
@@ -263,7 +296,8 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     const info = g.code.byName('D01B02001')!;
     const doc = g.doc(info);
     const ev = (await g.eventTable(1))!;
-    const rows0 = ev.rows, tg0 = g.master.treasureGroup.rows;
+    const rows0 = ev.rows,
+      tg0 = g.master.treasureGroup.rows;
     expect(ev.capacity).toBe(56);
     const ctx = { doc, docs: [doc], events: ev, master: g.master };
 
@@ -295,10 +329,19 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect(tgBack.rows).toBe(tg0 + 2);
     // index: sorted hashes, one per row, then the {0, 0} terminator
     const idx: number[][] = [];
-    for (let o = tgBack.indexOffset; o < tgBack.data.length; o += 8) idx.push([tgBack.data[o]! | (tgBack.data[o + 1]! << 8) | (tgBack.data[o + 2]! << 16) | (tgBack.data[o + 3]! << 24) >>> 0]);
+    for (let o = tgBack.indexOffset; o < tgBack.data.length; o += 8)
+      idx.push([
+        tgBack.data[o]! |
+          (tgBack.data[o + 1]! << 8) |
+          (tgBack.data[o + 2]! << 16) |
+          ((tgBack.data[o + 3]! << 24) >>> 0),
+      ]);
     expect(idx.length).toBe(tg0 + 3);
     expect(equalBytes(tgBack.row(5), game.master.treasureGroup.row(5))).toBe(true);
-    const db = new MapDb(unpackEntry(parseArchive(files.get('A90C8038')!), parseArchive(files.get('A90C8038')!).entries[g.dbEntry.index]!).body);
+    const db = new MapDb(
+      unpackEntry(parseArchive(files.get('A90C8038')!), parseArchive(files.get('A90C8038')!).entries[g.dbEntry.index]!)
+        .body,
+    );
     expect(loadDoc(db, info).recs[4]!.length).toBe(game.doc(info).recs[4]!.length + 1);
   });
   test('every vanilla event kind has a name', async () => {
@@ -334,36 +377,45 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
   });
 
   const MODOUT = BASE_MOD;
-  test.skipIf(!existsSync(`${MODOUT}/code.ips`))('base MOD (elpulse mod/out): switch patch, switch + gate, package', async () => {
-    const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({ name: n, bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)) }));
-    files.push({ name: 'code.ips', bytes: new Uint8Array(readFileSync(`${MODOUT}/code.ips`)) });
-    const mod = baseModFromFiles('out', files);
-    const g = await Game.load(await openImage(Bun.file(CIA), 'cia'), mod);
-    expect(g.switchVersion).toBe(1);
-    expect(g.master.itemName(34)).toBe('アンテナパワーＳ'); // item MOD's master
-    const info = g.code.byName('D01B02001')!;
-    const doc = g.doc(info);
-    const ev = (await g.eventTable(1))!;
-    const ctx = { doc, docs: [doc], events: ev, master: g.master };
-    const stamp = { type: 'switchgate' as const, gate: undefined as number | undefined };
-    const [s3, i3] = placeStamp(ctx, stamp, 14.5, 10.5); // gate on the tile (14, 10)
-    const gateRow = P3.door(doc.recs[s3]![i3]!.raw);
-    expect(stamp.gate).toBe(gateRow);
-    const [s5, i5] = placeStamp(ctx, stamp, 15.5, 11.5);
-    const swRow = doc.recs[s5]![i5]!.raw[0]!;
-    expect(ev.kind(swRow)).toBe(KIND_SWITCH);
-    expect(ev.table.row(swRow)[8]).toBe(gateRow);
-    expect(validate(g, doc, 0, new Map(), ev).filter((i) => i.level === 'error')).toEqual([]);
-    const pkg = modPackage(g, buildModFiles(g, [doc], [ev], false));
-    expect(pkg.has('exefs/code.ips')).toBe(true);
-    expect(pkg.has('romfs/A90C8038') && pkg.has('romfs/79B881BB') && pkg.has('romfs/56562135')).toBe(true);
-    expect(equalBytes(pkg.get('romfs/56562135')!, mod.romfs.get('56562135')!)).toBe(true); // untouched base file
-    // the code MOD "ドロップ率の天井を撤廃" goes on the base MOD's code
-    expect(dropCapProblem(g.dump.code, 'kahara')).toBeNull(); // the base MOD's code.ips is applied to it
-    const capped = applyIps(game.dump.code, modPackage(g, new Map(), [dropCapPatch('kahara')]).get('exefs/code.ips')!);
-    for (const at of [0x283f7c, 0x283f94, 0x283fac]) expect(u32(capped, at - 0x100000) >>> 24).toBe(0xeb);
-    expect(dropCapProblem(capped, 'kahara')).not.toBeNull();
-  });
+  test.skipIf(!existsSync(`${MODOUT}/code.ips`))(
+    'base MOD (elpulse mod/out): switch patch, switch + gate, package',
+    async () => {
+      const files = readdirSync(`${MODOUT}/romfs`).map((n) => ({
+        name: n,
+        bytes: new Uint8Array(readFileSync(`${MODOUT}/romfs/${n}`)),
+      }));
+      files.push({ name: 'code.ips', bytes: new Uint8Array(readFileSync(`${MODOUT}/code.ips`)) });
+      const mod = baseModFromFiles('out', files);
+      const g = await Game.load(await openImage(Bun.file(CIA), 'cia'), mod);
+      expect(g.switchVersion).toBe(1);
+      expect(g.master.itemName(34)).toBe('アンテナパワーＳ'); // item MOD's master
+      const info = g.code.byName('D01B02001')!;
+      const doc = g.doc(info);
+      const ev = (await g.eventTable(1))!;
+      const ctx = { doc, docs: [doc], events: ev, master: g.master };
+      const stamp = { type: 'switchgate' as const, gate: undefined as number | undefined };
+      const [s3, i3] = placeStamp(ctx, stamp, 14.5, 10.5); // gate on the tile (14, 10)
+      const gateRow = P3.door(doc.recs[s3]![i3]!.raw);
+      expect(stamp.gate).toBe(gateRow);
+      const [s5, i5] = placeStamp(ctx, stamp, 15.5, 11.5);
+      const swRow = doc.recs[s5]![i5]!.raw[0]!;
+      expect(ev.kind(swRow)).toBe(KIND_SWITCH);
+      expect(ev.table.row(swRow)[8]).toBe(gateRow);
+      expect(validate(g, doc, 0, new Map(), ev).filter((i) => i.level === 'error')).toEqual([]);
+      const pkg = modPackage(g, buildModFiles(g, [doc], [ev], false));
+      expect(pkg.has('exefs/code.ips')).toBe(true);
+      expect(pkg.has('romfs/A90C8038') && pkg.has('romfs/79B881BB') && pkg.has('romfs/56562135')).toBe(true);
+      expect(equalBytes(pkg.get('romfs/56562135')!, mod.romfs.get('56562135')!)).toBe(true); // untouched base file
+      // the code MOD "ドロップ率の天井を撤廃" goes on the base MOD's code
+      expect(dropCapProblem(g.dump.code, 'kahara')).toBeNull(); // the base MOD's code.ips is applied to it
+      const capped = applyIps(
+        game.dump.code,
+        modPackage(g, new Map(), [dropCapPatch('kahara')]).get('exefs/code.ips')!,
+      );
+      for (const at of [0x283f7c, 0x283f94, 0x283fac]) expect(u32(capped, at - 0x100000) >>> 24).toBe(0xeb);
+      expect(dropCapProblem(capped, 'kahara')).not.toBeNull();
+    },
+  );
 });
 
 describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
@@ -391,7 +443,9 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     // MonsterDesign 4 charges, 27 sees through walls, 64 runs away (and hops), 1 drops in and flies
     expect([4, 27, 64, 1].map((d) => book.chaseGet(d, 'kind'))).toEqual([3, 6, 4, 1]);
     expect([book.chaseGet(64, 'style'), book.chaseGet(1, 'style'), book.chaseGet(1, 'fly')]).toEqual([2, 1, 1]);
-    expect(['waitMin', 'waitMax', 'walk', 'chase', 'sight'].map((k) => book.chaseGet(0, k as ChaseKey))).toEqual([10, 30, 80, 50, 600]);
+    expect(['waitMin', 'waitMax', 'walk', 'chase', 'sight'].map((k) => book.chaseGet(0, k as ChaseKey))).toEqual([
+      10, 30, 80, 50, 600,
+    ]);
     const saved = book.designData().slice();
     book.chaseSet(0, 'kind', 4);
     book.chaseSet(0, 'sight', 1023);
@@ -406,7 +460,9 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
 
     expect(chaseSpeedProblem(game.dump.code)).toBeNull();
     expect(chaseSpeedPatch({ walk: 150 })).toBeNull(); // the game's value: nothing to patch
-    const ips = modPackage(game, new Map(), [chaseSpeedPatch({ fastDungeon: 1000, chargeTime: 2.5 })!]).get('exefs/code.ips')!;
+    const ips = modPackage(game, new Map(), [chaseSpeedPatch({ fastDungeon: 1000, chargeTime: 2.5 })!]).get(
+      'exefs/code.ips',
+    )!;
     const patched = applyIps(game.dump.code, ips);
     expect(f32(patched, 0x1eda14 - 0x100000)).toBe(1000);
     expect(f32(patched, 0x1eda24 - 0x100000)).toBe(2.5);
@@ -445,7 +501,11 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.group(copy.hash)).toBe(copy);
     expect(g2.master.changedTables()).toEqual(['monsterGroup.bin']);
     const files = buildModFiles(g2, [], [], g2.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const b2 = await again.monsters();
     expect(b2.groups.length).toBe(145);
     expect(b2.group(copy.hash)!.leads).toEqual([{ monster: 15, weight: 3, count: 0 }]);
@@ -474,7 +534,11 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.original(1, 'hpMax')).toBe(before.hp.max);
     expect(book.changed(1)).toBe(true);
     const files = buildModFiles(g2, [], [], g2.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const m2 = (await again.monsters()).monster(1)!;
     expect([m2.hp.max, m2.nextForm, m2.dropSlots[0]!.item]).toEqual([999, 2, 2]);
     expect(m2.skills.map((s) => s.action)).toEqual([before.skills[0]!.action, 328]);
@@ -489,22 +553,39 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     // たからばこぞう, トレジャーメイジ and おばけざいほう share 「箱からとびだした！」
     expect([book.get(84, 'line'), book.lineSharers(84)]).toEqual([0x1b8f, [20, 180]]);
     const own = book.ownLine(84);
-    expect([own, book.get(84, 'line'), book.get(20, 'line'), book.lineSharers(84)]).toEqual([texts.addedBase, own, 0x1b8f, []]);
+    expect([own, book.get(84, 'line'), book.get(20, 'line'), book.lineSharers(84)]).toEqual([
+      texts.addedBase,
+      own,
+      0x1b8f,
+      [],
+    ]);
     expect(texts.text(own)!.text).toBe(texts.text(0x1b8f)!.text);
     texts.setText(own, 'メイジは　箱をやぶった！');
     // まおう's first form has none: a new one
     expect(book.get(44, 'line')).toBe(0);
     const made = book.ownLine(44, 'まだまだ！');
-    expect([made, texts.text(made)!.text, texts.text(made)!.kind]).toEqual([own + 1, 'まだまだ！', texts.text(0x1b4f)!.kind]);
+    expect([made, texts.text(made)!.text, texts.text(made)!.kind]).toEqual([
+      own + 1,
+      'まだまだ！',
+      texts.text(0x1b4f)!.kind,
+    ]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const b2 = await again.monsters();
-    expect([again.master.message(b2.get(84, 'line')), again.master.message(b2.get(20, 'line')), again.master.message(b2.get(44, 'line'))])
-      .toEqual(['メイジは　箱をやぶった！', g2.master.message(0x1b8f), 'まだまだ！']);
+    expect([
+      again.master.message(b2.get(84, 'line')),
+      again.master.message(b2.get(20, 'line')),
+      again.master.message(b2.get(44, 'line')),
+    ]).toEqual(['メイジは　箱をやぶった！', g2.master.message(0x1b8f), 'まだまだ！']);
   });
 
   test('copied monster: a new row, exported with the row patch, read back', async () => {
-    const { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } = await import('../src/game/monsters');
+    const { MONSTER_DESIGN_ARCHIVE, MONSTER_ROWS_PATCH, MONSTER_ROWS_PATCH_ID, VANILLA_MONSTER_ROWS } =
+      await import('../src/game/monsters');
     const { buildPatches } = await import('../src/game/patch');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g2.monsters();
@@ -515,7 +596,20 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(n).toBe(VANILLA_MONSTER_ROWS);
     expect(book.monsters.length).toBe(185);
     const c = book.monster(n)!;
-    expect({ ...c, row: 15, design: src.design }).toEqual(src);
+    expect({ ...c, row: 15, design: src.design, species: src.species, museum: src.museum }).toEqual(src);
+    // a museum entry of its own: the lowest number no row uses as species or museum number
+    expect([c.species, c.museum]).toEqual([72, 72]);
+    expect(src.species).not.toBe(72);
+    expect([book.museumSharers(n), book.freeMuseumNumber()]).toEqual([[], 73]);
+    // another form of a monster goes in its entry (its species and museum number, which differ for some rows)
+    book.setMuseum(n, 116);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([
+      book.monster(116)!.species,
+      book.monster(116)!.museum,
+      [116],
+    ]);
+    book.setMuseum(n);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([72, 72, []]);
     // its own design row and name message: renaming it leaves the original alone
     expect(c.design).not.toBe(src.design);
     expect(book.nameId(n)).toBe(g2.master.texts.addedBase);
@@ -523,24 +617,49 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     book.setName(n, 'コピーおう');
     expect([book.monster(n)!.name, book.monster(15)!.name]).toEqual(['コピーおう', src.name]);
     expect(book.designChanged()).toBe(true);
-    expect([book.added(n), book.changed(n), book.canRemove(n), book.needsRowsPatch()]).toEqual([true, false, true, true]);
+    expect([book.added(n), book.changed(n), book.canRemove(n), book.needsRowsPatch()]).toEqual([
+      true,
+      false,
+      true,
+      true,
+    ]);
     book.set(n, 'hpMax', 1234);
     expect([book.monster(n)!.hp.max, book.monster(15)!.hp.max]).toEqual([1234, src.hp.max]);
     expect(book.users(n)).toEqual({ groups: [], fixes: [], forms: [] });
     // the patch replaces the 5 checks of row < 0xB9
     const built = buildPatches(g2.dump.code, [MONSTER_ROWS_PATCH]).get(MONSTER_ROWS_PATCH_ID)!;
     expect(built.errors).toEqual([]);
-    expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe35800b9, 0xe35100b9, 0xe35100b9, 0xe35100b9, 0xe35100b9]);
+    expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([
+      0xe35800b9, 0xe35100b9, 0xe35100b9, 0xe35100b9, 0xe35100b9,
+    ]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
     const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
-      label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()]]), ips: null,
+      label: 'x',
+      romfs: new Map([
+        ['56562135', files.get('56562135')!],
+        [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()],
+      ]),
+      ips: null,
     });
     const b2 = await again.monsters();
-    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual(['コピーおう', src.name, 1234, false]);
+    expect([
+      b2.monster(n)!.name,
+      b2.monster(15)!.name,
+      b2.monster(n)!.hp.max,
+      b2.added(n),
+      b2.monster(n)!.species,
+      b2.monster(n)!.museum,
+    ]).toEqual(['コピーおう', src.name, 1234, false, 72, 72]);
     expect(b2.monster(n)!.description).toBe(src.description);
     const nameId = book.nameId(n);
     book.removeMonster(n);
-    expect([book.monsters.length, book.needsRowsPatch(), book.designChanged(), g2.master.texts.isAdded(nameId), g2.master.texts.changed()]).toEqual([184, false, false, false, false]);
+    expect([
+      book.monsters.length,
+      book.needsRowsPatch(),
+      book.designChanged(),
+      g2.master.texts.isAdded(nameId),
+      g2.master.texts.changed(),
+    ]).toEqual([184, false, false, false, false]);
     // a vanilla row sharing its name with another form gets one of its own
     const shared = book.monsters.find((m) => book.nameSharers(m.row).length)!;
     const other = book.nameSharers(shared.row)[0]!;
@@ -553,12 +672,23 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const { ActionBook } = await import('../src/game/actions');
     const book = await game.monsters();
     console.log('drop base (BattleParameter +0x10C):', book.battle.dropBase.join(' '));
-    for (const m of book.monsters) for (const d of m.drops) expect(Number.isFinite(book.battle.dropOdds(d.rate))).toBe(true);
+    for (const m of book.monsters)
+      for (const d of m.drops) expect(Number.isFinite(book.battle.dropOdds(d.rate))).toBe(true);
     expect(book.directData?.name).toBe('DirectData');
     const actions = new ActionBook(game.master, (r) => book.monster(r)?.name ?? '', book.directData);
     const motions = new Map<number, number>();
-    for (const m of book.monsters) for (const s of m.skills) { const n = actions.motion(s.action); motions.set(n, (motions.get(n) ?? 0) + 1); }
-    console.log('skill motions:', [...motions].sort((a, b) => b[1] - a[1]).map(([n, c]) => `0x${n.toString(16)}×${c}`).join(' '));
+    for (const m of book.monsters)
+      for (const s of m.skills) {
+        const n = actions.motion(s.action);
+        motions.set(n, (motions.get(n) ?? 0) + 1);
+      }
+    console.log(
+      'skill motions:',
+      [...motions]
+        .sort((a, b) => b[1] - a[1])
+        .map(([n, c]) => `0x${n.toString(16)}×${c}`)
+        .join(' '),
+    );
     const skillAnims = [0x45, 0x46, 0x47, 0x48].reduce((a, n) => a + (motions.get(n) ?? 0), 0);
     const total = [...motions.values()].reduce((a, c) => a + c, 0);
     expect(skillAnims / total).toBeGreaterThan(0.5);
@@ -571,15 +701,21 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const edits = new ActionEdits(g2.master, book.directData, book.directOriginalRows);
     const rows = g2.master.table('actionData.bin').rows;
     const n = edits.copy(509);
-    expect([n, edits.canRemove(n), edits.canRemove(509), g2.master.texts.addedIds().length]).toEqual([rows, true, false, 1]);
+    expect([n, edits.canRemove(n), edits.canRemove(509), g2.master.texts.addedIds().length]).toEqual([
+      rows,
+      true,
+      false,
+      1,
+    ]);
     edits.remove(n);
     expect([g2.master.table('actionData.bin').rows, g2.master.texts.addedIds().length]).toEqual([rows, 0]);
   });
 
-  test('action edits: a copy with its own name and motion (まおう\'s デスブロー as skill D), export and read back', async () => {
+  test("action edits: a copy with its own name and motion (まおう's デスブロー as skill D), export and read back", async () => {
     const { ActionBook, ActionEdits } = await import('../src/game/actions');
     const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
-    const { LAST_GAME_MESSAGE, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } = await import('../src/game/gmsg');
+    const { LAST_GAME_MESSAGE, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } =
+      await import('../src/game/gmsg');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g2.monsters();
     const dd = book.directData!;
@@ -587,15 +723,23 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     const edits = new ActionEdits(g2.master, dd, book.directOriginalRows);
     const before = new ActionBook(g2.master, () => '', dd);
     // 509 デスブロー and 510 まおうけん share performance row 823 (skill B)
-    expect([before.action(509)!.performance, before.action(510)!.performance, before.motion(509)]).toEqual([823, 823, 0x46]);
+    expect([before.action(509)!.performance, before.action(510)!.performance, before.motion(509)]).toEqual([
+      823, 823, 0x46,
+    ]);
     const n = edits.copy(509);
     expect(n).toBe(672);
     expect(edits.added(n)).toBe(true);
     // its own name message, in a message file added to the master past the game's IDs: renaming it leaves デスブロー alone
     const texts = g2.master.texts;
-    expect(Math.max(...[...texts.files, ...texts.readings].map((f) => f.gmsg.last))).toBeLessThanOrEqual(LAST_GAME_MESSAGE);
+    expect(Math.max(...[...texts.files, ...texts.readings].map((f) => f.gmsg.last))).toBeLessThanOrEqual(
+      LAST_GAME_MESSAGE,
+    );
     const nameId = new ActionBook(g2.master, () => '', dd).action(n)!.nameId;
-    expect([nameId, texts.file(nameId)!.name, texts.plain(nameId)]).toEqual([NEW_MESSAGE_FIRST, NEW_MESSAGE_FILE, texts.plain(before.action(509)!.nameId)]);
+    expect([nameId, texts.file(nameId)!.name, texts.plain(nameId)]).toEqual([
+      NEW_MESSAGE_FIRST,
+      NEW_MESSAGE_FILE,
+      texts.plain(before.action(509)!.nameId),
+    ]);
     texts.setText(nameId, texts.text(nameId)!.text.replace('デスブロー', 'デスブローＺ'));
     edits.setMotion(n, 0x48);
     let acts = new ActionBook(g2.master, () => '', dd);
@@ -623,20 +767,38 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(book.directChanged()).toBe(true);
     const files = buildModFiles(g2, [], [], g2.master.changed());
     files.set(MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([
+        ['56562135', files.get('56562135')!],
+        [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!],
+      ]),
+      ips: null,
+    });
     const b2 = await again.monsters();
     const a2 = new ActionBook(again.master, () => '', b2.directData);
-    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([[n, 'デスブローＺ'], [510, 'まおうけん']]);
+    expect(b2.monster(46)!.skills.map((s) => [s.action, s.name])).toEqual([
+      [n, 'デスブローＺ'],
+      [510, 'まおうけん'],
+    ]);
     expect([a2.action(509)!.name, a2.action(510)!.nameId]).toEqual(['デスブロー', own]);
     // the new messages are a type 6 entry of their own; the game's message files are exported as they were
     const arc = parseArchive(files.get('56562135')!);
     const orig = g2.master.archive;
     const added = arc.entries.find((e) => e.hash === NEW_MESSAGE_HASH)!;
     expect([added.type, arc.entries.length]).toEqual([6, orig.entries.length + 1]);
-    console.log(`master: ${orig.entries.length} entries, in hash order: ${orig.entries.every((e, i) => !i || orig.entries[i - 1]!.hash < e.hash)}, the new one at ${arc.entries.indexOf(added)}`);
+    console.log(
+      `master: ${orig.entries.length} entries, in hash order: ${orig.entries.every((e, i) => !i || orig.entries[i - 1]!.hash < e.hash)}, the new one at ${arc.entries.indexOf(added)}`,
+    );
     const again2 = again.master.texts;
     expect(again2.files.find((f) => f.name === NEW_MESSAGE_FILE)!.gmsg.last).toBe(NEW_MESSAGE_FIRST + 1);
-    for (const f of [...texts.files, ...texts.readings]) expect(again2.files.concat(again2.readings).find((x) => x.name === f.name)!.gmsg.roundTrips()).toBe(true);
+    for (const f of [...texts.files, ...texts.readings])
+      expect(
+        again2.files
+          .concat(again2.readings)
+          .find((x) => x.name === f.name)!
+          .gmsg.roundTrips(),
+      ).toBe(true);
     // with that file in the master (like a base MOD's), new messages are appended to it
     expect(again2.addedBase).toBe(NEW_MESSAGE_FIRST + 2);
     expect([a2.motion(n), a2.motion(510), a2.motion(509), a2.action(510)!.element]).toEqual([0x48, 0x47, 0x46, 8]);
@@ -719,7 +881,7 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
       }
   });
 
-  test('another tileset loads that tileset\'s models (tileset switch in the inspector)', () => {
+  test("another tileset loads that tileset's models (tileset switch in the inspector)", () => {
     const m = (name: string) => game.code.byName(name)!;
     const cave = m('D01B02001');
     const tunnel = m('D02B02001');
@@ -748,7 +910,10 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
       indoor++;
       const src = game.tilesetSource(game.mapRef(info, doc));
       if (!archives.has(src.modelArchive))
-        archives.set(src.modelArchive, new Set(parseArchive(await game.dump.readRomfs(src.modelArchive)).entries.map((e) => e.hash >>> 0)));
+        archives.set(
+          src.modelArchive,
+          new Set(parseArchive(await game.dump.readRomfs(src.modelArchive)).entries.map((e) => e.hash >>> 0)),
+        );
       const have = archives.get(src.modelArchive)!;
       const missing = [...new Set(doc.tiles.map((t) => `${t.kind}/${letterIndex(t.letter)}`))].filter((k) => {
         const [kind, letter] = k.split('/').map(Number);
@@ -763,7 +928,8 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
 
 describe.skipIf(!hasCia)('resistance edits and the item book', () => {
   test('copied item: an empty row, its own messages and action, the action patch, read back', async () => {
-    const { ItemBook, ITEM_ACTION_PATCH, ITEM_ACTION_PATCH_ID, needsItemActionPatch } = await import('../src/game/items');
+    const { ItemBook, ITEM_ACTION_PATCH, ITEM_ACTION_PATCH_ID, needsItemActionPatch } =
+      await import('../src/game/items');
     const { buildPatches } = await import('../src/game/patch');
     const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const items = new ItemBook(g2, new Map());
@@ -774,7 +940,13 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     const n = items.copyItem(1);
     expect(n).toBe(34); // the reserved rows after the tools
     const c = items.item(n)!;
-    expect([c.name, c.price, c.category, items.added(n), items.changed(n)]).toEqual([src.name, src.price, src.category, true, true]);
+    expect([c.name, c.price, c.category, items.added(n), items.changed(n)]).toEqual([
+      src.name,
+      src.price,
+      src.category,
+      true,
+      true,
+    ]);
     expect(u16(g2.master.itemData.row(n), 0x28)).toBe(569); // an order number of its own (FUN_001cd548)
     // a copy of キズぐすり's action (#179) using up the new item
     expect(c.action).toBe(672);
@@ -789,13 +961,27 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     // and the battle keeps the added item actions (FUN_00288634: cmp r2, #0x2A0)
     expect(built.blocks[1]!.lines.map((l) => [l.addr, l.before])).toEqual([[0x28863c, 0xe3520e2a]]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const i2 = new ItemBook(again, new Map());
     // (read as the base archive, the row is no longer an added one)
-    expect([i2.item(n)!.name, i2.item(n)!.action, i2.added(n), i2.usesUp(n)]).toEqual(['コピーぐすり', 672, false, 'self']);
+    expect([i2.item(n)!.name, i2.item(n)!.action, i2.added(n), i2.usesUp(n)]).toEqual([
+      'コピーぐすり',
+      672,
+      false,
+      'self',
+    ]);
     // removed: the row, its messages and its action go back
     items.removeItem(n);
-    expect([items.item(n), g2.master.texts.addedIds(), g2.master.table('actionData.bin').rows, g2.master.itemData.row(n)]).toEqual([undefined, [], 672, g2.master.originalRow('itemData.bin', n)]);
+    expect([
+      items.item(n),
+      g2.master.texts.addedIds(),
+      g2.master.table('actionData.bin').rows,
+      g2.master.itemData.row(n),
+    ]).toEqual([undefined, [], 672, g2.master.originalRow('itemData.bin', n)]);
   });
 
   test('resistance: effect tables, edit, export and read back', async () => {
@@ -823,7 +1009,16 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     book.revert(3);
     const m = book.monster(1)!;
     expect(m.resist[0]!.name).toBe('火');
-    expect(ELEMENT_AILMENTS.map((k) => m.resist[k]!.name)).toEqual(['やけど', '氷結', 'かぜっぴき', 'どろだらけ', 'かんでん', '水びたし', 'ブラインド', '呪い']);
+    expect(ELEMENT_AILMENTS.map((k) => m.resist[k]!.name)).toEqual([
+      'やけど',
+      '氷結',
+      'かぜっぴき',
+      'どろだらけ',
+      'かんでん',
+      '水びたし',
+      'ブラインド',
+      '呪い',
+    ]);
     expect(PLAIN_AILMENTS.map((k) => m.resist[k]!.name)).toEqual(['毒', 'マヒ', 'ねむり', '誘惑']);
     expect(m.resist[0]!.value).toBe(-6);
     const before = m.resist.map((r) => r.value);
@@ -837,7 +1032,11 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     expect(book.changed(1)).toBe(true);
     expect(game.master.changedTables()).toEqual(['monsterParameter.bin']);
     const files = buildModFiles(game, [], [], game.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const b2 = await again.monsters();
     expect(b2.monster(1)!.resist[0]!.value).toBe(7);
     expect(b2.monster(1)!.resist[24]!.value).toBe(-9);
@@ -856,7 +1055,11 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     expect([potion.price, potion.sell, potion.rarity]).toEqual([80, 8, 1]);
     expect(potion.shops).toEqual([1, 5, 6, 7, 10, 11, 17]);
     expect(potion.effect).toStartWith('HP 回復');
-    const chests = await chestSources(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const chests = await chestSources(
+      game,
+      (m) => game.doc(m),
+      (d) => game.eventTable(d),
+    );
     expect(chests.size).toBeGreaterThan(20);
     for (const list of chests.values()) for (const c of list) expect(c.chance).toBeGreaterThan(0);
   });
@@ -881,7 +1084,10 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     const stock = (await ShopStock.load(game))!;
     expect(stock.archiveNames()).toEqual(['49A43B63', '1D37838B']);
     const arc = await game.archive('49A43B63');
-    const orig = unpackEntry(arc, arc.entries.find((e) => e.hash === 0x67297400)!).body;
+    const orig = unpackEntry(
+      arc,
+      arc.entries.find((e) => e.hash === 0x67297400)!,
+    ).body;
     expect(equalBytes(stock.build(), orig)).toBe(true);
     expect(stock.buildArchives().size).toBe(0);
     stock.set(0, [...stock.items(0), 480]);
@@ -890,7 +1096,12 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     expect([...files.keys()]).toEqual(['49A43B63', '1D37838B']);
     for (const bytes of files.values()) {
       const a = parseArchive(bytes);
-      const t = new GsTable(unpackEntry(a, a.entries.find((e) => e.hash === 0x67297400)!).body);
+      const t = new GsTable(
+        unpackEntry(
+          a,
+          a.entries.find((e) => e.hash === 0x67297400)!,
+        ).body,
+      );
       expect(parseShopItems(t).get(0)).toContain(480);
       expect(t.rows).toBe(444);
     }
@@ -911,7 +1122,11 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     expect(items.original(2).price).toBe(80);
     expect(game.master.changedTables()).toEqual(['itemData.bin']);
     const files = buildModFiles(game, [], [], game.master.changed());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([['56562135', files.get('56562135')!]]),
+      ips: null,
+    });
     const p2 = new ItemBook(again, new Map()).item(2)!;
     expect([p2.price, p2.sell, p2.rarity, p2.limit, p2.name]).toEqual([999, 8, 4, 20, 'キズぐすり+']);
     items.revert(2);
@@ -955,7 +1170,8 @@ describe.skipIf(!hasCia)('monster and item models', () => {
     const animated = new Map<string, number>();
     const transforms = new Map<number, number>();
     const values = new Set<number>();
-    let models = 0, tracks = 0;
+    let models = 0,
+      tracks = 0;
     for (const m of book.monsters) {
       const x = book.modelOf(m);
       if (!x || seen.has(x.model)) continue;
@@ -984,9 +1200,20 @@ describe.skipIf(!hasCia)('monster and item models', () => {
         animated.set(k, (animated.get(k) ?? 0) + 1);
       }
     }
-    console.log(`material animations: ${models} models, ${tracks} tracks; animated materials:`, [...animated].sort((a, b) => b[1] - a[1]));
-    console.log('texture transform types (0 Maya, 1 Softimage, 2 3ds Max):', Object.fromEntries(transforms), 'animated values:', [...values].sort((a, b) => a - b).join(' '));
-    console.log('material animation elements not played:', [...ignored].sort((a, b) => b[1] - a[1]));
+    console.log(
+      `material animations: ${models} models, ${tracks} tracks; animated materials:`,
+      [...animated].sort((a, b) => b[1] - a[1]),
+    );
+    console.log(
+      'texture transform types (0 Maya, 1 Softimage, 2 3ds Max):',
+      Object.fromEntries(transforms),
+      'animated values:',
+      [...values].sort((a, b) => a - b).join(' '),
+    );
+    console.log(
+      'material animation elements not played:',
+      [...ignored].sort((a, b) => b[1] - a[1]),
+    );
     expect(tracks).toBeGreaterThan(0);
   });
 
@@ -1053,11 +1280,20 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
   test('scripts: the classes of the D01 switches and the rows they complete', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const { eventEntries } = await import('../src/game/eventlist');
-    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const entries = await eventEntries(
+      game,
+      (m) => game.doc(m),
+      (d) => game.eventTable(d),
+    );
     expect(entries.length).toBe(1375);
     const d01 = (row: number) => entries.find((e) => e.dungeon === 1 && e.row === row)!;
     // switch -> door / gate (docs/events.md §5)
-    for (const [row, vtable, target] of [[2, 0x4feca4, 10], [3, 0x4fecc4, 11], [4, 0x4fece4, 13], [9, 0x4fec84, 1]] as const) {
+    for (const [row, vtable, target] of [
+      [2, 0x4feca4, 10],
+      [3, 0x4fecc4, 11],
+      [4, 0x4fece4, 13],
+      [9, 0x4fec84, 1],
+    ] as const) {
       const s = d01(row).scripts;
       expect(s.map((x) => x.cls.vtable)).toEqual([vtable]);
       expect(s[0]!.cls.completes).toEqual([target]);
@@ -1076,10 +1312,18 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
     const { eventEntries } = await import('../src/game/eventlist');
     const { CodeIndex } = await import('../src/game/scripts');
     const { scriptListing, listingText } = await import('../src/game/scriptasm');
-    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const entries = await eventEntries(
+      game,
+      (m) => game.doc(m),
+      (d) => game.eventTable(d),
+    );
     const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
     const index = new CodeIndex(game.code.code, new Set(entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable))));
-    const fns = scriptListing({ code: game.code.code, message: (id) => game.master.texts.plain(id) }, index, e.scripts[0]!.cls);
+    const fns = scriptListing(
+      { code: game.code.code, message: (id) => game.master.texts.plain(id) },
+      index,
+      e.scripts[0]!.cls,
+    );
     expect(fns[0]!.addr).toBe(0x258904); // vtable[1]
     expect(fns[0]!.lines.length).toBe(8); // not cut at the push
     const text = listingText(fns);
@@ -1097,10 +1341,15 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
     const { checkPatch } = await import('../src/game/patchcheck');
     const { codeIps } = await import('../src/export/pack');
     const { applyIps } = await import('../src/rom/ips');
-    const entries = await eventEntries(game, (m) => game.doc(m), (d) => game.eventTable(d));
+    const entries = await eventEntries(
+      game,
+      (m) => game.doc(m),
+      (d) => game.eventTable(d),
+    );
     const e = entries.find((x) => x.dungeon === 1 && x.row === 2)!;
     const vtables = entries.flatMap((x) => x.scripts.map((s) => s.cls.vtable));
-    const source = '@0x2587A4\n  bl both\n@0x2587AC\n  nop\n@cave both\n  push {r4, lr}\n  mov r0, #10\n  bl FUN_0031AA2C\n  mov r0, #11\n  bl FUN_0031AA2C\n  pop {r4, pc}\n';
+    const source =
+      '@0x2587A4\n  bl both\n@0x2587AC\n  nop\n@cave both\n  push {r4, lr}\n  mov r0, #10\n  bl FUN_0031AA2C\n  mov r0, #11\n  bl FUN_0031AA2C\n  pop {r4, pc}\n';
     const patch = { id: 'p', title: 'both', source, enabled: true };
     const built = buildPatches(game.dump.code, [patch]);
     const b = built.get('p')!;
@@ -1110,13 +1359,17 @@ describe.skipIf(!hasCia)('event list (docs/event-list.md)', () => {
     expect(check.runs.map((r) => r.result)).toEqual(['returned', 'returned']);
     expect(check.classes![0]!.completes).toEqual([10, 11]);
     // unbalanced stack is caught
-    const broken = buildPatches(game.dump.code, [{ ...patch, source: '@cave x\n  push {r4, lr}\n  bx lr\n' }]).get('p')!;
+    const broken = buildPatches(game.dump.code, [{ ...patch, source: '@cave x\n  push {r4, lr}\n  bx lr\n' }]).get(
+      'p',
+    )!;
     const run = checkPatch(applyRecords(game.dump.code, patchRecords([broken])), broken).runs[0]!;
     expect(run.result).toBe('stack');
     // export: code.ips holds the patch
     game.codePatches = [patch];
     const ips = codeIps(game)!;
-    expect(equalBytes(applyIps(game.dump.code, ips).subarray(0x1587a4, 0x1587b0), patched.subarray(0x1587a4, 0x1587b0))).toBe(true);
+    expect(
+      equalBytes(applyIps(game.dump.code, ips).subarray(0x1587a4, 0x1587b0), patched.subarray(0x1587a4, 0x1587b0)),
+    ).toBe(true);
     game.codePatches = [];
   });
 
@@ -1150,7 +1403,8 @@ describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
     // Most entrances lead to a map of the table, at a section 3 point of it.
     const known = ents.filter((r) => game.code.byHash(ENT.destMap(r)));
     expect(known.length).toBeGreaterThan(40);
-    for (const r of known) expect(ENT.x(r) >= 0 && ENT.x(r) < WORLD_SIZE && ENT.y(r) >= 0 && ENT.y(r) < WORLD_SIZE).toBe(true);
+    for (const r of known)
+      expect(ENT.x(r) >= 0 && ENT.x(r) < WORLD_SIZE && ENT.y(r) >= 0 && ENT.y(r) < WORLD_SIZE).toBe(true);
     expect(game.worldMaps().map((w) => w.code)).toEqual(['W01', 'W02', 'W99']); // W98 has no entrances
     expect(game.worldPartFlags()?.length).toBe(81);
     const g = game.ground(w01)!;
@@ -1160,7 +1414,9 @@ describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
     expect(coveredParts(g, (p) => flags[p] ?? 0).filter((p) => p > 0).length).toBeGreaterThan(10024);
     // Dungeon exits to W01 name one of its entrances.
     const ids = new Set(ents.map(ENT.id));
-    const exits = game.code.maps.flatMap((m) => (game.doc(m).recs[3] ?? []).filter((p) => P3.destMap(p.raw) === w01.hash));
+    const exits = game.code.maps.flatMap((m) =>
+      (game.doc(m).recs[3] ?? []).filter((p) => P3.destMap(p.raw) === w01.hash),
+    );
     expect(exits.length).toBeGreaterThan(40);
     expect(exits.filter((p) => ids.has(P3.destPoint(p.raw))).length).toBe(exits.length);
   });
@@ -1175,16 +1431,18 @@ describe.skipIf(!hasCia)('world maps (docs/worldmap.md)', () => {
     expect(changed).toBe(1);
     const back = new MapDb(db);
     expect(ENT.x(parseEntrances(back.get(w01.sections[2]!))[0]!)).toBe(ENT.x(ents[0]!) + 1);
-    for (const m of game.code.maps) expect(equalBytes(back.get(m.sections[0]!), game.db.get(m.sections[0]!))).toBe(true);
+    for (const m of game.code.maps)
+      expect(equalBytes(back.get(m.sections[0]!), game.db.get(m.sections[0]!))).toBe(true);
     const files = buildModFiles(game, [], [], false, [[w01.sections[2]!, buildEntrances(moved)]]);
     expect([...files.keys()]).toEqual(['A90C8038']);
   });
 });
 
 describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
-  test('directData / effectData / soundData of the actions, and a skill put together from other monsters\' performances', async () => {
+  test("directData / effectData / soundData of the actions, and a skill put together from other monsters' performances", async () => {
     const { ActionBook, ActionEdits } = await import('../src/game/actions');
-    const { EFFECT_ARCHIVE, decodePerformance, effectLabel, effectModelNames, performanceUses } = await import('../src/game/performance');
+    const { EFFECT_ARCHIVE, decodePerformance, effectLabel, effectModelNames, performanceUses } =
+      await import('../src/game/performance');
     const { MONSTER_DESIGN_ARCHIVE } = await import('../src/game/monsters');
     const g = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     const book = await g.monsters();
@@ -1212,7 +1470,11 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     // (effectData 176 has +0x28, so its slot is 3 frames late)
     const { slotTimeline } = await import('../src/game/performance');
     const tl = (p: number) => slotTimeline(decodePerformance(dd.row(p), p), fx, 60);
-    expect([tl(523).effect, tl(523).se, sounds.name(decodePerformance(dd.row(523), 523).se)]).toEqual([20, 20, 'SE_BTL_SPORE_PAL_S']);
+    expect([tl(523).effect, tl(523).se, sounds.name(decodePerformance(dd.row(523), 523).se)]).toEqual([
+      20,
+      20,
+      'SE_BTL_SPORE_PAL_S',
+    ]);
     expect([tl(524).se, sounds.name(decodePerformance(dd.row(524), 524).se)]).toEqual([3, 'SE_BTL_SPORE_PAL_S_G']);
 
     // 必滅邪眼: まおう's transformation, スベテノオワリ on the target, the effect of デスブロー
@@ -1223,7 +1485,8 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     edits.setSlot(n, 0x1e, 839);
     let a = new ActionBook(g.master, () => '', dd);
     const src = g.master.table('actionData.bin');
-    for (const o of [0, 8, 0x0c, 0x10, 0x14, 0x18, 0x30, 0x34, 0x38]) expect(u32(a.action(n)!.raw, o)).toBe(u32(src.row(509), o));
+    for (const o of [0, 8, 0x0c, 0x10, 0x14, 0x18, 0x30, 0x34, 0x38])
+      expect(u32(a.action(n)!.raw, o)).toBe(u32(src.row(509), o));
     expect(a.action(n)!.nameId).not.toBe(a.action(509)!.nameId);
     expect([a.slot(n, 0x1e), a.slot(n, 0x20), a.slot(n, 0x22)]).toEqual([839, 1009, 1008]);
     expect(dd.rows).toBe(1026);
@@ -1232,7 +1495,9 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     const p = edits.composeSlot(n, 0x1e, 839, { effect: d1007.effect, addEffect: d1007.addEffect, se: d1007.se });
     expect([p, dd.rows]).toEqual([1026, 1027]);
     expect(label(1026)).toBe(`0x48 ${effectLabel(fx.effect(d1007.effect), models)} ${sounds.name(d1007.se)}`);
-    expect(edits.composeSlot(n, 0x1e, 839, { effect: d1007.effect, addEffect: d1007.addEffect, se: d1007.se })).toBe(1026);
+    expect(edits.composeSlot(n, 0x1e, 839, { effect: d1007.effect, addEffect: d1007.addEffect, se: d1007.se })).toBe(
+      1026,
+    );
     // a field of a row only this slot uses changes in place; of a shared row, through a copy
     expect(edits.setSlotField(n, 0x1e, 'anim', 0x47)).toBe(1026);
     expect(dd.rows).toBe(1027);
@@ -1249,19 +1514,44 @@ describe.skipIf(!hasCia)('performances (docs/action-performance.md)', () => {
     edits.setKind(n, 1, 2);
     edits.setTarget(n, 1, 6);
     a = new ActionBook(g.master, () => '', dd);
-    expect([a.action(n)!.kind, a.action(n)!.type, a.action(n)!.side, a.action(n)!.range, (a.action(n)!.w0 & ~0x1ffe) >>> 0]).toEqual([1, 2, 1, 6, (w0 & ~0x1ffe) >>> 0]);
-    expect([a.action(n)!.state, a.action(n)!.strength, a.action(n)!.turns, a.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
+    expect([
+      a.action(n)!.kind,
+      a.action(n)!.type,
+      a.action(n)!.side,
+      a.action(n)!.range,
+      (a.action(n)!.w0 & ~0x1ffe) >>> 0,
+    ]).toEqual([1, 2, 1, 6, (w0 & ~0x1ffe) >>> 0]);
+    expect([a.action(n)!.state, a.action(n)!.strength, a.action(n)!.turns, a.action(n)!.level]).toEqual([
+      10,
+      [1, 4],
+      3,
+      7,
+    ]);
     expect([a.action(509)!.state, a.action(509)!.strength]).toEqual([decodeAction509.state, decodeAction509.strength]);
     // export and read back
     book.setSkills(44, [n]);
     const files = buildModFiles(g, [], [], g.master.changed());
     files.set(MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive());
-    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!]]), ips: null });
+    const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), {
+      label: 'x',
+      romfs: new Map([
+        ['56562135', files.get('56562135')!],
+        [MONSTER_DESIGN_ARCHIVE, files.get(MONSTER_DESIGN_ARCHIVE)!],
+      ]),
+      ips: null,
+    });
     const b2 = await again.monsters();
     const a2 = new ActionBook(again.master, () => '', b2.directData);
-    expect([a2.slot(n, 0x1e), a2.slot(n, 0x20), a2.slot(n, 0x22), b2.directData!.rows]).toEqual([1026, 1027, 1008, 1028]);
+    expect([a2.slot(n, 0x1e), a2.slot(n, 0x20), a2.slot(n, 0x22), b2.directData!.rows]).toEqual([
+      1026, 1027, 1008, 1028,
+    ]);
     expect(b2.monster(44)!.skills.map((s) => s.action)).toEqual([n]);
-    expect([a2.action(n)!.state, a2.action(n)!.strength, a2.action(n)!.turns, a2.action(n)!.level]).toEqual([10, [1, 4], 3, 7]);
+    expect([a2.action(n)!.state, a2.action(n)!.strength, a2.action(n)!.turns, a2.action(n)!.level]).toEqual([
+      10,
+      [1, 4],
+      3,
+      7,
+    ]);
     expect([a2.action(n)!.kind, a2.action(n)!.type, a2.action(n)!.side, a2.action(n)!.range]).toEqual([1, 2, 1, 6]);
     expect(b2.effects.effects.length).toBe(738);
   });

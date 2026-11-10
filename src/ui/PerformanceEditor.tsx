@@ -7,8 +7,26 @@ import type { ActionBook, ActionEdits } from '../game/actions';
 import type { Game } from '../game/game';
 import { SKILL_MOTION, type Monster, type MonsterBook } from '../game/monsters';
 import {
-  ACTION_DIRECTION, ACTION_SLOTS, ALLY_DIRECTIONS, animKeys, directionLabel, MONSTER_DIRECTIONS, PERF, PERF_RANGE, slotTimeline, decodePerformance, effectLabel, loadEffectModels, performanceUses,
-  type EffectModel, type EffectTable, type PerfField, type PerfLayout, type Performance, type PerformanceUse, type SlotTimeline,
+  ACTION_DIRECTION,
+  ACTION_SLOTS,
+  ALLY_DIRECTIONS,
+  animKeys,
+  directionLabel,
+  MONSTER_DIRECTIONS,
+  PERF,
+  PERF_RANGE,
+  slotTimeline,
+  decodePerformance,
+  effectLabel,
+  loadEffectModels,
+  performanceUses,
+  type EffectModel,
+  type EffectTable,
+  type PerfField,
+  type PerfLayout,
+  type Performance,
+  type PerformanceUse,
+  type SlotTimeline,
 } from '../game/performance';
 import type { SoundNames } from '../game/sound';
 import { monsterRef } from '../pages/monsters';
@@ -93,12 +111,17 @@ function rpg2Source(c: Ctx): PerfSource {
     rows: dd.rows,
     perf: (r) => decodePerformance(dd.row(r), r),
     uses: (r) => (c.uses.get(r) ?? []).map((u) => placeLabel(c, u)),
-    effects: c.effects, models: c.models, sounds: c.sounds,
+    effects: c.effects,
+    models: c.models,
+    sounds: c.sounds,
     anim: (a) => animLabel(a, c.keys),
   };
 }
 
-export function perfEffects(c: { effects: EffectTable; models: Map<number, EffectModel> | null }, p: Performance): string {
+export function perfEffects(
+  c: { effects: EffectTable; models: Map<number, EffectModel> | null },
+  p: Performance,
+): string {
   const list = [p.effect, ...c.effects.addEffects(p.addEffect)].filter(Boolean);
   return list.length ? list.map((e) => effectLabel(c.effects.effect(e), c.models)).join(' + ') : 'なし';
 }
@@ -118,7 +141,13 @@ const SLOT_INFO = [
 ].join('\n');
 
 /** The performance slots of an action, with the copy buttons. `onChange` after every edit. */
-export function PerformanceSlots({ session, actions, edits, row, onChange }: {
+export function PerformanceSlots({
+  session,
+  actions,
+  edits,
+  row,
+  onChange,
+}: {
   session: Session;
   actions: ActionBook;
   edits: ActionEdits;
@@ -135,7 +164,17 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
   useEffect(() => setSide(null), [row]);
   const a = actions.action(row);
   if (!book?.directData || !a) return <div className="muted">演出の表 (2713402F) を読めませんでした。</div>;
-  const c: Ctx = { session, book, actions, edits, effects: book.effects, models, sounds, keys, uses: performanceUses(game.master) };
+  const c: Ctx = {
+    session,
+    book,
+    actions,
+    edits,
+    effects: book.effects,
+    models,
+    sounds,
+    keys,
+    uses: performanceUses(game.master),
+  };
   const src = rpg2Source(c);
   const dd = book.directData;
   const apply = (f: () => void): void => {
@@ -148,8 +187,12 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
     book.reload();
     onChange();
   };
-  const slots = ACTION_SLOTS.filter((s) => a.raw.length >= s.offset + 2 && (all || s.main || actions.slot(row, s.offset)));
-  const hidden = ACTION_SLOTS.filter((s) => !s.main && a.raw.length >= s.offset + 2 && !actions.slot(row, s.offset)).length;
+  const slots = ACTION_SLOTS.filter(
+    (s) => a.raw.length >= s.offset + 2 && (all || s.main || actions.slot(row, s.offset)),
+  );
+  const hidden = ACTION_SLOTS.filter(
+    (s) => !s.main && a.raw.length >= s.offset + 2 && !actions.slot(row, s.offset),
+  ).length;
   const direction = a.raw.length >= ACTION_DIRECTION + 2 ? u16(a.raw, ACTION_DIRECTION) : 0;
   const refs = actions.refsOf(row);
   // Whose table +0x1C is read from: the monsters' unless items use the action (a copied skill has no users yet).
@@ -159,38 +202,116 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
     <div className="perf-slots">
       <table className="enc-table perf-table">
         <thead>
-          <tr><th>枠<InfoTip text={SLOT_INFO} /></th><th>演出の行</th><th>モーション</th><th>エフェクト</th><th>SE</th><th>追加のエフェクト</th><th></th></tr>
+          <tr>
+            <th>
+              枠<InfoTip text={SLOT_INFO} />
+            </th>
+            <th>演出の行</th>
+            <th>モーション</th>
+            <th>エフェクト</th>
+            <th>SE</th>
+            <th>追加のエフェクト</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {slots.map((s) => {
             const p = actions.slot(row, s.offset);
             const perf = p > 0 && p < dd.rows ? decodePerformance(dd.row(p), p) : null;
             const editable = edits.canEditSlot(row, s.offset);
-            const others = (c.uses.get(p) ?? []).filter((u) => !(u.kind === 'action' && u.action === row && u.slot === s.offset));
-            const set = (field: 'anim' | 'effect' | 'se' | 'addEffect', v: number): void => apply(() => edits.setSlotField(row, s.offset, field, v));
+            const others = (c.uses.get(p) ?? []).filter(
+              (u) => !(u.kind === 'action' && u.action === row && u.slot === s.offset),
+            );
+            const set = (field: 'anim' | 'effect' | 'se' | 'addEffect', v: number): void =>
+              apply(() => edits.setSlotField(row, s.offset, field, v));
             return (
               <tr key={s.offset}>
-                <td className="with-info">{s.label}<InfoTip text={s.info} /></td>
-                <td>
-                  {perf ? <span title={others.length ? `ほかに使っている所:\n${others.slice(0, 8).map((u) => placeLabel(c, u)).join('\n')}` : 'この枠だけが使う行'}>{`D${p}`}{others.length ? <span className="muted small">{` (共有 ${others.length})`}</span> : null}</span> : <span className="muted">なし</span>}
+                <td className="with-info">
+                  {s.label}
+                  <InfoTip text={s.info} />
                 </td>
                 <td>
-                  {perf && editable
-                    ? <MotionSelect value={perf.anim} groups={rpg2Motions(keys, perf.anim)} label={(n) => animLabel(n, keys)} onChange={(v) => set('anim', v)} />
-                    : <span className="muted">{perf ? animLabel(perf.anim, keys) : ''}</span>}
+                  {perf ? (
+                    <span
+                      title={
+                        others.length
+                          ? `ほかに使っている所:\n${others
+                              .slice(0, 8)
+                              .map((u) => placeLabel(c, u))
+                              .join('\n')}`
+                          : 'この枠だけが使う行'
+                      }
+                    >
+                      {`D${p}`}
+                      {others.length ? <span className="muted small">{` (共有 ${others.length})`}</span> : null}
+                    </span>
+                  ) : (
+                    <span className="muted">なし</span>
+                  )}
                 </td>
-                <td>{perf && <EffectButton src={src} value={perf.effect} disabled={!editable} onChange={(v) => set('effect', v)} />}</td>
-                <td>{perf && sounds && (editable
-                  ? <SoundButton game={game} sounds={sounds} value={perf.se} kind="se" title="演出の SE を選ぶ" onChange={(v) => set('se', v)} />
-                  : <span className="muted">{sounds.label(perf.se)}</span>)}</td>
                 <td>
-                  {perf && (editable
-                    ? <AddEffectSelect src={src} value={perf.addEffect} onChange={(v) => set('addEffect', v)} />
-                    : <span className="muted">{perf.addEffect || ''}</span>)}
+                  {perf && editable ? (
+                    <MotionSelect
+                      value={perf.anim}
+                      groups={rpg2Motions(keys, perf.anim)}
+                      label={(n) => animLabel(n, keys)}
+                      onChange={(v) => set('anim', v)}
+                    />
+                  ) : (
+                    <span className="muted">{perf ? animLabel(perf.anim, keys) : ''}</span>
+                  )}
+                </td>
+                <td>
+                  {perf && (
+                    <EffectButton
+                      src={src}
+                      value={perf.effect}
+                      disabled={!editable}
+                      onChange={(v) => set('effect', v)}
+                    />
+                  )}
+                </td>
+                <td>
+                  {perf &&
+                    sounds &&
+                    (editable ? (
+                      <SoundButton
+                        game={game}
+                        sounds={sounds}
+                        value={perf.se}
+                        kind="se"
+                        title="演出の SE を選ぶ"
+                        onChange={(v) => set('se', v)}
+                      />
+                    ) : (
+                      <span className="muted">{sounds.label(perf.se)}</span>
+                    ))}
+                </td>
+                <td>
+                  {perf &&
+                    (editable ? (
+                      <AddEffectSelect src={src} value={perf.addEffect} onChange={(v) => set('addEffect', v)} />
+                    ) : (
+                      <span className="muted">{perf.addEffect || ''}</span>
+                    ))}
                 </td>
                 <td className="nowrap">
-                  <button className="small" title="ほかのワザ・変身の演出からこの枠の演出を選びます" onClick={() => setPicking(s.offset)}>演出を選ぶ…</button>
-                  {p > 0 && <button className="small" title="この枠を空にします" onClick={() => apply(() => edits.setSlot(row, s.offset, 0))}>×</button>}
+                  <button
+                    className="small"
+                    title="ほかのワザ・変身の演出からこの枠の演出を選びます"
+                    onClick={() => setPicking(s.offset)}
+                  >
+                    演出を選ぶ…
+                  </button>
+                  {p > 0 && (
+                    <button
+                      className="small"
+                      title="この枠を空にします"
+                      onClick={() => apply(() => edits.setSlot(row, s.offset, 0))}
+                    >
+                      ×
+                    </button>
+                  )}
                 </td>
               </tr>
             );
@@ -198,51 +319,112 @@ export function PerformanceSlots({ session, actions, edits, row, onChange }: {
         </tbody>
       </table>
       <div className="row small">
-        {hidden > 0 && <label><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />{`空の枠も出す (${hidden})`}</label>}
+        {hidden > 0 && (
+          <label>
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+            {`空の枠も出す (${hidden})`}
+          </label>
+        )}
         <span className="with-info">
           {'演出の進行 (+0x1C)'}
           <InfoTip text={DIRECTION_INFO} />
         </span>
-        <select value={monsterSide ? 'm' : 'a'} title="+0x1C の意味は、使う側がモンスターか電波人間かで変わります" onChange={(e) => setSide(e.target.value === 'm' ? 'monster' : 'ally')}>
+        <select
+          value={monsterSide ? 'm' : 'a'}
+          title="+0x1C の意味は、使う側がモンスターか電波人間かで変わります"
+          onChange={(e) => setSide(e.target.value === 'm' ? 'monster' : 'ally')}
+        >
           <option value="m">モンスターが使う</option>
           <option value="a">電波人間が使う</option>
         </select>
-        <select value={direction} className={direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length ? 'invalid' : ''}
-          onChange={(e) => apply(() => edits.setDirection(row, Number(e.target.value)))}>
-          {(monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).map((label, i) => <option key={i} value={i}>{label}</option>)}
-          {direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length && <option value={direction}>{directionLabel(direction, monsterSide)}</option>}
+        <select
+          value={direction}
+          className={direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length ? 'invalid' : ''}
+          onChange={(e) => apply(() => edits.setDirection(row, Number(e.target.value)))}
+        >
+          {(monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).map((label, i) => (
+            <option key={i} value={i}>
+              {label}
+            </option>
+          ))}
+          {direction >= (monsterSide ? MONSTER_DIRECTIONS : ALLY_DIRECTIONS).length && (
+            <option value={direction}>{directionLabel(direction, monsterSide)}</option>
+          )}
         </select>
-        <button title="ほかのアクションの効果 (種類・範囲・属性・量・状態・威力・結果のメッセージ) をこのアクションに写します。名前と演出はそのままです" onClick={() => setCopying('ability')}>効果を写す…</button>
-        <button title="ほかのアクションの演出 (すべての枠と +0x1C) をこのアクションに写します" onClick={() => setCopying('performance')}>演出を写す…</button>
+        <button
+          title="ほかのアクションの効果 (種類・範囲・属性・量・状態・威力・結果のメッセージ) をこのアクションに写します。名前と演出はそのままです"
+          onClick={() => setCopying('ability')}
+        >
+          効果を写す…
+        </button>
+        <button
+          title="ほかのアクションの演出 (すべての枠と +0x1C) をこのアクションに写します"
+          onClick={() => setCopying('performance')}
+        >
+          演出を写す…
+        </button>
       </div>
-      {mixed && <div className="issue warn">⚠ モンスターとアイテムの両方が使うアクションです。+0x1C は使う側ごとに別の意味で読まれます。</div>}
+      {mixed && (
+        <div className="issue warn">
+          ⚠ モンスターとアイテムの両方が使うアクションです。+0x1C は使う側ごとに別の意味で読まれます。
+        </div>
+      )}
       {picking !== null && (
-        <PerformancePicker src={src} current={actions.slot(row, picking)} title={`${ACTION_SLOTS.find((s) => s.offset === picking)?.label ?? ''}の演出を選ぶ`}
-          onClose={() => setPicking(null)} onPick={(p) => { const o = picking; setPicking(null); apply(() => edits.setSlot(row, o, p)); }} />
+        <PerformancePicker
+          src={src}
+          current={actions.slot(row, picking)}
+          title={`${ACTION_SLOTS.find((s) => s.offset === picking)?.label ?? ''}の演出を選ぶ`}
+          onClose={() => setPicking(null)}
+          onPick={(p) => {
+            const o = picking;
+            setPicking(null);
+            apply(() => edits.setSlot(row, o, p));
+          }}
+        />
       )}
       {copying && (
-        <ActionPicker actions={actions} title={copying === 'ability' ? '効果を写す元のアクション' : '演出を写す元のアクション'}
+        <ActionPicker
+          actions={actions}
+          title={copying === 'ability' ? '効果を写す元のアクション' : '演出を写す元のアクション'}
           onClose={() => setCopying(null)}
-          onPick={(from) => { const k = copying; setCopying(null); apply(() => (k === 'ability' ? edits.copyAbility(row, from) : edits.copyPerformance(row, from))); }} />
+          onPick={(from) => {
+            const k = copying;
+            setCopying(null);
+            apply(() => (k === 'ability' ? edits.copyAbility(row, from) : edits.copyPerformance(row, from)));
+          }}
+        />
       )}
     </div>
   );
 }
 
 /** A motion (animData row) from groups of rows (the monsters', the 電波人間's). */
-export function MotionSelect({ value, groups, label, onChange }: {
+export function MotionSelect({
+  value,
+  groups,
+  label,
+  onChange,
+}: {
   value: number;
   groups: { label: string; rows: number[] }[];
   label: (anim: number) => string;
   onChange: (v: number) => void;
 }): ReactNode {
-  const opt = (n: number): ReactNode => <option key={n} value={n}>{label(n)}</option>;
+  const opt = (n: number): ReactNode => (
+    <option key={n} value={n}>
+      {label(n)}
+    </option>
+  );
   const listed = groups.some((g) => g.rows.includes(value));
   return (
     <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
       {opt(0)}
       {value > 0 && !listed && opt(value)}
-      {groups.map((g) => <optgroup key={g.label} label={g.label}>{g.rows.map(opt)}</optgroup>)}
+      {groups.map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.rows.map(opt)}
+        </optgroup>
+      ))}
     </select>
   );
 }
@@ -257,31 +439,86 @@ function rpg2Motions(keys: string[], value: number): { label: string; rows: numb
 }
 
 /** A row of directDataAddEffect (the effects added to the main one). */
-export function AddEffectSelect({ src, value, onChange }: { src: Pick<PerfSource, 'effects' | 'models'>; value: number; onChange: (v: number) => void }): ReactNode {
+export function AddEffectSelect({
+  src,
+  value,
+  onChange,
+}: {
+  src: Pick<PerfSource, 'effects' | 'models'>;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactNode {
   const { effects, models } = src;
   return (
-    <select value={value} title={value ? effects.addEffects(value).map((x) => effectLabel(effects.effect(x), models)).join(' + ') : ''} onChange={(e) => onChange(Number(e.target.value))}>
+    <select
+      value={value}
+      title={
+        value
+          ? effects
+              .addEffects(value)
+              .map((x) => effectLabel(effects.effect(x), models))
+              .join(' + ')
+          : ''
+      }
+      onChange={(e) => onChange(Number(e.target.value))}
+    >
       {Array.from({ length: Math.max(effects.addRows, value + 1) }, (_, i) => (
-        <option key={i} value={i}>{i ? `${i}: ${effects.addEffects(i).map((x) => effectLabel(effects.effect(x), models)).join(' + ')}` : 'なし'}</option>
+        <option key={i} value={i}>
+          {i
+            ? `${i}: ${effects
+                .addEffects(i)
+                .map((x) => effectLabel(effects.effect(x), models))
+                .join(' + ')}`
+            : 'なし'}
+        </option>
       ))}
     </select>
   );
 }
 
-export function EffectButton({ src, value, disabled, onChange }: { src: PerfSource; value: number; disabled: boolean; onChange: (v: number) => void }): ReactNode {
+export function EffectButton({
+  src,
+  value,
+  disabled,
+  onChange,
+}: {
+  src: PerfSource;
+  value: number;
+  disabled: boolean;
+  onChange: (v: number) => void;
+}): ReactNode {
   const [open, setOpen] = useState(false);
   const label = effectLabel(src.effects.effect(value), src.models);
   if (disabled) return <span className="muted">{label}</span>;
   return (
     <>
-      <button type="button" className="map-button" title="クリックでエフェクトを選ぶ" onClick={() => setOpen(true)}>{label}<span className="muted"> ▾</span></button>
-      {open && <EffectPicker src={src} current={value} onClose={() => setOpen(false)} onPick={(v) => { setOpen(false); if (v !== value) onChange(v); }} />}
+      <button type="button" className="map-button" title="クリックでエフェクトを選ぶ" onClick={() => setOpen(true)}>
+        {label}
+        <span className="muted"> ▾</span>
+      </button>
+      {open && (
+        <EffectPicker
+          src={src}
+          current={value}
+          onClose={() => setOpen(false)}
+          onPick={(v) => {
+            setOpen(false);
+            if (v !== value) onChange(v);
+          }}
+        />
+      )}
     </>
   );
 }
 
 /** Every directData row, searchable by what uses it (actions, their monsters, transformations) and what it plays. */
-export function PerformancePicker({ src, current, title, onPick, onClose }: {
+export function PerformancePicker({
+  src,
+  current,
+  title,
+  onPick,
+  onClose,
+}: {
   src: PerfSource;
   current: number;
   title: string;
@@ -300,23 +537,45 @@ export function PerformancePicker({ src, current, title, onPick, onClose }: {
     const uses = list.sort((x, y) => Number(!!q && y.includes(q)) - Number(!!q && x.includes(q)));
     const fx = perfEffects(src, p);
     const se = src.sounds?.name(p.se) ?? '';
-    if (q && String(r) !== q && !uses.some((u) => u.includes(q)) && !fx.includes(q) && !se.includes(q.toUpperCase())) continue;
+    if (q && String(r) !== q && !uses.some((u) => u.includes(q)) && !fx.includes(q) && !se.includes(q.toUpperCase()))
+      continue;
     shown.push({ p, uses, fx, se });
   }
   return (
     <Dialog title={title} onClose={onClose}>
       <div className="row">
-        <input type="search" className="picker-search" autoFocus placeholder="ワザ・モンスター・エフェクト・SE の名前、行番号で絞り込み" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label><input type="checkbox" checked={used} onChange={(e) => setUsed(e.target.checked)} />使われている行だけ</label>
+        <input
+          type="search"
+          className="picker-search"
+          autoFocus
+          placeholder="ワザ・モンスター・エフェクト・SE の名前、行番号で絞り込み"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label>
+          <input type="checkbox" checked={used} onChange={(e) => setUsed(e.target.checked)} />
+          使われている行だけ
+        </label>
       </div>
       <div className="picker-list">
         <table className="book-table perf-pick">
-          <thead><tr><th>#</th><th>使っている所</th><th>モーション</th><th>エフェクト</th><th>SE</th></tr></thead>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>使っている所</th>
+              <th>モーション</th>
+              <th>エフェクト</th>
+              <th>SE</th>
+            </tr>
+          </thead>
           <tbody>
             {shown.slice(0, 400).map(({ p, uses, fx, se }) => (
               <tr key={p.row} className={p.row === current ? 'active current' : ''} onClick={() => onPick(p.row)}>
                 <td className="num muted">{`D${p.row}`}</td>
-                <td className="small">{uses.slice(0, 3).join(' / ') || <span className="muted">(なし)</span>}{uses.length > 3 ? <span className="muted">{` ほか ${uses.length - 3}`}</span> : null}</td>
+                <td className="small">
+                  {uses.slice(0, 3).join(' / ') || <span className="muted">(なし)</span>}
+                  {uses.length > 3 ? <span className="muted">{` ほか ${uses.length - 3}`}</span> : null}
+                </td>
                 <td className="small">{src.anim(p.anim)}</td>
                 <td className="small mono">{fx}</td>
                 <td className="small mono">{se}</td>
@@ -324,7 +583,9 @@ export function PerformancePicker({ src, current, title, onPick, onClose }: {
             ))}
           </tbody>
         </table>
-        {shown.length > 400 && <div className="muted small">{`ほか ${shown.length - 400} 件 (絞り込んでください)`}</div>}
+        {shown.length > 400 && (
+          <div className="muted small">{`ほか ${shown.length - 400} 件 (絞り込んでください)`}</div>
+        )}
         {!shown.length && <div className="muted">見つかりません</div>}
       </div>
     </Dialog>
@@ -332,7 +593,17 @@ export function PerformancePicker({ src, current, title, onPick, onClose }: {
 }
 
 /** Every effectData row: the effect model's name (8756A407), the bone, and the performances that use it. */
-function EffectPicker({ src, current, onPick, onClose }: { src: PerfSource; current: number; onPick: (row: number) => void; onClose: () => void }): ReactNode {
+function EffectPicker({
+  src,
+  current,
+  onPick,
+  onClose,
+}: {
+  src: PerfSource;
+  current: number;
+  onPick: (row: number) => void;
+  onClose: () => void;
+}): ReactNode {
   const [query, setQuery] = useState('');
   const users = useMemo(() => {
     const m = new Map<number, number[]>();
@@ -352,14 +623,33 @@ function EffectPicker({ src, current, onPick, onClose }: { src: PerfSource; curr
   return (
     <Dialog title="エフェクトを選ぶ" onClose={onClose}>
       <div className="row">
-        <input type="search" className="picker-search" autoFocus placeholder="エフェクト名 (fx_…)・ボーン・使うワザで絞り込み" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input
+          type="search"
+          className="picker-search"
+          autoFocus
+          placeholder="エフェクト名 (fx_…)・ボーン・使うワザで絞り込み"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <InfoTip text="effectData の行です。見た目 (パーティクル) はまだ表示できません。名前と、使っているワザで選んでください。" />
       </div>
       <div className="picker-list">
         <table className="book-table">
-          <thead><tr><th>#</th><th>エフェクト</th><th>エミッター</th><th>使うワザ</th></tr></thead>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>エフェクト</th>
+              <th>エミッター</th>
+              <th>使うワザ</th>
+            </tr>
+          </thead>
           <tbody>
-            <tr className={current === 0 ? 'active current' : ''} onClick={() => onPick(0)}><td className="num muted">0</td><td className="muted">なし</td><td /><td /></tr>
+            <tr className={current === 0 ? 'active current' : ''} onClick={() => onPick(0)}>
+              <td className="num muted">0</td>
+              <td className="muted">なし</td>
+              <td />
+              <td />
+            </tr>
             {shown.slice(0, 400).map((e) => {
               const acts = (users.get(e.row) ?? []).flatMap((p) => src.uses(p));
               return (
@@ -367,13 +657,18 @@ function EffectPicker({ src, current, onPick, onClose }: { src: PerfSource; curr
                   <td className="num muted">{e.row}</td>
                   <td className="mono small">{effectLabel(e, src.models)}</td>
                   <td className="num muted">{src.models?.get(e.model)?.emitters.length ?? ''}</td>
-                  <td className="small muted">{acts.slice(0, 2).join(' / ')}{acts.length > 2 ? ` ほか ${acts.length - 2}` : ''}</td>
+                  <td className="small muted">
+                    {acts.slice(0, 2).join(' / ')}
+                    {acts.length > 2 ? ` ほか ${acts.length - 2}` : ''}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {shown.length > 400 && <div className="muted small">{`ほか ${shown.length - 400} 件 (絞り込んでください)`}</div>}
+        {shown.length > 400 && (
+          <div className="muted small">{`ほか ${shown.length - 400} 件 (絞り込んでください)`}</div>
+        )}
       </div>
     </Dialog>
   );
@@ -381,14 +676,26 @@ function EffectPicker({ src, current, onPick, onClose }: { src: PerfSource; curr
 
 /** The phases of an action's performance: the user's slot on the user, then the target's and the extra on the target. */
 /** A phase of the preview: directData row `p` played on `who` (null = the stand-in for 電波人間), or null. */
-export function performancePhase(session: Session, p: number, who: Monster | null, place: string, models: Map<number, EffectModel> | null): PreviewPhase | null {
+export function performancePhase(
+  session: Session,
+  p: number,
+  who: Monster | null,
+  place: string,
+  models: Map<number, EffectModel> | null,
+): PreviewPhase | null {
   const { game, book, sounds } = session;
   if (!book?.directData || !p || p >= book.directData.rows) return null;
   const keys = animKeys(game.master);
   const d = decodePerformance(book.directData.row(p), p);
-  const effects: PreviewEffect[] = [d.effect, ...book.effects.addEffects(d.addEffect)].map((e) => book.effects.effect(e)).filter((e) => !!e).map((e) => ({
-    label: effectLabel(e, models), bone: e.bone, offset: e.offset, length: e.length || 60,
-  }));
+  const effects: PreviewEffect[] = [d.effect, ...book.effects.addEffects(d.addEffect)]
+    .map((e) => book.effects.effect(e))
+    .filter((e) => !!e)
+    .map((e) => ({
+      label: effectLabel(e, models),
+      bone: e.bone,
+      offset: e.offset,
+      length: e.length || 60,
+    }));
   const lead = who ? book.skillLead(who) : [];
   const index = sounds?.index(d.se) ?? null;
   return {
@@ -397,20 +704,38 @@ export function performancePhase(session: Session, p: number, who: Monster | nul
     anim: keys[d.anim] ?? '',
     timeline: (mf) => slotTimeline(d, book.effects, mf, lead),
     effects,
-    sound: index === null ? null : () => void soundPlayer.play(`perf-se:${index}`, async () => (await game.soundRenderer()).render(index)),
+    sound:
+      index === null
+        ? null
+        : () => void soundPlayer.play(`perf-se:${index}`, async () => (await game.soundRenderer()).render(index)),
   };
 }
 
-export function previewPhases(session: Session, actions: ActionBook, row: number, user: Monster | null, target: Monster | null,
-  models: Map<number, EffectModel> | null): PreviewPhase[] {
+export function previewPhases(
+  session: Session,
+  actions: ActionBook,
+  row: number,
+  user: Monster | null,
+  target: Monster | null,
+  models: Map<number, EffectModel> | null,
+): PreviewPhase[] {
   const phase = (offset: number, who: Monster | null): PreviewPhase | null =>
-    performancePhase(session, actions.slot(row, offset), who, ACTION_SLOTS.find((s) => s.offset === offset)!.label, models);
+    performancePhase(
+      session,
+      actions.slot(row, offset),
+      who,
+      ACTION_SLOTS.find((s) => s.offset === offset)!.label,
+      models,
+    );
   return [phase(0x1e, user), phase(0x20, target), phase(0x22, target)].filter((p): p is PreviewPhase => !!p);
 }
 
 /** The slots the preview plays, in order (those with a performance row). */
 export function previewSlots(actions: ActionBook, row: number, rows: number): number[] {
-  return [0x1e, 0x20, 0x22].filter((o) => { const p = actions.slot(row, o); return p > 0 && p < rows; });
+  return [0x1e, 0x20, 0x22].filter((o) => {
+    const p = actions.slot(row, o);
+    return p > 0 && p < rows;
+  });
 }
 
 const PREVIEW_INFO = [
@@ -420,7 +745,14 @@ const PREVIEW_INFO = [
 ].join('\n');
 
 /** Preview of an action's performance on the chosen monsters, with the timeline of its slots (editable). */
-export function ActionPreview({ session, actions, edits, row, users, onChange }: {
+export function ActionPreview({
+  session,
+  actions,
+  edits,
+  row,
+  users,
+  onChange,
+}: {
   session: Session;
   actions: ActionBook;
   edits: ActionEdits;
@@ -442,11 +774,20 @@ export function ActionPreview({ session, actions, edits, row, users, onChange }:
     viewer.onFrame = (p, f) => setAt([p, f]);
   }, [viewer]);
   const user = book?.monster(userRow) ?? null;
-  const target = targetRow ? book?.monster(targetRow) ?? null : null;
+  const target = targetRow ? (book?.monster(targetRow) ?? null) : null;
   const dd = book?.directData;
   // Reload when the action's slots or their rows change.
-  const sig = [row, userRow, targetRow, !!models, ...ACTION_SLOTS.map((s) => actions.slot(row, s.offset)),
-    ...[0x1e, 0x20, 0x22].map((o) => { const p = actions.slot(row, o); return dd && p && p < dd.rows ? [...dd.row(p)].join('.') : ''; })].join(',');
+  const sig = [
+    row,
+    userRow,
+    targetRow,
+    !!models,
+    ...ACTION_SLOTS.map((s) => actions.slot(row, s.offset)),
+    ...[0x1e, 0x20, 0x22].map((o) => {
+      const p = actions.slot(row, o);
+      return dd && p && p < dd.rows ? [...dd.row(p)].join('.') : '';
+    }),
+  ].join(',');
   const phases = useMemo(() => previewPhases(session, actions, row, user, target, models), [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phases depend on
   useEffect(() => {
     setTimings([]);
@@ -463,19 +804,53 @@ export function ActionPreview({ session, actions, edits, row, users, onChange }:
   return (
     <div className="perf-preview">
       <div className="row small">
-        <span className="with-info">{'プレビュー'}<InfoTip text={PREVIEW_INFO} /></span>
-        <label>{'使う側 '}{who(user, () => setPicking('user'), '使う側')}</label>
-        <label>{'対象 '}{who(target, () => setPicking('target'), '対象')}</label>
+        <span className="with-info">
+          {'プレビュー'}
+          <InfoTip text={PREVIEW_INFO} />
+        </span>
+        <label>
+          {'使う側 '}
+          {who(user, () => setPicking('user'), '使う側')}
+        </label>
+        <label>
+          {'対象 '}
+          {who(target, () => setPicking('target'), '対象')}
+        </label>
       </div>
       {picking && book && (
-        <MonsterPicker session={session} book={book} current={picking === 'user' ? userRow : targetRow} title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
-          choices={ally} groups={picking === 'user' && users.length ? [{ label: 'このワザを持つモンスター', rows: users.map((m) => m.row) }] : []}
-          onClose={() => setPicking(null)} onPick={(r) => { if (picking === 'user') setUserRow(r); else setTargetRow(r); setPicking(null); }} />
+        <MonsterPicker
+          session={session}
+          book={book}
+          current={picking === 'user' ? userRow : targetRow}
+          title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
+          choices={ally}
+          groups={
+            picking === 'user' && users.length
+              ? [{ label: 'このワザを持つモンスター', rows: users.map((m) => m.row) }]
+              : []
+          }
+          onClose={() => setPicking(null)}
+          onPick={(r) => {
+            if (picking === 'user') setUserRow(r);
+            else setTargetRow(r);
+            setPicking(null);
+          }}
+        />
       )}
       <Dom node={viewer.el} />
       {dd && (
-        <PerformanceTimeline session={session} actions={actions} edits={edits} row={row} slots={slots} phases={phases}
-          timings={timings} at={at} onSeek={(p, f) => viewer.showAt(p, f)} onChange={onChange} />
+        <PerformanceTimeline
+          session={session}
+          actions={actions}
+          edits={edits}
+          row={row}
+          slots={slots}
+          phases={phases}
+          timings={timings}
+          at={at}
+          onSeek={(p, f) => viewer.showAt(p, f)}
+          onChange={onChange}
+        />
       )}
     </div>
   );
@@ -489,7 +864,11 @@ const TIMELINE_INFO = [
 ].join('\n');
 
 /** Where the markers of a slot can be dragged: the field and how a frame maps to its value. */
-const DRAG: Partial<Record<'se' | 'shake' | 'motion', PerfField>> = { se: 'seDelay', shake: 'shakeDelay', motion: 'motionStart' };
+const DRAG: Partial<Record<'se' | 'shake' | 'motion', PerfField>> = {
+  se: 'seDelay',
+  shake: 'shakeDelay',
+  motion: 'motionStart',
+};
 
 const hex = (o: number): string => `+0x${o.toString(16).toUpperCase().padStart(2, '0')}`;
 
@@ -516,7 +895,14 @@ export interface TimelineSlot {
  * The timeline of the slots the preview plays, for either game: markers per event, a playhead, dragging and number
  * fields to edit. `layout` names where the fields are in a directData row (for the titles).
  */
-export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
+export function SlotTimelines({
+  slots,
+  effects,
+  layout,
+  at,
+  onSeek,
+  onEdit,
+}: {
   slots: TimelineSlot[];
   effects: EffectTable;
   layout: PerfLayout;
@@ -525,7 +911,13 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
   onEdit: (slot: TimelineSlot, field: PerfField, v: number) => void;
 }): ReactNode {
   const [drag, setDrag] = useState<{ slot: number; kind: 'se' | 'shake' | 'motion'; frame: number } | null>(null);
-  const scale = Math.max(60, ...slots.map(({ timeline: t, motionFrames }) => Math.max(t.length, t.effect, t.se ?? 0, t.shake ?? 0, t.hit, t.motion + (motionFrames ?? 0)) + 5));
+  const scale = Math.max(
+    60,
+    ...slots.map(
+      ({ timeline: t, motionFrames }) =>
+        Math.max(t.length, t.effect, t.se ?? 0, t.shake ?? 0, t.hit, t.motion + (motionFrames ?? 0)) + 5,
+    ),
+  );
   const pct = (f: number): string => `${(Math.max(0, f) / scale) * 100}%`;
   const apply = (slot: TimelineSlot, field: PerfField, v: number): void => {
     const [lo, hi] = PERF_RANGE[field];
@@ -539,7 +931,10 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
   return (
     <div className="perf-timeline">
       <div className="perf-tl-head small">
-        <span className="with-info">{'タイムライン'}<InfoTip text={TIMELINE_INFO} /></span>
+        <span className="with-info">
+          {'タイムライン'}
+          <InfoTip text={TIMELINE_INFO} />
+        </span>
         <span className="muted">✦ エフェクト　♪ SE　▶ モーション　◆ 命中　〰 揺れ</span>
       </div>
       {slots.map((slot, i) => {
@@ -547,34 +942,59 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
         const main = effects.effect(perf.effect);
         // The motion start is replaced when the effect starts before 0 (it is not editable then).
         const motionFixed = (main?.delay ?? 0) < 0;
-        const pos = (kind: 'se' | 'shake' | 'motion', f: number): number => (drag && drag.slot === i && drag.kind === kind ? drag.frame : f);
+        const pos = (kind: 'se' | 'shake' | 'motion', f: number): number =>
+          drag && drag.slot === i && drag.kind === kind ? drag.frame : f;
         const value = (kind: 'se' | 'shake' | 'motion', f: number): number => {
           const late = main?.late ? 3 : 0;
           return kind === 'motion' ? f - late : f - tl.effect;
         };
-        const marker = (kind: 'effect' | 'se' | 'motion' | 'hit' | 'shake', f: number, glyph: string, title: string): ReactNode => {
+        const marker = (
+          kind: 'effect' | 'se' | 'motion' | 'hit' | 'shake',
+          f: number,
+          glyph: string,
+          title: string,
+        ): ReactNode => {
           const draggable = editable && (kind === 'se' || kind === 'shake' || (kind === 'motion' && !motionFixed));
           const k = kind as 'se' | 'shake' | 'motion';
           const shown = draggable ? pos(k, f) : f;
           return (
-            <span key={kind} className={`perf-mark mark-${kind}${draggable ? ' draggable' : ''}`} style={{ left: pct(shown) }}
+            <span
+              key={kind}
+              className={`perf-mark mark-${kind}${draggable ? ' draggable' : ''}`}
+              style={{ left: pct(shown) }}
               title={`${title} (フレーム ${shown})${draggable ? '\nドラッグで動かせます' : ''}`}
-              onPointerDown={draggable ? (e) => {
-                e.stopPropagation();
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                setDrag({ slot: i, kind: k, frame: f });
-              } : undefined}
-              onPointerMove={draggable ? (e) => {
-                if (!drag || drag.slot !== i || drag.kind !== k) return;
-                setDrag({ ...drag, frame: Math.max(0, frameAt(e, e.currentTarget.parentElement as HTMLElement)) });
-              } : undefined}
+              onPointerDown={
+                draggable
+                  ? (e) => {
+                      e.stopPropagation();
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                      setDrag({ slot: i, kind: k, frame: f });
+                    }
+                  : undefined
+              }
+              onPointerMove={
+                draggable
+                  ? (e) => {
+                      if (!drag || drag.slot !== i || drag.kind !== k) return;
+                      setDrag({
+                        ...drag,
+                        frame: Math.max(0, frameAt(e, e.currentTarget.parentElement as HTMLElement)),
+                      });
+                    }
+                  : undefined
+              }
               onClick={draggable ? (e) => e.stopPropagation() : undefined}
-              onPointerUp={draggable ? () => {
-                if (!drag || drag.slot !== i || drag.kind !== k) return;
-                const d = drag;
-                setDrag(null);
-                if (d.frame !== f) apply(slot, DRAG[k]!, value(k, d.frame));
-              } : undefined}>
+              onPointerUp={
+                draggable
+                  ? () => {
+                      if (!drag || drag.slot !== i || drag.kind !== k) return;
+                      const d = drag;
+                      setDrag(null);
+                      if (d.frame !== f) apply(slot, DRAG[k]!, value(k, d.frame));
+                    }
+                  : undefined
+              }
+            >
               {glyph}
             </span>
           );
@@ -582,15 +1002,45 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
         return (
           <div key={slot.key} className="perf-tl-row">
             <div className="perf-tl-label small">
-              <b>{slot.label}</b>{` D${slot.row}`}
-              {!tl.exact && <span className="muted" title="モデルのモーションの長さがまだ分からないので、長さは仮です">{' (仮)'}</span>}
+              <b>{slot.label}</b>
+              {` D${slot.row}`}
+              {!tl.exact && (
+                <span className="muted" title="モデルのモーションの長さがまだ分からないので、長さは仮です">
+                  {' (仮)'}
+                </span>
+              )}
             </div>
-            <div className={`perf-tl-track${at[0] === slot.phase ? ' current' : ''}`} onClick={(e) => onSeek(slot.phase, frameAt(e, e.currentTarget))}>
-              <span className="perf-tl-slot" style={{ width: pct(tl.length) }} title={`枠の長さ ${tl.length} フレーム`} />
-              {mf !== null && perf.anim > 0 && <span className="perf-tl-motion" style={{ left: pct(tl.motion), width: pct(mf) }} title={`モーション ${mf} フレーム`} />}
-              {ticks.map((t) => <span key={t} className="perf-tl-tick" style={{ left: pct(t) }}>{t}</span>)}
+            <div
+              className={`perf-tl-track${at[0] === slot.phase ? ' current' : ''}`}
+              onClick={(e) => onSeek(slot.phase, frameAt(e, e.currentTarget))}
+            >
+              <span
+                className="perf-tl-slot"
+                style={{ width: pct(tl.length) }}
+                title={`枠の長さ ${tl.length} フレーム`}
+              />
+              {mf !== null && perf.anim > 0 && (
+                <span
+                  className="perf-tl-motion"
+                  style={{ left: pct(tl.motion), width: pct(mf) }}
+                  title={`モーション ${mf} フレーム`}
+                />
+              )}
+              {ticks.map((t) => (
+                <span key={t} className="perf-tl-tick" style={{ left: pct(t) }}>
+                  {t}
+                </span>
+              ))}
               {perf.effect > 0 && marker('effect', tl.effect, '✦', `エフェクト: ${slot.effects}`)}
-              {perf.anim > 0 && marker('motion', tl.motion, '▶', motionFixed ? 'モーションの開始 (エフェクトの開始が負なので、その分だけ遅れる)' : `モーションの開始 (${hex(layout.motionStart)})`)}
+              {perf.anim > 0 &&
+                marker(
+                  'motion',
+                  tl.motion,
+                  '▶',
+                  motionFixed
+                    ? 'モーションの開始 (エフェクトの開始が負なので、その分だけ遅れる)'
+                    : `モーションの開始 (${hex(layout.motionStart)})`,
+                )}
               {slot.hit && tl.hit !== tl.motion && marker('hit', tl.hit, '◆', '命中の印 (MonsterDesign +0x6A〜)')}
               {tl.se !== null && marker('se', tl.se, '♪', `SE: ${slot.se || perf.se}`)}
               {tl.shake !== null && marker('shake', tl.shake, '〰', '揺れ')}
@@ -598,17 +1048,43 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
             </div>
             {editable && (
               <div className="perf-tl-fields small">
-                <label title={`SE を鳴らすフレーム: エフェクトの開始からのずれ (directData ${hex(layout.seDelay)})`}>{'♪ '}
-                  <NumberInput value={perf.timing[1]} min={-128} max={127} onCommit={(v) => apply(slot, 'seDelay', v)} />
+                <label title={`SE を鳴らすフレーム: エフェクトの開始からのずれ (directData ${hex(layout.seDelay)})`}>
+                  {'♪ '}
+                  <NumberInput
+                    value={perf.timing[1]}
+                    min={-128}
+                    max={127}
+                    onCommit={(v) => apply(slot, 'seDelay', v)}
+                  />
                 </label>
-                <label title={`揺れのフレーム: エフェクトの開始からのずれ (directData ${hex(layout.shakeDelay)})`}>{'〰 '}
-                  <NumberInput value={perf.timing[0]} min={-128} max={127} onCommit={(v) => apply(slot, 'shakeDelay', v)} />
+                <label title={`揺れのフレーム: エフェクトの開始からのずれ (directData ${hex(layout.shakeDelay)})`}>
+                  {'〰 '}
+                  <NumberInput
+                    value={perf.timing[0]}
+                    min={-128}
+                    max={127}
+                    onCommit={(v) => apply(slot, 'shakeDelay', v)}
+                  />
                 </label>
-                <label title={`モーションの開始 (directData ${hex(layout.motionStart)})`}>{'▶ '}
-                  <NumberInput value={perf.motionStart} min={0} max={255} onCommit={(v) => apply(slot, 'motionStart', v)} />
+                <label title={`モーションの開始 (directData ${hex(layout.motionStart)})`}>
+                  {'▶ '}
+                  <NumberInput
+                    value={perf.motionStart}
+                    min={0}
+                    max={255}
+                    onCommit={(v) => apply(slot, 'motionStart', v)}
+                  />
                 </label>
-                <label title={`枠の長さ (directData ${hex(layout.length)})。${perf.addLength ? 'モーションの長さに足す' : '0 ならモーションの長さ'}`}>{'長さ '}
-                  <NumberInput value={perf.length} min={-32768} max={32767} onCommit={(v) => apply(slot, 'length', v)} />
+                <label
+                  title={`枠の長さ (directData ${hex(layout.length)})。${perf.addLength ? 'モーションの長さに足す' : '0 ならモーションの長さ'}`}
+                >
+                  {'長さ '}
+                  <NumberInput
+                    value={perf.length}
+                    min={-32768}
+                    max={32767}
+                    onCommit={(v) => apply(slot, 'length', v)}
+                  />
                 </label>
               </div>
             )}
@@ -620,7 +1096,18 @@ export function SlotTimelines({ slots, effects, layout, at, onSeek, onEdit }: {
 }
 
 /** RPG2's timeline: the slots the preview plays, one phase each. */
-function PerformanceTimeline({ session, actions, edits, row, slots, phases, timings, at, onSeek, onChange }: {
+function PerformanceTimeline({
+  session,
+  actions,
+  edits,
+  row,
+  slots,
+  phases,
+  timings,
+  at,
+  onSeek,
+  onChange,
+}: {
   session: Session;
   actions: ActionBook;
   edits: ActionEdits;
@@ -638,32 +1125,54 @@ function PerformanceTimeline({ session, actions, edits, row, slots, phases, timi
     const p = actions.slot(row, offset);
     const perf = decodePerformance(dd.row(p), p);
     return {
-      key: offset, label: ACTION_SLOTS.find((s) => s.offset === offset)!.label, row: p, perf, phase: i,
+      key: offset,
+      label: ACTION_SLOTS.find((s) => s.offset === offset)!.label,
+      row: p,
+      perf,
+      phase: i,
       // Before the models are read, the timelines without the motions' lengths.
       timeline: timings[i]?.timeline ?? phases[i]!.timeline(null),
       motionFrames: timings[i]?.motionFrames ?? null,
       editable: edits.canEditSlot(row, offset),
-      effects: [perf.effect, ...book.effects.addEffects(perf.addEffect)].filter(Boolean).map((e) => effectLabel(book.effects.effect(e), null)).join(' + '),
+      effects: [perf.effect, ...book.effects.addEffects(perf.addEffect)]
+        .filter(Boolean)
+        .map((e) => effectLabel(book.effects.effect(e), null))
+        .join(' + '),
       se: session.sounds?.name(perf.se) ?? '',
       hit: perf.anim >= 0x45 && perf.anim <= 0x48,
     };
   });
   return (
-    <SlotTimelines slots={tracks} effects={book.effects} layout={PERF} at={at} onSeek={onSeek} onEdit={(t, field, v) => {
-      try {
-        edits.setSlotField(row, t.key as number, field, v);
-      } catch (err) {
-        alert((err as Error).message);
-        return;
-      }
-      book.reload();
-      onChange();
-    }} />
+    <SlotTimelines
+      slots={tracks}
+      effects={book.effects}
+      layout={PERF}
+      at={at}
+      onSeek={onSeek}
+      onEdit={(t, field, v) => {
+        try {
+          edits.setSlotField(row, t.key as number, field, v);
+        } catch (err) {
+          alert((err as Error).message);
+          return;
+        }
+        book.reload();
+        onChange();
+      }}
+    />
   );
 }
 
 /** Preview of the performance a monster plays when its form changes (MonsterParameter +0x36, a directData row). */
-export function TransformPreview({ session, monster, row }: { session: Session; monster: Monster; row: number }): ReactNode {
+export function TransformPreview({
+  session,
+  monster,
+  row,
+}: {
+  session: Session;
+  monster: Monster;
+  row: number;
+}): ReactNode {
   const models = useEffectModels(session.game);
   const viewer = useMemo(() => new PerformanceViewer(), []);
   const dd = session.book?.directData;
@@ -673,5 +1182,9 @@ export function TransformPreview({ session, monster, row }: { session: Session; 
     return p ? [p] : [];
   }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phase depends on
   useEffect(() => void viewer.show(phases), [phases, viewer]);
-  return <div className="perf-preview"><Dom node={viewer.el} /></div>;
+  return (
+    <div className="perf-preview">
+      <Dom node={viewer.el} />
+    </div>
+  );
 }

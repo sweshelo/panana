@@ -4,12 +4,26 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { OahuMapBattlePanel } from '../src/oahu/BattleParts';
-import { OAHU_BATTLE_BACKGROUNDS, OAHU_RESOURCE_BATTLE_BG, oahuBattleBackgroundRef, oahuBattleRows, setOahuResourceBackground } from '../src/oahu/battleField';
+import {
+  OAHU_BATTLE_BACKGROUNDS,
+  OAHU_RESOURCE_BATTLE_BG,
+  oahuBattleBackgroundRef,
+  oahuBattleRows,
+  setOahuResourceBackground,
+} from '../src/oahu/battleField';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
 import { OahuEditState } from '../src/oahu/mapedit';
 import { OahuSession } from '../src/oahu/session';
 import { LanaiGroupBattleField, LanaiMapBattlePanel } from '../src/lanai/BattleParts';
-import { LANAI_BATTLE_BACKGROUNDS, LANAI_BF, LANAI_MAP_SOUNDS, lanaiBackgroundName, lanaiBattleBackgroundRef, lanaiBattleFieldTable, lanaiGroupBattleField } from '../src/lanai/battleField';
+import {
+  LANAI_BATTLE_BACKGROUNDS,
+  LANAI_BF,
+  LANAI_MAP_SOUNDS,
+  lanaiBackgroundName,
+  lanaiBattleBackgroundRef,
+  lanaiBattleFieldTable,
+  lanaiGroupBattleField,
+} from '../src/lanai/battleField';
 import { lanaiContents } from '../src/lanai/contents';
 import { lanaiEditState } from '../src/lanai/mapedit';
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
@@ -37,7 +51,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 battle background and BGM'
     expect(u32(t.row(31), 0x10)).toBe(0x5acb5000);
   });
 
-  test('a dungeon map reads its dungeon\'s row; the panel edits the background with an undo point', async () => {
+  test("a dungeon map reads its dungeon's row; the panel edits the background with an undo point", async () => {
     const m = s.maps.maps.find((x) => !x.world && s.maps.dungeonOf(x)?.mapData)!;
     const st = new OahuEditState(s.maps);
     st.open(m);
@@ -76,7 +90,10 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
   let s: LanaiSession;
   let maps: LanaiMaps;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump, { fresh: true });
     maps = await lanaiMaps(s, lanaiContents(s)[38]!);
   }, 300000);
@@ -89,7 +106,12 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
     expect(t.u32(23, LANAI_BF.bgm)).toBe(676);
     const sounds = await s.sounds();
     expect(sounds.rows).toBe(896);
-    expect([2, 3, 4, 676].map((r) => sounds.name(r))).toEqual(['BGM_BATTLE_NORMAL', 'BGM_BATTLE_BOSS', 'BGM_BATTLE_GOAL', 'BGM_BATTLE_HONOLULU']);
+    expect([2, 3, 4, 676].map((r) => sounds.name(r))).toEqual([
+      'BGM_BATTLE_NORMAL',
+      'BGM_BATTLE_BOSS',
+      'BGM_BATTLE_GOAL',
+      'BGM_BATTLE_HONOLULU',
+    ]);
   });
 
   test('every background model of 52120000 / F0F40000 loads for the preview', async () => {
@@ -100,7 +122,7 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
     }
   }, 300000);
 
-  test('a group\'s row of BattleFieldContents (content 38 row 1: 80000009) shows on the group page', () => {
+  test("a group's row of BattleFieldContents (content 38 row 1: 80000009) shows on the group page", () => {
     const f = lanaiGroupBattleField(s, maps, 1);
     expect(f.contents).toBe(true);
     expect(f.value).toBe(0x80000009);
@@ -117,7 +139,15 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
     const src = st.source!;
     const md = maps.contentTable('MapData')!;
     const before = md.u16(src.mapData, LANAI_MAP_SOUNDS[0].offset);
-    const html = renderToString(<LanaiMapBattlePanel session={s} maps={maps} mapData={src.mapData} resource={src.resource} edit={(f) => st.editTables(f)} />);
+    const html = renderToString(
+      <LanaiMapBattlePanel
+        session={s}
+        maps={maps}
+        mapData={src.mapData}
+        resource={src.resource}
+        edit={(f) => st.editTables(f)}
+      />,
+    );
     expect(html).toContain('フィールドの BGM');
     st.editTables(() => md.setU16(src.mapData, 0x04, 19));
     expect(md.u16(src.mapData, 0x04)).toBe(19);

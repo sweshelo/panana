@@ -45,25 +45,71 @@ export interface ModEffect {
 }
 
 export const MOD_EFFECTS: ModEffect[] = [
-  { key: 'ap-all', label: '仲間全員の AP 回復', template: 182, w0: 0xa0324c8d, msgs: [0x1803, 0x1804], amount: [70, 100],
-    note: '仲間全員の AP を回復します (量はアクションの最小〜最大。アンテナパワー+ と同じ 70〜100 で作ります)。戦闘の結果は「āのAPがN回復した」「APが平均N回復した」。' },
-  { key: 'full-all', label: '仲間全員を全回復・復活', template: 191, w0: 0xa0324ca5, msgs: [0x17fe, 0x17ff], amount: [0, 0],
-    note: '回復の泉やベッドと同じ全回復 (FUN_002d8404) を仲間全員に: HP と AP が最大になり、倒れた電波人間も生き返り、状態異常も治ります。' },
-  { key: 'fixate', label: '固定化 (QR の電波人間)', template: 179, w0: 0xc03244ad, msgs: ['fixate', 'fixate'], amount: [0, 0], itemFlags: HOUSE_ITEM_FLAG,
-    note: 'QR コードで入手した電波人間をふつうの電波人間にして、さよならしても精霊のほこらから呼び戻せるようにします。フィールドと電波人間ハウスで使えます (戦闘では使えません)。さよならの記録に見た目と名前を残すパッチも入ります。' },
-  { key: 'teleporter-plus', label: 'テレポーター+ (ワープホールを残す)', template: TELEPORTER_ACTION,
-    note: 'その場にワープホールを作ってから、テレポーターと同じようにダンジョンを脱出します。次にダンジョンに入ると、ワープホールから始めるか聞かれます。ワープホールを残せないダンジョンでは「しかし何も起きなかった」になり、減りません。' },
-  { key: 'fixate-all', label: '全員を固定化 (デバッグ)', template: 182, w0: 0x80324cb5, msgs: ['fixate_all_1', 'fixate_all'], amount: [0, 0], debug: true,
-    note: 'デバッグ用。さよならで消えてしまう電波人間 (QR など) を一度に全員固定化します。フィールドだけで使えます。' },
-  { key: 'unfix-all', label: '全員を QR 由来に戻す (デバッグ)', template: 182, w0: 0x80324cbd, msgs: ['unfix_all_1', 'unfix_all'], amount: [0, 0], debug: true,
-    note: 'デバッグ用。主人公と家族以外の電波人間を全員 QR 由来に戻します (固定化の確認用)。フィールドだけで使えます。' },
+  {
+    key: 'ap-all',
+    label: '仲間全員の AP 回復',
+    template: 182,
+    w0: 0xa0324c8d,
+    msgs: [0x1803, 0x1804],
+    amount: [70, 100],
+    note: '仲間全員の AP を回復します (量はアクションの最小〜最大。アンテナパワー+ と同じ 70〜100 で作ります)。戦闘の結果は「āのAPがN回復した」「APが平均N回復した」。',
+  },
+  {
+    key: 'full-all',
+    label: '仲間全員を全回復・復活',
+    template: 191,
+    w0: 0xa0324ca5,
+    msgs: [0x17fe, 0x17ff],
+    amount: [0, 0],
+    note: '回復の泉やベッドと同じ全回復 (FUN_002d8404) を仲間全員に: HP と AP が最大になり、倒れた電波人間も生き返り、状態異常も治ります。',
+  },
+  {
+    key: 'fixate',
+    label: '固定化 (QR の電波人間)',
+    template: 179,
+    w0: 0xc03244ad,
+    msgs: ['fixate', 'fixate'],
+    amount: [0, 0],
+    itemFlags: HOUSE_ITEM_FLAG,
+    note: 'QR コードで入手した電波人間をふつうの電波人間にして、さよならしても精霊のほこらから呼び戻せるようにします。フィールドと電波人間ハウスで使えます (戦闘では使えません)。さよならの記録に見た目と名前を残すパッチも入ります。',
+  },
+  {
+    key: 'teleporter-plus',
+    label: 'テレポーター+ (ワープホールを残す)',
+    template: TELEPORTER_ACTION,
+    note: 'その場にワープホールを作ってから、テレポーターと同じようにダンジョンを脱出します。次にダンジョンに入ると、ワープホールから始めるか聞かれます。ワープホールを残せないダンジョンでは「しかし何も起きなかった」になり、減りません。',
+  },
+  {
+    key: 'fixate-all',
+    label: '全員を固定化 (デバッグ)',
+    template: 182,
+    w0: 0x80324cb5,
+    msgs: ['fixate_all_1', 'fixate_all'],
+    amount: [0, 0],
+    debug: true,
+    note: 'デバッグ用。さよならで消えてしまう電波人間 (QR など) を一度に全員固定化します。フィールドだけで使えます。',
+  },
+  {
+    key: 'unfix-all',
+    label: '全員を QR 由来に戻す (デバッグ)',
+    template: 182,
+    w0: 0x80324cbd,
+    msgs: ['unfix_all_1', 'unfix_all'],
+    amount: [0, 0],
+    debug: true,
+    note: 'デバッグ用。主人公と家族以外の電波人間を全員 QR 由来に戻します (固定化の確認用)。フィールドだけで使えます。',
+  },
 ];
 
 export const modEffect = (key: string): ModEffect | undefined => MOD_EFFECTS.find((e) => e.key === key);
 
 const R = (base: string, yomi: string): string => `[0001]'${base}[0001](${yomi}[0001])`;
-const DENPA = R('電波', 'でんぱ'), KOTEIKA = R('固定化', 'こていか'), DENPANINGEN = R('電波人間', 'でんぱにんげん');
-const TAI = R('体', 'たい'), YURAI = R('由来', 'ゆらい'), MODO = R('戻', 'もど');
+const DENPA = R('電波', 'でんぱ'),
+  KOTEIKA = R('固定化', 'こていか'),
+  DENPANINGEN = R('電波人間', 'でんぱにんげん');
+const TAI = R('体', 'たい'),
+  YURAI = R('由来', 'ゆらい'),
+  MODO = R('戻', 'もど');
 /** The result messages of the effects (elpulse mod/build_items.py EXTRA_TEXTS; ā = the unit, [000B] = the amount). */
 export const MOD_TEXTS: Record<string, string> = {
   fixate: `[0011][0001]āの${DENPA}が${KOTEIKA}された`,
@@ -86,13 +132,15 @@ export function encodeModText(s: string): Uint16Array {
   return Uint16Array.from(out);
 }
 
-const sameUnits = (a: Uint16Array | undefined, b: Uint16Array): boolean => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
+const sameUnits = (a: Uint16Array | undefined, b: Uint16Array): boolean =>
+  !!a && a.length === b.length && a.every((x, i) => x === b[i]);
 
 /** Whether an action row is テレポーター+: a copy of テレポーター's action for another item (only +0x14 differs). */
 function isTeleporterPlus(master: Master, row: number): boolean {
   const t = master.table('actionData.bin');
   if (row === TELEPORTER_ACTION || row <= 0 || row >= t.rows || TELEPORTER_ACTION >= t.rows) return false;
-  const a = t.row(row), b = master.originalRow('actionData.bin', TELEPORTER_ACTION);
+  const a = t.row(row),
+    b = master.originalRow('actionData.bin', TELEPORTER_ACTION);
   if (a.length !== b.length || u16(a, 0x14) === TELEPORTER_ITEM || !u16(a, 0x14)) return false;
   for (let i = 0; i < a.length; i++) if ((i < 0x14 || i > 0x15) && a[i] !== b[i]) return false;
   return true;
@@ -115,7 +163,8 @@ export function modEffectOf(master: Master, row: number): ModEffect | null {
 
 /** Items (tools, with a name) and the action of each. */
 function tools(master: Master): { id: number; action: number }[] {
-  const items = master.itemData, actions = master.table('actionData.bin');
+  const items = master.itemData,
+    actions = master.table('actionData.bin');
   const out: { id: number; action: number }[] = [];
   for (let id = 1; id < items.rows; id++) {
     const r = items.row(id);
@@ -142,11 +191,15 @@ export function usedModEffects(master: Master): Map<ModEffectKey, number[]> {
 export function assignModEffect(master: Master, item: number, key: ModEffectKey): number {
   const e = modEffect(key);
   if (!e) throw new Error(`効果 ${key} はありません`);
-  const items = master.itemData, t = master.table('actionData.bin');
+  const items = master.itemData,
+    t = master.table('actionData.bin');
   const r = items.row(item);
   const cur = u32(r, 0x24);
-  const own = cur >= master.originalRows('actionData.bin') && cur < t.rows && u16(t.row(cur), 0x14) === item
-    && tools(master).every((x) => x.action !== cur || x.id === item);
+  const own =
+    cur >= master.originalRows('actionData.bin') &&
+    cur < t.rows &&
+    u16(t.row(cur), 0x14) === item &&
+    tools(master).every((x) => x.action !== cur || x.id === item);
   const row = own ? cur : new ActionEdits(master, null, 0).copyForItem(e.template, item);
   const dst = t.row(row);
   dst.set(t.row(e.template).subarray(0, dst.length));
@@ -176,10 +229,29 @@ function modText(master: Master, key: string): number {
 
 /** A hook of the game the patches overwrite: its address and the instruction there in the game (to see a base MOD's). */
 const HOOKS = {
-  effects: [[0x2f4248, 0x1a000004], [0x310028, 0x1a00000a], [0x318440, 0x1a000103], [0x2f63ac, 0x1a00004a]],
-  healmsg: [[0x24e3f0, 0xe3a03b06], [0x24e360, 0xe59f303c]],
-  farewell: [[0x220a58, 0xeb02d32f], [0x2d5300, 0xe92d4ff0], [0x290940, 0xe2841004]],
-  teleporter: [[0x2c6600, 0xe350001c], [0x25de4c, 0xe350001c], [0x266b14, 0xe350001c], [0x2c66fc, 0x13500000], [0x2c6764, 0xe3a01613], [0x353480, 0xe92d4070]],
+  effects: [
+    [0x2f4248, 0x1a000004],
+    [0x310028, 0x1a00000a],
+    [0x318440, 0x1a000103],
+    [0x2f63ac, 0x1a00004a],
+  ],
+  healmsg: [
+    [0x24e3f0, 0xe3a03b06],
+    [0x24e360, 0xe59f303c],
+  ],
+  farewell: [
+    [0x220a58, 0xeb02d32f],
+    [0x2d5300, 0xe92d4ff0],
+    [0x290940, 0xe2841004],
+  ],
+  teleporter: [
+    [0x2c6600, 0xe350001c],
+    [0x25de4c, 0xe350001c],
+    [0x266b14, 0xe350001c],
+    [0x2c66fc, 0x13500000],
+    [0x2c6764, 0xe3a01613],
+    [0x353480, 0xe92d4070],
+  ],
 } as const;
 type Group = keyof typeof HOOKS;
 
@@ -191,24 +263,29 @@ export const MOD_PATCH_TITLES: Record<Group, string> = {
 };
 
 /** Whether the code already has a group's hooks (a base MOD built by elpulse mod/build_code.py). */
-const hooked = (code: Uint8Array, g: Group): boolean => HOOKS[g].some(([a, w]) => a - 0x100000 + 4 <= code.length && u32(code, a - 0x100000) !== w);
+const hooked = (code: Uint8Array, g: Group): boolean =>
+  HOOKS[g].some(([a, w]) => a - 0x100000 + 4 <= code.length && u32(code, a - 0x100000) !== w);
 
 /** "cmp reg, #n" (or the conditional form) for any n: through ip when n is not an ARM immediate (flags only change). */
 function cmpLines(reg: string, n: number, cond = ''): string[] {
   const imm = (v: number): boolean => {
-    for (let rot = 0; rot < 32; rot += 2) if ((((v << rot) | (v >>> (32 - rot))) >>> 0) <= 0xff) return true;
+    for (let rot = 0; rot < 32; rot += 2) if (((v << rot) | (v >>> (32 - rot))) >>> 0 <= 0xff) return true;
     return false;
   };
   return imm(n) ? [`cmp${cond} ${reg}, #${n}`] : [`push {ip}`, `ldr ip, =${n}`, `cmp${cond} ${reg}, ip`, `pop {ip}`];
 }
 
 /** Z = `reg` is one of `ids`. */
-const isOneOf = (reg: string, ids: number[], first = ''): string[] => ids.flatMap((id, i) => cmpLines(reg, id, i ? 'ne' : first));
+const isOneOf = (reg: string, ids: number[], first = ''): string[] =>
+  ids.flatMap((id, i) => cmpLines(reg, id, i ? 'ne' : first));
 
-const lines = (xs: (string | false | undefined)[]): string => xs.filter((x): x is string => typeof x === 'string').join('\n') + '\n';
+const lines = (xs: (string | false | undefined)[]): string =>
+  xs.filter((x): x is string => typeof x === 'string').join('\n') + '\n';
 
 function effectsSource(types: Set<number>): string {
-  const all = types.has(6) || types.has(7), fix = types.has(5), full = types.has(4);
+  const all = types.has(6) || types.has(7),
+    fix = types.has(5),
+    full = types.has(4);
   return lines([
     '; アイテムの効果 (elpulse mod/build_code.py): 効果の種別 4 全回復・5 固定化・6 / 7 デバッグ',
     '@0x2F4248                     ; FUN_002f41ac (効果の計算): cmp r2, #3 / bne ret',
@@ -733,8 +810,13 @@ function teleporterSource(ids: number[]): string {
 /** The patches for the given effects (ids: the items of テレポーター+). */
 export function modEffectPatchesFor(used: Map<ModEffectKey, number[]>): Map<Group, CodePatch> {
   const out = new Map<Group, CodePatch>();
-  const add = (g: Group, source: string): void => void out.set(g, { id: `elp-${g}`, title: MOD_PATCH_TITLES[g], source, enabled: true });
-  const types = new Set<number>([...used.keys()].map((k) => ({ 'full-all': 4, fixate: 5, 'fixate-all': 6, 'unfix-all': 7 } as Record<string, number>)[k]).filter((t): t is number => t !== undefined));
+  const add = (g: Group, source: string): void =>
+    void out.set(g, { id: `elp-${g}`, title: MOD_PATCH_TITLES[g], source, enabled: true });
+  const types = new Set<number>(
+    [...used.keys()]
+      .map((k) => ({ 'full-all': 4, fixate: 5, 'fixate-all': 6, 'unfix-all': 7 } as Record<string, number>)[k])
+      .filter((t): t is number => t !== undefined),
+  );
   if (types.size) add('effects', effectsSource(types));
   if (used.has('ap-all') || used.has('full-all')) add('healmsg', HEALMSG_SOURCE);
   if (types.has(5) || types.has(6) || types.has(7)) add('farewell', FAREWELL_SOURCE);
@@ -758,7 +840,9 @@ export interface ModEffectPatches {
 export function modEffectPatches(master: Master, code: Uint8Array): ModEffectPatches {
   const used = usedModEffects(master);
   const want = modEffectPatchesFor(used);
-  const patches: CodePatch[] = [], inBase: string[] = [], warnings: string[] = [];
+  const patches: CodePatch[] = [],
+    inBase: string[] = [],
+    warnings: string[] = [];
   for (const [g, p] of want) {
     if (!hooked(code, g)) {
       patches.push(p);
@@ -767,9 +851,13 @@ export function modEffectPatches(master: Master, code: Uint8Array): ModEffectPat
     inBase.push(p.title);
     // elpulse's code.ips knows テレポーター+ as item 178 only, and types 6 / 7 only when built with --debug
     const tp = (used.get('teleporter-plus') ?? []).filter((id) => id !== 178);
-    if (g === 'teleporter' && tp.length) warnings.push(`土台の MOD の テレポーター+ はアイテム 178 だけです。アイテム ${tp.join('・')} はテレポーター+ として動きません`);
+    if (g === 'teleporter' && tp.length)
+      warnings.push(
+        `土台の MOD の テレポーター+ はアイテム 178 だけです。アイテム ${tp.join('・')} はテレポーター+ として動きません`,
+      );
     const dbg = MOD_EFFECTS.filter((e) => e.debug && used.has(e.key));
-    if (g === 'effects' && dbg.length) warnings.push(`土台の MOD が --debug で作られていないと「${dbg.map((e) => e.label).join('」「')}」は動きません`);
+    if (g === 'effects' && dbg.length)
+      warnings.push(`土台の MOD が --debug で作られていないと「${dbg.map((e) => e.label).join('」「')}」は動きません`);
   }
   return { patches, inBase, warnings };
 }

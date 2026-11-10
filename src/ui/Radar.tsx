@@ -34,7 +34,14 @@ export function Radar({ axes, min, max, rings, format, onChange, size = 320 }: R
     const r = ((Math.max(min, Math.min(max, v)) - min) / span) * R;
     return [c + Math.cos(angle(i)) * r, c + Math.sin(angle(i)) * r];
   };
-  const poly = (vals: number[]): string => vals.map((v, i) => pt(i, v).map((x) => x.toFixed(1)).join(',')).join(' ');
+  const poly = (vals: number[]): string =>
+    vals
+      .map((v, i) =>
+        pt(i, v)
+          .map((x) => x.toFixed(1))
+          .join(','),
+      )
+      .join(' ');
   const vals = axes.map((a, i) => (drag?.axis === i ? drag.value : a.value));
 
   const valueAt = (i: number, e: PointerEvent): number => {
@@ -61,11 +68,20 @@ export function Radar({ axes, min, max, rings, format, onChange, size = 320 }: R
         return (
           <g key={i}>
             <line className="axis" x1={c} y1={c} x2={x} y2={y} />
-            <text className="axis-label" x={lx} y={ly + 4} textAnchor={Math.abs(lx - c) < 8 ? 'middle' : lx > c ? 'start' : 'end'}>{a.label}</text>
+            <text
+              className="axis-label"
+              x={lx}
+              y={ly + 4}
+              textAnchor={Math.abs(lx - c) < 8 ? 'middle' : lx > c ? 'start' : 'end'}
+            >
+              {a.label}
+            </text>
           </g>
         );
       })}
-      {axes.some((a) => a.original !== a.value) && <polygon className="shape original" points={poly(axes.map((a) => a.original))} />}
+      {axes.some((a) => a.original !== a.value) && (
+        <polygon className="shape original" points={poly(axes.map((a) => a.original))} />
+      )}
       <polygon className="shape" points={poly(vals)} />
       {axes.map((a, i) => {
         const [x, y] = pt(i, vals[i]!);
@@ -94,7 +110,11 @@ export function Radar({ axes, min, max, rings, format, onChange, size = 320 }: R
         );
       })}
       {drag && tip && (
-        <text className="radar-tip" x={tip[0] + 10} y={tip[1] - 10}>{`${axes[drag.axis]!.label} ${format(drag.value, drag.axis)}`}</text>
+        <text
+          className="radar-tip"
+          x={tip[0] + 10}
+          y={tip[1] - 10}
+        >{`${axes[drag.axis]!.label} ${format(drag.value, drag.axis)}`}</text>
       )}
     </svg>
   );

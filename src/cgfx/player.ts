@@ -19,7 +19,9 @@ const vScale = new THREE.Vector3();
 const tmp4 = [0, 0, 0, 0];
 
 function localMatrix(bone: CgfxBone, track: SkeletalTrack | undefined, frame: number, out: THREE.Matrix4): void {
-  const [sx, sy, sz] = bone.scale, [rx, ry, rz] = bone.rotation, [tx, ty, tz] = bone.translation;
+  const [sx, sy, sz] = bone.scale,
+    [rx, ry, rz] = bone.rotation,
+    [tx, ty, tz] = bone.translation;
   if (track?.channels) {
     const c = track.channels;
     vScale.set(evalChannel(c[0]!, frame, sx), evalChannel(c[1]!, frame, sy), evalChannel(c[2]!, frame, sz));
@@ -104,7 +106,9 @@ export class AnimatedModel {
   select(name: string | null): void {
     this.skeletal = this.model.animations.find((a) => a.kind === 'skeletal' && a.name === name) ?? null;
     const key = name ? animationKey(name) : null;
-    this.material = key ? this.model.animations.filter((a) => a.kind === 'material' && a.material.length && animationKey(a.name) === key) : [];
+    this.material = key
+      ? this.model.animations.filter((a) => a.kind === 'material' && a.material.length && animationKey(a.name) === key)
+      : [];
     this.update(0);
   }
 
@@ -140,7 +144,8 @@ export class AnimatedModel {
       this.scales[i]!.copy(vScale);
       if (bone.ssc && parent) {
         // local = T × parent scale⁻¹ × R × S: divide the rows of the 3×3 (three.js is column-major)
-        const ps = this.scales[p]!, e = local.elements;
+        const ps = this.scales[p]!,
+          e = local.elements;
         for (let row = 0; row < 3; row++) {
           const k = ps.getComponent(row) ? 1 / ps.getComponent(row) : 1;
           for (let col = 0; col < 3; col++) e[col * 4 + row]! *= k;
@@ -159,20 +164,27 @@ export class AnimatedModel {
     const m = new THREE.Matrix4();
     for (let b = 0; b < this.world.length; b++) {
       m.multiplyMatrices(this.world[b]!, this.restInverse[b]!);
-      const e = m.elements, o = b * 12;
+      const e = m.elements,
+        o = b * 12;
       // Row-major 3x4 from the column-major 4x4.
       this.skin.set([e[0]!, e[4]!, e[8]!, e[12]!, e[1]!, e[5]!, e[9]!, e[13]!, e[2]!, e[6]!, e[10]!, e[14]!], o);
     }
     const s = this.skin;
     for (const { mesh, src } of this.parts) {
-      const idx = src.skinIndices, wt = src.skinWeights;
+      const idx = src.skinIndices,
+        wt = src.skinWeights;
       if (!idx || !wt) continue;
       const attr = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
       const out = attr.array as Float32Array;
       const rest = src.positions;
       for (let v = 0, n = rest.length / 3; v < n; v++) {
-        const x = rest[v * 3]!, y = rest[v * 3 + 1]!, z = rest[v * 3 + 2]!;
-        let ox = 0, oy = 0, oz = 0, total = 0;
+        const x = rest[v * 3]!,
+          y = rest[v * 3 + 1]!,
+          z = rest[v * 3 + 2]!;
+        let ox = 0,
+          oy = 0,
+          oz = 0,
+          total = 0;
         for (let k = 0; k < 4; k++) {
           const w = wt[v * 4 + k]!;
           if (!w) continue;
@@ -206,7 +218,10 @@ export class AnimatedModel {
         const uni = mat.uniforms[`uvm${i}`];
         const u = def.units[i];
         if (!uni || !u) continue;
-        let tu = u.translateU, tv = u.translateV, su = u.scaleU || 1, sv = u.scaleV || 1;
+        let tu = u.translateU,
+          tv = u.translateV,
+          su = u.scaleU || 1,
+          sv = u.scaleV || 1;
         for (const a of this.material)
           for (const t of a.material) {
             if (t.material !== material || t.coordinator !== i) continue;

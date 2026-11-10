@@ -19,7 +19,12 @@ export const LANAI_RESOURCE_BATTLE_FIELD = 0x10;
 /** MapData: field BGM, the tune FUN_001DAB34 plays before a battle, the encounter sound (u16 SoundData rows). */
 export const LANAI_MAP_SOUNDS = [
   { offset: 0x04, label: 'フィールドの BGM', kind: 'bgm', note: '0 なら MapGroup で決まる (ワールドマップ・海など)' },
-  { offset: 0x06, label: '戦闘の前の曲', kind: 'bgm', note: 'エンカウントの経路の 1 つで戦闘の前に鳴らす。戦闘が始まると戦闘の背景の行の BGM に変わる (推定)' },
+  {
+    offset: 0x06,
+    label: '戦闘の前の曲',
+    kind: 'bgm',
+    note: 'エンカウントの経路の 1 つで戦闘の前に鳴らす。戦闘が始まると戦闘の背景の行の BGM に変わる (推定)',
+  },
   { offset: 0x08, label: 'エンカウントの効果音', kind: 'se', note: '0 なら 107。値は 107〜111 (推定)' },
 ] as const;
 
@@ -27,18 +32,44 @@ export const LANAI_BG_ARCHIVES = [0x52120000, 0xf0f40000];
 
 /** The btmp_* entries of the two archives the rows point at (entry headers' paths). */
 export const LANAI_BATTLE_BACKGROUNDS: { archive: number; entry: number; name: string }[] = [
-  ...([
-    [0x8d63d000, 'btmp_01_caveA'], [0xa09dd800, 'btmp_02_caveB'], [0x1825d400, 'btmp_03_towerA'], [0x4bdec000, 'btmp_04_forestA'],
-    [0x8ca98400, 'btmp_05_volcanoA'], [0x3afefc00, 'btmp_06_ruinsA'], [0x580a4800, 'btmp_07_ruinsB'], [0xe76b3400, 'btmp_08_iceA'],
-    [0x81ee5400, 'btmp_09_relic'], [0x560c5c00, 'btmp_10_temple'], [0xfedf0c00, 'btmp_10_templeB'], [0x80b4f000, 'btmp_11_caveC'],
-    [0x5b800400, 'btmp_11_opnforest'], [0x422cc400, 'btmp_12_flat'], [0x7fd5d400, 'btmp_13_sand'], [0x4b8f1400, 'btmp_14_sea'],
-    [0xa08cfc00, 'btmp_15_arena'], [0xf8b91800, 'btmp_16_caveD'], [0x21306000, 'btmp_17_towerB'], [0x8a645000, 'btmp_18_hell'],
-    [0x9212b800, 'btmp_19_snow'], [0x1125c400, 'btmp_20_snowfst'],
-  ] as const).map(([entry, name]) => ({ archive: 0x52120000, entry, name })),
-  ...([
-    [0x57b86800, 'btmp_00_photo'], [0x0785fc00, 'btmp_04_forestB'], [0xf646fc00, 'btmp_04_forestB_n'], [0x81ee5400, 'btmp_09_relic'],
-    [0xfedf0c00, 'btmp_10_templeB'], [0x2fb36800, 'btmp_10_templeC'], [0x1125c400, 'btmp_20_snowfst'], [0x6a634800, 'btmp_21_rain'],
-  ] as const).map(([entry, name]) => ({ archive: 0xf0f40000, entry, name })),
+  ...(
+    [
+      [0x8d63d000, 'btmp_01_caveA'],
+      [0xa09dd800, 'btmp_02_caveB'],
+      [0x1825d400, 'btmp_03_towerA'],
+      [0x4bdec000, 'btmp_04_forestA'],
+      [0x8ca98400, 'btmp_05_volcanoA'],
+      [0x3afefc00, 'btmp_06_ruinsA'],
+      [0x580a4800, 'btmp_07_ruinsB'],
+      [0xe76b3400, 'btmp_08_iceA'],
+      [0x81ee5400, 'btmp_09_relic'],
+      [0x560c5c00, 'btmp_10_temple'],
+      [0xfedf0c00, 'btmp_10_templeB'],
+      [0x80b4f000, 'btmp_11_caveC'],
+      [0x5b800400, 'btmp_11_opnforest'],
+      [0x422cc400, 'btmp_12_flat'],
+      [0x7fd5d400, 'btmp_13_sand'],
+      [0x4b8f1400, 'btmp_14_sea'],
+      [0xa08cfc00, 'btmp_15_arena'],
+      [0xf8b91800, 'btmp_16_caveD'],
+      [0x21306000, 'btmp_17_towerB'],
+      [0x8a645000, 'btmp_18_hell'],
+      [0x9212b800, 'btmp_19_snow'],
+      [0x1125c400, 'btmp_20_snowfst'],
+    ] as const
+  ).map(([entry, name]) => ({ archive: 0x52120000, entry, name })),
+  ...(
+    [
+      [0x57b86800, 'btmp_00_photo'],
+      [0x0785fc00, 'btmp_04_forestB'],
+      [0xf646fc00, 'btmp_04_forestB_n'],
+      [0x81ee5400, 'btmp_09_relic'],
+      [0xfedf0c00, 'btmp_10_templeB'],
+      [0x2fb36800, 'btmp_10_templeC'],
+      [0x1125c400, 'btmp_20_snowfst'],
+      [0x6a634800, 'btmp_21_rain'],
+    ] as const
+  ).map(([entry, name]) => ({ archive: 0xf0f40000, entry, name })),
 ];
 
 const hex = (v: number): string => (v >>> 0).toString(16).toUpperCase().padStart(8, '0');
@@ -55,7 +86,11 @@ export function lanaiBackgroundName(archive: number, entry: number): string {
 export const lanaiBackgroundKey = (archive: number, entry: number): string => `${hex(archive)}:${hex(entry)}`;
 
 /** The master's BattleField (26 rows) and the content's BattleFieldContents. */
-export function lanaiBattleFieldTable(session: LanaiSession, maps: LanaiMaps, contents: boolean): LanaiTable | undefined {
+export function lanaiBattleFieldTable(
+  session: LanaiSession,
+  maps: LanaiMaps,
+  contents: boolean,
+): LanaiTable | undefined {
   return contents ? maps.contentTable('BattleFieldContents') : session.table('BattleField');
 }
 
@@ -67,7 +102,11 @@ export function lanaiBattleFieldRow(t: LanaiTable | undefined, value: number): {
 }
 
 /** A group's battle field: which table, the value and the row it gives. */
-export function lanaiGroupBattleField(session: LanaiSession, maps: LanaiMaps, row: number): { contents: boolean; value: number; table: LanaiTable | undefined; row: number; found: boolean } {
+export function lanaiGroupBattleField(
+  session: LanaiSession,
+  maps: LanaiMaps,
+  row: number,
+): { contents: boolean; value: number; table: LanaiTable | undefined; row: number; found: boolean } {
   const g = maps.monsterGroup!;
   const contents = !!(g.u8(row, LANAI_MG_FLAGS) & LANAI_MG_FIELD_CONTENTS);
   const value = g.u32(row, LANAI_MG_FIELD);
@@ -82,7 +121,12 @@ export interface LanaiBattleFieldUse {
 }
 
 /** Who uses each row of a battle-field table: the content's groups (and, for BattleFieldContents, MapResource +0x10). */
-export function lanaiBattleFieldUses(session: LanaiSession, maps: LanaiMaps, contents: boolean, groupHref: (row: number) => string): Map<number, LanaiBattleFieldUse[]> {
+export function lanaiBattleFieldUses(
+  session: LanaiSession,
+  maps: LanaiMaps,
+  contents: boolean,
+  groupHref: (row: number) => string,
+): Map<number, LanaiBattleFieldUse[]> {
   const out = new Map<number, LanaiBattleFieldUse[]>();
   const add = (r: number, u: LanaiBattleFieldUse): void => void out.set(r, [...(out.get(r) ?? []), u]);
   const g = maps.monsterGroup;
@@ -106,6 +150,9 @@ export function lanaiBattleBackgroundRef(session: LanaiSession, archive: number,
   if (!archive || !entry) return null;
   return {
     key: `lanai-btmp/${session.dump.title.key}/${hex8(archive)}/${hex8(entry)}`,
-    load: async () => ({ set: await lanaiObjectModels(session, { archive: archive >>> 0, entry: entry >>> 0 }), hash: entry >>> 0 }),
+    load: async () => ({
+      set: await lanaiObjectModels(session, { archive: archive >>> 0, entry: entry >>> 0 }),
+      hash: entry >>> 0,
+    }),
   };
 }

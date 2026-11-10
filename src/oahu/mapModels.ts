@@ -43,7 +43,11 @@ function addEntry(set: TilesetModels, arc: Archive, hash: number): void {
 }
 
 /** The tile models `hashes` of a map's tile source, with the textures of its mapResource row. */
-export async function oahuTileModels(dump: Dump, src: OahuTileSource, hashes: Iterable<number>): Promise<TilesetModels> {
+export async function oahuTileModels(
+  dump: Dump,
+  src: OahuTileSource,
+  hashes: Iterable<number>,
+): Promise<TilesetModels> {
   const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
   const models = await archive(dump, src.modelArchive);
   const textures = src.textureArchive !== '00000000' ? await archive(dump, src.textureArchive).catch(() => null) : null;
@@ -54,7 +58,8 @@ export async function oahuTileModels(dump: Dump, src: OahuTileSource, hashes: It
       continue;
     }
     try {
-      for (const t of parseBch(unwrapBch(unpackEntry(arc, findEntry(arc, h)!).body)).textures) set.textures.set(t.name, t);
+      for (const t of parseBch(unwrapBch(unpackEntry(arc, findEntry(arc, h)!).body)).textures)
+        set.textures.set(t.name, t);
     } catch (err) {
       set.errors.push(`テクスチャ ${hex8(h)}: ${(err as Error).message}`);
     }
@@ -71,7 +76,12 @@ export async function oahuObjectModels(dump: Dump, ref: { archive: string; entry
 }
 
 /** The world map's terrain models (worldmapParts +0x00, entries of archive `archive`) with the textures of entry `texture`. */
-export async function oahuWorldModels(dump: Dump, archiveName: string, texture: number, hashes: Iterable<number>): Promise<TilesetModels> {
+export async function oahuWorldModels(
+  dump: Dump,
+  archiveName: string,
+  texture: number,
+  hashes: Iterable<number>,
+): Promise<TilesetModels> {
   const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
   const arc = await archive(dump, archiveName);
   const t = findEntry(arc, texture);

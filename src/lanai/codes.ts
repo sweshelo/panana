@@ -27,7 +27,15 @@ export const CODE_KINDS = ['ROM の表のコード (CampaignCodeLocal)', '期限
 /** The archive of the checkin tables, and the code table (a language archive). */
 export const CHECKIN_ARCHIVE = 'A9DF0000';
 export const CODE_TABLE = 'CampaignCodeLocal';
-export const CHECKIN_TABLES = ['Checkin_Rom', 'CheckinData', 'CheckinDeliVersion', 'CheckinEVCK18', 'CheckinEVCK19', 'CheckinJewelBuy', 'CheckinCheckinCount'] as const;
+export const CHECKIN_TABLES = [
+  'Checkin_Rom',
+  'CheckinData',
+  'CheckinDeliVersion',
+  'CheckinEVCK18',
+  'CheckinEVCK19',
+  'CheckinJewelBuy',
+  'CheckinCheckinCount',
+] as const;
 
 // ---- SHA-256 (synchronous; only the first byte of the hash of 5 bytes is needed, crypto.subtle is async) ----
 
@@ -55,8 +63,10 @@ export function sha256(data: Uint8Array): Uint8Array {
   for (let o = 0; o < len; o += 64) {
     for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
     for (let i = 16; i < 64; i++) {
-      const a = w[i - 15]!, b = w[i - 2]!;
-      w[i] = (w[i - 16]! + (ror(a, 7) ^ ror(a, 18) ^ (a >>> 3)) + w[i - 7]! + (ror(b, 17) ^ ror(b, 19) ^ (b >>> 10))) | 0;
+      const a = w[i - 15]!,
+        b = w[i - 2]!;
+      w[i] =
+        (w[i - 16]! + (ror(a, 7) ^ ror(a, 18) ^ (a >>> 3)) + w[i - 7]! + (ror(b, 17) ^ ror(b, 19) ^ (b >>> 10))) | 0;
     }
     let [a, b, c, d, e, f, g, k] = h as [number, number, number, number, number, number, number, number];
     for (let i = 0; i < 64; i++) {
@@ -93,7 +103,8 @@ const M16 = [0x9fa5, 0x302d] as const;
 const I32 = [inverse(M32[1]), inverse(M32[0])] as const;
 const I16 = [inverse(M16[1]) & 0xffff, inverse(M16[0]) & 0xffff] as const;
 const mix32 = (x: number, [m, n]: readonly [number, number]): number => Math.imul(rev32(Math.imul(x, m)), n) >>> 0;
-const mix16 = (x: number, [m, n]: readonly [number, number]): number => Math.imul(rev16(Math.imul(x, m) & 0xffff), n) & 0xffff;
+const mix16 = (x: number, [m, n]: readonly [number, number]): number =>
+  Math.imul(rev16(Math.imul(x, m) & 0xffff), n) & 0xffff;
 
 const put32 = (b: Uint8Array, o: number, v: number): void => {
   for (let i = 0; i < 4; i++) b[o + i] = (v >>> (8 * i)) & 0xff;
@@ -142,16 +153,23 @@ export function decodeCode(input: string): DecodedCode {
   const code = normalizeCode(input);
   if (code.length !== CODE_LENGTH) throw new Error(`コードは ${CODE_LENGTH} 文字です (いまは ${code.length} 文字)`);
   const bad = [...code].filter((c) => !/[0-9A-Z]/.test(c));
-  if (bad.length) throw new Error(`使えない文字があります: ${[...new Set(bad)].join(' ')} (ゲームでは「入力されたコードの中に使用できない文字が含まれています。」)`);
+  if (bad.length)
+    throw new Error(
+      `使えない文字があります: ${[...new Set(bad)].join(' ')} (ゲームでは「入力されたコードの中に使用できない文字が含まれています。」)`,
+    );
   const missing = [...code].filter((c) => !CODE_ALPHABET.includes(c));
-  if (missing.length) throw new Error(`CampaignCharacter にない文字があります: ${[...new Set(missing)].join(' ')} (I・O・S・Z は使われません)`);
+  if (missing.length)
+    throw new Error(
+      `CampaignCharacter にない文字があります: ${[...new Set(missing)].join(' ')} (I・O・S・Z は使われません)`,
+    );
   const b = new Uint8Array(10);
   [...code].forEach((c, i) => {
     const v = CODE_ALPHABET.indexOf(c);
-    for (let k = 0; k < 5; k++) if ((v >> (4 - k)) & 1) {
-      const bit = i * 5 + k;
-      b[bit >> 3] = b[bit >> 3]! | (0x80 >> (bit & 7));
-    }
+    for (let k = 0; k < 5; k++)
+      if ((v >> (4 - k)) & 1) {
+        const bit = i * 5 + k;
+        b[bit >> 3] = b[bit >> 3]! | (0x80 >> (bit & 7));
+      }
   });
   descramble(b);
   const w0 = u32(b, 0);
@@ -224,17 +242,28 @@ export function codeVerdict(c: DecodedCode, rows: number, software: CodeVersion 
   const wrong = 'コードが間違っています (「入力されたコードが間違っています。」)';
   if (!c.checkOk) return { ok: false, text: `チェックの値が合いません: ${wrong}` };
   if (versionValue(c.version) > versionValue(software))
-    return { ok: false, text: `ソフトの版 ${versionText(software)} より新しいコードです (「ソフトのバージョンが古い為…」)` };
+    return {
+      ok: false,
+      text: `ソフトの版 ${versionText(software)} より新しいコードです (「ソフトのバージョンが古い為…」)`,
+    };
   switch (c.kind) {
     case 0:
       if (c.extra !== 0) return { ok: false, text: `バイト 9 が 0 ではありません: ${wrong}` };
-      if (c.payload >= rows) return { ok: false, text: `行 ${c.payload} は ${CODE_TABLE} (${rows} 行) にありません: ${wrong}` };
-      return { ok: true, text: `${CODE_TABLE} の行 ${c.payload} の報酬を受け取る (使用済みなら「このコードは既に使用されています。」)`, row: c.payload };
+      if (c.payload >= rows)
+        return { ok: false, text: `行 ${c.payload} は ${CODE_TABLE} (${rows} 行) にありません: ${wrong}` };
+      return {
+        ok: true,
+        text: `${CODE_TABLE} の行 ${c.payload} の報酬を受け取る (使用済みなら「このコードは既に使用されています。」)`,
+        row: c.payload,
+      };
     case 1:
       return { ok: false, text: '期限切れのコード (「有効期限が切れています」)' };
     case 2: {
       const { op } = supportFields(c);
-      return { ok: false, text: `サポート専用のコード。サポートのコード入力では${op >= 1 && op <= 12 ? `操作 ${op} を行う (中身は未解析)` : `操作 ${op} がないので「コードが間違っています」`}` };
+      return {
+        ok: false,
+        text: `サポート専用のコード。サポートのコード入力では${op >= 1 && op <= 12 ? `操作 ${op} を行う (中身は未解析)` : `操作 ${op} がないので「コードが間違っています」`}`,
+      };
     }
     default:
       return { ok: false, text: `種類 3: ${wrong}` };
@@ -277,7 +306,8 @@ export function rewardRows(session: LanaiSession, t: LanaiTable): RewardRow[] {
   const at = msg + 4;
   const out: RewardRow[] = [];
   for (let r = 0; r < t.rows; r++) {
-    const d = t.data, o = t.at(r, 0);
+    const d = t.data,
+      o = t.at(r, 0);
     const fail = msg > MESSAGE ? t.stringOffset(r, MESSAGE) : -2;
     out.push({
       row: r,
@@ -298,7 +328,8 @@ export function rewardRows(session: LanaiSession, t: LanaiTable): RewardRow[] {
 
 export const ROW_KINDS: Record<number, string> = { 0x80000008: 'お知らせの見出し', 0x80000000: '報酬だけ' };
 
-export const rowKindLabel = (k: number): string => ROW_KINDS[k] ?? `種類 ${(k & 0x7fffffff).toString(16).toUpperCase()} (未解析)`;
+export const rowKindLabel = (k: number): string =>
+  ROW_KINDS[k] ?? `種類 ${(k & 0x7fffffff).toString(16).toUpperCase()} (未解析)`;
 
 const WEEKDAYS = ['', '月', '火', '水', '木', '金', '土', '日'];
 
@@ -314,7 +345,9 @@ export function conditionLabel(c: RewardCondition): string | null {
 }
 
 /** Reward kinds that do nothing (FUN_003023E0). */
-export const NOOP_REWARDS = new Set([0x06, 0x0b, 0x1a, 0x1c, 0x1d, 0x1f, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2a, 0x2b, 0x2c]);
+export const NOOP_REWARDS = new Set([
+  0x06, 0x0b, 0x1a, 0x1c, 0x1d, 0x1f, 0x20, 0x22, 0x24, 0x26, 0x28, 0x2a, 0x2b, 0x2c,
+]);
 
 /** The switch the service-end code sets (FlagData key 0x51): checkin does not go online while it is on. */
 export const OFFLINE_SWITCH = 0x2a4;

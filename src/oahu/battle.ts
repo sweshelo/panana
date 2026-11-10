@@ -11,7 +11,15 @@ import type { OahuItemModels } from './itemModels';
 import type { OahuMonsterModels } from './monsterModels';
 import type { ModelRef } from '../pages/modelview';
 import { OahuRows } from './rows';
-import { OAHU_ACTION_DATA, OAHU_CONDITION_DATA, OAHU_FORM_CATEGORIES, OAHU_MONSTER_GROUP, OAHU_MONSTER_PARAMETER, OAHU_SKILLS, OAHU_STATE_NAMES } from './tables';
+import {
+  OAHU_ACTION_DATA,
+  OAHU_CONDITION_DATA,
+  OAHU_FORM_CATEGORIES,
+  OAHU_MONSTER_GROUP,
+  OAHU_MONSTER_PARAMETER,
+  OAHU_SKILLS,
+  OAHU_STATE_NAMES,
+} from './tables';
 
 export interface OahuMonster {
   id: number;
@@ -89,11 +97,26 @@ export interface OahuFormChange {
 export const OAHU_STATE_FIELDS = ['auto', 'body', 'body2', 'act2B', 'act2C'];
 
 /** Message fields of a monster row. */
-export const OAHU_MONSTER_TEXTS: [string, string][] = [['name', '名前'], ['desc', '説明']];
+export const OAHU_MONSTER_TEXTS: [string, string][] = [
+  ['name', '名前'],
+  ['desc', '説明'],
+];
 /** Message fields of an action row. */
-export const OAHU_ACTION_TEXTS: [string, string][] = [['name', '名前'], ['result1', '結果'], ['result2', '結果 (複数・別)']];
+export const OAHU_ACTION_TEXTS: [string, string][] = [
+  ['name', '名前'],
+  ['result1', '結果'],
+  ['result2', '結果 (複数・別)'],
+];
 /** Fields of a monster row that name an action. */
-export const OAHU_MONSTER_ACTIONS = [...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`), 'own', 'auto', 'body', 'body2', 'act2B', 'act2C'];
+export const OAHU_MONSTER_ACTIONS = [
+  ...Array.from({ length: OAHU_SKILLS }, (_, i) => `skill${i + 1}`),
+  'own',
+  'auto',
+  'body',
+  'body2',
+  'act2B',
+  'act2C',
+];
 
 export class OahuBattle {
   private readonly loaded = new Map<string, OahuRows>();
@@ -127,7 +150,8 @@ export class OahuBattle {
   sameDesign(row: number): number[] {
     const d = this.monsters.get(row, 'design');
     const out: number[] = [];
-    for (let m = 1; m < this.monsters.rows; m++) if (m !== row && this.monsters.get(m, 'name') && this.monsters.get(m, 'design') === d) out.push(m);
+    for (let m = 1; m < this.monsters.rows; m++)
+      if (m !== row && this.monsters.get(m, 'name') && this.monsters.get(m, 'design') === d) out.push(m);
     return out;
   }
 
@@ -183,13 +207,24 @@ export class OahuBattle {
     for (let id = 1; id < this.monsters.rows; id++) {
       const g = (k: string): number => this.monsters.get(id, k);
       if (!g('name')) continue;
-      out.push({ id, name: this.monsterName(id), level: g('level'), hp: [g('hpMin'), g('hpMax')], exp: g('exp'), gold: g('gold') });
+      out.push({
+        id,
+        name: this.monsterName(id),
+        level: g('level'),
+        hp: [g('hpMin'), g('hpMax')],
+        exp: g('exp'),
+        gold: g('gold'),
+      });
     }
     return out;
   }
 
   skills(row: number): OahuSkill[] {
-    return Array.from({ length: OAHU_SKILLS }, (_, i) => ({ slot: i + 1, action: this.monsters.get(row, `skill${i + 1}`), condition: this.monsters.get(row, `cond${i + 1}`) }));
+    return Array.from({ length: OAHU_SKILLS }, (_, i) => ({
+      slot: i + 1,
+      action: this.monsters.get(row, `skill${i + 1}`),
+      condition: this.monsters.get(row, `cond${i + 1}`),
+    }));
   }
 
   /** The skills in use (action not 0); the game's rows keep them packed to the front. */
@@ -214,7 +249,11 @@ export class OahuBattle {
   }
 
   drops(row: number): OahuDrop[] {
-    return [1, 2, 3].map((slot) => ({ slot, item: this.monsters.get(row, `drop${slot}`), rate: this.monsters.get(row, `rate${slot}`) }));
+    return [1, 2, 3].map((slot) => ({
+      slot,
+      item: this.monsters.get(row, `drop${slot}`),
+      rate: this.monsters.get(row, `rate${slot}`),
+    }));
   }
 
   /**
@@ -258,7 +297,9 @@ export class OahuBattle {
 
   /** A monster's row or its messages differ from the archive. */
   monsterChanged(row: number): boolean {
-    return this.monsters.changed(row) || OAHU_MONSTER_TEXTS.some(([k]) => this.texts.isEdited(this.monsters.get(row, k)));
+    return (
+      this.monsters.changed(row) || OAHU_MONSTER_TEXTS.some(([k]) => this.texts.isEdited(this.monsters.get(row, k)))
+    );
   }
 
   revertMonster(row: number): void {
@@ -279,7 +320,13 @@ export class OahuBattle {
    * other tables in at most 16 bits, so rows stay under 0x100) and for the messages of its texts.
    */
   canCopyMonster(row: number): boolean {
-    return row > 0 && row < this.monsters.rows && this.monsters.rows < 0x100 && !!this.monsters.get(row, 'name') && this.texts.canAdd(this.monsterMessages(row).length);
+    return (
+      row > 0 &&
+      row < this.monsters.rows &&
+      this.monsters.rows < 0x100 &&
+      !!this.monsters.get(row, 'name') &&
+      this.texts.canAdd(this.monsterMessages(row).length)
+    );
   }
 
   /**
@@ -328,10 +375,12 @@ export class OahuBattle {
   /** Drop added messages that are the last added ones and no monster, action or item names any more (newest first). */
   private dropUnusedMessages(ids: number[]): void {
     const used = new Set<number>();
-    for (let r = 1; r < this.monsters.rows; r++) for (const [k] of OAHU_MONSTER_TEXTS) used.add(this.monsters.get(r, k));
+    for (let r = 1; r < this.monsters.rows; r++)
+      for (const [k] of OAHU_MONSTER_TEXTS) used.add(this.monsters.get(r, k));
     for (let r = 1; r < this.actions.rows; r++) for (const [k] of OAHU_ACTION_TEXTS) used.add(this.actions.get(r, k));
     for (const it of this.items.items) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.items.messageId(it.id, k));
-    for (const m of ids.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
+    for (const m of ids.sort((a, b) => b - a))
+      if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
   }
 
   /** Copy a group to a new row at the end of monsterGroup. Returns the new row. */
@@ -379,13 +428,27 @@ export class OahuBattle {
     for (let row = 1; row < this.actions.rows; row++) {
       const g = (k: string): number => this.actions.get(row, k);
       if (!g('name') && !g('bits')) continue;
-      out.push({ row, name: this.actionName(row) || `#${row}`, kind: g('kind'), subject: g('subject'), category: g('category'), element: g('element'), range: g('range'), power: [g('min'), g('max')], state: g('state') });
+      out.push({
+        row,
+        name: this.actionName(row) || `#${row}`,
+        kind: g('kind'),
+        subject: g('subject'),
+        category: g('category'),
+        element: g('element'),
+        range: g('range'),
+        power: [g('min'), g('max')],
+        state: g('state'),
+      });
     }
     return out;
   }
 
   actionChanged(row: number): boolean {
-    return this.actions.added(row) || this.actions.changed(row) || OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)));
+    return (
+      this.actions.added(row) ||
+      this.actions.changed(row) ||
+      OAHU_ACTION_TEXTS.some(([k]) => this.texts.isEdited(this.actions.get(row, k)))
+    );
   }
 
   revertAction(row: number): void {
@@ -441,7 +504,8 @@ export class OahuBattle {
     const m = this.actions.get(row, key);
     if (!m) return [];
     const out: number[] = [];
-    for (let r = 1; r < this.actions.rows; r++) if (r !== row && OAHU_ACTION_TEXTS.some(([k]) => this.actions.get(r, k) === m)) out.push(r);
+    for (let r = 1; r < this.actions.rows; r++)
+      if (r !== row && OAHU_ACTION_TEXTS.some(([k]) => this.actions.get(r, k) === m)) out.push(r);
     return out;
   }
 
@@ -473,7 +537,8 @@ export class OahuBattle {
     const out = new Map<number, number[]>();
     for (let m = 1; m < this.monsters.rows; m++) {
       if (!this.monsters.get(m, 'name')) continue;
-      for (const s of this.usedSkills(m)) if (!out.get(s.action)?.includes(m)) out.set(s.action, [...(out.get(s.action) ?? []), m]);
+      for (const s of this.usedSkills(m))
+        if (!out.get(s.action)?.includes(m)) out.set(s.action, [...(out.get(s.action) ?? []), m]);
     }
     return out;
   }
@@ -481,14 +546,23 @@ export class OahuBattle {
   /** Monsters with the action in a skill slot or as a state's action; items whose action it is. */
   actionUsers(row: number): { monsters: number[]; items: number[] } {
     const monsters: number[] = [];
-    for (let m = 1; m < this.monsters.rows; m++) if (this.monsters.get(m, 'name') && OAHU_MONSTER_ACTIONS.some((k) => this.monsters.get(m, k) === row)) monsters.push(m);
-    const items = this.items.items.filter((it) => it.action === row || it.effects.some((e) => e.value === row && e.kind >= 0x2b && e.kind <= 0x2f)).map((it) => it.id);
+    for (let m = 1; m < this.monsters.rows; m++)
+      if (this.monsters.get(m, 'name') && OAHU_MONSTER_ACTIONS.some((k) => this.monsters.get(m, k) === row))
+        monsters.push(m);
+    const items = this.items.items
+      .filter((it) => it.action === row || it.effects.some((e) => e.value === row && e.kind >= 0x2b && e.kind <= 0x2f))
+      .map((it) => it.id);
     return { monsters, items };
   }
 
   /** The monster row an action changes its user into (category 21 / 22, +0x1A), else 0. */
   formTarget(action: number): number {
-    if (action <= 0 || action >= this.actions.rows || !OAHU_FORM_CATEGORIES.includes(this.actions.get(action, 'category'))) return 0;
+    if (
+      action <= 0 ||
+      action >= this.actions.rows ||
+      !OAHU_FORM_CATEGORIES.includes(this.actions.get(action, 'category'))
+    )
+      return 0;
     const to = this.actions.get(action, 'max') & 0xff; // only the low byte is read (@0x1B45AC)
     return to > 0 && to < this.monsters.rows ? to : 0;
   }
@@ -517,7 +591,13 @@ export class OahuBattle {
     const out: OahuFormChange[] = [];
     const add = (via: string, action: number, state: boolean): void => {
       const to = this.formTarget(action);
-      if (to) out.push({ action, via, to, trigger: state && this.actions.get(action, 'kind') === 3 ? this.actions.get(action, 'trigger') : null });
+      if (to)
+        out.push({
+          action,
+          via,
+          to,
+          trigger: state && this.actions.get(action, 'kind') === 3 ? this.actions.get(action, 'trigger') : null,
+        });
     };
     for (const s of this.usedSkills(row)) add(`skill${s.slot}`, s.action, false);
     for (const k of OAHU_STATE_FIELDS) add(k, this.monsters.get(row, k), true);
@@ -537,7 +617,7 @@ export class OahuBattle {
   conditionName(row: number): string {
     if (row <= 0 || row >= this.conditions.rows) return row ? `#${row}` : 'なし';
     const n = this.message(this.conditions.get(row, 'name'));
-    return n && n !== 'なし' ? n : OAHU_STATE_NAMES[row] ?? `状態 ${row}`;
+    return n && n !== 'なし' ? n : (OAHU_STATE_NAMES[row] ?? `状態 ${row}`);
   }
 
   setGroupSlots(row: number, leads: GroupSlot[], mates: GroupSlot[]): void {
@@ -561,6 +641,8 @@ export class OahuBattle {
 
   /** Groups with the monster among their candidates or in their fixed formation. */
   groupsOf(monster: number): number[] {
-    return this.groupList().filter((g) => [...g.leads, ...g.mates].some((s) => s.monster === monster) || g.fixed.includes(monster)).map((g) => g.row);
+    return this.groupList()
+      .filter((g) => [...g.leads, ...g.mates].some((s) => s.monster === monster) || g.fixed.includes(monster))
+      .map((g) => g.row);
   }
 }

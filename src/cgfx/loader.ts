@@ -42,7 +42,11 @@ export function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Pr
  * Every model of a tile archive with the textures of an entry of another archive ('00000000' = none). `scope` keeps
  * another game's archive of the same name apart (初代's 46910AB6 is not RPG2's) in the caches.
  */
-export function loadTileset(game: Pick<Game, 'dump'>, src: { modelArchive: string; textureArchive: string; textureEntry: number }, scope = ''): Promise<TilesetModels> {
+export function loadTileset(
+  game: Pick<Game, 'dump'>,
+  src: { modelArchive: string; textureArchive: string; textureEntry: number },
+  scope = '',
+): Promise<TilesetModels> {
   const key = `tileset/${scope ? `${scope}/` : ''}${src.modelArchive}/${hex8(src.textureEntry)}/v${CACHE_VERSION}`;
   let p = memory.get(key);
   if (!p) {
@@ -78,7 +82,8 @@ export function loadTileset(game: Pick<Game, 'dump'>, src: { modelArchive: strin
   return p;
 }
 
-const objKey = (archive: number, entry: number, scope = ''): string => `object/${scope ? `${scope}/` : ''}${hex8(archive)}/${hex8(entry)}/v${CACHE_VERSION}`;
+const objKey = (archive: number, entry: number, scope = ''): string =>
+  `object/${scope ? `${scope}/` : ''}${hex8(archive)}/${hex8(entry)}/v${CACHE_VERSION}`;
 
 /**
  * Models of object files (mapObject rows). Files of the same archive are converted in one request. `scope` keeps
@@ -115,7 +120,9 @@ export async function loadObjectModels(
       }
       if (missing.length) {
         const bytes = (await game.dump.readRomfs(hex8(archive))).slice();
-        const res = await run<Map<number, TilesetModels>>({ kind: 'objects', archive: bytes, entries: missing }, [bytes.buffer as ArrayBuffer]);
+        const res = await run<Map<number, TilesetModels>>({ kind: 'objects', archive: bytes, entries: missing }, [
+          bytes.buffer as ArrayBuffer,
+        ]);
         for (const [e, t] of res) {
           found.set(e, t);
           await idbSet(objKey(archive, e, scope), t);
@@ -138,7 +145,8 @@ export { objKey };
 
 // ---- model + texture pairs of one archive (monsters)
 
-const compositeKey = (name: string, model: number, tex: number): string => `composite/${name}/${hex8(model)}/${hex8(tex)}/v${CACHE_VERSION}`;
+const compositeKey = (name: string, model: number, tex: number): string =>
+  `composite/${name}/${hex8(model)}/${hex8(tex)}/v${CACHE_VERSION}`;
 /** Archives the worker already keeps. */
 const sentArchives = new Set<string>();
 
@@ -147,13 +155,22 @@ export function forgetArchives(name?: string): void {
   if (name) sentArchives.delete(name);
   else sentArchives.clear();
 }
-const queues = new Map<string, Map<string, { model: number; tex: number; resolve: (t: TilesetModels) => void; reject: (e: Error) => void }>>();
+const queues = new Map<
+  string,
+  Map<string, { model: number; tex: number; resolve: (t: TilesetModels) => void; reject: (e: Error) => void }>
+>();
 
 /**
  * A model of an archive with the textures of another entry (0 = its own); batched per archive. `scope` keeps the models
  * of another game's archive of the same name apart (初代's 470D2848 is not RPG2's) in the caches and the worker.
  */
-export function loadComposite(game: Pick<Game, 'dump'>, name: string, model: number, tex: number, scope = ''): Promise<TilesetModels> {
+export function loadComposite(
+  game: Pick<Game, 'dump'>,
+  name: string,
+  model: number,
+  tex: number,
+  scope = '',
+): Promise<TilesetModels> {
   const id = scope ? `${scope}/${name}` : name;
   const key = compositeKey(id, model, tex);
   let p = memory.get(key);

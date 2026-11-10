@@ -20,7 +20,10 @@ export const SKILL_FILE = 'monsterAttackSkill.bin';
 export const GROUP_FILE = 'monsterGroup.bin';
 export const FIX_GROUP_FILE = 'monsterFixGroup.bin';
 
-export const DROP_SLOTS = [['drop1', 'drop1Rate'], ['drop2', 'drop2Rate']] as const;
+export const DROP_SLOTS = [
+  ['drop1', 'drop1Rate'],
+  ['drop2', 'drop2Rate'],
+] as const;
 export const SKILL_SLOTS = ['skill0', 'skill1', 'skill2', 'skill3', 'skill4'] as const;
 
 export interface HonoluluMonster {
@@ -41,7 +44,7 @@ export const skillRows = (session: HonoluluSession): TableRows => session.master
 /** The name of a look (monsterData's row). */
 export function designName(session: HonoluluSession, design: number): string {
   const d = designRows(session);
-  return design > 0 && design < d.rows ? session.messages.texts.preview(d.get(design, 'name'), true) ?? '' : '';
+  return design > 0 && design < d.rows ? (session.messages.texts.preview(d.get(design, 'name'), true) ?? '') : '';
 }
 
 /** The monsters: the rows of monsterBattleParameter with a look (row 0 is empty), in row order. */
@@ -53,7 +56,14 @@ export function honoluluMonsters(session: HonoluluSession): HonoluluMonster[] {
     if (!design) continue;
     const a = t.get(row, 'hpMin');
     const b = t.get(row, 'hpMax');
-    out.push({ row, design, name: designName(session, design), level: t.get(row, 'level'), hp: { min: Math.min(a, b), max: Math.max(a, b) }, next: t.get(row, 'next') });
+    out.push({
+      row,
+      design,
+      name: designName(session, design),
+      level: t.get(row, 'level'),
+      hp: { min: Math.min(a, b), max: Math.max(a, b) },
+      next: t.get(row, 'next'),
+    });
   }
   return out;
 }
@@ -77,9 +87,12 @@ export function monsterName(session: HonoluluSession, row: number): string {
 /** Names of rows of the monster tables (FieldContext.rowName for the tables both archives refer to). */
 export function monsterRowName(session: HonoluluSession, table: string, row: number): string | undefined {
   switch (table) {
-    case DESIGN_FILE: return designName(session, row) || undefined;
-    case BATTLE_FILE: return monsterName(session, row) || undefined;
-    case SKILL_FILE: return attackName(session, row) || undefined;
+    case DESIGN_FILE:
+      return designName(session, row) || undefined;
+    case BATTLE_FILE:
+      return monsterName(session, row) || undefined;
+    case SKILL_FILE:
+      return attackName(session, row) || undefined;
   }
   return undefined;
 }
@@ -99,7 +112,11 @@ export function monsterGroups(session: HonoluluSession): Map<number, MonsterGrou
     if (!g[kind].includes(row)) g[kind].push(row);
   };
   const groups = session.master.rows(GROUP_FILE);
-  for (let r = 0; r < groups.rows; r++) for (let k = 0; k < 5; k++) { add(groups.get(r, `a${k}`), 'groups', r); add(groups.get(r, `b${k}`), 'groups', r); }
+  for (let r = 0; r < groups.rows; r++)
+    for (let k = 0; k < 5; k++) {
+      add(groups.get(r, `a${k}`), 'groups', r);
+      add(groups.get(r, `b${k}`), 'groups', r);
+    }
   const fixed = session.master.rows(FIX_GROUP_FILE);
   for (let r = 0; r < fixed.rows; r++) for (let k = 0; k < 5; k++) add(fixed.get(r, `m${k}`), 'fixed', r);
   return out;
@@ -108,8 +125,14 @@ export function monsterGroups(session: HonoluluSession): Map<number, MonsterGrou
 /** The monsters of a group, by name (the group's slots A then B, or a fixed group's). */
 export function groupMembers(session: HonoluluSession, file: string, row: number): string[] {
   const t = session.master.rows(file);
-  const keys = file === GROUP_FILE ? [...Array.from({ length: 5 }, (_, k) => `a${k}`), ...Array.from({ length: 5 }, (_, k) => `b${k}`)] : Array.from({ length: 5 }, (_, k) => `m${k}`);
-  return keys.map((k) => t.get(row, k)).filter((m) => m).map((m) => monsterRowName(session, BATTLE_FILE, m) ?? `#${m}`);
+  const keys =
+    file === GROUP_FILE
+      ? [...Array.from({ length: 5 }, (_, k) => `a${k}`), ...Array.from({ length: 5 }, (_, k) => `b${k}`)]
+      : Array.from({ length: 5 }, (_, k) => `m${k}`);
+  return keys
+    .map((k) => t.get(row, k))
+    .filter((m) => m)
+    .map((m) => monsterRowName(session, BATTLE_FILE, m) ?? `#${m}`);
 }
 
 /** The model of a look (monsterData +0x04 with the textures of +0x08, in 470D2848), or null. */
@@ -122,7 +145,10 @@ export function honoluluMonsterModel(session: HonoluluSession, design: number): 
   return {
     key: `honolulu-monster/${hex8(model)}/${hex8(texture)}`,
     // 初代 draws the lower render priority first (the eyes over the bodies), not RPG2's order
-    load: async () => ({ set: lowerPriorityFirst(await loadComposite(session, HONOLULU_MONSTER_MODELS, model, texture, 'honolulu')), hash: model }),
+    load: async () => ({
+      set: lowerPriorityFirst(await loadComposite(session, HONOLULU_MONSTER_MODELS, model, texture, 'honolulu')),
+      hash: model,
+    }),
   };
 }
 

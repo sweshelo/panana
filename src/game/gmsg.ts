@@ -6,7 +6,15 @@
 // A message runs to the next offset (the last one to the end of the file). Text messages are UTF-16LE (msgtext.ts);
 // readings are 1-byte strings. The game checks neither the size nor the end (FUN_001e78f0).
 import { equalBytes, u16, u32, w16, w32 } from '../util/bytes';
-import { KAHARA_SYNTAX, plainText, previewText, textToUnits, unitsToText, type MessageSyntax, type MessageText } from './msgtext';
+import {
+  KAHARA_SYNTAX,
+  plainText,
+  previewText,
+  textToUnits,
+  unitsToText,
+  type MessageSyntax,
+  type MessageText,
+} from './msgtext';
 
 export class Gmsg {
   readonly first: number;
@@ -115,7 +123,8 @@ export function fromUnits(u: Uint16Array): Uint8Array {
   return b;
 }
 
-export const equalUnits = (a: Uint16Array, b: Uint16Array): boolean => a.length === b.length && a.every((c, i) => c === b[i]);
+export const equalUnits = (a: Uint16Array, b: Uint16Array): boolean =>
+  a.length === b.length && a.every((c, i) => c === b[i]);
 
 export interface MessageFile {
   name: string;
@@ -164,16 +173,31 @@ export class MessageStore {
    * MessageMod_JP.gsmb, a file name = past the last ID of that file of the archive (RPG3: its files are 10000 IDs
    * apart, so a file can grow without meeting the next one).
    */
-  constructor(files: MessageFile[], readonly syntax: MessageSyntax = KAHARA_SYNTAX, canAddMessages: boolean | string = true) {
+  constructor(
+    files: MessageFile[],
+    readonly syntax: MessageSyntax = KAHARA_SYNTAX,
+    canAddMessages: boolean | string = true,
+  ) {
     this.files = files.filter((f) => !f.gmsg.reading);
     this.readings = files.filter((f) => f.gmsg.reading);
     const last = files.reduce((a, f) => (f.gmsg.raw.length ? Math.max(a, f.gmsg.last) : a), LAST_GAME_MESSAGE);
     const own = this.files.find((f) => f.gmsg.first > LAST_GAME_MESSAGE && f.gmsg.last === last);
     const template = this.files.find((f) => f.editable);
-    const append = typeof canAddMessages === 'string' ? this.files.find((f) => f.name === canAddMessages && f.editable) : undefined;
-    this.host = typeof canAddMessages === 'string' ? append : !canAddMessages ? undefined : own?.editable
-      ? own
-      : template && { name: NEW_MESSAGE_FILE, entryIndex: -1, gmsg: Gmsg.empty(template.gmsg, Math.max(NEW_MESSAGE_FIRST, last + 1)), editable: true };
+    const append =
+      typeof canAddMessages === 'string' ? this.files.find((f) => f.name === canAddMessages && f.editable) : undefined;
+    this.host =
+      typeof canAddMessages === 'string'
+        ? append
+        : !canAddMessages
+          ? undefined
+          : own?.editable
+            ? own
+            : template && {
+                name: NEW_MESSAGE_FILE,
+                entryIndex: -1,
+                gmsg: Gmsg.empty(template.gmsg, Math.max(NEW_MESSAGE_FIRST, last + 1)),
+                editable: true,
+              };
   }
 
   file(id: number): MessageFile | undefined {
@@ -190,7 +214,9 @@ export class MessageStore {
   canAdd(n = 1): boolean {
     if (!this.host) return false;
     const next = this.addedBase + this.added.length;
-    return !this.files.some((f) => f !== this.host && f.gmsg.raw.length > 0 && f.gmsg.first < next + n && f.gmsg.last >= next);
+    return !this.files.some(
+      (f) => f !== this.host && f.gmsg.raw.length > 0 && f.gmsg.first < next + n && f.gmsg.last >= next,
+    );
   }
 
   isAdded(id: number): boolean {
@@ -206,7 +232,8 @@ export class MessageStore {
 
   /** Remove the last added message (only that one: the IDs stay in a row). */
   removeAdded(id: number): void {
-    if (id !== this.addedBase + this.added.length - 1) throw new Error(`メッセージ ${id} は最後に追加したものではありません`);
+    if (id !== this.addedBase + this.added.length - 1)
+      throw new Error(`メッセージ ${id} は最後に追加したものではありません`);
     this.added.pop();
   }
 
@@ -326,15 +353,24 @@ export class MessageStore {
     const host = this.added.length ? this.host : undefined;
     const holds = (f: MessageFile, id: number): boolean => {
       const o = this.file(id);
-      return o === f || (!!o && f.editable && o.name === f.name && o.gmsg.first === f.gmsg.first && o.gmsg.last === f.gmsg.last);
+      return (
+        o === f ||
+        (!!o && f.editable && o.name === f.name && o.gmsg.first === f.gmsg.first && o.gmsg.last === f.gmsg.last)
+      );
     };
     for (const f of this.files) {
-      const mine = new Map([...this.edits].filter(([id]) => holds(f, id)).map(([id, u]) => [id, fromUnits(u)] as const));
+      const mine = new Map(
+        [...this.edits].filter(([id]) => holds(f, id)).map(([id, u]) => [id, fromUnits(u)] as const),
+      );
       const extra = f === host ? this.added.map(fromUnits) : [];
       if (mine.size || extra.length) out.push([f, f.gmsg.build(mine, extra)]);
     }
     for (const f of this.readings) {
-      const mine = new Map([...this.edits.keys()].filter((id) => f.gmsg.has(id)).map((id) => [id, new Uint8Array(f.gmsg.raw[id - f.gmsg.first]!.length)] as const));
+      const mine = new Map(
+        [...this.edits.keys()]
+          .filter((id) => f.gmsg.has(id))
+          .map((id) => [id, new Uint8Array(f.gmsg.raw[id - f.gmsg.first]!.length)] as const),
+      );
       if (mine.size) out.push([f, f.gmsg.build(mine)]);
     }
     return out;

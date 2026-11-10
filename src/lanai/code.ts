@@ -9,7 +9,11 @@ export const LANAI_CODE_VERSION = 17408;
 export const LANAI_CODE_SIZE = 4182016;
 
 /** Sections of the Update's code.bin (ExHeader). */
-export const LANAI_SECTIONS = { text: [0x100000, 0x399900], ro: [0x49a000, 0x48848], data: [0x4e3000, 0x19a68] } as const;
+export const LANAI_SECTIONS = {
+  text: [0x100000, 0x399900],
+  ro: [0x49a000, 0x48848],
+  data: [0x4e3000, 0x19a68],
+} as const;
 
 /** Where patches go: the cave is the zero padding between the end of .text and .rodata (0x700 bytes). */
 export const LANAI_LAYOUT: CodeLayout = {
@@ -23,7 +27,11 @@ export const LANAI_LAYOUT: CodeLayout = {
 export function lanaiCode(dump: Dump): Uint8Array {
   if (!dump.update) throw new Error('code.bin を書き換えるには Update の CIA が要ります');
   const v = dump.update.titleVersion;
-  if (v !== undefined && v !== LANAI_CODE_VERSION) throw new Error(`Update のバージョンが v${v} です。Panana が調べた v${LANAI_CODE_VERSION} の Update を選んでください。`);
-  if (dump.code.length !== LANAI_CODE_SIZE) throw new Error(`code.bin が Update v${LANAI_CODE_VERSION} のものと違います (大きさ ${dump.code.length} バイト)。`);
+  if (v !== undefined && v !== LANAI_CODE_VERSION)
+    throw new Error(
+      `Update のバージョンが v${v} です。Panana が調べた v${LANAI_CODE_VERSION} の Update を選んでください。`,
+    );
+  if (dump.code.length !== LANAI_CODE_SIZE)
+    throw new Error(`code.bin が Update v${LANAI_CODE_VERSION} のものと違います (大きさ ${dump.code.length} バイト)。`);
   return dump.code;
 }

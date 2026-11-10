@@ -8,6 +8,8 @@
 // "opened" state; the rows' fields are edited from the inspector. The table goes into undo points and the export
 // like the map (it is one of the content's tables of the session).
 import { MapEditState, GRID, tileAt, type Issue, type Selection } from '../editor/model';
+import type { AutoProfile } from '../editor/autotile';
+import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
 import {
@@ -46,26 +48,39 @@ export interface LanaiTemplate {
 
 export type LanaiStamp =
   /** A prop (section 2): MapObject row (+0x00) and facing (turn 0..3). */
-  | { type: 'prop'; row: number; dir: number }
-  | { type: 'template'; t: LanaiTemplate };
+  { type: 'prop'; row: number; dir: number } | { type: 'template'; t: LanaiTemplate };
 
 export function lanaiStampLabel(s: LanaiStamp): string {
   return s.type === 'prop' ? `置物 (MapObject #${s.row})` : `${s.t.label} (${s.t.source} から)`;
 }
 
 /** EventObject row of a record (sections 3 / 4 / 5 / 8), 0 for the others. */
-export const lanaiRecEventRow = (section: number, raw: Uint8Array): number => ((LANAI_EVENT_SECTIONS as readonly number[]).includes(section) ? u32(raw, EVENT_FIELD) : 0);
+export const lanaiRecEventRow = (section: number, raw: Uint8Array): number =>
+  (LANAI_EVENT_SECTIONS as readonly number[]).includes(section) ? u32(raw, EVENT_FIELD) : 0;
 
 /** What a section's record is, for the add panel and the checks. */
 export function lanaiRecLabel(section: number, raw: Uint8Array): string {
   switch (section) {
-    case 1: return `床のギミック ${raw[0x0d]}`;
-    case 2: return `置物 #${u32(raw, 0)}`;
-    case 3: return lanaiExitLabel(lanaiExitKind(raw));
-    case 4: return u32(raw, 0) === LANAI_GOAL_CHEST ? 'ゴールの宝箱 (見た目 3、開けるとクリア)' : `宝箱 (見た目 ${u32(raw, 0)})`;
-    case 5: return u32(raw, 0) === LANAI_REPAIR_POINT ? '回復ポイント (種類 13)' : u32(raw, 0) === LANAI_REPAIR_FIELD ? '回復の場 (種類 12)' : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
-    case 8: return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
-    case 9: return `地点 ${u32(raw, 0)}`;
+    case 1:
+      return `床のギミック ${raw[0x0d]}`;
+    case 2:
+      return `置物 #${u32(raw, 0)}`;
+    case 3:
+      return lanaiExitLabel(lanaiExitKind(raw));
+    case 4:
+      return u32(raw, 0) === LANAI_GOAL_CHEST
+        ? 'ゴールの宝箱 (見た目 3、開けるとクリア)'
+        : `宝箱 (見た目 ${u32(raw, 0)})`;
+    case 5:
+      return u32(raw, 0) === LANAI_REPAIR_POINT
+        ? '回復ポイント (種類 13)'
+        : u32(raw, 0) === LANAI_REPAIR_FIELD
+          ? '回復の場 (種類 12)'
+          : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
+    case 8:
+      return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
+    case 9:
+      return `地点 ${u32(raw, 0)}`;
   }
   return `区画 ${section}`;
 }
@@ -77,7 +92,12 @@ const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 /** Content tables an undo point copies whole: the map's sounds and battle field (BattleParts.tsx). */
 const UNDO_CONTENT_TABLES = ['MapData', 'MapResource'];
 
-type LanaiTables = { group: number | null; rows: Uint8Array[] | null; treasure: Uint8Array[] | null; content: [name: string, rows: Uint8Array[]][] };
+type LanaiTables = {
+  group: number | null;
+  rows: Uint8Array[] | null;
+  treasure: Uint8Array[] | null;
+  content: [name: string, rows: Uint8Array[]][];
+};
 
 export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   info: LanaiMapInfo | null = null;
@@ -105,14 +125,28 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   }
 
   open(info: LanaiMapInfo): void {
-    if(this.stamp?.type==='template' && this.info?.dungeon!==info.dungeon) {
-      this.stamp=null;
-      if(this.tool==='place') this.tool='select';
+    if (this.stamp?.type === 'template' && this.info?.dungeon !== info.dungeon) {
+      this.stamp = null;
+      if (this.tool === 'place') this.tool = 'select';
     }
     this.info = info;
     this.reopen();
     if (this.stamp?.type === 'template' && this.tool === 'place') this.tool = 'select';
     this.emit('map');
+  }
+
+  /** The automatic brush on the outdoor / dungeon maps (not the world map, not maps with indoor tiles: map.md §6.1). */
+  override get mapTopology(): AutoProfile | undefined {
+    return this.info &&
+      !this.info.world &&
+      this.current &&
+      !this.current.tiles.some((t) => t.kind >= 15 && t.kind <= 27)
+      ? LANAI_AUTO
+      : undefined;
+  }
+
+  protected override autoPalette(): ReadonlyMap<number, readonly number[]> {
+    return this.maps.palette(this.tileset);
   }
 
   private reopen(): void {
@@ -122,6 +156,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     this.current = doc;
     this.selection = { type: 'none' };
     this.readSource();
+    if (this.brush.auto && !this.autoProfile) this.brush = { ...this.brush, auto: false };
   }
 
   /** Read the open map's MapData again (adding or removing indoor tiles can change it); returns whether it changed. */
@@ -140,7 +175,12 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       const t = this.maps.contentTable(n);
       return t ? [[n, tableRows(t)]] : [];
     });
-    return { group, rows: group === null ? null : this.maps.eventRows(group), treasure: this.maps.treasureRows(), content };
+    return {
+      group,
+      rows: group === null ? null : this.maps.eventRows(group),
+      treasure: this.maps.treasureRows(),
+      content,
+    };
   }
   protected restoreTables(t: LanaiTables): void {
     if (t.group !== null && t.rows) this.maps.restoreEventRows(t.group, t.rows);
@@ -168,7 +208,8 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   /** A point ID (section 3 +0x00) no map of the content uses. */
   private newPointId(): number {
     const used = new Set<number>();
-    for (const m of this.maps.maps) if (!m.world) for (const r of this.maps.doc(m).recs[3] ?? []) used.add(u32(r.raw, 0));
+    for (const m of this.maps.maps)
+      if (!m.world) for (const r of this.maps.doc(m).recs[3] ?? []) used.add(u32(r.raw, 0));
     for (const r of this.current?.recs[3] ?? []) used.add(u32(r.raw, 0));
     let id: number;
     do id = (Math.random() * 0xffffffff) >>> 0;
@@ -267,7 +308,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   /** MapObject rows the props of the content's maps use, most used first. */
   props(): number[] {
     const n = new Map<number, number>();
-    for (const m of this.maps.maps) if (!m.world) for (const r of this.maps.doc(m).recs[2] ?? []) n.set(u32(r.raw, 0), (n.get(u32(r.raw, 0)) ?? 0) + 1);
+    for (const m of this.maps.maps)
+      if (!m.world)
+        for (const r of this.maps.doc(m).recs[2] ?? []) n.set(u32(r.raw, 0), (n.get(u32(r.raw, 0)) ?? 0) + 1);
     return [...n].sort((a, b) => b[1] - a[1]).map(([row]) => row);
   }
 }
@@ -321,14 +364,29 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     const k = `${t.x},${t.y}`;
     seen.set(k, (seen.get(k) ?? 0) + 1);
     if (t.x < 0 || t.y < 0 || t.x >= GRID || t.y >= GRID)
-      out.push({ level: 'error', msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`, target: cell(t.x, t.y), key: `range/${k}` });
+      out.push({
+        level: 'error',
+        msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`,
+        target: cell(t.x, t.y),
+        key: `range/${k}`,
+      });
     if (t.kind !== LANAI_EMPTY_KIND && !maps.partRef(src, t.kind, letterIndex(t.letter)))
-      out.push({ level: 'warn', msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセット (${src.partsName || src.tileset}) にモデルがありません`, target: cell(t.x, t.y), key: `model/${k}/${t.kind}/${letterIndex(t.letter)}` });
+      out.push({
+        level: 'warn',
+        msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセット (${src.partsName || src.tileset}) にモデルがありません`,
+        target: cell(t.x, t.y),
+        key: `model/${k}/${t.kind}/${letterIndex(t.letter)}`,
+      });
   }
   for (const [k, n] of seen)
     if (n > 1) {
       const [x, y] = k.split(',').map(Number) as [number, number];
-      out.push({ level: 'warn', msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`, target: cell(x, y), key: `dup/${k}` });
+      out.push({
+        level: 'warn',
+        msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`,
+        target: cell(x, y),
+        key: `dup/${k}`,
+      });
     }
   if (!doc.tiles.length) out.push({ level: 'error', msg: 'タイルがありません', key: 'empty' });
 
@@ -336,7 +394,12 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
   for (const k of [2, 4, 5, 8, 9]) {
     (doc.recs[k] ?? []).forEach((r, i) => {
       if (r.x < 0 || r.x > 299 || r.y < 0 || r.y > 299)
-        out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`, target: rec(k, i), key: `fine/${k}/${r.x},${r.y}` });
+        out.push({
+          level: 'error',
+          msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`,
+          target: rec(k, i),
+          key: `fine/${k}/${r.x},${r.y}`,
+        });
     });
   }
   // records on cells without a tile
@@ -344,7 +407,12 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
     (doc.recs[k] ?? []).forEach((r, i) => {
       const [px, py] = recCellPos(r, LANAI_LAYOUTS[k]!);
       if (!tileAt(doc, Math.floor(px), Math.floor(py)))
-        out.push({ level: 'warn', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: セル (${Math.floor(px)}, ${Math.floor(py)}) にタイルがありません`, target: rec(k, i), key: `notile/${k}/${hex8(u32(r.raw, 0))}/${r.x},${r.y}` });
+        out.push({
+          level: 'warn',
+          msg: `${LANAI_LAYOUTS[k]!.label} #${i}: セル (${Math.floor(px)}, ${Math.floor(py)}) にタイルがありません`,
+          target: rec(k, i),
+          key: `notile/${k}/${hex8(u32(r.raw, 0))}/${r.x},${r.y}`,
+        });
     });
   }
 
@@ -356,7 +424,12 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (!row) return;
       users.set(row, (users.get(row) ?? 0) + 1);
       if (table && row >= table.rows)
-        out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`, target: rec(k, i), key: `evrow/${k}/${row}` });
+        out.push({
+          level: 'error',
+          msg: `${LANAI_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`,
+          target: rec(k, i),
+          key: `evrow/${k}/${row}`,
+        });
     });
   }
   // chests: their TreasureGroup row is in the content's table
@@ -368,11 +441,21 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
         for (const { field } of ev && ev < table.rows ? lanaiChestFields(table, ev) : []) {
           const row = table.u32(ev, field);
           if (row >= treasure.rows)
-            out.push({ level: 'error', msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`, target: rec(k, i), key: `treasure/${k}/${row}` });
+            out.push({
+              level: 'error',
+              msg: `${LANAI_LAYOUTS[k]!.label} #${i}: 中身の表 (TreasureGroup) に行 ${row} がありません (表は ${treasure.rows} 行)`,
+              target: rec(k, i),
+              key: `treasure/${k}/${row}`,
+            });
         }
       });
   for (const [row, n] of users)
-    if (n > 1) out.push({ level: 'warn', msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`, key: `evshare/${row}/${n}` });
+    if (n > 1)
+      out.push({
+        level: 'warn',
+        msg: `${n} 個のレコードが同じ EventObject の行 ${row} を使っています (宝箱の中身や「開けた」などの状態を共有します)`,
+        key: `evshare/${row}/${n}`,
+      });
 
   // EventObject state slots (+0x58): below the group's count, one row each (map.md §7.2)
   const group = maps.group(info);
@@ -382,7 +465,11 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (row >= table.rows) continue;
       const slot = lanaiEventSlot(table, row);
       if (slot >= group.stateCount) {
-        out.push({ level: 'warn', msg: `EventObject の行 ${row}: 状態の枠 ${slot} が MapGroup の枠の数 ${group.stateCount} 以上なので、状態 (開けた、など) が保存されません`, key: `evslot/${row}/${slot}` });
+        out.push({
+          level: 'warn',
+          msg: `EventObject の行 ${row}: 状態の枠 ${slot} が MapGroup の枠の数 ${group.stateCount} 以上なので、状態 (開けた、など) が保存されません`,
+          key: `evslot/${row}/${slot}`,
+        });
         continue;
       }
       slots.set(slot, [...(slots.get(slot) ?? []), row]);
@@ -393,7 +480,12 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
       if (slots.has(slot)) slots.get(slot)!.push(t);
     }
     for (const [slot, rows] of slots)
-      if (rows.length > 1) out.push({ level: 'warn', msg: `EventObject の行 ${rows.join(', ')} が同じ状態の枠 ${slot} を使っています (状態を共有します)`, key: `evslotshare/${slot}/${rows.join(',')}` });
+      if (rows.length > 1)
+        out.push({
+          level: 'warn',
+          msg: `EventObject の行 ${rows.join(', ')} が同じ状態の枠 ${slot} を使っています (状態を共有します)`,
+          key: `evslotshare/${slot}/${rows.join(',')}`,
+        });
   }
 
   // section 3: point IDs are what the exits of other maps lead to (EventObject +0x18)
@@ -402,20 +494,45 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
   (doc.recs[3] ?? []).forEach((r, i) => {
     const id = u32(r.raw, 0);
     if (id && ids.get(id)! > 1 && lanaiExitKind(r.raw) !== WALL_DOOR)
-      out.push({ level: 'warn', msg: `出入口 #${i}: 地点 ID ${hex8(id).toUpperCase()} がこのマップでほかにも使われています`, target: rec(3, i), key: `iddup/${hex8(id)}` });
+      out.push({
+        level: 'warn',
+        msg: `出入口 #${i}: 地点 ID ${hex8(id).toUpperCase()} がこのマップでほかにも使われています`,
+        target: rec(3, i),
+        key: `iddup/${hex8(id)}`,
+      });
   });
   for (const r of maps.originalDoc(info).recs[3] ?? []) {
     const id = u32(r.raw, 0);
-    if (!ids.has(id)) out.push({ level: 'warn', msg: `元の出入口 (地点 ${hex8(id).toUpperCase()}) が消えています。ここへ来る出入口の行き先がなくなります`, key: `gone/${hex8(id)}` });
+    if (!ids.has(id))
+      out.push({
+        level: 'warn',
+        msg: `元の出入口 (地点 ${hex8(id).toUpperCase()}) が消えています。ここへ来る出入口の行き先がなくなります`,
+        key: `gone/${hex8(id)}`,
+      });
   }
 
   // section 6: cells on tiles, values that name a MonsterGroup row (others become row 0: map.md §5.7)
   doc.cells6.forEach((c) => {
-    if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
+    if (!tileAt(doc, c.x, c.y))
+      out.push({
+        level: 'warn',
+        msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`,
+        target: cell(c.x, c.y),
+        key: `s6/${c.x},${c.y}`,
+      });
     if (maps.monsterGroup && maps.monsterGroupRow(c.value) < 0)
-      out.push({ level: 'error', msg: `区画 6 のセル (${c.x}, ${c.y}): ${hex8(c.value).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`, target: cell(c.x, c.y), key: `s6id/${c.x},${c.y}/${hex8(c.value)}` });
+      out.push({
+        level: 'error',
+        msg: `区画 6 のセル (${c.x}, ${c.y}): ${hex8(c.value).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`,
+        target: cell(c.x, c.y),
+        key: `s6id/${c.x},${c.y}/${hex8(c.value)}`,
+      });
   });
   if (doc.sec6Header.length >= 4 && maps.monsterGroup && maps.monsterGroupRow(u32(doc.sec6Header, 0)) < 0)
-    out.push({ level: 'error', msg: `区画 6 のヘッダーの群れ ${hex8(u32(doc.sec6Header, 0)).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`, key: `s6head/${hex8(u32(doc.sec6Header, 0))}` });
+    out.push({
+      level: 'error',
+      msg: `区画 6 のヘッダーの群れ ${hex8(u32(doc.sec6Header, 0)).toUpperCase()} はこのコンテンツの MonsterGroup にありません (行 0 の群れになります)`,
+      key: `s6head/${hex8(u32(doc.sec6Header, 0))}`,
+    });
   return out;
 }

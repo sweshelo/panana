@@ -80,15 +80,23 @@ export function automapPatchSource(hosts: ReadonlyMap<number, number>): string |
 /** Why the patch cannot go into this code.bin (the calls it replaces are not the game's), or null. */
 export function automapProblem(code: Uint8Array): string | null {
   const bad = AUTOMAP_SITES.filter((a) => a - BASE + 4 > code.length || u32(code, a - BASE) !== blWord(a, FUN_DUNGEON));
-  return bad.length ? `code.bin の 0x${bad.map((a) => a.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${AUTOMAP_PATCH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)` : null;
+  return bad.length
+    ? `code.bin の 0x${bad.map((a) => a.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${AUTOMAP_PATCH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)`
+    : null;
 }
 
-const mapsOf = (game: Game) => (d: number): number => game.code.maps.filter((m) => m.dungeon === d).length;
+const mapsOf =
+  (game: Game) =>
+  (d: number): number =>
+    game.code.maps.filter((m) => m.dungeon === d).length;
 
 /** The new dungeons with maps -> the dungeon whose automap slot each shares. */
 export function gameAutomapHosts(game: Game): Map<number, number> {
   const count = mapsOf(game);
-  return automapHosts(game.code.dungeons.map((d) => d.dungeon).filter((d) => count(d) > 0), count);
+  return automapHosts(
+    game.code.dungeons.map((d) => d.dungeon).filter((d) => count(d) > 0),
+    count,
+  );
 }
 
 /** The patch for the new dungeons of the game (null: none has maps). */
@@ -105,7 +113,11 @@ export function automapGroup(game: Game, dungeon: number): number[] | null {
   const hosts = gameAutomapHosts(game);
   const isNew = game.code.dungeons.some((d) => d.dungeon === dungeon);
   // a new dungeon without maps yet: the slot it will get with its first map
-  const host = hosts.get(dungeon) ?? (isNew && !hasAutomapSlot(dungeon) ? automapHosts([...hosts.keys(), dungeon], (d) => (d === dungeon ? 1 : mapsOf(game)(d))).get(dungeon) : undefined);
+  const host =
+    hosts.get(dungeon) ??
+    (isNew && !hasAutomapSlot(dungeon)
+      ? automapHosts([...hosts.keys(), dungeon], (d) => (d === dungeon ? 1 : mapsOf(game)(d))).get(dungeon)
+      : undefined);
   if (host === undefined && !hasAutomapSlot(dungeon)) return null;
   const slot = host ?? dungeon;
   return [dungeon, ...[slot, ...[...hosts].filter(([, h]) => h === slot).map(([d]) => d)].filter((d) => d !== dungeon)];

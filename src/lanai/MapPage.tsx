@@ -14,7 +14,15 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactN
 import { editorKey } from '../editor/controller';
 import { HexInput, RawBytes } from '../editor/fields';
 import { kindName, ROT_ARROW } from '../editor/legend';
-import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
+import {
+  LayerBox,
+  MapChecks,
+  MapFrame,
+  MapHeaderControls,
+  MapLayers,
+  MapStatus,
+  type MapViewMode,
+} from '../editor/mappage';
 import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
 import { MapToolbox, TOOLS } from '../editor/tools';
@@ -48,9 +56,18 @@ import {
   type LanaiMapInfo,
   type LanaiMaps,
 } from './maps';
-import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
+import {
+  LANAI_ACTION_GOAL_CHEST,
+  LANAI_ACTION_NONE,
+  LANAI_ACTION_SCRIPT,
+  LANAI_ACTION_TYPES,
+  LANAI_ACTIONS,
+  lanaiActionName,
+  talkMessageOffset,
+} from './actions';
 import { LanaiMapBattlePanel } from './BattleParts';
 import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSelect, TreasureEditor } from './MapParts';
+import { LanaiNamesDialog, LanaiNewGroupDialog, LanaiNewMapDialog } from './MapEditDialogs';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
@@ -67,27 +84,50 @@ export const lanaiMapHref = (content: number, name?: string, rec?: { section: nu
 export const lanaiStageHref = (content: number): string => `#/stages/${content}`;
 
 /** The tools of RPG FREE!'s map page: the section 6 tool adds cells of the MonsterGroup picked in its panel. */
-const LANAI_TOOLS = TOOLS.map((t): (typeof TOOLS)[number] => (t[0] === 'room' ? ['room', '敵の群れのセル (区画 6)', t[2]] : t));
+const LANAI_TOOLS = TOOLS.map((t): (typeof TOOLS)[number] =>
+  t[0] === 'room' ? ['room', '敵の群れのセル (区画 6)', t[2]] : t,
+);
 
 const noop = (): void => {};
 
 /** Re-render on every change of the content's maps (edits, reverts, sections put back). */
 function useMaps(maps: LanaiMaps | null): number {
-  return useSyncExternalStore((f) => (maps ? maps.on(f) : noop), () => maps?.revision ?? 0, () => maps?.revision ?? 0);
+  return useSyncExternalStore(
+    (f) => (maps ? maps.on(f) : noop),
+    () => maps?.revision ?? 0,
+    () => maps?.revision ?? 0,
+  );
 }
 
 export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const contents = useMemo(() => lanaiContents(session), [session]);
   const m = arg ? /^(\d+)(?:\.([^@]*))?(?:@(\d+)\.(\d+))?$/.exec(arg) : null;
-  const content = useSticky<number>(m ? Number(m[1]) : undefined, (i) => i < contents.length, () => (contents.length > 1 ? 1 : 0));
+  const content = useSticky<number>(
+    m ? Number(m[1]) : undefined,
+    (i) => i < contents.length,
+    () => (contents.length > 1 ? 1 : 0),
+  );
   const c = contents[content]!;
   const loaded = useAsync(() => lanaiMaps(session, c), [session, c]);
   return (
     <div className="map-detail">
-      {!loaded ? <p className="muted" style={{ padding: 16 }}>マップを読み込み中…</p>
-        : loaded instanceof Error ? <NoMaps session={session} contents={contents} content={c} error={loaded.message} />
-        : <MapDetail key={c.index} session={session} contents={contents} content={c} maps={loaded} name={m?.[2] ? decodeURIComponent(m[2]) : undefined}
-            rec={m?.[3] ? { section: Number(m[3]), index: Number(m[4]) } : undefined} />}
+      {!loaded ? (
+        <p className="muted" style={{ padding: 16 }}>
+          マップを読み込み中…
+        </p>
+      ) : loaded instanceof Error ? (
+        <NoMaps session={session} contents={contents} content={c} error={loaded.message} />
+      ) : (
+        <MapDetail
+          key={c.index}
+          session={session}
+          contents={contents}
+          content={c}
+          maps={loaded}
+          name={m?.[2] ? decodeURIComponent(m[2]) : undefined}
+          rec={m?.[3] ? { section: Number(m[3]), index: Number(m[4]) } : undefined}
+        />
+      )}
     </div>
   );
 }
@@ -106,17 +146,31 @@ const groupLabel = (maps: LanaiMaps, g: number): string => maps.groupName(g) || 
  */
 function useMapGroups(session: LanaiSession, contents: LanaiContent[], current: LanaiMaps | null): MapPickerGroups {
   const revision = useMaps(current);
-  return useMemo(() => contents.flatMap((c): MapPickerGroups => {
-    const head = `${c.index}: ${contentTitle(c)}`;
-    const maps = current?.content.index === c.index ? current : loadedLanaiMaps(session, c.index);
-    if (!maps) return [[head, [{ hash: pickId(c.index, CONTENT_ROW), title: 'このステージのマップを開く', code: c.archive }]]];
-    const byGroup = new Map<number, MapPickerRow[]>();
-    for (const m of maps.maps) {
-      const title = m.world ? 'ワールドマップ (表示のみ)' : `${lanaiFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
-      byGroup.set(m.dungeon, [...(byGroup.get(m.dungeon) ?? []), { hash: pickId(c.index, m.index), title, code: m.name }]);
-    }
-    return [...byGroup].sort(([a], [b]) => a - b).map(([g, rows]): [string, MapPickerRow[]] => [`${head} — ${groupLabel(maps, g)}  (MapGroup ${g})`, rows]);
-  }), [session, contents, current, revision]);
+  return useMemo(
+    () =>
+      contents.flatMap((c): MapPickerGroups => {
+        const head = `${c.index}: ${contentTitle(c)}`;
+        const maps = current?.content.index === c.index ? current : loadedLanaiMaps(session, c.index);
+        if (!maps)
+          return [
+            [head, [{ hash: pickId(c.index, CONTENT_ROW), title: 'このステージのマップを開く', code: c.archive }]],
+          ];
+        const byGroup = new Map<number, MapPickerRow[]>();
+        for (const m of maps.maps) {
+          const title = m.world
+            ? 'ワールドマップ (表示のみ)'
+            : `${lanaiFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
+          byGroup.set(m.dungeon, [
+            ...(byGroup.get(m.dungeon) ?? []),
+            { hash: pickId(c.index, m.index), title, code: m.name },
+          ]);
+        }
+        return [...byGroup]
+          .sort(([a], [b]) => a - b)
+          .map(([g, rows]): [string, MapPickerRow[]] => [`${head} — ${groupLabel(maps, g)}  (MapGroup ${g})`, rows]);
+      }),
+    [session, contents, current, revision],
+  );
 }
 
 /** The maps with edits, as picker rows. */
@@ -124,13 +178,19 @@ function modifiedIds(session: LanaiSession, contents: LanaiContent[]): Set<numbe
   const out = new Set<number>();
   for (const c of contents) {
     const maps = loadedLanaiMaps(session, c.index);
-    for (const m of maps?.maps ?? []) if (maps!.isChanged(m)) out.add(pickId(c.index, m.index));
+    for (const m of maps?.maps ?? []) if (m.added || maps!.isChanged(m)) out.add(pickId(c.index, m.index));
   }
   return out;
 }
 
 /** The header's map picker. */
-function Picker({ session, contents, maps, content, info }: {
+function Picker({
+  session,
+  contents,
+  maps,
+  content,
+  info,
+}: {
   session: LanaiSession;
   contents: LanaiContent[];
   maps: LanaiMaps | null;
@@ -138,35 +198,71 @@ function Picker({ session, contents, maps, content, info }: {
   info: LanaiMapInfo | null;
 }): ReactNode {
   const groups = useMapGroups(session, contents, maps);
-  const label = maps && info ? `${contentTitle(content)} — ${groupLabel(maps, info.dungeon)}・${lanaiFloorLabel(info.floor) || '地上'}  ${info.name}` : `${content.index}: ${contentTitle(content)} (マップなし)`;
+  const label =
+    maps && info
+      ? `${contentTitle(content)} — ${groupLabel(maps, info.dungeon)}・${lanaiFloorLabel(info.floor) || '地上'}  ${info.name}`
+      : `${content.index}: ${contentTitle(content)} (マップなし)`;
   return (
-    <MapPickerButton groups={groups} value={pickId(content.index, info ? info.index : CONTENT_ROW)} className="map-select" modified={modifiedIds(session, contents)} label={label}
+    <MapPickerButton
+      groups={groups}
+      value={pickId(content.index, info ? info.index : CONTENT_ROW)}
+      className="map-select"
+      modified={modifiedIds(session, contents)}
+      label={label}
       onChange={(id) => {
         const c = contents[Math.floor(id / 0x1000)];
         if (!c) return;
         const row = id % 0x1000;
-        const m = row === CONTENT_ROW ? undefined : (c.index === content.index ? maps : loadedLanaiMaps(session, c.index))?.maps[row];
+        const m =
+          row === CONTENT_ROW
+            ? undefined
+            : (c.index === content.index ? maps : loadedLanaiMaps(session, c.index))?.maps[row];
         location.hash = lanaiMapHref(c.index, m?.name);
-      }} />
+      }}
+    />
   );
 }
 
 /** Shown while a content has no maps (or they did not load): another map can still be picked. */
-function NoMaps({ session, contents, content, error }: { session: LanaiSession; contents: LanaiContent[]; content: LanaiContent; error: string }): ReactNode {
+function NoMaps({
+  session,
+  contents,
+  content,
+  error,
+}: {
+  session: LanaiSession;
+  contents: LanaiContent[];
+  content: LanaiContent;
+  error: string;
+}): ReactNode {
   const pane = useRef<HTMLDivElement>(null);
   return (
-    <MapFrame mode="split" pane2d={pane} pane3d={pane} left={null} right={null} status={null}
+    <MapFrame
+      mode="split"
+      pane2d={pane}
+      pane3d={pane}
+      left={null}
+      right={null}
+      status={null}
       header={<Picker session={session} contents={contents} maps={null} content={content} info={null} />}
       placeholder={
         <div style={{ padding: 16 }}>
           <div className="error">{error}</div>
           <Stages content={content} />
         </div>
-      } />
+      }
+    />
   );
 }
 
-function MapDetail({ session, contents, content, maps, name, rec }: {
+function MapDetail({
+  session,
+  contents,
+  content,
+  maps,
+  name,
+  rec,
+}: {
   session: LanaiSession;
   contents: LanaiContent[];
   content: LanaiContent;
@@ -175,8 +271,16 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
   /** A record to select (a link from the shop page). */
   rec?: { section: number; index: number };
 }): ReactNode {
-  const first = useMemo(() => maps.maps.find((m) => !m.world && m.hash === maps.groups[1]?.firstMap) ?? maps.maps.find((m) => !m.world) ?? maps.maps[0]!, [maps]);
-  const picked = useSticky<string>(name, (n) => !!maps.mapByName(n), () => first.name);
+  // not memoized: maps can be added and taken out (mapadd.ts)
+  const first =
+    maps.maps.find((m) => !m.world && m.hash === maps.groups[1]?.firstMap) ??
+    maps.maps.find((m) => !m.world) ??
+    maps.maps[0]!;
+  const picked = useSticky<string>(
+    name,
+    (n) => !!maps.mapByName(n),
+    () => first.name,
+  );
   const info = maps.mapByName(picked)!;
   useMaps(maps);
   const st = lanaiEditState(maps);
@@ -211,45 +315,135 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
   }, [view, mode]);
   // the record a link names (after the map was opened above)
   useEffect(() => {
-    if (view && rec && st.current?.hash === info.hash && st.current.recs[rec.section]?.[rec.index]) st.select({ type: 'rec', section: rec.section, index: rec.index });
+    if (view && rec && st.current?.hash === info.hash && st.current.recs[rec.section]?.[rec.index])
+      st.select({ type: 'rec', section: rec.section, index: rec.index });
   }, [view, st, info, rec?.section, rec?.index]);
   const open = view && st.current?.hash === info.hash;
+  const [dialog, setDialog] = useState<'map' | 'group' | 'names' | null>(null);
+  const goto = (n: string): void => {
+    setDialog(null);
+    location.hash = lanaiMapHref(content.index, n);
+  };
   return (
-    <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
+    <MapFrame
+      mode={mode}
+      pane2d={pane2d}
+      pane3d={pane3d}
       header={
         <>
           <Picker session={session} contents={contents} maps={maps} content={content} info={info} />
-          <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
-          <MapHeaderControls st={st} view={view} open={!!open} mode={mode} setMode={setMode} showModes={!info.world}
-            onRevert={maps.isChanged(info) ? () => st.revert() : undefined} />
+          <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}${info.added ? '・追加したマップ' : ''}`}</span>
+          <button
+            title="このステージのダンジョンに新しいマップ (階) を足す、またはマップを複製する"
+            onClick={() => setDialog('map')}
+          >
+            ＋ マップを追加・複製
+          </button>
+          <button
+            title="このステージに新しいダンジョン (MapGroup) を足す、またはダンジョンをマップごと複製する"
+            onClick={() => setDialog('group')}
+          >
+            ＋ ダンジョンを追加・複製
+          </button>
+          <button
+            title="マップのコード、ダンジョンの名前・コードを変える (追加したものは消せる)"
+            onClick={() => setDialog('names')}
+          >
+            名前・コード…
+          </button>
+          <MapHeaderControls
+            st={st}
+            view={view}
+            open={!!open}
+            mode={mode}
+            setMode={setMode}
+            showModes={!info.world}
+            onRevert={maps.isChanged(info) ? () => st.revert() : undefined}
+          />
+          {dialog === 'map' && (
+            <LanaiNewMapDialog
+              maps={maps}
+              current={info}
+              onClose={() => setDialog(null)}
+              onCreated={(m) => goto(m.name)}
+            />
+          )}
+          {dialog === 'group' && (
+            <LanaiNewGroupDialog
+              maps={maps}
+              current={info}
+              onClose={() => setDialog(null)}
+              onCreated={(m) => goto(m.name)}
+            />
+          )}
+          {dialog === 'names' && (
+            <LanaiNamesDialog
+              maps={maps}
+              current={info}
+              onClose={() => setDialog(null)}
+              onRenamed={(n) => {
+                location.hash = lanaiMapHref(content.index, n);
+              }}
+              onRemoved={() => goto((maps.maps.find((m) => !m.world) ?? maps.maps[0]!).name)}
+            />
+          )}
         </>
       }
-      placeholder={info.world ? (
-        <div style={{ padding: 16 }}>
-          <p className="book-desc">ワールドマップの区画は別の形なので、ワールドマップのページで編集します。 <a href={`#/world/${content.index}.${info.name}`}>{`${info.name} をワールドマップのページで開く`}</a></p>
-          <Facts maps={maps} info={info} view={null} />
-          <Stages content={content} />
-        </div>
-      ) : undefined}
-      left={open && (
-        <>
-          <MapToolbox st={st} tileTools={LANAI_TOOLS} tiles={st.tool==='room'?<EnemyPanel st={st} />:<TilePalette st={st} view={view} />}
-            parts={<AddPanel st={st} view={view} />} onDelete={()=>view.ctl.deleteSelection()} onDuplicate={()=>view.ctl.duplicateRec()} />
-          {st.tool!=='room' && <MapSettings title="敵の設定"><EnemyPanel st={st} /></MapSettings>}
-          <MapSettings title="音・戦闘背景"><BattlePanel st={st} /></MapSettings>
-          <MapSettings><MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
-            <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
-          </MapLayers></MapSettings>
-        </>
-      )}
-      right={open && (
-        <>
-          <Inspector st={st} view={view} content={content} />
-          <h3>検証</h3>
-          <MapChecks st={st} hash={info.hash} validate={(doc) => lanaiValidate(maps, info, doc)} />
-        </>
-      )}
-      status={view ? <MapStatus st={st} view={view} /> : null} />
+      placeholder={
+        info.world ? (
+          <div style={{ padding: 16 }}>
+            <p className="book-desc">
+              ワールドマップの区画は別の形なので、ワールドマップのページで編集します。{' '}
+              <a href={`#/world/${content.index}.${info.name}`}>{`${info.name} をワールドマップのページで開く`}</a>
+            </p>
+            <Facts maps={maps} info={info} view={null} />
+            <Stages content={content} />
+          </div>
+        ) : undefined
+      }
+      left={
+        open && (
+          <>
+            <MapToolbox
+              st={st}
+              tileTools={LANAI_TOOLS}
+              tiles={st.tool === 'room' ? <EnemyPanel st={st} /> : <TilePalette st={st} view={view} />}
+              parts={<AddPanel st={st} view={view} />}
+              onDelete={() => view.ctl.deleteSelection()}
+              onDuplicate={() => view.ctl.duplicateRec()}
+            />
+            {st.tool !== 'room' && (
+              <MapSettings title="敵の設定">
+                <EnemyPanel st={st} />
+              </MapSettings>
+            )}
+            <MapSettings title="音・戦闘背景">
+              <BattlePanel st={st} />
+            </MapSettings>
+            <MapSettings>
+              <MapLayers st={st} view={view} sections={LANAI_POINT_SECTIONS} layouts={LANAI_LAYOUTS}>
+                <LayerBox
+                  view={view}
+                  label="モデル (置物・宝箱・キャラ)"
+                  checked={view.showModels}
+                  set={(v) => (view.showModels = v)}
+                />
+              </MapLayers>
+            </MapSettings>
+          </>
+        )
+      }
+      right={
+        open && (
+          <>
+            <Inspector st={st} view={view} content={content} />
+            <h3>検証</h3>
+            <MapChecks st={st} hash={info.hash} validate={(doc) => lanaiValidate(maps, info, doc)} />
+          </>
+        )
+      }
+      status={view ? <MapStatus st={st} view={view} /> : null}
+    />
   );
 }
 
@@ -276,7 +470,9 @@ function Stages({ content }: { content: LanaiContent }): ReactNode {
       )}
       <p className="muted small">
         {`マップはコンテンツ ${content.index} (`}
-        <a className="mono" href={romfsHref(content.archive)} title="RomFS ビューでアーカイブを開く">{content.archive}</a>
+        <a className="mono" href={romfsHref(content.archive)} title="RomFS ビューでアーカイブを開く">
+          {content.archive}
+        </a>
         {') のマップ表にあり、そのステージで使われます。'}
       </p>
     </>
@@ -288,7 +484,15 @@ function TilePalette({ st, view }: { st: LanaiEditState; view: LanaiMapView }): 
   useSignal(view.signal);
   useEditorState(st);
   const palette = useMemo(() => st.maps.palette(st.tileset), [st.maps, st.tileset]);
-  return <Palette st={st} factory={view.factory} palette={palette} partModel={(k, l) => st.maps.partModel(st.tileset, k, l)} rotDir={LANAI_ROT_DIR} />;
+  return (
+    <Palette
+      st={st}
+      factory={view.factory}
+      palette={palette}
+      partModel={(k, l) => st.maps.partModel(st.tileset, k, l)}
+      rotDir={LANAI_ROT_DIR}
+    />
+  );
 }
 
 const NO_SIGNAL = new Signal();
@@ -324,12 +528,18 @@ function SameName({ maps, info }: { maps: LanaiMaps; info: LanaiMapInfo }): Reac
     <>
       <h4>同じマップ名の別ステージ</h4>
       {hits === null ? (
-        <button disabled={busy} onClick={() => void search()}>{busy ? '探しています…' : `「${info.name}」を他のコンテンツから探す`}</button>
-      ) : !hits.length ? <p className="muted small">ほかのコンテンツに同じ名前のマップはありません。</p> : (
+        <button disabled={busy} onClick={() => void search()}>
+          {busy ? '探しています…' : `「${info.name}」を他のコンテンツから探す`}
+        </button>
+      ) : !hits.length ? (
+        <p className="muted small">ほかのコンテンツに同じ名前のマップはありません。</p>
+      ) : (
         <ul className="small">
           {hits.map((h) => (
             <li key={h.content.index}>
-              <a href={lanaiMapHref(h.content.index, h.info.name)}>{`${h.content.index}: ${contentTitle(h.content)}`}</a>
+              <a
+                href={lanaiMapHref(h.content.index, h.info.name)}
+              >{`${h.content.index}: ${contentTitle(h.content)}`}</a>
               <span className="muted">{` ${lanaiFloorLabel(h.info.floor) || '地上'}・MapGroup ${h.info.dungeon}`}</span>
             </li>
           ))}
@@ -350,10 +560,24 @@ function Facts({ maps, info, view }: { maps: LanaiMaps; info: LanaiMapInfo; view
       <h3>マップ</h3>
       <p className="small">
         {`MapGroup ${info.dungeon}${maps.groupName(info.dungeon) ? ` 「${maps.groupName(info.dungeon)}」` : ''}`}
-        <br />{`階 ${info.floor}・敵の出方 ${info.encounterLevel}`}
-        {src && <><br />{src.mapData < 0 ? 'MapData が見つかりません' : `MapData 行 ${src.mapData}・タイルセット ${src.tileset} (${src.partsName || 'MapParts なし'})・MapResource 行 ${src.resource}`}</>}
-        {group && <><br />{`最初のマップ ${hex8(group.firstMap).toUpperCase()}`}</>}
-        <br />{events ? `EventObject: ${events.name} (${events.rows} 行)` : 'EventObject の表なし'}
+        <br />
+        {`階 ${info.floor}・敵の出方 ${info.encounterLevel}`}
+        {src && (
+          <>
+            <br />
+            {src.mapData < 0
+              ? 'MapData が見つかりません'
+              : `MapData 行 ${src.mapData}・タイルセット ${src.tileset} (${src.partsName || 'MapParts なし'})・MapResource 行 ${src.resource}`}
+          </>
+        )}
+        {group && (
+          <>
+            <br />
+            {`最初のマップ ${hex8(group.firstMap).toUpperCase()}`}
+          </>
+        )}
+        <br />
+        {events ? `EventObject: ${events.name} (${events.rows} 行)` : 'EventObject の表なし'}
       </p>
       <SameName maps={maps} info={info} />
     </>
@@ -364,40 +588,88 @@ const FACING_LABELS = ['↓ 南 (4)', '← 西 (2)', '↑ 北 (1)', '→ 東 (8)
 
 /** Adding records: props (section 2) and copies of the group's records; copying and removing the selected one. */
 function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): ReactNode {
-  const revision=useMaps(st.maps);
-  const templates=useMemo(()=>st.templates(),[st,st.info,revision]);
-  const props=useMemo(()=>st.props(),[st,st.info,revision]);
-  const objects=st.maps.session.table('MapObject');
-  const all=useMemo(()=>Array.from({length:objects?.rows??0},(_,i)=>i).filter(row=>!!lanaiObjectRef(objects,row)),[objects]);
-  return <RecordPartPanel st={st} source={view} templates={templates} rows={all} usedRows={props} maxRow={0xffff}
-    validRow={row=>!!lanaiObjectRef(objects,row)} directions={FACING_LABELS}
-    modelForProp={row=>({type:'object' as const,row})} modelForTemplate={t=>view.partLook(t.section,t.raw)?.model??null}
-    help="マップをクリックして配置、Esc で選択に戻ります。レコードの写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。" />;
+  const revision = useMaps(st.maps);
+  const templates = useMemo(() => st.templates(), [st, st.info, revision]);
+  const props = useMemo(() => st.props(), [st, st.info, revision]);
+  const objects = st.maps.session.table('MapObject');
+  const all = useMemo(
+    () => Array.from({ length: objects?.rows ?? 0 }, (_, i) => i).filter((row) => !!lanaiObjectRef(objects, row)),
+    [objects],
+  );
+  return (
+    <RecordPartPanel
+      st={st}
+      source={view}
+      templates={templates}
+      rows={all}
+      usedRows={props}
+      maxRow={0xffff}
+      validRow={(row) => !!lanaiObjectRef(objects, row)}
+      directions={FACING_LABELS}
+      modelForProp={(row) => ({ type: 'object' as const, row })}
+      modelForTemplate={(t) => view.partLook(t.section, t.raw)?.model ?? null}
+      help="マップをクリックして配置、Esc で選択に戻ります。レコードの写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。"
+    />
+  );
 }
 
 /** Fields of a section's records besides the position and the facing (map.md §5). */
 const REC_FIELDS: Record<number, FieldDef[]> = {
   1: [{ key: 'kind', offset: 0x0d, type: 'u8', label: '種類 (+0x0D)' }],
   2: [{ key: 'row', offset: 0, type: 'u32', label: 'MapObject の行' }],
-  3: [{ key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }, { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (5 上り / 6 下り / 100 壁の扉)' }],
-  4: [{ key: 'look', offset: 0, type: 'u32', label: '見た目 (0〜3)' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }],
-  5: [{ key: 'type', offset: 0, type: 'u32', label: '種類' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }],
-  8: [{ key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }, { key: 'shape', offset: 0x1d, type: 'u8', label: '形 (0 円 / 1 矩形)' }],
-  9: [{ key: 'type', offset: 0, type: 'u32', label: '種類' }, { key: 'v', offset: 8, type: 'u8', label: '+0x08' }],
+  3: [
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+    { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (5 上り / 6 下り / 100 壁の扉)' },
+  ],
+  4: [
+    { key: 'look', offset: 0, type: 'u32', label: '見た目 (0〜3)' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+  ],
+  5: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+  ],
+  8: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+    { key: 'shape', offset: 0x1d, type: 'u8', label: '形 (0 円 / 1 矩形)' },
+  ],
+  9: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類' },
+    { key: 'v', offset: 8, type: 'u8', label: '+0x08' },
+  ],
 };
 
-function Inspector({ st, view, content }: { st: LanaiEditState; view: LanaiMapView; content: LanaiContent }): ReactNode {
+function Inspector({
+  st,
+  view,
+  content,
+}: {
+  st: LanaiEditState;
+  view: LanaiMapView;
+  content: LanaiContent;
+}): ReactNode {
   useEditorState(st);
   const sel = st.selection;
   const doc = view.doc;
   if (sel.type === 'rec' && doc.recs[sel.section]?.[sel.index])
-    return <RecFields st={st} view={view} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
+    return (
+      <RecFields st={st} view={view} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />
+    );
   if (sel.type === 'tiles' && sel.cells.length === 1) {
     const [x, y] = sel.cells[0]!;
     if (tileAt(doc, x, y)) return <TileFields st={st} view={view} x={x} y={y} />;
   }
-  if (sel.type === 'tiles' && sel.cells.length > 1) return <p className="muted small">{`${sel.cells.length} マスを選択中 (R で回す、[ ] で文字を変える、Delete で消す)`}</p>;
-  if (sel.type === 'rect') return <p className="muted small">範囲を選択中 (Ctrl+C でコピー、Ctrl+V で貼り付け、Shift+矢印で中身ごと動かす、Delete で消す)</p>;
+  if (sel.type === 'tiles' && sel.cells.length > 1)
+    return (
+      <p className="muted small">{`${sel.cells.length} マスを選択中 (R で回す、[ ] で文字を変える、Delete で消す)`}</p>
+    );
+  if (sel.type === 'rect')
+    return (
+      <p className="muted small">
+        範囲を選択中 (Ctrl+C でコピー、Ctrl+V で貼り付け、Shift+矢印で中身ごと動かす、Delete で消す)
+      </p>
+    );
   return (
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
@@ -415,28 +687,83 @@ function TileFields({ st, view, x, y }: { st: LanaiEditState; view: LanaiMapView
   return (
     <>
       <h3>{`タイル (${t.x}, ${t.y})`}</h3>
-      <label className="field"><span>種類</span><NumberInput value={t.kind} min={0} max={65} onCommit={(v) => st.edit(() => { t.kind = v; })} /></label>
+      <label className="field">
+        <span>種類</span>
+        <NumberInput
+          value={t.kind}
+          min={0}
+          max={65}
+          onCommit={(v) =>
+            st.edit(() => {
+              t.kind = v;
+            })
+          }
+        />
+      </label>
       <p className="muted small">{kindName(t.kind)}</p>
-      <label className="field"><span>向き</span>
-        <select value={t.rot} onChange={(e) => st.edit(() => { t.rot = Number(e.target.value); t.rotHi = 0; })}>
-          {[0, 1, 2, 3].map((r) => <option key={r} value={r}>{`${ROT_ARROW[LANAI_ROT_DIR[r]!]} ${r} (バイト ${LANAI_ROT_CODEC.encode(r)})`}</option>)}
+      <label className="field">
+        <span>向き</span>
+        <select
+          value={t.rot}
+          onChange={(e) =>
+            st.edit(() => {
+              t.rot = Number(e.target.value);
+              t.rotHi = 0;
+            })
+          }
+        >
+          {[0, 1, 2, 3].map((r) => (
+            <option
+              key={r}
+              value={r}
+            >{`${ROT_ARROW[LANAI_ROT_DIR[r]!]} ${r} (バイト ${LANAI_ROT_CODEC.encode(r)})`}</option>
+          ))}
         </select>
       </label>
-      <label className="field"><span>文字 (部品の差分)</span>
-        <select value={t.letter} onChange={(e) => st.edit(() => { t.letter = Number(e.target.value); })}>
+      <label className="field">
+        <span>文字 (部品の差分)</span>
+        <select
+          value={t.letter}
+          onChange={(e) =>
+            st.edit(() => {
+              t.letter = Number(e.target.value);
+            })
+          }
+        >
           <option value={LETTER_DEFAULT}>なし (z)</option>
-          {Array.from({ length: 7 }, (_, i) => 0x61 + i).map((c) => <option key={c} value={c}>{letterLabel(c)}</option>)}
-          {t.letter !== LETTER_DEFAULT && !(t.letter >= 0x61 && t.letter <= 0x67) && <option value={t.letter}>{`0x${t.letter.toString(16)}`}</option>}
+          {Array.from({ length: 7 }, (_, i) => 0x61 + i).map((c) => (
+            <option key={c} value={c}>
+              {letterLabel(c)}
+            </option>
+          ))}
+          {t.letter !== LETTER_DEFAULT && !(t.letter >= 0x61 && t.letter <= 0x67) && (
+            <option value={t.letter}>{`0x${t.letter.toString(16)}`}</option>
+          )}
         </select>
       </label>
       <p className="muted small">
-        {ref ? `モデル ${hex8(ref.entry).toUpperCase()} (${hex8(ref.archive).toUpperCase()})` : t.kind === 33 ? 'モデルなし (種類 33 = 空)' : 'モデルなし'}
+        {ref
+          ? `モデル ${hex8(ref.entry).toUpperCase()} (${hex8(ref.archive).toUpperCase()})`
+          : t.kind === 33
+            ? 'モデルなし (種類 33 = 空)'
+            : 'モデルなし'}
         {letterIndex(t.letter) > 0 && !ref && ' (この文字のモデルがない)'}
       </p>
-      {t.kind + 1 >= 0x10 && t.kind + 1 <= 0x1c && <p className="muted small">屋内の部品 (種類 15〜27): このマップは MapGroup の屋内用の MapData を使います。</p>}
+      {t.kind + 1 >= 0x10 && t.kind + 1 <= 0x1c && (
+        <p className="muted small">屋内の部品 (種類 15〜27): このマップは MapGroup の屋内用の MapData を使います。</p>
+      )}
       {cell6 && (
-        <label className="field"><span>区画 6 のセル (MonsterGroup)</span>
-          <MonsterGroupSelect maps={st.maps} value={cell6.value} onChange={(v) => st.edit(() => { cell6.value = v; })} />
+        <label className="field">
+          <span>区画 6 のセル (MonsterGroup)</span>
+          <MonsterGroupSelect
+            maps={st.maps}
+            value={cell6.value}
+            onChange={(v) =>
+              st.edit(() => {
+                cell6.value = v;
+              })
+            }
+          />
         </label>
       )}
     </>
@@ -449,11 +776,17 @@ function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook |
   if (!look) return null;
   const m = look.model;
   const name = view.modelName(m);
-  const kind = look.chara !== undefined ? LANAI_CHARA_KIND[lanaiCharaKind(view.maps.contentTable('MapChara'), look.chara)] : undefined;
-  const what = !m ? 'モデルなし'
-    : m.type === 'object' ? `MapObject #${m.row}${name ? ` ${name}` : ''}`
-    : m.type === 'monster' ? `MonsterDesign #${m.design}${designNames(view.maps.session, m.design)}${name ? ` ${name}` : ''}`
-    : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
+  const kind =
+    look.chara !== undefined
+      ? LANAI_CHARA_KIND[lanaiCharaKind(view.maps.contentTable('MapChara'), look.chara)]
+      : undefined;
+  const what = !m
+    ? 'モデルなし'
+    : m.type === 'object'
+      ? `MapObject #${m.row}${name ? ` ${name}` : ''}`
+      : m.type === 'monster'
+        ? `MonsterDesign #${m.design}${designNames(view.maps.session, m.design)}${name ? ` ${name}` : ''}`
+        : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
   return (
     <p className="muted small">
       {look.chara !== undefined && `MapChara #${look.chara}${kind ? ` (${kind})` : ''}・`}
@@ -464,11 +797,29 @@ function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook |
 
 /** " (まおう・…)": the monsters that look like a MonsterDesign row, '' when none does. */
 function designNames(session: LanaiSession, design: number): string {
-  const names = [...new Set(lanaiMonsters(session).filter((x) => x.designRow === design && x.name).map((x) => x.name))];
+  const names = [
+    ...new Set(
+      lanaiMonsters(session)
+        .filter((x) => x.designRow === design && x.name)
+        .map((x) => x.name),
+    ),
+  ];
   return names.length ? ` (${names.slice(0, 3).join('・')}${names.length > 3 ? ' …' : ''})` : '';
 }
 
-function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view: LanaiMapView; section: number; rec: Rec; index: number }): ReactNode {
+function RecFields({
+  st,
+  view,
+  section,
+  rec,
+  index,
+}: {
+  st: LanaiEditState;
+  view: LanaiMapView;
+  section: number;
+  rec: Rec;
+  index: number;
+}): ReactNode {
   const L = LANAI_LAYOUTS[section]!;
   const [cx, cy] = recCellPos(rec, L);
   const max = L.unit === 'cell' ? 29 : 299;
@@ -481,31 +832,80 @@ function RecFields({ st, view, section, rec, index }: { st: LanaiEditState; view
       <p className="muted small">{lanaiRecLabel(section, rec.raw)}</p>
       <ModelLine view={view} look={view.look(section, index)} />
       <div className="row">
-        <label className="field"><span>{`x (${L.unit === 'cell' ? 'マス' : '1/5 マス'})`}</span><NumberInput value={rec.x} min={0} max={max} onCommit={(v) => st.edit(() => { rec.x = v; })} /></label>
-        <label className="field"><span>y</span><NumberInput value={rec.y} min={0} max={max} onCommit={(v) => st.edit(() => { rec.y = v; })} /></label>
+        <label className="field">
+          <span>{`x (${L.unit === 'cell' ? 'マス' : '1/5 マス'})`}</span>
+          <NumberInput
+            value={rec.x}
+            min={0}
+            max={max}
+            onCommit={(v) =>
+              st.edit(() => {
+                rec.x = v;
+              })
+            }
+          />
+        </label>
+        <label className="field">
+          <span>y</span>
+          <NumberInput
+            value={rec.y}
+            min={0}
+            max={max}
+            onCommit={(v) =>
+              st.edit(() => {
+                rec.y = v;
+              })
+            }
+          />
+        </label>
       </div>
       <p className="muted small">{`セル (${cx.toFixed(2)}, ${cy.toFixed(2)})`}</p>
       {section === 3 && <p className="small">{`地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}`}</p>}
       {facing !== undefined && st.canRotate(section) && (
-        <label className="field"><span>{`向き (+0x${facing.toString(16).toUpperCase()}、R で回す)`}</span>
-          <select value={LANAI_ROT_CODEC.decode(rec.raw[facing]!)} onChange={(e) => st.edit(() => { rec.raw[facing] = LANAI_ROT_CODEC.encode(Number(e.target.value)); })}>
+        <label className="field">
+          <span>{`向き (+0x${facing.toString(16).toUpperCase()}、R で回す)`}</span>
+          <select
+            value={LANAI_ROT_CODEC.decode(rec.raw[facing]!)}
+            onChange={(e) =>
+              st.edit(() => {
+                rec.raw[facing] = LANAI_ROT_CODEC.encode(Number(e.target.value));
+              })
+            }
+          >
             {LANAI_ROT_CODEC.decode(rec.raw[facing]!) < 0 && <option value={-1}>{`バイト ${rec.raw[facing]}`}</option>}
-            {FACING_LABELS.map((l, r) => <option key={r} value={r}>{l}</option>)}
+            {FACING_LABELS.map((l, r) => (
+              <option key={r} value={r}>
+                {l}
+              </option>
+            ))}
           </select>
         </label>
       )}
       {(REC_FIELDS[section] ?? []).map((f) => (
-        <label key={f.key} className="field"><span>{f.label}</span>
-          <NumberInput value={readField(rec.raw, f)} min={0} max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff} onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))} />
+        <label key={f.key} className="field">
+          <span>{f.label}</span>
+          <NumberInput
+            value={readField(rec.raw, f)}
+            min={0}
+            max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
+            onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
+          />
         </label>
       ))}
       {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
-      {ev > 0 && (events && ev < events.rows ? <EventFields st={st} section={section} index={index} row={ev} /> : (
-        <p className="muted small">{events ? `EventObject の行 ${ev} は表 (${events.rows} 行) の外です` : `EventObject の行 ${ev} (表なし)`}</p>
-      ))}
+      {ev > 0 &&
+        (events && ev < events.rows ? (
+          <EventFields st={st} section={section} index={index} row={ev} />
+        ) : (
+          <p className="muted small">
+            {events ? `EventObject の行 ${ev} は表 (${events.rows} 行) の外です` : `EventObject の行 ${ev} (表なし)`}
+          </p>
+        ))}
       <details>
         <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
-        <code className="small mono" style={{ wordBreak: 'break-all' }}>{[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</code>
+        <code className="small mono" style={{ wordBreak: 'break-all' }}>
+          {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
+        </code>
       </details>
     </>
   );
@@ -528,24 +928,47 @@ function EnemyPanel({ st }: { st: LanaiEditState }): ReactNode {
   return (
     <div className="add-panel">
       <h3>敵 (区画 6)</h3>
-      {header === null ? <p className="muted small">このマップには区画 6 がありません (セルを足せません)。</p> : (
+      {header === null ? (
+        <p className="muted small">このマップには区画 6 がありません (セルを足せません)。</p>
+      ) : (
         <>
-          <label className="field"><span>マップの群れ (ヘッダー)</span>
-            <MonsterGroupSelect maps={maps} value={header} onChange={(v) => st.edit((d) => {
-              const h = d.sec6Header.slice();
-              w32(h, 0, v);
-              d.sec6Header = h;
-            })} />
+          <label className="field">
+            <span>マップの群れ (ヘッダー)</span>
+            <MonsterGroupSelect
+              maps={maps}
+              value={header}
+              onChange={(v) =>
+                st.edit((d) => {
+                  const h = d.sec6Header.slice();
+                  w32(h, 0, v);
+                  d.sec6Header = h;
+                })
+              }
+            />
           </label>
-          <label className="field"><span>足すセルの群れ</span>
-            <MonsterGroupSelect maps={maps} value={st.cell6Value} onChange={(v) => {
-              st.cell6Value = v;
-              st.setTool('room');
-            }} />
+          <label className="field">
+            <span>足すセルの群れ</span>
+            <MonsterGroupSelect
+              maps={maps}
+              value={st.cell6Value}
+              onChange={(v) => {
+                st.cell6Value = v;
+                st.setTool('room');
+              }}
+            />
           </label>
-          <InfoTip text={"G でクリックすると選んだ群れのセルを足す／消す。セル "+doc.cells6.length+" 個。群れはこのコンテンツから選びます。"} />
+          <InfoTip
+            text={
+              'G でクリックすると選んだ群れのセルを足す／消す。セル ' +
+              doc.cells6.length +
+              ' 個。群れはこのコンテンツから選びます。'
+            }
+          />
           {[...counts].map(([v, n]) => (
-            <div key={v} className="row small"><span className="muted">{`セル ${n} 個:`}</span><MonsterGroupLine maps={maps} value={v} /></div>
+            <div key={v} className="row small">
+              <span className="muted">{`セル ${n} 個:`}</span>
+              <MonsterGroupLine maps={maps} value={v} />
+            </div>
           ))}
         </>
       )}
@@ -560,12 +983,19 @@ function BattlePanel({ st }: { st: LanaiEditState }): ReactNode {
   if (!st.current || !src) return null;
   const maps = st.maps;
   return (
-    <LanaiMapBattlePanel session={maps.session} maps={maps} mapData={src.mapData} resource={src.resource}
-      edit={(f) => st.editTables(() => {
-        f();
-        maps.changed();
-        maps.session.edited();
-      })} />
+    <LanaiMapBattlePanel
+      session={maps.session}
+      maps={maps}
+      mapData={src.mapData}
+      resource={src.resource}
+      edit={(f) =>
+        st.editTables(() => {
+          f();
+          maps.changed();
+          maps.session.edited();
+        })
+      }
+    />
   );
 }
 
@@ -582,7 +1012,17 @@ function talkRowLabel(session: LanaiSession, t: LanaiTable, offset: number, row:
  * (rows of the group's talk table, MapGroup +0x24: picked from the table and edited in the message editor), the
  * arguments whose meaning is known and the raw ones.
  */
-function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: number; offset: number; index: number }): ReactNode {
+function ActionFields({
+  st,
+  row,
+  offset,
+  index,
+}: {
+  st: LanaiEditState;
+  row: number;
+  offset: number;
+  index: number;
+}): ReactNode {
   const info = st.info!;
   const session = st.maps.session;
   useLanaiRevision(session);
@@ -593,7 +1033,8 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
   const group = st.maps.group(info);
   const message = talk ? talkMessageOffset(talk) : undefined;
   const arg = (a: number): number => t.u32(row, offset + 4 + a * 4);
-  const setArg = (a: number, v: number): void => st.setEventField(row, (x) => x.setU32(row, offset + 4 + a * 4, v >>> 0));
+  const setArg = (a: number, v: number): void =>
+    st.setEventField(row, (x) => x.setU32(row, offset + 4 + a * 4, v >>> 0));
   const apply = (f: () => void): void => {
     f();
     session.edited();
@@ -603,16 +1044,25 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
   const lines = talkArgs.map((a, k): ReactNode => {
     const v = arg(a);
     const head = `${talkArgs.length > 1 ? `台詞 ${k + 1}` : '台詞'} (引数 ${a + 1})`;
-    if (!talk || message === undefined) return <p key={a} className="muted small">{`${head}: 行 ${v}。このマップの群れの台詞の表 (MapGroup +0x24 / MessageContents) が見つからないため表示できません。`}</p>;
+    if (!talk || message === undefined)
+      return (
+        <p
+          key={a}
+          className="muted small"
+        >{`${head}: 行 ${v}。このマップの群れの台詞の表 (MapGroup +0x24 / MessageContents) が見つからないため表示できません。`}</p>
+      );
     const none = action!.zeroIsNone && v === 0;
     const inside = v < talk.rows;
     return (
       <div key={a}>
-        <label className="field"><span>{head}</span>
+        <label className="field">
+          <span>{head}</span>
           <select value={inside ? v : -1} onChange={(e) => setArg(a, Number(e.target.value))}>
             {!inside && <option value={-1}>{`行 ${v} (表は ${talk.rows} 行: 表の外)`}</option>}
             {Array.from({ length: talk.rows }, (_, r) => (
-              <option key={r} value={r}>{action!.zeroIsNone && r === 0 ? '0: なし' : talkRowLabel(session, talk, message, r)}</option>
+              <option key={r} value={r}>
+                {action!.zeroIsNone && r === 0 ? '0: なし' : talkRowLabel(session, talk, message, r)}
+              </option>
             ))}
           </select>
         </label>
@@ -624,34 +1074,61 @@ function ActionFields({ st, row, offset, index }: { st: LanaiEditState; row: num
   return (
     <details open={index === 0 || (type !== 0 && type !== LANAI_ACTION_NONE)}>
       <summary className="small">{`動作 ${index + 1} (${ACTION_STATES[index]}): ${lanaiActionName(type)}`}</summary>
-      <label className="field"><span>動作の型</span>
-        <select value={type} onChange={(e) => st.setEventField(row, (x) => x.setU32(row, offset, Number(e.target.value) >>> 0))}>
-          {types.map((v) => <option key={v} value={v}>{`${hex8(v).toUpperCase().slice(6)}: ${lanaiActionName(v)}`}</option>)}
+      <label className="field">
+        <span>動作の型</span>
+        <select
+          value={type}
+          onChange={(e) => st.setEventField(row, (x) => x.setU32(row, offset, Number(e.target.value) >>> 0))}
+        >
+          {types.map((v) => (
+            <option key={v} value={v}>{`${hex8(v).toUpperCase().slice(6)}: ${lanaiActionName(v)}`}</option>
+          ))}
         </select>
       </label>
       {action?.note && <p className="muted small">{action.note}</p>}
       {type === LANAI_ACTION_SCRIPT && talk && (
         <p className="muted small">
-          {'台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞の行を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'}
+          {
+            '台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞の行を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'
+          }
         </p>
       )}
-      {talk && talkArgs.length > 0 && <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ行を使うほかの NPC の台詞も変わる。`}</p>}
+      {talk && talkArgs.length > 0 && (
+        <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 行、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ行を使うほかの NPC の台詞も変わる。`}</p>
+      )}
       {lines}
       {known.map(([a, label]) => {
-        const i = Number(a), pick = action?.pick?.[i];
+        const i = Number(a),
+          pick = action?.pick?.[i];
         return (
-          <label key={a} className="field"><span>{`引数 ${i + 1}: ${label}`}</span>
-            {pick === 'monsterGroupRow' && st.maps.monsterGroup ? <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
-              : pick === 'content' ? <ContentSelect maps={st.maps} value={arg(i)} allowNone={type === LANAI_ACTION_GOAL_CHEST} onChange={(v) => setArg(i, v)} />
-              : <HexInput value={arg(i)} onChange={(v) => setArg(i, v)} />}
+          <label key={a} className="field">
+            <span>{`引数 ${i + 1}: ${label}`}</span>
+            {pick === 'monsterGroupRow' && st.maps.monsterGroup ? (
+              <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
+            ) : pick === 'content' ? (
+              <ContentSelect
+                maps={st.maps}
+                value={arg(i)}
+                allowNone={type === LANAI_ACTION_GOAL_CHEST}
+                onChange={(v) => setArg(i, v)}
+              />
+            ) : (
+              <HexInput value={arg(i)} onChange={(v) => setArg(i, v)} />
+            )}
           </label>
         );
       })}
       <details>
         <summary className="small">型と引数 (16 進)</summary>
-        <label className="field"><span>{`型 (+0x${offset.toString(16).toUpperCase()}、0x80000000 = なし)`}</span><HexInput value={type} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, offset, v >>> 0))} /></label>
+        <label className="field">
+          <span>{`型 (+0x${offset.toString(16).toUpperCase()}、0x80000000 = なし)`}</span>
+          <HexInput value={type} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, offset, v >>> 0))} />
+        </label>
         {Array.from({ length: LANAI_EVENT_ARGS }, (_, a) => (
-          <label key={a} className="field"><span>{`引数 ${a + 1} (+0x${(offset + 4 + a * 4).toString(16).toUpperCase()})`}</span><HexInput value={arg(a)} onChange={(v) => setArg(a, v)} /></label>
+          <label key={a} className="field">
+            <span>{`引数 ${a + 1} (+0x${(offset + 4 + a * 4).toString(16).toUpperCase()})`}</span>
+            <HexInput value={arg(a)} onChange={(v) => setArg(a, v)} />
+          </label>
         ))}
       </details>
     </details>
@@ -663,25 +1140,55 @@ function eventUsers(maps: LanaiMaps, info: LanaiMapInfo, row: number): number {
   let n = 0;
   for (const m of maps.maps)
     if (m.dungeon === info.dungeon && !m.world)
-      for (const k of LANAI_EVENT_SECTIONS) for (const r of maps.doc(m).recs[k] ?? []) if (lanaiRecEventRow(k, r.raw) === row) n++;
+      for (const k of LANAI_EVENT_SECTIONS)
+        for (const r of maps.doc(m).recs[k] ?? []) if (lanaiRecEventRow(k, r.raw) === row) n++;
   return n;
 }
 
 /** The EventObject row of a record (map.md §7.1): conditions, the three actions, the state slot; edited in the group's table. */
-function EventFields({ st, section, index, row }: { st: LanaiEditState; section: number; index: number; row: number }): ReactNode {
+function EventFields({
+  st,
+  section,
+  index,
+  row,
+}: {
+  st: LanaiEditState;
+  section: number;
+  index: number;
+  row: number;
+}): ReactNode {
   const info = st.info!;
   const t = st.maps.eventTable(info.dungeon)!;
   const group = st.maps.group(info);
   const users = eventUsers(st.maps, info, row);
   const slot = lanaiEventSlot(t, row);
   const u32f = (o: number, label: string): ReactNode => (
-    <label key={o} className="field"><span>{label}</span><HexInput value={t.u32(row, o)} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, o, v >>> 0))} /></label>
+    <label key={o} className="field">
+      <span>{label}</span>
+      <HexInput value={t.u32(row, o)} onChange={(v) => st.setEventField(row, (x) => x.setU32(row, o, v >>> 0))} />
+    </label>
   );
   const u8f = (o: number, label: string): ReactNode => (
-    <label key={o} className="field"><span>{label}</span><NumberInput value={t.u8(row, o)} min={0} max={255} onCommit={(v) => st.setEventField(row, (x) => x.setU8(row, o, v))} /></label>
+    <label key={o} className="field">
+      <span>{label}</span>
+      <NumberInput
+        value={t.u8(row, o)}
+        min={0}
+        max={255}
+        onCommit={(v) => st.setEventField(row, (x) => x.setU8(row, o, v))}
+      />
+    </label>
   );
   const u16f = (o: number, label: string): ReactNode => (
-    <label key={o} className="field"><span>{label}</span><NumberInput value={t.u16(row, o)} min={0} max={0xffff} onCommit={(v) => st.setEventField(row, (x) => x.setU16(row, o, v))} /></label>
+    <label key={o} className="field">
+      <span>{label}</span>
+      <NumberInput
+        value={t.u16(row, o)}
+        min={0}
+        max={0xffff}
+        onCommit={(v) => st.setEventField(row, (x) => x.setU16(row, o, v))}
+      />
+    </label>
   );
   return (
     <>
@@ -693,10 +1200,16 @@ function EventFields({ st, section, index, row }: { st: LanaiEditState; section:
         </div>
       )}
       <p className="small">出る条件 (+0x5F の種類、0 = なし)</p>
-      {u8f(LANAI_EVENT_APPEAR, '種類')}{u32f(0x00, '値 1 (+0x00)')}{u32f(0x04, '値 2 (+0x04)')}
+      {u8f(LANAI_EVENT_APPEAR, '種類')}
+      {u32f(0x00, '値 1 (+0x00)')}
+      {u32f(0x04, '値 2 (+0x04)')}
       <p className="small">消える条件 (+0x60 の種類、0 = なし)</p>
-      {u8f(LANAI_EVENT_DISAPPEAR, '種類')}{u32f(0x08, '値 1 (+0x08)')}{u32f(0x0c, '値 2 (+0x0C)')}
-      {LANAI_EVENT_ACTIONS.map((o, i) => <ActionFields key={o} st={st} row={row} offset={o} index={i} />)}
+      {u8f(LANAI_EVENT_DISAPPEAR, '種類')}
+      {u32f(0x08, '値 1 (+0x08)')}
+      {u32f(0x0c, '値 2 (+0x0C)')}
+      {LANAI_EVENT_ACTIONS.map((o, i) => (
+        <ActionFields key={o} st={st} row={row} offset={o} index={i} />
+      ))}
       {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = 行番号)`)}
       <p className="muted small">
         {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}

@@ -5,7 +5,15 @@
 import type { GsTable } from '../archive/gstable';
 import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
 import type { Master } from './master';
-import { ABILITY_RANGES, ACTION_DIRECTION, ACTION_SLOTS, PERF, performanceUses, writePerfField, type PerfField } from './performance';
+import {
+  ABILITY_RANGES,
+  ACTION_DIRECTION,
+  ACTION_SLOTS,
+  PERF,
+  performanceUses,
+  writePerfField,
+  type PerfField,
+} from './performance';
 
 /**
  * Entry hash of the performance table: directData.bin (1026 × 20) in 2713402F, the archive of MonsterDesign
@@ -16,7 +24,16 @@ import { ABILITY_RANGES, ACTION_DIRECTION, ACTION_SLOTS, PERF, performanceUses, 
 export const PERFORMANCE_TABLE = 0x92124c00;
 
 /** Item effect by actionData type (kind 2; FUN_002f41ac). 4〜7 are added by the elpulse MOD (game/itemeffects.ts). */
-export const ITEM_EFFECT: Record<number, string> = { 0: 'HP 回復', 1: 'AP 回復', 2: '状態の回復', 3: '復活', 4: '全回復 (MOD)', 5: '固定化 (MOD)', 6: '全員を固定化 (MOD・デバッグ)', 7: '全員を QR 由来に戻す (MOD・デバッグ)' };
+export const ITEM_EFFECT: Record<number, string> = {
+  0: 'HP 回復',
+  1: 'AP 回復',
+  2: '状態の回復',
+  3: '復活',
+  4: '全回復 (MOD)',
+  5: '固定化 (MOD)',
+  6: '全員を固定化 (MOD・デバッグ)',
+  7: '全員を QR 由来に戻す (MOD・デバッグ)',
+};
 /** Kind (category) of an action (w0 bit1-2; elpulse docs/battle.md §8). */
 export const ACTION_KIND: Record<number, string> = { 0: '状態', 1: '攻撃・とくぎ', 2: 'アイテム', 3: '特殊' };
 /**
@@ -28,7 +45,17 @@ export const ACTION_TYPE: Record<number, Record<number, string>> = {
   0: { 3: 'ブレス' },
   1: { 0: '物理', 1: '物理・会心あり', 2: '固定の威力', 3: 'ブレス (固定の威力)' },
   2: ITEM_EFFECT,
-  3: { 0: '効果なし (メッセージだけ)', 1: '能力の増減', 2: '場から消す (にげる)', 4: 'なかまをよぶ', 5: '変身・セリフ', 6: 'ゴールドをぬすむ', 7: '状態 (+0x32)', 8: '時間で変わる', 9: '時間で変わる' },
+  3: {
+    0: '効果なし (メッセージだけ)',
+    1: '能力の増減',
+    2: '場から消す (にげる)',
+    4: 'なかまをよぶ',
+    5: '変身・セリフ',
+    6: 'ゴールドをぬすむ',
+    7: '状態 (+0x32)',
+    8: '時間で変わる',
+    9: '時間で変わる',
+  },
 };
 
 /**
@@ -42,7 +69,15 @@ export const ACTION_SIDE: Record<number, string> = { 0: 'モンスターの側',
  * BattleParameter [0x58 + range] (100 / 100 / 100 / 80 / 70 / 60 / 60 %).
  */
 export const ACTION_RANGE: Record<number, string> = {
-  0: '自分', 1: '自分', 2: '単体', 3: '目標と周り (距離 1)', 4: '目標と周り (距離 2)', 5: '目標と周り (距離 3)', 6: '全体', 7: 'なし (だれにも当たらない)', 8: '陣営全体 (場の効果)',
+  0: '自分',
+  1: '自分',
+  2: '単体',
+  3: '目標と周り (距離 1)',
+  4: '目標と周り (距離 2)',
+  5: '目標と周り (距離 3)',
+  6: '全体',
+  7: 'なし (だれにも当たらない)',
+  8: '陣営全体 (場の効果)',
 };
 
 /** "2: 単体". */
@@ -64,7 +99,11 @@ export function actionKindLabel(kind: number, type: number): string {
 /** Element of an action (w0 bit24-27). */
 export const ELEMENT = ['', '火', '氷', '風', '土', '電気', '水', '光', '闇'];
 /** Scenes where an item action can be used: w0 bit -> label. */
-const SCENES: [number, string][] = [[31, 'フィールド'], [30, 'ハウス'], [29, '戦闘']];
+const SCENES: [number, string][] = [
+  [31, 'フィールド'],
+  [30, 'ハウス'],
+  [29, '戦闘'],
+];
 
 export interface ActionFields {
   w0: number;
@@ -118,7 +157,8 @@ export function decodeAction(r: Uint8Array): ActionFields {
     state: r.length > 0x32 ? r[0x32]! : 0,
     strength: [(w0 >>> 16) & 15, (w0 >>> 20) & 15],
     turns: r.length >= 0x18 ? s16(r, 0x16) : 0,
-    formChange: ((w0 >>> 1) & 3) === 3 && ((w0 >>> 3) & 15) === 5 && r.length >= 0x18 && s16(r, 0x16) > 1 ? s16(r, 0x16) : 0,
+    formChange:
+      ((w0 >>> 1) & 3) === 3 && ((w0 >>> 3) & 15) === 5 && r.length >= 0x18 && s16(r, 0x16) > 1 ? s16(r, 0x16) : 0,
   };
 }
 
@@ -132,7 +172,11 @@ export function itemEffect(f: ActionFields): string {
 
 /** Name of an action as shown in battle, without the actor placeholders and the trailing "！". */
 export function cleanActionName(s: string): string {
-  return s.replace(/Ē/g, '(色)').replace(/^[Ąą]+/, '').replace(/^[のは]　/, '').replace(/！$/, '');
+  return s
+    .replace(/Ē/g, '(色)')
+    .replace(/^[Ąą]+/, '')
+    .replace(/^[のは]　/, '')
+    .replace(/！$/, '');
 }
 
 export interface Action extends ActionFields {
@@ -156,7 +200,11 @@ export class ActionBook {
   private readonly performances: GsTable | null;
 
   /** `performances`: directData.bin (MonsterBook.directData), for the motions of the actions. */
-  constructor(private readonly master: Master, monsterName: (row: number) => string = () => '', performances: GsTable | null = null) {
+  constructor(
+    private readonly master: Master,
+    monsterName: (row: number) => string = () => '',
+    performances: GsTable | null = null,
+  ) {
     this.performances = performances;
     const t = master.table('actionData.bin');
     for (let i = 0; i < t.rows; i++) {
@@ -210,7 +258,10 @@ export class ActionBook {
     if (row >= this.master.originalRows('actionData.bin')) return null;
     const f = decodeAction(this.master.originalRow('actionData.bin', row));
     const t = this.performances;
-    return { ...f, motion: f.performance && t && f.performance < t.rows && t.rowSize > 0x0a ? t.row(f.performance)[0x0a]! : 0 };
+    return {
+      ...f,
+      motion: f.performance && t && f.performance < t.rows && t.rowSize > 0x0a ? t.row(f.performance)[0x0a]! : 0,
+    };
   }
 
   refsOf(row: number): ActionRefs {
@@ -399,7 +450,8 @@ export class ActionEdits {
   setSlot(row: number, offset: number, perf: number): void {
     const r = this.row(row);
     if (r.length < offset + 2) return;
-    if (perf && (!this.performances || perf >= this.performances.rows)) throw new Error(`演出の行 ${perf} はありません`);
+    if (perf && (!this.performances || perf >= this.performances.rows))
+      throw new Error(`演出の行 ${perf} はありません`);
     w16(r, offset, perf);
   }
 
@@ -414,14 +466,17 @@ export class ActionEdits {
    * ABILITY_RANGES). The name and the performance stay.
    */
   copyAbility(row: number, from: number): void {
-    const src = this.row(from).slice(), dst = this.row(row);
+    const src = this.row(from).slice(),
+      dst = this.row(row);
     for (const [lo, hi] of ABILITY_RANGES) dst.set(src.subarray(lo, Math.min(hi, dst.length)), lo);
   }
 
   /** Copy the performance of another action: every slot and +0x1C. */
   copyPerformance(row: number, from: number): void {
-    const src = this.row(from).slice(), dst = this.row(row);
-    for (const o of [ACTION_DIRECTION, ...ACTION_SLOTS.map((s) => s.offset)]) if (dst.length >= o + 2) dst.set(src.subarray(o, o + 2), o);
+    const src = this.row(from).slice(),
+      dst = this.row(row);
+    for (const o of [ACTION_DIRECTION, ...ACTION_SLOTS.map((s) => s.offset)])
+      if (dst.length >= o + 2) dst.set(src.subarray(o, o + 2), o);
   }
 
   /** Whether a slot of an action has a performance row whose fields can be changed. */

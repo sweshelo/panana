@@ -61,7 +61,11 @@ export class ModelFactory {
 
   private material(m: CgfxMaterial | undefined, hasColor: boolean): THREE.Material {
     if (m?.tev && m.units) {
-      const maps = m.units.map((u) => (u.name && this.set.textures.has(u.name) ? this.rawTexture(this.set.textures.get(u.name)!, u.wrapS, u.wrapT) : null));
+      const maps = m.units.map((u) =>
+        u.name && this.set.textures.has(u.name)
+          ? this.rawTexture(this.set.textures.get(u.name)!, u.wrapS, u.wrapT)
+          : null,
+      );
       return this.register(tevMaterial(m, { maps }, this.clipping));
     }
     const texName = m?.textures.find((t) => t && this.set.textures.has(t));
@@ -102,7 +106,9 @@ export class ModelFactory {
   /**
    * A model with its own geometry and materials (for animating), and the source mesh of each three.js mesh.
    */
-  buildOwn(hash: number): { model: CgfxModel; group: THREE.Group; parts: { mesh: THREE.Mesh; src: CgfxMesh }[] } | null {
+  buildOwn(
+    hash: number,
+  ): { model: CgfxModel; group: THREE.Group; parts: { mesh: THREE.Mesh; src: CgfxMesh }[] } | null {
     const model = this.set.models.get(hash);
     if (!model) return null;
     const parts: { mesh: THREE.Mesh; src: CgfxMesh }[] = [];

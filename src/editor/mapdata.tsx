@@ -55,7 +55,12 @@ function usersText(game: Game, ms: MapInfo[]): { top: string; all: string } {
 }
 
 /** Picking a tileset by the picture of its floor (tilesets that no mapData row gives models to are greyed out). */
-function TilesetPicker({ game, current, onPick, onClose }: {
+function TilesetPicker({
+  game,
+  current,
+  onPick,
+  onClose,
+}: {
   game: Game;
   current: number;
   onPick: (t: number) => void;
@@ -69,15 +74,35 @@ function TilesetPicker({ game, current, onPick, onClose }: {
     entries.push({
       id: t,
       name: `タイルセット ${t}`,
-      icon: <Photo model={from >= 0 ? floorRef(game, master.mapData.row(from)[1]!, t) : null} className="photo photo-lg" />,
+      icon: (
+        <Photo model={from >= 0 ? floorRef(game, master.mapData.row(from)[1]!, t) : null} className="photo photo-lg" />
+      ),
       unavailable: from < 0 ? 'モデルを持つ mapData の行がありません' : null,
     });
   }
-  return <GridPicker title="タイルセットを選ぶ" entries={entries} current={current} placeholder="番号で絞り込み" onPick={onPick} onClose={onClose} />;
+  return (
+    <GridPicker
+      title="タイルセットを選ぶ"
+      entries={entries}
+      current={current}
+      placeholder="番号で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
 }
 
 /** Picking a mapData row; each shows its floor and the dungeons / maps that use it. `none` comes first (value 0). */
-function RowPicker({ game, title, current, users, from = 0, none, onPick, onClose }: {
+function RowPicker({
+  game,
+  title,
+  current,
+  users,
+  from = 0,
+  none,
+  onPick,
+  onClose,
+}: {
   game: Game;
   title: string;
   current: number;
@@ -102,15 +127,39 @@ function RowPicker({ game, title, current, users, from = 0, none, onPick, onClos
       keywords: u.all,
     });
   }
-  return <GridPicker title={title} entries={entries} current={current} choices={none ? [none] : []} wide placeholder="行の番号・ダンジョン名・マップ名で絞り込み" onPick={onPick} onClose={onClose} />;
+  return (
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
+      choices={none ? [none] : []}
+      wide
+      placeholder="行の番号・ダンジョン名・マップ名で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
 }
 
 /** A button showing a choice with its floor picture; clicking it opens a picker. */
-function PickButton({ photo, label, sub, onOpen }: { photo: ModelRef | null; label: string; sub?: string; onOpen: () => void }): ReactNode {
+function PickButton({
+  photo,
+  label,
+  sub,
+  onOpen,
+}: {
+  photo: ModelRef | null;
+  label: string;
+  sub?: string;
+  onOpen: () => void;
+}): ReactNode {
   return (
     <button type="button" className="tileset-button" title={sub} onClick={onOpen}>
       <Photo model={photo} />
-      <span>{label}<span className="muted"> ▾</span></span>
+      <span>
+        {label}
+        <span className="muted"> ▾</span>
+      </span>
     </button>
   );
 }
@@ -163,14 +212,17 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
       st.emit('doc');
     }
   };
-  const setKey = (r: number): void => edit(() => {
-    info.mapDataKey = r > 0 ? master.mapDataKey(r) : 0;
-    if (r > 0 && !info.mapDataKey) throw new Error(`mapData の行 ${r} にはキーがありません`);
-  });
-  const ownDungeonRow = (): void => edit(() => master.setDungeonMapDataRow(info.dungeon, indoor, master.addMapData(row)));
-  const ownMapRow = (): void => edit(() => {
-    info.mapDataKey = master.mapDataKey(master.addMapData(row));
-  });
+  const setKey = (r: number): void =>
+    edit(() => {
+      info.mapDataKey = r > 0 ? master.mapDataKey(r) : 0;
+      if (r > 0 && !info.mapDataKey) throw new Error(`mapData の行 ${r} にはキーがありません`);
+    });
+  const ownDungeonRow = (): void =>
+    edit(() => master.setDungeonMapDataRow(info.dungeon, indoor, master.addMapData(row)));
+  const ownMapRow = (): void =>
+    edit(() => {
+      info.mapDataKey = master.mapDataKey(master.addMapData(row));
+    });
 
   // Does the row reach outside this dungeon? (Only then is a row for the dungeon worth making.)
   const outside = others.some((m) => m.dungeon !== info.dungeon);
@@ -186,7 +238,12 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
       </Field>
       {added && (
         <Field label="このマップの行 (マップ自身のキー)">
-          <PickButton photo={rowPhoto(row)} label={from === 'key' ? rowLabel(row) : `ダンジョンの行に従う (#${dungeonRow})`} sub={rowSub(row)} onOpen={() => setOpen('key')} />
+          <PickButton
+            photo={rowPhoto(row)}
+            label={from === 'key' ? rowLabel(row) : `ダンジョンの行に従う (#${dungeonRow})`}
+            sub={rowSub(row)}
+            onOpen={() => setOpen('key')}
+          />
         </Field>
       )}
       {fromDungeon && (
@@ -195,35 +252,86 @@ export function MapDataPanel({ session }: { session: Session }): ReactNode {
         </Field>
       )}
       {open === 'tileset' && (
-        <TilesetPicker game={game} current={tileset} onClose={() => setOpen('')}
-          onPick={(t) => { setOpen(''); edit(() => master.setTileset(row, t)); }} />
+        <TilesetPicker
+          game={game}
+          current={tileset}
+          onClose={() => setOpen('')}
+          onPick={(t) => {
+            setOpen('');
+            edit(() => master.setTileset(row, t));
+          }}
+        />
       )}
       {open === 'key' && (
-        <RowPicker game={game} title="このマップの mapData 行を選ぶ" current={from === 'key' ? row : 0} users={users} from={1}
-          none={{ value: 0, label: 'ダンジョンの行に従う', sub: `#${dungeonRow}`, icon: <Photo model={rowPhoto(dungeonRow)} className="photo photo-lg" /> }}
-          onClose={() => setOpen('')} onPick={(r) => { setOpen(''); setKey(r); }} />
+        <RowPicker
+          game={game}
+          title="このマップの mapData 行を選ぶ"
+          current={from === 'key' ? row : 0}
+          users={users}
+          from={1}
+          none={{
+            value: 0,
+            label: 'ダンジョンの行に従う',
+            sub: `#${dungeonRow}`,
+            icon: <Photo model={rowPhoto(dungeonRow)} className="photo photo-lg" />,
+          }}
+          onClose={() => setOpen('')}
+          onPick={(r) => {
+            setOpen('');
+            setKey(r);
+          }}
+        />
       )}
       {open === 'dungeon' && (
-        <RowPicker game={game} title={`ダンジョンの mapData 行を選ぶ (${indoor ? '屋内' : '屋外'})`} current={row} users={users}
-          onClose={() => setOpen('')} onPick={(r) => { setOpen(''); edit(() => master.setDungeonMapDataRow(info.dungeon, indoor, r)); }} />
+        <RowPicker
+          game={game}
+          title={`ダンジョンの mapData 行を選ぶ (${indoor ? '屋内' : '屋外'})`}
+          current={row}
+          users={users}
+          onClose={() => setOpen('')}
+          onPick={(r) => {
+            setOpen('');
+            edit(() => master.setDungeonMapDataRow(info.dungeon, indoor, r));
+          }}
+        />
       )}
       <p>
         {fromDungeon && outside && (
-          <button disabled={master.mapData.rows > 0xff} title="この行を写した新しい行を作り、ダンジョンの行にします" onClick={ownDungeonRow}>このダンジョン専用の行を作る</button>
+          <button
+            disabled={master.mapData.rows > 0xff}
+            title="この行を写した新しい行を作り、ダンジョンの行にします"
+            onClick={ownDungeonRow}
+          >
+            このダンジョン専用の行を作る
+          </button>
         )}
         {added && shared.length > 1 && (
-          <button disabled={master.mapData.rows > 0xff} title="この行を写した新しい行を作り、このマップのキーにします" onClick={ownMapRow}>このマップ専用の行を作る</button>
+          <button
+            disabled={master.mapData.rows > 0xff}
+            title="この行を写した新しい行を作り、このマップのキーにします"
+            onClick={ownMapRow}
+          >
+            このマップ専用の行を作る
+          </button>
         )}
       </p>
       <div className="muted small" style={{ whiteSpace: 'pre-line' }}>
         {[
-          others.length ? `同じ行を使うマップ: ${others.map((m) => mapShortTitle(m, game.code.maps) + (m.dungeon !== info.dungeon ? ` (${master.dungeonName(m.dungeon) || m.dungeonCode})` : '')).join('、')}。タイルセットや音を変えると、これらもまとめて変わります。` : 'この行を使うのはこのマップだけです。',
+          others.length
+            ? `同じ行を使うマップ: ${others.map((m) => mapShortTitle(m, game.code.maps) + (m.dungeon !== info.dungeon ? ` (${master.dungeonName(m.dungeon) || m.dungeonCode})` : '')).join('、')}。タイルセットや音を変えると、これらもまとめて変わります。`
+            : 'この行を使うのはこのマップだけです。',
           '「専用の行を作る」は、今の行を写した行を mapData の末尾に足して付け替えます (BGM・タイルセットを別々にできます)。',
-          from === 'key' && !added ? 'このマップはゲームのコードにある自分のキーで行が決まるので、行の付け替えはできません (タイルセット・音の編集は、同じ行のマップにまとめて効きます)。' : '',
+          from === 'key' && !added
+            ? 'このマップはゲームのコードにある自分のキーで行が決まるので、行の付け替えはできません (タイルセット・音の編集は、同じ行のマップにまとめて効きます)。'
+            : '',
           from === 'designed' ? 'このマップは designedMap.bin で行が決まるので、行の付け替えはできません。' : '',
-          fromDungeon && !newDungeon ? '元からあるダンジョンの行を付け替えると、そのダンジョンのマップ (自分のキーを持つものを除く) がすべて変わります。' : '',
+          fromDungeon && !newDungeon
+            ? '元からあるダンジョンの行を付け替えると、そのダンジョンのマップ (自分のキーを持つものを除く) がすべて変わります。'
+            : '',
           'mapData の行を足すこと自体は、ゲームの中ではまだ確かめていません。',
-        ].filter(Boolean).join('\n')}
+        ]
+          .filter(Boolean)
+          .join('\n')}
       </div>
     </div>
   );

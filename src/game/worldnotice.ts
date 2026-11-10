@@ -97,7 +97,15 @@ export function notices(events: EventTable | null | undefined, entrances: readon
     const r = events.table.row(row);
     const message = noticeMessage(r);
     const entrance = entrances.find((e) => ENT.event(e) === row);
-    if (message && entrance) out.push({ row, message, sound: noticeSound(r), show: [r[0x4b]!, u32(r, 0x00)], hide: [r[0x4c]!, u32(r, 0x04)], entrance: ENT.id(entrance) });
+    if (message && entrance)
+      out.push({
+        row,
+        message,
+        sound: noticeSound(r),
+        show: [r[0x4b]!, u32(r, 0x00)],
+        hide: [r[0x4c]!, u32(r, 0x04)],
+        entrance: ENT.id(entrance),
+      });
   }
   return out;
 }
@@ -128,7 +136,10 @@ export function notices(events: EventTable | null | undefined, entrances: readon
  */
 export function noticePatchSource(list: Notice[]): string {
   const hex = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
-  const table = list.flatMap((n) => [`  .word ${n.row}                 ; 行`, ...[n.show[0], n.show[1], n.hide[0], n.hide[1], n.message, n.sound, n.entrance].map((v) => `  .word ${hex(v)}`)]);
+  const table = list.flatMap((n) => [
+    `  .word ${n.row}                 ; 行`,
+    ...[n.show[0], n.show[1], n.hide[0], n.hide[1], n.message, n.sound, n.entrance].map((v) => `  .word ${hex(v)}`),
+  ]);
   return `; ワールドマップの出現の告知 (W01)。docs/integrations/panana/world-notice.md
 ; FUN_0019aa88 の W01 の分岐 (pop のあとの末尾呼び出し)
 @0x19ABA0
@@ -436,5 +447,7 @@ ${table.join('\n')}
 /** The notice patch for the notices of W01's table (with W01's entrances), or null when there are none. */
 export function noticePatch(events: EventTable | null | undefined, entrances: readonly Uint8Array[]): CodePatch | null {
   const list = notices(events, entrances);
-  return list.length ? { id: NOTICE_PATCH_ID, title: NOTICE_PATCH_TITLE, source: noticePatchSource(list), enabled: true } : null;
+  return list.length
+    ? { id: NOTICE_PATCH_ID, title: NOTICE_PATCH_TITLE, source: noticePatchSource(list), enabled: true }
+    : null;
 }

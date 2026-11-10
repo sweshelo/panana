@@ -63,7 +63,8 @@ export function releaseRows(ev: EventTable, free: readonly number[]): void {
   for (const r of free) {
     if (r >= ev.rows) continue;
     const row = ev.table.row(r);
-    const s0 = row[0x44]!, s1 = row[0x45]!;
+    const s0 = row[0x44]!,
+      s1 = row[0x45]!;
     row.fill(0);
     row[0x44] = s0;
     row[0x45] = s1;

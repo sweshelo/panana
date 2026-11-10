@@ -4,7 +4,14 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import type { Game } from '../game/game';
-import { countLabel, mapEncounters, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import {
+  countLabel,
+  GROUP_PATTERNS,
+  mapEncounters,
+  type GroupSlot,
+  type MonsterBook,
+  type MonsterGroup,
+} from '../game/monsters';
 import type { MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
 import { monsterRef } from '../pages/monsters';
@@ -38,7 +45,17 @@ export function groupUses(game: Game, docOf: (m: MapInfo) => MapDoc): Map<number
 }
 
 /** Photo (model) of a monster, with its name as the tooltip. */
-export function MonsterPhoto({ game, book, row, className }: { game: Game; book: MonsterBook; row: number; className?: string }): ReactNode {
+export function MonsterPhoto({
+  game,
+  book,
+  row,
+  className,
+}: {
+  game: Game;
+  book: MonsterBook;
+  row: number;
+  className?: string;
+}): ReactNode {
   const m = book.monster(row);
   return <Photo model={m ? monsterRef(game, book, m) : null} className={className} title={m?.name ?? `#${row}`} />;
 }
@@ -55,7 +72,14 @@ export function GroupIconRow({ icons, changed }: { icons: ReactNode[]; changed: 
 }
 
 export function GroupIcons({ game, book, g }: { game: Game; book: MonsterBook; g: MonsterGroup }): ReactNode {
-  return <GroupIconRow icons={book.groupMonsters(g).map((r, i) => <MonsterPhoto key={i} game={game} book={book} row={r} />)} changed={book.groupChanged(g.row)} />;
+  return (
+    <GroupIconRow
+      icons={book.groupMonsters(g).map((r, i) => (
+        <MonsterPhoto key={i} game={game} book={book} row={r} />
+      ))}
+      changed={book.groupChanged(g.row)}
+    />
+  );
 }
 
 /** What the group parts show of a monster. */
@@ -68,7 +92,12 @@ export interface GroupMonster {
 }
 
 /** One side's candidates as tiles: picture, name and level, share of the weight and the count. */
-export function SlotTiles({ title, slots, monster, count = countLabel }: {
+export function SlotTiles({
+  title,
+  slots,
+  monster,
+  count = countLabel,
+}: {
   title: string;
   slots: GroupSlot[];
   monster: (row: number) => GroupMonster | undefined;
@@ -82,10 +111,17 @@ export function SlotTiles({ title, slots, monster, count = countLabel }: {
         {slots.map((s, i) => {
           const m = monster(s.monster);
           return (
-            <a key={i} className="group-tile" href={monsterHref(s.monster)} title={m ? `${m.name}${m.sub ? ` ${m.sub}` : ''} (モンスター図鑑で開く)` : `#${s.monster}`}>
+            <a
+              key={i}
+              className="group-tile"
+              href={monsterHref(s.monster)}
+              title={m ? `${m.name}${m.sub ? ` ${m.sub}` : ''} (モンスター図鑑で開く)` : `#${s.monster}`}
+            >
               {m?.icon ?? <Photo model={null} />}
               <span className="group-tile-name">{m ? m.name : `#${s.monster}`}</span>
-              <span className="group-tile-meta">{s.weight ? `${Math.round((s.weight / total) * 100)}% ×${count(s.count)}` : `×${count(s.count)}`}</span>
+              <span className="group-tile-meta">
+                {s.weight ? `${Math.round((s.weight / total) * 100)}% ×${count(s.count)}` : `×${count(s.count)}`}
+              </span>
             </a>
           );
         })}
@@ -103,14 +139,31 @@ export function rpg2Monster(game: Game, book: MonsterBook): (row: number) => Gro
   };
 }
 
-export function GroupDetail({ game, book, group: g }: { game: Game; book: MonsterBook; group: MonsterGroup }): ReactNode {
+export function GroupDetail({
+  game,
+  book,
+  group: g,
+}: {
+  game: Game;
+  book: MonsterBook;
+  group: MonsterGroup;
+}): ReactNode {
   const monster = rpg2Monster(game, book);
   return (
     <div className="enc-group">
-      <div className="small"><a href={groupHref(g.row)}>{`群れ #${g.row} を開く (編集)`}</a></div>
+      <div className="small">
+        <a href={groupHref(g.row)}>{`群れ #${g.row} を開く (編集)`}</a>
+      </div>
       <SlotTiles title="先頭 (マップで見える敵)・3 体目" slots={g.leads} monster={monster} />
       <SlotTiles title="2・4 体目" slots={g.mates} monster={monster} />
-      <div className="muted small">{`+0x28〜: ${g.extra.join(' ')} (未解析)`}</div>
+      {!!g.extra[0] && (
+        <SlotTiles
+          title={`固定編成 #${g.extra[5]}`}
+          slots={(book.groupFix(g)?.slots ?? []).map((s) => ({ ...s, weight: 0 }))}
+          monster={monster}
+        />
+      )}
+      <div className="muted small">{GROUP_PATTERNS.filter((_, i) => g.extra[i]).join(' / ') || '編成方式なし'}</div>
     </div>
   );
 }
@@ -122,7 +175,18 @@ export type GroupFilter<G> = [string, string, (g: G) => boolean];
  * Every group with the pictures of its monsters, searchable by monster name or row and filtered by `filters` (the first
  * is the default): the left pane of the group pages and the body of the group picker. `extra` adds a column.
  */
-export function GroupListView<G extends { row: number }>({ groups, monsters, name, icon, changed, filters, extra, selected, onSelect, children }: {
+export function GroupListView<G extends { row: number }>({
+  groups,
+  monsters,
+  name,
+  icon,
+  changed,
+  filters,
+  extra,
+  selected,
+  onSelect,
+  children,
+}: {
   groups: G[];
   /** Monster rows of a group (leads first, each once). */
   monsters: (g: G) => number[];
@@ -150,18 +214,32 @@ export function GroupListView<G extends { row: number }>({ groups, monsters, nam
   const rows = groups.filter(matches);
   return (
     <>
-      <ListFilter query={query} setQuery={setQuery} placeholder="モンスターの名前か群れの番号で検索" filter={filter} setFilter={setFilter}
-        options={filters.map(([k, label]): [string, string] => [k, label])} />
+      <ListFilter
+        query={query}
+        setQuery={setQuery}
+        placeholder="モンスターの名前か群れの番号で検索"
+        filter={filter}
+        setFilter={setFilter}
+        options={filters.map(([k, label]): [string, string] => [k, label])}
+      />
       <div className="book-list" ref={list}>
         <Count shown={rows.length} total={groups.length} />
         <table className="book-table">
-          <thead><tr><th>#</th><th>モンスター</th>{extra && <th>{extra.head}</th>}</tr></thead>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>モンスター</th>
+              {extra && <th>{extra.head}</th>}
+            </tr>
+          </thead>
           <tbody>
             {children}
             {rows.map((g) => (
               <tr key={g.row} className={g.row === selected ? 'active' : ''} onClick={() => onSelect(g)}>
                 <td className="num muted">{g.row}</td>
-                <td><GroupIconRow icons={monsters(g).map((r, i) => icon(r, i))} changed={changed(g)} /></td>
+                <td>
+                  <GroupIconRow icons={monsters(g).map((r, i) => icon(r, i))} changed={changed(g)} />
+                </td>
                 {extra && <td className="num muted">{extra.cell(g)}</td>}
               </tr>
             ))}
@@ -173,7 +251,15 @@ export function GroupListView<G extends { row: number }>({ groups, monsters, nam
 }
 
 /** RPG2's groups (optionally only those `only` keeps) with how many maps use each. */
-export function GroupList({ game, book, uses, selected, only, onSelect, children }: {
+export function GroupList({
+  game,
+  book,
+  uses,
+  selected,
+  only,
+  onSelect,
+  children,
+}: {
   game: Game;
   book: MonsterBook;
   uses: Map<number, GroupUse[]>;
@@ -192,7 +278,12 @@ export function GroupList({ game, book, uses, selected, only, onSelect, children
       name={(r) => book.monster(r)?.name}
       icon={(r, i) => <MonsterPhoto key={i} game={game} book={book} row={r} />}
       changed={(g) => book.groupChanged(g.row)}
-      filters={[['all', 'すべて', () => true], ['used', 'マップで使う', used], ['unused', 'どのマップも使わない', (g) => !used(g)], ['changed', '変更した', (g) => book.groupChanged(g.row)]]}
+      filters={[
+        ['all', 'すべて', () => true],
+        ['used', 'マップで使う', used],
+        ['unused', 'どのマップも使わない', (g) => !used(g)],
+        ['changed', '変更した', (g) => book.groupChanged(g.row)],
+      ]}
       extra={{ head: 'マップ', cell: (g) => uses.get(g.hash)?.length || '' }}
       selected={selected}
       onSelect={onSelect}
@@ -203,8 +294,18 @@ export function GroupList({ game, book, uses, selected, only, onSelect, children
 }
 
 /** Pick the group of a map (or none) from the same list as the group page. */
-export function GroupPicker({ session, book, current, onPick, onClose }: {
-  session: Session; book: MonsterBook; current: number; onPick: (hash: number) => void; onClose: () => void;
+export function GroupPicker({
+  session,
+  book,
+  current,
+  onPick,
+  onClose,
+}: {
+  session: Session;
+  book: MonsterBook;
+  current: number;
+  onPick: (hash: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const { game } = session;
   // The maps' current documents (edits of the open map included); computed once per opening.
@@ -212,9 +313,19 @@ export function GroupPicker({ session, book, current, onPick, onClose }: {
   const cur = book.group(current);
   return (
     <Dialog title="群れを選ぶ" onClose={onClose}>
-      <p className="muted small">「マップ」はこの群れを使うマップの数。群れの中身は「群れ」のページで編集できます (共有している群れを変えると、使っているマップ全部に効きます)。</p>
+      <p className="muted small">
+        「マップ」はこの群れを使うマップの数。群れの中身は「群れ」のページで編集できます
+        (共有している群れを変えると、使っているマップ全部に効きます)。
+      </p>
       <div className="group-picker">
-        <GroupList game={game} book={book} uses={uses} selected={cur?.row} only={(g) => !!g.hash} onSelect={(g) => onPick(g.hash)}>
+        <GroupList
+          game={game}
+          book={book}
+          uses={uses}
+          selected={cur?.row}
+          only={(g) => !!g.hash}
+          onSelect={(g) => onPick(g.hash)}
+        >
           <tr className={current === 0 ? 'active' : ''} onClick={() => onPick(0)}>
             <td></td>
             <td className="muted">(なし: 敵が出ない)</td>
@@ -237,7 +348,17 @@ export function GroupPicker({ session, book, current, onPick, onClose }: {
  * Table of one side's candidates: monster (picked from the pictures), weight (with its share), count; add and remove.
  * `counts` are the choices of the count code.
  */
-export function GroupSlotEditor({ title, info, slots, max, monster, counts, set, picker }: {
+export function GroupSlotEditor({
+  title,
+  info,
+  slots,
+  max,
+  monster,
+  counts,
+  set,
+  picker,
+  weighted = true,
+}: {
   title: string;
   info?: string;
   slots: GroupSlot[];
@@ -246,17 +367,32 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
   counts: (current: number) => [number, string][];
   set: (next: GroupSlot[]) => void;
   picker: (current: number, pick: (row: number) => void, close: () => void) => ReactNode;
+  weighted?: boolean;
 }): ReactNode {
   /** The monster picker, and what to do with the pick. */
   const [picking, setPicking] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
   const total = slots.reduce((a, s) => a + s.weight, 0);
-  const change = (k: number, patch: Partial<GroupSlot>): void => set(slots.map((s, i) => (i === k ? { ...s, ...patch } : s)));
+  const change = (k: number, patch: Partial<GroupSlot>): void =>
+    set(slots.map((s, i) => (i === k ? { ...s, ...patch } : s)));
   return (
     <section>
-      <h3 className={info ? 'with-info' : undefined}>{title}{info && <InfoTip text={info} />}</h3>
+      <h3 className={info ? 'with-info' : undefined}>
+        {title}
+        {info && <InfoTip text={info} />}
+      </h3>
       <table className="enc-table group-slots">
         <tbody>
-          <tr><th>モンスター</th><th>重み</th><th>割合</th><th>数</th><th></th></tr>
+          <tr>
+            <th>モンスター</th>
+            {weighted && (
+              <>
+                <th>重み</th>
+                <th>割合</th>
+              </>
+            )}
+            <th>数</th>
+            <th></th>
+          </tr>
           {slots.map((s, k) => {
             const m = monster(s.monster);
             const options = counts(s.count);
@@ -264,36 +400,75 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
               <tr key={k}>
                 <td>
                   <div className="row">
-                    <button className="monster-pick" title="モンスターを選び直す" onClick={() => setPicking({ current: s.monster, onPick: (row) => change(k, { monster: row }) })}>
+                    <button
+                      className="monster-pick"
+                      title="モンスターを選び直す"
+                      onClick={() => setPicking({ current: s.monster, onPick: (row) => change(k, { monster: row }) })}
+                    >
                       {m?.icon ?? <Photo model={null} />}
                       <span>{m?.name ?? `#${s.monster}`}</span>
                     </button>
-                    <a href={monsterHref(s.monster)} title="モンスター図鑑で開く">↗</a>
+                    <a href={monsterHref(s.monster)} title="モンスター図鑑で開く">
+                      ↗
+                    </a>
                   </div>
                 </td>
-                <td>
-                  {/* weight 0 would drop the slot (the game skips it), so removing is done with × */}
-                  <NumberInput value={s.weight} min={1} max={255} onCommit={(v) => change(k, { weight: v })} />
-                </td>
-                <td className="num">{`${Math.round((s.weight / total) * 100)}%`}</td>
+                {weighted && (
+                  <>
+                    <td>
+                      {/* weight 0 would drop the slot (the game skips it), so removing is done with × */}
+                      <NumberInput value={s.weight} min={1} max={255} onCommit={(v) => change(k, { weight: v })} />
+                    </td>
+                    <td className="num">{`${Math.round((s.weight / total) * 100)}%`}</td>
+                  </>
+                )}
                 <td>
                   <select value={s.count} onChange={(e) => change(k, { count: Number(e.target.value) })}>
-                    {[...options, ...(options.some(([c]) => c === s.count) ? [] : [[s.count, String(s.count)] as [number, string]])].map(([c, label]) => <option key={c} value={c}>{label}</option>)}
+                    {[
+                      ...options,
+                      ...(options.some(([c]) => c === s.count) ? [] : [[s.count, String(s.count)] as [number, string]]),
+                    ].map(([c, label]) => (
+                      <option key={c} value={c}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                 </td>
-                <td><button title="外す" onClick={() => set(slots.filter((_, i) => i !== k))}>×</button></td>
+                <td>
+                  <button title="外す" onClick={() => set(slots.filter((_, i) => i !== k))}>
+                    ×
+                  </button>
+                </td>
               </tr>
             );
           })}
-          {!slots.length && <tr><td className="muted" colSpan={5}>なし</td></tr>}
+          {!slots.length && (
+            <tr>
+              <td className="muted" colSpan={weighted ? 5 : 3}>
+                なし
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       <button
         disabled={slots.length >= max}
         title={slots.length >= max ? `候補は ${max} 個まで` : ''}
-        onClick={() => setPicking({ current: 0, onPick: (row) => set([...slots, { monster: row, weight: 1, count: 0 }]) })}
-      >＋ 追加</button>
-      {picking && picker(picking.current, (row) => { setPicking(null); picking.onPick(row); }, () => setPicking(null))}
+        onClick={() =>
+          setPicking({ current: 0, onPick: (row) => set([...slots, { monster: row, weight: 1, count: 0 }]) })
+        }
+      >
+        ＋ 追加
+      </button>
+      {picking &&
+        picker(
+          picking.current,
+          (row) => {
+            setPicking(null);
+            picking.onPick(row);
+          },
+          () => setPicking(null),
+        )}
     </section>
   );
 }

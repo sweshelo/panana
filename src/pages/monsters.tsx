@@ -3,7 +3,17 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Game } from '../game/game';
 import type { MapInfo } from '../game/codebin';
-import { ELEMENT_AILMENTS, mapEncounters, PLAIN_AILMENTS, RESIST_ELEMENTS as ELEMENTS, RESIST_MAX, RESIST_MIN, type Monster, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import {
+  ELEMENT_AILMENTS,
+  mapEncounters,
+  PLAIN_AILMENTS,
+  RESIST_ELEMENTS as ELEMENTS,
+  RESIST_MAX,
+  RESIST_MIN,
+  type Monster,
+  type MonsterBook,
+  type MonsterGroup,
+} from '../game/monsters';
 import type { ModelRef } from './modelview';
 import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, MONSTER_MOTIONS } from '../game/monsters';
@@ -67,7 +77,6 @@ export function monsterRef(game: Game, book: MonsterBook, m: Monster): ModelRef 
   };
 }
 
-
 type Filter = string; // 'all' | 'seen' | 'boss' | 'd<dungeon>'
 
 export function MonsterPage({ session, arg, visit, book }: PageProps & { book: MonsterBook }): ReactNode {
@@ -77,14 +86,19 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
   const [filter, setFilter] = useState<Filter>('all');
   // Recomputed on every visit: the maps may have been edited.
   const where = useMemo(() => appearances(game, book, session.docOf), [game, book, session, visit, edits]);
-  const selected = useSticky(Number(arg) || undefined, (r) => !!book.monster(r), () => 1);
+  const selected = useSticky(
+    Number(arg) || undefined,
+    (r) => !!book.monster(r),
+    () => 1,
+  );
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, selected);
   const dungeons = useMemo(() => [...new Set(game.editableMaps().map((m) => m.dungeon))], [game]);
 
   const matches = (m: Monster): boolean => {
     const q = query.trim();
-    if (q && ![m.name, ...m.skills.map((s) => s.name), ...m.drops.map((d) => d.name)].some((t) => t.includes(q))) return false;
+    if (q && ![m.name, ...m.skills.map((s) => s.name), ...m.drops.map((d) => d.name)].some((t) => t.includes(q)))
+      return false;
     if (filter === 'seen') return where.has(m.row);
     if (filter === 'boss') return !!(m.boss || m.nextForm || book.monsters.some((o) => o.nextForm === m.row));
     if (filter.startsWith('d')) return (where.get(m.row) ?? []).some((a) => a.map.dungeon === Number(filter.slice(1)));
@@ -98,12 +112,39 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
   };
   return (
     <div className="book">
-      <MonsterList query={query} setQuery={setQuery} filter={filter} setFilter={setFilter}
-        options={[['all', 'すべて'], ['seen', 'マップに出る'], ['boss', 'ボス・変身'], ...dungeons.map((d): [string, string] => [`d${d}`, game.master.dungeonName(d) || `ダンジョン ${d}`])]}
-        rows={rows.map((m) => ({ row: m.row, icon: <Photo model={monsterRef(game, book, m)} />, name: m.name, level: m.level, hp: m.hp.max, count: where.get(m.row)?.length ?? 0 }))}
-        total={book.monsters.length} selected={selected} href={(r) => `#/monsters/${r}`} countHead="出現" listRef={list}
-        top={<NewRecordButton copy={monsterCopy(book)} current={selected} onEdit={onEdit}
-          picker={(p) => <MonsterPicker session={session} book={book} {...p} />} />} />
+      <MonsterList
+        query={query}
+        setQuery={setQuery}
+        filter={filter}
+        setFilter={setFilter}
+        options={[
+          ['all', 'すべて'],
+          ['seen', 'マップに出る'],
+          ['boss', 'ボス・変身'],
+          ...dungeons.map((d): [string, string] => [`d${d}`, game.master.dungeonName(d) || `ダンジョン ${d}`]),
+        ]}
+        rows={rows.map((m) => ({
+          row: m.row,
+          icon: <Photo model={monsterRef(game, book, m)} />,
+          name: m.name,
+          level: m.level,
+          hp: m.hp.max,
+          count: where.get(m.row)?.length ?? 0,
+        }))}
+        total={book.monsters.length}
+        selected={selected}
+        href={(r) => `#/monsters/${r}`}
+        countHead="出現"
+        listRef={list}
+        top={
+          <NewRecordButton
+            copy={monsterCopy(book)}
+            current={selected}
+            onEdit={onEdit}
+            picker={(p) => <MonsterPicker session={session} book={book} {...p} />}
+          />
+        }
+      />
       <div className="book-detail">
         {m && <MonsterDetail session={session} book={book} m={m} where={where.get(m.row) ?? []} edited={onEdit} />}
       </div>
@@ -111,20 +152,52 @@ export function MonsterPage({ session, arg, visit, book }: PageProps & { book: M
   );
 }
 
-function MonsterDetail({ session, book, m, where, edited }: { session: Session; book: MonsterBook; m: Monster; where: Appearance[]; edited: () => void }): ReactNode {
+function MonsterDetail({
+  session,
+  book,
+  m,
+  where,
+  edited,
+}: {
+  session: Session;
+  book: MonsterBook;
+  m: Monster;
+  where: Appearance[];
+  edited: () => void;
+}): ReactNode {
   const { game } = session;
   // Rebuilt after each edit: the monsters using each skill change with the skill slots.
-  const actions = useMemo(() => new ActionBook(game.master, (row) => book.monster(row)?.name ?? '', book.directData), [game, book, m]);
+  const actions = useMemo(
+    () => new ActionBook(game.master, (row) => book.monster(row)?.name ?? '', book.directData),
+    [game, book, m],
+  );
   const p = { book, m, edited };
   return (
     <>
       <div className="book-head">
-        <h2 className="with-info">{m.name}<InfoTip text={'変更はマスター (56562135) の monsterParameter.bin として書き出されます。\n同じモンスターの別の形態 (ボスなど) は別の行です。'} /></h2>
+        <h2 className="with-info">
+          {m.name}
+          <InfoTip
+            text={
+              '変更はマスター (56562135) の monsterParameter.bin として書き出されます。\n同じモンスターの別の形態 (ボスなど) は別の行です。'
+            }
+          />
+        </h2>
         <span className="muted">{`#${m.row}  種族 ${m.species}  図鑑 ${m.museum}  デザイン ${m.design}${book.added(m.row) ? '  (追加した行)' : ''}`}</span>
         <CopyRemoveButtons copy={monsterCopy(book)} from={m.row} remove={monsterRemove(book, m)} onEdit={edited} />
-        {book.changed(m.row) && <button onClick={() => { book.revert(m.row); edited(); }}>このモンスターの変更を元に戻す</button>}
+        {book.changed(m.row) && (
+          <button
+            onClick={() => {
+              book.revert(m.row);
+              edited();
+            }}
+          >
+            このモンスターの変更を元に戻す
+          </button>
+        )}
         <PortLookButton target="kahara" row={m.row} onDone={edited} />
       </div>
+      {book.added(m.row) && <MuseumEditor {...p} />}
       <div className="book-top">
         <div>
           <NameEditor session={session} {...p} />
@@ -133,8 +206,14 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         </div>
         <div>
           <ModelView model={monsterRef(game, book, m)} name={m.name} motionHints={MONSTER_MOTIONS} />
-          <ModelTextures model={monsterRef(game, book, m)} replaceInfo={REPLACE_INFO}
-            replace={async (name, image) => { await replaceMonsterTexture(session, m.row, name, image); edited(); }} />
+          <ModelTextures
+            model={monsterRef(game, book, m)}
+            replaceInfo={REPLACE_INFO}
+            replace={async (name, image) => {
+              await replaceMonsterTexture(session, m.row, name, image);
+              edited();
+            }}
+          />
         </div>
       </div>
       <div className="book-cols monster-cols">
@@ -143,7 +222,10 @@ function MonsterDetail({ session, book, m, where, edited }: { session: Session; 
         <BossEditor session={session} actions={actions} {...p} />
         <ChaseEditor session={session} {...p} />
       </div>
-      <h3 className="with-info">耐性<InfoTip text={RESIST_INFO} /></h3>
+      <h3 className="with-info">
+        耐性
+        <InfoTip text={RESIST_INFO} />
+      </h3>
       <ResistEditor book={book} m={m} edited={edited} />
       <h3>{`出現する場所 (${where.length})`}</h3>
       <div className="book-where">
@@ -168,8 +250,57 @@ const REPLACE_INFO = [
   'ほかのモンスターと同じデザインの行を使っているときは、このモンスターに新しいデザインの行を作ります (元に戻すと元の見た目に戻ります)。',
 ].join('\n');
 
+const MUSEUM_INFO = [
+  'ゲームは種族 (w0 の下位 8 ビット) が同じモンスターを図鑑の 1 項目にまとめ、図鑑の番号 (+0x4A) で倒した記録・ドロップ・「そうぐうしたばしょ」を残します。',
+  '写したモンスターは空いている番号 (1〜209) を種族と図鑑の番号の両方に使うので、倒すと自分の項目に載ります。',
+  'ボスの別の形態のように 1 体のモンスターとして載せたいときは、「同じ図鑑にする」でそのモンスターの項目に入れます。',
+].join('\n');
+
+/** The museum entry of an added monster: its own, or another monster's (for another form of it). */
+function MuseumEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edited: () => void }): ReactNode {
+  const sharers = book.museumSharers(m.row);
+  const others = new Map<number, Monster>();
+  for (const x of book.monsters)
+    if (x.row !== m.row && x.species !== m.species && !others.has(x.species)) others.set(x.species, x);
+  const act = (f: () => void): void => {
+    try {
+      f();
+      edited();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
+  return (
+    <div className="row">
+      <span className="with-info">
+        {`図鑑 No.${m.species}`}
+        <InfoTip text={MUSEUM_INFO} />
+      </span>
+      {sharers.length > 0 && (
+        <span className="warn-mark">{`${sharers
+          .map((r) => book.monster(r)?.name ?? `#${r}`)
+          .filter((n, i, a) => a.indexOf(n) === i)
+          .join('・')} と同じ項目です (倒すとその項目に載ります)`}</span>
+      )}
+      {sharers.length > 0 && (
+        <button onClick={() => act(() => book.setMuseum(m.row))} disabled={!book.freeMuseumNumber()}>
+          図鑑を別にする
+        </button>
+      )}
+      <select value="" onChange={(e) => e.target.value && act(() => book.setMuseum(m.row, Number(e.target.value)))}>
+        <option value="">同じ図鑑にする…</option>
+        {[...others.values()]
+          .sort((a, b) => a.species - b.species)
+          .map((x) => (
+            <option key={x.row} value={x.row}>{`No.${x.species} ${x.name}`}</option>
+          ))}
+      </select>
+    </div>
+  );
+}
+
 const COPY_INFO = [
-  'この行を写した新しいモンスターを表の最後に作ります。見た目と種族 (図鑑やドロップの記録) は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。',
+  'この行を写した新しいモンスターを表の最後に作ります。見た目は元と同じで、名前・能力・ワザ・耐性などは別に変えられます。図鑑には空いている番号で別の項目として載ります。',
   '見た目は「見た目を選ぶ…」で、この作品やほかの作品のモンスターから選び直せます。',
   '群れ・ボス戦の敵・次の形態で選べます。',
   'ゲームは行 185 以降を弾くので、追加した行があると書き出しに code.ips のパッチ「追加したモンスター」が入ります。行は 255 まで。',
@@ -177,16 +308,28 @@ const COPY_INFO = [
 
 /** Copying a row as a new monster (the buttons of an entry and the list's "＋ 新しいモンスター"). */
 export function monsterCopy(book: MonsterBook): CopySpec {
-  return { noun: 'モンスター', can: book.canCopy(), why: 'モンスターは行 255 までです', info: COPY_INFO, copy: (row) => book.copyMonster(row), href: (r) => `#/monsters/${r}` };
+  return {
+    noun: 'モンスター',
+    can: book.canCopy(),
+    why: 'モンスターは行 255 までです',
+    info: COPY_INFO,
+    copy: (row) => book.copyMonster(row),
+    href: (r) => `#/monsters/${r}`,
+  };
 }
 
 /** Removing the last added monster when nothing refers to it. */
 function monsterRemove(book: MonsterBook, m: Monster): RemoveSpec | undefined {
   if (!book.added(m.row)) return undefined;
-  if (!book.canRemove(m.row)) return { used: [], why: '消せるのは最後に追加したモンスターだけです', remove: () => {}, next: '' };
+  if (!book.canRemove(m.row))
+    return { used: [], why: '消せるのは最後に追加したモンスターだけです', remove: () => {}, next: '' };
   const users = book.users(m.row);
   return {
-    used: [...users.groups.map((r) => `群れ #${r}`), ...users.fixes.map((r) => `ボス戦の敵 #${r}`), ...users.forms.map((r) => `#${r} の次の形態`)],
+    used: [
+      ...users.groups.map((r) => `群れ #${r}`),
+      ...users.fixes.map((r) => `ボス戦の敵 #${r}`),
+      ...users.forms.map((r) => `#${r} の次の形態`),
+    ],
     remove: () => book.removeMonster(m.row),
     next: `#/monsters/${m.row - 1}`,
   };
@@ -230,15 +373,26 @@ function ResistEditor({ book, m, edited }: { book: MonsterBook; m: Monster; edit
         effectHead: ks[0]! < ELEMENTS ? 'ダメージ' : '係数',
         axes: ks.map((k) => {
           const r = m.resist[k]!;
-          return { name: r.name, value: r.value, original: book.originalResist(m.row, k), title: `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})` };
+          return {
+            name: r.name,
+            value: r.value,
+            original: book.originalResist(m.row, k),
+            title: `状態 ${r.id} (0x${r.id.toString(16).toUpperCase()})`,
+          };
         }),
       }))}
       min={RESIST_MIN}
       max={RESIST_MAX}
       rings={[-9, -5, 0, 5, 10]}
       effect={(c, j, v) => effect(charts[c]![1][j]!, v)}
-      cell={(c, j, v) => { const k = charts[c]![1][j]!; return k < ELEMENTS ? effect(k, v) : `${bp.coefficient(v)}%`; }}
-      onChange={(c, j, v) => { book.setResist(m.row, charts[c]![1][j]!, v); edited(); }}
+      cell={(c, j, v) => {
+        const k = charts[c]![1][j]!;
+        return k < ELEMENTS ? effect(k, v) : `${bp.coefficient(v)}%`;
+      }}
+      onChange={(c, j, v) => {
+        book.setResist(m.row, charts[c]![1][j]!, v);
+        edited();
+      }}
     />
   );
 }

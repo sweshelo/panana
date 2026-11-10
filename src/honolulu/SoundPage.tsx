@@ -14,19 +14,48 @@ export const honoluluSoundHref = (row: number): string => `#/sounds/${row}`;
 
 export function HonoluluSoundPage({ session, arg }: { session: HonoluluSession; arg: string | undefined }): ReactNode {
   const sounds = useAsync(() => session.sounds(), [session]);
-  if (sounds instanceof Error) return <div className="book"><p className="muted">{`音の表を読めませんでした: ${sounds.message}`}</p></div>;
-  if (!sounds) return <div className="book"><p className="muted">読み込み中…</p></div>;
+  if (sounds instanceof Error)
+    return (
+      <div className="book">
+        <p className="muted">{`音の表を読めませんでした: ${sounds.message}`}</p>
+      </div>
+    );
+  if (!sounds)
+    return (
+      <div className="book">
+        <p className="muted">読み込み中…</p>
+      </div>
+    );
   return <HonoluluSoundBook session={session} sounds={sounds} arg={arg} />;
 }
 
-export function HonoluluSoundBook({ session, sounds, arg }: { session: HonoluluSession; sounds: SoundNames; arg: string | undefined }): ReactNode {
+export function HonoluluSoundBook({
+  session,
+  sounds,
+  arg,
+}: {
+  session: HonoluluSession;
+  sounds: SoundNames;
+  arg: string | undefined;
+}): ReactNode {
   const revision = useHonoluluRevision(session);
   const uses = useMemo(() => honoluluSoundUses(session.master), [session, revision]);
-  const selected = useSticky(arg ? Number(arg) : undefined, (r) => r >= 1 && r < sounds.rows, () => 1);
+  const selected = useSticky(
+    arg ? Number(arg) : undefined,
+    (r) => r >= 1 && r < sounds.rows,
+    () => 1,
+  );
   return (
     <div className="book">
-      <SoundView game={session} sounds={sounds} selected={selected} href={honoluluSoundHref} uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う場所の数 (mapData +0x07 の階の BGM、推定)" usedLabel="使われている">
+      <SoundView
+        game={session}
+        sounds={sounds}
+        selected={selected}
+        href={honoluluSoundHref}
+        uses={(r) => uses.get(r)?.length ?? 0}
+        usesTitle="この音を使う場所の数 (mapData +0x07 の階の BGM、推定)"
+        usedLabel="使われている"
+      >
         <HonoluluSoundUses use={uses.get(selected) ?? []} />
       </SoundView>
     </div>
@@ -41,14 +70,24 @@ const USES_INFO = [
 function HonoluluSoundUses({ use }: { use: HonoluluSoundUse[] }): ReactNode {
   return (
     <>
-      <h3 className="with-info">{`使われている場所 (${use.length})`}<InfoTip text={USES_INFO} /></h3>
+      <h3 className="with-info">
+        {`使われている場所 (${use.length})`}
+        <InfoTip text={USES_INFO} />
+      </h3>
       {use.length ? (
         <table className="enc-table">
           <tbody>
-            <tr><th>欄</th><th>どこ</th><th>ダンジョン</th></tr>
+            <tr>
+              <th>欄</th>
+              <th>どこ</th>
+              <th>ダンジョン</th>
+            </tr>
             {use.map((u, i) => (
               <tr key={i} className={u.unsure ? 'muted' : ''}>
-                <td>{u.what}{u.unsure ? ' (推定)' : ''}</td>
+                <td>
+                  {u.what}
+                  {u.unsure ? ' (推定)' : ''}
+                </td>
                 <td className="mono small">{u.where}</td>
                 <td>{u.dungeons.join('、') || <span className="muted">(なし)</span>}</td>
               </tr>
@@ -56,7 +95,10 @@ function HonoluluSoundUses({ use }: { use: HonoluluSoundUse[] }): ReactNode {
           </tbody>
         </table>
       ) : (
-        <div className="muted">分かっている表 (mapData +0x07 の階の BGM) には見つかりません。ボス戦・イベント・コードから鳴らす音は、まだ数えていません。</div>
+        <div className="muted">
+          分かっている表 (mapData +0x07 の階の BGM)
+          には見つかりません。ボス戦・イベント・コードから鳴らす音は、まだ数えていません。
+        </div>
       )}
     </>
   );

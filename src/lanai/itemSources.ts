@@ -29,7 +29,12 @@ export function lanaiDropIndex(session: LanaiSession): Map<number, SourceLink[]>
       const item = readField(r, field(LANAI_STATS[0]!, `drop${i + 1}`));
       if (!item) continue;
       const rank = readField(r, RANKS[i]!);
-      const link = { label: m.name, href: lanaiMonsterHref(m.row), note: `${dropClass(rank)}・${rank ? `約 1/${DROP_DEN[rank]}` : '100%'}`, title: `ドロップ ${i + 1}、ランク ${rank}` };
+      const link = {
+        label: m.name,
+        href: lanaiMonsterHref(m.row),
+        note: `${dropClass(rank)}・${rank ? `約 1/${DROP_DEN[rank]}` : '100%'}`,
+        title: `ドロップ ${i + 1}、ランク ${rank}`,
+      };
       out.set(item, [...(out.get(item) ?? []), link]);
     }
   }
@@ -39,7 +44,11 @@ export function lanaiDropIndex(session: LanaiSession): Map<number, SourceLink[]>
 /** The random slot kind that can draw an item (the slots of 0x56 draw from 0x55), as a link to its page. */
 export function lanaiSlotSource(session: LanaiSession, it: LanaiItem): SourceLink | null {
   if (!lanaiInSlotPool(session, it)) return null;
-  return { label: 'ランダム枠の候補', href: lanaiShopSlotHref(it.kind === 0x56 ? 0x55 : it.kind), note: '店に毎日 1 つ選ばれる' };
+  return {
+    label: 'ランダム枠の候補',
+    href: lanaiShopSlotHref(it.kind === 0x56 ? 0x55 : it.kind),
+    note: '店に毎日 1 つ選ばれる',
+  };
 }
 
 export interface LanaiSourceIndex {
@@ -56,7 +65,10 @@ export const lanaiSourcesScanned = (session: LanaiSession): boolean => scans.has
  * The shops and the chests of every content, by item ID. The contents' maps and shops are read once per session (the
  * pages share them), so after the first time this is quick; it is made again after each edit.
  */
-export function lanaiSourceIndex(session: LanaiSession, progress?: (done: number, total: number) => void): Promise<LanaiSourceIndex> {
+export function lanaiSourceIndex(
+  session: LanaiSession,
+  progress?: (done: number, total: number) => void,
+): Promise<LanaiSourceIndex> {
   const have = scans.get(session);
   if (have && have.revision === session.revision) return have.p;
   const p = (async (): Promise<LanaiSourceIndex> => {
@@ -72,7 +84,10 @@ export function lanaiSourceIndex(session: LanaiSession, progress?: (done: number
         for (const r of s!.rows(sh.row)) {
           if (!r.item || seen.has(r.item)) continue;
           seen.add(r.item);
-          shops.set(r.item, [...(shops.get(r.item) ?? []), { label: `${title} の店 ${sh.row}`, href: lanaiShopHref(c.index, sh.row) }]);
+          shops.set(r.item, [
+            ...(shops.get(r.item) ?? []),
+            { label: `${title} の店 ${sh.row}`, href: lanaiShopHref(c.index, sh.row) },
+          ]);
         }
       }
       const maps = await lanaiMaps(session, c).catch(() => null);
@@ -82,12 +97,20 @@ export function lanaiSourceIndex(session: LanaiSession, progress?: (done: number
           const all = lanaiTreasureSlots(t, row);
           const total = all.reduce((a, x) => a + x.weight, 0);
           const weights = new Map<number, number>();
-          for (const x of all) if (x.kind === LANAI_TREASURE_ITEM) weights.set(x.value, (weights.get(x.value) ?? 0) + x.weight);
+          for (const x of all)
+            if (x.kind === LANAI_TREASURE_ITEM) weights.set(x.value, (weights.get(x.value) ?? 0) + x.weight);
           for (const [item, w] of weights)
             for (const u of users)
-              chests.set(item, [...(chests.get(item) ?? []), {
-                place: `${title} ${u.map}`, href: lanaiMapHref(c.index, u.map, u), at: `区画 ${u.section} #${u.index}`, table: `#${row}`, chance: total ? (w / total) * 100 : 0,
-              }]);
+              chests.set(item, [
+                ...(chests.get(item) ?? []),
+                {
+                  place: `${title} ${u.map}`,
+                  href: lanaiMapHref(c.index, u.map, u),
+                  at: `区画 ${u.section} #${u.index}`,
+                  table: `#${row}`,
+                  chance: total ? (w / total) * 100 : 0,
+                },
+              ]);
         }
       progress?.(++done, contents.length);
     }

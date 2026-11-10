@@ -4,7 +4,15 @@ import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { askClaude, errorText, getApiKey } from '../ai/claude';
 import { GAME_CONTEXT } from '../game/aiprompt';
 import type { EventEntry } from '../game/eventlist';
-import { applyRecords, blockDiff, buildPatches, PATCH_FORMAT, patchRecords, type BuiltPatch, type CodePatch } from '../game/patch';
+import {
+  applyRecords,
+  blockDiff,
+  buildPatches,
+  PATCH_FORMAT,
+  patchRecords,
+  type BuiltPatch,
+  type CodePatch,
+} from '../game/patch';
 import { checkPatch, type PatchCheck } from '../game/patchcheck';
 import type { Session } from '../session';
 import { AiSettings } from './AskAi';
@@ -25,7 +33,13 @@ interface Checked {
   check: PatchCheck | null;
 }
 
-export function PatchPanel({ session, entry, eventRow, allVtables, eventText }: {
+export function PatchPanel({
+  session,
+  entry,
+  eventRow,
+  allVtables,
+  eventText,
+}: {
   session: Session;
   entry: EventEntry;
   eventRow: Uint8Array | null;
@@ -61,7 +75,13 @@ export function PatchPanel({ session, entry, eventRow, allVtables, eventText }: 
   };
   /** Assemble the draft after the other enabled patches (so the cave is shared as in the export), and check it. */
   const check = (src = source): Checked => {
-    const draft: CodePatch = { id: '__draft', title: title || '(新しいパッチ)', source: src, enabled: true, event: key };
+    const draft: CodePatch = {
+      id: '__draft',
+      title: title || '(新しいパッチ)',
+      source: src,
+      enabled: true,
+      event: key,
+    };
     const list = [...game.codePatches.filter((p) => p.enabled && p.id !== editing), draft];
     const all = buildPatches(game.dump.code, list);
     const built = all.get('__draft')!;
@@ -127,60 +147,142 @@ export function PatchPanel({ session, entry, eventRow, allVtables, eventText }: 
             const err = buildPatches(game.dump.code, [p]).get(p.id)!.errors.length;
             return (
               <li key={p.id}>
-                <label><input type="checkbox" checked={p.enabled} onChange={(e) => { p.enabled = e.target.checked; save(); }} /> {p.title}</label>
-                {err > 0 && <span className="error-text small"> 誤りあり</span>}
-                {' '}<button onClick={() => open(p)}>編集</button>
-                {' '}<button onClick={() => { if (confirm(`パッチ「${p.title}」を消しますか?`)) { game.codePatches = game.codePatches.filter((x) => x !== p); save(); } }}>消す</button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={p.enabled}
+                    onChange={(e) => {
+                      p.enabled = e.target.checked;
+                      save();
+                    }}
+                  />{' '}
+                  {p.title}
+                </label>
+                {err > 0 && <span className="error-text small"> 誤りあり</span>}{' '}
+                <button onClick={() => open(p)}>編集</button>{' '}
+                <button
+                  onClick={() => {
+                    if (confirm(`パッチ「${p.title}」を消しますか?`)) {
+                      game.codePatches = game.codePatches.filter((x) => x !== p);
+                      save();
+                    }
+                  }}
+                >
+                  消す
+                </button>
               </li>
             );
           })}
         </ul>
       )}
       {others > 0 && <div className="muted small">{`ほかのイベントのパッチが ${others} 個あります。`}</div>}
-      {editing === null && <div className="row"><button onClick={() => open(null)}>パッチを書く</button></div>}
+      {editing === null && (
+        <div className="row">
+          <button onClick={() => open(null)}>パッチを書く</button>
+        </div>
+      )}
 
       <div className="ai-box">
-        <textarea className="ai-question" rows={2} placeholder="AI にしてほしい変更 (例: このスイッチを踏んだら行 11 の扉も開くようにして)" value={request} onChange={(e) => setRequest(e.target.value)} />
+        <textarea
+          className="ai-question"
+          rows={2}
+          placeholder="AI にしてほしい変更 (例: このスイッチを踏んだら行 11 の扉も開くようにして)"
+          value={request}
+          onChange={(e) => setRequest(e.target.value)}
+        />
         <div className="row">
-          {aiBusy
-            ? <button onClick={() => abort.current?.abort()}>止める</button>
-            : <button className="primary" disabled={!request.trim()} onClick={askAi}>AI にパッチを書かせる</button>}
+          {aiBusy ? (
+            <button onClick={() => abort.current?.abort()}>止める</button>
+          ) : (
+            <button className="primary" disabled={!request.trim()} onClick={askAi}>
+              AI にパッチを書かせる
+            </button>
+          )}
           {aiBusy && <span className="muted small">書いています…</span>}
           <button onClick={() => setSettings(!settings)}>{getApiKey() ? 'AI の設定' : 'API キーを設定'}</button>
         </div>
         {settings && <AiSettings onClose={() => setSettings(false)} />}
         {aiError && <div className="error">{aiError}</div>}
-        {aiText && <details open={aiBusy}><summary className="small">AI の答え</summary><div className="ai-answer">{aiText}</div></details>}
+        {aiText && (
+          <details open={aiBusy}>
+            <summary className="small">AI の答え</summary>
+            <div className="ai-answer">{aiText}</div>
+          </details>
+        )}
       </div>
 
       {editing !== null && (
         <div className="patch-editor">
           <div className="row">
-            <input type="text" placeholder="パッチの名前" size={40} value={title} onChange={(e) => setTitle(e.target.value)} />
+            <input
+              type="text"
+              placeholder="パッチの名前"
+              size={40}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </div>
-          <textarea className="asm-edit" rows={14} spellCheck={false} value={source} onChange={(e) => { setSource(e.target.value); setChecked(null); }} />
+          <textarea
+            className="asm-edit"
+            rows={14}
+            spellCheck={false}
+            value={source}
+            onChange={(e) => {
+              setSource(e.target.value);
+              setChecked(null);
+            }}
+          />
           <div className="row">
             <button onClick={() => check()}>組み立てて確かめる</button>
-            <button className="primary" disabled={!checked || checked.built.errors.length > 0} onClick={keep}>{editing ? 'パッチを更新' : 'パッチに加える'}</button>
-            <button onClick={() => { setEditing(null); setChecked(null); }}>やめる</button>
+            <button className="primary" disabled={!checked || checked.built.errors.length > 0} onClick={keep}>
+              {editing ? 'パッチを更新' : 'パッチに加える'}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(null);
+                setChecked(null);
+              }}
+            >
+              やめる
+            </button>
           </div>
-          <details><summary className="muted small">書式</summary><pre className="small patch-help">{PATCH_FORMAT}</pre></details>
+          <details>
+            <summary className="muted small">書式</summary>
+            <pre className="small patch-help">{PATCH_FORMAT}</pre>
+          </details>
           {checked && (
             <div className="patch-result">
               {checked.built.errors.length > 0 && (
-                <div className="error">{checked.built.errors.map((e, i) => <div key={i}>{`${e.line} 行目: ${e.message}`}</div>)}</div>
+                <div className="error">
+                  {checked.built.errors.map((e, i) => (
+                    <div key={i}>{`${e.line} 行目: ${e.message}`}</div>
+                  ))}
+                </div>
               )}
               {checked.built.blocks.map((b, i) => (
                 <Fragment key={i}>
-                  <div className="small"><b>{b.kind === 'cave' ? `code cave 0x${b.addr.toString(16).toUpperCase()}${b.label ? ` (${b.label})` : ''}` : `0x${b.addr.toString(16).toUpperCase()} を上書き`}</b></div>
+                  <div className="small">
+                    <b>
+                      {b.kind === 'cave'
+                        ? `code cave 0x${b.addr.toString(16).toUpperCase()}${b.label ? ` (${b.label})` : ''}`
+                        : `0x${b.addr.toString(16).toUpperCase()} を上書き`}
+                    </b>
+                  </div>
                   <pre className="asm">
-                    {blockDiff(b).map((d) => `${d.addr.toString(16).toUpperCase().padStart(8, '0')}  ${b.kind === 'at' ? `${d.before.padEnd(30)} → ` : ''}${d.after}\n`).join('')}
+                    {blockDiff(b)
+                      .map(
+                        (d) =>
+                          `${d.addr.toString(16).toUpperCase().padStart(8, '0')}  ${b.kind === 'at' ? `${d.before.padEnd(30)} → ` : ''}${d.after}\n`,
+                      )
+                      .join('')}
                   </pre>
                 </Fragment>
               ))}
               {checked.check && (
                 <>
-                  <div className="small"><b>実行器で動かした結果</b></div>
+                  <div className="small">
+                    <b>実行器で動かした結果</b>
+                  </div>
                   <ul className="small">
                     {checked.check.runs.map((r, i) => (
                       <li key={i} className={r.result === 'stack' ? 'error-text' : ''}>
@@ -190,9 +292,14 @@ export function PatchPanel({ session, entry, eventRow, allVtables, eventText }: 
                     {before && after && (
                       <li>{`完了させる行: ${before.completes.join(', ') || 'なし'} → ${after.completes.join(', ') || 'なし'}、メッセージ ${before.messages.length} → ${after.messages.length} 個`}</li>
                     )}
-                    {before && checked.check.classes && !after && <li className="error-text">パッチの後、この行のクラスが作られなくなりました</li>}
+                    {before && checked.check.classes && !after && (
+                      <li className="error-text">パッチの後、この行のクラスが作られなくなりました</li>
+                    )}
                   </ul>
-                  <div className="muted small">実行器は作り物のデータで動かすので、「迷った」は誤りとは限りません。スタックが崩れる (push / pop が対でない) ときは直してください。最後はエミュレータで確かめてください。</div>
+                  <div className="muted small">
+                    実行器は作り物のデータで動かすので、「迷った」は誤りとは限りません。スタックが崩れる (push / pop
+                    が対でない) ときは直してください。最後はエミュレータで確かめてください。
+                  </div>
                 </>
               )}
             </div>

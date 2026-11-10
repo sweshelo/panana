@@ -31,7 +31,8 @@ export function applyIps(base: Uint8Array, ips: Uint8Array): Uint8Array {
 
 /** Version of the generic switch patch (elpulse mod/build_code.py: "PNSW" + u32 in the code cave), or 0. */
 export function switchPatchVersion(code: Uint8Array): number {
-  const from = 0x4bf020 - 0x100000, to = Math.min(code.length, 0x4c0000 - 0x100000);
+  const from = 0x4bf020 - 0x100000,
+    to = Math.min(code.length, 0x4c0000 - 0x100000);
   for (let o = from; o + 8 <= to; o += 4)
     if (code[o] === 0x50 && code[o + 1] === 0x4e && code[o + 2] === 0x53 && code[o + 3] === 0x57)
       return (code[o + 4]! | (code[o + 5]! << 8) | (code[o + 6]! << 16) | (code[o + 7]! << 24)) >>> 0;

@@ -26,7 +26,9 @@ export function lanaiCanRemoveMonster(session: LanaiSession, row: number): boole
 
 /** The transformations into a monster (the monsters whose actions turn into it). */
 export function lanaiTransformSources(session: LanaiSession, row: number): number[] {
-  return [...new Set((lanaiMonsterIndex(session).into.get(row) ?? []).map((x) => x.use.monster))].filter((m) => m !== row);
+  return [...new Set((lanaiMonsterIndex(session).into.get(row) ?? []).map((x) => x.use.monster))].filter(
+    (m) => m !== row,
+  );
 }
 
 /** Removes the last added monster, with its ability row when that is the last added one and no other monster uses it. */
@@ -36,7 +38,8 @@ export function lanaiRemoveMonster(session: LanaiSession, row: number): void {
   session.need('MonsterParameter').removeLastRow();
   if (ref) {
     const t = session.need(ref.table);
-    if (ref.row === t.rows - 1 && ref.row >= t.originalRows && !lanaiStatsSharers(session, ref).length) t.removeLastRow();
+    if (ref.row === t.rows - 1 && ref.row >= t.originalRows && !lanaiStatsSharers(session, ref).length)
+      t.removeLastRow();
   }
   forgetLanaiMonsters(session);
 }

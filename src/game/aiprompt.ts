@@ -17,7 +17,10 @@ export const GAME_CONTEXT = `対象: ニンテンドー3DS「電波人間のRPG2
 
 既知の関数:
 ${Object.entries(KNOWN_FUNCTIONS)
-  .map(([a, k]) => `- ${fnLabel(Number(a))}: ${k.name}${k.args ? `(${k.args.join(', ')})` : ''}${k.guess ? ' (推定)' : ''}`)
+  .map(
+    ([a, k]) =>
+      `- ${fnLabel(Number(a))}: ${k.name}${k.args ? `(${k.args.join(', ')})` : ''}${k.guess ? ' (推定)' : ''}`,
+  )
   .join('\n')}`;
 
 export interface EventDescription {
@@ -39,10 +42,16 @@ export function eventText(d: EventDescription): string {
     `置かれている場所: ${d.places.length ? d.places.join('、') : 'なし'}`,
     `出現条件: ${e.conditions.length ? e.conditions.map((c) => `${c.field === 0x4b ? '出る' : '消える'}: ${c.text}`).join('、') : 'なし'}`,
   ];
-  for (const m of e.messages) lines.push(`行の欄 +0x${m.off.toString(16).toUpperCase()} のメッセージ 0x${m.id.toString(16).toUpperCase()}: ${d.message(m.id) ?? ''}`);
+  for (const m of e.messages)
+    lines.push(
+      `行の欄 +0x${m.off.toString(16).toUpperCase()} のメッセージ 0x${m.id.toString(16).toUpperCase()}: ${d.message(m.id) ?? ''}`,
+    );
   for (const s of e.scripts) {
-    lines.push(`スクリプト: ${fnLabel(s.make)} が作るクラス (vtable 0x${s.cls.vtable.toString(16).toUpperCase()})、完了させる行 ${s.cls.completes.join(', ') || 'なし'}`);
-    for (const id of s.cls.messages) lines.push(`  メッセージ 0x${id.toString(16).toUpperCase()}: ${d.message(id) ?? ''}`);
+    lines.push(
+      `スクリプト: ${fnLabel(s.make)} が作るクラス (vtable 0x${s.cls.vtable.toString(16).toUpperCase()})、完了させる行 ${s.cls.completes.join(', ') || 'なし'}`,
+    );
+    for (const id of s.cls.messages)
+      lines.push(`  メッセージ 0x${id.toString(16).toUpperCase()}: ${d.message(id) ?? ''}`);
   }
   if (d.listing.length) lines.push('', '## コード (注釈つき逆アセンブル)', '```asm', listingText(d.listing), '```');
   return lines.join('\n');

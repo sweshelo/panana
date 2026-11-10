@@ -3,17 +3,60 @@
 // (H3DLayout) so that writeH3D can put it back at the same place.
 import { commandState, readCommands, Reg, vectorFromWords } from './pica';
 import type {
-  H3D, H3DAnimation, H3DAnimContent, H3DAnimSlot, H3DBone, H3DBoundingBox, H3DCamera, H3DFloatKeyFrameGroup, H3DKeySegment, H3DLayout, H3DLight,
-  H3DLUT, H3DMaterial, H3DMaterialAnim, H3DMaterialParams, H3DMesh, H3DMetaData, H3DMetaDataValue, H3DModel, H3DQuatTrack,
-  H3DShader, H3DSubMesh, H3DTexture, H3DTextureCoord, H3DTextureMapper, H3DVertexData, KeyFrame, Matrix3x4, PICAAttribute,
-  PICAFixedAttribute, PICATexEnvStage, RGBA, Vector3, Vector4,
+  H3D,
+  H3DAnimation,
+  H3DAnimContent,
+  H3DAnimSlot,
+  H3DBone,
+  H3DBoundingBox,
+  H3DCamera,
+  H3DFloatKeyFrameGroup,
+  H3DKeySegment,
+  H3DLayout,
+  H3DLight,
+  H3DLUT,
+  H3DMaterial,
+  H3DMaterialAnim,
+  H3DMaterialParams,
+  H3DMesh,
+  H3DMetaData,
+  H3DMetaDataValue,
+  H3DModel,
+  H3DQuatTrack,
+  H3DShader,
+  H3DSubMesh,
+  H3DTexture,
+  H3DTextureCoord,
+  H3DTextureMapper,
+  H3DVertexData,
+  KeyFrame,
+  Matrix3x4,
+  PICAAttribute,
+  PICAFixedAttribute,
+  PICATexEnvStage,
+  RGBA,
+  Vector3,
+  Vector4,
 } from './types';
 import { H3DPrimitiveType, vectorSlots } from './types';
 
 /** H3DSection: where a relocated pointer points. */
 export const Sec = {
-  Contents: 0, Strings: 1, Commands: 2, CommandsSrc: 3, RawData: 4, RawDataTexture: 5, RawDataVertex: 6, RawDataIndex16: 7, RawDataIndex8: 8,
-  RawExt: 9, RawExtTexture: 10, RawExtVertex: 11, RawExtIndex16: 12, RawExtIndex8: 13, BaseAddress: 14,
+  Contents: 0,
+  Strings: 1,
+  Commands: 2,
+  CommandsSrc: 3,
+  RawData: 4,
+  RawDataTexture: 5,
+  RawDataVertex: 6,
+  RawDataIndex16: 7,
+  RawDataIndex8: 8,
+  RawExt: 9,
+  RawExtTexture: 10,
+  RawExtVertex: 11,
+  RawExtIndex16: 12,
+  RawExtIndex8: 13,
+  BaseAddress: 14,
 } as const;
 
 export interface H3DHeader {
@@ -42,7 +85,8 @@ export interface H3DHeader {
 export const headerLength = (version: number): number => (version >= 0x21 ? 0x44 : version >= 8 ? 0x3c : 0x38);
 
 export function readH3DHeader(b: Uint8Array): H3DHeader {
-  if (b.length < 0x38 || b[0] !== 0x42 || b[1] !== 0x43 || b[2] !== 0x48 || b[3] !== 0) throw new Error('not a BCH (H3D) file');
+  if (b.length < 0x38 || b[0] !== 0x42 || b[1] !== 0x43 || b[2] !== 0x48 || b[3] !== 0)
+    throw new Error('not a BCH (H3D) file');
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   const v = b[4]!;
   const ext = v >= 0x21;
@@ -52,23 +96,46 @@ export function readH3DHeader(b: Uint8Array): H3DHeader {
     o += 4;
     return x;
   };
-  const contentsAddress = next(), stringsAddress = next(), commandsAddress = next(), rawDataAddress = next();
+  const contentsAddress = next(),
+    stringsAddress = next(),
+    commandsAddress = next(),
+    rawDataAddress = next();
   const rawExtAddress = ext ? next() : 0;
   const relocationAddress = next();
-  const contentsLength = next(), stringsLength = next(), commandsLength = next(), rawDataLength = next();
+  const contentsLength = next(),
+    stringsLength = next(),
+    commandsLength = next(),
+    rawDataLength = next();
   const rawExtLength = ext ? next() : 0;
   const relocationLength = next();
-  const unInitDataLength = next(), unInitCommandsLength = next();
-  let flags = 0, addressCount = 0;
+  const unInitDataLength = next(),
+    unInitCommandsLength = next();
+  let flags = 0,
+    addressCount = 0;
   if (v >= 8) {
     flags = b[o]!;
     addressCount = dv.getUint16(o + 2, true);
   }
   return {
-    backwardCompatibility: v, forwardCompatibility: b[5]!, converterVersion: dv.getUint16(6, true),
-    contentsAddress, stringsAddress, commandsAddress, rawDataAddress, rawExtAddress, relocationAddress,
-    contentsLength, stringsLength, commandsLength, rawDataLength, rawExtLength, relocationLength,
-    unInitDataLength, unInitCommandsLength, flags, addressCount,
+    backwardCompatibility: v,
+    forwardCompatibility: b[5]!,
+    converterVersion: dv.getUint16(6, true),
+    contentsAddress,
+    stringsAddress,
+    commandsAddress,
+    rawDataAddress,
+    rawExtAddress,
+    relocationAddress,
+    contentsLength,
+    stringsLength,
+    commandsLength,
+    rawDataLength,
+    rawExtLength,
+    relocationLength,
+    unInitDataLength,
+    unInitCommandsLength,
+    flags,
+    addressCount,
   };
 }
 
@@ -84,13 +151,27 @@ export function legacyRelocDiff(section: number, version: number): number {
 
 export function sectionAddress(h: H3DHeader, s: number): number {
   switch (s) {
-    case Sec.Contents: return h.contentsAddress;
-    case Sec.Strings: return h.stringsAddress;
-    case Sec.Commands: case Sec.CommandsSrc: return h.commandsAddress;
-    case Sec.RawData: case Sec.RawDataTexture: case Sec.RawDataVertex: case Sec.RawDataIndex8: return h.rawDataAddress;
-    case Sec.RawDataIndex16: return (h.rawDataAddress | 0x80000000) >>> 0;
-    case Sec.RawExt: case Sec.RawExtTexture: case Sec.RawExtVertex: case Sec.RawExtIndex8: return h.rawExtAddress;
-    case Sec.RawExtIndex16: return (h.rawExtAddress | 0x80000000) >>> 0;
+    case Sec.Contents:
+      return h.contentsAddress;
+    case Sec.Strings:
+      return h.stringsAddress;
+    case Sec.Commands:
+    case Sec.CommandsSrc:
+      return h.commandsAddress;
+    case Sec.RawData:
+    case Sec.RawDataTexture:
+    case Sec.RawDataVertex:
+    case Sec.RawDataIndex8:
+      return h.rawDataAddress;
+    case Sec.RawDataIndex16:
+      return (h.rawDataAddress | 0x80000000) >>> 0;
+    case Sec.RawExt:
+    case Sec.RawExtTexture:
+    case Sec.RawExtVertex:
+    case Sec.RawExtIndex8:
+      return h.rawExtAddress;
+    case Sec.RawExtIndex16:
+      return (h.rawExtAddress | 0x80000000) >>> 0;
   }
   return 0;
 }
@@ -204,7 +285,8 @@ class Ctx {
 
   /** A command list {pointer, word count}, or null. */
   words = (o: number): Uint32Array | null => {
-    const p = this.ptr(o), n = this.u32(o + 4);
+    const p = this.ptr(o),
+      n = this.u32(o + 4);
     if (!p) return null;
     return this.cached('cmd', p, () => {
       const out = new Uint32Array(n);
@@ -260,7 +342,8 @@ function readTree(c: Ctx, at: number, owner: object): string[] | null {
 }
 
 function readDict<T>(c: Ctx, at: number, item: (o: number) => T, inlineSize = 0): T[] {
-  const p = c.ptr(at), n = c.u32(at + 4);
+  const p = c.ptr(at),
+    n = c.u32(at + 4);
   const out: T[] = [];
   const names = readTree(c, at + 8, out);
   if (names && names.length !== n) throw new Error(`name tree of ${names.length} names for ${n} values`);
@@ -288,7 +371,8 @@ export const treeless = new WeakSet<object>();
 
 /** A list {pointer, count} of `size`-byte items, recording a null pointer on `out`. */
 function list<T>(c: Ctx, at: number, out: T[], role: string, size: number, item: (p: number, i: number) => T): T[] {
-  const p = c.ptr(at), n = c.u32(at + 4);
+  const p = c.ptr(at),
+    n = c.u32(at + 4);
   if (!p) {
     nullValues.add(out);
     return out;
@@ -320,17 +404,22 @@ function readMetaValue(c: Ctx, o: number): H3DMetaDataValue {
     return v;
   };
   switch (type) {
-    case 0: return done({ name, type, values: Array.from({ length: n }, (_, i) => c.s32(at(i, 4))) });
-    case 1: return done({ name, type, values: Array.from({ length: n }, (_, i) => c.f32(at(i, 4))) });
-    case 2: return done({ name, type, values: Array.from({ length: n }, (_, i) => c.name(at(i, 4))) });
+    case 0:
+      return done({ name, type, values: Array.from({ length: n }, (_, i) => c.s32(at(i, 4))) });
+    case 1:
+      return done({ name, type, values: Array.from({ length: n }, (_, i) => c.f32(at(i, 4))) });
+    case 2:
+      return done({ name, type, values: Array.from({ length: n }, (_, i) => c.name(at(i, 4))) });
     case 3: {
       const values: string[] = [];
       const v = done({ name, type, values });
       for (let i = 0; i < n; i++) values.push(utf16(c, c.ptr(at(i, 4)), values, i));
       return v;
     }
-    case 4: return done({ name, type, values: Array.from({ length: n }, (_, i) => readBoundingBox(c, at(i, 0x3c))) });
-    case 5: return done({ name, type, values: Array.from({ length: n }, (_, i) => readVertexData(c, at(i, 0x0c))) });
+    case 4:
+      return done({ name, type, values: Array.from({ length: n }, (_, i) => readBoundingBox(c, at(i, 0x3c))) });
+    case 5:
+      return done({ name, type, values: Array.from({ length: n }, (_, i) => readVertexData(c, at(i, 0x0c))) });
   }
   throw new Error(`unknown metadata type ${type}`);
 }
@@ -350,28 +439,43 @@ function readBoundingBox(c: Ctx, o: number): H3DBoundingBox {
 
 /** H3DVertexData (metadata of type 5). Never seen in the games' files; read for completeness, not written. */
 function readVertexData(c: Ctx, o: number): H3DVertexData {
-  const na = c.u16(o) & 0xff, ni = c.u16(o + 2);
-  const pa = c.ptr(o + 4), pi = c.ptr(o + 8);
+  const na = c.u16(o) & 0xff,
+    ni = c.u16(o + 2);
+  const pa = c.ptr(o + 4),
+    pi = c.ptr(o + 8);
   const attributes = Array.from({ length: na }, (_, i) => {
     const a = pa + i * 12;
     const type = c.u8(a + 1);
     const stride = c.u8(a + 2);
     const offset = c.ptr(a + 4) || c.u32(a + 4);
-    const format = type & 3, elements = ((type >> 2) & 3) + 1;
+    const format = type & 3,
+      elements = ((type >> 2) & 3) + 1;
     const fixedValue: Vector4 = [0, 0, 0, 0];
-    if (!stride) for (let k = 0; k < elements; k++) fixedValue[k] = [c.s8, c.u8, c.s16, c.f32][format]!(offset + k * [1, 1, 2, 4][format]!);
+    if (!stride)
+      for (let k = 0; k < elements; k++)
+        fixedValue[k] = [c.s8, c.u8, c.s16, c.f32][format]!(offset + k * [1, 1, 2, 4][format]!);
     return { name: c.u8(a), format, elements, stride, offset, fixedValue };
   });
   const indices = Array.from({ length: ni }, (_, i) => {
     const x = pi + i * 8;
-    const type = c.u8(x), count = c.u16(x + 2), p = c.ptr(x + 4);
-    return { type, drawMode: c.u8(x + 1), indices: Array.from({ length: count }, (_, k) => (type === 1 ? c.u16(p + k * 2) : c.u8(p + k))) };
+    const type = c.u8(x),
+      count = c.u16(x + 2),
+      p = c.ptr(x + 4);
+    return {
+      type,
+      drawMode: c.u8(x + 1),
+      indices: Array.from({ length: count }, (_, k) => (type === 1 ? c.u16(p + k * 2) : c.u8(p + k))),
+    };
   });
   const base = Math.min(...attributes.filter((a) => a.stride).map((a) => a.offset), Infinity);
   const stride = attributes.filter((a) => a.stride).reduce((s, a) => s + a.elements * [1, 1, 2, 4][a.format]!, 0);
   const max = Math.max(0, ...indices.flatMap((x) => x.indices));
   for (const a of attributes) if (a.stride) a.offset -= base;
-  return { attributes, indices, rawBuffer: Number.isFinite(base) ? c.b.slice(base, base + (max + 1) * stride) : new Uint8Array(0) };
+  return {
+    attributes,
+    indices,
+    rawBuffer: Number.isFinite(base) ? c.b.slice(base, base + (max + 1) * stride) : new Uint8Array(0),
+  };
 }
 
 // ---- Model
@@ -380,14 +484,16 @@ function readModel(c: Ctx, o: number): H3DModel {
   return c.cached('model', o, () => {
     const v21 = c.version >= 0x21;
     const meshes: H3DMesh[] = [];
-    const mp = c.ptr(o + 0x40), mn = c.u32(o + 0x44);
+    const mp = c.ptr(o + 0x40),
+      mn = c.u32(o + 0x44);
     if (mp) {
       c.mark(meshes, 'meshes', mp, mp + mn * 0x38);
       for (let i = 0; i < mn; i++) meshes.push(readMesh(c, mp + i * 0x38));
     } else nullValues.add(meshes);
     // Layer lists are ranges {start, end} of the mesh list.
     const range = (at: number): H3DMesh[] => {
-      const s = c.ptr(at), e = c.ptr(at + 4);
+      const s = c.ptr(at),
+        e = c.ptr(at + 4);
       const out: H3DMesh[] = [];
       if (s) for (let p = s; p < e; p += 0x38) out.push(readMesh(c, p));
       return out;
@@ -427,7 +533,8 @@ function readModel(c: Ctx, o: number): H3DModel {
       tree.push(...names);
       model.meshNodesTree = tree;
     }
-    for (const m of meshes) if (c.ptr(meshAt.get(m)! + 0x2c) !== o) throw new Error('a mesh whose parent is another model');
+    for (const m of meshes)
+      if (c.ptr(meshAt.get(m)! + 0x2c) !== o) throw new Error('a mesh whose parent is another model');
     return model;
   });
 }
@@ -435,7 +542,8 @@ function readModel(c: Ctx, o: number): H3DModel {
 const meshAt = new WeakMap<H3DMesh, number>();
 
 function readBools(c: Ctx, at: number): boolean[] {
-  const p = c.ptr(at), n = c.u32(at + 4);
+  const p = c.ptr(at),
+    n = c.u32(at + 4);
   const out: boolean[] = [];
   if (!p) {
     nullValues.add(out);
@@ -461,9 +569,11 @@ function readBone(c: Ctx, o: number): H3DBone {
 
 function readMesh(c: Ctx, o: number): H3DMesh {
   return c.cached('mesh', o, () => {
-    const flags = c.u8(o + 2), key = c.u16(o + 6);
+    const flags = c.u8(o + 2),
+      key = c.u16(o + 6);
     const subMeshes: H3DSubMesh[] = [];
-    const sp = c.ptr(o + 0x10), sn = c.u32(o + 0x14);
+    const sp = c.ptr(o + 0x10),
+      sn = c.u32(o + 0x14);
     if (sp) {
       c.mark(subMeshes, 'subMeshes', sp, sp + sn * 0x34);
       for (let i = 0; i < sn; i++) subMeshes.push(readSubMesh(c, sp + i * 0x34));
@@ -511,7 +621,8 @@ function readMesh(c: Ctx, o: number): H3DMesh {
 /** Set the relocated values of `registers` to 0 (the addresses the writer fills in). */
 function clearAddresses(c: Ctx, words: Uint32Array, registers: number[]): void {
   const at = c.cmdAt.get(words);
-  for (const cmd of readCommands(words)) if (registers.includes(cmd.register) && at !== undefined && c.relocs.has(at + cmd.word * 4)) words[cmd.word] = 0;
+  for (const cmd of readCommands(words))
+    if (registers.includes(cmd.register) && at !== undefined && c.relocs.has(at + cmd.word * 4)) words[cmd.word] = 0;
 }
 
 /** The vertex layout of a mesh's enable commands (SPICA H3DMesh.Deserialize). */
@@ -524,10 +635,13 @@ export function vertexLayout(words: Uint32Array): {
 } {
   const st = commandState(words);
   const g = (r: number): number => st.regs.get(r) ?? 0;
-  const formats = BigInt(g(Reg.GPUREG_ATTRIBBUFFERS_FORMAT_LOW)) | (BigInt(g(Reg.GPUREG_ATTRIBBUFFERS_FORMAT_HIGH)) << 32n);
+  const formats =
+    BigInt(g(Reg.GPUREG_ATTRIBBUFFERS_FORMAT_LOW)) | (BigInt(g(Reg.GPUREG_ATTRIBBUFFERS_FORMAT_HIGH)) << 32n);
   const config2 = g(Reg.GPUREG_ATTRIBBUFFER0_CONFIG2);
   const bufferAttributes = BigInt(g(Reg.GPUREG_ATTRIBBUFFER0_CONFIG1)) | (BigInt(config2 & 0xffff) << 32n);
-  const permutation = BigInt(g(Reg.GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW)) | (BigInt(g(Reg.GPUREG_VSH_ATTRIBUTES_PERMUTATION_HIGH)) << 32n);
+  const permutation =
+    BigInt(g(Reg.GPUREG_VSH_ATTRIBUTES_PERMUTATION_LOW)) |
+    (BigInt(g(Reg.GPUREG_VSH_ATTRIBUTES_PERMUTATION_HIGH)) << 32n);
   const total = st.regs.has(Reg.GPUREG_VSH_NUM_ATTR) ? g(Reg.GPUREG_VSH_NUM_ATTR) + 1 : 0;
   const nib = (v: bigint, i: number): number => Number((v >> BigInt(i * 4)) & 0xfn);
   const u7 = st.vtxUniforms.get(7) ?? [0, 0, 0, 0];
@@ -546,7 +660,13 @@ export function vertexLayout(words: Uint32Array): {
       attributes.push({ name, format: fmt & 3, elements: (fmt >> 2) + 1, scale: scale! });
     }
   }
-  return { address: g(Reg.GPUREG_ATTRIBBUFFER0_OFFSET), vertexStride: (config2 >>> 16) & 0xff, attributes, fixedAttributes, positionOffset: st.vtxUniforms.get(6) ?? [0, 0, 0, 0] };
+  return {
+    address: g(Reg.GPUREG_ATTRIBBUFFER0_OFFSET),
+    vertexStride: (config2 >>> 16) & 0xff,
+    attributes,
+    fixedAttributes,
+    positionOffset: st.vtxUniforms.get(6) ?? [0, 0, 0, 0],
+  };
 }
 
 function readSubMesh(c: Ctx, o: number): H3DSubMesh {
@@ -583,29 +703,51 @@ function readSubMesh(c: Ctx, o: number): H3DSubMesh {
 
 function readTextureCoord(c: Ctx, o: number): H3DTextureCoord {
   return {
-    flags: c.u8(o), transformType: c.u8(o + 1), mappingType: c.u8(o + 2), referenceCameraIndex: c.s8(o + 3),
-    scale: c.vec2(o + 4), rotation: c.f32(o + 0x0c), translation: c.vec2(o + 0x10),
+    flags: c.u8(o),
+    transformType: c.u8(o + 1),
+    mappingType: c.u8(o + 2),
+    referenceCameraIndex: c.s8(o + 3),
+    scale: c.vec2(o + 4),
+    rotation: c.f32(o + 0x0c),
+    translation: c.vec2(o + 0x10),
   };
 }
 
 function readMapper(c: Ctx, o: number): H3DTextureMapper {
   return {
-    samplerType: c.u8(o), wrapU: c.u8(o + 1), wrapV: c.u8(o + 2), magFilter: c.u8(o + 3), minFilter: c.u8(o + 4), minLOD: c.u8(o + 5),
-    lodBias: c.f32(o + 8), borderColor: c.rgba(o + 0x0c),
+    samplerType: c.u8(o),
+    wrapU: c.u8(o + 1),
+    wrapV: c.u8(o + 2),
+    magFilter: c.u8(o + 3),
+    minFilter: c.u8(o + 4),
+    minLOD: c.u8(o + 5),
+    lodBias: c.f32(o + 8),
+    borderColor: c.rgba(o + 0x0c),
   };
 }
 
-const emptyMapper = (): H3DTextureMapper => ({ samplerType: 0, wrapU: 0, wrapV: 0, magFilter: 0, minFilter: 0, minLOD: 0, lodBias: 0, borderColor: [0, 0, 0, 0] });
+const emptyMapper = (): H3DTextureMapper => ({
+  samplerType: 0,
+  wrapU: 0,
+  wrapV: 0,
+  magFilter: 0,
+  minFilter: 0,
+  minLOD: 0,
+  lodBias: 0,
+  borderColor: [0, 0, 0, 0],
+});
 
 function readMaterial(c: Ctx, o: number): H3DMaterial {
   const v21 = c.version >= 0x21;
   const textureCommands = c.words(o + 0x10) ?? undefined;
   const mp = v21 ? c.ptr(o + 0x18) : o + 0x18;
-  const mappers = [0, 1, 2].map((i) => (mp ? readMapper(c, mp + i * 0x10) : emptyMapper())) as H3DMaterial['textureMappers'];
+  const mappers = [0, 1, 2].map((i) =>
+    mp ? readMapper(c, mp + i * 0x10) : emptyMapper(),
+  ) as H3DMaterial['textureMappers'];
   if (v21 && mp) c.mark(mappers, 'mappers', mp, mp + 0x30);
   else if (v21) nullValues.add(mappers);
   const n = v21 ? 0x1c : 0x48;
-  const unit = textureCommands ? commandState(textureCommands).regs.get(Reg.GPUREG_TEXUNIT_CONFIG) ?? 0 : 0;
+  const unit = textureCommands ? (commandState(textureCommands).regs.get(Reg.GPUREG_TEXUNIT_CONFIG) ?? 0) : 0;
   const tex = (at: number): H3DTexture | null => (c.ptr(at) ? readTexture(c, c.ptr(at)) : null);
   return {
     materialParams: readMaterialParams(c, c.ptr(o)),
@@ -636,7 +778,9 @@ function readMaterialParams(c: Ctx, o: number): H3DMaterialParams {
       fragmentFlags: c.u8(o + 6),
       frameAccessOffset: c.u8(o + 7),
       materialShader: c.u32(o + 8),
-      textureCoords: [0, 1, 2].map((i) => readTextureCoord(c, o + 0x0c + i * 0x18)) as H3DMaterialParams['textureCoords'],
+      textureCoords: [0, 1, 2].map((i) =>
+        readTextureCoord(c, o + 0x0c + i * 0x18),
+      ) as H3DMaterialParams['textureCoords'],
       lightSetIndex: c.u16(o + 0x54),
       fogIndex: c.u16(o + 0x56),
       emissionColor: c.rgba(o + 0x58),
@@ -683,26 +827,60 @@ function readMaterialParams(c: Ctx, o: number): H3DMaterialParams {
   });
 }
 
-const lutInputs = <T>(f: (shift: number) => T): { dist0: T; dist1: T; specular: T; fresnel: T; reflecR: T; reflecG: T; reflecB: T } => ({
-  dist0: f(0), dist1: f(4), specular: f(8), fresnel: f(12), reflecR: f(16), reflecG: f(20), reflecB: f(24),
+const lutInputs = <T>(
+  f: (shift: number) => T,
+): { dist0: T; dist1: T; specular: T; fresnel: T; reflecR: T; reflecG: T; reflecB: T } => ({
+  dist0: f(0),
+  dist1: f(4),
+  specular: f(8),
+  fresnel: f(12),
+  reflecR: f(16),
+  reflecG: f(20),
+  reflecB: f(24),
 });
 
 const rgbaOf = (v: number): RGBA => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, v >>> 24];
 
 export function emptyTexEnvStage(): PICATexEnvStage {
   return {
-    source: { color: [0, 0, 0], alpha: [0, 0, 0] }, operand: { color: [0, 0, 0], alpha: [0, 0, 0] }, combiner: { color: 0, alpha: 0 },
-    color: [0, 0, 0, 0], scale: { color: 0, alpha: 0 }, updateColorBuffer: false, updateAlphaBuffer: false,
+    source: { color: [0, 0, 0], alpha: [0, 0, 0] },
+    operand: { color: [0, 0, 0], alpha: [0, 0, 0] },
+    combiner: { color: 0, alpha: 0 },
+    color: [0, 0, 0, 0],
+    scale: { color: 0, alpha: 0 },
+    updateColorBuffer: false,
+    updateAlphaBuffer: false,
   };
 }
 
 /** The decoded fields of H3DMaterialParams (SPICA H3DMaterialParams.Deserialize). */
-export function decodeFragment(lutConfig: ArrayLike<number>, fragment: ArrayLike<number>): Pick<
+export function decodeFragment(
+  lutConfig: ArrayLike<number>,
+  fragment: ArrayLike<number>,
+): Pick<
   H3DMaterialParams,
-  | 'lutInputAbsolute' | 'lutInputSelection' | 'lutInputScale' | 'texEnvStages' | 'texEnvBufferColor' | 'colorOperation' | 'blendFunction'
-  | 'logicalOperation' | 'alphaTest' | 'stencilTest' | 'stencilOperation' | 'depthColorMask' | 'faceCulling' | 'colorBufferRead'
-  | 'colorBufferWrite' | 'stencilBufferRead' | 'depthBufferRead' | 'stencilBufferWrite' | 'depthBufferWrite' | 'textureSources'
-  | 'vtxShaderUniforms' | 'geoShaderUniforms'
+  | 'lutInputAbsolute'
+  | 'lutInputSelection'
+  | 'lutInputScale'
+  | 'texEnvStages'
+  | 'texEnvBufferColor'
+  | 'colorOperation'
+  | 'blendFunction'
+  | 'logicalOperation'
+  | 'alphaTest'
+  | 'stencilTest'
+  | 'stencilOperation'
+  | 'depthColorMask'
+  | 'faceCulling'
+  | 'colorBufferRead'
+  | 'colorBufferWrite'
+  | 'stencilBufferRead'
+  | 'depthBufferRead'
+  | 'stencilBufferWrite'
+  | 'depthBufferWrite'
+  | 'textureSources'
+  | 'vtxShaderUniforms'
+  | 'geoShaderUniforms'
 > {
   const lut = commandState(lutConfig).regs;
   const abs = lut.get(Reg.GPUREG_LIGHTING_LUTINPUT_ABS) ?? 0;
@@ -711,11 +889,30 @@ export function decodeFragment(lutConfig: ArrayLike<number>, fragment: ArrayLike
   const st = commandState(fragment);
   const stages = Array.from({ length: 6 }, emptyTexEnvStage);
   const r = (reg: number): number | undefined => st.regs.get(reg);
-  [Reg.GPUREG_TEXENV0_SOURCE, Reg.GPUREG_TEXENV1_SOURCE, Reg.GPUREG_TEXENV2_SOURCE, Reg.GPUREG_TEXENV3_SOURCE, Reg.GPUREG_TEXENV4_SOURCE, Reg.GPUREG_TEXENV5_SOURCE].forEach((base, i) => {
+  [
+    Reg.GPUREG_TEXENV0_SOURCE,
+    Reg.GPUREG_TEXENV1_SOURCE,
+    Reg.GPUREG_TEXENV2_SOURCE,
+    Reg.GPUREG_TEXENV3_SOURCE,
+    Reg.GPUREG_TEXENV4_SOURCE,
+    Reg.GPUREG_TEXENV5_SOURCE,
+  ].forEach((base, i) => {
     const s = stages[i]!;
-    const src = r(base), opr = r(base + 1), comb = r(base + 2), col = r(base + 3), sc = r(base + 4);
-    if (src !== undefined) s.source = { color: [src & 15, (src >> 4) & 15, (src >> 8) & 15], alpha: [(src >> 16) & 15, (src >> 20) & 15, (src >> 24) & 15] };
-    if (opr !== undefined) s.operand = { color: [opr & 15, (opr >> 4) & 15, (opr >> 8) & 15], alpha: [(opr >> 12) & 7, (opr >> 16) & 7, (opr >> 20) & 7] };
+    const src = r(base),
+      opr = r(base + 1),
+      comb = r(base + 2),
+      col = r(base + 3),
+      sc = r(base + 4);
+    if (src !== undefined)
+      s.source = {
+        color: [src & 15, (src >> 4) & 15, (src >> 8) & 15],
+        alpha: [(src >> 16) & 15, (src >> 20) & 15, (src >> 24) & 15],
+      };
+    if (opr !== undefined)
+      s.operand = {
+        color: [opr & 15, (opr >> 4) & 15, (opr >> 8) & 15],
+        alpha: [(opr >> 12) & 7, (opr >> 16) & 7, (opr >> 20) & 7],
+      };
     if (comb !== undefined) s.combiner = { color: comb & 15, alpha: (comb >> 16) & 15 };
     if (col !== undefined) s.color = rgbaOf(col);
     if (sc !== undefined) s.scale = { color: sc & 3, alpha: (sc >> 16) & 3 };
@@ -743,16 +940,31 @@ export function decodeFragment(lutConfig: ArrayLike<number>, fragment: ArrayLike
     texEnvBufferColor: rgbaOf(r(Reg.GPUREG_TEXENV_BUFFER_COLOR) ?? 0),
     colorOperation: { fragOpMode: op & 3, blendMode: (op >> 8) & 1 },
     blendFunction: {
-      colorEquation: bf & 7, alphaEquation: (bf >> 8) & 7, colorSrcFunc: (bf >> 16) & 15, colorDstFunc: (bf >> 20) & 15,
-      alphaSrcFunc: (bf >> 24) & 15, alphaDstFunc: (bf >>> 28) & 15,
+      colorEquation: bf & 7,
+      alphaEquation: (bf >> 8) & 7,
+      colorSrcFunc: (bf >> 16) & 15,
+      colorDstFunc: (bf >> 20) & 15,
+      alphaSrcFunc: (bf >> 24) & 15,
+      alphaDstFunc: (bf >>> 28) & 15,
     },
     logicalOperation: (r(Reg.GPUREG_LOGIC_OP) ?? 0) & 15,
     alphaTest: { enabled: (at & 1) !== 0, function: (at >> 4) & 7, reference: (at >> 8) & 255 },
-    stencilTest: { enabled: (stt & 1) !== 0, function: (stt >> 4) & 7, bufferMask: (stt >> 8) & 255, reference: (stt >> 16) & 255, mask: stt >>> 24 },
+    stencilTest: {
+      enabled: (stt & 1) !== 0,
+      function: (stt >> 4) & 7,
+      bufferMask: (stt >> 8) & 255,
+      reference: (stt >> 16) & 255,
+      mask: stt >>> 24,
+    },
     stencilOperation: { failOp: sop & 7, zFailOp: (sop >> 4) & 7, zPassOp: (sop >> 8) & 7 },
     depthColorMask: {
-      enabled: (dcm & 1) !== 0, depthFunc: (dcm >> 4) & 7, redWrite: (dcm & 0x100) !== 0, greenWrite: (dcm & 0x200) !== 0,
-      blueWrite: (dcm & 0x400) !== 0, alphaWrite: (dcm & 0x800) !== 0, depthWrite: (dcm & 0x1000) !== 0,
+      enabled: (dcm & 1) !== 0,
+      depthFunc: (dcm >> 4) & 7,
+      redWrite: (dcm & 0x100) !== 0,
+      greenWrite: (dcm & 0x200) !== 0,
+      blueWrite: (dcm & 0x400) !== 0,
+      alphaWrite: (dcm & 0x800) !== 0,
+      depthWrite: (dcm & 0x1000) !== 0,
     },
     faceCulling: (r(Reg.GPUREG_FACECULLING_CONFIG) ?? 0) & 3,
     colorBufferRead: ((r(Reg.GPUREG_COLORBUFFER_READ) ?? 0) & 15) === 15,
@@ -783,32 +995,50 @@ export function mipmapLength(format: number, w: number, h: number, levels: numbe
 }
 
 /** The address registers of texture units 0 (6 cube faces), 1 and 2. */
-export const TEXTURE_ADDRESS_REGS = [[Reg.GPUREG_TEXUNIT0_ADDR1, 0x86, 0x87, 0x88, 0x89, 0x8a], [Reg.GPUREG_TEXUNIT1_ADDR], [Reg.GPUREG_TEXUNIT2_ADDR]];
+export const TEXTURE_ADDRESS_REGS = [
+  [Reg.GPUREG_TEXUNIT0_ADDR1, 0x86, 0x87, 0x88, 0x89, 0x8a],
+  [Reg.GPUREG_TEXUNIT1_ADDR],
+  [Reg.GPUREG_TEXUNIT2_ADDR],
+];
 
 function readTexture(c: Ctx, o: number): H3DTexture {
   return c.cached('texture', o, () => {
     const t0 = c.words(o) ?? new Uint32Array(0);
     const t1 = c.words(o + 8) ?? undefined;
     const t2 = c.words(o + 0x10) ?? undefined;
-    const format = c.u8(o + 0x18), mipmapSize = c.u8(o + 0x19);
+    const format = c.u8(o + 0x18),
+      mipmapSize = c.u8(o + 0x19);
     const st = commandState(t0);
     const dim = st.regs.get(Reg.GPUREG_TEXUNIT0_DIM) ?? 0;
-    const width = (dim >>> 16) & 0x7ff, height = dim & 0x7ff;
+    const width = (dim >>> 16) & 0x7ff,
+      height = dim & 0x7ff;
     const len = mipmapLength(format, width, height, mipmapSize);
     const rawBuffers: Uint8Array[] = [];
     for (const reg of TEXTURE_ADDRESS_REGS[0]!) {
       const a = st.regs.get(reg);
       if (!a) break;
-      rawBuffers.push(c.cached('raw', a, () => {
-        const r = c.b.slice(a, a + len);
-        c.mark(r, 'raw', a, a + len);
-        return r;
-      }));
+      rawBuffers.push(
+        c.cached('raw', a, () => {
+          const r = c.b.slice(a, a + len);
+          c.mark(r, 'raw', a, a + len);
+          return r;
+        }),
+      );
     }
     clearAddresses(c, t0, TEXTURE_ADDRESS_REGS[0]!);
     if (t1) clearAddresses(c, t1, TEXTURE_ADDRESS_REGS[1]!);
     if (t2) clearAddresses(c, t2, TEXTURE_ADDRESS_REGS[2]!);
-    const t: H3DTexture = { name: c.name(o + 0x1c), format, mipmapSize, width, height, rawBuffers, texture0Commands: t0, texture1Commands: t1, texture2Commands: t2 };
+    const t: H3DTexture = {
+      name: c.name(o + 0x1c),
+      format,
+      mipmapSize,
+      width,
+      height,
+      rawBuffers,
+      texture0Commands: t0,
+      texture1Commands: t1,
+      texture2Commands: t2,
+    };
     c.mark(t, 'texture', o, o + 0x20);
     return t;
   });
@@ -822,7 +1052,12 @@ function readLUT(c: Ctx, o: number): H3DLUT {
     let index = 0;
     for (const cmd of readCommands(commands)) {
       if (cmd.register === Reg.GPUREG_LIGHTING_LUT_INDEX) index = cmd.value & 0xff;
-      else if (cmd.register >= Reg.GPUREG_LIGHTING_LUT_DATA0 && cmd.register <= Reg.GPUREG_LIGHTING_LUT_DATA7 && index < 256) table[index++] = (cmd.value & 0xfff) / 0xfff;
+      else if (
+        cmd.register >= Reg.GPUREG_LIGHTING_LUT_DATA0 &&
+        cmd.register <= Reg.GPUREG_LIGHTING_LUT_DATA7 &&
+        index < 256
+      )
+        table[index++] = (cmd.value & 0xfff) / 0xfff;
     }
     return { flags: c.u8(s), commands, name: c.name(s + 0x0c), table };
   });
@@ -832,7 +1067,8 @@ function readLUT(c: Ctx, o: number): H3DLUT {
 }
 
 function readShader(c: Ctx, o: number): H3DShader {
-  const pp = c.ptr(o), pn = c.u32(o + 4);
+  const pp = c.ptr(o),
+    pn = c.u32(o + 4);
   // The 4 shaders of a program share it.
   const program = pp
     ? c.cached('program', pp, () => {
@@ -857,7 +1093,8 @@ function readShader(c: Ctx, o: number): H3DShader {
 }
 
 /** Bytes of a light's content by type (SPICA H3DHemisphereLight 0x30, Ambient 4, Vertex 0x40, Fragment 0x3C). */
-export const lightContentSize = (type: number): number => (type === 1 ? 0x30 : type === 2 ? 4 : (type & 4) !== 0 ? 0x40 : (type & 8) !== 0 ? 0x3c : 0);
+export const lightContentSize = (type: number): number =>
+  type === 1 ? 0x30 : type === 2 ? 4 : (type & 4) !== 0 ? 0x40 : (type & 8) !== 0 ? 0x3c : 0;
 
 function readLight(c: Ctx, o: number): H3DLight {
   const type = c.u8(o + 0x28);
@@ -884,8 +1121,10 @@ function readLight(c: Ctx, o: number): H3DLight {
 export const CAMERA_VIEW_SIZE = [4, 6, 3];
 
 function readCamera(c: Ctx, o: number): H3DCamera {
-  const viewType = c.u8(o + 0x28), projectionType = c.u8(o + 0x29);
-  const vp = c.ptr(o + 0x30), pp = c.ptr(o + 0x34);
+  const viewType = c.u8(o + 0x28),
+    projectionType = c.u8(o + 0x29);
+  const vp = c.ptr(o + 0x30),
+    pp = c.ptr(o + 0x34);
   const viewSize = CAMERA_VIEW_SIZE[viewType] ?? 0;
   const view = vp ? c.mtx(vp, viewSize) : null;
   const projection = pp ? c.mtx(pp, 4) : null;
@@ -916,50 +1155,109 @@ export const KEY_SIZE = [16, 8, 6, 12, 6, 4, 8, 4];
 /** The bytes of the keys as read and the keys they decoded to (the writer reuses the bytes while nothing changed). */
 export const keyBytes = new WeakMap<KeyFrame[], { bytes: Uint8Array; decoded: KeyFrame[]; params: number[] }>();
 
-function readKeys(c: Ctx, o: number, quant: number, n: number, frameScale: number, valueScale: number, valueOffset: number): KeyFrame[] {
+function readKeys(
+  c: Ctx,
+  o: number,
+  quant: number,
+  n: number,
+  frameScale: number,
+  valueScale: number,
+  valueOffset: number,
+): KeyFrame[] {
   const out: KeyFrame[] = [];
   const start = o;
   for (let i = 0; i < n; i++) {
-    let frame = 0, value = 0, inSlope = 0, outSlope = 0;
+    let frame = 0,
+      value = 0,
+      inSlope = 0,
+      outSlope = 0;
     switch (quant) {
-      case 0: frame = c.f32(o); value = c.f32(o + 4); inSlope = c.f32(o + 8); outSlope = c.f32(o + 12); break;
+      case 0:
+        frame = c.f32(o);
+        value = c.f32(o + 4);
+        inSlope = c.f32(o + 8);
+        outSlope = c.f32(o + 12);
+        break;
       case 1: {
         const w = c.u32(o);
-        frame = w & 0xfff; value = w >>> 12; inSlope = c.s16(o + 4) / 256; outSlope = c.s16(o + 6) / 256; break;
+        frame = w & 0xfff;
+        value = w >>> 12;
+        inSlope = c.s16(o + 4) / 256;
+        outSlope = c.s16(o + 6) / 256;
+        break;
       }
       case 2: {
-        frame = c.u8(o); value = c.u16(o + 1);
+        frame = c.u8(o);
+        value = c.u16(o + 1);
         const sl = c.u8(o + 3) | (c.u8(o + 4) << 8) | (c.u8(o + 5) << 16);
-        inSlope = ((sl << 20) >> 20) / 32; outSlope = ((sl << 8) >> 20) / 32; break;
+        inSlope = ((sl << 20) >> 20) / 32;
+        outSlope = ((sl << 8) >> 20) / 32;
+        break;
       }
-      case 3: frame = c.f32(o); value = c.f32(o + 4); inSlope = outSlope = c.f32(o + 8); break;
-      case 4: frame = c.u16(o) / 32; value = c.u16(o + 2); inSlope = outSlope = c.s16(o + 4) / 256; break;
+      case 3:
+        frame = c.f32(o);
+        value = c.f32(o + 4);
+        inSlope = outSlope = c.f32(o + 8);
+        break;
+      case 4:
+        frame = c.u16(o) / 32;
+        value = c.u16(o + 2);
+        inSlope = outSlope = c.s16(o + 4) / 256;
+        break;
       case 5: {
         const w = c.u8(o + 1) | (c.u8(o + 2) << 8) | (c.u8(o + 3) << 16);
-        frame = c.u8(o); value = w & 0xfff; inSlope = outSlope = ((w << 8) >> 20) / 32; break;
+        frame = c.u8(o);
+        value = w & 0xfff;
+        inSlope = outSlope = ((w << 8) >> 20) / 32;
+        break;
       }
-      case 6: frame = c.f32(o); value = c.f32(o + 4); break;
+      case 6:
+        frame = c.f32(o);
+        value = c.f32(o + 4);
+        break;
       case 7: {
         const w = c.u32(o);
-        frame = w & 0xfff; value = w >>> 12; break;
+        frame = w & 0xfff;
+        value = w >>> 12;
+        break;
       }
-      default: throw new Error(`unknown key frame quantization ${quant}`);
+      default:
+        throw new Error(`unknown key frame quantization ${quant}`);
     }
     out.push({ frame: frame * frameScale, value: value * valueScale + valueOffset, inSlope, outSlope });
     o += KEY_SIZE[quant]!;
   }
-  keyBytes.set(out, { bytes: c.b.slice(start, o), decoded: out.map((k) => ({ ...k })), params: [quant, frameScale, valueScale, valueOffset] });
+  keyBytes.set(out, {
+    bytes: c.b.slice(start, o),
+    decoded: out.map((k) => ({ ...k })),
+    params: [quant, frameScale, valueScale, valueOffset],
+  });
   return out;
 }
 
 /** A segment before version 0x20 (0x20 bytes). */
 function readSegment(c: Ctx, s: number): H3DKeySegment {
-  const quantization = c.u8(s + 9), count = c.u16(s + 0x0a);
-  const invDuration = c.f32(s + 0x0c), valueScale = c.f32(s + 0x10), valueOffset = c.f32(s + 0x14), frameScale = c.f32(s + 0x18), keys = c.ptr(s + 0x1c);
+  const quantization = c.u8(s + 9),
+    count = c.u16(s + 0x0a);
+  const invDuration = c.f32(s + 0x0c),
+    valueScale = c.f32(s + 0x10),
+    valueOffset = c.f32(s + 0x14),
+    frameScale = c.f32(s + 0x18),
+    keys = c.ptr(s + 0x1c);
   const keyFrames = keys ? readKeys(c, keys, quantization, count, frameScale, valueScale, valueOffset) : [];
   if (keys) c.mark(keyFrames, 'keys', keys, keys + count * KEY_SIZE[quantization]!);
   else nullValues.add(keyFrames);
-  return { startFrame: c.f32(s), endFrame: c.f32(s + 4), interpolationType: c.u8(s + 8), quantization, valueScale, valueOffset, frameScale, invDuration, keyFrames };
+  return {
+    startFrame: c.f32(s),
+    endFrame: c.f32(s + 4),
+    interpolationType: c.u8(s + 8),
+    quantization,
+    valueScale,
+    valueOffset,
+    frameScale,
+    invDuration,
+    keyFrames,
+  };
 }
 
 /**
@@ -969,19 +1267,40 @@ function readSegment(c: Ctx, s: number): H3DKeySegment {
  */
 function readCurve(c: Ctx, o: number): H3DFloatKeyFrameGroup {
   return c.cached('curve', o, () => {
-    const head = { startFrame: c.f32(o), endFrame: c.f32(o + 4), preRepeat: c.u8(o + 8), postRepeat: c.u8(o + 9), curveIndex: c.u16(o + 0x0a) };
+    const head = {
+      startFrame: c.f32(o),
+      endFrame: c.f32(o + 4),
+      preRepeat: c.u8(o + 8),
+      postRepeat: c.u8(o + 9),
+      curveIndex: c.u16(o + 0x0a),
+    };
     let curve: H3DFloatKeyFrameGroup;
     if (c.version >= 0x20) {
       const s = o + 0x0c;
-      const quantization = c.u8(s + 1), count = c.u16(s + 2);
-      const valueScale = c.f32(s + 4), valueOffset = c.f32(s + 8), frameScale = c.f32(s + 0x0c), invDuration = c.f32(s + 0x10), keys = c.ptr(s + 0x14);
+      const quantization = c.u8(s + 1),
+        count = c.u16(s + 2);
+      const valueScale = c.f32(s + 4),
+        valueOffset = c.f32(s + 8),
+        frameScale = c.f32(s + 0x0c),
+        invDuration = c.f32(s + 0x10),
+        keys = c.ptr(s + 0x14);
       const keyFrames = keys ? readKeys(c, keys, quantization, count, frameScale, valueScale, valueOffset) : [];
       if (keys) c.mark(keyFrames, 'keys', keys, keys + count * KEY_SIZE[quantization]!);
       else nullValues.add(keyFrames);
-      curve = { ...head, interpolationType: c.u8(s), quantization, valueScale, valueOffset, frameScale, invDuration, keyFrames };
+      curve = {
+        ...head,
+        interpolationType: c.u8(s),
+        quantization,
+        valueScale,
+        valueOffset,
+        frameScale,
+        invDuration,
+        keyFrames,
+      };
       c.mark(curve, 'curve', o, o + 0x24);
     } else {
-      const sp = c.ptr(o + 0x0c), n = c.u32(o + 0x10);
+      const sp = c.ptr(o + 0x0c),
+        n = c.u32(o + 0x10);
       if (!sp || n < 1) throw new Error('a curve without segments');
       const [first, ...more] = Array.from({ length: n }, (_, i) => readSegment(c, sp + i * 0x20));
       const { startFrame, endFrame, ...seg } = first!;
@@ -1014,11 +1333,18 @@ function readQuatTrack<T>(c: Ctx, p: number, constant: boolean, size: number): H
     c.mark(t, 'track', p, p + size * 4);
     return t;
   }
-  const fp = c.ptr(p + 0x0c), n = c.u32(p + 0x10);
+  const fp = c.ptr(p + 0x0c),
+    n = c.u32(p + 0x10);
   const frames = Array.from({ length: fp ? n : 0 }, (_, i) => read(fp + i * size * 4));
   if (fp) c.mark(frames, 'frames', fp, fp + n * size * 4);
   else nullValues.add(frames);
-  const t: H3DQuatTrack<T> = { constant: false, startFrame: c.f32(p), endFrame: c.f32(p + 4), flags: c.u32(p + 8), frames };
+  const t: H3DQuatTrack<T> = {
+    constant: false,
+    startFrame: c.f32(p),
+    endFrame: c.f32(p + 4),
+    flags: c.u32(p + 8),
+    frames,
+  };
   c.mark(t, 'track', p, p + 0x14);
   return t;
 }
@@ -1027,10 +1353,21 @@ function readContent(c: Ctx, o: number, prim: number): H3DAnimContent {
   const flags = c.u32(o);
   switch (prim) {
     case H3DPrimitiveType.Transform: {
-      const s = TRANSFORM_CONST.map((cb, i) => readSlot(c, o + 4 + i * 4, (flags & (1 << cb)) !== 0, (flags & (1 << TRANSFORM_ABSENT[i]!)) !== 0));
+      const s = TRANSFORM_CONST.map((cb, i) =>
+        readSlot(c, o + 4 + i * 4, (flags & (1 << cb)) !== 0, (flags & (1 << TRANSFORM_ABSENT[i]!)) !== 0),
+      );
       return {
-        kind: 'transform', scaleX: s[0]!, scaleY: s[1]!, scaleZ: s[2]!, rotationX: s[3]!, rotationY: s[4]!, rotationZ: s[5]!,
-        translationX: s[6]!, translationY: s[7]!, translationZ: s[8]!, flagsRest: flags & ~TRANSFORM_KNOWN,
+        kind: 'transform',
+        scaleX: s[0]!,
+        scaleY: s[1]!,
+        scaleZ: s[2]!,
+        rotationX: s[3]!,
+        rotationY: s[4]!,
+        rotationZ: s[5]!,
+        translationX: s[6]!,
+        translationY: s[7]!,
+        translationZ: s[8]!,
+        flagsRest: flags & ~TRANSFORM_KNOWN,
       };
     }
     case H3DPrimitiveType.QuatTransform: {
@@ -1040,23 +1377,47 @@ function readContent(c: Ctx, o: number, prim: number): H3DAnimContent {
         return p ? readQuatTrack<T>(c, p, (flags & (1 << (2 - i))) !== 0, size) : null;
       };
       if (flags & ~0x3f) throw new Error(`quaternion transform flags ${flags.toString(16)}`);
-      return { kind: 'quatTransform', scales: part<Vector3>(0, 3), rotations: part<Vector4>(1, 4), translations: part<Vector3>(2, 3) };
+      return {
+        kind: 'quatTransform',
+        scales: part<Vector3>(0, 3),
+        rotations: part<Vector4>(1, 4),
+        translations: part<Vector3>(2, 3),
+      };
     }
     case H3DPrimitiveType.Boolean: {
       const values = readBools(c, o + 0x0c);
-      return { kind: 'boolean', startFrame: c.f32(o), endFrame: c.f32(o + 4), preRepeat: c.u8(o + 8), postRepeat: c.u8(o + 9), curveIndex: c.u16(o + 0x0a), values };
+      return {
+        kind: 'boolean',
+        startFrame: c.f32(o),
+        endFrame: c.f32(o + 4),
+        preRepeat: c.u8(o + 8),
+        postRepeat: c.u8(o + 9),
+        curveIndex: c.u16(o + 0x0a),
+        values,
+      };
     }
     case H3DPrimitiveType.MtxTransform: {
-      const p = c.ptr(o + 0x0c), n = c.u32(o + 0x10);
+      const p = c.ptr(o + 0x0c),
+        n = c.u32(o + 0x10);
       const frames = Array.from({ length: p ? n : 0 }, (_, i): Matrix3x4 => c.mtx(p + i * 48, 12));
       if (p) c.mark(frames, 'frames', p, p + n * 48);
       else nullValues.add(frames);
-      return { kind: 'mtxTransform', startFrame: c.f32(o), endFrame: c.f32(o + 4), preRepeat: c.u8(o + 8), postRepeat: c.u8(o + 9), curveIndex: c.u16(o + 0x0a), frames };
+      return {
+        kind: 'mtxTransform',
+        startFrame: c.f32(o),
+        endFrame: c.f32(o + 4),
+        preRepeat: c.u8(o + 8),
+        postRepeat: c.u8(o + 9),
+        curveIndex: c.u16(o + 0x0a),
+        frames,
+      };
     }
   }
   const n = vectorSlots(prim);
   if (!n) throw new Error(`unknown animation primitive type ${prim}`);
-  const slots = Array.from({ length: n }, (_, i) => readSlot(c, o + 4 + i * 4, (flags & (1 << i)) !== 0, (flags & (1 << (8 + i))) !== 0));
+  const slots = Array.from({ length: n }, (_, i) =>
+    readSlot(c, o + 4 + i * 4, (flags & (1 << i)) !== 0, (flags & (1 << (8 + i))) !== 0),
+  );
   const known = Array.from({ length: n }, (_, i) => (1 << i) | (1 << (8 + i))).reduce((a, b) => a | b, 0);
   return { kind: 'vector', slots, flagsRest: flags & ~known };
 }
@@ -1064,8 +1425,10 @@ function readContent(c: Ctx, o: number, prim: number): H3DAnimContent {
 /** Bytes of an element's content. */
 export function contentSize(prim: number): number {
   switch (prim) {
-    case H3DPrimitiveType.Transform: return 40;
-    case H3DPrimitiveType.QuatTransform: return 16;
+    case H3DPrimitiveType.Transform:
+      return 40;
+    case H3DPrimitiveType.QuatTransform:
+      return 16;
     case H3DPrimitiveType.Boolean:
     case H3DPrimitiveType.MtxTransform:
       return 0x14;
@@ -1145,7 +1508,10 @@ export function readH3D(bch: Uint8Array, opts: ReadOptions = {}): H3D {
   if (h.unInitDataLength) out.unInitDataLength = h.unInitDataLength;
   if (h.unInitCommandsLength) out.unInitCommandsLength = h.unInitCommandsLength;
   // Bytes outside every block that are not 0 (padding some converters fill with 0xFF).
-  c.ranges.push([0, headerLength(h.backwardCompatibility)], [h.relocationAddress, h.relocationAddress + h.relocationLength]);
+  c.ranges.push(
+    [0, headerLength(h.backwardCompatibility)],
+    [h.relocationAddress, h.relocationAddress + h.relocationLength],
+  );
   c.ranges.sort((a, b) => a[0] - b[0]);
   let covered = 0;
   const fill: [number, Uint8Array][] = [];

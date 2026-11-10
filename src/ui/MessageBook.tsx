@@ -18,7 +18,14 @@ export function parseMessageArg(arg: string | undefined): number | undefined {
 
 const PAGE = 300;
 
-export function MessageBook({ texts, files, arg, onEdit, placeholder, help }: {
+export function MessageBook({
+  texts,
+  files,
+  arg,
+  onEdit,
+  placeholder,
+  help,
+}: {
   texts: MessageStore;
   /** The files of the filter and the list (copies of a file in other archives left out). */
   files: MessageFile[];
@@ -36,15 +43,25 @@ export function MessageBook({ texts, files, arg, onEdit, placeholder, help }: {
   const [limit, setLimit] = useState(PAGE);
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
-  const selected = useSticky(parseMessageArg(arg), (id) => !!texts.file(id), () => files.find((f) => f.gmsg.raw.length)?.gmsg.first ?? 0);
+  const selected = useSticky(
+    parseMessageArg(arg),
+    (id) => !!texts.file(id),
+    () => files.find((f) => f.gmsg.raw.length)?.gmsg.first ?? 0,
+  );
   useActiveRow(list, selected);
   useScrollTop(detail, selected);
 
   /** Every message: [id, one-line preview]. */
-  const all = useMemo(() => files.flatMap((f) => Array.from({ length: f.gmsg.raw.length }, (_, i): [number, string] => {
-    const id = f.gmsg.first + i;
-    return [id, texts.preview(id, true) ?? ''];
-  })), [files, texts, edits]);
+  const all = useMemo(
+    () =>
+      files.flatMap((f) =>
+        Array.from({ length: f.gmsg.raw.length }, (_, i): [number, string] => {
+          const id = f.gmsg.first + i;
+          return [id, texts.preview(id, true) ?? ''];
+        }),
+      ),
+    [files, texts, edits],
+  );
   const q = query.trim();
   const qid = parseMessageArg(q);
   // a file is named by its name and range: two files of one name (初代's unnamed entries) stay apart
@@ -60,26 +77,63 @@ export function MessageBook({ texts, files, arg, onEdit, placeholder, help }: {
     onEdit();
   };
   const file = texts.file(selected);
-  const copies = file ? texts.files.filter((f) => f.name === file.name && f.gmsg.first === file.gmsg.first).map((f) => f.archive) : [];
+  const copies = file
+    ? texts.files.filter((f) => f.name === file.name && f.gmsg.first === file.gmsg.first).map((f) => f.archive)
+    : [];
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={(v) => { setQuery(v); setLimit(PAGE); }} placeholder={placeholder} filter={filter} setFilter={(v) => { setFilter(v); setLimit(PAGE); }}
-          options={[['all', 'すべてのファイル'], ...files.map((f): [string, string] => [fileKey(f), `${f.name.replace(/_JP\.gsmb$/, '')} (${f.gmsg.first}〜)`]), ['edited', '変更したもの']]} />
+        <ListFilter
+          query={query}
+          setQuery={(v) => {
+            setQuery(v);
+            setLimit(PAGE);
+          }}
+          placeholder={placeholder}
+          filter={filter}
+          setFilter={(v) => {
+            setFilter(v);
+            setLimit(PAGE);
+          }}
+          options={[
+            ['all', 'すべてのファイル'],
+            ...files.map((f): [string, string] => [
+              fileKey(f),
+              `${f.name.replace(/_JP\.gsmb$/, '')} (${f.gmsg.first}〜)`,
+            ]),
+            ['edited', '変更したもの'],
+          ]}
+        />
         <div className="book-list" ref={list}>
           <Count shown={shown.length} total={all.length} />
           <table className="book-table">
-            <thead><tr><th>ID</th><th>本文</th></tr></thead>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>本文</th>
+              </tr>
+            </thead>
             <tbody>
               {shown.slice(0, limit).map(([id, text]) => (
-                <tr key={id} className={id === selected ? 'active' : ''} onClick={() => (location.hash = messageHref(id))}>
-                  <td className="num muted">{id}{texts.isEdited(id) && <b className="edited"> ●</b>}</td>
+                <tr
+                  key={id}
+                  className={id === selected ? 'active' : ''}
+                  onClick={() => (location.hash = messageHref(id))}
+                >
+                  <td className="num muted">
+                    {id}
+                    {texts.isEdited(id) && <b className="edited"> ●</b>}
+                  </td>
                   <td className="msg-cell">{text || <span className="muted">(空)</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {shown.length > limit && <div className="row"><button onClick={() => setLimit(limit + PAGE * 5)}>{`続きを表示 (${shown.length - limit} 件)`}</button></div>}
+          {shown.length > limit && (
+            <div className="row">
+              <button onClick={() => setLimit(limit + PAGE * 5)}>{`続きを表示 (${shown.length - limit} 件)`}</button>
+            </div>
+          )}
         </div>
       </div>
       <div className="book-detail" ref={detail}>
@@ -87,7 +141,9 @@ export function MessageBook({ texts, files, arg, onEdit, placeholder, help }: {
           <h2>{`メッセージ ${selected}`}</h2>
           <span className="muted">{`${hexId(selected)}${file ? ` · ${file.name} (${copies.join('・')})` : ''}`}</span>
         </div>
-        {copies.length > 1 && <p className="muted small">{`このファイルは ${copies.length} つのアーカイブに同じものが入っています。編集はすべてに書き出します。`}</p>}
+        {copies.length > 1 && (
+          <p className="muted small">{`このファイルは ${copies.length} つのアーカイブに同じものが入っています。編集はすべてに書き出します。`}</p>
+        )}
         <MessageEditor texts={texts} id={selected} apply={apply} />
         <p className="muted small">{help}</p>
       </div>

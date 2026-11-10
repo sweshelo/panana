@@ -4,7 +4,13 @@
 // of its string in the table's pool (lanai/table.ts); "unsure" fields are guesses or not known.
 import type { FieldDef, TableDef } from '../game/tabledef';
 
-const f = (key: string, offset: number, type: FieldDef['type'], label: string, more: Partial<FieldDef> = {}): FieldDef => ({ key, offset, type, label, ...more });
+const f = (
+  key: string,
+  offset: number,
+  type: FieldDef['type'],
+  label: string,
+  more: Partial<FieldDef> = {},
+): FieldDef => ({ key, offset, type, label, ...more });
 const str = { kind: 'message' } as const;
 const hash = { kind: 'hash' } as const;
 
@@ -18,35 +24,100 @@ export const LANAI_MONSTER_PARAMETER: TableDef = {
   file: 'MonsterParameter',
   rowSize: 0x24,
   fields: [
-    f('base', 0x00, 'u32', '元のモンスターの番号', { bits: [0, 10], unsure: true, note: '同じモンスターの重複の行が共有する番号と推定' }),
-    f('own', 0x00, 'u32', '+0x00 bit10-19', { bits: [10, 10], unsure: true, note: '重複でない行では bit0-9 と同じ、重複の行では 0' }),
-    f('look', 0x00, 'u32', '見た目 (MonsterDesign)', { bits: [20, 10], ref: { kind: 'row', table: 'MonsterDesign' }, note: 'MonsterDesign の行番号。ゲームはこれで見た目を引く (code.bin 0x306E84: lsl #2; lsr #22)' }),
+    f('base', 0x00, 'u32', '元のモンスターの番号', {
+      bits: [0, 10],
+      unsure: true,
+      note: '同じモンスターの重複の行が共有する番号と推定',
+    }),
+    f('own', 0x00, 'u32', '+0x00 bit10-19', {
+      bits: [10, 10],
+      unsure: true,
+      note: '重複でない行では bit0-9 と同じ、重複の行では 0',
+    }),
+    f('look', 0x00, 'u32', '見た目 (MonsterDesign)', {
+      bits: [20, 10],
+      ref: { kind: 'row', table: 'MonsterDesign' },
+      note: 'MonsterDesign の行番号。ゲームはこれで見た目を引く (code.bin 0x306E84: lsl #2; lsr #22)',
+    }),
     f('top', 0x00, 'u32', '+0x00 bit30-31', { bits: [30, 2], unsure: true }),
     f('name', 0x04, 'u32', '名前', { ref: str }),
-    f('voice', 0x08, 'u32', 'voice', { unsure: true, note: '1 バイトずつの文字列 (半角カナの読み)。音声合成用と推定。多くは空' }),
+    f('voice', 0x08, 'u32', 'voice', {
+      unsure: true,
+      note: '1 バイトずつの文字列 (半角カナの読み)。音声合成用と推定。多くは空',
+    }),
     f('groupName', 0x0c, 'u32', '群れの名前', { ref: str }),
-    f('design', 0x10, 'u32', '図鑑の説明文', { ref: { kind: 'row', table: 'MessageFlavor' }, note: 'MessageFlavor (4177000A) の行 ID (naauao lanai/monsters.md §2)' }),
-    f('statsRow', 0x14, 'u16', '能力の行', { note: '+0x16 bit0-2 の表の行番号。能力の行は複数のモンスターで共有されることがある' }),
-    f('statsTable', 0x16, 'u16', '能力の表', { bits: [0, 3], ref: { kind: 'enum', values: { 0: 'Main (0 は 1 扱い)', 1: 'Main', 2: 'Extra', 3: 'RegularEvent', 4: 'SpecialEvent' } } }),
+    f('design', 0x10, 'u32', '図鑑の説明文', {
+      ref: { kind: 'row', table: 'MessageFlavor' },
+      note: 'MessageFlavor (4177000A) の行 ID (naauao lanai/monsters.md §2)',
+    }),
+    f('statsRow', 0x14, 'u16', '能力の行', {
+      note: '+0x16 bit0-2 の表の行番号。能力の行は複数のモンスターで共有されることがある',
+    }),
+    f('statsTable', 0x16, 'u16', '能力の表', {
+      bits: [0, 3],
+      ref: {
+        kind: 'enum',
+        values: { 0: 'Main (0 は 1 扱い)', 1: 'Main', 2: 'Extra', 3: 'RegularEvent', 4: 'SpecialEvent' },
+      },
+    }),
     f('u16b3', 0x16, 'u16', '+0x16 bit3', { bits: [3, 1], unsure: true, note: 'ボス・強敵に多い。用途未確認' }),
-    f('bookNo', 0x16, 'u16', '+0x16 bit4-15', { bits: [4, 12], unsure: true, note: '倒したときに登録する図鑑番号と推定' }),
+    f('bookNo', 0x16, 'u16', '+0x16 bit4-15', {
+      bits: [4, 12],
+      unsure: true,
+      note: '倒したときに登録する図鑑番号と推定',
+    }),
     ...unknown(0x18, 0x24),
   ],
 };
 
 const action = { kind: 'row', table: 'ActionData' } as const;
-const RES = (key: string, offset: number, shift: number, label: string): FieldDef => f(key, offset, 's32', label, { bits: [shift, 5] });
+const RES = (key: string, offset: number, shift: number, label: string): FieldDef =>
+  f(key, offset, 's32', label, { bits: [shift, 5] });
 
 /** The elements of the resistances (w9 bit5-29, w10 bit0-14; naauao lanai/monsters.md §4.1). */
-export const LANAI_ELEMENTS: [key: string, label: string][] = [['fire', '火'], ['ice', '氷'], ['wind', '風'], ['earth', '土'], ['thunder', '電気'], ['water', '水'], ['light', '光'], ['dark', '闇']];
+export const LANAI_ELEMENTS: [key: string, label: string][] = [
+  ['fire', '火'],
+  ['ice', '氷'],
+  ['wind', '風'],
+  ['earth', '土'],
+  ['thunder', '電気'],
+  ['water', '水'],
+  ['light', '光'],
+  ['dark', '闇'],
+];
 /** The 18 states of the resistances (w11〜w13 in order). */
 export const LANAI_STATES: [key: string, label: string][] = [
-  ['poison', '毒'], ['burn', 'やけど'], ['soak', 'みずびたし'], ['cold', 'かぜっぴき'], ['mud', 'どろだらけ'], ['curse', '呪い'],
-  ['shock', 'かんでん'], ['frost', 'しもやけ'], ['paralysis', 'マヒ'], ['sleep', 'ねむり'], ['blind', 'ブラインド'], ['atkDown', '攻撃力ダウン'],
-  ['defDown', '防御力ダウン'], ['spdDown', '素早さダウン'], ['evaDown', '回避率ダウン'], ['death', '突然死'], ['charm', 'ゆうわく'], ['fear', 'きょうふ'],
+  ['poison', '毒'],
+  ['burn', 'やけど'],
+  ['soak', 'みずびたし'],
+  ['cold', 'かぜっぴき'],
+  ['mud', 'どろだらけ'],
+  ['curse', '呪い'],
+  ['shock', 'かんでん'],
+  ['frost', 'しもやけ'],
+  ['paralysis', 'マヒ'],
+  ['sleep', 'ねむり'],
+  ['blind', 'ブラインド'],
+  ['atkDown', '攻撃力ダウン'],
+  ['defDown', '防御力ダウン'],
+  ['spdDown', '素早さダウン'],
+  ['evaDown', '回避率ダウン'],
+  ['death', '突然死'],
+  ['charm', 'ゆうわく'],
+  ['fear', 'きょうふ'],
 ];
 /** The race types: +0x8D bit0-7 and +0x8E bit0. */
-export const LANAI_RACES: [key: string, label: string][] = [['good', 'ぜん'], ['evil', 'あく'], ['spirit', '霊'], ['dragon', '竜'], ['beast', '獣'], ['demon', '魔'], ['insect', '虫'], ['aquatic', '水生'], ['plant', '植物']];
+export const LANAI_RACES: [key: string, label: string][] = [
+  ['good', 'ぜん'],
+  ['evil', 'あく'],
+  ['spirit', '霊'],
+  ['dragon', '竜'],
+  ['beast', '獣'],
+  ['demon', '魔'],
+  ['insect', '虫'],
+  ['aquatic', '水生'],
+  ['plant', '植物'],
+];
 /** The action slots of an ability row with the condition byte of each (naauao lanai/monsters.md §3, §7). */
 export const LANAI_AUTO_SLOTS: { key: string; cond?: string; label: string }[] = [
   { key: 'actBattle', label: '戦闘開始時' },
@@ -64,23 +135,37 @@ const statsFields: FieldDef[] = [
   f('exp', 0x04, 'u32', '経験値', { bits: [0, 22] }),
   f('gold', 0x08, 'u32', 'ゴールド', { bits: [0, 22] }),
   f('ab27', 0x08, 'u32', '+0x08 bit22 (能力 0x27)', { bits: [22, 1], unsure: true }),
-  ...[0, 1, 2, 3].map((i) => f(`drop${i + 1}`, 0x0c + i * 4, 'u32', `ドロップ ${i + 1}`, { ref: { kind: 'row', table: 'ItemData' }, note: 'ItemData の行 ID (0 = なし)' })),
+  ...[0, 1, 2, 3].map((i) =>
+    f(`drop${i + 1}`, 0x0c + i * 4, 'u32', `ドロップ ${i + 1}`, {
+      ref: { kind: 'row', table: 'ItemData' },
+      note: 'ItemData の行 ID (0 = なし)',
+    }),
+  ),
   f('drop5', 0x1c, 'u32', 'ドロップ 5 (未使用)', { unsure: true, hex: true }),
   f('drop6', 0x20, 'u32', 'ドロップ 6 (未使用)', { unsure: true, hex: true }),
   f('res0', 0x24, 's32', '属性 0 (未使用)', { bits: [0, 5], unsure: true }),
-  ...LANAI_ELEMENTS.map(([k, l], i) => (i < 5 ? RES(k, 0x24, 5 + i * 5, `${l}たいせい`) : RES(k, 0x28, (i - 5) * 5, `${l}たいせい`))),
+  ...LANAI_ELEMENTS.map(([k, l], i) =>
+    i < 5 ? RES(k, 0x24, 5 + i * 5, `${l}たいせい`) : RES(k, 0x28, (i - 5) * 5, `${l}たいせい`),
+  ),
   ...LANAI_STATES.map(([k, l], i) => RES(k, 0x2c + Math.floor(i / 6) * 4, (i % 6) * 5, `${l}たいせい`)),
   f('actBattle', 0x38, 'u32', '戦闘開始時の行動', { ref: action }),
-  f('actDefault', 0x3c, 'u32', '捕まえたときの既定の行動', { ref: action, note: '『つかまえる』(系統 21) で捕まえたモンスターを連れたユニットの既定の行動。種族の行のものを使う (FUN_002F4900、FUN_002027E8)。敵のときは使わない' }),
+  f('actDefault', 0x3c, 'u32', '捕まえたときの既定の行動', {
+    ref: action,
+    note: '『つかまえる』(系統 21) で捕まえたモンスターを連れたユニットの既定の行動。種族の行のものを使う (FUN_002F4900、FUN_002027E8)。敵のときは使わない',
+  }),
   f('actTurnStart', 0x40, 'u32', 'ターン開始時の行動', { ref: action }),
   f('actHit1', 0x44, 'u32', '被弾時の行動 1', { ref: action }),
   f('actHit2', 0x48, 'u32', '被弾時の行動 2', { ref: action }),
   f('actTurnEnd', 0x4c, 'u32', 'ターン終了時の行動', { ref: action }),
-  f('morph30', 0x50, 'u32', '系統 30 の変身先 (先読み)', { ref: { kind: 'row', table: 'MonsterParameter' }, note: '0 = なし' }),
+  f('morph30', 0x50, 'u32', '系統 30 の変身先 (先読み)', {
+    ref: { kind: 'row', table: 'MonsterParameter' },
+    note: '0 = なし',
+  }),
   ...[0, 1, 2, 3, 4, 5].map((i) => f(`skill${i + 1}`, 0x54 + i * 4, 'u32', `ワザ ${i + 1}`, { ref: action })),
   // per slot 6 bits of target rule + 3 bits of level; slots 1-3 in +0x6C/+0x6E, 4-6 the same in +0x70/+0x72
   ...[0, 1].flatMap((g) => {
-    const o = 0x6c + g * 4, n = g * 3;
+    const o = 0x6c + g * 4,
+      n = g * 3;
     return [
       f(`target${n + 1}`, o, 'u16', `ワザ ${n + 1} の狙い方`, { bits: [0, 6] }),
       f(`slotLv${n + 1}`, o, 'u16', `ワザ ${n + 1} のレベル`, { bits: [6, 3] }),
@@ -108,16 +193,29 @@ const statsFields: FieldDef[] = [
   f('rank3', 0x8b, 'u8', 'ドロップ 3 のランク', { bits: [0, 4] }),
   f('rank4', 0x8b, 'u8', 'ドロップ 4 のランク', { bits: [4, 4] }),
   f('u8c', 0x8c, 'u8', 'ドロップ 5・6 のランク (未使用)', { unsure: true, hex: true }),
-  ...LANAI_RACES.map(([k, l], i) => f(`race_${k}`, i < 8 ? 0x8d : 0x8e, 'u8', `種族: ${l}`, { bits: [i < 8 ? i : 0, 1] })),
+  ...LANAI_RACES.map(([k, l], i) =>
+    f(`race_${k}`, i < 8 ? 0x8d : 0x8e, 'u8', `種族: ${l}`, { bits: [i < 8 ? i : 0, 1] }),
+  ),
   f('auraCharm', 0x8e, 'u8', 'ゆうわくのオーラ', { bits: [1, 7], note: '毎ターン相手にゆうわくを付ける率 % (推定)' }),
   f('auraFear', 0x8f, 'u8', 'きょうふのオーラ', { bits: [0, 7], note: '毎ターン相手にきょうふを付ける率 % (推定)' }),
   f('ab4a', 0x8f, 'u8', '+0x8F bit7 (能力 0x4A)', { bits: [7, 1], unsure: true }),
   f('actions', 0x90, 'u8', '行動回数', { bits: [0, 3] }),
-  f('u90b3', 0x90, 'u8', '+0x90 bit3', { bits: [3, 1], unsure: true, note: '0 の敵は戦闘の記録 +0x35 bit6 を落とす (@0x195A18)。意味は未解析' }),
+  f('u90b3', 0x90, 'u8', '+0x90 bit3', {
+    bits: [3, 1],
+    unsure: true,
+    note: '0 の敵は戦闘の記録 +0x35 bit6 を落とす (@0x195A18)。意味は未解析',
+  }),
   f('u90hi', 0x90, 'u8', '+0x90 bit4-7', { bits: [4, 4], unsure: true }),
-  f('u91', 0x91, 'u8', '+0x91 (能力 0x4B の率)', { unsure: true, note: '状態 (+0x92 bit0-3 の番号) に反応する率 % (相手の状態の耐性で減る。@0x173A3C)。身代わりと推定' }),
+  f('u91', 0x91, 'u8', '+0x91 (能力 0x4B の率)', {
+    unsure: true,
+    note: '状態 (+0x92 bit0-3 の番号) に反応する率 % (相手の状態の耐性で減る。@0x173A3C)。身代わりと推定',
+  }),
   f('ab4bState', 0x92, 'u8', '+0x92 bit0-3 (能力 0x4B の状態)', { bits: [0, 4], unsure: true }),
-  f('noParry', 0x92, 'u8', '+0x92 bit4 (受け流しを避ける)', { bits: [4, 1], unsure: true, note: '立っていると受け流しの場面で ActionData 行 0x1A5「受け流しを避けた」を使う (@0x171B04)。推定' }),
+  f('noParry', 0x92, 'u8', '+0x92 bit4 (受け流しを避ける)', {
+    bits: [4, 1],
+    unsure: true,
+    note: '立っていると受け流しの場面で ActionData 行 0x1A5「受け流しを避けた」を使う (@0x171B04)。推定',
+  }),
   f('u92hi', 0x92, 'u8', '+0x92 bit5-7', { bits: [5, 3], unsure: true }),
   f('u93', 0x93, 'u8', '+0x93 (能力 0x28 の値)', { unsure: true }),
   f('u94', 0x94, 'u8', '+0x94', { unsure: true, hex: true }),
@@ -132,7 +230,12 @@ const statsFields: FieldDef[] = [
 ];
 
 /** The four ability tables, in the order of MonsterParameter +0x16 bit0-2 (1〜4). */
-export const LANAI_STATS_TABLES = ['MonsterParameterMain', 'MonsterParameterExtra', 'MonsterParameterRegularEvent', 'MonsterParameterSpecialEvent'] as const;
+export const LANAI_STATS_TABLES = [
+  'MonsterParameterMain',
+  'MonsterParameterExtra',
+  'MonsterParameterRegularEvent',
+  'MonsterParameterSpecialEvent',
+] as const;
 export const LANAI_STATS: TableDef[] = LANAI_STATS_TABLES.map((file) => ({ file, rowSize: 0x9c, fields: statsFields }));
 
 export const LANAI_MONSTER_DESIGN: TableDef = {
@@ -147,11 +250,91 @@ export const LANAI_MONSTER_DESIGN: TableDef = {
     f('u14', 0x14, 'u32', '+0x14', { unsure: true, ref: str, note: '一部の行だけ文字列 (再配置される)' }),
     f('u18', 0x18, 'u32', '+0x18', { unsure: true, ref: str, note: '一部の行だけ文字列 (再配置される)' }),
     f('u1c', 0x1c, 'u32', '+0x1C', { unsure: true, hex: true }),
-    ...[0x20, 0x24, 0x28, 0x2c, 0x30, 0x38, 0x3c, 0x40, 0x44, 0x48].map((o, i) => f(`size${i}`, o, 'f32', `大きさ ${i + 1}`, { unsure: true, note: '大きさ・距離と推定 (60.0、4.0、1.0 …)' })),
+    ...[0x20, 0x24, 0x28, 0x2c, 0x30, 0x38, 0x3c, 0x40, 0x44, 0x48].map((o, i) =>
+      f(`size${i}`, o, 'f32', `大きさ ${i + 1}`, { unsure: true, note: '大きさ・距離と推定 (60.0、4.0、1.0 …)' }),
+    ),
     f('u34', 0x34, 'u32', '+0x34', { unsure: true, ref: str, note: '一部の行だけ文字列 (再配置される)' }),
     ...unknown(0x4c, 0xa0),
   ].sort((a, b) => a.offset - b.offset),
 };
 
 /** The definitions by table name. */
-export const LANAI_TABLES: Record<string, TableDef> = Object.fromEntries([LANAI_MONSTER_PARAMETER, LANAI_MONSTER_DESIGN, ...LANAI_STATS].map((d) => [d.file, d]));
+/** The elements of ActionData +0x28 (0 = none; the same order as the resistances, naauao lanai/actions.md). */
+export const LANAI_ACTION_ELEMENTS: Record<number, string> = {
+  0: 'なし',
+  1: '火',
+  2: '氷',
+  3: '風',
+  4: '土',
+  5: '電気',
+  6: '水',
+  7: '光',
+  8: '闇',
+};
+
+/**
+ * ActionData (5017 × 0x2C, row IDs; naauao lanai/actions.md): the battle's actions (the monsters' skills, the automatic
+ * actions, the items' and the equipment's actions). The meanings come from the data (the values against the texts:
+ * つかまえる2ばい has 20 at +0x06, ウインドロール 3 at +0x28 …) unless the note names the code.
+ */
+export const LANAI_ACTION_DATA: TableDef = {
+  file: 'ActionData',
+  rowSize: 0x2c,
+  fields: [
+    f('target', 0x00, 'u32', 'モンスター (変身先・呼ぶ相手)', {
+      ref: { kind: 'row', table: 'MonsterParameter' },
+      note: '系統 29 / 30 (変身) では変身先の MonsterParameter の行 ID (確定、naauao lanai/monsters.md §11)。系統 27 (呼ぶ) などの行にも MonsterParameter の行 ID が入る (推定)。ほかは 0',
+    }),
+    f('max', 0x04, 'u16', '量の上限 (推定)', {
+      note: '回復・ダメージの量の上側と推定 (+0x16 が下側)。自動回復 (行 658〜663) は 9999',
+    }),
+    f('scale', 0x06, 'u8', '倍率 (推定。10 = 1 倍)', {
+      note: 'ほぼすべての行が 10。『つかまえる2ばい』は 20 で、10 を 1 倍とする倍率と推定',
+    }),
+    f('b07', 0x07, 'u8', '+0x07', { unsure: true, hex: true, note: '0 が大半。0x80 / 0x14 / 0x0F / 0x0A / 3 など' }),
+    f('flags8', 0x08, 'u32', '+0x08 (ビット)', {
+      unsure: true,
+      hex: true,
+      note: '0x26480000 が大半。攻撃呪文は bit10-14 が属性ごとに違う (推定: 対象・範囲・属性の印)',
+    }),
+    f('message', 0x0c, 'u32', '文 (MessageAction)', {
+      ref: { kind: 'row', table: 'MessageAction' },
+      note: 'MessageAction の行 ID。individual が戦闘の文。多くの行は「〈name〉」だけ (0x80000016) で、文はほかで出す',
+    }),
+    f('u10', 0x10, 'u32', '+0x10 (行 ID)', {
+      unsure: true,
+      hex: true,
+      note: '0x80000020 が大半 (2657 行)。演出の表の行 ID と推定',
+    }),
+    f('kind', 0x14, 'u32', '+0x14 bit0-3', {
+      bits: [0, 4],
+      note: '被弾時の枠では 5 / 8 のとき働く。5 は倒される一撃で HP が戻る (naauao lanai/monsters.md §11)',
+    }),
+    f('system', 0x14, 'u32', '系統', {
+      bits: [4, 8],
+      note: '戦闘の結果の種類 (確定: 29 / 30 = 変身、21 = つかまえる)。ほかの番号の意味は一部だけ',
+    }),
+    f('b14hi', 0x14, 'u32', '+0x14 bit12-15', { bits: [12, 4], unsure: true, note: '1 / 2 / 3 / 6 / 7 が多い' }),
+    f('min', 0x16, 'u16', '量の下限・値 (推定)', {
+      note: '量の下側と推定。自動回復 (表示用の種類 0x56 / 0x57) では回復の値 (FUN_0024F6C0、naauao lanai/equipment.md §4)',
+    }),
+    ...unknown(0x18, 0x24),
+    f('u24', 0x24, 'u16', '+0x24', { unsure: true, note: '0x13B〜0x142 が多い' }),
+    f('display', 0x26, 'u8', '表示用の種類', {
+      note: '装備の自動のアクションの画面で、ConditionData の行を引く種類 (FUN_00165F60、naauao lanai/equipment.md §4)。0 が大半',
+    }),
+    f('b27', 0x27, 'u8', '+0x27', { unsure: true, hex: true, note: '0 / 4 が大半 (0x80 / 0x10 / 0x40 も)' }),
+    f('element', 0x28, 'u8', '属性 (推定)', {
+      ref: { kind: 'enum', values: LANAI_ACTION_ELEMENTS },
+      note: '0〜8。ワザの名前と合う (ウインドロール 3 = 風、根っこをのばした 4 = 土)。データからの推定',
+    }),
+    f('b2b', 0x2b, 'u8', '+0x2B', { unsure: true, hex: true, note: '0 が大半。0x80 が 41 行' }),
+  ],
+};
+
+/** The fields of ActionData the action page edits as numbers (the others are shown in the table of all fields). */
+export const LANAI_ACTION_EDITS = ['min', 'max', 'scale'] as const;
+
+export const LANAI_TABLES: Record<string, TableDef> = Object.fromEntries(
+  [LANAI_MONSTER_PARAMETER, LANAI_MONSTER_DESIGN, ...LANAI_STATS, LANAI_ACTION_DATA].map((d) => [d.file, d]),
+);

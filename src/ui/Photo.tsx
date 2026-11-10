@@ -2,7 +2,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { modelPhoto, type ModelRef } from '../pages/modelview';
 
-export function Photo({ model, className = 'photo', title }: { model: ModelRef | null; className?: string; title?: string }): ReactNode {
+export function Photo({
+  model,
+  className = 'photo',
+  title,
+}: {
+  model: ModelRef | null;
+  className?: string;
+  title?: string;
+}): ReactNode {
   const box = useRef<HTMLSpanElement>(null);
   const [url, setUrl] = useState<string | null>(null);
   const key = model?.key ?? '';

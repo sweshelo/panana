@@ -14,6 +14,7 @@ import { ITEM_ACTION_PATCH, needsItemActionPatch } from '../game/items';
 import { modEffectPatches } from '../game/itemeffects';
 import { BGM_EXT_PATCH, hasBgmRows } from '../game/bgmext';
 import { TRANSFORM_PATCH, needsTransformPatch } from '../game/transform';
+import { PLACE_PATCH, needsPlacePatch } from '../game/newdungeon';
 import { LEVEL_STEALTH_ID, LEVEL_STEALTH_TITLE, levelStealthPatch, levelStealthProblem } from '../game/levelstealth';
 import { buildPatches } from '../game/patch';
 import { automapPatch, automapProblem } from '../game/automap';
@@ -25,7 +26,6 @@ import { tableLabel, type Session } from '../session';
 import { CodeModOption } from './CodeModOption';
 import { LevelStealthOption } from './LevelStealthOption';
 import { download } from './download';
-
 
 export function ExportDialog({ session, onClose }: { session: Session; onClose: () => void }): ReactNode {
   const { game, st } = session;
@@ -39,41 +39,77 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const issues: { map: string; issue: Issue }[] = [];
     for (const d of docs) {
       const info = game.code.byHash(d.hash)!;
-      for (const i of validate(game, d, game.master.tileset(game.mapRef(info, d)), st.docs, st.events.get(d.dungeon) ?? null))
+      for (const i of validate(
+        game,
+        d,
+        game.master.tileset(game.mapRef(info, d)),
+        st.docs,
+        st.events.get(d.dungeon) ?? null,
+      ))
         issues.push({ map: mapTitle(info, game.code.maps, game.master), issue: i });
     }
     const worlds = session.changedWorlds();
     for (const w of worlds)
-      for (const i of validateWorld(game, w.hash, session.entrancesOf(w), session.originalEntrances(w), st.docs)) issues.push({ map: mapLabel(game, w.hash), issue: i });
+      for (const i of validateWorld(game, w.hash, session.entrancesOf(w), session.originalEntrances(w), st.docs))
+        issues.push({ map: mapLabel(game, w.hash), issue: i });
     const changes: string[] = docs.map((d) => `${mapLabel(game, d.hash)} (区画 ${st.changedSections(d).join(', ')})`);
     const added = game.code.addedMaps();
     if (added.length) changes.push(`新しいマップ ${added.map((m) => m.name).join('・')} (exefs/code.ips のマップの表)`);
     for (const w of worlds) changes.push(`${mapLabel(game, w.hash)} の入口 (区画 2)`);
-    for (const w of session.changedGrounds()) changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
+    for (const w of session.changedGrounds())
+      changes.push(`${mapLabel(game, w.hash)} の地形 (${MASTER_ARCHIVE} の ${w.groundFile}、プールの数も作り直す)`);
     // Panana's own patches, when their data is used (boss battles: game/boss.ts; added monsters: game/monsters.ts;
     // added items' actions: game/items.ts; transformations into another design: game/transform.ts)
     const w01 = game.worldMaps().find((w) => w.dungeon === NOTICE_DUNGEON);
-    const extra = [...[bossPatchFor(st.events.values())].filter((p) => p !== null), ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
-      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []), ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
-      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []), ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p)];
+    const extra = [
+      ...[bossPatchFor(st.events.values())].filter((p) => p !== null),
+      ...(session.book?.needsRowsPatch() ? [MONSTER_ROWS_PATCH] : []),
+      ...(needsItemActionPatch(game.master) ? [ITEM_ACTION_PATCH] : []),
+      ...(hasBgmRows(game.master) ? [BGM_EXT_PATCH] : []),
+      ...(needsTransformPatch(game.master) ? [TRANSFORM_PATCH] : []),
+      ...(needsPlacePatch(game) ? [PLACE_PATCH] : []),
+      ...[noticePatch(st.events.get(NOTICE_DUNGEON), w01 ? session.entrancesOf(w01) : [])].filter((p) => !!p),
+    ];
     // the item effects cut out of elpulse (game/itemeffects.ts), for the ones the items use
     const mod = modEffectPatches(game.master, game.dump.code);
     extra.push(...mod.patches);
-    for (const w of mod.warnings) issues.push({ map: 'アイテムの効果', issue: { level: 'warn', msg: w, key: `elp:${w}` } });
-    if (mod.inBase.length) changes.push(`${mod.inBase.map((t) => `「${t}」`).join('・')} は土台の MOD の code.ips のものを使います`);
+    for (const w of mod.warnings)
+      issues.push({ map: 'アイテムの効果', issue: { level: 'warn', msg: w, key: `elp:${w}` } });
+    if (mod.inBase.length)
+      changes.push(`${mod.inBase.map((t) => `「${t}」`).join('・')} は土台の MOD の code.ips のものを使います`);
     // the jump destinations (game/jumppoints.ts): more rows, rows hidden while their entrance is not placed
     const jump = session.jumpPatch();
     if (jump.patch) extra.push(jump.patch);
-    if (jump.missing.length) issues.push({ map: 'ジャンプの行き先', issue: { level: 'error', msg: `行き先 ${jump.missing.join('・')} の入口の出現条件を読めませんでした (ワールドマップを開き直してから書き出してください)。この行き先は条件なしで一覧に出ます`, key: 'jump:missing' } });
+    if (jump.missing.length)
+      issues.push({
+        map: 'ジャンプの行き先',
+        issue: {
+          level: 'error',
+          msg: `行き先 ${jump.missing.join('・')} の入口の出現条件を読めませんでした (ワールドマップを開き直してから書き出してください)。この行き先は条件なしで一覧に出ます`,
+          key: 'jump:missing',
+        },
+      });
     // the automap (lower screen minimap) of the new dungeons (game/automap.ts): they share a slot of another dungeon
     const automap = automapPatch(game);
     const automapErr = automap && automapProblem(game.dump.code);
-    if (automapErr) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `${automapErr} (このパッチは書き出しません。新しいダンジョンにはオートマップが付きません)`, key: `patch:${automap.id}` } });
+    if (automapErr)
+      issues.push({
+        map: 'コードのパッチ',
+        issue: {
+          level: 'error',
+          msg: `${automapErr} (このパッチは書き出しません。新しいダンジョンにはオートマップが付きません)`,
+          key: `patch:${automap.id}`,
+        },
+      });
     else if (automap) extra.push(automap);
     // the speeds of the map symbols (game/chase.ts), when changed on the monster page
     const chase = chaseSpeedPatch(game.chaseSpeeds);
     const chaseProblem = chase && chaseSpeedProblem(game.dump.code);
-    if (chaseProblem) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `${chaseProblem} (このパッチは書き出しません)`, key: `patch:${CHASE_PATCH_ID}` } });
+    if (chaseProblem)
+      issues.push({
+        map: 'コードのパッチ',
+        issue: { level: 'error', msg: `${chaseProblem} (このパッチは書き出しません)`, key: `patch:${CHASE_PATCH_ID}` },
+      });
     else if (chase) extra.push(chase);
     const patches = exportedPatches(game, extra);
     if (patches.length) {
@@ -81,7 +117,15 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       changes.push(`コードのパッチ ${patches.map((p) => p.title).join('・')} (exefs/code.ips)`);
       for (const p of patches) {
         const err = built.get(p.id)?.errors[0];
-        if (err) issues.push({ map: 'コードのパッチ', issue: { level: 'error', msg: `「${p.title}」の ${err.line} 行目: ${err.message} (このパッチは書き出しません)`, key: `patch:${p.id}` } });
+        if (err)
+          issues.push({
+            map: 'コードのパッチ',
+            issue: {
+              level: 'error',
+              msg: `「${p.title}」の ${err.line} 行目: ${err.message} (このパッチは書き出しません)`,
+              key: `patch:${p.id}`,
+            },
+          });
       }
     }
     for (const t of events) changes.push(`${game.master.dungeonName(t.dungeon)} のイベントの表 (${t.archiveName})`);
@@ -89,10 +133,20 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     for (const n of game.master.changedTables()) changes.push(`${tableLabel(n)} (${MASTER_ARCHIVE} の ${n})`);
     if (session.book?.directChanged()) changes.push(`ワザの演出 (${MONSTER_DESIGN_ARCHIVE} の directData.bin)`);
     const shops = session.stock;
-    if (shops?.changed()) changes.push(`店の品揃え ${shops.changedShops().map((s) => `店 ${s}`).join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`);
+    if (shops?.changed())
+      changes.push(
+        `店の品揃え ${shops
+          .changedShops()
+          .map((s) => `店 ${s}`)
+          .join('・')} (${shops.archiveNames().join(' と ')} の ShopItem)`,
+      );
     const texts = [...game.master.texts.editedIds(), ...game.master.texts.addedIds()];
-    if (texts.length) changes.push(`メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`);
-    if (session.book?.designChanged()) changes.push(`モンスターのデザイン (${MONSTER_DESIGN_ARCHIVE} の monsterDesign.bin)`);
+    if (texts.length)
+      changes.push(
+        `メッセージ ${texts.length} 個 (${MASTER_ARCHIVE} の ${[...new Set(texts.map((id) => game.master.texts.file(id)!.name))].join(', ')})`,
+      );
+    if (session.book?.designChanged())
+      changes.push(`モンスターのデザイン (${MONSTER_DESIGN_ARCHIVE} の monsterDesign.bin)`);
     return { docs, events, issues, changes, shops, worlds: session.worldSections(), extra };
   });
   const { issues } = what;
@@ -104,26 +158,41 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const [stealth, setStealth] = useState(game.levelStealth);
   const stealthProblem = useState(() => levelStealthProblem(game.dump.code))[0];
   const stealthOn = stealth > 0 && !stealthProblem;
-  const extra = [...what.extra, ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : []), ...(stealthOn ? [levelStealthPatch(stealth)] : [])];
+  const extra = [
+    ...what.extra,
+    ...(dropCap && !capProblem ? [dropCapPatch('kahara')] : []),
+    ...(stealthOn ? [levelStealthPatch(stealth)] : []),
+  ];
   const built = dropCap || stealthOn ? buildPatches(game.dump.code, exportedPatches(game, extra)) : null;
   const capError = dropCap && !capProblem ? built?.get(DROP_CAP_ID)?.errors[0] : undefined;
   const stealthError = stealthOn ? built?.get(LEVEL_STEALTH_ID)?.errors[0] : undefined;
   // models ported from other games (#100): the archives that hold them
-  const ported = useAsync(async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()], []);
-  const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []),
-    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
+  const ported = useAsync(
+    async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()],
+    [],
+  );
+  const changes = [
+    ...what.changes,
+    ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []),
+    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []),
+    ...(Array.isArray(ported) ? ported : []),
+  ];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = async (): Promise<Map<string, Uint8Array> | null> => {
     try {
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
-      for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
+      for (const [name, bytes] of await (await PortStore.of('kahara')).archives())
+        if (!files.has(name)) files.set(name, bytes);
       // BGMs ported from other games: sound.bcsar and their streams
       for (const [name, bytes] of await (await SoundPortStore.of()).files()) files.set(name, bytes);
       for (const [name, bytes] of what.shops?.buildArchives() ?? []) files.set(name, bytes);
-      if (session.book?.directChanged() || session.book?.designChanged()) files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
+      if (session.book?.directChanged() || session.book?.designChanged())
+        files.set(MONSTER_DESIGN_ARCHIVE, session.book.buildDesignArchive());
       const pkg = modPackage(game, files, extra);
-      setOut(`書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`);
+      setOut(
+        `書き出すファイル: ${[...pkg].map(([n, b]) => `${n}${files.has(n.replace('romfs/', '')) ? ' (変更)' : ''} ${(b.length / 1024).toFixed(0)} KB`).join('、') || 'なし'}`,
+      );
       return pkg;
     } catch (err) {
       setOut(`書き出せませんでした: ${(err as Error).message}`);
@@ -134,7 +203,8 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
     const pkg = await build();
     if (!pkg?.size) return;
     try {
-      const picker = (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+      const picker = (window as unknown as { showDirectoryPicker: (o: object) => Promise<FileSystemDirectoryHandle> })
+        .showDirectoryPicker;
       let dir = await picker({ mode: 'readwrite' });
       // Accept the mods folder or the title folder.
       if (dir.name.toUpperCase() !== TITLE_ID) dir = await dir.getDirectoryHandle(TITLE_ID, { create: true });
@@ -159,25 +229,58 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
       <div className="dialog">
         <h2>書き出し</h2>
         {changes.length ? <div>{`変更: ${changes.join('、')}`}</div> : <div className="muted">変更はありません。</div>}
-        {issues.length
-          ? <div className="issues">{issues.map(({ map, issue }, i) => <div key={i} className={`issue ${issue.level}`}>{`${issue.level === 'error' ? '✖' : '⚠'} ${map}: ${issue.msg}`}</div>)}</div>
-          : <div className="ok">検証: 問題なし</div>}
-        <CodeModOption title="kahara" on={dropCap} problem={capProblem ?? (capError ? `${capError.line} 行目: ${capError.message} (書き出しません)` : null)} onChange={(on) => {
-          game.dropCap = on;
-          setDropCap(on);
-          session.scheduleSave();
-        }} />
-        <LevelStealthOption diff={stealth} problem={stealthProblem ?? (stealthError ? `${stealthError.line} 行目: ${stealthError.message} (書き出しません)` : null)} onChange={(d) => {
-          game.levelStealth = d;
-          setStealth(d);
-          session.scheduleSave();
-        }} />
-        {errors > 0 && <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>}
-        {game.baseMod
-          ? <div className="muted">{`土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</div>
-          : <div className="warn-box">{`アイテム MOD など、ほかの MOD と一緒に使う場合は、ヘッダーの「土台の MOD」でその MOD のフォルダ (elpulse の mod/out など) を読み込んでから書き出してください。同じファイル (${MASTER_ARCHIVE} や code.ips) を置き換える MOD は同時に置けません。`}</div>}
+        {issues.length ? (
+          <div className="issues">
+            {issues.map(({ map, issue }, i) => (
+              <div
+                key={i}
+                className={`issue ${issue.level}`}
+              >{`${issue.level === 'error' ? '✖' : '⚠'} ${map}: ${issue.msg}`}</div>
+            ))}
+          </div>
+        ) : (
+          <div className="ok">検証: 問題なし</div>
+        )}
+        <CodeModOption
+          title="kahara"
+          on={dropCap}
+          problem={capProblem ?? (capError ? `${capError.line} 行目: ${capError.message} (書き出しません)` : null)}
+          onChange={(on) => {
+            game.dropCap = on;
+            setDropCap(on);
+            session.scheduleSave();
+          }}
+        />
+        <LevelStealthOption
+          diff={stealth}
+          problem={
+            stealthProblem ??
+            (stealthError ? `${stealthError.line} 行目: ${stealthError.message} (書き出しません)` : null)
+          }
+          onChange={(d) => {
+            game.levelStealth = d;
+            setStealth(d);
+            session.scheduleSave();
+          }}
+        />
+        {errors > 0 && (
+          <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>
+        )}
+        {game.baseMod ? (
+          <div className="muted">{`土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</div>
+        ) : (
+          <div className="warn-box">{`アイテム MOD など、ほかの MOD と一緒に使う場合は、ヘッダーの「土台の MOD」でその MOD のフォルダ (elpulse の mod/out など) を読み込んでから書き出してください。同じファイル (${MASTER_ARCHIVE} や code.ips) を置き換える MOD は同時に置けません。`}</div>
+        )}
         <div className="row">
-          <button className="primary" onClick={async () => { const f = await build(); if (f?.size) download(buildModZip(f), 'denpa2-map-mod.zip'); }}>MOD の zip をダウンロード</button>
+          <button
+            className="primary"
+            onClick={async () => {
+              const f = await build();
+              if (f?.size) download(buildModZip(f), 'denpa2-map-mod.zip');
+            }}
+          >
+            MOD の zip をダウンロード
+          </button>
           {canFs && <button onClick={writeToFolder}>MOD フォルダに直接書き込む</button>}
           <button onClick={onClose}>閉じる</button>
         </div>

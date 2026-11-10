@@ -28,7 +28,11 @@ function summary(master: Master, slots: Slot[]): string {
   const f = filled(slots);
   const total = f.reduce((a, s) => a + s.weight, 0);
   if (!f.length) return '(空)';
-  return f.map((s) => `${itemLabel(master, s.item)}${f.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`).join('、');
+  return f
+    .map(
+      (s) => `${itemLabel(master, s.item)}${f.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`,
+    )
+    .join('、');
 }
 
 /** Write the filled slots back packed at the front; empty slots are {0, 1} like the game's data. */
@@ -53,14 +57,26 @@ function usage(st: EditorState): Map<number, string[]> {
 }
 
 /** Pick a treasureGroup row for a chest, or make a new one from the current contents. */
-function TreasureRowPicker({ st, current, apply, onPick, onClose }: {
-  st: EditorState; current: number; apply: (f: () => void) => void; onPick: (row: number) => void; onClose: () => void;
+function TreasureRowPicker({
+  st,
+  current,
+  apply,
+  onPick,
+  onClose,
+}: {
+  st: EditorState;
+  current: number;
+  apply: (f: () => void) => void;
+  onPick: (row: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const master = st.game.master;
   const [query, setQuery] = useState('');
   const [onlyFree, setOnlyFree] = useState(false);
   const list = useRef<HTMLDivElement>(null);
-  useEffect(() => { list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' }); }, []);
+  useEffect(() => {
+    list.current?.querySelector('tr.current')?.scrollIntoView({ block: 'center' });
+  }, []);
   const used = usage(st);
   const q = query.trim();
   const rows: { row: number; text: string; users: string[] }[] = [];
@@ -74,24 +90,49 @@ function TreasureRowPicker({ st, current, apply, onPick, onClose }: {
   return (
     <Dialog title="宝箱の中身を選ぶ" onClose={onClose}>
       <div className="row">
-        <input type="search" placeholder="アイテム名か行番号で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="layer"><input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> どの宝箱も使っていない行だけ</label>
-        <button className="primary" onClick={() => {
-          let row = -1;
-          apply(() => (row = master.addTreasureRow(master.treasureSlots(current))));
-          onPick(row);
-        }}>今の中身を写して新しい行を作る</button>
+        <input
+          type="search"
+          placeholder="アイテム名か行番号で絞り込み"
+          className="picker-search"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label className="layer">
+          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} />{' '}
+          どの宝箱も使っていない行だけ
+        </label>
+        <button
+          className="primary"
+          onClick={() => {
+            let row = -1;
+            apply(() => (row = master.addTreasureRow(master.treasureSlots(current))));
+            onPick(row);
+          }}
+        >
+          今の中身を写して新しい行を作る
+        </button>
       </div>
-      <p className="muted small">「使っている宝箱」は、読み込んだダンジョンの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。</p>
+      <p className="muted small">
+        「使っている宝箱」は、読み込んだダンジョンの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。
+      </p>
       <div className="picker-list" ref={list}>
         <table className="picker-table">
-          <thead><tr><th>行</th><th>中身</th><th>使っている宝箱</th></tr></thead>
+          <thead>
+            <tr>
+              <th>行</th>
+              <th>中身</th>
+              <th>使っている宝箱</th>
+            </tr>
+          </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.row} className={'pick' + (r.row === current ? ' current' : '')} onClick={() => onPick(r.row)}>
                 <td className="num">{r.row}</td>
                 <td>{r.text}</td>
-                <td className="muted" title={r.users.join('、')}>{r.users.length ? `${r.users.length} 個` : '—'}</td>
+                <td className="muted" title={r.users.join('、')}>
+                  {r.users.length ? `${r.users.length} 個` : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -105,8 +146,16 @@ function TreasureRowPicker({ st, current, apply, onPick, onClose }: {
  * Contents of the chest of EventObject row `evRow` (+0x08 -> treasureGroup row, 10 x {item, weight};
  * FUN_00305dc8). `apply` makes an edit of the shared tables (with an undo point in the map editor).
  */
-export function TreasureEditor({ session, ev, evRow, apply }: {
-  session: Session; ev: EventTable; evRow: number; apply: (f: () => void) => void;
+export function TreasureEditor({
+  session,
+  ev,
+  evRow,
+  apply,
+}: {
+  session: Session;
+  ev: EventTable;
+  evRow: number;
+  apply: (f: () => void) => void;
 }): ReactNode {
   const { game, st } = session;
   const master = game.master;
@@ -133,7 +182,9 @@ export function TreasureEditor({ session, ev, evRow, apply }: {
       <div className="row">
         <span className="grow">
           {`中身の表 #${row}`}
-          {users.length > 1 && <span className="badge" title={users.join('、')}>{`${users.length} 個の宝箱で共有`}</span>}
+          {users.length > 1 && (
+            <span className="badge" title={users.join('、')}>{`${users.length} 個の宝箱で共有`}</span>
+          )}
         </span>
         <button onClick={() => setPickingRow(true)}>変更…</button>
       </div>
@@ -145,20 +196,42 @@ export function TreasureEditor({ session, ev, evRow, apply }: {
               const it = items?.item(s.item);
               return (
                 <div key={i} className="loot-row">
-                  <button className="loot-item" title="クリックでアイテムを変える" disabled={!items}
-                    onClick={() => setPicking({ current: s.item, onPick: (id) => update(i, { item: id, weight: s.weight }) })}>
+                  <button
+                    className="loot-item"
+                    title="クリックでアイテムを変える"
+                    disabled={!items}
+                    onClick={() =>
+                      setPicking({ current: s.item, onPick: (id) => update(i, { item: id, weight: s.weight }) })
+                    }
+                  >
                     {it && <Photo model={itemRef(game, it)} />}
-                    <span className="muted">{`${s.item} `}</span>{itemLabel(master, s.item)}
+                    <span className="muted">{`${s.item} `}</span>
+                    {itemLabel(master, s.item)}
                   </button>
-                  <NumberInput value={s.weight} min={1} max={0xffff} className="" title="重み (出やすさ)" onCommit={(v) => update(i, { item: s.item, weight: v })} />
+                  <NumberInput
+                    value={s.weight}
+                    min={1}
+                    max={0xffff}
+                    className=""
+                    title="重み (出やすさ)"
+                    onCommit={(v) => update(i, { item: s.item, weight: v })}
+                  />
                   <span className="loot-pct">{total ? `${Math.round((s.weight / total) * 100)}%` : ''}</span>
-                  <button className="danger" title="外す" onClick={() => update(i, null)}>×</button>
+                  <button className="danger" title="外す" onClick={() => update(i, null)}>
+                    ×
+                  </button>
                 </div>
               );
             })}
             {!slots.length && <div className="muted">空です (開けても何も出ません)。</div>}
             {slots.length < 10 && (
-              <button className="loot-add" disabled={!items} onClick={() => setPicking({ onPick: (id) => write([...slots, { item: id, weight: 1 }]) })}>＋ 追加</button>
+              <button
+                className="loot-add"
+                disabled={!items}
+                onClick={() => setPicking({ onPick: (id) => write([...slots, { item: id, weight: 1 }]) })}
+              >
+                ＋ 追加
+              </button>
             )}
           </div>
           <div className="muted small">
@@ -167,12 +240,29 @@ export function TreasureEditor({ session, ev, evRow, apply }: {
         </>
       )}
       {picking && items && (
-        <ItemPicker game={game} items={items} title="宝箱に入れるアイテムを選ぶ" current={picking.current}
-          onClose={() => setPicking(null)} onPick={(id) => { setPicking(null); picking.onPick(id); }} />
+        <ItemPicker
+          game={game}
+          items={items}
+          title="宝箱に入れるアイテムを選ぶ"
+          current={picking.current}
+          onClose={() => setPicking(null)}
+          onPick={(id) => {
+            setPicking(null);
+            picking.onPick(id);
+          }}
+        />
       )}
       {pickingRow && (
-        <TreasureRowPicker st={st} current={row} apply={apply} onClose={() => setPickingRow(false)}
-          onPick={(v) => { setPickingRow(false); if (v !== row) apply(() => ev.setTreasureRow(evRow, v)); }} />
+        <TreasureRowPicker
+          st={st}
+          current={row}
+          apply={apply}
+          onClose={() => setPickingRow(false)}
+          onPick={(v) => {
+            setPickingRow(false);
+            if (v !== row) apply(() => ev.setTreasureRow(evRow, v));
+          }}
+        />
       )}
     </div>
   );

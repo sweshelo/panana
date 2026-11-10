@@ -42,7 +42,15 @@ export interface TableDef {
 }
 
 const SIZE: Record<FieldType, number> = { u8: 1, s8: 1, u16: 2, s16: 2, u32: 4, s32: 4, f32: 4 };
-const SIGNED: Record<FieldType, boolean> = { u8: false, s8: true, u16: false, s16: true, u32: false, s32: true, f32: false };
+const SIGNED: Record<FieldType, boolean> = {
+  u8: false,
+  s8: true,
+  u16: false,
+  s16: true,
+  u32: false,
+  s32: true,
+  f32: false,
+};
 
 const f32Bits = new DataView(new ArrayBuffer(4));
 
@@ -50,9 +58,12 @@ export const fieldSize = (f: FieldDef): number => SIZE[f.type];
 
 function readRaw(row: Uint8Array, f: FieldDef): number {
   switch (SIZE[f.type]) {
-    case 1: return row[f.offset]!;
-    case 2: return u16(row, f.offset);
-    default: return u32(row, f.offset);
+    case 1:
+      return row[f.offset]!;
+    case 2:
+      return u16(row, f.offset);
+    default:
+      return u32(row, f.offset);
   }
 }
 
@@ -93,9 +104,14 @@ export function writeField(row: Uint8Array, f: FieldDef, v: number): void {
     raw = ((readRaw(row, f) & ~mask) | ((v << shift) & mask)) >>> 0;
   }
   switch (SIZE[f.type]) {
-    case 1: row[f.offset] = raw & 0xff; break;
-    case 2: w16(row, f.offset, raw & 0xffff); break;
-    default: w32(row, f.offset, raw >>> 0);
+    case 1:
+      row[f.offset] = raw & 0xff;
+      break;
+    case 2:
+      w16(row, f.offset, raw & 0xffff);
+      break;
+    default:
+      w32(row, f.offset, raw >>> 0);
   }
 }
 
@@ -130,7 +146,8 @@ export function fieldValue(f: FieldDef, v: number): string {
 
 export function fieldText(f: FieldDef, v: number, ctx: FieldContext = {}): string {
   const r = f.ref;
-  if (!r) return f.hex ? `0x${(v >>> 0).toString(16).toUpperCase()}` : f.type === 'f32' ? String(+v.toFixed(4)) : String(v);
+  if (!r)
+    return f.hex ? `0x${(v >>> 0).toString(16).toUpperCase()}` : f.type === 'f32' ? String(+v.toFixed(4)) : String(v);
   switch (r.kind) {
     case 'message': {
       if (!v) return '';
@@ -148,12 +165,17 @@ export function fieldText(f: FieldDef, v: number, ctx: FieldContext = {}): strin
       const id = v >= 0x80000000 ? hex8(v) : String(v);
       return n ? `#${id} ${n}` : `#${id}`;
     }
-    case 'enum': return r.values[v] ?? String(v);
+    case 'enum':
+      return r.values[v] ?? String(v);
   }
 }
 
 /** The fields of a definition that cover a row of `rowSize` bytes (a table whose rows are another size is not it). */
-export const defFor = (defs: Record<string, TableDef> | undefined, file: string | null, rowSize: number): TableDef | undefined => {
+export const defFor = (
+  defs: Record<string, TableDef> | undefined,
+  file: string | null,
+  rowSize: number,
+): TableDef | undefined => {
   const d = file ? defs?.[file] : undefined;
   return d && d.rowSize === rowSize ? d : undefined;
 };
@@ -161,9 +183,16 @@ export const defFor = (defs: Record<string, TableDef> | undefined, file: string 
 /** Raw fields over bytes [from, to) of a row: u32 where aligned, else u16 / u8 (rows of 0x16 or 0x2E bytes). */
 export function rawFields(from: number, to: number): FieldDef[] {
   const out: FieldDef[] = [];
-  for (let o = from; o < to; ) {
+  for (let o = from; o < to;) {
     const type: FieldType = o % 4 === 0 && o + 4 <= to ? 'u32' : o % 2 === 0 && o + 2 <= to ? 'u16' : 'u8';
-    out.push({ key: `raw${o.toString(16)}`, offset: o, type, label: `+0x${o.toString(16).toUpperCase().padStart(2, '0')}`, unsure: true, hex: true });
+    out.push({
+      key: `raw${o.toString(16)}`,
+      offset: o,
+      type,
+      label: `+0x${o.toString(16).toUpperCase().padStart(2, '0')}`,
+      unsure: true,
+      hex: true,
+    });
     o += SIZE[type];
   }
   return out;
@@ -177,8 +206,11 @@ export function withRawFields(def: TableDef): TableDef {
   const covered = new Uint8Array(def.rowSize);
   for (const f of def.fields) covered.fill(1, f.offset, Math.min(def.rowSize, f.offset + SIZE[f.type]));
   const raw: FieldDef[] = [];
-  for (let o = 0; o < def.rowSize; ) {
-    if (covered[o]) { o++; continue; }
+  for (let o = 0; o < def.rowSize;) {
+    if (covered[o]) {
+      o++;
+      continue;
+    }
     let end = o;
     while (end < def.rowSize && !covered[end]) end++;
     raw.push(...rawFields(o, end));

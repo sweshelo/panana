@@ -14,6 +14,8 @@ import { hex8, u16, u32, w16, w32 } from '../util/bytes';
 import type { EventTable } from './events';
 import type { Game } from './game';
 import { dungeonRows, freeTableRows, newHash } from './mappatch';
+import { freeHash } from './monsters';
+import type { CodePatch } from './patch';
 import { WORLD_DUNGEON } from './worldmap';
 
 /** Dungeon IDs are checked against this (the number of mapGroup rows of the game). */
@@ -34,6 +36,8 @@ export const MG = {
   /** u16 first flag in 0x92 and u8 the number. */
   flags: 0x22,
   flagCount: 0x24,
+  /** u8 place: the areaInfoData row whose message the museum shows as where a monster was met / an item found. */
+  place: 0x28,
 } as const;
 
 /** Save values (flagData.bin rows) the ranges are in. */
@@ -50,7 +54,11 @@ const RANGES = [
 /** The ID of every dungeon of the game's dungeon table (as it was before any row was given to a new dungeon). */
 function tableDungeons(game: Game): Set<number> {
   const given = new Set(game.code.dungeons.map((d) => d.dungeon));
-  return new Set(dungeonRows(game.dump.code).filter((d) => d.count > 0 && !given.has(d.dungeon)).map((d) => d.dungeon));
+  return new Set(
+    dungeonRows(game.dump.code)
+      .filter((d) => d.count > 0 && !given.has(d.dungeon))
+      .map((d) => d.dungeon),
+  );
 }
 
 /**
@@ -108,7 +116,8 @@ export function takenCodes(game: Game, except = -1): Set<string> {
   const out = new Set<string>();
   // A new dungeon's own code (and its maps') is not taken for itself (renaming it, game/newdungeon.ts renameDungeon).
   const ownNew = game.code.dungeons.some((d) => d.dungeon === except);
-  for (const m of game.code.maps) if (m.dungeonCode && !(ownNew && m.dungeon === except)) out.add(m.dungeonCode.toUpperCase());
+  for (const m of game.code.maps)
+    if (m.dungeonCode && !(ownNew && m.dungeon === except)) out.add(m.dungeonCode.toUpperCase());
   for (const d of dungeonRows(game.dump.code)) {
     let s = '';
     for (let a = d.name - 0x100000; a >= 0 && game.dump.code[a]; a++) s += String.fromCharCode(game.dump.code[a]!);
@@ -221,7 +230,11 @@ export function slotsNeeded(t: EventTable | null): number {
 }
 
 /** The dungeon with the most unused 0x8E slots at the end of its range: its row, how many it needs, and the tail. */
-export async function stateDonor(game: Game, eventsOf: (d: number) => Promise<EventTable | null>, except: number): Promise<{ donor: number; need: number; tail: Range } | null> {
+export async function stateDonor(
+  game: Game,
+  eventsOf: (d: number) => Promise<EventTable | null>,
+  except: number,
+): Promise<{ donor: number; need: number; tail: Range } | null> {
   const t = game.master.mapGroup;
   let best: { donor: number; need: number; tail: Range } | null = null;
   for (let r = 1; r < t.rows; r++) {
@@ -238,7 +251,11 @@ export async function stateDonor(game: Game, eventsOf: (d: number) => Promise<Ev
 }
 
 export async function makeDungeon(
-  game: Game, spec: NewDungeonSpec, existing: Set<string>, eventsOf: (d: number) => Promise<EventTable | null> = (d) => game.eventTable(d), rand: () => number = Math.random,
+  game: Game,
+  spec: NewDungeonSpec,
+  existing: Set<string>,
+  eventsOf: (d: number) => Promise<EventTable | null> = (d) => game.eventTable(d),
+  rand: () => number = Math.random,
 ): Promise<NewDungeon> {
   const code = spec.code.trim().toUpperCase();
   const name = spec.name.trim();
@@ -248,7 +265,8 @@ export async function makeDungeon(
   if (problem) throw new Error(problem);
   if (!name) throw new Error('ダンジョンの名前を入れてください');
   const mg = game.master.table('mapGroup.bin');
-  if (spec.template <= 0 || spec.template >= mg.rows || spec.template === spec.dungeon) throw new Error('写す元のダンジョンが不正です');
+  if (spec.template <= 0 || spec.template >= mg.rows || spec.template === spec.dungeon)
+    throw new Error('写す元のダンジョンが不正です');
   const tmpl = mg.row(spec.template);
   const archiveOf = u32(tmpl, MG.archive);
   if (!archiveOf) throw new Error('写す元のダンジョンにイベントのアーカイブがありません');
@@ -274,7 +292,8 @@ export async function makeDungeon(
     const f = freeRange(saveSize(game, r.key), usedRanges(game, r.first, r.count, spec.dungeon), tmpl[r.count]!);
     return f.count ? f : { first: 0, count: 0 };
   });
-  let donor = -1, donorSlots = 0;
+  let donor = -1,
+    donorSlots = 0;
   if (!ranges[0]!.count) {
     const d = await stateDonor(game, eventsOf, spec.dungeon);
     if (d) {
@@ -300,6 +319,7 @@ export async function makeDungeon(
   }
   // The row's label in the table header ("E00" for row 11) becomes the code, when the labels are in row order.
   setRowLabel(game, spec.dungeon, code);
+  ownPlace(game, spec.dungeon);
   return { dungeon: spec.dungeon, code, archiveName: hex8(hash), archive, ranges, nameId, donor, donorSlots };
 }
 
@@ -329,7 +349,7 @@ export function renameDungeon(game: Game, dungeon: number, change: { name?: stri
   if (change.name !== undefined && !name) throw new Error('ダンジョンの名前を入れてください');
   const code = change.code?.trim().toUpperCase();
   const maps = game.code.maps.filter((m) => m.dungeon === dungeon);
-  const renames: [typeof maps[number], string][] = [];
+  const renames: [(typeof maps)[number], string][] = [];
   if (code !== undefined && code !== d.code) {
     const problem = codeProblem(game, code, dungeon);
     if (problem) throw new Error(problem);
@@ -352,3 +372,65 @@ export function renameDungeon(game: Game, dungeon: number, change: { name?: stri
     setRowLabel(game, dungeon, code);
   }
 }
+
+// ---- The place of a new dungeon (docs/kahara/museum.md §4)
+// Entering a dungeon puts its mapGroup +0x28 into the place byte (FUN_00401568 -> FUN_002e59bc, which turns values
+// from 0x4E on into 0). Beating a monster keeps that place in save values 0x6D / 0x6E (FUN_003fc2cc), getting an item
+// in 0x71 / 0x72 (FUN_003fb94c), and the museum shows the message of areaInfoData row `place` (+0x00). A new dungeon
+// copies its template's row, so it took the template's place; it gets an areaInfoData row of its own instead.
+
+export const AREA_TABLE = 'areaInfoData.bin';
+/** Places the game takes (the setter's `cmp r1, #0x4E`): the 78 rows of areaInfoData. */
+export const VANILLA_PLACES = 0x4e;
+/** Places a save can hold: 0x6D / 0x6E / 0x71 / 0x72 are 8 bits with a maximum of 150 (flagData +0x00). */
+export const PLACE_LIMIT = 151;
+
+/**
+ * Give a new dungeon a place of its own: an areaInfoData row (a copy of the template's, as it sat in the row) whose
+ * message is the dungeon's name message, so a rename follows. A row it already has alone is kept (its message is
+ * set again). Does nothing when the table is full (the dungeon keeps the place it has).
+ */
+export function ownPlace(game: Game, dungeon: number): void {
+  const mg = game.master.mapGroup;
+  const row = mg.row(dungeon);
+  const nameId = u16(row, MG.name);
+  const t = game.master.table(AREA_TABLE);
+  const place = row[MG.place]!;
+  const original = game.master.originalRows(AREA_TABLE);
+  const shared = Array.from({ length: mg.rows }, (_, r) => r).some(
+    (r) => r !== dungeon && mg.row(r)[MG.place] === place,
+  );
+  if (place >= original && place < t.rows && !shared) {
+    w32(t.row(place), 0, nameId);
+    return;
+  }
+  if (t.rows >= PLACE_LIMIT) return;
+  const copy = (place < t.rows ? t.row(place) : t.row(0)).slice();
+  w32(copy, 0, nameId);
+  row[MG.place] = t.append(copy, freeHash(t, 0x6d600000));
+}
+
+/** {@link ownPlace} for every new dungeon (saved edits made before new dungeons had a place of their own). */
+export function ownPlaces(game: Game): void {
+  for (const d of game.code.dungeons) ownPlace(game, d.dungeon);
+}
+
+/** Whether there are places past the game's (the export then needs {@link PLACE_PATCH}). */
+export function needsPlacePatch(game: Game): boolean {
+  return game.master.table(AREA_TABLE).rows > VANILLA_PLACES;
+}
+
+export const PLACE_PATCH_ID = 'dungeon-places';
+export const PLACE_PATCH_TITLE = '追加したダンジョンの場所';
+export const PLACE_PATCH_SOURCE = `; 追加したダンジョンの場所: いる場所の番号を 0x4E (78) 以上なら 0 にする比較を 0x97 (151) にする。
+; 番号は areaInfoData の行。図鑑の「そうぐうしたばしょ」(セーブ 0x6D / 0x6E) とアイテムを手に入れた場所 (0x71 / 0x72) は
+; 最大 150 なので 150 まで。図鑑が引くときは表の行数とも比べる。
+@0x2E59BC                    ; FUN_002e59bc (いる場所を入れる)
+  cmp r1, #0x97
+`;
+export const PLACE_PATCH: CodePatch = {
+  id: PLACE_PATCH_ID,
+  title: PLACE_PATCH_TITLE,
+  source: PLACE_PATCH_SOURCE,
+  enabled: true,
+};

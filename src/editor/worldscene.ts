@@ -66,7 +66,10 @@ export class WorldScene {
   private center: [number, number] = [-1e9, -1e9];
   private disposed = false;
 
-  constructor(className: string, readonly size = 300) {
+  constructor(
+    className: string,
+    readonly size = 300,
+  ) {
     this.scene = new MapScene(className, size);
     this.scene.camera.far = 60000;
     this.scene.camera.updateProjectionMatrix();
@@ -101,7 +104,8 @@ export class WorldScene {
   /** Re-draw the window when the camera moved far enough. */
   private follow(): void {
     const t = this.scene.controls.target;
-    const cx = Math.round(t.x / CELL), cy = Math.round(t.z / CELL);
+    const cx = Math.round(t.x / CELL),
+      cy = Math.round(t.z / CELL);
     if (Math.abs(cx - this.center[0]) >= 4 || Math.abs(cy - this.center[1]) >= 4) this.sync(false);
   }
 
@@ -115,20 +119,26 @@ export class WorldScene {
   sync(force = true): void {
     if (this.disposed) return;
     const t = this.scene.controls.target;
-    const cx = Math.round(t.x / CELL), cy = Math.round(t.z / CELL);
+    const cx = Math.round(t.x / CELL),
+      cy = Math.round(t.z / CELL);
     if (!force && cx === this.center[0] && cy === this.center[1]) return;
     this.center = [cx, cy];
-    const T = this.terrain, N = this.size, W = this.window;
+    const T = this.terrain,
+      N = this.size,
+      W = this.window;
     const wants: { x: number; y: number; sig: string; make: () => THREE.Object3D }[] = [];
     if (T)
       for (let y = cy - W; y <= cy + W; y++)
         for (let x = cx - W; x <= cx + W; x++) {
           const i = (((y % N) + N) % N) * N + (((x % N) + N) % N);
-          const part = T.part(i), rot = T.rot(i);
+          const part = T.part(i),
+            rot = T.rot(i);
           if (!part) continue;
           const has = T.hasModel(part);
           wants.push({
-            x, y, sig: `${part}/${rot}/${has ? 1 : 0}`,
+            x,
+            y,
+            sig: `${part}/${rot}/${has ? 1 : 0}`,
             make: () => {
               const outer = new THREE.Group();
               const m = has ? T.model(part) : null;
@@ -170,7 +180,16 @@ export class WorldScene {
           const v = Math.round(this.seaShade((((y % N) + N) % N) * N + (((x % N) + N) % N)) * 3);
           if (!v) continue;
           let mat = this.shadeMats.get(v);
-          if (!mat) this.shadeMats.set(v, (mat = new THREE.MeshBasicMaterial({ color: 0x00000c, transparent: true, opacity: 0.22 * v, depthWrite: false })));
+          if (!mat)
+            this.shadeMats.set(
+              v,
+              (mat = new THREE.MeshBasicMaterial({
+                color: 0x00000c,
+                transparent: true,
+                opacity: 0.22 * v,
+                depthWrite: false,
+              })),
+            );
           const m = new THREE.Mesh(this.shadeGeo, mat);
           m.position.set((x + 0.5) * CELL, -100 * WORLD_SCALE + 10, (y + 0.5) * CELL);
           this.sea.add(m);

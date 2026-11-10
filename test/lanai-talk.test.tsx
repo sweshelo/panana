@@ -27,15 +27,35 @@ function talkTable(rows: [text: string, speaker: number][]): Uint8Array {
   const name = put(ascii('d01_msg'));
   const fMessage = put(ascii('message'));
   const fVoice = put(ascii('voice'));
-  const strings = rows.map(([text]) => [put(encodeLanaiMessage(parseLanaiText(text))), put([0xc0, 0xde, ...ascii('yomi')])] as const);
+  const strings = rows.map(
+    ([text]) => [put(encodeLanaiMessage(parseLanaiText(text))), put([0xc0, 0xde, ...ascii('yomi')])] as const,
+  );
   while (pool.length % 16) pool.push(0);
   const data = 0x40 + pool.length;
   const ids = align(data + rows.length * 12, 16);
   const names = align(ids + rows.length * 4, 16);
   const reloc = align(names + 16, 16);
-  const relocs = [...rows.flatMap((_, r) => [data + r * 12, data + r * 12 + 4]), names, names + 8].sort((a, b) => a - b);
+  const relocs = [...rows.flatMap((_, r) => [data + r * 12, data + r * 12 + 4]), names, names + 8].sort(
+    (a, b) => a - b,
+  );
   const b = new Uint8Array(reloc + relocs.length * 4);
-  [rows.length, 12, 0x40, pool.length, data, rows.length * 12, ids, rows.length * 4, names, 16, reloc, relocs.length, 0, name - 0x40, 7].forEach((v, i) => w32(b, i * 4, v));
+  [
+    rows.length,
+    12,
+    0x40,
+    pool.length,
+    data,
+    rows.length * 12,
+    ids,
+    rows.length * 4,
+    names,
+    16,
+    reloc,
+    relocs.length,
+    0,
+    name - 0x40,
+    7,
+  ].forEach((v, i) => w32(b, i * 4, v));
   b.set(pool, 0x40);
   rows.forEach(([, speaker], r) => {
     w32(b, data + r * 12, strings[r]![0]);
@@ -69,7 +89,12 @@ describe('talks by line', () => {
     const { ref, session } = setup([['ナレーション', 0], ...TONES, ['ひとり', 3], ['村人', 0x0a]]);
     expect(isTalkTable(ref)).toBe(true);
     const gs = talkGroups(ref);
-    expect(gs.map((g) => [g.kind, g.rows.length])).toEqual([['none', 1], ['set', 8], ['single', 1], ['npc', 1]]);
+    expect(gs.map((g) => [g.kind, g.rows.length])).toEqual([
+      ['none', 1],
+      ['set', 8],
+      ['single', 1],
+      ['npc', 1],
+    ]);
     expect(talkPlain(session, gs[1]!)[7]).toBe('こんにちは8またね');
     expect(marksDiffer(session, gs[1]!)).toBe(false);
     expect(toneLabel(1)).toBe('口調 1 (主人公専用)');
@@ -110,19 +135,27 @@ describe('talks by line', () => {
 describe.skipIf(!hasLanai)('RPG FREE! talks', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump: Dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump: Dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump, { fresh: true });
   });
 
-  test('the sets of 8 tones: 727 in the contents\' talk tables (naauao lanai/messages.md), 73 in MessageNagomiFriend', async () => {
-    const sets = (ts: LanaiTableRef[]): number => ts.reduce((n, t) => n + talkGroups(t).filter((g) => g.kind === 'set').length, 0);
+  test("the sets of 8 tones: 727 in the contents' talk tables (naauao lanai/messages.md), 73 in MessageNagomiFriend", async () => {
+    const sets = (ts: LanaiTableRef[]): number =>
+      ts.reduce((n, t) => n + talkGroups(t).filter((g) => g.kind === 'set').length, 0);
     const contents: LanaiTableRef[] = [];
-    for (const a of new Set(lanaiContents(session).map((c) => c.archive))) contents.push(...(await session.tablesIn(a)).filter(isTalkTable));
+    for (const a of new Set(lanaiContents(session).map((c) => c.archive)))
+      contents.push(...(await session.tablesIn(a)).filter(isTalkTable));
     const others = session.tables.filter(isTalkTable);
     expect(contents.length).toBeGreaterThan(100);
     expect(sets(contents)).toBe(727);
     // the master's and the language archives' talk tables: only the two MessageNagomiFriend of FE74000A have sets
-    expect(others.filter((t) => sets([t])).map((t) => `${t.archive}/${t.table.name}: ${sets([t])}`)).toEqual(['FE74000A/MessageNagomiFriend: 50', 'FE74000A/MessageNagomiFriend: 23']);
+    expect(others.filter((t) => sets([t])).map((t) => `${t.archive}/${t.table.name}: ${sets([t])}`)).toEqual([
+      'FE74000A/MessageNagomiFriend: 50',
+      'FE74000A/MessageNagomiFriend: 23',
+    ]);
   });
 
   test('a talk of a content is written, exported and put back', async () => {
