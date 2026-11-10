@@ -226,7 +226,7 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
       }
       placeholder={info.world ? (
         <div style={{ padding: 16 }}>
-          <p className="book-desc">ワールドマップ (W01) の区画は別の形 (naauao lanai/map.md §13) なので、まだ表示・編集できません。</p>
+          <p className="book-desc">ワールドマップの区画は別の形なので、ワールドマップのページで編集します。 <a href={`#/world/${content.index}.${info.name}`}>{`${info.name} をワールドマップのページで開く`}</a></p>
           <Facts maps={maps} info={info} view={null} />
           <Stages content={content} />
         </div>

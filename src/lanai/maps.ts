@@ -89,6 +89,8 @@ export interface LanaiMapInfo {
   name: string;
   /** Section hashes by section number (0 = the map hash; 7 has no data = 0). */
   sections: number[];
+  /** The row's ten slots as written (+0x00〜+0x24): the world maps use them by slot, slot 9 being the terrain (worldmap.ts). */
+  slots: number[];
   /** +0x28: row ID of MapData (0 / 0x80000000 = the group's). */
   mapDataId: number;
   /** +0x2C: MapGroup row of the content (named `dungeon` as RPG2's map info). */
@@ -96,7 +98,7 @@ export interface LanaiMapInfo {
   /** +0x30: how the enemies come (3 / 4 / 5, 0 = none; 推定). */
   encounterLevel: number;
   floor: number;
-  /** The world map (W01): its sections have another shape, it is shown read-only. */
+  /** A world map (W01 / W02): its slots have another shape and are edited on the world page (worldmap.ts). */
   world: boolean;
 }
 
@@ -229,6 +231,7 @@ export class LanaiMaps {
         hash: slots[0]!,
         name,
         sections: LANAI_SECTION_SLOT.map((s) => (s < 0 ? 0 : slots[s]!)),
+        slots,
         mapDataId: u32(t, i + 0x28),
         dungeon: u32(t, i + 0x2c),
         encounterLevel: s32(t, i + 0x30),

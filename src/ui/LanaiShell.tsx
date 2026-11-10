@@ -13,6 +13,7 @@ import { LanaiSession } from '../lanai/session';
 import { LanaiShopPage } from '../lanai/ShopPage';
 import { LanaiStagePage } from '../lanai/StagePage';
 import { LanaiTalkPage } from '../lanai/TalkPage';
+import { LanaiWorldPage } from '../lanai/WorldPage';
 import { openUpdate, withUpdate, type BaseMod } from '../rom/dump';
 import { lanaiRomfsProfile } from '../romfs/lanai';
 import type { RomfsProfile } from '../romfs/profile';
@@ -20,9 +21,9 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
-export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
+export const LANAI_PAGES = [['stages', 'ステージ'], ['maps', 'マップ'], ['world', 'ワールド'], ['talks', 'セリフ'], ['messages', 'メッセージ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['codes', 'コード・配信'], ['romfs', 'RomFS']] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
-const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', groups: '群れ', items: 'アイテム', shops: 'ショップ', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
+const TITLES: Record<LanaiPage, string> = { stages: 'ステージ', maps: 'マップ', world: 'ワールドマップ', talks: 'セリフ', messages: 'メッセージ', monsters: 'モンスター', groups: '群れ', items: 'アイテム', shops: 'ショップ', codes: 'コード入力・チェックイン', romfs: 'RomFS' };
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -71,6 +72,7 @@ export function LanaiShell({ session, onSession, onBaseMod }: {
       render={(id, { arg: a }) => (
         id === 'stages' ? <LanaiStagePage session={session} arg={a} />
           : id === 'maps' ? <LanaiMapPage session={session} arg={a} />
+          : id === 'world' ? <LanaiWorldPage session={session} arg={a} />
           : id === 'talks' ? <LanaiTalkPage session={session} arg={a} />
           : id === 'messages' ? <LanaiMessagePage session={session} arg={a} />
           : id === 'monsters' ? <LanaiMonsterPage session={session} arg={a} />
