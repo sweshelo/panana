@@ -5,6 +5,14 @@ import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection 
 import { autoTiles, cellKey, partOf, roomGroups, type AutoCell, type AutoProfile } from './autotile';
 import { roomCenters, roomVariantLetters } from './autotile-variants';
 import type { Tile } from '../game/sections';
+import { placeRec, recPositions, snapPoint, snapsIn, snapValue, type SnapGuide, type SnapResult } from './snap';
+
+/** What the views tell the controller with a pointer move: Alt (snapping off while held) and the alignment reach. */
+export interface PointerInfo {
+  altKey?: boolean;
+  /** How near (in cells) another record's x / y must be to align with it (the 2D view: a few pixels). */
+  tol?: number;
+}
 
 interface AutoStroke {
   doc: MapDoc;
@@ -26,7 +34,17 @@ export class Controller {
   hover: [number, number] | null = null;
   private drag:
     | null
-    | { kind: 'rec'; section: number; index: number; dx: number; dy: number; moved: boolean }
+    | {
+        kind: 'rec';
+        section: number;
+        index: number;
+        dx: number;
+        dy: number;
+        moved: boolean;
+        /** Where the pointer went down: a click (no drag past a few pixels) leaves the record where it is. */
+        x0: number;
+        y0: number;
+      }
     | { kind: 'paint'; last: string; auto?: AutoStroke }
     | { kind: 'erase'; last: string }
     | { kind: 'rect'; x0: number; y0: number }
@@ -35,6 +53,16 @@ export class Controller {
   /** Section 9 starts hidden (RPG2: unknown points; RPG3: plants and fishing spots, many per map). */
   layers: Layers;
   onHover: () => void = () => {};
+  /** The alignment guides of the record being moved (or of the place tool's point), for the views to draw. */
+  snapGuides: SnapGuide[] = [];
+  /** Where the place tool would put a record (snapped), while hovering with it. */
+  placePoint: [number, number] | null = null;
+  /** A record is being dragged (the views show the snap grid). */
+  get dragging(): boolean {
+    return this.drag?.kind === 'rec' && this.drag.moved;
+  }
+  private tol = 0.15;
+  private free = false;
 
   constructor(readonly st: MapEditState) {
     this.layers = { tiles: true, sections: Object.fromEntries(st.pointSections.map((k) => [k, k !== 9])), room: true };
@@ -91,7 +119,7 @@ export class Controller {
           const r = doc.recs[hit.section]![hit.index]!;
           const [px, py] = recCellPos(r, st.layouts[hit.section]!);
           st.select({ type: 'rec', ...hit });
-          this.drag = { kind: 'rec', ...hit, dx: px - cx, dy: py - cy, moved: false };
+          this.drag = { kind: 'rec', ...hit, dx: px - cx, dy: py - cy, moved: false, x0: cx, y0: cy };
           return;
         }
         if (this.layers.tiles && tileAt(doc, x, y)) {
@@ -140,8 +168,15 @@ export class Controller {
         const stamp = st.stamp;
         if (!stamp || !inGrid(x, y)) return;
         let placed: [number, number] | null = null;
+        const at = this.snapAt(cx, cy);
         try {
-          st.edit((d) => (placed = st.placeStamp(d, stamp, cx, cy)));
+          st.edit((d) => {
+            const p = st.placeStamp(d, stamp, cx, cy);
+            placed = p;
+            const L = st.layouts[p[0]]!;
+            // fractions of a cell: the snapped point (cell units keep the cell clicked)
+            if (snapsIn(L)) placeRec(d.recs[p[0]]![p[1]]!, L, at.x, at.y);
+          });
         } catch (err) {
           st.error = (err as Error).message;
           st.emit('tool');
@@ -161,24 +196,57 @@ export class Controller {
     }
   }
 
-  move(cx: number, cy: number): void {
+  /**
+   * Snap a point for a record: the grid of the snap settings and the other records of the visible layers (Alt held:
+   * neither). `except`: the record being moved.
+   */
+  snapAt(cx: number, cy: number, except?: { section: number; index: number }): SnapResult {
+    const st = this.st;
+    const doc = st.current;
+    if (this.free || !doc) return { x: snapValue(cx, 0), y: snapValue(cy, 0), guides: [] };
+    const sections = st.pointSections.filter((k) => this.layers.sections[k]);
+    const others = st.snap.align ? recPositions(doc.recs, st.layouts, sections, except) : [];
+    return snapPoint(cx, cy, st.snap, others, this.tol);
+  }
+
+  move(cx: number, cy: number, info: PointerInfo = {}): void {
+    this.free = !!info.altKey;
+    if (info.tol !== undefined) this.tol = info.tol;
     const x = Math.floor(cx);
     const y = Math.floor(cy);
     const prev = this.hover;
     this.hover = [x, y];
-    if (!prev || prev[0] !== x || prev[1] !== y) this.onHover();
     const st = this.st;
     const d = this.drag;
+    if (st.tool === 'place' && !d && st.stamp) {
+      const at = this.snapAt(cx, cy);
+      const was = this.placePoint;
+      this.placePoint = [at.x, at.y];
+      this.snapGuides = at.guides;
+      if (!was || was[0] !== at.x || was[1] !== at.y || !prev || prev[0] !== x || prev[1] !== y) this.onHover();
+    } else if (this.placePoint) {
+      this.placePoint = null;
+      this.snapGuides = [];
+      this.onHover();
+    } else if (!prev || prev[0] !== x || prev[1] !== y) this.onHover();
     if (!d) return;
     const key = `${x},${y}`;
     switch (d.kind) {
       case 'rec': {
         const L = st.layouts[d.section]!;
         if (!d.moved) {
+          // a click that wobbles a pixel or two does not move (and so snap) the record
+          if (Math.hypot(cx - d.x0, cy - d.y0) < this.tol * 0.4) return;
           st.checkpoint();
           d.moved = true;
         }
-        st.touch((doc) => setRecCellPos(doc.recs[d.section]![d.index]!, L, cx + d.dx, cy + d.dy));
+        if (!snapsIn(L)) {
+          st.touch((doc) => setRecCellPos(doc.recs[d.section]![d.index]!, L, cx + d.dx, cy + d.dy));
+          return;
+        }
+        const at = this.snapAt(cx + d.dx, cy + d.dy, d);
+        this.snapGuides = at.guides;
+        st.touch((doc) => placeRec(doc.recs[d.section]![d.index]!, L, at.x, at.y));
         return;
       }
       case 'paint':
@@ -278,11 +346,16 @@ export class Controller {
   }
 
   up(): void {
+    const had = this.snapGuides.length > 0 || this.drag?.kind === 'rec';
     this.drag = null;
+    this.snapGuides = [];
+    if (had) this.onHover();
   }
 
   leave(): void {
     this.hover = null;
+    this.placePoint = null;
+    if (!this.drag) this.snapGuides = [];
     this.onHover();
   }
 
@@ -364,7 +437,9 @@ export class Controller {
         const L = st.layouts[s.section]!;
         const copy = st.duplicateRecord(doc, s.section, r);
         const [px, py] = recCellPos(r, L);
-        setRecCellPos(copy, L, px + (L.unit === 'cell' ? 1 : 0.4), py);
+        // one cell to the right: the copy stays on every grid the original is on
+        if (snapsIn(L)) placeRec(copy, L, px + 1, py);
+        else setRecCellPos(copy, L, px + 1, py);
         list.push(copy);
         idx = list.length - 1;
       });
@@ -423,8 +498,24 @@ export class Controller {
     const st = this.st;
     const s = st.selection;
     if (s.type === 'rec') {
-      // one unit of the record (a cell, or 1/5 cell for fine coordinates; 50 for world coordinates)
-      const step = st.layouts[s.section]?.unit === 'world' ? WORLD_SNAP : 1;
+      const L = st.layouts[s.section]!;
+      if (snapsIn(L)) {
+        // one step of the snap grid (no grid: 1/50 cell), landing on the grid
+        const step = st.snap.step || 0.02;
+        st.edit((doc) => {
+          const r = doc.recs[s.section]![s.index]!;
+          const [px, py] = recCellPos(r, L);
+          placeRec(
+            r,
+            L,
+            dx ? snapValue(px + dx * step, st.snap.step) : px,
+            dy ? snapValue(py + dy * step, st.snap.step) : py,
+          );
+        });
+        return;
+      }
+      // one unit of the record (a cell; 50 for world coordinates)
+      const step = L.unit === 'world' ? WORLD_SNAP : 1;
       st.edit((doc) => {
         const r = doc.recs[s.section]![s.index]!;
         r.x += dx * step;

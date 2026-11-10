@@ -13,6 +13,24 @@ import {
   type Tile,
 } from '../game/sections';
 import { autoTiles, cellKey, type AutoProfile } from './autotile';
+import { DEFAULT_SNAP, SNAP_STEPS, type SnapSettings } from './snap';
+
+const SNAP_KEY = 'panana.mapSnap';
+
+/** The snap settings kept between visits (per browser; defaults when storage cannot be read). */
+function loadSnap(): SnapSettings {
+  try {
+    const v = JSON.parse(globalThis.localStorage?.getItem(SNAP_KEY) ?? 'null') as Partial<SnapSettings> | null;
+    if (!v) return { ...DEFAULT_SNAP };
+    return {
+      step: SNAP_STEPS.includes(v.step as never) ? v.step! : DEFAULT_SNAP.step,
+      align: typeof v.align === 'boolean' ? v.align : DEFAULT_SNAP.align,
+      showGrid: typeof v.showGrid === 'boolean' ? v.showGrid : DEFAULT_SNAP.showGrid,
+    };
+  } catch {
+    return { ...DEFAULT_SNAP };
+  }
+}
 
 export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
 
@@ -85,6 +103,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
   stamp: S | null = null;
+  /** How moved and placed records snap (the grid step, alignment with the other records). */
+  snap: SnapSettings = loadSnap();
   /** The value the section 6 tool ('room') gives the cells it adds (0 = no enemies in RPG2; RPG FREE!: a MonsterGroup row ID). */
   cell6Value = 0;
   /** Last error of an edit (shown in the status bar). */
@@ -246,6 +266,15 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   select(s: Selection): void {
     this.selection = s;
     this.emit('selection');
+  }
+  setSnap(p: Partial<SnapSettings>): void {
+    this.snap = { ...this.snap, ...p };
+    try {
+      globalThis.localStorage?.setItem(SNAP_KEY, JSON.stringify(this.snap));
+    } catch {
+      /* storage blocked: the settings last for this page only */
+    }
+    this.emit('tool');
   }
 }
 

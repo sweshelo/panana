@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEditorState } from '../ui/useEditorState';
 import type { Issue, MapEditState, Tool } from './model';
+import { SNAP_STEP_LABEL, SNAP_STEPS } from './snap';
 
 export const TOOLS: [Tool, string, string][] = [
   ['select', '選択・移動', 'V'],
@@ -92,6 +93,7 @@ export function ToolboxLayout<T extends string>({
   onDelete,
   onDuplicate,
   canEditPart,
+  head,
   children,
 }: {
   /** The "チップ" mode is shown (else "パーツ"). */
@@ -108,6 +110,8 @@ export function ToolboxLayout<T extends string>({
   onDuplicate?: () => void;
   /** A part is selected (duplicate / delete can be used). */
   canEditPart?: boolean;
+  /** More controls at the bottom of the sticky head (the parts' snapping). */
+  head?: ReactNode;
   children: ReactNode;
 }): ReactNode {
   return (
@@ -179,8 +183,52 @@ export function ToolboxLayout<T extends string>({
             </button>
           )}
         </div>
+        {head}
       </div>
       {children}
+    </div>
+  );
+}
+
+const SNAP_SHORT: Record<number, string> = { 1: '1', 0.5: '1/2', 0.2: '1/5', 0.1: '1/10', 0: '自由' };
+
+/**
+ * How parts snap when moved or placed: the grid step (a segmented control, like the grid menus of map makers), the
+ * alignment with the other parts, and the grid shown while dragging. Alt held while dragging snaps to nothing.
+ */
+export function SnapBar({ st }: { st: MapEditState }): ReactNode {
+  useEditorState(st);
+  const sn = st.snap;
+  return (
+    <div className="snap-bar" role="group" aria-label="パーツのスナップ">
+      <div className="snap-steps" role="radiogroup" aria-label="スナップの間隔 (マス)">
+        <span className="small muted">間隔</span>
+        {SNAP_STEPS.map((v) => (
+          <button
+            key={v}
+            role="radio"
+            aria-checked={sn.step === v}
+            className={sn.step === v ? 'active' : ''}
+            title={SNAP_STEP_LABEL[v]}
+            onClick={() => st.setSnap({ step: v })}
+          >
+            {SNAP_SHORT[v]}
+          </button>
+        ))}
+      </div>
+      <div className="snap-options small">
+        <label title="ほかのパーツと x / y が近いとき、そこに揃えてガイドの線を出します">
+          <input type="checkbox" checked={sn.align} onChange={(e) => st.setSnap({ align: e.target.checked })} />
+          ほかのパーツに揃える
+        </label>
+        <label title="動かしている間、スナップの目盛りを 2D に出します">
+          <input type="checkbox" checked={sn.showGrid} onChange={(e) => st.setSnap({ showGrid: e.target.checked })} />
+          目盛りを表示
+        </label>
+      </div>
+      <p className="small muted snap-hint">
+        Alt を押しながら動かすとスナップしません。矢印キーで 1 目盛りずつ動きます。
+      </p>
     </div>
   );
 }
@@ -222,6 +270,7 @@ export function MapToolbox({
       onDelete={onDelete}
       onDuplicate={onDuplicate}
       canEditPart={st.selection.type === 'rec'}
+      head={isTiles ? undefined : <SnapBar st={st} />}
     >
       {isTiles ? tiles : parts}
     </ToolboxLayout>

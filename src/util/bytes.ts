@@ -16,6 +16,10 @@ export const u32be = (b: Uint8Array, o: number): number =>
   ((b[o]! << 24) | (b[o + 1]! << 16) | (b[o + 2]! << 8) | b[o + 3]!) >>> 0;
 export const u64be = (b: Uint8Array, o: number): number => u32be(b, o) * 0x100000000 + u32be(b, o + 4);
 export const f32 = (b: Uint8Array, o: number): number => view(b).getFloat32(o, true);
+/** Write a little-endian f32 (-0 as 0). */
+export function wf32(b: Uint8Array, o: number, v: number): void {
+  view(b).setFloat32(o, v || 0, true);
+}
 
 export function w16(b: Uint8Array, o: number, v: number): void {
   b[o] = v & 0xff;

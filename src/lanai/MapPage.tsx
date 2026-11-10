@@ -1,4 +1,5 @@
 import { RecordPartPanel } from '../editor/recordparts';
+import { RecPositionFields } from '../editor/recposition';
 import { MapSettings } from '../editor/partpalette';
 import { InfoTip } from '../ui/InfoTip';
 // The maps of 電波人間のRPG FREE! (#/maps/<content>.<name>; naauao lanai/map.md), the same page as RPG3's map page
@@ -27,7 +28,7 @@ import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
 import { MapToolbox, TOOLS } from '../editor/tools';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
-import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, type Rec } from '../game/sections';
+import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';
 import { NumberInput, useSticky } from '../ui/book';
 import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
@@ -821,8 +822,6 @@ function RecFields({
   index: number;
 }): ReactNode {
   const L = LANAI_LAYOUTS[section]!;
-  const [cx, cy] = recCellPos(rec, L);
-  const max = L.unit === 'cell' ? 29 : 299;
   const facing = LANAI_FACING_OFFSET[section];
   const ev = lanaiRecEventRow(section, rec.raw);
   const events = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
@@ -831,35 +830,7 @@ function RecFields({
       <h3>{`${L.label} #${index}`}</h3>
       <p className="muted small">{lanaiRecLabel(section, rec.raw)}</p>
       <ModelLine view={view} look={view.look(section, index)} />
-      <div className="row">
-        <label className="field">
-          <span>{`x (${L.unit === 'cell' ? 'マス' : '1/5 マス'})`}</span>
-          <NumberInput
-            value={rec.x}
-            min={0}
-            max={max}
-            onCommit={(v) =>
-              st.edit(() => {
-                rec.x = v;
-              })
-            }
-          />
-        </label>
-        <label className="field">
-          <span>y</span>
-          <NumberInput
-            value={rec.y}
-            min={0}
-            max={max}
-            onCommit={(v) =>
-              st.edit(() => {
-                rec.y = v;
-              })
-            }
-          />
-        </label>
-      </div>
-      <p className="muted small">{`セル (${cx.toFixed(2)}, ${cy.toFixed(2)})`}</p>
+      <RecPositionFields st={st} rec={rec} L={L} />
       {section === 3 && <p className="small">{`地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}`}</p>}
       {facing !== undefined && st.canRotate(section) && (
         <label className="field">

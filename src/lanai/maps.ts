@@ -30,13 +30,26 @@ export const LANAI_MAP_NAME_MAX = 11;
 /** Slot of the map table row that holds section k (section k = slot k; section 7 has no data, 8 / 9 moved up). */
 export const LANAI_SECTION_SLOT = [0, 1, 2, 3, 4, 5, 6, -1, 7, 8] as const;
 
-/** Record layouts of the sections (§3): oahu's, with the treasure and character positions in 100 units. */
+/**
+ * Record layouts of the sections (§3): oahu's, with the treasure and character positions in 100 units. Every offset
+ * is added × 100 (checked in the Update's code.bin: sections 2 / 4 / 5 / 8 / 3).
+ */
 export const LANAI_LAYOUTS: Record<number, RecordLayout> = {
   1: { size: 16, xo: 0, yo: 2, unit: 'cell', label: '床のギミック (区画 1)' },
   2: { size: 20, xo: 4, yo: 6, unit: 'fine', fxo: 8, fyo: 0x0c, label: '置物 (区画 2)' },
   3: { size: 24, xo: 8, yo: 0x0a, unit: 'cell', fxo: 0x0c, fyo: 0x10, label: '出入口 (区画 3)' },
   4: { size: 24, xo: 8, yo: 0x0a, unit: 'fine', fxo: 0x0c, fyo: 0x10, label: '宝箱 (区画 4)' },
-  5: { size: 32, xo: 8, yo: 0x0a, unit: 'fine', fxo: 0x0c, fyo: 0x10, label: 'キャラ・オブジェクト (区画 5)' },
+  // characters: world = 100 + v × 100 + d × 100 (FUN_0021c844 of the Update's code.bin; the others start at 50)
+  5: {
+    size: 32,
+    xo: 8,
+    yo: 0x0a,
+    unit: 'fine',
+    fxo: 0x0c,
+    fyo: 0x10,
+    base: 100,
+    label: 'キャラ・オブジェクト (区画 5)',
+  },
   8: { size: 32, xo: 8, yo: 0x0a, unit: 'fine', fxo: 0x0c, fyo: 0x10, label: 'イベントの範囲 (区画 8)' },
   9: { size: 24, xo: 0x0c, yo: 0x0e, unit: 'fine', label: '地点 (区画 9)' },
 };

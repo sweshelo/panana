@@ -83,6 +83,8 @@ export interface RecordLayout {
   /** f32 offsets added to x / y, in world units / 100 (RPG3). */
   fxo?: number;
   fyo?: number;
+  /** Fine units: the world position of v = 0 (default 50; RPG FREE!'s characters are 100 + v × 100). */
+  base?: number;
 }
 export const LAYOUTS: Record<number, RecordLayout> = {
   1: { size: 8, xo: 0, yo: 2, unit: 'cell', label: '床のギミック (区画 1)' },
@@ -316,7 +318,8 @@ export function recCellPos(r: Rec, L: RecordLayout): [number, number] {
   if (L.unit === 'cell') return [r.x + 0.5 + ox, r.y + 0.5 + oy];
   if (L.unit === 'world') return [r.x / CELL + ox, r.y / CELL + oy];
   if (L.unit === 'quarter') return [quarterToWorld(r.x) / CELL + ox, quarterToWorld(r.y) / CELL + oy];
-  return [fineToWorld(r.x) / CELL + ox, fineToWorld(r.y) / CELL + oy];
+  const b = (L.base ?? 50) - 50;
+  return [(fineToWorld(r.x) + b) / CELL + ox, (fineToWorld(r.y) + b) / CELL + oy];
 }
 
 /** Grid the world-unit records snap to when moved (doors on the walls sit on multiples of 50 in the game). */
@@ -339,8 +342,9 @@ export function setRecCellPos(r: Rec, L: RecordLayout, cx: number, cy: number): 
     r.x = Math.max(0, Math.min(299, worldToQuarter(cx * CELL)));
     r.y = Math.max(0, Math.min(299, worldToQuarter(cy * CELL)));
   } else {
-    r.x = Math.max(0, Math.min(299, worldToFine(cx * CELL)));
-    r.y = Math.max(0, Math.min(299, worldToFine(cy * CELL)));
+    const b = (L.base ?? 50) - 50;
+    r.x = Math.max(0, Math.min(299, worldToFine(cx * CELL - b)));
+    r.y = Math.max(0, Math.min(299, worldToFine(cy * CELL - b)));
   }
 }
 
