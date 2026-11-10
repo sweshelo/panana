@@ -6,6 +6,7 @@ import { hex8 } from '../util/bytes';
 import type { MessageSource } from '../ui/message';
 import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiText } from './message';
 import { LanaiMessage } from './MessageView';
+import { LanaiMessageInsert } from './MessageInsert';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -37,6 +38,7 @@ export function lanaiMessageSource(session: LanaiSession, t: LanaiTable, offset:
       encodeLanaiMessage(tokens); // throws on an argument that cannot be written
       return <LanaiMessage session={session} tokens={tokens} />;
     },
+    tools: insert => <LanaiMessageInsert session={session} onInsert={insert} />,
     missing: () => '(なし)',
   };
   m.set(offset, s);

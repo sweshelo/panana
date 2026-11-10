@@ -82,7 +82,7 @@ export function LanaiMessagePage({ session, arg }: { session: LanaiSession; arg:
     const out: Entry[] = [];
     for (let r = 0; r < ref.table.rows; r++) if (cols.some((c) => ref.table.stringOffset(r, c.offset) >= 0)) out.push({ ref, row: r, key: `${tableKey(ref)}:${r}` });
     return out;
-  }), [tables]);
+  }), [tables, revision]);
   const byKey = useMemo(() => new Map(all.map((e) => [e.key, e])), [all]);
   const m = /^([0-9A-F]{8}:[0-9A-F]{8})(?::(\d+))?$/i.exec(arg ?? '');
   const wanted = m ? `${m[1]!.toUpperCase()}:${m[2] ?? all.find((e) => tableKey(e.ref) === m[1]!.toUpperCase())?.row ?? 0}` : undefined;

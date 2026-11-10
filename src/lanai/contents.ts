@@ -5,6 +5,7 @@ import { entryBlob, unpackEntry, type Archive } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { ascii, hex8, u32 } from '../util/bytes';
 import type { LanaiSession, LanaiTableRef } from './session';
+import type { LanaiCondition } from './conditions';
 
 /** A stage: a row of MapStageIntegration (MapStage +0x00..+0x33, then the content, its archive, its TableResource). */
 export interface LanaiStage {
@@ -17,8 +18,10 @@ export interface LanaiStage {
   name: string;
   mission: string;
   note: string;
-  /** +0x24 (3 = story, 0x16 = events …, 推定). */
-  category: number;
+  /** +0x1C / +0x20 / +0x24: display/unlock predicate. */
+  visible: LanaiCondition;
+  /** +0x28 / +0x2C / +0x30: hide predicate, which takes precedence. */
+  hidden: LanaiCondition;
   /** +0x49 (MapStage +0x3D): stamina to enter the stage. */
   stamina: number;
 }
@@ -31,8 +34,6 @@ export interface LanaiContent {
   tableResource: number;
   stages: LanaiStage[];
 }
-
-export const CATEGORY_NOTE: Record<number, string> = { 3: '本編 (推定)', 0x16: 'イベント系 (推定)' };
 
 export function lanaiContents(s: LanaiSession): LanaiContent[] {
   const contents = s.need('Contents');
@@ -56,7 +57,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
       name: m < 0 ? '' : s.plain(msg, m, 'stage_name').trim(),
       mission: m < 0 ? '' : s.plain(msg, m, 'stage_mission').trim(),
       note: m < 0 ? '' : s.plain(msg, m, 'stage_exp'),
-      category: row[0x24]!,
+      visible: {kind: row[0x24]!, v1: u32(row, 0x1c), v2: u32(row, 0x20)},
+      hidden: {kind: row[0x30]!, v1: u32(row, 0x28), v2: u32(row, 0x2c)},
       stamina: row[0x49]!,
     };
     out[stage.content]?.stages.push(stage);

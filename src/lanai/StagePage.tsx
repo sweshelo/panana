@@ -7,10 +7,14 @@ import { romfsHref } from '../romfs/RomfsPage';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
-import { CATEGORY_NOTE, contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
+import { contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
 import { lanaiMapHref } from './MapPage';
-import { textColumns } from './MessagePage';
+import { messagesHref, textColumns } from './MessagePage';
+import { useLanaiRevision } from './MonsterEditor';
+import { conditionText } from './conditions';
+import { LanaiContentCreator, LanaiStageEditor } from './StageEditor';
+import { ScriptApiBrowser } from './ScriptApiBrowser';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
@@ -21,7 +25,8 @@ type Filter = 'all' | 'stages' | 'none';
 const staminaText = (c: LanaiContent): string => [...new Set(c.stages.map((s) => s.stamina))].join(' / ');
 
 export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const revision = useLanaiRevision(session);
+  const contents = useMemo(() => lanaiContents(session), [session, revision]);
   const index = useSticky<number>(arg === undefined || !/^\d+$/.test(arg) ? undefined : Number(arg), (i) => i < contents.length, () => (contents.length > 1 ? 1 : 0));
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -67,6 +72,8 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
 
 function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
   const msg = session.need('MessageMapStage');
+  const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
+  const [creating, setCreating] = useState(false);
   const read = useAsync(() => readContent(session, c), [session, c]);
   return (
     <>
@@ -76,6 +83,9 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
         <a className="mono muted" href={romfsHref(c.archive)} title="RomFS ビューでアーカイブを開く">{c.archive}</a>
         <span className="muted mono" title="Contents +0x04: TableResource のエントリ">{`TableResource ${hex8(c.tableResource)}`}</span>
       </div>
+      <div className="row"><button disabled={c.index === 0 || c.stages.length !== 1 || !session.canExport} onClick={() => setCreating(true)}>＋ コンテンツを複製して追加</button></div>
+      {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
+      {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
       <h3>マップ</h3>
       <ContentMaps session={session} c={c} />
       <h3>ステージ (MapStageIntegration)</h3>
@@ -85,8 +95,8 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
             <tr>
               <th>行</th><th>ステージ名</th><th>ミッション</th>
               <th title="+0x49 (MapStage +0x3D)。クイズの正解と照合して確定">スタミナ</th>
-              <th title="+0x24。3 = 本編、0x16 = イベント系 (推定)">分類</th>
-              <th title="+0x00。0x64 刻み (並び順と推定)">順</th>
+              <th title="+0x1C〜+0x30">解放・非表示条件</th>
+              <th title="+0x00。0x64 刻み (並び順と推定)">順</th><th>編集</th>
             </tr>
           </thead>
           <tbody>
@@ -105,8 +115,9 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
                     {exp && <div className="small romfs-msg"><LanaiMessage session={session} tokens={exp.tokens} /></div>}
                   </td>
                   <td className="num">{s.stamina}</td>
-                  <td className="muted" title={CATEGORY_NOTE[s.category]}>{`0x${s.category.toString(16).toUpperCase()}`}</td>
+                  <td className="small"><div>表示: {conditionText(s.visible)}</div><div>非表示: {conditionText(s.hidden)}</div></td>
                   <td className="num muted">{s.order}</td>
+                  <td><button onClick={() => setEditing(s)}>編集</button>{m >= 0 && <a href={messagesHref(session.refOf(msg)!, m)}>名前・ミッション・説明を編集</a>}</td>
                 </tr>
               );
             })}
@@ -139,6 +150,7 @@ function ContentArchiveView({ session, c, a }: { session: LanaiSession; c: Lanai
           </details>
         </>
       )}
+      <ScriptApiBrowser session={session} imported={a.cro?.info.imports ?? []} />
       <h3>ContentsDef</h3>
       <p className="mono">{a.def.map((v) => `0x${v.toString(16).toUpperCase()}`).join(', ') || <span className="muted">なし</span>}</p>
       <p className="muted small">行 0・1 = コンテンツ番号、行 2 = CRO のエントリのハッシュ、行 3 = 1 (意味は未確認)。4 行目以降は未解析。</p>

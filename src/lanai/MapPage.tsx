@@ -1,3 +1,4 @@
+import { LanaiConditionEditor } from './ConditionEditor';
 import { RecordPartPanel } from '../editor/recordparts';
 import { MapSettings } from '../editor/partpalette';
 import { InfoTip } from '../ui/InfoTip';
@@ -710,9 +711,9 @@ function EventFields({ st, section, index, row }: { st: LanaiEditState; section:
         </div>
       )}
       <p className="small">出る条件 (+0x5F の種類、0 = なし)</p>
-      {u8f(LANAI_EVENT_APPEAR, '種類')}{u32f(0x00, '値 1 (+0x00)')}{u32f(0x04, '値 2 (+0x04)')}
-      <p className="small">消える条件 (+0x60 の種類、0 = なし)</p>
-      {u8f(LANAI_EVENT_DISAPPEAR, '種類')}{u32f(0x08, '値 1 (+0x08)')}{u32f(0x0c, '値 2 (+0x0C)')}
+      <LanaiConditionEditor key={`${info.dungeon}:${row}:appear`} session={st.maps.session} value={{kind: t.u8(row, LANAI_EVENT_APPEAR), v1: t.u32(row, 0), v2: t.u32(row, 4)}} onChange={c => st.setEventField(row, x => { x.setU8(row, LANAI_EVENT_APPEAR, c.kind); x.setU32(row, 0, c.v1); x.setU32(row, 4, c.v2); })} />
+      <p className="small">消える条件 (0 = 消えない)</p>
+      <LanaiConditionEditor key={`${info.dungeon}:${row}:disappear`} session={st.maps.session} value={{kind: t.u8(row, LANAI_EVENT_DISAPPEAR), v1: t.u32(row, 8), v2: t.u32(row, 12)}} onChange={c => st.setEventField(row, x => { x.setU8(row, LANAI_EVENT_DISAPPEAR, c.kind); x.setU32(row, 8, c.v1); x.setU32(row, 12, c.v2); })} />
       {LANAI_EVENT_ACTIONS.map((o, i) => <ActionFields key={o} st={st} row={row} offset={o} index={i} />)}
       {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = 行番号)`)}
       <p className="muted small">

@@ -35,6 +35,8 @@ export interface Dump {
   /** Every file of the RomFS, folders included (when the source knows them; the RomFS viewer). */
   files?(): RomfsListing[];
   readRomfs(name: string): Promise<Uint8Array>;
+  /** Update-only resources omitted from patchList (app/*.crs, .crr/*). */
+  readUpdateRomfs?(name: string): Promise<Uint8Array>;
 }
 
 /** A decrypted CIA or NCCH: its title ID, version, code.bin (decompressed) and RomFS. */
@@ -142,6 +144,7 @@ export function withUpdate(base: Dump, update: UpdateImage): Dump {
     title: base.title,
     titleVersion: base.titleVersion,
     update: { label: update.label, titleVersion: update.titleVersion, patched: update.patched },
+    readUpdateRomfs: update.readRomfs,
     code: update.code,
     names: () => [...new Set([...base.names(), ...patched])],
     // the patched files with the Update's sizes (some are only in the Update)
@@ -250,6 +253,7 @@ export function overlayDump(dump: Dump, mod: BaseMod): Dump {
     title: dump.title,
     titleVersion: dump.titleVersion,
     update: dump.update,
+    readUpdateRomfs: dump.readUpdateRomfs && (async name => (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readUpdateRomfs!(name)),
     code: mod.ips ? applyIps(dump.code, mod.ips) : dump.code,
     names: () => [...new Set([...dump.names(), ...mod.romfs.keys()])],
     files: files && (() => {
@@ -257,6 +261,6 @@ export function overlayDump(dump: Dump, mod: BaseMod): Dump {
       for (const [path, b] of mod.romfs) out.set(path, { path, size: b.length });
       return [...out.values()];
     }),
-    readRomfs: async (name) => mod.romfs.get(name.toUpperCase())?.slice() ?? dump.readRomfs(name),
+    readRomfs: async (name) => (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readRomfs(name),
   };
 }
