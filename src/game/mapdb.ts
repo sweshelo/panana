@@ -16,6 +16,8 @@ export class MapDb {
   private readonly data: Uint8Array;
   /** Replaced entries (hash -> bytes). */
   private readonly changes = new Map<number, Uint8Array>();
+  /** Entries {@link add} added (not in the bytes the database was read from). */
+  private readonly added = new Set<number>();
 
   constructor(bytes: Uint8Array) {
     const n = u32(bytes, 0);
@@ -73,6 +75,26 @@ export class MapDb {
     // After every original block, so the original data keeps its order.
     this.index.push({ hash, offset: this.data.length, size: 0 });
     this.changes.set(hash, bytes);
+    this.added.add(hash);
+  }
+
+  /** Whether {@link add} added the entry. */
+  isAdded(hash: number): boolean {
+    return this.added.has(hash);
+  }
+
+  /** Hashes {@link add} added, in the order they were added. */
+  addedHashes(): number[] {
+    return [...this.added];
+  }
+
+  /** Take out an entry {@link add} added (the original entries stay). */
+  remove(hash: number): void {
+    if (!this.added.has(hash)) throw new Error(`マップ DB の ${hash.toString(16)} は元からある区画なので消せません`);
+    this.added.delete(hash);
+    this.changes.delete(hash);
+    const i = this.index.findIndex((e) => e.hash === hash);
+    if (i >= 0) this.index.splice(i, 1);
   }
 
   /**

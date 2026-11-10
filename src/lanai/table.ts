@@ -493,6 +493,17 @@ export class LanaiTable {
     this.parse();
   }
 
+  /**
+   * A new table with the bytes of `t` as it is now (its edits in), cut to its first `rows` rows: it reads as unedited
+   * (a new MapGroup's EventObject table starts from it).
+   */
+  static copyOf(t: LanaiTable, rows = t.rows): LanaiTable {
+    const c = new LanaiTable(t.data.slice());
+    if (rows < 0 || rows > c.rows) throw new RangeError(`${t.name}: ${rows} 行は写せません (${c.rows} 行)`);
+    if (rows < c.rows) c.rebuild([], c.rowIds.slice(0, c.rowIds.length ? rows : 0), [], c.rows - rows);
+    return new LanaiTable(c.data);
+  }
+
   /** The table laid out again with no change (for checking that the layout is the one the files have). */
   relaidOut(): Uint8Array {
     const copy = new LanaiTable(this.data.slice());

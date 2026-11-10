@@ -51,6 +51,7 @@ import {
 import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT, LANAI_ACTION_TYPES, LANAI_ACTIONS, lanaiActionName, talkMessageOffset } from './actions';
 import { LanaiMapBattlePanel } from './BattleParts';
 import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSelect, TreasureEditor } from './MapParts';
+import { LanaiNamesDialog, LanaiNewGroupDialog, LanaiNewMapDialog } from './MapEditDialogs';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
@@ -124,7 +125,7 @@ function modifiedIds(session: LanaiSession, contents: LanaiContent[]): Set<numbe
   const out = new Set<number>();
   for (const c of contents) {
     const maps = loadedLanaiMaps(session, c.index);
-    for (const m of maps?.maps ?? []) if (maps!.isChanged(m)) out.add(pickId(c.index, m.index));
+    for (const m of maps?.maps ?? []) if (m.added || maps!.isChanged(m)) out.add(pickId(c.index, m.index));
   }
   return out;
 }
@@ -175,7 +176,8 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
   /** A record to select (a link from the shop page). */
   rec?: { section: number; index: number };
 }): ReactNode {
-  const first = useMemo(() => maps.maps.find((m) => !m.world && m.hash === maps.groups[1]?.firstMap) ?? maps.maps.find((m) => !m.world) ?? maps.maps[0]!, [maps]);
+  // not memoized: maps can be added and taken out (mapadd.ts)
+  const first = maps.maps.find((m) => !m.world && m.hash === maps.groups[1]?.firstMap) ?? maps.maps.find((m) => !m.world) ?? maps.maps[0]!;
   const picked = useSticky<string>(name, (n) => !!maps.mapByName(n), () => first.name);
   const info = maps.mapByName(picked)!;
   useMaps(maps);
@@ -214,14 +216,29 @@ function MapDetail({ session, contents, content, maps, name, rec }: {
     if (view && rec && st.current?.hash === info.hash && st.current.recs[rec.section]?.[rec.index]) st.select({ type: 'rec', section: rec.section, index: rec.index });
   }, [view, st, info, rec?.section, rec?.index]);
   const open = view && st.current?.hash === info.hash;
+  const [dialog, setDialog] = useState<'map' | 'group' | 'names' | null>(null);
+  const goto = (n: string): void => {
+    setDialog(null);
+    location.hash = lanaiMapHref(content.index, n);
+  };
   return (
     <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
       header={
         <>
           <Picker session={session} contents={contents} maps={maps} content={content} info={info} />
-          <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
+          <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}${info.added ? '・追加したマップ' : ''}`}</span>
+          <button title="このステージのダンジョンに新しいマップ (階) を足す、またはマップを複製する" onClick={() => setDialog('map')}>＋ マップを追加・複製</button>
+          <button title="このステージに新しいダンジョン (MapGroup) を足す、またはダンジョンをマップごと複製する" onClick={() => setDialog('group')}>＋ ダンジョンを追加・複製</button>
+          <button title="マップのコード、ダンジョンの名前・コードを変える (追加したものは消せる)" onClick={() => setDialog('names')}>名前・コード…</button>
           <MapHeaderControls st={st} view={view} open={!!open} mode={mode} setMode={setMode} showModes={!info.world}
             onRevert={maps.isChanged(info) ? () => st.revert() : undefined} />
+          {dialog === 'map' && <LanaiNewMapDialog maps={maps} current={info} onClose={() => setDialog(null)} onCreated={(m) => goto(m.name)} />}
+          {dialog === 'group' && <LanaiNewGroupDialog maps={maps} current={info} onClose={() => setDialog(null)} onCreated={(m) => goto(m.name)} />}
+          {dialog === 'names' && (
+            <LanaiNamesDialog maps={maps} current={info} onClose={() => setDialog(null)}
+              onRenamed={(n) => { location.hash = lanaiMapHref(content.index, n); }}
+              onRemoved={() => goto((maps.maps.find((m) => !m.world) ?? maps.maps[0]!).name)} />
+          )}
         </>
       }
       placeholder={info.world ? (
