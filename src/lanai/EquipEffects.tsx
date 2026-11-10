@@ -10,6 +10,7 @@ import {
 } from './equipment';
 import { lanaiConditionLabel } from './monsterStats';
 import { LanaiActionPicker } from './pickers';
+import { lanaiActionHref } from './hrefs';
 import type { LanaiSession } from './session';
 
 const hx = (v: number): string => `0x${v.toString(16).toUpperCase().padStart(2, '0')}`;
@@ -75,7 +76,12 @@ export function LanaiEquipEffects({ session, equip, kind, onEdit }: { session: L
               {![2, 3, 4].includes(e.value) && <option value={e.value}>{String(e.value)}</option>}
             </select>
           );
-          if (isAutoEffect(e.kind)) return <button className={changed(o, 2)} onClick={() => setPicking(e.slot)} title="アクションを選び直す">{`アクション ${e.value}`}</button>;
+          if (isAutoEffect(e.kind)) return (
+            <>
+              <button className={changed(o, 2)} onClick={() => setPicking(e.slot)} title="アクションを選び直す">アクションを選ぶ…</button>
+              {e.value > 0 && <a href={lanaiActionHref(e.value)} title="アクションのページで開く">{`#${e.value}`}</a>}
+            </>
+          );
           return <NumberInput value={e.value} min={Math.min(min, e.value)} max={Math.max(max, e.value)} className={`num-input ${changed(o, 2)}`} title={`${min}〜${max}`} onCommit={(v) => set(e, { value: v })} />;
         };
         return (

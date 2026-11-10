@@ -91,16 +91,40 @@ export interface LanaiAction {
   target: number;
   /** The battle text (MessageAction `individual` of +0x0C). */
   message: string;
+  /** The text of the result (MessageAction `individual` of +0x10: "〈name〉に　〈value〉ダメージ与えた" …). */
+  result: string;
 }
 
 export const isTransform = (a: LanaiAction | null): boolean => !!a && (a.system === 29 || a.system === 30);
+
+/**
+ * The MessageAction row of a message ID. The language archive 3E42000A has two MessageAction tables (3531 and 37
+ * rows); an ID not in the first is looked up in the second.
+ */
+export function lanaiActionMessageAt(session: LanaiSession, id: number): { table: LanaiTable; row: number } | null {
+  if (!id || id === 0x80000000) return null;
+  let tables = messageTables.get(session);
+  if (!tables) messageTables.set(session, tables = session.tables.filter((t) => t.table.name === 'MessageAction').map((t) => t.table));
+  for (const table of tables) {
+    const row = table.find(id);
+    if (row > 0) return { table, row };
+  }
+  return null;
+}
+const messageTables = new WeakMap<LanaiSession, LanaiTable[]>();
+
+/** The text (`individual`) of a MessageAction ID, '' when none. */
+export function lanaiActionMessageText(session: LanaiSession, id: number): string {
+  const m = lanaiActionMessageAt(session, id);
+  return m ? session.plain(m.table, m.row, 'individual') : '';
+}
 
 export function lanaiAction(session: LanaiSession, id: number): LanaiAction | null {
   const t = session.need('ActionData');
   const row = t.find(id);
   if (row < 0) return null;
   const head = t.u32(row, 0x14);
-  return { row, id: t.rowId(row), system: (head >>> 4) & 0xff, kind: head & 0xf, target: t.u32(row, 0x00), message: session.insert('MessageAction', t.u32(row, 0x0c), 'individual') ?? '' };
+  return { row, id: t.rowId(row), system: (head >>> 4) & 0xff, kind: head & 0xf, target: t.u32(row, 0x00), message: lanaiActionMessageText(session, t.u32(row, 0x0c)), result: lanaiActionMessageText(session, t.u32(row, 0x10)) };
 }
 
 /** The action IDs an ability row names (its slots). */
