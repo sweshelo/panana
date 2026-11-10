@@ -1,6 +1,7 @@
 // RPG3's world map W01 as the shared world views draw and edit it (editor/worldview.ts): the terrain and the entrances
 // of OahuWorld (worldmap.ts), the encounter ranges (land / sea), the chests, props and event ranges, the dark sea and
 // slot 7, and the models of archive 0E820000 for the 3D preview.
+import { renderPartThumb } from '../editor/thumbs';
 import type * as THREE from 'three';
 import { ModelFactory } from '../cgfx/three';
 import type { WorldOverlay, WorldPaletteRow, WorldPin, WorldPointSet, WorldRangeSet, WorldSource } from '../editor/worldview';
@@ -124,6 +125,16 @@ export class OahuWorldSource implements WorldSource {
     if (this.disposed) return '';
     this.factory = new ModelFactory(set);
     return set.errors.length ? `モデルの一部を読めませんでした: ${set.errors.slice(0, 3).join(' / ')}` : '';
+  }
+  private readonly thumbs = new Map<number, string | null>();
+  partThumb(part: number): string | null {
+    const h = this.world.parts[part]?.model ?? 0;
+    if (!h || !this.factory?.set.models.has(h)) return null;
+    if (!this.thumbs.has(h)) {
+      const m = this.factory.instance(h);
+      this.thumbs.set(h, m ? renderPartThumb(this.factory, m) : null);
+    }
+    return this.thumbs.get(h) ?? null;
   }
   hasPartModel(part: number): boolean {
     const h = this.world.parts[part]?.model;

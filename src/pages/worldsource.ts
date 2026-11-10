@@ -2,6 +2,7 @@
 // (editor/worldview.ts): the terrain (Wxx_ground.bin, edited through the session), the entrances (section 2), the
 // points of section 3, the zones of section 1, and the models of archive D98F0E82 (with the shared textures CC4E7000)
 // for the 3D preview.
+import { renderPartThumb } from '../editor/thumbs';
 import type * as THREE from 'three';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { ModelFactory } from '../cgfx/three';
@@ -25,6 +26,8 @@ export const rgbHex = ([r, g, b]: [number, number, number]): string => `#${((1 <
 interface Snapshot {
   entrances: Uint8Array[];
   ground: Ground | null;
+  /** The world map's EventObject table (the entrances' conditions), when loaded. */
+  events: Uint8Array | null;
 }
 
 export class KaharaWorldSource implements WorldSource {
@@ -124,12 +127,14 @@ export class KaharaWorldSource implements WorldSource {
 
   snapshot(): Snapshot {
     const g = this.ground();
-    return { entrances: this.session.entrancesOf(this.world).map((r) => r.slice()), ground: g && copyGround(g) };
+    const events = this.session.st.events.get(this.world.dungeon);
+    return { entrances: this.session.entrancesOf(this.world).map((r) => r.slice()), ground: g && copyGround(g), events: events ? events.data.slice() : null };
   }
   restore(s: unknown): void {
     const snap = s as Snapshot;
     this.session.setEntrances(this.world, snap.entrances);
     if (snap.ground && this.editable) this.session.setGround(this.world, snap.ground);
+    if (snap.events) this.session.st.events.get(this.world.dungeon)?.restore(snap.events);
     this.changed();
   }
 
@@ -157,6 +162,17 @@ export class KaharaWorldSource implements WorldSource {
   }
   private partHash(part: number): number {
     return this.session.game.worldParts()[part]?.model ?? 0;
+  }
+  private readonly thumbs = new Map<number, string | null>();
+  partThumb(part: number): string | null {
+    const h = this.partHash(part);
+    const f = this.models.get(h);
+    if (!f) return null;
+    if (!this.thumbs.has(h)) {
+      const m = f.instance(h);
+      this.thumbs.set(h, m ? renderPartThumb(f, m) : null);
+    }
+    return this.thumbs.get(h) ?? null;
   }
   hasPartModel(part: number): boolean {
     return this.models.has(this.partHash(part));

@@ -103,3 +103,41 @@ export function describeCondition(c: ConditionType | undefined, type: number, va
       return `FUN_00281E30(${value}) が${c.test === 'set' ? '真' : '偽'}`;
   }
 }
+
+/** The two appearance conditions of a row: +0x4B (placed when it holds) with +0x00, +0x4C (removed when it holds) with +0x04. */
+export const CONDITION_FIELDS = [
+  { field: 0x4b, value: 0x00, label: '出る' },
+  { field: 0x4c, value: 0x04, label: '消える' },
+] as const;
+
+/** What a condition type checks, with "値" for the row's value (the label of a type in a picker). */
+export function conditionTypeLabel(c: ConditionType, dungeonName: (d: number) => string = (d) => `ダンジョン ${d}`): string {
+  const x = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`;
+  const is = c.test === 'set' ? 'が立っている' : 'が立っていない';
+  switch (c.getter) {
+    case 'progress':
+      return `進行 0x8D[${x(c.index!)}] ≥ 値`;
+    case 'rowState':
+      return 'この行の状態 ≥ 値';
+    case 'value91':
+      return `0x91[値] = ${c.eq}`;
+    case 'hereValue':
+      return `このダンジョンの値 [値] = ${c.eq}`;
+    case 'flag92':
+      return `フラグ 0x92[値] ${is}`;
+    case 'hereFlag':
+      return `このダンジョンのフラグ [値] ${is}`;
+    case 'dungeonFlag':
+      return `${dungeonName(c.index!)} のフラグ [値] ${is}`;
+    default:
+      return `FUN_00281E30(値) が${c.test === 'set' ? '真' : '偽'}`;
+  }
+}
+
+/** Groups of condition types in a picker, story progress first. */
+export const CONDITION_GROUPS: { label: string; getters: ConditionType['getter'][] }[] = [
+  { label: 'ストーリーの進行', getters: ['progress'] },
+  { label: '値 (0x91)', getters: ['value91', 'hereValue'] },
+  { label: 'フラグ (0x92)', getters: ['flag92', 'hereFlag', 'dungeonFlag'] },
+  { label: 'そのほか', getters: ['rowState', 'other'] },
+];

@@ -1,9 +1,10 @@
 // Checks before export (docs/map-editor-design.md §7 "検証ルール").
 import type { EventTable } from '../game/events';
 import { GATE_KINDS, KIND_SWITCH } from '../game/eventkinds';
-import { fixGroup, KIND_BOSS, readStages } from '../game/boss';
+import { fixGroup, KIND_BOSS, readStages, stageCommands } from '../game/boss';
+import { ACTOR_HERO, ACTOR_NONE, ACTOR_PARTY, OP } from '../game/cutscene';
 import type { Game } from '../game/game';
-import { AUTOMAP_LIMIT, hasAutomap } from '../game/newmap';
+import { AUTOMAP_LIMIT, automapGroup, automapMaps } from '../game/automap';
 import { EVENT_SECTIONS, LAYOUTS, P3, loadDoc, recEventRow, type MapDoc } from '../game/sections';
 import { ENT, parseEntrances } from '../game/worldmap';
 import { hex8 } from '../util/bytes';
@@ -54,12 +55,12 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
         const row = recEventRow(k, r.raw);
         if ((k === 3 || k === 7) && !row) return;
         if (!events.has(row))
-          out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} がありません (表は ${events.rows} 行)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
+          out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベント #${row} がありません (表は #${events.rows - 1} まで)`, target: { type: 'rec', section: k, index: i }, key: `evrow/${k}/${row}` });
         if (k === 4) chests.set(row, (chests.get(row) ?? 0) + 1);
         if (events.has(row)) {
           const slot = events.slot(row);
           if (row >= events.capacity || slot >= events.capacity)
-            out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベントの行 ${row} (状態の枠 ${slot}) がダンジョンの枠 (${events.capacity}) を超えています。状態が別のダンジョンのものと混ざります`, target: { type: 'rec', section: k, index: i }, key: `evcap/${row}/${slot}` });
+            out.push({ level: 'error', msg: `${LAYOUTS[k]!.label} #${i}: イベント #${row} (状態の枠 ${slot}) がダンジョンの枠 (${events.capacity}) を超えています。状態が別のダンジョンのものと混ざります`, target: { type: 'rec', section: k, index: i }, key: `evcap/${row}/${slot}` });
           slots.set(slot, [...(slots.get(slot) ?? []), row]);
         }
       });
@@ -104,6 +105,16 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
         if (k !== 8) out.push({ level: 'error', msg: `${name} は区画 8 (イベントの範囲) に置いてください`, target, key: `bosssec/${row}` });
         if (row >= 0x2000) out.push({ level: 'error', msg: `${name}: 行番号は 0x2000 未満にしてください`, target, key: `bossrow/${row}` });
         readStages(events.table.row(row)).forEach((s, n) => {
+          if (s.script) {
+            const lines = stageCommands(events, row, n);
+            for (const c of lines) {
+              if (c.op === OP.MSG && (!c.p || game.master.message(c.p) === undefined))
+                out.push({ level: 'warn', msg: `${name} の段階 ${n + 1}: 演出のセリフ ${hex8(c.p)} が見つかりません`, target, key: `scenemsg/${row}/${n}/${c.p}` });
+              if (c.actor !== ACTOR_NONE && c.actor !== ACTOR_HERO && c.actor !== ACTOR_PARTY && !(doc.recs[5] ?? []).some((x) => recEventRow(5, x.raw) === c.actor))
+                out.push({ level: 'warn', msg: `${name} の段階 ${n + 1}: 演出の役者 (イベント #${c.actor}) がこのマップの区画 5 にいません (その命令は何もしません)`, target, key: `sceneactor/${row}/${n}/${c.actor}` });
+            }
+          }
+          if (!s.fix) return; // no battle
           const g = fixGroup(game.master, s.fix);
           if (!g) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: monsterFixGroup の行 ${s.fix} がありません`, target, key: `bossfix/${row}/${n}` });
           else if (!g.slots.length) out.push({ level: 'error', msg: `${name} の段階 ${n + 1}: 敵がいません`, target, key: `bossnone/${row}/${n}` });
@@ -116,10 +127,10 @@ export function validateAll(game: Game, doc: MapDoc, tileset: number, docs: Map<
     for (const [slot, rows] of slots) {
       const distinct = [...new Set(rows)];
       if (distinct.length > 1)
-        out.push({ level: 'warn', msg: `イベントの行 ${distinct.join(', ')} が同じ状態の枠 ${slot} を使っています (開けた・押したなどの状態を共有します)`, key: `slotdup/${slot}/${distinct.join(',')}` });
+        out.push({ level: 'warn', msg: `イベント #${distinct.join(', #')} が同じ状態の枠 ${slot} を使っています (開けた・押したなどの状態を共有します)`, key: `slotdup/${slot}/${distinct.join(',')}` });
     }
     for (const [row, n] of chests)
-      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じイベントの行 ${row} を使っています (中身と「開けた」フラグを共有します)`, key: `chestdup/${row}` });
+      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じイベント #${row} を使っています (中身と「開けた」フラグを共有します)`, key: `chestdup/${row}` });
   }
   const cell = (x: number, y: number): Selection => ({ type: 'tiles', cells: [[x, y]] });
 
@@ -220,10 +231,21 @@ function validateNewMap(game: Game, doc: MapDoc, docs: Map<number, MapDoc>): Iss
     const d = docs.get(m.hash) ?? loadDoc(game.db, m);
     return (d.recs[3] ?? []).some((r) => P3.destMap(r.raw) === doc.hash);
   });
-  if (!reached) out.push({ level: 'warn', msg: 'このマップに来る出入口がほかのマップにありません (行き先をこのマップにしてください)', key: 'new/reach' });
-  const n = game.code.maps.filter((m) => m.dungeon === doc.dungeon).length;
-  if (hasAutomap(doc.dungeon) && n > AUTOMAP_LIMIT)
-    out.push({ level: 'warn', msg: `このダンジョンのマップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
+  const fromWorld = game.code.worlds.some((w) => game.entrances(w).some((r) => ENT.destMap(r) === doc.hash));
+  const nd = game.code.dungeons.find((d) => d.dungeon === doc.dungeon);
+  if (!reached && !fromWorld)
+    out.push({
+      level: 'warn',
+      msg: nd
+        ? 'このマップに来る出入口がありません (ワールドマップの入口か、ほかのマップの出入口の行き先をこのマップにしてください)'
+        : 'このマップに来る出入口がほかのマップにありません (行き先をこのマップにしてください)',
+      key: 'new/reach',
+    });
+  if (nd && !game.code.maps.some((m) => m.dungeon === nd.dungeon && game.code.worlds.some((w) => game.entrances(w).some((r) => ENT.destMap(r) === m.hash))))
+    out.push({ level: 'warn', msg: `新しいダンジョン ${nd.code} に入るワールドマップの入口がありません (ワールドマップのページで入口の行き先をこのダンジョンのマップにしてください)`, key: 'new/world' });
+  const n = automapMaps(game, doc.dungeon);
+  if (n !== null && n > AUTOMAP_LIMIT)
+    out.push({ level: 'warn', msg: `${automapShare(game, doc.dungeon)}マップが ${n} 枚あり、オートマップの枠 (${AUTOMAP_LIMIT}) を超えます。あとから入ったマップにはオートマップが付きません`, key: 'new/automap' });
   return out;
 }
 
@@ -268,4 +290,10 @@ export function validateWorld(game: Game, world: number, list: Uint8Array[], ori
       });
   });
   return out;
+}
+
+/** "このダンジョンの" or, when the automap records are shared (a new dungeon), "このダンジョンと D01 の". */
+function automapShare(game: Game, dungeon: number): string {
+  const others = (automapGroup(game, dungeon) ?? []).slice(1).map((d) => game.master.dungeonName(d) || `ID ${d}`);
+  return others.length ? `このダンジョンと、オートマップの記録を分け合う ${others.join('・')} の` : 'このダンジョンの';
 }

@@ -9,6 +9,7 @@ import { openDumps, type BaseMod, type Dump } from '../rom/dump';
 import type { TitleKey } from '../rom/titles';
 import { Session } from '../session';
 import { PortStore } from '../port/store';
+import { SoundPortStore } from '../port/sounds';
 import { forgetArchives } from '../cgfx/loader';
 import { HonoluluSession } from '../honolulu/session';
 import { LanaiSession } from '../lanai/session';
@@ -19,7 +20,7 @@ import { OahuSession } from '../oahu/session';
 import { RomDialog, TitleChoiceDialog } from './RomDialog';
 import { Shell } from './Shell';
 import { StartScreen } from './StartScreen';
-import { openedKeys, WorkspaceContext, type Opened, type Workspace } from './workspace';
+import { openedKeys, setShownWorkspace, WorkspaceContext, type Opened, type Workspace } from './workspace';
 
 /** Opens a game on its saved base MOD; when that fails, the base MOD is taken off and the dump opened without it. */
 async function withSavedMod<T>(key: TitleKey, open: (mod: BaseMod | null) => Promise<T>): Promise<T> {
@@ -51,6 +52,7 @@ type State =
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
   forgetArchives();
   await PortStore.install(game.dump);
+  game.soundPorts = await SoundPortStore.install(game.dump);
   const session = await Session.open(game, autoRestore);
   return { session, editor: await MapEditor.create(session) };
 }
@@ -215,6 +217,7 @@ export function Root(): ReactNode {
   };
 
   const workspace = useMemo((): Workspace | null => ready && { opened: ready.opened, active: ready.active, showRoms: () => { setRomError(null); setRoms(true); } }, [ready]);
+  setShownWorkspace(workspace);
 
   if (state.kind === 'loading') return <div className="start"><p>読み込み中…</p></div>;
   if (state.kind === 'start' || !ready || !workspace) return <StartScreen error={state.kind === 'start' ? state.error : undefined} onOpen={load} />;

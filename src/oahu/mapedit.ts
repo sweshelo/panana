@@ -87,6 +87,10 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   }
 
   open(info: OahuMapInfo): void {
+    if(this.stamp?.type==='template' && this.info?.dungeon!==info.dungeon) {
+      this.stamp=null;
+      if(this.tool==='place') this.tool='select';
+    }
     const doc = this.maps.doc(info);
     this.docs.set(info.hash, doc);
     this.current = doc;

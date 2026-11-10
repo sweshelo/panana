@@ -1,6 +1,6 @@
 // RPG FREE!'s monsters, items and actions in the boards and pickers shared with RPG2 / RPG3 (ui/MonsterSlots,
-// ui/GridPicker, ui/ActionPicker): the photos of the monsters' models, a badge for the items (their models are not
-// read yet) and the actions (no model). The game has no item or action page yet, so their boards are not linked.
+// ui/GridPicker, ui/ActionPicker): the photos of the monsters' and items' models and a badge for the actions (no model).
+// The boards' "#ID" opens the monster, item or action page.
 import { useMemo, type ReactNode } from 'react';
 import { ActionTablePicker, type ActionEntry } from '../ui/ActionPicker';
 import { GridPicker, type PickerChoice } from '../ui/GridPicker';
@@ -12,6 +12,7 @@ import { lanaiMonsterModel } from './monsterModels';
 import { isTransform, lanaiAction } from './monsterStats';
 import { lanaiMonsterDesign, lanaiMonsterHref, lanaiMonsters } from './monsters';
 import type { LanaiSession } from './session';
+import { lanaiActionHref, lanaiItemHref } from './hrefs';
 
 /** The photo of a monster's model (empty without a MonsterDesign row). */
 export function lanaiMonsterIcon(session: LanaiSession, row: number, large = false): ReactNode {
@@ -37,7 +38,8 @@ export function lanaiItemIcon(session: LanaiSession, row: number, name: string, 
 
 export function lanaiItemEntry(session: LanaiSession, id: number): BoardEntry {
   const name = lanaiItemName(session, id);
-  return { icon: lanaiItemIcon(session, session.need('ItemData').find(id), name), name };
+  const row = session.need('ItemData').find(id);
+  return { icon: lanaiItemIcon(session, row, name), name, href: row > 0 ? lanaiItemHref(row) : undefined };
 }
 
 /** An action's badge: "変" for a transformation, else its system number. */
@@ -47,7 +49,8 @@ function actionIcon(session: LanaiSession, id: number): ReactNode {
 }
 
 export function lanaiActionEntry(session: LanaiSession, id: number): BoardEntry {
-  return { icon: actionIcon(session, id), name: lanaiActionName(session, id) };
+  const row = session.need('ActionData').find(id);
+  return { icon: actionIcon(session, id), name: lanaiActionName(session, id), href: row > 0 ? lanaiActionHref(row) : undefined };
 }
 
 /** The second line of an action's board: its system, and the monster a transformation makes. */

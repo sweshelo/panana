@@ -18,6 +18,8 @@ export interface ActionListRow {
   edited?: boolean;
   /** Class of the name cell (RPG3 marks the rows of the caught monsters). */
   nameClass?: string;
+  /** The 行 cell when it is not `row` (初代 lists two tables: the row of its own table). */
+  rowLabel?: ReactNode;
 }
 
 /**
@@ -57,7 +59,7 @@ export function ActionListPane<F extends string>({ rows, total, columns, selecte
           <tbody>
             {rows.slice(0, shown).map((a) => (
               <tr key={a.row} className={a.row === selected ? 'active' : ''} onClick={() => (location.hash = href(a.row))}>
-                <td className="num muted">{a.row}</td>
+                <td className="num muted">{a.rowLabel ?? a.row}</td>
                 <td className={`action-name ${a.nameClass ?? ''}`}>{a.name}{a.edited && <EditedMark text=" ●" />}</td>
                 {a.cells.map((c, i) => <td key={i} className="muted nowrap">{c}</td>)}
               </tr>

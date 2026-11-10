@@ -5,20 +5,25 @@ import { mapLabel } from './editor/labels';
 import type { MapInfo } from './game/codebin';
 import type { EventTable } from './game/events';
 import type { CodePatch } from './game/patch';
+import { repairNotices } from './game/worldnotice';
+import { changedSpeeds, type ChaseSpeeds } from './game/chase';
 import type { Game } from './game/game';
 import { ItemBook } from './game/items';
 import { MapDb } from './game/mapdb';
 import type { MonsterBook } from './game/monsters';
 import { makeMap, type NewMapSpec } from './game/newmap';
+import { AREA_TABLE, makeDungeon, ownPlaces, renameDungeon, type NewDungeonSpec } from './game/newdungeon';
+import type { AddedDungeon } from './game/mappatch';
 import { loadDoc, sectionBytes, type MapDoc } from './game/sections';
 import { ShopStock } from './game/shops';
 import type { SoundNames } from './game/sound';
-import { buildEntrances, buildGround, parseEntrances, type Ground, type WorldInfo } from './game/worldmap';
+import { buildEntrances, buildGround, ENT, parseEntrances, type Ground, type WorldInfo } from './game/worldmap';
+import { JP, JUMP_TABLE, jumpPatch } from './game/jumppoints';
 import { findByName, findEntry, unpackEntry, type ArcEntry } from './archive/gsarc';
 import { equalBytes } from './util/bytes';
 import { idbGet, idbSet } from './util/idb';
 
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)', 'actionData.bin': 'アクション (ワザ)' };
+const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)', 'actionData.bin': 'アクション (ワザ)', 'mapGroup.bin': 'ダンジョンの設定', 'mapJumpPoint.bin': 'ジャンプの行き先' };
 export const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 
@@ -45,6 +50,7 @@ export class Session {
     readonly sounds: SoundNames | null,
   ) {
     this.st = new EditorState(game);
+    game.entrances = this.entrancesOf;
   }
 
   /** Reads the books and restores the saved edits (asking first unless `autoRestore`). */
@@ -70,6 +76,43 @@ export class Session {
   readonly originalEntrances = (w: WorldInfo): Uint8Array[] => parseEntrances(this.game.db.get(w.sections[2]!));
   /** Entrances of a world map as edited so far. */
   readonly entrancesOf = (w: WorldInfo): Uint8Array[] => this.worldEdits.get(w.hash) ?? this.originalEntrances(w);
+
+  /** The rows of mapJumpPoint.bin as edited ("ジャンプ" destinations; game/jumppoints.ts). */
+  jumpRows(): Uint8Array[] {
+    const t = this.game.master.table(JUMP_TABLE);
+    return Array.from({ length: t.rows }, (_, i) => t.row(i));
+  }
+
+  /**
+   * The jump patch for the edited table (more rows, rows that follow their entrance), and the rows whose world map's
+   * event table is not loaded yet (see {@link loadJumpEvents}).
+   */
+  jumpPatch(): ReturnType<typeof jumpPatch> {
+    const worlds = this.game.worldMaps();
+    return jumpPatch(
+      this.jumpRows(),
+      (w, id) => {
+        const r = worlds[w] ? this.entrancesOf(worlds[w]).find((e) => ENT.id(e) === id) : undefined;
+        return r ? { event: ENT.event(r) } : null;
+      },
+      (w, row) => {
+        const t = worlds[w] ? this.st.events.get(worlds[w].dungeon) : undefined;
+        return t && t.has(row) ? t.table.row(row) : null;
+      },
+    );
+  }
+
+  /** Read the event tables of the world maps whose entrances jump rows follow (the patch embeds their conditions). */
+  async loadJumpEvents(): Promise<void> {
+    const worlds = this.game.worldMaps();
+    const want = new Set(this.jumpRows().filter(JP.follows).map(JP.world));
+    for (const w of want) {
+      const d = worlds[w]?.dungeon;
+      if (d === undefined || this.st.events.has(d)) continue;
+      const t = await this.game.eventTable(d);
+      if (t && !this.st.events.has(d)) this.st.events.set(d, t);
+    }
+  }
 
   setEntrances(w: WorldInfo, list: Uint8Array[]): void {
     this.worldEdits.set(w.hash, list);
@@ -156,6 +199,52 @@ export class Session {
     return this.game.code.byHash(info.hash)!;
   }
 
+  /**
+   * Add a new dungeon (game/newdungeon.ts) with its first map, made like {@link addMap} from a map of any dungeon.
+   * The mapGroup row, the name message and the event archive are saved with the other edits.
+   */
+  async addDungeon(spec: NewDungeonSpec, first: Omit<NewMapSpec, 'dungeon' | 'newDungeonCode'>): Promise<MapInfo> {
+    const game = this.game;
+    const mg = game.master.mapGroup;
+    const before = mg.data.slice();
+    const area = game.master.table(AREA_TABLE);
+    const areaBefore = area.data.slice();
+    const nd = await makeDungeon(game, spec, new Set([...game.dump.names(), ...game.addedFiles.keys()]), this.eventsOf);
+    let map: { info: MapInfo; doc: MapDoc };
+    try {
+      map = makeMap(game, { ...first, dungeon: nd.dungeon, newDungeonCode: nd.code });
+    } catch (e) {
+      mg.data = before;
+      area.data = areaBefore;
+      game.master.texts.removeAdded(nd.nameId);
+      if (nd.donor >= 0) game.forgetEvents(nd.donor);
+      const t = nd.donor >= 0 ? this.st.events.get(nd.donor) : undefined;
+      if (t) t.capacity = mg.row(nd.donor)[0x1c]!;
+      throw e;
+    }
+    game.addedFiles.set(nd.archiveName, nd.archive);
+    game.forgetEvents(nd.dungeon);
+    game.code.addDungeon({ dungeon: nd.dungeon, code: nd.code });
+    game.code.addMap(map.info);
+    this.st.docs.set(map.info.hash, map.doc);
+    this.saveNow();
+    return game.code.byHash(map.info.hash)!;
+  }
+
+  /**
+   * Change a new dungeon's name and code (game/newdungeon.ts renameDungeon; its maps' codes follow the code). Not an
+   * undo point: saved with the other edits at once.
+   */
+  renameDungeon(dungeon: number, change: { name?: string; code?: string }): void {
+    renameDungeon(this.game, dungeon, change);
+    for (const m of this.game.code.maps) {
+      const doc = m.dungeon === dungeon ? this.st.docs.get(m.hash) : undefined;
+      if (doc) doc.name = m.name;
+    }
+    this.saveNow();
+    this.st.emit('doc');
+  }
+
   items(): Promise<ItemData> {
     this.itemData ??= ShopStock.load(this.game)
       .catch(() => null)
@@ -200,9 +289,11 @@ export class Session {
     const added = this.game.code
       .addedMaps()
       .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
+    const dungeons: AddedDungeon[] = this.game.code.dungeons.map(({ dungeon, code }) => ({ dungeon, code }));
+    const files: Record<string, Uint8Array> = Object.fromEntries(this.game.addedFiles);
     const patches = this.game.codePatches;
     const direct = this.book?.directChanged() ? this.book.directData!.data : null;
-    idbSet(EDITS_KEY, { added, worlds, grounds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
+    idbSet(EDITS_KEY, { added, dungeons, files, worlds, grounds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), ...(this.game.levelStealth ? { levelStealth: this.game.levelStealth } : {}), ...(changedSpeeds(this.game.chaseSpeeds).length ? { chaseSpeeds: this.game.chaseSpeeds } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -217,9 +308,16 @@ export class Session {
       /** Terrains of the world maps: parts then rotations (300 x 300 each). */
       grounds?: Record<number, Uint8Array>;
       added?: MapInfo[];
+      /** New dungeons (game/newdungeon.ts) and the RomFS files made for them (their event archives). */
+      dungeons?: AddedDungeon[];
+      files?: Record<string, Uint8Array>;
       patches?: CodePatch[];
       /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
       dropCap?: boolean;
+      /** Changed speeds of the map symbols (game/chase.ts). */
+      chaseSpeeds?: ChaseSpeeds;
+      /** The Lv difference of Panana's code MOD "レベルステルス" when it is on (game/levelstealth.ts). */
+      levelStealth?: number;
       /** monsterDesign.bin (2713402F) when monsters got a design of their own. */
       design?: Uint8Array | null;
       /** directData of 2713402F (the performances of the actions), when edited. */
@@ -228,7 +326,9 @@ export class Session {
     const edits = await idbGet<Saved>(EDITS_KEY);
     if (!edits) return;
     const game = this.game;
-    // New maps first: the names below and the saved sections refer to them.
+    // New dungeons and maps first: the names below and the saved sections refer to them.
+    const dungeons = (edits.dungeons ?? []).filter((d) => !game.code.dungeons.some((x) => x.dungeon === d.dungeon));
+    for (const d of dungeons) game.code.addDungeon(d);
     const added = (edits.added ?? []).filter((m) => !game.code.byHash(m.hash));
     for (const m of added) game.code.addMap(m);
     const names = Object.keys(edits.maps).map((h) => mapLabel(game, Number(h)));
@@ -240,13 +340,18 @@ export class Session {
     const grounds = Object.keys(edits.grounds ?? {}).map((h) => mapLabel(game, Number(h)));
     const nPatches = edits.patches?.length ?? 0;
     const direct = edits.direct && this.book?.directData ? edits.direct : null;
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !grounds.length && !nPatches && !edits.dropCap && !direct && !edits.design) return;
-    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), grounds.map((w) => `${w} の地形`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
+    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !grounds.length && !nPatches && !edits.dropCap && !edits.levelStealth && !edits.chaseSpeeds && !direct && !edits.design) return;
+    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), grounds.map((w) => `${w} の地形`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', edits.levelStealth ? 'レベルステルス' : '', edits.chaseSpeeds ? 'シンボルの速さ' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       game.code.removeMaps(added.map((m) => m.hash));
+      for (const d of dungeons) game.code.removeDungeon(d.dungeon);
       await idbSet(EDITS_KEY, null);
       return;
     }
+    for (const [name, bytes] of Object.entries(edits.files ?? {})) game.addedFiles.set(name.toUpperCase(), bytes);
+    // The new dungeons' mapGroup rows name their event archives (read below).
+    if (edits.tables?.['mapGroup.bin']) game.master.restoreTable('mapGroup.bin', edits.tables['mapGroup.bin']);
+    for (const d of dungeons) game.forgetEvents(d.dungeon);
     const tmp = new MapDb(game.dbBytes);
     for (const [hash, secs] of Object.entries(edits.maps)) {
       const info = game.code.byHash(Number(hash));
@@ -271,14 +376,19 @@ export class Session {
       const t = await game.eventTable(Number(d));
       if (t) {
         t.restore(bytes);
+        repairNotices(t);
         this.st.events.set(Number(d), t);
       }
     }
     if (edits.patches) game.codePatches = edits.patches;
     game.dropCap = !!edits.dropCap;
+    game.chaseSpeeds = edits.chaseSpeeds ?? {};
+    game.levelStealth = edits.levelStealth ?? 0;
     if (edits.treasure) game.master.restoreTreasure(edits.treasure);
     for (const [n, bytes] of Object.entries(edits.tables ?? {})) game.master.restoreTable(n, bytes);
     if (edits.messages) game.master.texts.restore(edits.messages);
+    // new dungeons saved before they got a place of their own (the museum showed the template's name)
+    if (dungeons.length) ownPlaces(game);
     if (direct) this.book!.restoreDirect(direct);
     if (edits.design) this.book?.restoreDesign(edits.design);
     if (tables.length || edits.design || nMessages) this.book?.reload();
@@ -287,5 +397,6 @@ export class Session {
       stock?.restore(edits.shops!);
       if (stock) items.setShops(stock.lists);
     }
+    await this.loadJumpEvents().catch((err) => console.warn('jump events', err));
   }
 }

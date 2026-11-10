@@ -27,8 +27,14 @@ export interface Workspace {
 
 export const WorkspaceContext = createContext<Workspace | null>(null);
 
+/** The workspace Root shows, for the React roots outside it (the map editor draws its panes in its own). */
+let shown: Workspace | null = null;
+export const setShownWorkspace = (w: Workspace | null): void => {
+  shown = w;
+};
+
 /** The opened dumps (null outside the shells, e.g. in the tests that draw a page alone). */
-export const useWorkspace = (): Workspace | null => useContext(WorkspaceContext);
+export const useWorkspace = (): Workspace | null => useContext(WorkspaceContext) ?? shown;
 
 /** The dump of an opened game. */
 export function openedDump(o: Opened, key: TitleKey): Dump | undefined {

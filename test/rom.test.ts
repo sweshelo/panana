@@ -19,13 +19,15 @@ import { gimmickTemplates } from '../src/game/templates';
 import { OBJ_INVISIBLE, recordObjectRow, recordPlacement, isIndoor } from '../src/game/objects';
 import { validate } from '../src/editor/validate';
 import { removeTile, setTile } from '../src/editor/state';
-import { equalBytes, u16, u32 } from '../src/util/bytes';
+import { equalBytes, f32, u16, u32 } from '../src/util/bytes';
+import { chaseSpeedPatch, chaseSpeedProblem, type ChaseKey } from '../src/game/chase';
 import { BASE_MOD, CIA, GOLDEN, hasCia, hasGolden } from './env';
 import { existsSync, readdirSync } from 'node:fs';
 import { baseModFromFiles } from '../src/rom/dump';
 import { EVENT_KINDS, KIND_SWITCH } from '../src/game/eventkinds';
 import { modPackage } from '../src/export/pack';
 import { dropCapPatch, dropCapProblem } from '../src/game/dropcap';
+import { levelStealthPatch, levelStealthProblem } from '../src/game/levelstealth';
 import { applyIps } from '../src/rom/ips';
 import { ENT, WORLD_SIZE, buildEntrances, coveredParts, moveEntrance, parseEntrances } from '../src/game/worldmap';
 import { ELEMENT_AILMENTS, PLAIN_AILMENTS } from '../src/game/monsters';
@@ -308,6 +310,21 @@ describe.skipIf(!hasCia || !hasGolden)('dump vs Python reference', () => {
     expect([...missing]).toEqual([]);
   });
 
+  test('the code MOD "レベルステルス": the stealth check of FUN_001eeaf0 calls a cave function that calls it', () => {
+    expect(levelStealthProblem(game.dump.code)).toBeNull();
+    const ips = modPackage(game, new Map(), [levelStealthPatch(10)]).get('exefs/code.ips')!;
+    const patched = applyIps(game.dump.code, ips);
+    const bl = u32(patched, 0x1eeb30 - 0x100000);
+    expect(bl >>> 24).toBe(0xeb);
+    const cave = 0x1eeb30 + 8 + ((bl << 8) >> 6);
+    expect(cave).toBeGreaterThanOrEqual(0x4bf020);
+    expect(u32(patched, cave - 0x100000)).toBe(0xe92d41f0); // push {r4-r8, lr}
+    // its call of the game's check (bl FUN_00435380)
+    const call = u32(patched, cave + 8 - 0x100000);
+    expect(cave + 8 + 8 + ((call << 8) >> 6)).toBe(0x435380);
+    expect(levelStealthProblem(patched)).not.toBeNull();
+  });
+
   test('the code MOD "ドロップ率の天井を撤廃": three calls to a cave function in code.ips', () => {
     expect(dropCapProblem(game.dump.code, 'kahara')).toBeNull();
     const ips = modPackage(game, new Map(), [dropCapPatch('kahara')]).get('exefs/code.ips')!;
@@ -367,6 +384,34 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(king.name).toBe('キングウッキー');
     expect(king.focus).toBe(true);
     expect(book.monster(21)!.nextForm).toBe(20);
+  });
+
+  test('how the symbols move (naauao kahara/symbol.md): design fields and the speed patch', async () => {
+    const book = await game.monsters();
+    // MonsterDesign 4 charges, 27 sees through walls, 64 runs away (and hops), 1 drops in and flies
+    expect([4, 27, 64, 1].map((d) => book.chaseGet(d, 'kind'))).toEqual([3, 6, 4, 1]);
+    expect([book.chaseGet(64, 'style'), book.chaseGet(1, 'style'), book.chaseGet(1, 'fly')]).toEqual([2, 1, 1]);
+    expect(['waitMin', 'waitMax', 'walk', 'chase', 'sight'].map((k) => book.chaseGet(0, k as ChaseKey))).toEqual([10, 30, 80, 50, 600]);
+    const saved = book.designData().slice();
+    book.chaseSet(0, 'kind', 4);
+    book.chaseSet(0, 'sight', 1023);
+    expect([book.chaseGet(0, 'kind'), book.chaseGet(0, 'sight'), book.chaseOriginal(0, 'kind')]).toEqual([4, 1023, 2]);
+    expect(book.designChanged()).toBe(true);
+    // only the bytes of the two fields changed
+    const before = new GsTable(saved).row(0);
+    const changed = [...book.designBytes(0)].flatMap((v, i) => (v !== before[i] ? [i] : []));
+    expect(changed.every((i) => i === 8 || (i >= 0x0c && i <= 0x0e))).toBe(true);
+    book.restoreDesign(saved);
+    expect(book.designChanged()).toBe(false);
+
+    expect(chaseSpeedProblem(game.dump.code)).toBeNull();
+    expect(chaseSpeedPatch({ walk: 150 })).toBeNull(); // the game's value: nothing to patch
+    const ips = modPackage(game, new Map(), [chaseSpeedPatch({ fastDungeon: 1000, chargeTime: 2.5 })!]).get('exefs/code.ips')!;
+    const patched = applyIps(game.dump.code, ips);
+    expect(f32(patched, 0x1eda14 - 0x100000)).toBe(1000);
+    expect(f32(patched, 0x1eda24 - 0x100000)).toBe(2.5);
+    expect(f32(patched, 0x1eda10 - 0x100000)).toBe(680);
+    expect(chaseSpeedProblem(patched)).not.toBeNull();
   });
 
   test('map encounter groups (section 6) resolve to monsterGroup rows', async () => {
@@ -470,7 +515,16 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
     expect(n).toBe(VANILLA_MONSTER_ROWS);
     expect(book.monsters.length).toBe(185);
     const c = book.monster(n)!;
-    expect({ ...c, row: 15, design: src.design }).toEqual(src);
+    expect({ ...c, row: 15, design: src.design, species: src.species, museum: src.museum }).toEqual(src);
+    // a museum entry of its own: the lowest number no row uses as species or museum number
+    expect([c.species, c.museum]).toEqual([72, 72]);
+    expect(src.species).not.toBe(72);
+    expect([book.museumSharers(n), book.freeMuseumNumber()]).toEqual([[], 73]);
+    // another form of a monster goes in its entry (its species and museum number, which differ for some rows)
+    book.setMuseum(n, 116);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([book.monster(116)!.species, book.monster(116)!.museum, [116]]);
+    book.setMuseum(n);
+    expect([book.monster(n)!.species, book.monster(n)!.museum, book.museumSharers(n)]).toEqual([72, 72, []]);
     // its own design row and name message: renaming it leaves the original alone
     expect(c.design).not.toBe(src.design);
     expect(book.nameId(n)).toBe(g2.master.texts.addedBase);
@@ -491,7 +545,7 @@ describe.skipIf(!hasCia)('monsters, encounters and sounds', () => {
       label: 'x', romfs: new Map([['56562135', files.get('56562135')!], [MONSTER_DESIGN_ARCHIVE, book.buildDesignArchive()]]), ips: null,
     });
     const b2 = await again.monsters();
-    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n)]).toEqual(['コピーおう', src.name, 1234, false]);
+    expect([b2.monster(n)!.name, b2.monster(15)!.name, b2.monster(n)!.hp.max, b2.added(n), b2.monster(n)!.species, b2.monster(n)!.museum]).toEqual(['コピーおう', src.name, 1234, false, 72, 72]);
     expect(b2.monster(n)!.description).toBe(src.description);
     const nameId = book.nameId(n);
     book.removeMonster(n);
@@ -741,6 +795,8 @@ describe.skipIf(!hasCia)('resistance edits and the item book', () => {
     const built = buildPatches(g2.dump.code, [ITEM_ACTION_PATCH]).get(ITEM_ACTION_PATCH_ID)!;
     expect(built.errors).toEqual([]);
     expect(built.blocks[0]!.lines.map((l) => l.before)).toEqual([0xe3500035, 0x23a00000, 0xe92d4010, 0x2a00000d]);
+    // and the battle keeps the added item actions (FUN_00288634: cmp r2, #0x2A0)
+    expect(built.blocks[1]!.lines.map((l) => [l.addr, l.before])).toEqual([[0x28863c, 0xe3520e2a]]);
     const files = buildModFiles(g2, [], [], g2.master.changed());
     const again = await Game.load(await openImage(Bun.file(CIA), 'cia'), { label: 'x', romfs: new Map([['56562135', files.get('56562135')!]]), ips: null });
     const i2 = new ItemBook(again, new Map());

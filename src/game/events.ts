@@ -13,11 +13,17 @@ import { equalBytes, hex8, u16, u32, w16, w32 } from '../util/bytes';
 export class EventTable {
   readonly table: GsTable;
   private readonly original: Uint8Array;
+  /**
+   * Rows nothing uses any more (game/eventslots.ts), lowest first. The map editor sets it, as only it knows the maps
+   * that point at the rows; addRow takes rows out of the returned list (so several adds in one edit take different
+   * rows), so the source hands out a fresh list after every edit.
+   */
+  freeRows: () => number[] = () => [];
 
   private constructor(
     readonly dungeon: number,
     /** Rows that can keep a state (mapGroup +0x1C). */
-    readonly capacity: number,
+    public capacity: number,
     readonly archiveName: string,
     private readonly archive: Archive,
     private readonly entry: ArcEntry,
@@ -75,34 +81,79 @@ export class EventTable {
     return v === 0xffff ? row : v;
   }
 
-  /** A slot below the capacity that no row uses, or -1. */
-  freeSlot(): number {
+  /** State slots below the capacity that the rows in use do not hold (free rows give theirs back). */
+  private freeSlots(free: readonly number[] = this.freeRows()): number[] {
+    const skip = new Set(free);
     const used = new Set<number>();
-    for (let i = 0; i < this.rows; i++) used.add(this.slot(i));
-    for (let s = 0; s < this.capacity; s++) if (!used.has(s)) return s;
-    return -1;
+    for (let i = 0; i < this.rows; i++) if (!skip.has(i)) used.add(this.slot(i));
+    const out: number[] = [];
+    for (let s = 0; s < this.capacity; s++) if (!used.has(s)) out.push(s);
+    return out;
   }
 
-  /** Rows that can still be added (0 when the dungeon has no room). */
+  /** A slot below the capacity that no row in use holds, or -1. */
+  freeSlot(): number {
+    return this.freeSlots()[0] ?? -1;
+  }
+
+  /** Rows that can still be added: free rows to take again plus room to grow, as far as the state slots go. */
   roomLeft(): number {
-    if (this.freeSlot() < 0) return 0;
-    return Math.max(0, this.capacity - this.rows);
+    const free = this.freeRows();
+    return Math.max(0, Math.min(this.capacity - this.rows + free.length, this.freeSlots(free).length));
   }
 
   /**
-   * Append a row copied from `template` with its own state slot. Throws when the dungeon has no room
-   * (rows and slots are limited to mapGroup +0x1C).
+   * A row copied from `template` with its own state slot: a free row taken again, else a new row at the end.
+   * Returns its number. Throws when the dungeon has no room (rows and slots are limited to mapGroup +0x1C).
    */
   addRow(template: Uint8Array): number {
-    if (this.rows >= this.capacity) throw new Error(`このダンジョンのイベントの行は ${this.capacity} 行までです`);
-    const slot = this.freeSlot();
-    if (slot < 0) throw new Error('このダンジョンには空いている状態の枠がありません');
+    const free = this.freeRows();
+    if (!free.length && this.rows >= this.capacity) throw new Error(`このダンジョンのイベント番号は ${this.capacity - 1} までです`);
+    const slot = this.freeSlots(free)[0];
+    if (slot === undefined) throw new Error('このダンジョンには空いている状態の枠がありません');
     const row = template.slice();
     w16(row, 0x44, slot);
-    return this.table.append(row);
+    const reuse = free.shift();
+    if (reuse === undefined) return this.table.append(row);
+    this.table.row(reuse).set(row);
+    return reuse;
+  }
+
+  /** Number of rows the table has in the game (rows from this one on were added). */
+  get originalRows(): number {
+    return new GsTable(this.original).rows;
+  }
+
+  /** Drop the rows from `n` on (only added ones: the table keeps at least the game's rows). */
+  truncate(n: number): void {
+    const t = this.table;
+    n = Math.max(n, this.originalRows);
+    if (n >= t.rows) return;
+    if (t.indexOffset) {
+      t.data = t.withRows(Array.from({ length: n }, (_, i) => t.row(i).slice()));
+      return;
+    }
+    const end = t.offset + n * t.rowSize;
+    const orig = new GsTable(this.original);
+    // back to the game's row count: the game's bytes after the rows (padding) too, so an undone add leaves no trace
+    const out = n === orig.rows && orig.offset === t.offset ? this.original.slice() : t.data.slice(0, end);
+    out.set(t.data.subarray(0, end));
+    w32(out, 0, n);
+    w32(out, 0x14, n * t.rowSize);
+    w32(out, 0x18, out.length);
+    t.data = out;
   }
   changed(): boolean {
     return !equalBytes(this.table.data, this.original);
+  }
+  /** Back to the table as in the game. */
+  revert(): void {
+    this.table.data = this.original.slice();
+  }
+  /** A row as in the game (undefined for added rows). */
+  originalRow(row: number): Uint8Array | undefined {
+    const t = new GsTable(this.original);
+    return row >= 0 && row < t.rows ? t.row(row) : undefined;
   }
 
   /** The event archive with this table re-packed (other entries copied verbatim). */

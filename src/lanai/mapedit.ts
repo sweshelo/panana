@@ -8,6 +8,8 @@
 // "opened" state; the rows' fields are edited from the inspector. The table goes into undo points and the export
 // like the map (it is one of the content's tables of the session).
 import { MapEditState, GRID, tileAt, type Issue, type Selection } from '../editor/model';
+import type { AutoProfile } from '../editor/autotile';
+import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
 import {
@@ -105,10 +107,23 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   }
 
   open(info: LanaiMapInfo): void {
+    if(this.stamp?.type==='template' && this.info?.dungeon!==info.dungeon) {
+      this.stamp=null;
+      if(this.tool==='place') this.tool='select';
+    }
     this.info = info;
     this.reopen();
     if (this.stamp?.type === 'template' && this.tool === 'place') this.tool = 'select';
     this.emit('map');
+  }
+
+  /** The automatic brush on the outdoor / dungeon maps (not the world map, not maps with indoor tiles: map.md §6.1). */
+  override get mapTopology(): AutoProfile | undefined {
+    return this.info && !this.info.world && this.current && !this.current.tiles.some((t) => t.kind >= 15 && t.kind <= 27) ? LANAI_AUTO : undefined;
+  }
+
+  protected override autoPalette(): ReadonlyMap<number, readonly number[]> {
+    return this.maps.palette(this.tileset);
   }
 
   private reopen(): void {
@@ -118,6 +133,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     this.current = doc;
     this.selection = { type: 'none' };
     this.readSource();
+    if (this.brush.auto && !this.autoProfile) this.brush = { ...this.brush, auto: false };
   }
 
   /** Read the open map's MapData again (adding or removing indoor tiles can change it); returns whether it changed. */

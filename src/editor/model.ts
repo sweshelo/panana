@@ -2,7 +2,8 @@
 // redo (MapEditState), and the tile helpers. It imports only the map format (game/sections: MapDoc, records, layouts),
 // so the views and the controller can be used with any game. A game extends MapEditState (state.ts EditorState for
 // RPG2, src/oahu/mapedit.ts OahuEditState for RPG3). state.ts re-exports everything here.
-import { cloneDoc, LETTER_DEFAULT, type MapDoc, type Rec, type RecordLayout, type Tile } from '../game/sections';
+import { cloneDoc, LETTER_DEFAULT, letterByte, letterIndex, type MapDoc, type Rec, type RecordLayout, type Tile } from '../game/sections';
+import { autoTiles, cellKey, type AutoProfile } from './autotile';
 
 export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
 
@@ -13,6 +14,7 @@ export type Selection =
   | { type: 'rect'; x0: number; y0: number; x1: number; y1: number };
 
 export interface Brush {
+  auto?: boolean;
   kind: number;
   letter: number; // byte
   rot: number;
@@ -66,7 +68,10 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   /** Tileset of the open map (the palette and the tile models). */
   tileset = 0;
   tool: Tool = 'select';
+  placementMode: 'tiles' | 'parts' = 'tiles';
   brush: Brush = { kind: 5, letter: LETTER_DEFAULT, rot: 0 };
+  /** Applies to subsequent automatic strokes; existing tiles are not rerolled by the checkbox. */
+  autoRandomVariants = true;
   selection: Selection = { type: 'none' };
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
@@ -81,6 +86,33 @@ export abstract class MapEditState<S = unknown, T = unknown> {
 
   /** A view-only map (初代's map page): edit, touch, editTables and checkpoint do nothing, so dragging in the views moves nothing. */
   readonly readOnly: boolean = false;
+
+  /** Verified geometry of the open map (games opt in with their vocabulary), even when its palette lacks parts. */
+  get mapTopology(): AutoProfile | undefined { return undefined; }
+  /** The open tileset's palette (kind -> letter indices with a model); undefined: the game has no automatic brush. */
+  protected autoPalette(): ReadonlyMap<number, readonly number[]> | undefined { return undefined; }
+  /** The automatic brush: the map's topology, when the tileset has a model for every one of its parts. */
+  get autoProfile(): AutoProfile | undefined {
+    const profile = this.mapTopology, palette = profile && this.autoPalette();
+    return profile && palette && profile.parts.every(p => palette.has(p.kind)) ? profile : undefined;
+  }
+  /** The preferred letter byte when the tileset has that variant, else the kind's first one (no palette: as preferred). */
+  autoLetter(kind: number, preferred: number): number {
+    const palette = this.autoPalette();
+    if (!palette) return preferred;
+    const letters = palette.get(kind) ?? [0];
+    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : letters[0] ?? 0);
+  }
+  autoVariantLetters(kind: number): readonly number[] { return this.autoPalette()?.get(kind) ?? [0]; }
+
+  /** The actual automatic tile under the pointer, shared by both views. */
+  brushAt(x: number, y: number): Brush | undefined {
+    if (!this.brush.auto) return this.brush;
+    const profile = this.autoProfile;
+    if (!this.current || !profile) return undefined;
+    const tile = autoTiles(this.current.tiles, new Set([cellKey(x,y)]), profile).find(t => t.x === x && t.y === y);
+    return tile && {...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT)};
+  }
 
   /** Record layouts of the sections, by RPG2's section numbers. */
   abstract readonly layouts: Record<number, RecordLayout>;
@@ -99,6 +131,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   }
   /** Turn a record by a quarter (`R`; sections where canRotate). */
   rotateRecord(_rec: Rec, _section: number, _dir: 1 | -1): void {}
+  /** A record was deleted from `doc` (inside the edit): games release what only it used (RPG2: its event row). */
+  recordRemoved(_doc: MapDoc, _section: number, _rec: Rec): void {}
   /** A document was replaced (undo / redo): games that keep documents elsewhere put it there. */
   protected docReplaced(_doc: MapDoc): void {}
 
@@ -184,6 +218,13 @@ export abstract class MapEditState<S = unknown, T = unknown> {
 
   setTool(t: Tool): void {
     this.tool = t;
+    if (t === 'place') this.placementMode = 'parts';
+    else if (t === 'paint' || t === 'erase' || t === 'room') this.placementMode = 'tiles';
+    this.emit('tool');
+  }
+  setPlacementMode(mode: 'tiles' | 'parts'): void {
+    this.placementMode = mode;
+    this.tool = mode === 'tiles' ? 'paint' : this.stamp ? 'place' : 'select';
     this.emit('tool');
   }
   select(s: Selection): void {

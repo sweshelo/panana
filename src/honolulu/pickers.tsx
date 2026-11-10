@@ -6,6 +6,7 @@ import { ActionTablePicker, type ActionEntry } from '../ui/ActionPicker';
 import { GridPicker, type PickerChoice } from '../ui/GridPicker';
 import { ActionBadge, type BoardEntry } from '../ui/MonsterSlots';
 import { Photo } from '../ui/Photo';
+import { honoluluAttackHref } from './actions';
 import { honoluluItemHref } from './ItemPage';
 import { categoryName, honoluluItemRows, honoluluItems } from './items';
 import { attackName, battleRows, honoluluMonsterHref, honoluluMonsterModel, honoluluMonsters, monsterName, SKILL_SLOTS, skillRows } from './monsters';
@@ -35,7 +36,7 @@ export function honoluluItemEntry(session: HonoluluSession, row: number): BoardE
 }
 
 export function honoluluSkillEntry(session: HonoluluSession, row: number): BoardEntry {
-  return { icon: <ActionBadge element={0} label="ワ" />, name: attackName(session, row) || `#${row}` };
+  return { icon: <ActionBadge element={0} label="ワ" />, name: attackName(session, row) || `#${row}`, href: honoluluAttackHref(row) };
 }
 
 /** The second line of a skill's board: its amount (min〜max) when it has one. */

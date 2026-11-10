@@ -17,7 +17,9 @@ import { lanaiDropIndex, lanaiSlotSource, lanaiSourceIndex, lanaiSourcesScanned,
 import { ItemListControls, ItemSources, rarityMatches, sortItems, type ItemSort, type RarityFilter, type SourceLink } from '../ui/ItemSources';
 import type { LanaiSession } from './session';
 
-export const lanaiItemHref = (row: number): string => `#/items/${row}`;
+export { lanaiItemHref } from './hrefs';
+import { lanaiActionHref, lanaiItemHref } from './hrefs';
+import { lanaiBattleActions, lanaiItemUseAction } from './battleActions';
 const PAGE = 300;
 const kindName = (k: number): string => LANAI_ITEM_KINDS[k] ?? `種類 0x${k.toString(16).toUpperCase()}`;
 
@@ -80,6 +82,7 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   const scanned = !!sources.index;
   const it = byRow.get(selected);
   const equip = it ? lanaiEquipRow(session, it) : null;
+  const useAction = it && !equip ? lanaiItemUseAction(session, it) : 0;
   return (
     <div className="book">
       <div className="book-side">
@@ -124,6 +127,7 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
                   <tr><th>☆</th><td>{it.rarity}</td></tr>
                   <tr><th title="ItemDataCore +0x04 / +0x08 (推定)">買値 / 売値</th><td>{`${it.buy} / ${it.sell}`}</td></tr>
                   <tr><th>説明</th><td className="book-desc">{lanaiItemDescription(session, it)}</td></tr>
+                  {useAction > 0 && <tr><th title="UseItemInfo +0x04: 使ったときの ActionData の行">使うと</th><td><a href={lanaiActionHref(useAction)}>{`#${useAction}`}</a>{` ${lanaiBattleActions(session)[useAction]?.name ?? ''}`}</td></tr>}
                   <tr><th title="ItemDataCore +0x18 / +0x1C">モデル</th><td className="muted">{it.model ? `${hex8(it.archive)} / ${hex8(it.model)}` : 'なし'}</td></tr>
                 </tbody>
               </table>
