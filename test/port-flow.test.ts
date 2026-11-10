@@ -22,7 +22,17 @@ import { ItemBook } from '../src/game/items';
 import type { Session } from '../src/session';
 import type { Opened } from '../src/ui/workspace';
 import { u32 } from '../src/util/bytes';
-import { CIA, hasCia, hasLanai, hasOahuBase, hasOahuUpdate, LANAI_BASE, LANAI_UPDATE, OAHU_BASE, OAHU_UPDATE } from './env';
+import {
+  CIA,
+  hasCia,
+  hasLanai,
+  hasOahuBase,
+  hasOahuUpdate,
+  LANAI_BASE,
+  LANAI_UPDATE,
+  OAHU_BASE,
+  OAHU_UPDATE,
+} from './env';
 
 const ready = hasCia && hasOahuBase && hasOahuUpdate && hasLanai;
 
@@ -37,7 +47,9 @@ describe.skipIf(!ready)('porting between the games', () => {
     let items: ItemBook | null = null;
     // the parts of RPG2's session the ports use (Session.open needs IndexedDB)
     const session = {
-      game, book, saveNow: () => {},
+      game,
+      book,
+      saveNow: () => {},
       items: async () => ({ items: (items ??= new ItemBook(game, new Map())), stock: null }),
     } as unknown as Session;
     o.kahara = { session, editor: null as never };
@@ -111,7 +123,7 @@ describe.skipIf(!ready)('porting between the games', () => {
       const m = lanaiMonsters(s).find((x) => x.row === row)!;
       expect(m.designRow).toBe(d);
       const design = lanaiMonsterDesign(s, d)!;
-      expect((s.need("MonsterDesign").u32(d, 0x04) >>> 20) & 1).toBe(1);
+      expect((s.need('MonsterDesign').u32(d, 0x04) >>> 20) & 1).toBe(1);
       const set = await lanaiMonsterSet(s, design);
       expect(set.models.size).toBeGreaterThan(0);
       expect(set.errors).toEqual([]);
@@ -125,7 +137,7 @@ describe.skipIf(!ready)('porting between the games', () => {
     expect(unwrapBch(unpackEntry(arc, findEntry(arc, d.model)!).body)[4]).toBe(0x21);
   }, 300_000);
 
-  test('items get the other game\'s models', async () => {
+  test("items get the other game's models", async () => {
     const fromOahu = (await itemLooks(o, 'oahu')).slice(0, 3);
     const fromKahara = (await itemLooks(o, 'kahara')).slice(0, 3);
     expect(fromOahu.length).toBe(3);
@@ -169,11 +181,15 @@ describe.skipIf(!ready)('porting between the games', () => {
 
   test('the other idle switch goes off when the new look has no 002_', async () => {
     const s = o.lanai!;
-    const row = lanaiMonsters(s).find((m) => m.name && m.designRow >= 0 && !(s.need('MonsterParameter').u32(m.row, 0x18) & 1))!.row;
+    const row = lanaiMonsters(s).find(
+      (m) => m.name && m.designRow >= 0 && !(s.need('MonsterParameter').u32(m.row, 0x18) & 1),
+    )!.row;
     setAltIdle(o, 'lanai', row, true);
     expect(altIdle(o, 'lanai', row)).toBe(true);
     // RPG2's looks have no 002_ (except a few): pick one without it
-    const plain = (await monsterLooks(o, 'kahara')).find((l) => l.names.some((n) => n.includes('スライム'))) ?? (await monsterLooks(o, 'kahara'))[0]!;
+    const plain =
+      (await monsterLooks(o, 'kahara')).find((l) => l.names.some((n) => n.includes('スライム'))) ??
+      (await monsterLooks(o, 'kahara'))[0]!;
     await giveMonsterLook(o, 'lanai', row, plain);
     const hasIt = lanaiMonsters(s).find((m) => m.row === row)!;
     expect(hasIt.designRow).toBeGreaterThan(0);

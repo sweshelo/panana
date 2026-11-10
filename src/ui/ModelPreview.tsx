@@ -6,11 +6,31 @@ import { Dialog } from './Dialog';
 import { ModelView } from './ModelView';
 
 /** @param inside Look around from the ground of the model (a battle background's sky dome) instead of turning it. */
-export function ModelPreviewButton({ model, name, label = '3D で見る', note, inside = false }: { model: ModelRef | null; name: string; label?: string; note?: ReactNode; inside?: boolean }): ReactNode {
+export function ModelPreviewButton({
+  model,
+  name,
+  label = '3D で見る',
+  note,
+  inside = false,
+}: {
+  model: ModelRef | null;
+  name: string;
+  label?: string;
+  note?: ReactNode;
+  inside?: boolean;
+}): ReactNode {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className="small" disabled={!model} title={model ? `${name} を 3D で見る` : 'モデルがありません'} onClick={() => setOpen(true)}>{label}</button>
+      <button
+        type="button"
+        className="small"
+        disabled={!model}
+        title={model ? `${name} を 3D で見る` : 'モデルがありません'}
+        onClick={() => setOpen(true)}
+      >
+        {label}
+      </button>
       {open && model && (
         <Dialog title={name} onClose={() => setOpen(false)}>
           <ModelView model={model} name={name} inside={inside} />

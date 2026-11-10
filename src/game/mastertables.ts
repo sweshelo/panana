@@ -66,7 +66,8 @@ export class MasterTables {
   /** Changed tables: archive entry index -> bytes. */
   changedEntries(): Map<number, Uint8Array> {
     const out = new Map<number, Uint8Array>();
-    for (const t of this.tables.values()) if (!equalBytes(t.table.data, t.original)) out.set(t.entryIndex, t.table.data);
+    for (const t of this.tables.values())
+      if (!equalBytes(t.table.data, t.original)) out.set(t.entryIndex, t.table.data);
     return out;
   }
 
@@ -84,7 +85,9 @@ export class MasterTables {
 
   /** The tables whose number of rows is not the archive's, for saving (saved() keeps only the rows there are). */
   savedRowCounts(): SavedRowCount[] {
-    return [...this.tables].filter(([name, t]) => t.table.rows !== this.originalRows(name)).map(([name, t]) => [name, t.table.rows]);
+    return [...this.tables]
+      .filter(([name, t]) => t.table.rows !== this.originalRows(name))
+      .map(([name, t]) => [name, t.table.rows]);
   }
 
   /** Give tables their saved number of rows (rows past the end dropped, new ones zero), before restore(). */
@@ -97,7 +100,9 @@ export class MasterTables {
         continue;
       }
       if (rows === t.rows || rows < 0) continue;
-      t.data = t.withRows(Array.from({ length: rows }, (_, i) => (i < t.rows ? t.row(i).slice() : new Uint8Array(t.rowSize))));
+      t.data = t.withRows(
+        Array.from({ length: rows }, (_, i) => (i < t.rows ? t.row(i).slice() : new Uint8Array(t.rowSize))),
+      );
     }
   }
 
@@ -115,7 +120,11 @@ export class MasterTables {
       }
       if (after.length !== t.rowSize) continue;
       // A row added by an edit (addRow): grow the table up to it (rows saved in order, zeros between).
-      if (r >= t.rows) t.data = t.withRows([...Array.from({ length: t.rows }, (_, i) => t.row(i).slice()), ...Array.from({ length: r + 1 - t.rows }, () => new Uint8Array(t.rowSize))]);
+      if (r >= t.rows)
+        t.data = t.withRows([
+          ...Array.from({ length: t.rows }, (_, i) => t.row(i).slice()),
+          ...Array.from({ length: r + 1 - t.rows }, () => new Uint8Array(t.rowSize)),
+        ]);
       const row = t.row(r);
       for (let i = 0; i < row.length; i++) if (after[i] !== before[i]) row[i] = after[i]!;
     }

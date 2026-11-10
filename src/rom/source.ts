@@ -22,7 +22,8 @@ export class BytesSource implements ByteSource {
     return this.bytes.length;
   }
   async read(offset: number, length: number): Promise<Uint8Array> {
-    if (offset < 0 || offset + length > this.bytes.length) throw new RangeError(`read out of range: ${offset}+${length}`);
+    if (offset < 0 || offset + length > this.bytes.length)
+      throw new RangeError(`read out of range: ${offset}+${length}`);
     return this.bytes.subarray(offset, offset + length);
   }
 }

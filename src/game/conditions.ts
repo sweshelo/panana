@@ -64,10 +64,12 @@ export function readConditionTypes(code: Uint8Array): Map<number, ConditionType>
     if (rows.length !== 2) continue;
     const [a, b] = rows as [(typeof rows)[0], (typeof rows)[0]];
     const pat = (x: number[]) => x.map((v) => (v < 0 ? 'E' : v ? '1' : '0')).join('');
-    const pa = pat(a.results), pb = pat(b.results);
+    const pa = pat(a.results),
+      pb = pat(b.results);
     let c: ConditionType | null = null;
     if (pa === '011111' && pb === '000111') c = { type, getter: a.getter, test: 'atLeast' };
-    else if (pa === pb && /^0*10*$/.test(pa) && !(a.getter === 'other' && pa === '100000')) c = { type, getter: a.getter, test: 'equals', eq: pa.indexOf('1') };
+    else if (pa === pb && /^0*10*$/.test(pa) && !(a.getter === 'other' && pa === '100000'))
+      c = { type, getter: a.getter, test: 'equals', eq: pa.indexOf('1') };
     else if (pa.startsWith('01') && pb.startsWith('01')) c = { type, getter: a.getter, test: 'set' };
     else if (pa.startsWith('10') && pb.startsWith('10')) c = { type, getter: a.getter, test: 'clear' };
     if (!c) continue;
@@ -111,7 +113,10 @@ export const CONDITION_FIELDS = [
 ] as const;
 
 /** What a condition type checks, with "値" for the row's value (the label of a type in a picker). */
-export function conditionTypeLabel(c: ConditionType, dungeonName: (d: number) => string = (d) => `ダンジョン ${d}`): string {
+export function conditionTypeLabel(
+  c: ConditionType,
+  dungeonName: (d: number) => string = (d) => `ダンジョン ${d}`,
+): string {
   const x = (n: number) => `0x${n.toString(16).toUpperCase().padStart(2, '0')}`;
   const is = c.test === 'set' ? 'が立っている' : 'が立っていない';
   switch (c.getter) {

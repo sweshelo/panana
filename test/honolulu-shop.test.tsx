@@ -13,7 +13,20 @@ import { equalBytes, u16 } from '../src/util/bytes';
 import { hasHonolulu, HONOLULU_BASE } from './env';
 
 /** The ROM's stages: [first, last] and the number of featured items (naauao honolulu/shops.md §4). */
-const ROM_STAGES: [number, number][] = [[0, 5], [6, 18], [19, 37], [38, 75], [76, 116], [117, 167], [168, 224], [225, 301], [302, 398], [399, 502], [503, 615], [616, 752]];
+const ROM_STAGES: [number, number][] = [
+  [0, 5],
+  [6, 18],
+  [19, 37],
+  [38, 75],
+  [76, 116],
+  [117, 167],
+  [168, 224],
+  [225, 301],
+  [302, 398],
+  [399, 502],
+  [503, 615],
+  [616, 752],
+];
 
 describe.skipIf(!hasHonolulu)('初代のショップ (ROM)', () => {
   let bytes: Uint8Array;
@@ -66,7 +79,8 @@ describe.skipIf(!hasHonolulu)('初代のショップ (ROM)', () => {
     expect(groupRow(m, 11)).toEqual([617, 753, 11, 15, 504, 616]);
     expect(groupRow(m, 1)).toEqual(before[1]!);
     // the other stocks are the same
-    for (const i of [0, 1, 3, 11]) expect(shop.rows(i).map((r) => r.bytes)).toEqual(shop.originalRows(i).map((r) => r.bytes));
+    for (const i of [0, 1, 3, 11])
+      expect(shop.rows(i).map((r) => r.bytes)).toEqual(shop.originalRows(i).map((r) => r.bytes));
     expect(shop.changedStages()).toEqual([2]);
     // and in the exported master
     const out = new HonoluluShop(new HonoluluMaster(m.export()));
@@ -140,7 +154,9 @@ describe.skipIf(!hasHonolulu)('初代のショップのページ (ROM)', () => {
   });
 
   test('the page lists the 12 stages and shows a stage with its condition, stock and greetings', () => {
-    const html = renderToString(<HonoluluShopPage master={session.master} shop={session.shop} arg="5" edited={() => session.edited()} />);
+    const html = renderToString(
+      <HonoluluShopPage master={session.master} shop={session.shop} arg="5" edited={() => session.edited()} />,
+    );
     expect(html).toContain('12 / 12 段階');
     expect(html).toContain('段階 5');
     expect(html).toContain('しゃくねつ火山 の進み具合 = 4');

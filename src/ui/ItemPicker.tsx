@@ -10,7 +10,15 @@ import { Photo } from './Photo';
  * A dialog with every item as a photo, filtered by name, ID or category. `unavailable` greys out items that
  * cannot be picked (and says why in their tooltip); `current` is highlighted and scrolled into view.
  */
-export function ItemPicker({ game, items, title = 'アイテムを選ぶ', current, unavailable, onPick, onClose }: {
+export function ItemPicker({
+  game,
+  items,
+  title = 'アイテムを選ぶ',
+  current,
+  unavailable,
+  onPick,
+  onClose,
+}: {
   game: Game;
   items: ItemBook;
   title?: string;
@@ -28,5 +36,15 @@ export function ItemPicker({ game, items, title = 'アイテムを選ぶ', curre
     unavailable: unavailable?.(it) ?? null,
     category: it.categoryByte & 0xf,
   }));
-  return <GridPicker title={title} entries={entries} current={current} categories={ITEM_CATEGORY} placeholder="名前か ID で絞り込み" onPick={onPick} onClose={onClose} />;
+  return (
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
+      categories={ITEM_CATEGORY}
+      placeholder="名前か ID で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
 }

@@ -6,7 +6,6 @@ import { dungeonRows, newHash } from './mappatch';
 import { loadDoc, type MapDoc } from './sections';
 import { MapDb } from './mapdb';
 
-
 export interface DungeonChoice {
   dungeon: number;
   code: string;
@@ -33,7 +32,8 @@ export function addableDungeons(game: Game): DungeonChoice[] {
 
 /** "D01B03001": the next free number on that floor ("D01F02001" above ground, "D01OUT001" for floor 0). */
 export function suggestName(game: Game, code: string, floor: number): string {
-  const prefix = floor === 0 ? `${code}OUT` : `${code}${floor < 0 ? 'B' : 'F'}${String(Math.abs(floor)).padStart(2, '0')}`;
+  const prefix =
+    floor === 0 ? `${code}OUT` : `${code}${floor < 0 ? 'B' : 'F'}${String(Math.abs(floor)).padStart(2, '0')}`;
   for (let n = 1; ; n++) {
     const name = prefix + String(n).padStart(3, '0');
     if (!game.code.byName(name)) return name;
@@ -62,11 +62,17 @@ export function takenHashes(game: Game): Set<number> {
 }
 
 /** The new map (not yet registered) and its initial document. */
-export function makeMap(game: Game, spec: NewMapSpec, rand: () => number = Math.random): { info: MapInfo; doc: MapDoc } {
+export function makeMap(
+  game: Game,
+  spec: NewMapSpec,
+  rand: () => number = Math.random,
+): { info: MapInfo; doc: MapDoc } {
   const name = spec.name.trim().toUpperCase();
-  if (!/^[A-Z0-9]{1,15}$/.test(name)) throw new Error('マップのコードは英数字 15 文字までにしてください (例: D01B03001)');
+  if (!/^[A-Z0-9]{1,15}$/.test(name))
+    throw new Error('マップのコードは英数字 15 文字までにしてください (例: D01B03001)');
   if (game.code.byName(name)) throw new Error(`${name} はもうあります`);
-  if (spec.template.dungeon !== spec.dungeon && !spec.newDungeonCode) throw new Error('写す元は同じダンジョンのマップにしてください');
+  if (spec.template.dungeon !== spec.dungeon && !spec.newDungeonCode)
+    throw new Error('写す元は同じダンジョンのマップにしてください');
   if (!Number.isInteger(spec.floor) || Math.abs(spec.floor) > 99) throw new Error('階は -99〜99 にしてください');
   const taken = takenHashes(game);
   const isTaken = (h: number): boolean => taken.has(h) || game.db.has(h);
@@ -81,7 +87,8 @@ export function makeMap(game: Game, spec: NewMapSpec, rand: () => number = Math.
     hash: sections[0]!,
     name,
     dungeon: spec.dungeon,
-    dungeonCode: spec.newDungeonCode ?? (game.code.dungeons.find((d) => d.dungeon === spec.dungeon)?.code || t.dungeonCode),
+    dungeonCode:
+      spec.newDungeonCode ?? (game.code.dungeons.find((d) => d.dungeon === spec.dungeon)?.code || t.dungeonCode),
     floor: spec.floor,
     mapDataKey: t.mapDataKey,
     sections,

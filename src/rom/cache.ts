@@ -19,7 +19,14 @@ interface Manifest {
 export async function saveDumpCache(dump: Dump, names: string[]): Promise<void> {
   await idbSet('dump/code.bin', dump.code);
   for (const n of names) await idbSet('dump/romfs/' + n, await dump.readRomfs(n));
-  const m: Manifest = { version: VERSION, label: dump.label, title: dump.title.key, titleVersion: dump.titleVersion, names, savedAt: Date.now() };
+  const m: Manifest = {
+    version: VERSION,
+    label: dump.label,
+    title: dump.title.key,
+    titleVersion: dump.titleVersion,
+    names,
+    savedAt: Date.now(),
+  };
   await idbSet(MANIFEST, m);
 }
 

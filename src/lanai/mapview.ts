@@ -10,7 +10,7 @@ import { AnimatedModel, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
-import { drawHover, drawRoomCells, drawSelection, drawTiles } from '../editor/draw2d';
+import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from '../editor/draw2d';
 import { GridCanvas } from '../editor/gridcanvas';
 import { kindColor, SECTION_COLORS } from '../editor/legend';
 import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
@@ -19,10 +19,25 @@ import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
-import { LANAI_LAYOUTS, LANAI_POINT_SECTIONS, LANAI_ROT_DIR, lanaiExitKind, type LanaiMapInfo, type LanaiPartRef, type LanaiTileSource } from './maps';
+import {
+  LANAI_LAYOUTS,
+  LANAI_POINT_SECTIONS,
+  LANAI_ROT_DIR,
+  lanaiExitKind,
+  type LanaiMapInfo,
+  type LanaiPartRef,
+  type LanaiTileSource,
+} from './maps';
 import { lanaiObjectModels, lanaiTileModels } from './mapModels';
 import { PartThumbnails } from '../editor/part-thumbnails';
-import { LANAI_EFFECT_NAMES, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook, type LanaiRecordLook, type LanaiRecordModel } from './mapObjects';
+import {
+  LANAI_EFFECT_NAMES,
+  lanaiObjectRef,
+  lanaiObjectScale,
+  lanaiRecordLook,
+  type LanaiRecordLook,
+  type LanaiRecordModel,
+} from './mapObjects';
 import { lanaiMonsterModel } from './monsterModels';
 import { lanaiMonsterDesign } from './monsters';
 
@@ -39,7 +54,8 @@ interface LoadedModel {
  */
 function posed(f: ModelFactory, hash: number): THREE.Object3D | null {
   const motions = f.set.models.get(hash)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
-  const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions.find((a) => animationKey(a.name) === '000_');
+  const first =
+    motions.find((a) => animationKey(a.name) === '001_') ?? motions.find((a) => animationKey(a.name) === '000_');
   if (!first) return null;
   const m = new AnimatedModel(f, hash);
   m.select(first.name);
@@ -73,24 +89,34 @@ export class LanaiMapView {
   private readonly markerMats = new MarkerMaterials();
   /** The mark of an effect (a glowing column standing on the cell). */
   private readonly effectGeo = new THREE.CylinderGeometry(70, 70, 160, 24, 1, true).translate(0, 80, 0);
-  private readonly effectMat = new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
+  private readonly effectMat = new THREE.MeshBasicMaterial({
+    color: 0x66ccff,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
   private readonly unsubscribe: () => void;
   private disposed = false;
 
-  constructor(readonly st: LanaiEditState, readonly info: LanaiMapInfo) {
+  constructor(
+    readonly st: LanaiEditState,
+    readonly info: LanaiMapInfo,
+  ) {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d');
     this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group);
     const pointer = {
       down: (cx: number, cy: number, e: { shiftKey: boolean; button: number }) => this.ctl.down(cx, cy, e),
-      move: (cx: number, cy: number) => this.ctl.move(cx, cy),
+      move: (cx: number, cy: number, e: { altKey: boolean }) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 0.15 }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
     // A click in 2D also brings what it picked to the middle of the 3D view.
     this.grid.pointer = {
       ...pointer,
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 8 / this.grid.scale }),
       down: (cx, cy, e) => {
         pointer.down(cx, cy, e);
         const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
@@ -147,7 +173,8 @@ export class LanaiMapView {
     if (this.st.current?.hash !== this.info.hash || this.disposed) return;
     // an edit that switched the MapData (indoor tiles) needs the other tileset's models
     const src = this.source;
-    if (this.loadedFor && (src.mapData !== this.loadedFor.mapData || src.tileset !== this.loadedFor.tileset)) void this.loadTiles();
+    if (this.loadedFor && (src.mapData !== this.loadedFor.mapData || src.tileset !== this.loadedFor.tileset))
+      void this.loadTiles();
     if (what === 'doc' || what === 'selection' || what === 'map') this.sync3d();
     this.grid.draw();
     if (this.st.error) {
@@ -167,14 +194,17 @@ export class LanaiMapView {
   private paint(g: CanvasRenderingContext2D, s: number): void {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash) return;
-    const st = this.st, layers = this.ctl.layers, sel = st.selection;
+    const st = this.st,
+      layers = this.ctl.layers,
+      sel = st.selection;
     if (layers.tiles) drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
     if (layers.room) drawRoomCells(g, s, doc);
     for (const k of [...LANAI_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, LANAI_LAYOUTS[k]!);
-        const x = px * s, y = py * s;
+        const x = px * s,
+          y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         g.fillStyle = SECTION_COLORS[k]!;
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
@@ -196,6 +226,7 @@ export class LanaiMapView {
         g.stroke();
       });
     }
+    drawSnap(g, s, st, this.ctl);
     drawSelection(g, s, st);
     drawHover(g, s, st, this.ctl.hover, LANAI_ROT_DIR);
   }
@@ -238,7 +269,7 @@ export class LanaiMapView {
   look(section: number, index: number): LanaiRecordLook | null {
     const rec = this.doc.recs[section]?.[index];
     if (!rec) return null;
-    return this.partLook(section,rec.raw);
+    return this.partLook(section, rec.raw);
   }
 
   partLook(section: number, raw: Uint8Array): LanaiRecordLook | null {
@@ -251,9 +282,9 @@ export class LanaiMapView {
     });
   }
 
-  private readonly partImages = new PartThumbnails<LanaiRecordModel>(model => this.loadModel(model));
+  private readonly partImages = new PartThumbnails<LanaiRecordModel>((model) => this.loadModel(model));
   partThumb(model: LanaiRecordModel | null): Promise<string | null> {
-    return model ? this.partImages.get(JSON.stringify(model),model) : Promise.resolve(null);
+    return model ? this.partImages.get(JSON.stringify(model), model) : Promise.resolve(null);
   }
 
   /** The name of a loaded model ("obj_box_01") or of an effect ("fx_bg_repair_point.ptcl"), '' while it is loading or when there is none. */
@@ -272,12 +303,15 @@ export class LanaiMapView {
     const key = this.modelKey(m);
     if (!this.objects.has(key)) {
       this.objects.set(key, null);
-      void this.loadModel(m).then((loaded) => {
-        if (this.disposed || !loaded) return loaded?.factory.dispose();
-        this.objects.set(key, loaded);
-        this.sync3d();
-        this.signal.emit();
-      }, () => {});
+      void this.loadModel(m).then(
+        (loaded) => {
+          if (this.disposed || !loaded) return loaded?.factory.dispose();
+          this.objects.set(key, loaded);
+          this.sync3d();
+          this.signal.emit();
+        },
+        () => {},
+      );
       return null;
     }
     const o = this.objects.get(key);
@@ -306,7 +340,9 @@ export class LanaiMapView {
   private sync3d(): void {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash || this.disposed) return;
-    const f = this.factory, layers = this.ctl.layers, sel = this.st.selection;
+    const f = this.factory,
+      layers = this.ctl.layers,
+      sel = this.st.selection;
     const ts = this.loadedFor?.tileset ?? -1;
     this.tileLayer.sync(
       (layers.tiles ? doc.tiles : []).map((t) => ({
@@ -316,7 +352,8 @@ export class LanaiMapView {
         make: () => {
           const ref = f ? this.modelOf(t.kind, t.letter) : null;
           const m = ref ? f!.instance(ref.entry) : null;
-          if (!m) return t.kind === LANAI_EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
+          if (!m)
+            return t.kind === LANAI_EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
           m.rotation.y = (-t.rot * Math.PI) / 2;
           return m;
         },
@@ -335,7 +372,8 @@ export class LanaiMapView {
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = look!.angle;
           // monsters keep their own size (not checked against the game yet)
-          if (look!.model!.type === 'object') model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
+          if (look!.model!.type === 'object')
+            model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
           this.markers.add(model);
           if (!selected) return;
         }

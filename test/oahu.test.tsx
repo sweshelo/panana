@@ -11,7 +11,15 @@ import { OAHU_MESSAGE_ARCHIVES, OahuMessages } from '../src/oahu/messages';
 import { OahuActionPage } from '../src/oahu/ActionPage';
 import { OAHU_CODE, OAHU_LAYOUT, OahuCode } from '../src/oahu/code';
 import { OahuCodePage } from '../src/oahu/CodePage';
-import { OAHU_ELEMENT_NAMES, OAHU_EQUIP_EFFECTS, OAHU_FORM_CATEGORIES, OAHU_MONSTER_BRAIN, oahuCategoryValues, OAHU_SKILL_CONDITION, oahuTriggerLabel } from '../src/oahu/tables';
+import {
+  OAHU_ELEMENT_NAMES,
+  OAHU_EQUIP_EFFECTS,
+  OAHU_FORM_CATEGORIES,
+  OAHU_MONSTER_BRAIN,
+  oahuCategoryValues,
+  OAHU_SKILL_CONDITION,
+  oahuTriggerLabel,
+} from '../src/oahu/tables';
 import { applyIps } from '../src/rom/ips';
 import { u32 } from '../src/util/bytes';
 import { OahuGroupPage } from '../src/oahu/GroupPage';
@@ -19,7 +27,14 @@ import { OahuMonsterPage } from '../src/oahu/MonsterPage';
 import { OahuMonsterModels } from '../src/oahu/monsterModels';
 import { OahuMaster } from '../src/oahu/master';
 import { oahuPreviewPhases } from '../src/oahu/ActionPreview';
-import { decodeOahuPerformance, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression } from '../src/oahu/performance';
+import {
+  decodeOahuPerformance,
+  OAHU_PERF_SLOTS,
+  OahuPerfEdits,
+  OahuPerformances,
+  oahuPerformanceUses,
+  oahuProgression,
+} from '../src/oahu/performance';
 import { animKeys, effectLabel } from '../src/game/performance';
 import { OahuSession } from '../src/oahu/session';
 import { DROP_CAP_ID, dropCapProblem } from '../src/game/dropcap';
@@ -70,7 +85,9 @@ describe.skipIf(!hasOahuBase)('RPG3 Base', () => {
     const t = new GsTable(item.body);
     expect([t.rows, t.rowSize]).toEqual([1191, 0x40]);
     expect(viewsFor(item.body, 'itemData.bin')[0]!.id).toBe('gstable');
-    expect(renderToString(<GsTableView body={item.body} name="itemData.bin" profile={oahuRomfsProfile} />)).toContain('1191 行 × 0x40 バイト');
+    expect(renderToString(<GsTableView body={item.body} name="itemData.bin" profile={oahuRomfsProfile} />)).toContain(
+      '1191 行 × 0x40 バイト',
+    );
 
     const msg = findByName(m, 'MessageSystemCommon_JP.gsmb')!;
     const g = new Gmsg(msg.body);
@@ -79,7 +96,9 @@ describe.skipIf(!hasOahuBase)('RPG3 Base', () => {
     const name = new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0x14, true);
     expect(g.has(name)).toBe(true);
     const text = String.fromCharCode(...toUnits(g.raw[name]!).subarray(1)).replace(/\0.*$/s, '');
-    expect(renderToString(<GmsgView body={msg.body} name={null} profile={oahuRomfsProfile} />)).toContain(`ID 0〜${g.last}`);
+    expect(renderToString(<GmsgView body={msg.body} name={null} profile={oahuRomfsProfile} />)).toContain(
+      `ID 0〜${g.last}`,
+    );
     expect(text.length).toBeGreaterThan(0);
   });
 
@@ -87,8 +106,16 @@ describe.skipIf(!hasOahuBase)('RPG3 Base', () => {
     const m = parseArchive(await dump.readRomfs('21350000'));
     const item = findByName(m, 'itemData.bin')!;
     const s = await OahuSession.open(dump);
-    const html = renderToString(<GsTableView body={item.body} name="itemData.bin" profile={oahuRomfsProfile} context={{ message: (id) => s.messages.texts.preview(id, true) }} />);
-    for (const label of ['買値', '売値', '名前', 'アクション', '分類', '上限']) expect(html).toContain(`>${label}</th>`);
+    const html = renderToString(
+      <GsTableView
+        body={item.body}
+        name="itemData.bin"
+        profile={oahuRomfsProfile}
+        context={{ message: (id) => s.messages.texts.preview(id, true) }}
+      />,
+    );
+    for (const label of ['買値', '売値', '名前', 'アクション', '分類', '上限'])
+      expect(html).toContain(`>${label}</th>`);
     expect(html).toContain('キズぐすり');
     expect(html).toContain('道具 (回復など)');
   });
@@ -105,7 +132,16 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
     expect(items.table.rows).toBe(1191);
     expect(items.items.length).toBe(981);
     const kizu = items.item(1)!;
-    expect([kizu.name, kizu.price, kizu.sell, kizu.rarity, kizu.limit, kizu.action, kizu.categoryByte, kizu.kind]).toEqual(['キズぐすり', 20, 2, 1, 99, 267, 0x11, 1]);
+    expect([
+      kizu.name,
+      kizu.price,
+      kizu.sell,
+      kizu.rarity,
+      kizu.limit,
+      kizu.action,
+      kizu.categoryByte,
+      kizu.kind,
+    ]).toEqual(['キズぐすり', 20, 2, 1, 99, 267, 0x11, 1]);
     expect(items.actionName(267)).toContain('キズぐすり');
     expect(items.itemActions().some((a) => a.row === 267)).toBe(true);
     const choker = items.items.find((it) => it.name === 'ハートのチョーカー')!;
@@ -130,11 +166,15 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
     const nameId = items.messageId(n, 'name');
     expect(nameId).toBe(8658);
     expect(copy.name).toBe('キズぐすり+');
-    expect(items.get(n, 'order')).toBe(Math.max(...items.items.filter((x) => x.id !== n).map((x) => items.get(x.id, 'order'))) + 1);
+    expect(items.get(n, 'order')).toBe(
+      Math.max(...items.items.filter((x) => x.id !== n).map((x) => items.get(x.id, 'order'))) + 1,
+    );
     items.setText(n, 'name', 'キズぐすりＺ');
     items.set(n, 'price', 12345);
     expect(items.item(3)!.name).toBe('キズぐすり+');
-    expect(texts.addedIds().length).toBe(new Set(['name', 'menu', 'shop0', 'shop1', 'shop2'].map((k) => items.messageId(3, k))).size);
+    expect(texts.addedIds().length).toBe(
+      new Set(['name', 'menu', 'shop0', 'shop1', 'shop2'].map((k) => items.messageId(3, k))).size,
+    );
 
     const u = await s.withUpdate(await openUpdate(Bun.file(OAHU_UPDATE), 'update'));
     expect(u.items.item(1)!.price).toBe(30);
@@ -148,12 +188,16 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
     for (const e of out.entries) {
       const name = unpackEntry(out, e).name;
       const same = equalBytes(unpackEntry(before, before.entries[e.index]!).body, unpackEntry(out, e).body);
-      expect(same).toBe(!['itemData.bin', 'MessageSystemCommon_JP.gsmb', 'MessageSystemCommon_IN.gsmb'].includes(name ?? ''));
+      expect(same).toBe(
+        !['itemData.bin', 'MessageSystemCommon_JP.gsmb', 'MessageSystemCommon_IN.gsmb'].includes(name ?? ''),
+      );
     }
     const t = new GsTable(findByName(out, 'itemData.bin')!.body);
     const g = new Gmsg(findByName(out, 'MessageSystemCommon_JP.gsmb')!.body);
     expect(g.last).toBe(8657 + texts.addedIds().length);
-    expect(unitsToText(g.units(new DataView(t.row(n).buffer, t.row(n).byteOffset).getUint32(0x14, true))!, OAHU_SYNTAX).text).toBe('キズぐすりＺ');
+    expect(
+      unitsToText(g.units(new DataView(t.row(n).buffer, t.row(n).byteOffset).getUint32(0x14, true))!, OAHU_SYNTAX).text,
+    ).toBe('キズぐすりＺ');
     expect(new DataView(t.row(1).buffer, t.row(1).byteOffset).getUint32(0, true)).toBe(30);
 
     u.items.removeItem(n);
@@ -164,7 +208,9 @@ describe.skipIf(!hasOahuBase)('RPG3 items (Base)', () => {
 
 describe.skipIf(!hasOahuUpdate)('RPG3 Update', () => {
   test('is refused with the Base to choose', async () => {
-    await expect(openImage(Bun.file(OAHU_UPDATE), 'update')).rejects.toThrow('Base (00040000000EF000) の CIA を選んでください');
+    await expect(openImage(Bun.file(OAHU_UPDATE), 'update')).rejects.toThrow(
+      'Base (00040000000EF000) の CIA を選んでください',
+    );
   });
 });
 
@@ -179,8 +225,21 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
   test('the Update: v4096, its code.bin, 11 archives from patch:', async () => {
     expect(merged.update?.titleVersion).toBe(4096);
     expect(merged.code.length).toBe(5029888);
-    expect(merged.update!.patched).toEqual(['21350000', '3B630000', 'A9DF0000', '296B0000', '97CF0000', '7BF70000', '619D0000', '838B0000', '58190000', '00910000', '6E380000']);
-    const b = await base.readRomfs('21350000'), m = await merged.readRomfs('21350000');
+    expect(merged.update!.patched).toEqual([
+      '21350000',
+      '3B630000',
+      'A9DF0000',
+      '296B0000',
+      '97CF0000',
+      '7BF70000',
+      '619D0000',
+      '838B0000',
+      '58190000',
+      '00910000',
+      '6E380000',
+    ]);
+    const b = await base.readRomfs('21350000'),
+      m = await merged.readRomfs('21350000');
     expect(equalBytes(b, m)).toBe(false);
     expect(equalBytes(await base.readRomfs('A4070000'), await merged.readRomfs('A4070000'))).toBe(true);
     await expect(openUpdate(Bun.file(OAHU_BASE), 'x')).rejects.toThrow('Base です');
@@ -206,7 +265,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
     expect(m.texts.text(40000)?.text).toBeDefined();
   });
 
-  test('an edit made on the Base is exported on the Update\'s archives; the zip is in 00040000000EF000/romfs', async () => {
+  test("an edit made on the Base is exported on the Update's archives; the zip is in 00040000000EF000/romfs", async () => {
     const s = await OahuSession.open(base);
     expect(s.canExport).toBe(false);
     expect(() => s.modFiles()).toThrow('Update');
@@ -228,7 +287,12 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 messages and the MOD (Base
     const cmd = out.entries.find((e) => unpackEntry(out, e).name === 'MessageCommand_JP.gsmb')!;
     expect(unitsToText(new Gmsg(unpackEntry(out, cmd).body).units(80000)!, OAHU_SYNTAX).text).toBe('ＭＯＤ');
     const zip = unzipSync(await u.modZip());
-    expect(Object.keys(zip).sort()).toEqual(['00040000000EF000/romfs/3B630000', '00040000000EF000/romfs/58190000', '00040000000EF000/romfs/619D0000', '00040000000EF000/romfs/838B0000']);
+    expect(Object.keys(zip).sort()).toEqual([
+      '00040000000EF000/romfs/3B630000',
+      '00040000000EF000/romfs/58190000',
+      '00040000000EF000/romfs/619D0000',
+      '00040000000EF000/romfs/838B0000',
+    ]);
   });
 });
 
@@ -244,12 +308,35 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect([m.rows, battle.groups.rows, battle.actions.rows, battle.conditions.rows]).toEqual([201, 190, 1126, 125]);
     expect(battle.monsterName(1)).toBe('はなもぐら');
     const g = (k: string): number => m.get(1, k);
-    expect([g('level'), g('hpMin'), g('hpMax'), g('attackMax'), g('defenseMax'), g('speedMax'), g('exp'), g('gold')]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
-    expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([['タンポポのたね(色1)', 4], ['キズぐすり', 7], ['ちていじんプリント', 10]]);
+    expect([
+      g('level'),
+      g('hpMin'),
+      g('hpMax'),
+      g('attackMax'),
+      g('defenseMax'),
+      g('speedMax'),
+      g('exp'),
+      g('gold'),
+    ]).toEqual([1, 10, 12, 16, 4, 5, 2, 5]);
+    expect(battle.drops(1).map((d) => [battle.itemName(d.item), d.rate])).toEqual([
+      ['タンポポのたね(色1)', 4],
+      ['キズぐすり', 7],
+      ['ちていじんプリント', 10],
+    ]);
     // battleParameter +0xE6, rolled in float (FUN_001C3994): 1/3 and 1/6 come out as 1/2 and 1/5
     expect(battle.dropBase).toEqual([1, 3, 4, 6, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
-    expect(Array.from({ length: 16 }, (_, r) => battle.dropOdds(r))).toEqual([1, 2, 4, 5, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384]);
-    expect([0, 1, 9, 10, 12, 13, 15].map((r) => battle.dropClass(r).label)).toEqual(['必ず', 'おたから', 'おたから', 'レア', 'レア', '激レア', '激レア']);
+    expect(Array.from({ length: 16 }, (_, r) => battle.dropOdds(r))).toEqual([
+      1, 2, 4, 5, 8, 12, 16, 32, 64, 128, 256, 512, 1024, 4096, 8192, 16384,
+    ]);
+    expect([0, 1, 9, 10, 12, 13, 15].map((r) => battle.dropClass(r).label)).toEqual([
+      '必ず',
+      'おたから',
+      'おたから',
+      'レア',
+      'レア',
+      '激レア',
+      '激レア',
+    ]);
     expect([battle.dropOdds(4, 200), battle.dropOdds(4, 0), battle.dropOdds(15, -1)]).toEqual([4, Infinity, 1]);
     expect(battle.skills(1)[0]).toEqual({ slot: 1, action: 995, condition: 1 });
     expect(battle.actionName(995)).toBe('たいあたり');
@@ -268,7 +355,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(battle.actions.get(969, 'element')).toBe(2);
     expect(battle.actions.get(984, 'range')).toBe(3);
     // Two elements: 10〜25 need the 5th bit (アイスメテオ 16 = 氷・土, ダークシャイニング 25 = 光・闇).
-    expect([190, 202, 220].map((r) => OAHU_ELEMENT_NAMES[battle.actions.get(r, 'element')])).toEqual(['火・氷', '氷・土', '光・闇']);
+    expect([190, 202, 220].map((r) => OAHU_ELEMENT_NAMES[battle.actions.get(r, 'element')])).toEqual([
+      '火・氷',
+      '氷・土',
+      '光・闇',
+    ]);
     // A monster's row (kind 2) names the monster, points back at it, and its skills follow it.
     expect(battle.actions.get(566, 'kind')).toBe(2);
     expect(battle.actions.get(566, 'subject')).toBe(79);
@@ -285,7 +376,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
 
   test('the books render; an edit goes into the master', () => {
     const html = renderToString(<OahuMonsterPage session={s} arg="1" />);
-    for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい']) expect(html).toContain(t);
+    for (const t of ['はなもぐら', 'ドロップ', 'たいあたり', 'ちていじんプリント', 'たいせい'])
+      expect(html).toContain(t);
     for (const t of ['おたから・12.5%', 'レア・0.39%', '4: 1/8']) expect(html).toContain(t);
     expect(renderToString(<OahuGroupPage session={s} arg="5" />)).toContain('てっぽうオトシゴ');
     expect(renderToString(<OahuActionPage session={s} arg="233" />)).toContain('どくこうげき');
@@ -309,14 +401,26 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(battle.formChanges(161)).toEqual([{ action: 562, via: 'body', to: 162, trigger: 101 }]);
     // たからばこぞう 18 hides by a skill (picked by the AI), 19 jumps out when hit by breath or spells (107).
     expect(battle.formChanges(18)).toEqual([{ action: 644, via: 'skill3', to: 19, trigger: null }]);
-    expect(battle.formChanges(19)).toEqual([{ action: 645, via: 'skill2', to: 18, trigger: null }, { action: 645, via: 'body', to: 18, trigger: 107 }]);
+    expect(battle.formChanges(19)).toEqual([
+      { action: 645, via: 'skill2', to: 18, trigger: null },
+      { action: 645, via: 'body', to: 18, trigger: 107 },
+    ]);
     // テンペスター's barrier: broken by a wind attack (110 = element 3).
-    expect(battle.formChanges(112).find((c) => c.via === 'body')).toEqual({ action: 1026, via: 'body', to: 111, trigger: 110 });
+    expect(battle.formChanges(112).find((c) => c.via === 'body')).toEqual({
+      action: 1026,
+      via: 'body',
+      to: 111,
+      trigger: 110,
+    });
     expect(oahuTriggerLabel(110)).toBe('風の攻撃を受けたとき');
     expect(oahuTriggerLabel(30)).toBe('30% の確率');
-    expect(battle.formSources(149)).toEqual([{ monster: 148, change: { action: 530, via: 'body', to: 149, trigger: 101 } }]);
+    expect(battle.formSources(149)).toEqual([
+      { monster: 148, change: { action: 530, via: 'body', to: 149, trigger: 101 } },
+    ]);
     // Every category 21 / 22 action points at a monster row.
-    for (let a = 1; a < battle.actions.rows; a++) if (OAHU_FORM_CATEGORIES.includes(battle.actions.get(a, 'category'))) expect(battle.formTarget(a)).toBeGreaterThan(0);
+    for (let a = 1; a < battle.actions.rows; a++)
+      if (OAHU_FORM_CATEGORIES.includes(battle.actions.get(a, 'category')))
+        expect(battle.formTarget(a)).toBeGreaterThan(0);
     const html = renderToString(<OahuMonsterPage session={s} arg="148" />);
     for (const t of ['変身', '倒される一撃を受けたとき', '#149']) expect(html).toContain(t);
     expect(renderToString(<OahuActionPage session={s} arg="530" />)).toContain('形態を変える');
@@ -326,7 +430,12 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const { battle } = s;
     const a = battle.actions;
     // ジャシン's #870: category 21, +0x1A = the new form (row 147), fired from ボディ by a fatal blow.
-    expect([870, 966].map((r) => [a.get(r, 'category'), a.get(r, 'min'), a.get(r, 'max'), a.get(r, 'trigger')])).toEqual([[21, 1, 147, 101], [22, 1, 161, 101]]);
+    expect(
+      [870, 966].map((r) => [a.get(r, 'category'), a.get(r, 'min'), a.get(r, 'max'), a.get(r, 'trigger')]),
+    ).toEqual([
+      [21, 1, 147, 101],
+      [22, 1, 161, 101],
+    ]);
     expect(oahuCategoryValues(21).kind).toBe('monster');
     const jashin = renderToString(<OahuActionPage session={s} arg="870" />);
     for (const t of ['新しい形態', 'ジャシン', '倒される一撃を受けたとき']) expect(jashin).toContain(t);
@@ -393,7 +502,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(m.get(n, 'design')).toBe(m.get(from, 'design'));
     expect(battle.monsterUsers(n)).toEqual([]);
     const html = renderToString(<OahuMonsterPage session={s} arg={String(n)} />);
-    for (const t of ['写して新しいモンスターを作る', 'このモンスターを消す', '＋ 新しいモンスター']) expect(html).toContain(t);
+    for (const t of ['写して新しいモンスターを作る', 'このモンスターを消す', '＋ 新しいモンスター'])
+      expect(html).toContain(t);
     const t = new GsTable(findByName(parseArchive(s.modFiles().get('21350000')!), 'monsterParameter.bin')!.body);
     expect(t.rows).toBe(rows + 1);
     battle.removeMonster(n);
@@ -408,7 +518,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect(g.rows).toBe(groups);
   });
 
-  test('a message shared by several actions can be made one action\'s own', () => {
+  test("a message shared by several actions can be made one action's own", () => {
     const { battle } = s;
     const a = battle.actions;
     const row = [...Array(a.rows).keys()].find((r) => r > 0 && battle.actionsWithText(r, 'name').length > 0)!;
@@ -416,7 +526,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const others = battle.actionsWithText(row, 'name');
     expect(renderToString(<OahuActionPage session={s} arg={String(row)} />)).toContain('このアクションだけの文にする');
     const n = battle.ownActionText(row, 'name');
-    expect([a.get(row, 'name'), battle.actionsWithText(row, 'name'), a.get(others[0]!, 'name')]).toEqual([n, [], before]);
+    expect([a.get(row, 'name'), battle.actionsWithText(row, 'name'), a.get(others[0]!, 'name')]).toEqual([
+      n,
+      [],
+      before,
+    ]);
     expect(battle.message(n)).toBe(battle.message(before));
     battle.revertAction(row);
     battle.texts.removeAdded(n);
@@ -426,7 +540,14 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
   test('performances: directData of 402F0000, the counterpart row, the skill motions and the preview phases', async () => {
     const { battle } = s;
     const a = battle.actions;
-    expect([995, 526].map((r) => ['perfUser', 'perfUser2', 'perfTarget', 'perfTarget2', 'perfField', 'perfSecond'].map((k) => a.get(r, k)))).toEqual([[872, 0, 873, 0, 0, 0], [458, 0, 115, 0, 459, 277]]);
+    expect(
+      [995, 526].map((r) =>
+        ['perfUser', 'perfUser2', 'perfTarget', 'perfTarget2', 'perfField', 'perfSecond'].map((k) => a.get(r, k)),
+      ),
+    ).toEqual([
+      [872, 0, 873, 0, 0, 0],
+      [458, 0, 115, 0, 459, 277],
+    ]);
     const t = (await s.performances.tables())!;
     expect([t.direct.rows, t.direct.rowSize]).toEqual([985, 0x16]);
     const keys = animKeys(s.master);
@@ -442,7 +563,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const motions = loaded.set.models.get(loaded.hash)!.animations.map((x) => x.name.slice(0, 4));
     for (const k of ['001_', '005_', '006_', '008_']) expect(motions).toContain(k);
     const phases = oahuPreviewPhases(s, { ...t, names, sounds: null }, 526, 150, 0);
-    expect(phases.map((p) => [p.anim, p.effects.length > 0, !!p.model])).toEqual([['006_', true, true], ['012_', true, false], ['', true, false]]);
+    expect(phases.map((p) => [p.anim, p.effects.length > 0, !!p.model])).toEqual([
+      ['006_', true, true],
+      ['012_', true, false],
+      ['', true, false],
+    ]);
     expect(renderToString(<OahuActionPage session={s} arg="526" />)).toContain('プレビュー');
   });
 
@@ -453,7 +578,11 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const before = t.direct.data.slice();
     const rows = t.direct.rows;
     const edits = new OahuPerfEdits(a, s.performances);
-    expect(oahuPerformanceUses(a).get(458)?.some((u) => u.action === 526 && u.key === 'perfUser')).toBe(true);
+    expect(
+      oahuPerformanceUses(a)
+        .get(458)
+        ?.some((u) => u.action === 526 && u.key === 'perfUser'),
+    ).toBe(true);
     // Rows 458 and its bytes stay; 526 gets a copy with the new sound delay.
     const n = edits.setSlotField(526, 'perfUser', 'seDelay', 7);
     expect(n).toBe(rows);
@@ -465,7 +594,12 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     expect([t.direct.rows, decodeOahuPerformance(t.direct.row(n), n).motionStart]).toEqual([rows + 1, 3]);
     // Back to the bytes of 458: the slot points at it again.
     edits.setSlotField(526, 'perfUser', 'motionStart', decodeOahuPerformance(t.direct.row(458), 458).motionStart);
-    const back = edits.setSlotField(526, 'perfUser', 'seDelay', decodeOahuPerformance(t.direct.row(458), 458).timing[1]);
+    const back = edits.setSlotField(
+      526,
+      'perfUser',
+      'seDelay',
+      decodeOahuPerformance(t.direct.row(458), 458).timing[1],
+    );
     expect(back < rows && equalBytes(t.direct.row(back), t.direct.row(458))).toBe(true);
     edits.setSlotField(526, 'perfUser', 'seDelay', 7);
     expect(s.performances.changed).toBe(true);
@@ -491,7 +625,13 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
     const prog = (r: number): number => oahuProgression(a.get(r, 'category'), a.get(r, 'kind'));
     expect(oahuProgression(0, 0)).toBe(1);
     expect([oahuProgression(1, 0), oahuProgression(1, 2), oahuProgression(0x12, 0)]).toEqual([2, 3, 2]);
-    expect([oahuProgression(0x17, 4), oahuProgression(0x17, 2), oahuProgression(0x17, 0), oahuProgression(5, 4), oahuProgression(5, 0)]).toEqual([4, 3, 6, 4, 3]);
+    expect([
+      oahuProgression(0x17, 4),
+      oahuProgression(0x17, 2),
+      oahuProgression(0x17, 0),
+      oahuProgression(5, 4),
+      oahuProgression(5, 0),
+    ]).toEqual([4, 3, 6, 4, 3]);
     expect([526, 995].map(prog).every((p) => p > 0)).toBe(true);
     // ドローンＺ: 10 → 16 when it changes form.
     expect([battle.cameraSize(160), battle.cameraSize(161)]).toEqual([10, 16]);
@@ -532,14 +672,37 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
   test('skill conditions: monsterBrain.bin (402F0000) has a row per condition, named after the test monsters 「知能：…」', async () => {
     const t = new GsTable(findByName(parseArchive(await s.dump.readRomfs('402F0000')), 'monsterBrain.bin')!.body);
     expect([t.rows, t.rowSize]).toEqual([16, OAHU_MONSTER_BRAIN.rowSize]);
-    const get = (row: number, k: string): number => readField(t.row(row), OAHU_MONSTER_BRAIN.fields.find((x) => x.key === k)!);
-    expect([0, 1, 2, 3].map((r) => [get(r, 'ap'), get(r, 'apOwn'), get(r, 'once')])).toEqual([[0, 0, 0], [0, 1, 0], [1, 0, 0], [0, 1, 1]]);
-    expect([get(6, 'effective'), get(6, 'targetHp25'), get(6, 'lowestHp'), get(6, 'weakElement')]).toEqual([1, 1, 1, 1]);
-    expect([get(5, 'targetHp65'), get(7, 'strongHalf'), get(8, 'healer'), get(9, 'canAct'), get(9, 'canUse')]).toEqual([2, 1, 2, 2, 2]);
-    expect([12, 14].map((r) => [get(r, 'hp50'), get(r, 'hp25')])).toEqual([[1, 0], [0, 1]]);
+    const get = (row: number, k: string): number =>
+      readField(
+        t.row(row),
+        OAHU_MONSTER_BRAIN.fields.find((x) => x.key === k)!,
+      );
+    expect([0, 1, 2, 3].map((r) => [get(r, 'ap'), get(r, 'apOwn'), get(r, 'once')])).toEqual([
+      [0, 0, 0],
+      [0, 1, 0],
+      [1, 0, 0],
+      [0, 1, 1],
+    ]);
+    expect([get(6, 'effective'), get(6, 'targetHp25'), get(6, 'lowestHp'), get(6, 'weakElement')]).toEqual([
+      1, 1, 1, 1,
+    ]);
+    expect([get(5, 'targetHp65'), get(7, 'strongHalf'), get(8, 'healer'), get(9, 'canAct'), get(9, 'canUse')]).toEqual([
+      2, 1, 2, 2, 2,
+    ]);
+    expect([12, 14].map((r) => [get(r, 'hp50'), get(r, 'hp25')])).toEqual([
+      [1, 0],
+      [0, 1],
+    ]);
     const { battle } = s;
     const tests = battle.monsterList().filter((m) => m.name.startsWith('知能：'));
-    const named = new Map(tests.flatMap((m) => battle.usedSkills(m.id).filter((k) => k.condition > 1).map((k): [number, string] => [k.condition, m.name.slice(3)])));
+    const named = new Map(
+      tests.flatMap((m) =>
+        battle
+          .usedSkills(m.id)
+          .filter((k) => k.condition > 1)
+          .map((k): [number, string] => [k.condition, m.name.slice(3)]),
+      ),
+    );
     for (const [c, n] of named) if (c !== 3) expect(OAHU_SKILL_CONDITION[c]).toBe(n);
     expect(named.get(3)).toBe('標準抑');
     expect(battle.actions.get(1089, 'ap')).toBe(1);
@@ -547,7 +710,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 monsters, groups and actio
 
   test('skills and group slots are written packed; the fallback slot follows its skill', () => {
     const { battle } = s;
-    const row = battle.monsterList().find((m) => battle.usedSkills(m.id).length >= 3 && battle.monsters.get(m.id, 'fallback') === 1)!.id;
+    const row = battle
+      .monsterList()
+      .find((m) => battle.usedSkills(m.id).length >= 3 && battle.monsters.get(m.id, 'fallback') === 1)!.id;
     const before = battle.usedSkills(row);
     const now = before.map((x) => ({ action: x.action, condition: x.condition, from: x.slot }));
     // remove the first skill: the fallback (slot 2) is now slot 1
@@ -586,7 +751,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(() => OahuCode.check(base.dump.code)).toThrow('v4096');
   });
 
-  test('the Update\'s code.bin: the probes, the cave is zero, the effect table matches the item effects', () => {
+  test("the Update's code.bin: the probes, the cave is zero, the effect table matches the item effects", () => {
     const code = s.code!;
     expect(code).not.toBeNull();
     expect(code.caveSize).toBe(0x740);
@@ -598,13 +763,15 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(renderToString(<OahuCodePage session={s} onAddUpdate={() => {}} />)).toContain('mov r1, r0');
   });
 
-  test('a patch is assembled on the Update\'s addresses and exported as exefs/code.ips', async () => {
-    s.codePatches = [{
-      id: 'p',
-      title: 'kind 0x30 -> row 0x4C',
-      source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n',
-      enabled: true,
-    }];
+  test("a patch is assembled on the Update's addresses and exported as exefs/code.ips", async () => {
+    s.codePatches = [
+      {
+        id: 'p',
+        title: 'kind 0x30 -> row 0x4C',
+        source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n',
+        enabled: true,
+      },
+    ];
     const built = s.buildPatches().get('p')!;
     expect(built.errors).toEqual([]);
     expect(built.cave![1]).toBe(OAHU_LAYOUT.caveEnd);
@@ -612,7 +779,7 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     const ips = zip['00040000000EF000/exefs/code.ips']!;
     expect(ips).toBeDefined();
     const patched = OahuCode.check(applyIps(s.code!.code, ips));
-    expect(() => patched.effectConditions()).toThrow("0x30");
+    expect(() => patched.effectConditions()).toThrow('0x30');
     const cave = built.cave![0];
     expect(u32(patched.code, cave - 0x100000)).toBe(0xe59f0000); // ldr r0, [pc, #0]
     expect(u32(patched.code, cave + 8 - 0x100000)).toBe(0x4c);
@@ -626,7 +793,14 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     expect(base.dropCapProblem()).toContain('Update');
     expect(dropCapProblem(s.code!.code, 'oahu')).toBeNull();
     expect(s.dropCapProblem()).toBeNull();
-    s.codePatches = [{ id: 'p', title: 'p', source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n', enabled: true }];
+    s.codePatches = [
+      {
+        id: 'p',
+        title: 'p',
+        source: '@0x1A658C\n  b to_cave\n@cave to_cave\n  ldr r0, =0x4C\n  bx lr\n',
+        enabled: true,
+      },
+    ];
     s.dropCap = true;
     const built = s.buildPatches(s.exportedPatches());
     expect([...built.values()].flatMap((b) => b.errors)).toEqual([]);
@@ -637,11 +811,19 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 code.bin (#65)', () => {
     for (const at of [0x19fd4c, 0x2b7690, 0x4ced28, 0x4cef08]) expect(u32(patched, at - 0x100000) >>> 24).toBe(0xeb); // bl to the cave
     expect(dropCapProblem(patched, 'oahu')).not.toBeNull();
     // the party's state multiplied by five 300 % items, × 200 %: 243 倍 (vanilla stops at 5000 %), and never full
-    for (const [code, acc, value, full] of [[s.code!.code, 5000, 5000, 1], [patched, 16631, 48576, 0]] as const) {
+    for (const [code, acc, value, full] of [
+      [s.code!.code, 5000, 5000, 1],
+      [patched, 16631, 48576, 0],
+    ] as const) {
       const m = new ArmMachine(code, { maxDepth: 6, textEnd: OAHU_TEXT_END });
-      const row = m.alloc(0x40), st = m.alloc(0x10);
-      m.write(row + 0x28, 100, 2); m.write(row + 0x2e, 5001, 2); m.write(row + 0x36, 6, 1);
-      m.write(st, row, 4); m.write(st + 8, 100, 2); m.write(st + 0xa, 200, 2);
+      const row = m.alloc(0x40),
+        st = m.alloc(0x10);
+      m.write(row + 0x28, 100, 2);
+      m.write(row + 0x2e, 5001, 2);
+      m.write(row + 0x36, 6, 1);
+      m.write(st, row, 4);
+      m.write(st + 8, 100, 2);
+      m.write(st + 0xa, 200, 2);
       for (let i = 0; i < 5; i++) m.run(0x2b7674, [st, 300]);
       expect([m.read(st + 8, 2), m.run(0x4ced08, [st]) | 0, m.run(0x4ceef4, [st])]).toEqual([acc, value, full]);
     }
@@ -677,7 +859,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
   test('the table is rebuilt byte for byte; a stock edit is written to both archives', async () => {
     const shops = s.shops!;
     const arc = parseArchive(await s.dump.readRomfs('3B630000'));
-    const original = unpackEntry(arc, arc.entries.find((e) => e.hash === 0x67297400)!).body;
+    const original = unpackEntry(
+      arc,
+      arc.entries.find((e) => e.hash === 0x67297400)!,
+    ).body;
     expect(equalBytes(shops.build(), original)).toBe(true);
     shops.set(27, [...shops.rows(27), { item: 1, price: 3, once: 0 }]);
     shops.set(0, shops.rows(0).slice(1));
@@ -685,7 +870,13 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     const files = s.modFiles();
     expect([...files.keys()].sort()).toEqual(['3B630000', 'E3C10000']);
     const out = [parseArchive(files.get('3B630000')!), parseArchive(files.get('E3C10000')!)];
-    const tables = out.map((a) => unpackEntry(a, a.entries.find((e) => e.hash === 0x67297400)!).body);
+    const tables = out.map(
+      (a) =>
+        unpackEntry(
+          a,
+          a.entries.find((e) => e.hash === 0x67297400)!,
+        ).body,
+    );
     expect(equalBytes(tables[0]!, tables[1]!)).toBe(true);
     const t = new GsTable(tables[0]!);
     expect(t.rows).toBe(782);
@@ -693,7 +884,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     expect(back.get(27)!.rows.at(-1)).toEqual({ item: 1, price: 3, once: 0 });
     expect(back.get(0)!.rows.length).toBe(8);
     // the rest of 3B630000 (models, Shop, MessageCommand) is as it was
-    for (const e of out[0]!.entries) if (e.hash !== 0x67297400) expect(equalBytes(unpackEntry(out[0]!, e).body, unpackEntry(arc, arc.entries[e.index]!).body)).toBe(true);
+    for (const e of out[0]!.entries)
+      if (e.hash !== 0x67297400)
+        expect(equalBytes(unpackEntry(out[0]!, e).body, unpackEntry(arc, arc.entries[e.index]!).body)).toBe(true);
     // saved and restored like the other edits
     const saved = shops.saved();
     shops.set(27, shops.originalRows(27));
@@ -707,7 +900,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 shops (#79)', () => {
     expect(html).not.toContain('同一アイテム');
     // 店 25 (幻影の店) sells キズぐすり eight times: only a note
     expect(shops.rows(25).map((r) => r.item)).toEqual(Array(8).fill(2));
-    expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain('同一アイテムが既に陳列されています (キズぐすり)');
+    expect(renderToString(<OahuShopPage session={s} arg="25" />)).toContain(
+      '同一アイテムが既に陳列されています (キズぐすり)',
+    );
     shops.set(27, shops.originalRows(27));
     shops.set(0, shops.originalRows(0));
   });

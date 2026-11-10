@@ -8,7 +8,21 @@ import { LanaiSession } from '../src/lanai/session';
 import { LanaiShopPage } from '../src/lanai/ShopPage';
 import { lanaiDropIndex, lanaiSourceIndex } from '../src/lanai/itemSources';
 import { lanaiItems } from '../src/lanai/items';
-import { LanaiContentShops, lanaiClerks, lanaiInSlotPool, lanaiSetSlotPool, lanaiShopRowBytes, lanaiShops, lanaiShopSlotItems, lanaiShopSlotKind, lanaiSlotKindItems, SHOP_COND, SHOP_HEAD, SHOP_LIMIT, SHOP_SLOT } from '../src/lanai/shops';
+import {
+  LanaiContentShops,
+  lanaiClerks,
+  lanaiInSlotPool,
+  lanaiSetSlotPool,
+  lanaiShopRowBytes,
+  lanaiShops,
+  lanaiShopSlotItems,
+  lanaiShopSlotKind,
+  lanaiSlotKindItems,
+  SHOP_COND,
+  SHOP_HEAD,
+  SHOP_LIMIT,
+  SHOP_SLOT,
+} from '../src/lanai/shops';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages } from '../src/rom/dump';
 import { u32, w32 } from '../src/util/bytes';
@@ -21,7 +35,23 @@ function plainTable(name: string, size: number, rows: Uint8Array[], ids: number[
   const idsAt = Math.ceil((data + rows.length * size) / 16) * 16;
   const relocAt = Math.ceil((idsAt + ids.length * 4) / 16) * 16;
   const b = new Uint8Array(relocAt);
-  [rows.length, size, 0x40, pool.length, data, rows.length * size, idsAt, ids.length * 4, 0, 0, relocAt, 0, 0, 0, name.length + 1].forEach((v, i) => w32(b, i * 4, v));
+  [
+    rows.length,
+    size,
+    0x40,
+    pool.length,
+    data,
+    rows.length * size,
+    idsAt,
+    ids.length * 4,
+    0,
+    0,
+    relocAt,
+    0,
+    0,
+    0,
+    name.length + 1,
+  ].forEach((v, i) => w32(b, i * 4, v));
   b.set(pool, 0x40);
   rows.forEach((r, i) => b.set(r, data + i * size));
   ids.forEach((id, i) => w32(b, idsAt + i * 4, id));
@@ -42,10 +72,26 @@ const id = (n: number): number => (0x80000000 | n) >>> 0;
 
 /** Two shops: shop 0 = head row 0 + two items, shop 1 = head row 3 + one item (Shop +0x00 = their head rows' IDs). */
 function twoShops(): LanaiContentShops {
-  const items = new LanaiTable(plainTable('ShopItem', 0x2c, [head(), item(id(1), 5), item(id(2)), head(), item(id(7))], [0, 1, 2, 3, 4].map((n) => id(n + 10))));
-  const shopRow = (ref: number): Uint8Array => { const b = new Uint8Array(0x1c); w32(b, 0, ref); return b; };
+  const items = new LanaiTable(
+    plainTable(
+      'ShopItem',
+      0x2c,
+      [head(), item(id(1), 5), item(id(2)), head(), item(id(7))],
+      [0, 1, 2, 3, 4].map((n) => id(n + 10)),
+    ),
+  );
+  const shopRow = (ref: number): Uint8Array => {
+    const b = new Uint8Array(0x1c);
+    w32(b, 0, ref);
+    return b;
+  };
   const shop = new LanaiTable(plainTable('Shop', 0x1c, [shopRow(id(10)), shopRow(id(13))], [id(0), id(1)]));
-  return new LanaiContentShops(null as unknown as LanaiSession, { index: 1, archive: 'X', tableResource: 0, stages: [] }, shop, items);
+  return new LanaiContentShops(
+    null as unknown as LanaiSession,
+    { index: 1, archive: 'X', tableResource: 0, stages: [] },
+    shop,
+    items,
+  );
 }
 
 const itemsOf = (s: LanaiContentShops, shop: number): number[] => s.rows(shop).map((r) => r.item & 0xffff);
@@ -120,7 +166,10 @@ describe('RPG FREE! shop stock edits', () => {
 describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump, { fresh: true });
   }, 300000);
   afterEach(() => session.revertAll());
@@ -142,11 +191,22 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
   test('content 2: the clerk of D01001F01 and the shop it opens', async () => {
     const c = lanaiContents(session)[2]!;
     const shops = (await lanaiShops(session, c))!;
-    const names = new Map(session.need('ItemData').rowIds.map((rid, r) => [rid, session.plain(session.need('ItemData'), r, 'name')]));
-    expect(shops.rows(0).map((r) => names.get(r.item))).toEqual(['キズぐすり', 'ふっかつのくすり', 'アンテナパワー', 'マヒよけのスカーフ', 'つちのおまもり', 'かぜのグラブ']);
+    const names = new Map(
+      session.need('ItemData').rowIds.map((rid, r) => [rid, session.plain(session.need('ItemData'), r, 'name')]),
+    );
+    expect(shops.rows(0).map((r) => names.get(r.item))).toEqual([
+      'キズぐすり',
+      'ふっかつのくすり',
+      'アンテナパワー',
+      'マヒよけのスカーフ',
+      'つちのおまもり',
+      'かぜのグラブ',
+    ]);
     expect(shops.rows(0).map((r) => r.bytes[SHOP_LIMIT])).toEqual([5, 3, 1, 0, 0, 0]);
     const clerks = lanaiClerks(await lanaiMaps(session, c));
-    expect(clerks.map((k) => [k.group, k.event, k.places.map((p) => `${p.map}/${p.section}#${p.index}`)])).toEqual([[1, 10, ['D01001F01/5#0']]]);
+    expect(clerks.map((k) => [k.group, k.event, k.places.map((p) => `${p.map}/${p.section}#${p.index}`)])).toEqual([
+      [1, 10, ['D01001F01/5#0']],
+    ]);
     const html = renderToString(<LanaiShopPage session={session} arg="2.0" />);
     expect(html).toContain('店の表を読むコンテンツ');
   }, 300000);
@@ -155,8 +215,12 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     const shops = (await lanaiShops(session, lanaiContents(session)[0]!))!;
     const slots = shops.rows(2).filter((r) => lanaiShopSlotKind(r.bytes) >= 0);
     expect(slots.length).toBe(35);
-    expect(slots.map((r) => r.bytes[SHOP_SLOT]!).sort((a, b) => a - b)).toEqual(Array.from({ length: 35 }, (_, i) => i + 1));
-    expect(new Set(slots.map((r) => lanaiShopSlotKind(r.bytes)))).toEqual(new Set([0x34, 0x51, 0x53, 0x54, 0x55, 0x57, 0x58, 0x59, 0x61, 0x62, 0x63, 0x64, 0x65, 0x67, 0x68]));
+    expect(slots.map((r) => r.bytes[SHOP_SLOT]!).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 35 }, (_, i) => i + 1),
+    );
+    expect(new Set(slots.map((r) => lanaiShopSlotKind(r.bytes)))).toEqual(
+      new Set([0x34, 0x51, 0x53, 0x54, 0x55, 0x57, 0x58, 0x59, 0x61, 0x62, 0x63, 0x64, 0x65, 0x67, 0x68]),
+    );
     for (const r of slots) expect(lanaiShopSlotItems(session, lanaiShopSlotKind(r.bytes)).length).toBeGreaterThan(0);
     // a pool is edited by ItemDataCore +0x30 bit 0
     const out = lanaiSlotKindItems(session, 0x51).find((it) => !lanaiInSlotPool(session, it));
@@ -198,7 +262,9 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     const other = await LanaiSession.open(session.dump, { fresh: true });
     await other.restore(saved);
     const again = (await lanaiShops(other, lanaiContents(other)[24]!))!;
-    expect(again.shops.map((s) => again.rows(s.row).map((r) => r.item))).toEqual(shops.shops.map((s) => shops.rows(s.row).map((r) => r.item)));
+    expect(again.shops.map((s) => again.rows(s.row).map((r) => r.item))).toEqual(
+      shops.shops.map((s) => shops.rows(s.row).map((r) => r.item)),
+    );
     shops.set(0, shops.originalRows(0));
     expect(shops.items.changed || shops.shopTable.changed).toBe(false);
     expect(u32(shops.shopTable.row(1), 0)).toBe(u32(shops.shopTable.originalRow(1)!, 0));
@@ -208,7 +274,10 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
 describe.skipIf(!hasLanai)('RPG FREE! item book: where items are got (ROM)', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump, { fresh: true });
   }, 300000);
 

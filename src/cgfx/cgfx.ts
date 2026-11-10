@@ -190,14 +190,29 @@ function composeTRS(sc: [number, number, number], rot: [number, number, number],
   const [sx, sy, sz] = rot.map(Math.sin) as [number, number, number];
   // R = Rz * Ry * Rx
   const r = [
-    cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
-    sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
-    -sy, cy * sx, cy * cx,
+    cz * cy,
+    cz * sy * sx - sz * cx,
+    cz * sy * cx + sz * sx,
+    sz * cy,
+    sz * sy * sx + cz * cx,
+    sz * sy * cx - cz * sx,
+    -sy,
+    cy * sx,
+    cy * cx,
   ];
   return [
-    r[0]! * sc[0], r[1]! * sc[1], r[2]! * sc[2], t[0],
-    r[3]! * sc[0], r[4]! * sc[1], r[5]! * sc[2], t[1],
-    r[6]! * sc[0], r[7]! * sc[1], r[8]! * sc[2], t[2],
+    r[0]! * sc[0],
+    r[1]! * sc[1],
+    r[2]! * sc[2],
+    t[0],
+    r[3]! * sc[0],
+    r[4]! * sc[1],
+    r[5]! * sc[2],
+    t[1],
+    r[6]! * sc[0],
+    r[7]! * sc[1],
+    r[8]! * sc[2],
+    t[2],
   ];
 }
 
@@ -276,7 +291,8 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
   };
   const mappers = o + 0x16c + 3 * 0x58;
   const textures: (string | null)[] = [];
-  let wrapS = 2, wrapT = 2;
+  let wrapS = 2,
+    wrapT = 2;
   for (let i = 0; i < 3; i++) {
     const m = r.rel(mappers + i * 4);
     if (!m) {
@@ -299,7 +315,8 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
   for (let i = 0; i < 3; i++) {
     const c = coord + i * 0x58;
     const m = r.rel(mappers + i * 4);
-    let ws = 2, wt = 2;
+    let ws = 2,
+      wt = 2;
     if (m) {
       const param = picaRegs(r.b, m + 0x10, 13).get([0x83, 0x93, 0x9b][i]!);
       if (param !== undefined) {
@@ -371,7 +388,8 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
     const at = after.get(0x104);
     if (at !== undefined) alphaFunc = { enabled: (at & 1) === 1, func: (at >> 4) & 7, ref: ((at >> 8) & 255) / 255 };
     const bc = after.get(0xfd);
-    if (bc !== undefined) tevBuffer.color = [bc & 255, (bc >> 8) & 255, (bc >> 16) & 255, bc >>> 24].map((v) => v / 255);
+    if (bc !== undefined)
+      tevBuffer.color = [bc & 255, (bc >> 8) & 255, (bc >> 16) & 255, bc >>> 24].map((v) => v / 255);
     const up = after.get(0xe0);
     if (up !== undefined) {
       tevBuffer.updateRgb = (up >> 8) & 15;
@@ -379,7 +397,8 @@ function readMaterial(r: Reader, o: number): CgfxMaterial {
     }
   }
   const depth = picaRegs(r.b, o + 0x11c, 2).get(0x107);
-  const depthTest = depth === undefined ? { enabled: true, func: 5 } : { enabled: (depth & 1) === 1, func: (depth >> 4) & 7 };
+  const depthTest =
+    depth === undefined ? { enabled: true, func: 5 } : { enabled: (depth & 1) === 1, func: (depth >> 4) & 7 };
   const polygonOffset = r.u32(o + 0x104) & 1 ? r.f32(o + 0x10c) || 1 : 0;
 
   return {
@@ -417,10 +436,18 @@ function readValue(b: Uint8Array, o: number, a: Attr, out: number[]): void {
   for (let i = 0; i < 4; i++) out[i] = i === 3 ? 1 : 0;
   for (let i = 0; i < a.elements && i < 4; i++) {
     switch (a.type) {
-      case 0: out[i] = (b[o + i]! << 24) >> 24; break;
-      case 1: out[i] = b[o + i]!; break;
-      case 2: out[i] = (u16(b, o + i * 2) << 16) >> 16; break;
-      case 6: out[i] = f32(b, o + i * 4); break;
+      case 0:
+        out[i] = (b[o + i]! << 24) >> 24;
+        break;
+      case 1:
+        out[i] = b[o + i]!;
+        break;
+      case 2:
+        out[i] = (u16(b, o + i * 2) << 16) >> 16;
+        break;
+      case 6:
+        out[i] = f32(b, o + i * 4);
+        break;
     }
   }
 }
@@ -448,12 +475,21 @@ function readModel(r: Reader, o: number): CgfxModel {
         const v = (off: number): [number, number, number] => [r.f32(b + off), r.f32(b + off + 4), r.f32(b + off + 8)];
         const index = r.u32(b + 8);
         bones[index] = { parent: r.s32(b + 0x0c), local: composeTRS(v(0x20), v(0x2c), v(0x38)) };
-        skeleton[index] = { name: e.name, parent: r.s32(b + 0x0c), scale: v(0x20), rotation: v(0x2c), translation: v(0x38) };
+        skeleton[index] = {
+          name: e.name,
+          parent: r.s32(b + 0x0c),
+          scale: v(0x20),
+          rotation: v(0x2c),
+          translation: v(0x38),
+        };
       }
     const world = (i: number, depth = 0): Mat34 => {
       if (boneWorld[i]) return boneWorld[i]!;
       const bone = bones[i]!;
-      const m = bone.parent >= 0 && bones[bone.parent] && depth < 64 ? mul34(world(bone.parent, depth + 1), bone.local) : bone.local;
+      const m =
+        bone.parent >= 0 && bones[bone.parent] && depth < 64
+          ? mul34(world(bone.parent, depth + 1), bone.local)
+          : bone.local;
       boneWorld[i] = m;
       return m;
     };
@@ -479,7 +515,8 @@ function readModel(r: Reader, o: number): CgfxModel {
       visible: node ? node.visible : visibleFlag === 1,
     });
   }
-  for (let i = 0; i < skeleton.length; i++) skeleton[i] ??= { name: '', parent: -1, scale: [1, 1, 1], rotation: [0, 0, 0], translation: [0, 0, 0] };
+  for (let i = 0; i < skeleton.length; i++)
+    skeleton[i] ??= { name: '', parent: -1, scale: [1, 1, 1], rotation: [0, 0, 0], translation: [0, 0, 0] };
   return { name, meshes, materials, bones: skeleton, animations: [] };
 }
 
@@ -494,7 +531,8 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
 
   // Vertex buffers: one interleaved buffer (0x40000002, its attributes are 0x40000001) + fixed attributes
   // (0x80000000).
-  let vbuf = 0, stride = 0;
+  let vbuf = 0,
+    stride = 0;
   const attrs: Attr[] = [];
   for (const vg of r.ptrs(vgCount, vgTable)) {
     const type = r.u32(vg);
@@ -523,8 +561,15 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
     }
   }
 
-  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
-  const skinIdx: number[] = [], skinW: number[] = [];
+  const pos: number[] = [],
+    nrm: number[] = [],
+    uv: number[] = [],
+    uv1: number[] = [],
+    uv2: number[] = [],
+    col: number[] = [],
+    idx: number[] = [];
+  const skinIdx: number[] = [],
+    skinW: number[] = [];
   let skinned = false;
   const has = (u: number): boolean => attrs.some((a) => a.usage === u);
   const tmp = [0, 0, 0, 0];
@@ -550,10 +595,16 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
             out = pos.length / 3;
             vmap.set(vi, out);
             const base = vbuf + vi * stride;
-            let p = [0, 0, 0], nn = [0, 1, 0], bone = -1;
-            const bi = [-1, -1, -1, -1], bw = [0, 0, 0, 0];
+            let p = [0, 0, 0],
+              nn = [0, 1, 0],
+              bone = -1;
+            const bi = [-1, -1, -1, -1],
+              bw = [0, 0, 0, 0];
             let hasWeights = false;
-            let c = [1, 1, 1, 1], t = [0, 0], t1 = [0, 0], t2 = [0, 0];
+            let c = [1, 1, 1, 1],
+              t = [0, 0],
+              t1 = [0, 0],
+              t2 = [0, 0];
             for (const a of attrs) {
               if (a.fixed) for (let k = 0; k < 4; k++) tmp[k] = a.fixed[k]! * a.scale;
               else {
@@ -561,12 +612,24 @@ function readShape(r: Reader, s: number, boneWorld: Mat34[]): Shape {
                 for (let k = 0; k < 4; k++) tmp[k] = tmp[k]! * a.scale;
               }
               switch (a.usage) {
-                case ATTR.position: p = [tmp[0]! + posOffset[0]!, tmp[1]! + posOffset[1]!, tmp[2]! + posOffset[2]!]; break;
-                case ATTR.normal: nn = [tmp[0]!, tmp[1]!, tmp[2]!]; break;
-                case ATTR.color: c = [tmp[0]!, tmp[1]!, tmp[2]!, a.elements > 3 || a.fixed ? tmp[3]! : 1]; break;
-                case ATTR.uv0: t = [tmp[0]!, tmp[1]!]; break;
-                case ATTR.uv1: t1 = [tmp[0]!, tmp[1]!]; break;
-                case ATTR.uv2: t2 = [tmp[0]!, tmp[1]!]; break;
+                case ATTR.position:
+                  p = [tmp[0]! + posOffset[0]!, tmp[1]! + posOffset[1]!, tmp[2]! + posOffset[2]!];
+                  break;
+                case ATTR.normal:
+                  nn = [tmp[0]!, tmp[1]!, tmp[2]!];
+                  break;
+                case ATTR.color:
+                  c = [tmp[0]!, tmp[1]!, tmp[2]!, a.elements > 3 || a.fixed ? tmp[3]! : 1];
+                  break;
+                case ATTR.uv0:
+                  t = [tmp[0]!, tmp[1]!];
+                  break;
+                case ATTR.uv1:
+                  t1 = [tmp[0]!, tmp[1]!];
+                  break;
+                case ATTR.uv2:
+                  t2 = [tmp[0]!, tmp[1]!];
+                  break;
                 case ATTR.boneIndex: {
                   // Bone indices are raw integers (the scale applies to other attributes only).
                   for (let k = 0; k < Math.min(a.elements, 4); k++) {

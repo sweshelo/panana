@@ -22,7 +22,18 @@ export const OAHU_ITEM_FILE = OAHU_ITEM_DATA.file;
 export const OAHU_ITEM_MESSAGE_KEYS = ['name', ...OAHU_ITEM_TEXTS.map(([key]) => key)];
 
 /** Keys of the fields the book edits as numbers. */
-export type OahuItemNumber = 'price' | 'sell' | 'rarity' | 'limit' | 'action' | 'effect1' | 'effect1Sub' | 'amount1' | 'effect2' | 'effect2Sub' | 'amount2';
+export type OahuItemNumber =
+  | 'price'
+  | 'sell'
+  | 'rarity'
+  | 'limit'
+  | 'action'
+  | 'effect1'
+  | 'effect1Sub'
+  | 'amount1'
+  | 'effect2'
+  | 'effect2Sub'
+  | 'amount2';
 
 export interface OahuEquipEffect {
   /** 1 or 2. */
@@ -57,22 +68,32 @@ const F = (key: string): FieldDef => field(OAHU_ITEM_DATA, key);
 const decoText = (s: string): string => s.replace(/[Ę-Ĥ]/g, (c) => `(色${c.charCodeAt(0) - 0x117})`);
 
 export function oahuCategoryLabel(b: number): string {
-  return OAHU_ITEM_CATEGORY[b] ?? `${OAHU_ITEM_KIND[b & 0xf] ?? `分類 ${b & 0xf}`} (0x${b.toString(16).toUpperCase().padStart(2, '0')})`;
+  return (
+    OAHU_ITEM_CATEGORY[b] ??
+    `${OAHU_ITEM_KIND[b & 0xf] ?? `分類 ${b & 0xf}`} (0x${b.toString(16).toUpperCase().padStart(2, '0')})`
+  );
 }
 
 /** "能力アップ: こうげき +20", "経験値増加 120%", "アクション (打撃): #233 どくこうげき". */
 export function oahuEffectText(e: OahuEquipEffect, actionName: (row: number) => string = (r) => `#${r}`): string {
   const k = OAHU_EQUIP_EFFECTS[e.kind];
-  if (!k) return `効果 0x${e.kind.toString(16).toUpperCase().padStart(2, '0')}${e.sub ? ` (${e.sub})` : ''}: ${e.value}`;
-  const target = k.sub ? OAHU_EFFECT_SUBS[k.sub][e.sub] ?? `${e.sub}` : '';
+  if (!k)
+    return `効果 0x${e.kind.toString(16).toUpperCase().padStart(2, '0')}${e.sub ? ` (${e.sub})` : ''}: ${e.value}`;
+  const target = k.sub ? (OAHU_EFFECT_SUBS[k.sub][e.sub] ?? `${e.sub}`) : '';
   const head = target ? `${k.label}: ${target}` : k.label;
   switch (k.value) {
-    case 'plus': return `${head} ${e.value < 0 ? '' : '+'}${e.value}`;
-    case 'percent': return `${head} ${e.value}%`;
-    case 'element': return `${head}: ${OAHU_EFFECT_SUBS.element[e.value] ?? e.value}`;
-    case 'action': return `${head}: ${actionName(e.value)}`;
-    case 'number': return `${head} ${e.value}`;
-    case 'flag': return e.value === 1 ? head : `${head} (${e.value})`;
+    case 'plus':
+      return `${head} ${e.value < 0 ? '' : '+'}${e.value}`;
+    case 'percent':
+      return `${head} ${e.value}%`;
+    case 'element':
+      return `${head}: ${OAHU_EFFECT_SUBS.element[e.value] ?? e.value}`;
+    case 'action':
+      return `${head}: ${actionName(e.value)}`;
+    case 'number':
+      return `${head} ${e.value}`;
+    case 'flag':
+      return e.value === 1 ? head : `${head} (${e.value})`;
   }
 }
 
@@ -121,7 +142,13 @@ export class OahuItems {
     if (kind === 3) {
       for (const slot of [1, 2]) {
         const k = readField(r, F(`effect${slot}`));
-        if (k) effects.push({ slot, kind: k, sub: readField(r, F(`effect${slot}Sub`)), value: readField(r, F(`amount${slot}`)) });
+        if (k)
+          effects.push({
+            slot,
+            kind: k,
+            sub: readField(r, F(`effect${slot}Sub`)),
+            value: readField(r, F(`amount${slot}`)),
+          });
       }
     }
     return {
@@ -216,7 +243,12 @@ export class OahuItems {
 
   /** Whether an item fills a row that is empty in the archive (copyItem). */
   added(id: number): boolean {
-    return id > 0 && id < this.table.rows && !u32(this.master.originalRow(OAHU_ITEM_FILE, id), 0x14) && !!u32(this.row(id), 0x14);
+    return (
+      id > 0 &&
+      id < this.table.rows &&
+      !u32(this.master.originalRow(OAHU_ITEM_FILE, id), 0x14) &&
+      !!u32(this.row(id), 0x14)
+    );
   }
 
   /** The row a copy goes to: the first empty row after the item (each category has some), else the first one; -1 = none. */
@@ -271,7 +303,8 @@ export class OahuItems {
     this.row(id).set(this.master.originalRow(OAHU_ITEM_FILE, id));
     const used = new Set<number>();
     for (let i = 1; i < this.table.rows; i++) for (const k of OAHU_ITEM_MESSAGE_KEYS) used.add(this.get(i, k));
-    for (const m of mine.sort((a, b) => b - a)) if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
+    for (const m of mine.sort((a, b) => b - a))
+      if (m === this.texts.addedIds().at(-1) && !used.has(m)) this.texts.removeAdded(m);
     const i = this.items.findIndex((x) => x.id === id);
     if (i >= 0) this.items.splice(i, 1);
     this.byId.delete(id);
@@ -288,7 +321,8 @@ export class OahuItems {
   actionName(row: number): string {
     if (row <= 0 || row >= this.actions.rows) return `#${row}`;
     const users = this.items.filter((it) => it.kind !== 3 && it.action === row).map((it) => it.name);
-    if (users.length) return `#${row} ${[...new Set(users)].slice(0, 3).join('・')}${users.length > 3 ? ' ほか' : ''} のアクション`;
+    if (users.length)
+      return `#${row} ${[...new Set(users)].slice(0, 3).join('・')}${users.length > 3 ? ' ほか' : ''} のアクション`;
     const name = this.message(readField(this.actions.row(row), field(OAHU_ACTION_DATA, 'name')));
     return name && !name.includes('使') ? `#${row} ${name}` : `#${row}`;
   }
@@ -297,7 +331,8 @@ export class OahuItems {
   itemActions(): { row: number; label: string }[] {
     const kind = field(OAHU_ACTION_DATA, 'kind');
     const out: { row: number; label: string }[] = [];
-    for (let row = 1; row < this.actions.rows; row++) if (readField(this.actions.row(row), kind) === 4) out.push({ row, label: this.actionName(row) });
+    for (let row = 1; row < this.actions.rows; row++)
+      if (readField(this.actions.row(row), kind) === 4) out.push({ row, label: this.actionName(row) });
     return out;
   }
 

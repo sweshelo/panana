@@ -64,7 +64,13 @@ async function readImage(file: Blob): Promise<Image> {
   if (titleId && ncch.programId !== titleId) throw new Error(`プログラム ID が違います (${ncch.programId})`);
   let code = await readExefsFile(ncch.exefs, '.code');
   if (isCodeCompressed(ncch.exheader)) code = blzDecompress(code);
-  return { titleId: titleId ?? ncch.programId, titleVersion, code, files: await parseRomfs(ncch.romfs), romfs: ncch.romfs };
+  return {
+    titleId: titleId ?? ncch.programId,
+    titleVersion,
+    code,
+    files: await parseRomfs(ncch.romfs),
+    romfs: ncch.romfs,
+  };
 }
 
 const readFile = (img: Image, path: string): Promise<Uint8Array> => {
@@ -127,16 +133,30 @@ async function imageUpdate(img: Image, label: string): Promise<UpdateImage> {
   const title = titleByUpdateId(img.titleId);
   if (!title) {
     const base = titleById(img.titleId);
-    throw new Error(base ? `これは『${base.name}』の Base です。Update (${base.updateTitleId ?? 'なし'}) の CIA を選んでください。` : `タイトル ID が ${img.titleId} です。Update の CIA ではありません。`);
+    throw new Error(
+      base
+        ? `これは『${base.name}』の Base です。Update (${base.updateTitleId ?? 'なし'}) の CIA を選んでください。`
+        : `タイトル ID が ${img.titleId} です。Update の CIA ではありません。`,
+    );
   }
   const patched = img.files.has('/patchList.bin') ? parsePatchList(await readFile(img, 'patchList.bin')) : [];
-  for (const n of patched) if (!img.files.has('/' + n)) throw new Error(`Update の RomFS に patchList.bin の ${n} がありません`);
-  return { label, title, titleVersion: img.titleVersion, patched, code: img.code, readRomfs: (name) => readFile(img, name), size: (name) => img.files.get('/' + name)?.size ?? NaN };
+  for (const n of patched)
+    if (!img.files.has('/' + n)) throw new Error(`Update の RomFS に patchList.bin の ${n} がありません`);
+  return {
+    label,
+    title,
+    titleVersion: img.titleVersion,
+    patched,
+    code: img.code,
+    readRomfs: (name) => readFile(img, name),
+    size: (name) => img.files.get('/' + name)?.size ?? NaN,
+  };
 }
 
 /** The dump as the game sees it with its Update installed: the Update's code.bin, and the patched files from it. */
 export function withUpdate(base: Dump, update: UpdateImage): Dump {
-  if (update.title !== base.title) throw new Error(`Update は『${update.title.name}』のものです (ダンプは『${base.title.name}』)`);
+  if (update.title !== base.title)
+    throw new Error(`Update は『${update.title.name}』のものです (ダンプは『${base.title.name}』)`);
   const patched = new Set(update.patched);
   const files = base.files?.bind(base);
   return {
@@ -148,12 +168,15 @@ export function withUpdate(base: Dump, update: UpdateImage): Dump {
     code: update.code,
     names: () => [...new Set([...base.names(), ...patched])],
     // the patched files with the Update's sizes (some are only in the Update)
-    files: files && (() => {
-      const out = new Map(files().map((f) => [f.path, f]));
-      for (const n of patched) out.set(n, { path: n, size: update.size?.(n) ?? NaN });
-      return [...out.values()];
-    }),
-    readRomfs: (name) => (patched.has(name.toUpperCase()) ? update.readRomfs(name.toUpperCase()) : base.readRomfs(name)),
+    files:
+      files &&
+      (() => {
+        const out = new Map(files().map((f) => [f.path, f]));
+        for (const n of patched) out.set(n, { path: n, size: update.size?.(n) ?? NaN });
+        return [...out.values()];
+      }),
+    readRomfs: (name) =>
+      patched.has(name.toUpperCase()) ? update.readRomfs(name.toUpperCase()) : base.readRomfs(name),
   };
 }
 
@@ -186,13 +209,15 @@ export async function openDumps(files: Blob[], label: (f: Blob) => string): Prom
   }
   for (const { img } of updates) {
     const t = titleByUpdateId(img.titleId)!;
-    if (!out.some((d) => d.title === t)) throw new Error(`『${t.name}』の Update だけがあります。Base (${t.titleId}) の CIA も選んでください。`);
+    if (!out.some((d) => d.title === t))
+      throw new Error(`『${t.name}』の Update だけがあります。Base (${t.titleId}) の CIA も選んでください。`);
   }
   return out;
 }
 
 /** The program ID in an ExHeader (+0x200, the ARM11 local system capabilities), as hex. */
-export const exheaderProgramId = (exh: Uint8Array): string => (hex8(u32(exh, 0x204)) + hex8(u32(exh, 0x200))).toUpperCase();
+export const exheaderProgramId = (exh: Uint8Array): string =>
+  (hex8(u32(exh, 0x204)) + hex8(u32(exh, 0x200))).toUpperCase();
 
 /**
  * Folder input: any file named code.bin (or .code) plus files whose name is an 8-digit hex hash. The game is told by the
@@ -253,14 +278,20 @@ export function overlayDump(dump: Dump, mod: BaseMod): Dump {
     title: dump.title,
     titleVersion: dump.titleVersion,
     update: dump.update,
-    readUpdateRomfs: dump.readUpdateRomfs && (async name => (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readUpdateRomfs!(name)),
+    readUpdateRomfs:
+      dump.readUpdateRomfs &&
+      (async (name) =>
+        (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readUpdateRomfs!(name)),
     code: mod.ips ? applyIps(dump.code, mod.ips) : dump.code,
     names: () => [...new Set([...dump.names(), ...mod.romfs.keys()])],
-    files: files && (() => {
-      const out = new Map(files().map((f) => [f.path, f]));
-      for (const [path, b] of mod.romfs) out.set(path, { path, size: b.length });
-      return [...out.values()];
-    }),
-    readRomfs: async (name) => (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readRomfs(name),
+    files:
+      files &&
+      (() => {
+        const out = new Map(files().map((f) => [f.path, f]));
+        for (const [path, b] of mod.romfs) out.set(path, { path, size: b.length });
+        return [...out.values()];
+      }),
+    readRomfs: async (name) =>
+      (mod.romfs.get(name) ?? mod.romfs.get(name.toUpperCase()))?.slice() ?? dump.readRomfs(name),
   };
 }

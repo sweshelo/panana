@@ -5,7 +5,14 @@ import { ArmMachine } from '../src/game/arm';
 import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
 import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
-import { AUTOMAP_PATCH_ID, AUTOMAP_SITES, automapHosts, automapPatchSource, automapProblem, hasAutomapSlot } from '../src/game/automap';
+import {
+  AUTOMAP_PATCH_ID,
+  AUTOMAP_SITES,
+  automapHosts,
+  automapPatchSource,
+  automapProblem,
+  hasAutomapSlot,
+} from '../src/game/automap';
 import { openImage } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
@@ -20,14 +27,37 @@ const build = (code: Uint8Array, source: string): { built: BuiltPatch; code: Uin
 
 describe('automap slots', () => {
   test('the dungeons with a slot of their own', () => {
-    expect([0, 1, 10, 11, 14, 15, 18, 19, 0x1b, 0x1c, 0x1d, 0x1e].map(hasAutomapSlot)).toEqual([false, true, true, false, false, true, true, false, false, true, true, false]);
+    expect([0, 1, 10, 11, 14, 15, 18, 19, 0x1b, 0x1c, 0x1d, 0x1e].map(hasAutomapSlot)).toEqual([
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+    ]);
   });
 
   test('a new dungeon shares the slot with the fewest maps (the lower ID on a tie); two new ones spread', () => {
-    const maps = new Map([[1, 2], [2, 12], [0x1c, 1], [0x1d, 1], [11, 3], [12, 1]]);
+    const maps = new Map([
+      [1, 2],
+      [2, 12],
+      [0x1c, 1],
+      [0x1d, 1],
+      [11, 3],
+      [12, 1],
+    ]);
     const count = (d: number) => maps.get(d) ?? 5;
     expect([...automapHosts([11], count)]).toEqual([[11, 0x1c]]);
-    expect([...automapHosts([12, 11], count)]).toEqual([[11, 0x1c], [12, 0x1d]]);
+    expect([...automapHosts([12, 11], count)]).toEqual([
+      [11, 0x1c],
+      [12, 0x1d],
+    ]);
     expect([...automapHosts([5], count)]).toEqual([]); // has its own
     expect(automapPatchSource(new Map())).toBeNull();
   });
@@ -87,7 +117,15 @@ describe.skipIf(!hasCia)('automap patch on code.bin', () => {
     const { built, code } = build(game.dump.code, automapPatchSource(new Map([[11, 0x1c]]))!);
     expect(built.errors).toEqual([]);
     expect(recordOf(code, 11)).toBe(0x7000 + 14);
-    for (const [id, slot] of [[1, 0], [10, 9], [0x0f, 10], [0x12, 13], [0x1c, 14], [0x1d, 15]] as const) expect(recordOf(code, id)).toBe(0x7000 + slot);
+    for (const [id, slot] of [
+      [1, 0],
+      [10, 9],
+      [0x0f, 10],
+      [0x12, 13],
+      [0x1c, 14],
+      [0x1d, 15],
+    ] as const)
+      expect(recordOf(code, id)).toBe(0x7000 + slot);
     expect(recordOf(code, 12)).toBe(0);
     expect(recordOf(code, 0x34)).toBe(0);
   });

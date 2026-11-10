@@ -39,22 +39,37 @@ export function ShopPage({ session, arg, data, shops }: PageProps & { data: Item
       newRow={(_, item) => ({ item })}
       item={(id) => {
         const it = items.item(id);
-        return it && { name: it.name, href: `#/items/${id}`, icon: <Photo model={itemRef(game, it)} title={it.name} />, changed: items.changed(id) };
+        return (
+          it && {
+            name: it.name,
+            href: `#/items/${id}`,
+            icon: <Photo model={itemRef(game, it)} title={it.name} />,
+            changed: items.changed(id),
+          }
+        );
       }}
       columns={() => [
         { head: '分類', className: 'muted', cell: (r) => items.item(r.item)?.category ?? '' },
         { head: '買値', className: 'num', cell: (r) => items.item(r.item)?.price ?? '' },
       ]}
-      setRows={stock ? (s, next) => {
-        stock.set(s.id, next.map((r) => r.item));
-        items.setShops(stock.lists);
-        session.scheduleSave();
-      } : undefined}
+      setRows={
+        stock
+          ? (s, next) => {
+              stock.set(
+                s.id,
+                next.map((r) => r.item),
+              );
+              items.setShops(stock.lists);
+              session.scheduleSave();
+            }
+          : undefined
+      }
       picker={(p) => <ItemPicker game={game} items={items} title={p.title} onClose={p.onClose} onPick={p.onPick} />}
       warnings={(_, rows) => {
         const w: string[] = [];
         if (!rows.length) w.push('品物のない店はゲームで確かめていません (開いたときに止まるおそれがあります)。');
-        if (stock && rows.length > stock.originalMax) w.push(`元のデータで一番多い店は ${stock.originalMax} 品です。それを超える数はゲームで確かめていません。`);
+        if (stock && rows.length > stock.originalMax)
+          w.push(`元のデータで一番多い店は ${stock.originalMax} 品です。それを超える数はゲームで確かめていません。`);
         if (rows.some((r) => items.item(r.item)?.price === 0)) w.push('買値 0 のアイテムがあります (タダで買えます)。');
         return w;
       }}
@@ -62,11 +77,17 @@ export function ShopPage({ session, arg, data, shops }: PageProps & { data: Item
       stockNote="並びは店での表示順 (ShopItem)。値段はアイテムごと (アイテム図鑑で編集できます)。"
       info={(s) => {
         const v = byId.get(s.id)!.variant;
-        return <span className="muted">{`商品の説明: ${v < 0 ? '不明' : `${VARIANT_LABEL[v] ?? `バリアント ${v}`} (itemData +0x${(DESCRIPTION_VARIANT[v] ?? 0).toString(16).toUpperCase()})`}`}</span>;
+        return (
+          <span className="muted">{`商品の説明: ${v < 0 ? '不明' : `${VARIANT_LABEL[v] ?? `バリアント ${v}`} (itemData +0x${(DESCRIPTION_VARIANT[v] ?? 0).toString(16).toUpperCase()})`}`}</span>
+        );
       }}
       footer={(s) => {
         const raw = byId.get(s.id)!.raw;
-        return raw.length > 0 && <div className="muted small mono">{`+0x00〜+0x08 (未解析): ${[0, 4, 8].map((o) => hex8(u32(raw, o))).join(' ')}`}</div>;
+        return (
+          raw.length > 0 && (
+            <div className="muted small mono">{`+0x00〜+0x08 (未解析): ${[0, 4, 8].map((o) => hex8(u32(raw, o))).join(' ')}`}</div>
+          )
+        );
       }}
     />
   );

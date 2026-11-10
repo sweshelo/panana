@@ -4,14 +4,35 @@ import { decodeDsp } from '../src/sound/formats';
 import { lz10Compress, lz10Decompress } from '../src/archive/lz10';
 import { parseArchive, rebuildArchive, unpackEntry } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
-import { buildTiles, letterByte, letterIndex, parseTiles, setRecCellPos, LAYOUTS, recCellPos } from '../src/game/sections';
+import {
+  buildTiles,
+  letterByte,
+  letterIndex,
+  parseTiles,
+  setRecCellPos,
+  LAYOUTS,
+  recCellPos,
+} from '../src/game/sections';
 import { decodeTexture } from '../src/cgfx/texture';
 import { evalBaked, evalChannel, type AnimCurve } from '../src/cgfx/anim';
 import { equalBytes, u32, w16, w32 } from '../src/util/bytes';
 import { fromUnits, Gmsg, MessageStore, NEW_MESSAGE_FILE, NEW_MESSAGE_FIRST, NEW_MESSAGE_HASH } from '../src/game/gmsg';
 import { parseBody, plainText, previewText, textToUnits, unitsToText } from '../src/game/msgtext';
 import { applyIps, switchPatchVersion } from '../src/rom/ips';
-import { ENT, ENTRANCE_SIZE, WORLD_SIZE, WORLD_TABLE, buildEntrances, coveredParts, groundFromTiles, moveEntrance, parseEntrances, parseGround, readWorldTable, setEntranceU32 } from '../src/game/worldmap';
+import {
+  ENT,
+  ENTRANCE_SIZE,
+  WORLD_SIZE,
+  WORLD_TABLE,
+  buildEntrances,
+  coveredParts,
+  groundFromTiles,
+  moveEntrance,
+  parseEntrances,
+  parseGround,
+  readWorldTable,
+  setEntranceU32,
+} from '../src/game/worldmap';
 import { validateWorld } from '../src/editor/validate';
 import type { Game } from '../src/game/game';
 import { findCodeMessageRefs, groupByFunction } from '../src/game/codemessages';
@@ -35,10 +56,14 @@ import type { Master } from '../src/game/master';
 
 describe('LZ10', () => {
   test('round trip of random and repetitive data', () => {
-    const samples = [new Uint8Array(0), new Uint8Array(1000).fill(7), Uint8Array.from({ length: 5000 }, (_, i) => (i * 7919) % 251)];
+    const samples = [
+      new Uint8Array(0),
+      new Uint8Array(1000).fill(7),
+      Uint8Array.from({ length: 5000 }, (_, i) => (i * 7919) % 251),
+    ];
     const rnd = new Uint8Array(20000);
     let s = 1;
-    for (let i = 0; i < rnd.length; i++) rnd[i] = (s = (s * 1103515245 + 12345) >>> 0) >>> 24 & (i % 3 ? 0xff : 0x0f);
+    for (let i = 0; i < rnd.length; i++) rnd[i] = ((s = (s * 1103515245 + 12345) >>> 0) >>> 24) & (i % 3 ? 0xff : 0x0f);
     samples.push(rnd);
     for (const d of samples) expect(equalBytes(lz10Decompress(lz10Compress(d)), d)).toBe(true);
   });
@@ -50,8 +75,13 @@ describe('archive', () => {
     const body2 = new Uint8Array([1, 2, 3, 4]);
     const blob1 = lz10Compress(body1);
     const hdr = new Uint8Array(12 + 28 * 2);
-    w32(hdr, 0, 5); w32(hdr, 4, 0xa90c8038); w32(hdr, 8, 2);
-    const entries = [[0x11, 0, blob1.length, hdr.length, 6, 0xffffffff, body1.length], [0x22, 0, 4, hdr.length + blob1.length, 0, 0xffffffff, 4]];
+    w32(hdr, 0, 5);
+    w32(hdr, 4, 0xa90c8038);
+    w32(hdr, 8, 2);
+    const entries = [
+      [0x11, 0, blob1.length, hdr.length, 6, 0xffffffff, body1.length],
+      [0x22, 0, 4, hdr.length + blob1.length, 0, 0xffffffff, 4],
+    ];
     entries.forEach((e, i) => e.forEach((v, j) => w32(hdr, 12 + i * 28 + j * 4, v)));
     const data = new Uint8Array([...hdr, ...blob1, ...body2]);
     const arc = parseArchive(data);
@@ -60,18 +90,28 @@ describe('archive', () => {
     expect(Array.from(unpackEntry(re, re.entries[0]!).body)).toEqual([9, 9, 9]);
     expect(Array.from(unpackEntry(re, re.entries[1]!).body)).toEqual([1, 2, 3, 4]);
     // an added entry goes where its hash sorts (the entries are in hash order), packed like `like`
-    const added = parseArchive(rebuildArchive(arc, new Map(), [{ hash: 0x18, name: 'x.bin', body: new Uint8Array([7, 7]), like: arc.entries[1]! }]));
+    const added = parseArchive(
+      rebuildArchive(arc, new Map(), [
+        { hash: 0x18, name: 'x.bin', body: new Uint8Array([7, 7]), like: arc.entries[1]! },
+      ]),
+    );
     expect(added.entries.map((e) => e.hash)).toEqual([0x11, 0x18, 0x22]);
     expect(Array.from(unpackEntry(added, added.entries[1]!).body)).toEqual([7, 7]);
     expect(Array.from(unpackEntry(added, added.entries[2]!).body)).toEqual([1, 2, 3, 4]);
-    expect(() => rebuildArchive(arc, new Map(), [{ hash: 0x22, name: 'x.bin', body: new Uint8Array(1), like: arc.entries[1]! }])).toThrow();
+    expect(() =>
+      rebuildArchive(arc, new Map(), [{ hash: 0x22, name: 'x.bin', body: new Uint8Array(1), like: arc.entries[1]! }]),
+    ).toThrow();
   });
 });
 
 describe('map DB', () => {
   test('rebuild keeps empty entries in place and recomputes offsets', () => {
     // count 3: A (4 bytes), B (empty, shares the next offset), C (2 bytes)
-    const idx = [[0x10, 0, 4], [0x20, 4, 0], [0x30, 4, 2]];
+    const idx = [
+      [0x10, 0, 4],
+      [0x20, 4, 0],
+      [0x30, 4, 2],
+    ];
     const b = new Uint8Array(4 + 36 + 6);
     w32(b, 0, 3);
     idx.forEach((e, i) => e.forEach((v, j) => w32(b, 4 + i * 12 + j * 4, v)));
@@ -127,7 +167,7 @@ describe('textures', () => {
   });
   test('ETC1 solid block', () => {
     // individual mode, colours 0x8/0x8/0x8 in both halves, table 0, all indices 0 (+2)
-    const data = new Uint8Array(8 * 8 / 2);
+    const data = new Uint8Array((8 * 8) / 2);
     for (let b = 0; b < 4; b++) data.set([0, 0, 0, 0, 0x00, 0x88, 0x88, 0x88], b * 8);
     const out = decodeTexture(data, 8, 8, 12);
     expect(Array.from(out.subarray(0, 4))).toEqual([0x88 + 2, 0x88 + 2, 0x88 + 2, 255]);
@@ -137,10 +177,28 @@ describe('textures', () => {
 describe('IPS', () => {
   test('records, RLE and the switch marker', () => {
     const base = new Uint8Array(0x3c0000 + 16);
-    const rec = (off: number, data: number[]) => [(off >> 16) & 255, (off >> 8) & 255, off & 255, data.length >> 8, data.length & 255, ...data];
-    const ips = new Uint8Array([...new TextEncoder().encode('PATCH'), ...rec(2, [9, 8]),
-      0, 0, 10, 0, 0, 0, 3, 7, // RLE: 3 x 7 at 10
-      ...rec(0x4bf680 - 0x100000, [0x50, 0x4e, 0x53, 0x57, 1, 0, 0, 0]), ...new TextEncoder().encode('EOF')]);
+    const rec = (off: number, data: number[]) => [
+      (off >> 16) & 255,
+      (off >> 8) & 255,
+      off & 255,
+      data.length >> 8,
+      data.length & 255,
+      ...data,
+    ];
+    const ips = new Uint8Array([
+      ...new TextEncoder().encode('PATCH'),
+      ...rec(2, [9, 8]),
+      0,
+      0,
+      10,
+      0,
+      0,
+      0,
+      3,
+      7, // RLE: 3 x 7 at 10
+      ...rec(0x4bf680 - 0x100000, [0x50, 0x4e, 0x53, 0x57, 1, 0, 0, 0]),
+      ...new TextEncoder().encode('EOF'),
+    ]);
     const out = applyIps(base, ips);
     expect(Array.from(out.subarray(0, 14))).toEqual([0, 0, 9, 8, 0, 0, 0, 0, 0, 0, 7, 7, 7, 0]);
     expect(switchPatchVersion(out)).toBe(1);
@@ -151,7 +209,9 @@ describe('IPS', () => {
 describe('texture coordinator matrix (SPICA TextureTransform)', () => {
   const apply = (type: number, s: [number, number], r: number, t: [number, number], uv: [number, number]): number[] => {
     const e = uvMatrix(new THREE.Matrix3(), type, s[0], s[1], r, t[0], t[1]).elements; // column-major
-    return [e[0]! * uv[0] + e[3]! * uv[1] + e[6]!, e[1]! * uv[0] + e[4]! * uv[1] + e[7]!].map((x) => Math.round(x * 1e4) / 1e4);
+    return [e[0]! * uv[0] + e[3]! * uv[1] + e[6]!, e[1]! * uv[0] + e[4]! * uv[1] + e[7]!].map(
+      (x) => Math.round(x * 1e4) / 1e4,
+    );
   };
 
   test('Maya and Softimage subtract the translation (a blink 0 → ⅓ → ⅔ goes down the rows), 3ds Max only on U', () => {
@@ -167,7 +227,12 @@ describe('texture coordinator matrix (SPICA TextureTransform)', () => {
 });
 
 describe('CGFX animation curves', () => {
-  const curve = (interp: number, keys: number[]): AnimCurve => ({ start: 0, end: 10, interp, keys: new Float32Array(keys) });
+  const curve = (interp: number, keys: number[]): AnimCurve => ({
+    start: 0,
+    end: 10,
+    interp,
+    keys: new Float32Array(keys),
+  });
 
   test('hermite passes through the keys and uses the slopes', () => {
     const c = curve(2, [0, 0, 0, 1, 10, 10, 1, 0]);
@@ -211,11 +276,17 @@ describe('monster groups', () => {
     row.set([9, 0, 20, 0], 16);
     row.set([0x2c, 0x01, 1, 2], 0x14); // mate: monster 300
     expect(decodeGroupSlots(row)).toEqual({
-      leads: [{ monster: 3, weight: 10, count: 5 }, { monster: 9, weight: 20, count: 0 }],
+      leads: [
+        { monster: 3, weight: 10, count: 5 },
+        { monster: 9, weight: 20, count: 0 },
+      ],
       mates: [{ monster: 300, weight: 1, count: 2 }],
     });
     const leads = [{ monster: 9, weight: 300, count: 1 }];
-    const mates = [{ monster: 3, weight: 4, count: 6 }, { monster: 5, weight: 1, count: 0 }];
+    const mates = [
+      { monster: 3, weight: 4, count: 6 },
+      { monster: 5, weight: 1, count: 0 },
+    ];
     encodeGroupSlots(row, leads, mates);
     expect(decodeGroupSlots(row)).toEqual({ leads: [{ monster: 9, weight: 255, count: 1 }], mates });
     expect(Array.from(row.subarray(4, 0x14))).toEqual(new Array(16).fill(0));
@@ -259,7 +330,12 @@ describe('monster parameters', () => {
     encodeSkills(row, [328, 328, 328, 330]);
     expect(decodeSkills(row)).toEqual([328, 328, 328, 330]);
     expect(row[0x48]).toBe(0xaa);
-    expect(skillShares([328, 328, 328, 330])).toEqual(new Map([[328, 0.75], [330, 0.25]]));
+    expect(skillShares([328, 328, 328, 330])).toEqual(
+      new Map([
+        [328, 0.75],
+        [330, 0.25],
+      ]),
+    );
     expect(() => encodeSkills(row, new Array(7).fill(1))).toThrow();
   });
 });
@@ -278,7 +354,14 @@ describe('drop odds', () => {
     expect(bp.dropOdds(2, 200)).toBe(4);
     expect(bp.dropOdds(3, -1)).toBe(1);
     const { dropClass } = await import('../src/game/monsters');
-    expect([0, 9, 10, 12, 13, 15].map((r) => dropClass(r)[1])).toEqual(['おたから', 'おたから', 'レア', 'レア', '激レア', '激レア']);
+    expect([0, 9, 10, 12, 13, 15].map((r) => dropClass(r)[1])).toEqual([
+      'おたから',
+      'おたから',
+      'レア',
+      'レア',
+      '激レア',
+      '激レア',
+    ]);
   });
 });
 
@@ -331,9 +414,18 @@ describe('actions', () => {
 
   test('kind and type (w0 bit1-2 / bit3-6) name how the battle computes an action', async () => {
     const { actionKindLabel, actionTypeLabel } = await import('../src/game/actions');
-    expect([actionKindLabel(1, 0), actionKindLabel(1, 1), actionKindLabel(1, 2), actionKindLabel(1, 3)])
-      .toEqual(['攻撃・とくぎ (物理)', '攻撃・とくぎ (物理・会心あり)', '攻撃・とくぎ (固定の威力)', '攻撃・とくぎ (ブレス (固定の威力))']);
-    expect([actionKindLabel(0, 2), actionKindLabel(0, 3), actionKindLabel(2, 0), actionKindLabel(3, 4)]).toEqual(['状態', '状態 (ブレス)', 'アイテム (HP 回復)', '特殊']);
+    expect([actionKindLabel(1, 0), actionKindLabel(1, 1), actionKindLabel(1, 2), actionKindLabel(1, 3)]).toEqual([
+      '攻撃・とくぎ (物理)',
+      '攻撃・とくぎ (物理・会心あり)',
+      '攻撃・とくぎ (固定の威力)',
+      '攻撃・とくぎ (ブレス (固定の威力))',
+    ]);
+    expect([actionKindLabel(0, 2), actionKindLabel(0, 3), actionKindLabel(2, 0), actionKindLabel(3, 4)]).toEqual([
+      '状態',
+      '状態 (ブレス)',
+      'アイテム (HP 回復)',
+      '特殊',
+    ]);
     expect([actionTypeLabel(3, 5), actionTypeLabel(1, 9)]).toEqual(['5: 変身・セリフ', '9']);
   });
 
@@ -346,7 +438,10 @@ describe('actions', () => {
     // みんなもうどく: all the monsters
     w32(r, 0, (6 << 9) >>> 0);
     expect([decodeAction(r).side, decodeAction(r).range]).toEqual([0, 6]);
-    expect([actionRangeLabel(3), actionRangeLabel(12)]).toEqual(['3: 目標と周り (距離 1)', '12: (表の外。だれにも当たらない)']);
+    expect([actionRangeLabel(3), actionRangeLabel(12)]).toEqual([
+      '3: 目標と周り (距離 1)',
+      '12: (表の外。だれにも当たらない)',
+    ]);
   });
 });
 
@@ -355,14 +450,37 @@ describe('performance timeline (docs/action-performance.md §3.1)', () => {
     const { EffectTable, decodePerformance, slotTimeline } = await import('../src/game/performance');
     const fx = new EffectTable(null, null);
     const effect = (row: number, delay: number, extra: { afterMotion?: boolean; late?: boolean } = {}): void => {
-      fx.effects[row] = { row, archive: 0, model: 0, texture: 0, bone: '', scale: 1, rotation: [0, 0, 0], delay, offset: [0, 0, 0], length: 0, afterMotion: false, late: false, ...extra };
+      fx.effects[row] = {
+        row,
+        archive: 0,
+        model: 0,
+        texture: 0,
+        bone: '',
+        scale: 1,
+        rotation: [0, 0, 0],
+        delay,
+        offset: [0, 0, 0],
+        length: 0,
+        afterMotion: false,
+        late: false,
+        ...extra,
+      };
     };
     effect(1, 20);
     effect(2, -30);
     effect(3, 0);
     effect(4, 10, { late: true });
     effect(5, 0, { afterMotion: true });
-    const perf = (f: { effect: number; se?: number; anim?: number; length?: number; add?: boolean; d12?: number; d13?: number; shake?: number }) => {
+    const perf = (f: {
+      effect: number;
+      se?: number;
+      anim?: number;
+      length?: number;
+      add?: boolean;
+      d12?: number;
+      d13?: number;
+      shake?: number;
+    }) => {
       const r = new Uint8Array(20);
       r.set([f.length ?? 0, 0], 2);
       r.set([f.effect, 0, f.se ?? 7, 0], 4);
@@ -400,15 +518,28 @@ describe('shops', () => {
     const row = new Uint8Array(0x38);
     for (let i = 0; i < 10; i++) w32(row, 0x0c + i * 4, 0xe3 + i);
     row[0x34] = 2;
-    expect(decodeShopRow(row)).toEqual({ messages: [0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec], variant: 2 });
+    expect(decodeShopRow(row)).toEqual({
+      messages: [0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec],
+      variant: 2,
+    });
     // a table of 2 rows (header 0x40 bytes): shop 0 and shop 1
     const data = new Uint8Array(0x40 + 2 * 0x38);
     w32(data, 0, 2);
     w32(data, 4, 0x38);
     w32(data, 0x10, 0x40);
     data.set(row, 0x40 + 0x38);
-    const shops = buildShops(new Map([[1, [2, 12]], [3, [5]]]), new GsTable(data));
-    expect(shops.map((s) => [s.id, s.items, s.variant])).toEqual([[0, [], 0], [1, [2, 12], 2], [3, [5], -1]]);
+    const shops = buildShops(
+      new Map([
+        [1, [2, 12]],
+        [3, [5]],
+      ]),
+      new GsTable(data),
+    );
+    expect(shops.map((s) => [s.id, s.items, s.variant])).toEqual([
+      [0, [], 0],
+      [1, [2, 12], 2],
+      [3, [5], -1],
+    ]);
     expect(shops[1]!.messages[0]).toBe(0xe3);
     expect(shops[2]!.messages).toEqual([]);
     expect(buildShops(new Map([[0, [1]]]), null)[0]!.variant).toBe(-1);
@@ -432,7 +563,11 @@ describe('shops', () => {
   test('ShopItem rows round trip, and withRows rebuilds a table with a hash index', async () => {
     const { parseShopItems, shopItemRows } = await import('../src/game/shops');
     const { GsTable } = await import('../src/archive/gstable');
-    const lists = new Map([[0, [1, 12, 28]], [1, []], [2, [93]]]);
+    const lists = new Map([
+      [0, [1, 12, 28]],
+      [1, []],
+      [2, [93]],
+    ]);
     const rows = shopItemRows(lists);
     expect(rows.length).toBe(3 + 3 + 0 + 1);
     // a ShopItem-like table (8-byte rows) with a hash index: {hash, row} sorted, then {0, 0}
@@ -453,7 +588,17 @@ describe('shops', () => {
     const t = new GsTable(data);
     expect([...parseShopItems(t)]).toEqual([...lists]);
     // one item more: every row keeps its hash, the new row gets a new one
-    const more = new GsTable(t.withRows(shopItemRows(new Map([[0, [1, 12, 28, 5]], [1, []], [2, [93]]]))));
+    const more = new GsTable(
+      t.withRows(
+        shopItemRows(
+          new Map([
+            [0, [1, 12, 28, 5]],
+            [1, []],
+            [2, [93]],
+          ]),
+        ),
+      ),
+    );
     expect(more.rows).toBe(n + 1);
     expect(parseShopItems(more).get(0)).toEqual([1, 12, 28, 5]);
     const index = more.hashIndex();
@@ -462,7 +607,17 @@ describe('shops', () => {
     expect(u32(more.data, 0x18)).toBe(more.data.length);
     expect(more.indexOffset % 16).toBe(0);
     // fewer rows: the index drops the rows that are gone
-    const fewer = new GsTable(t.withRows(shopItemRows(new Map([[0, [1]], [1, []], [2, [93]]]))));
+    const fewer = new GsTable(
+      t.withRows(
+        shopItemRows(
+          new Map([
+            [0, [1]],
+            [1, []],
+            [2, [93]],
+          ]),
+        ),
+      ),
+    );
     expect(fewer.rows).toBe(n - 2);
     expect([...fewer.hashIndex().values()].every((r) => r < fewer.rows)).toBe(true);
     expect(fewer.hashIndex().size).toBe(n - 2);
@@ -487,9 +642,31 @@ describe('item fields', () => {
     w32(r, 8, 0x12345601 | (1 << 5)); // other flag bits must survive a rarity change
     w32(r, 0x24, 7);
     r[0x2a] = 3;
-    expect(readItemFields(r)).toEqual({ price: 80, sell: 8, rarity: 1, limit: 99, action: 7, chain: 3, state1: 0, amount1: 7, state2: 0, amount2: 0 });
+    expect(readItemFields(r)).toEqual({
+      price: 80,
+      sell: 8,
+      rarity: 1,
+      limit: 99,
+      action: 7,
+      chain: 3,
+      state1: 0,
+      amount1: 7,
+      state2: 0,
+      amount2: 0,
+    });
     writeItemFields(r, { price: 120, rarity: 5, action: 9, chain: 0x1234 });
-    expect(readItemFields(r)).toEqual({ price: 120, sell: 8, rarity: 5, limit: 99, action: 9, chain: 0x1234, state1: 0, amount1: 9, state2: 0, amount2: 0 });
+    expect(readItemFields(r)).toEqual({
+      price: 120,
+      sell: 8,
+      rarity: 5,
+      limit: 99,
+      action: 9,
+      chain: 0x1234,
+      state1: 0,
+      amount1: 9,
+      state2: 0,
+      amount2: 0,
+    });
     expect((new DataView(r.buffer).getUint32(8, true) & ~0xe0) >>> 0).toBe((0x12345601 & ~0xe0) >>> 0);
     // 99 keeps a byte of 0 (it already means 99); other limits are written as they are
     writeItemFields(r, { limit: 99 });
@@ -508,7 +685,9 @@ describe('item fields', () => {
     r[0x2e] = 45;
     expect(readItemFields(r)).toMatchObject({ state1: 70, amount1: 1, state2: 45, amount2: 2 });
     writeItemFields(r, { amount2: -3, state1: 60 });
-    expect([r[0x2d], r[0x26], r[0x27], readItemFields(r).amount2, readItemFields(r).amount1]).toEqual([60, 0xfd, 0xff, -3, 1]);
+    expect([r[0x2d], r[0x26], r[0x27], readItemFields(r).amount2, readItemFields(r).amount1]).toEqual([
+      60, 0xfd, 0xff, -3, 1,
+    ]);
     const st = (combine: number) => ({ id: 1, name: 'X', combine, min: 0, max: 0 });
     expect(equipEffectText(st(5), 1, 1)).toBe('X +1');
     expect(equipEffectText(st(1), 1, -2)).toBe('X -2');
@@ -529,10 +708,13 @@ describe('board facing', () => {
     const uu = u.map((x) => x / ul);
     const v = [ny * uu[2]! - nz * uu[1]!, nz * uu[0]! - nx * uu[2]!, nx * uu[1]! - ny * uu[0]!];
     const pts: number[] = [];
-    for (let i = 0; i < 10; i++) for (let j = 0; j < 6; j++) {
-      const a = i * 3 - 13, b = j * 2 - 5, c = ((i * 7 + j * 3) % 5 - 2) * jitter;
-      for (let k = 0; k < 3; k++) pts.push(a * uu[k]! + b * v[k]! + c * normal[k]! + [4, -2, 9][k]!);
-    }
+    for (let i = 0; i < 10; i++)
+      for (let j = 0; j < 6; j++) {
+        const a = i * 3 - 13,
+          b = j * 2 - 5,
+          c = (((i * 7 + j * 3) % 5) - 2) * jitter;
+        for (let k = 0; k < 3; k++) pts.push(a * uu[k]! + b * v[k]! + c * normal[k]! + [4, -2, 9][k]!);
+      }
     return pts;
   };
   const unit = (x: number, y: number, z: number): [number, number, number] => {
@@ -593,7 +775,32 @@ describe('GMSG messages', () => {
   const T = 1; // tag
   const msgs = [
     [0x0001, T, 0x10e, ...u('こんにちは'), 0x0a, ...u('元気?'), 0],
-    [0x0001, ...u('ここ、'), 2, 0x26, 102, 0, ...u('。'), T, 0x10, 0x0a, T, 0x101, ...u('の'), T, 0x27, ...u('祠'), T, 0x28, ...u('ほこら'), T, 0x29, T, 0x0a, 0],
+    [
+      0x0001,
+      ...u('ここ、'),
+      2,
+      0x26,
+      102,
+      0,
+      ...u('。'),
+      T,
+      0x10,
+      0x0a,
+      T,
+      0x101,
+      ...u('の'),
+      T,
+      0x27,
+      ...u('祠'),
+      T,
+      0x28,
+      ...u('ほこら'),
+      T,
+      0x29,
+      T,
+      0x0a,
+      0,
+    ],
     [0x0001, ...u('デンパタウン'), 0],
   ];
 
@@ -611,7 +818,9 @@ describe('GMSG messages', () => {
   test('text form: tags, ruby, page breaks and references are kept', () => {
     for (const m of msgs) expect([...textToUnits(unitsToText(Uint16Array.from(m)))]).toEqual(m);
     expect(unitsToText(Uint16Array.from(msgs[0]!)).text).toBe('{tag:010E}こんにちは\n元気?');
-    expect(unitsToText(Uint16Array.from(msgs[1]!)).text).toBe('ここ、{msg:0066}。{page}\n{tag:0101}の{ruby:祠|ほこら}{tag:000A}');
+    expect(unitsToText(Uint16Array.from(msgs[1]!)).text).toBe(
+      'ここ、{msg:0066}。{page}\n{tag:0101}の{ruby:祠|ほこら}{tag:000A}',
+    );
     const br = Uint16Array.from([1, ...u('{a|b}'), 0]);
     expect(unitsToText(br).text).toBe('{007B}a{007C}b{007D}');
     expect([...textToUnits(unitsToText(br))]).toEqual([...br]);
@@ -619,21 +828,43 @@ describe('GMSG messages', () => {
     expect(() => textToUnits({ kind: 1, text: 'a}', tail: new Uint16Array([0]) })).toThrow();
     expect(() => textToUnits({ kind: 1, text: '{ruby:祠}', tail: new Uint16Array([0]) })).toThrow();
     expect(() => textToUnits({ kind: 1, text: '{tag:0024}', tail: new Uint16Array([0]) })).toThrow(); // takes 2 arguments
-    expect([...textToUnits({ kind: 1, text: '{tag:0024,1,2}', tail: new Uint16Array([0]) })]).toEqual([1, T, 0x24, 1, 2, 0]);
+    expect([...textToUnits({ kind: 1, text: '{tag:0024,1,2}', tail: new Uint16Array([0]) })]).toEqual([
+      1,
+      T,
+      0x24,
+      1,
+      2,
+      0,
+    ]);
   });
 
   test('previews and plain text', () => {
     const m1 = Uint16Array.from(msgs[1]!);
-    expect(parseBody(m1).tokens.map((t) => t.t)).toEqual(['text', 'ref', 'text', 'tag', 'br', 'tag', 'text', 'ruby', 'tag']);
+    expect(parseBody(m1).tokens.map((t) => t.t)).toEqual([
+      'text',
+      'ref',
+      'text',
+      'tag',
+      'br',
+      'tag',
+      'text',
+      'ruby',
+      'tag',
+    ]);
     // the page break eats its line break; [0001][000A] is a number, not a line break
-    expect(previewText(m1, (id) => (id === 102 ? 'デンパタウン' : undefined))).toBe('ここ、デンパタウン。\n〈電波人間〉の祠〈数値〉');
+    expect(previewText(m1, (id) => (id === 102 ? 'デンパタウン' : undefined))).toBe(
+      'ここ、デンパタウン。\n〈電波人間〉の祠〈数値〉',
+    );
     expect(previewText(Uint16Array.from(msgs[0]!), () => undefined)).toBe('こんにちは\n元気?'); // the voice tag is not shown
     expect(plainText(Uint16Array.from(msgs[0]!))).toBe('こんにちは 元気?');
     expect(plainText(m1)).toBe('ここ、。 āの祠');
   });
 
   test('store: edits, readings blanked, revert and replacements', () => {
-    const reading = makeGmsg([new Uint8Array([0x41, 0x42, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0x45, 0x46, 0])], true);
+    const reading = makeGmsg(
+      [new Uint8Array([0x41, 0x42, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0x45, 0x46, 0])],
+      true,
+    );
     const store = new MessageStore([
       { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
       { name: 'MessageTest_IN_JP.gsmb', entryIndex: 4, gmsg: new Gmsg(reading), editable: true },
@@ -660,7 +891,7 @@ describe('GMSG messages', () => {
     expect(() => store.setText(99, 'x')).toThrow();
   });
 
-  test('store: added messages go to a message file of their own past the game\'s IDs, save and restore', () => {
+  test("store: added messages go to a message file of their own past the game's IDs, save and restore", () => {
     const reading = makeGmsg([new Uint8Array([0x41, 0]), new Uint8Array([0x43, 0]), new Uint8Array([0x44, 0])], true);
     const store = new MessageStore([
       { name: 'MessageTest_JP.gsmb', entryIndex: 3, gmsg: new Gmsg(makeGmsg(msgs)), editable: true },
@@ -670,13 +901,25 @@ describe('GMSG messages', () => {
     const id = store.add(Uint16Array.from(msgs[2]!));
     expect(id).toBe(NEW_MESSAGE_FIRST);
     store.setText(id, 'ニセタウン');
-    expect([store.plain(id), store.plain(102), store.isAdded(id), store.changed(), store.file(id)!.name]).toEqual(['ニセタウン', 'デンパタウン', true, true, NEW_MESSAGE_FILE]);
+    expect([store.plain(id), store.plain(102), store.isAdded(id), store.changed(), store.file(id)!.name]).toEqual([
+      'ニセタウン',
+      'デンパタウン',
+      true,
+      true,
+      NEW_MESSAGE_FILE,
+    ]);
     // the game's files are left alone (no readings for the new ones); the new file holds them
     expect(store.replacements().size).toBe(0);
     const nf = store.newFile()!;
     expect([nf.name, nf.hash]).toEqual([NEW_MESSAGE_FILE, NEW_MESSAGE_HASH]);
     const g = new Gmsg(nf.bytes);
-    expect([g.first, g.last, g.reading, plainText(g.units(id)!), g.roundTrips()]).toEqual([NEW_MESSAGE_FIRST, NEW_MESSAGE_FIRST, false, 'ニセタウン', true]);
+    expect([g.first, g.last, g.reading, plainText(g.units(id)!), g.roundTrips()]).toEqual([
+      NEW_MESSAGE_FIRST,
+      NEW_MESSAGE_FIRST,
+      false,
+      'ニセタウン',
+      true,
+    ]);
     expect(u32(nf.bytes, 4)).toBe(nf.bytes.length);
     const saved = store.saved();
     store.restore([]);
@@ -690,7 +933,7 @@ describe('GMSG messages', () => {
     expect(store.changed()).toBe(false);
   });
 
-  test('store: with a MOD\'s message file past the game\'s IDs, new messages are appended to it', () => {
+  test("store: with a MOD's message file past the game's IDs, new messages are appended to it", () => {
     const mod = makeGmsg(msgs);
     w32(mod, 8, NEW_MESSAGE_FIRST);
     w32(mod, 12, NEW_MESSAGE_FIRST + msgs.length - 1);
@@ -702,7 +945,12 @@ describe('GMSG messages', () => {
     expect(id).toBe(NEW_MESSAGE_FIRST + msgs.length);
     expect(store.newFile()).toBeNull();
     const g = new Gmsg(store.replacements().get(7)!);
-    expect([g.first, g.last, plainText(g.units(id)!), plainText(g.units(NEW_MESSAGE_FIRST + 2)!)]).toEqual([NEW_MESSAGE_FIRST, id, 'デンパタウン', 'デンパタウン']);
+    expect([g.first, g.last, plainText(g.units(id)!), plainText(g.units(NEW_MESSAGE_FIRST + 2)!)]).toEqual([
+      NEW_MESSAGE_FIRST,
+      id,
+      'デンパタウン',
+      'デンパタウン',
+    ]);
   });
 });
 
@@ -735,7 +983,9 @@ describe('world maps', () => {
     const list = parseEntrances(buildEntrances([a, entrance(0x12, 0, 0, 1, 2)]));
     expect(list.length).toBe(2);
     expect(equalBytes(list[0]!, a)).toBe(true);
-    expect([ENT.id(a), ENT.destMap(a), ENT.destPoint(a), ENT.x(a), ENT.y(a), ENT.rot(a)]).toEqual([0x11, 0x98ec3fef, 0x22, 10, 299, 1]);
+    expect([ENT.id(a), ENT.destMap(a), ENT.destPoint(a), ENT.x(a), ENT.y(a), ENT.rot(a)]).toEqual([
+      0x11, 0x98ec3fef, 0x22, 10, 299, 1,
+    ]);
     const m = moveEntrance(a, 400, -3, 2);
     expect([ENT.x(m), ENT.y(m), ENT.rot(m), m[0x20], m[0x23]]).toEqual([299, 0, 2, 0x42, 0x99]);
     expect(ENT.x(a)).toBe(10); // copies, not in place
@@ -751,7 +1001,10 @@ describe('world maps', () => {
     const g = parseGround(b)!;
     expect([g.parts[5 * WORLD_SIZE + 7], g.rots[5 * WORLD_SIZE + 7], g.parts[0]]).toEqual([12, 3, 0]);
     expect(parseGround(b.subarray(0, 100))).toBeNull();
-    const t = buildTiles([{ kind: 9, x: 299, y: 1, rot: 2, rotHi: 0, letter: 0, pad: 0 }, { kind: 3, x: 300, y: 0, rot: 0, rotHi: 0, letter: 0, pad: 0 }]);
+    const t = buildTiles([
+      { kind: 9, x: 299, y: 1, rot: 2, rotHi: 0, letter: 0, pad: 0 },
+      { kind: 3, x: 300, y: 0, rot: 0, rotHi: 0, letter: 0, pad: 0 },
+    ]);
     const g2 = groundFromTiles(t);
     expect([g2.parts[WORLD_SIZE + 299], g2.rots[WORLD_SIZE + 299]]).toEqual([9, 2]);
     expect(g2.parts.reduce((a, v) => a + v, 0)).toBe(9);
@@ -777,7 +1030,15 @@ describe('world maps', () => {
 
   test('checks of edited entrances: missing point, lead back, duplicate IDs', () => {
     const W = 0xa8654391;
-    const dungeon = { hash: 0x98ec3fef, name: 'D01B02001', dungeon: 1, dungeonCode: 'D01', floor: -2, mapDataKey: 0, sections: [0x98ec3fef, 1, 2, 3, 4, 5, 6, 7, 8, 9] };
+    const dungeon = {
+      hash: 0x98ec3fef,
+      name: 'D01B02001',
+      dungeon: 1,
+      dungeonCode: 'D01',
+      floor: -2,
+      mapDataKey: 0,
+      sections: [0x98ec3fef, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    };
     const p3 = (id: number, dest: number, point: number): Uint8Array => {
       const r = new Uint8Array(28);
       w32(r, 0, id);
@@ -787,10 +1048,17 @@ describe('world maps', () => {
     };
     const sec3 = new Uint8Array([...p3(0x22, W, 0x11), ...p3(0x23, W, 0x99)]);
     const game = {
-      code: { byHash: (h: number) => (h === dungeon.hash ? dungeon : undefined), world: (h: number) => (h === W ? { hash: W, code: 'W01' } : undefined) },
+      code: {
+        byHash: (h: number) => (h === dungeon.hash ? dungeon : undefined),
+        world: (h: number) => (h === W ? { hash: W, code: 'W01' } : undefined),
+      },
       db: { get: (h: number) => (h === 3 ? sec3 : new Uint8Array(0)) },
     } as unknown as Game;
-    const orig = [entrance(0x11, dungeon.hash, 0x22, 1, 1), entrance(0x12, dungeon.hash, 0x22, 2, 2), entrance(0x13, dungeon.hash, 0x22, 3, 3)];
+    const orig = [
+      entrance(0x11, dungeon.hash, 0x22, 1, 1),
+      entrance(0x12, dungeon.hash, 0x22, 2, 2),
+      entrance(0x13, dungeon.hash, 0x22, 3, 3),
+    ];
     expect(validateWorld(game, W, orig, orig, new Map())).toEqual([]); // unedited ones are not checked
     const edited = [
       moveEntrance(orig[0]!, 5, 5), // still leads back
@@ -895,7 +1163,19 @@ describe('asking Claude (ai/claude.ts)', () => {
   test('streams the answer and sends the context as a cached system prompt', async () => {
     let sent: { url: string; headers: Headers; body: any } | null = null;
     const events = [
-      { type: 'message_start', message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-opus-5', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 5 } } },
+      {
+        type: 'message_start',
+        message: {
+          id: 'msg_1',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-opus-5',
+          content: [],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 5 },
+        },
+      },
       { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
       { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'スイッチを' } },
       { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '押すと扉が開く' } },
@@ -905,15 +1185,24 @@ describe('asking Claude (ai/claude.ts)', () => {
     ];
     const fakeFetch = (async (url: string, init: RequestInit) => {
       sent = { url: String(url), headers: new Headers(init.headers), body: JSON.parse(String(init.body)) };
-      const sse = events.map((e) => `event: ${e.type}
+      const sse = events
+        .map(
+          (e) => `event: ${e.type}
 data: ${JSON.stringify(e)}
 
-`).join('');
+`,
+        )
+        .join('');
       return new Response(sse, { headers: { 'content-type': 'text/event-stream' } });
     }) as unknown as typeof fetch;
     setApiKey('sk-ant-test', false);
     let streamed = '';
-    const r = await askClaude({ system: 'ゲームの説明', prompt: 'イベント', onText: (d) => (streamed += d), fetch: fakeFetch });
+    const r = await askClaude({
+      system: 'ゲームの説明',
+      prompt: 'イベント',
+      onText: (d) => (streamed += d),
+      fetch: fakeFetch,
+    });
     setApiKey('', false);
     expect(streamed).toBe('スイッチを押すと扉が開く');
     expect(r.text).toBe(streamed);
@@ -932,13 +1221,31 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
   const a = (t: string, addr = 0x100000) => assembleLine(t, addr).words[0]!;
   test('the inverse of the disassembler', () => {
     const lines: [string, number, number?][] = [
-      ['push {r4, lr}', 0xe92d4010], ['pop {r4, pc}', 0xe8bd8010], ['push {lr}', 0xe52de004], ['cmp r0, #0x10', 0xe3500010],
-      ['movgt r0, #1', 0xc3a00001], ['add r0, r0, r0, lsl #1', 0xe0800080], ['lsl r0, r1, #0x10', 0xe1a00801],
-      ['ldr r0, [pc, #0x24]', 0xe59f0024], ['strb r0, [r6, #0x80]', 0xe5c60080], ['ldrh r3, [r4, #2]', 0xe1d430b2],
-      ['bl #0x31aa2c', 0xeb03089e, 0x2587ac], ['beq #0x1d19dc', 0x0a000014, 0x1d1984], ['bx lr', 0xe12fff1e], ['uxth r2, r1', 0xe6ff2071],
-      ['vpush {d8}', 0xed2d8b02], ['vldr s16, [pc, #0x274]', 0xed9f8a9d], ['vmrs apsr_nzcv, fpscr', 0xeef1fa10], ['vmov.f32 s1, s17', 0xeef00a68],
-      ['mov r0, #-1', 0xe3e00000], ['nop', 0xe320f000], ['vcvt.f32.s32 s0, s0', 0xeeb80ac0], ['mul r0, r1, r2', 0xe0000291],
-      ['ssat r4, #16, r0', 0xe6af4010], ['usat r1, #8, r2, lsl #3', 0xe6e81192], ['ssatlt r0, #32, r3, asr #2', 0xb6bf0153],
+      ['push {r4, lr}', 0xe92d4010],
+      ['pop {r4, pc}', 0xe8bd8010],
+      ['push {lr}', 0xe52de004],
+      ['cmp r0, #0x10', 0xe3500010],
+      ['movgt r0, #1', 0xc3a00001],
+      ['add r0, r0, r0, lsl #1', 0xe0800080],
+      ['lsl r0, r1, #0x10', 0xe1a00801],
+      ['ldr r0, [pc, #0x24]', 0xe59f0024],
+      ['strb r0, [r6, #0x80]', 0xe5c60080],
+      ['ldrh r3, [r4, #2]', 0xe1d430b2],
+      ['bl #0x31aa2c', 0xeb03089e, 0x2587ac],
+      ['beq #0x1d19dc', 0x0a000014, 0x1d1984],
+      ['bx lr', 0xe12fff1e],
+      ['uxth r2, r1', 0xe6ff2071],
+      ['vpush {d8}', 0xed2d8b02],
+      ['vldr s16, [pc, #0x274]', 0xed9f8a9d],
+      ['vmrs apsr_nzcv, fpscr', 0xeef1fa10],
+      ['vmov.f32 s1, s17', 0xeef00a68],
+      ['mov r0, #-1', 0xe3e00000],
+      ['nop', 0xe320f000],
+      ['vcvt.f32.s32 s0, s0', 0xeeb80ac0],
+      ['mul r0, r1, r2', 0xe0000291],
+      ['ssat r4, #16, r0', 0xe6af4010],
+      ['usat r1, #8, r2, lsl #3', 0xe6e81192],
+      ['ssatlt r0, #32, r3, asr #2', 0xb6bf0153],
     ];
     for (const [t, w, at] of lines) expect([t, a(t, at).toString(16)]).toEqual([t, w.toString(16)]);
     expect(() => a('movw r0, #1')).toThrow();
@@ -953,14 +1260,27 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
     const cave = b.blocks[1]!;
     expect(cave.addr).toBe(0x4bff80 - 24);
     expect(b.labels.get('two')).toBe(cave.addr);
-    expect(cave.lines.map((l) => l.word.toString(16))).toEqual(['e92d4010', 'e59f0004', 'ed9f0a01', 'e8bd8010', '1c77', '3f800000']);
+    expect(cave.lines.map((l) => l.word.toString(16))).toEqual([
+      'e92d4010',
+      'e59f0004',
+      'ed9f0a01',
+      'e8bd8010',
+      '1c77',
+      '3f800000',
+    ]);
     expect(b.blocks[0]!.lines[0]!.word).toBe(assembleLine('bl two', 0x2587a4, () => cave.addr).words[0]!);
-    const bad = buildPatches(code, [{ id: 'b', title: 'b', source: '@0x2587A4\n  ldr r0, =1\n@0x4BF100\n  nop\n  foo r0\n', enabled: true }]).get('b')!;
+    const bad = buildPatches(code, [
+      { id: 'b', title: 'b', source: '@0x2587A4\n  ldr r0, =1\n@0x4BF100\n  nop\n  foo r0\n', enabled: true },
+    ]).get('b')!;
     expect(bad.errors.map((e) => e.line)).toEqual([2, 3, 5]);
   });
 
   test('the code MOD "ドロップ率の天井を撤廃" assembles for every title; a code.bin without its original words is refused', () => {
-    for (const [title, size, layout] of [['kahara', 0x3c0000, undefined], ['oahu', 5029888, OAHU_LAYOUT], ['lanai', 4182016, LANAI_LAYOUT]] as const) {
+    for (const [title, size, layout] of [
+      ['kahara', 0x3c0000, undefined],
+      ['oahu', 5029888, OAHU_LAYOUT],
+      ['lanai', 4182016, LANAI_LAYOUT],
+    ] as const) {
       const code = new Uint8Array(size);
       const b = buildPatches(code, [dropCapPatch(title)], layout).get(DROP_CAP_ID)!;
       expect([title, b.errors]).toEqual([title, []]);
@@ -971,7 +1291,13 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
 
   test('the code MOD "レベルステルス" assembles with its Lv difference; a code.bin without its original word is refused', () => {
     const code = new Uint8Array(0x3c0000);
-    for (const [diff, imm] of [[10, 10], [1, 1], [99, 99], [0, 10], [500, 99]] as const) {
+    for (const [diff, imm] of [
+      [10, 10],
+      [1, 1],
+      [99, 99],
+      [0, 10],
+      [500, 99],
+    ] as const) {
       const p = levelStealthPatch(diff);
       expect(p.source).toContain(`add r6, r6, #${imm}`);
       const b = buildPatches(code, [p]).get(LEVEL_STEALTH_ID)!;
@@ -990,7 +1316,17 @@ describe('ARM assembler and code patches (game/asm.ts, game/patch.ts)', () => {
 });
 
 describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
-  const doc = (tiles: MapDoc['tiles'] = []): MapDoc => ({ hash: 0, name: '', dungeon: 0, floor: 0, tiles, recs: {}, sec6Header: new Uint8Array(0), cells6: [], raw: {} });
+  const doc = (tiles: MapDoc['tiles'] = []): MapDoc => ({
+    hash: 0,
+    name: '',
+    dungeon: 0,
+    floor: 0,
+    tiles,
+    recs: {},
+    sec6Header: new Uint8Array(0),
+    cells6: [],
+    raw: {},
+  });
   const master = { mapParts: { rows: 0 } } as unknown as Master;
   const rec2 = (id: number, dir: number): Rec => {
     const raw = new Uint8Array(12);
@@ -1006,19 +1342,36 @@ describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
     raw[0x1a] = step;
     return { raw, x: 0, y: 0 };
   };
-  const round = (p: { angle: number; ox: number; oy: number; oz: number }) => ({ angle: Math.round((p.angle * 180) / Math.PI), ox: Math.round(p.ox * 10) / 10, oy: p.oy, oz: Math.round(p.oz * 10) / 10 });
+  const round = (p: { angle: number; ox: number; oy: number; oz: number }) => ({
+    angle: Math.round((p.angle * 180) / Math.PI),
+    ox: Math.round(p.ox * 10) / 10,
+    oy: p.oy,
+    oz: Math.round(p.oz * 10) / 10,
+  });
 
   test('section 2: angle table is the section 3 one turned by 180°', () => {
-    expect([0, 1, 2, 3, 7].map((d) => round(recordPlacement(2, rec2(0xc1, d), doc(), master)).angle)).toEqual([180, 90, 0, -90, 180]);
+    expect([0, 1, 2, 3, 7].map((d) => round(recordPlacement(2, rec2(0xc1, d), doc(), master)).angle)).toEqual([
+      180, 90, 0, -90, 180,
+    ]);
   });
 
   test('section 2: offsets by mapObject row', () => {
     // jump table of FUN_001c6b64: odd rows 0x9F..0xAD are pushed to the wall, even rows 0x9E..0xAC only sink
-    expect([0, 1, 2, 3].map((d) => section2Offset(0x9f, d))).toEqual([[0, -5, 50], [50, -5, 0], [0, -5, -50], [-50, -5, 0]]);
+    expect([0, 1, 2, 3].map((d) => section2Offset(0x9f, d))).toEqual([
+      [0, -5, 50],
+      [50, -5, 0],
+      [0, -5, -50],
+      [-50, -5, 0],
+    ]);
     expect(section2Offset(0xad, 1)).toEqual([50, -5, 0]);
     expect(section2Offset(0x9e, 1)).toEqual([0, -5, 0]);
     expect(section2Offset(0xaa, 2)).toEqual([0, -5, 0]);
-    expect([0, 1, 2, 3].map((d) => section2Offset(0xba, d))).toEqual([[-20, 0, -20], [30, 0, -130], [30, 0, -20], [-20, 0, 30]]);
+    expect([0, 1, 2, 3].map((d) => section2Offset(0xba, d))).toEqual([
+      [-20, 0, -20],
+      [30, 0, -130],
+      [30, 0, -20],
+      [-20, 0, 30],
+    ]);
     expect(section2Offset(0xda, 1)).toEqual([0, 0, 250]);
     expect(section2Offset(0xc1, 0)).toEqual([0, 0, 0]);
   });
@@ -1032,7 +1385,12 @@ describe('object placement (FUN_001c6b64, FUN_002effa0)', () => {
   test('section 3: indoor stairs move to their slot and 50 towards +0x15 (S10B01AAA)', () => {
     const indoor = doc([{ kind: 15, x: 0, y: 0, rot: 0, rotHi: 0, letter: 0x7a, pad: 0 }]);
     expect(round(recordPlacement(3, rec3(4, 3, 8), indoor, master))).toEqual({ angle: 0, ox: 116.7, oy: 0, oz: 166.7 });
-    expect(round(recordPlacement(3, rec3(4, 3, 2), indoor, master))).toEqual({ angle: 0, ox: 116.7, oy: 0, oz: -166.7 });
+    expect(round(recordPlacement(3, rec3(4, 3, 2), indoor, master))).toEqual({
+      angle: 0,
+      ox: 116.7,
+      oy: 0,
+      oz: -166.7,
+    });
   });
 
   test('section 3: doors step 100, or 250 with +0x1A', () => {

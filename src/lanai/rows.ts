@@ -1,7 +1,15 @@
 // One GS table of RPG FREE! read through its field definitions (tables.ts), shaped like RPG3's OahuRows: a field of a
 // row, the value in the archive, and whether a row was changed. An edit goes through the table (table.ts), which keeps
 // the rows as read; the session saves and exports it (session.ts).
-import { field, fieldRange, readField, writeField, type FieldContext, type FieldDef, type TableDef } from '../game/tabledef';
+import {
+  field,
+  fieldRange,
+  readField,
+  writeField,
+  type FieldContext,
+  type FieldDef,
+  type TableDef,
+} from '../game/tabledef';
 import { u32 } from '../util/bytes';
 import type { FieldAccess } from '../ui/FieldEdit';
 import type { LanaiSession } from './session';
@@ -12,7 +20,8 @@ export class LanaiRows {
     readonly table: LanaiTable,
     readonly def: TableDef,
   ) {
-    if (table.rowSize !== def.rowSize) throw new Error(`${def.file}: 行の大きさが ${table.rowSize} です (定義は ${def.rowSize})`);
+    if (table.rowSize !== def.rowSize)
+      throw new Error(`${def.file}: 行の大きさが ${table.rowSize} です (定義は ${def.rowSize})`);
   }
 
   get rows(): number {
@@ -57,7 +66,10 @@ export class LanaiRows {
     return {
       get: (k) => this.get(row, k),
       original: (k) => this.original(row, k),
-      set: (k, v) => { this.set(row, k, v); after(); },
+      set: (k, v) => {
+        this.set(row, k, v);
+        after();
+      },
       range: (k) => fieldRange(this.field(k)),
       added: !this.originalRow(row),
     };

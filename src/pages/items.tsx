@@ -5,8 +5,17 @@ import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
 import { MOD_EFFECTS, type ModEffectKey } from '../game/itemeffects';
-import { COMBINE, ITEM_CATEGORY, STATE_ACTION, MAX_LIMIT, MAX_RARITY, type Item, type ItemBook, type ItemFields } from '../game/items';
-import { dropClass, type MonsterBook } from '../game/monsters';
+import {
+  COMBINE,
+  ITEM_CATEGORY,
+  STATE_ACTION,
+  MAX_LIMIT,
+  MAX_RARITY,
+  type Item,
+  type ItemBook,
+  type ItemFields,
+} from '../game/items';
+import { dropClass } from '../game/monsters';
 import { mapTitle } from '../game/names';
 import { oneIn, pct } from './monsteredit';
 import { LAYOUTS, recCellPos, type MapDoc } from '../game/sections';
@@ -14,7 +23,18 @@ import { hex8, u32 } from '../util/bytes';
 import type { ModelRef } from './modelview';
 import type { ItemData, Session } from '../session';
 import { InfoTip } from '../ui/InfoTip';
-import { Count, EditedMark, ListFilter, NumberInput, TextBox, useActiveRow, useEdits, useScrollTop, useSticky, type PageProps } from '../ui/book';
+import {
+  Count,
+  EditedMark,
+  ListFilter,
+  NumberInput,
+  TextBox,
+  useActiveRow,
+  useEdits,
+  useScrollTop,
+  useSticky,
+  type PageProps,
+} from '../ui/book';
 import { ModelView } from '../ui/ModelView';
 import { ItemPicker } from '../ui/ItemPicker';
 import { PortItemButton } from '../ui/PortLook';
@@ -24,7 +44,14 @@ import { loadObjectModels, objKey } from '../cgfx/loader';
 import { itemModelArchive } from '../game/items';
 import { shopLabel } from '../game/shops';
 import { shopHref } from './shops';
-import { ItemListControls, ItemSources, rarityMatches, sortItems, type ItemSort, type RarityFilter } from '../ui/ItemSources';
+import {
+  ItemListControls,
+  ItemSources,
+  rarityMatches,
+  sortItems,
+  type ItemSort,
+  type RarityFilter,
+} from '../ui/ItemSources';
 
 const CHEST_KINDS = new Set([0x0c, 0x0d, 0x0e]);
 
@@ -38,7 +65,11 @@ export interface ChestSource {
 }
 
 /** Item -> chests that can hold it (current map documents and event tables). */
-export async function chestSources(game: Game, docOf: (m: MapInfo) => MapDoc, events: (d: number) => Promise<EventTable | null>): Promise<Map<number, ChestSource[]>> {
+export async function chestSources(
+  game: Game,
+  docOf: (m: MapInfo) => MapDoc,
+  events: (d: number) => Promise<EventTable | null>,
+): Promise<Map<number, ChestSource[]>> {
   const out = new Map<number, ChestSource[]>();
   const master = game.master;
   for (const m of game.editableMaps()) {
@@ -56,7 +87,10 @@ export async function chestSources(game: Game, docOf: (m: MapInfo) => MapDoc, ev
         if (seen.has(s.item)) continue;
         seen.add(s.item);
         const w = slots.filter((o) => o.item === s.item).reduce((a, o) => a + o.weight, 0);
-        out.set(s.item, [...(out.get(s.item) ?? []), { map: m, x: Math.floor(x), y: Math.floor(y), row, chance: total ? (w / total) * 100 : 0 }]);
+        out.set(s.item, [
+          ...(out.get(s.item) ?? []),
+          { map: m, x: Math.floor(x), y: Math.floor(y), row, chance: total ? (w / total) * 100 : 0 },
+        ]);
       }
     }
   }
@@ -98,13 +132,19 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
       live = false;
     };
   }, [game, session, visit]);
-  const selected = useSticky(Number(arg) || undefined, (id) => !!items.item(id), () => items.items[0]?.id ?? 0);
+  const selected = useSticky(
+    Number(arg) || undefined,
+    (id) => !!items.item(id),
+    () => items.items[0]?.id ?? 0,
+  );
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   useActiveRow(list, selected);
   useScrollTop(detail, selected);
   const drops = (id: number): { row: number; name: string; rate: number }[] =>
-    (monsters?.monsters ?? []).flatMap((m) => m.drops.filter((d) => d.item === id).map((d) => ({ row: m.row, name: m.name, rate: d.rate })));
+    (monsters?.monsters ?? []).flatMap((m) =>
+      m.drops.filter((d) => d.item === id).map((d) => ({ row: m.row, name: m.name, rate: d.rate })),
+    );
   const onEdit = (): void => {
     session.scheduleSave();
     edited();
@@ -126,22 +166,62 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
   return (
     <div className="book">
       <div className="book-side">
-        <NewRecordButton copy={itemCopy(items)} current={selected} onEdit={onEdit}
-          picker={(p) => <ItemPicker game={game} items={items} {...p} unavailable={(x) => p.unavailable(x.id)} />} />
-        <ListFilter query={query} setQuery={setQuery} placeholder="名前・説明・効果で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ...Object.entries(ITEM_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, v]),
-            ['shop', 'お店で買える'], ['chest', '宝箱から出る'], ['drop', 'モンスターが落とす'], ['changed', '変更した']]} />
-        <ItemListControls sort={sort} setSort={setSort} rarity={rarity} setRarity={setRarity} rarities={items.items.map((x) => x.rarity)} />
+        <NewRecordButton
+          copy={itemCopy(items)}
+          current={selected}
+          onEdit={onEdit}
+          picker={(p) => <ItemPicker game={game} items={items} {...p} unavailable={(x) => p.unavailable(x.id)} />}
+        />
+        <ListFilter
+          query={query}
+          setQuery={setQuery}
+          placeholder="名前・説明・効果で検索"
+          filter={filter}
+          setFilter={setFilter}
+          options={[
+            ['all', 'すべて'],
+            ...Object.entries(ITEM_CATEGORY).map(([k, v]): [string, string] => [`c${k}`, v]),
+            ['shop', 'お店で買える'],
+            ['chest', '宝箱から出る'],
+            ['drop', 'モンスターが落とす'],
+            ['changed', '変更した'],
+          ]}
+        />
+        <ItemListControls
+          sort={sort}
+          setSort={setSort}
+          rarity={rarity}
+          setRarity={setRarity}
+          rarities={items.items.map((x) => x.rarity)}
+        />
         <div className="book-list" ref={list}>
           <Count shown={rows.length} total={items.items.length} />
           <table className="book-table">
-            <thead><tr><th></th><th>ID</th><th>名前</th><th>分類</th><th>☆</th><th>買値</th></tr></thead>
+            <thead>
+              <tr>
+                <th></th>
+                <th>ID</th>
+                <th>名前</th>
+                <th>分類</th>
+                <th>☆</th>
+                <th>買値</th>
+              </tr>
+            </thead>
             <tbody>
               {rows.map((it) => (
-                <tr key={it.id} className={it.id === selected ? 'active' : ''} onClick={() => (location.hash = `#/items/${it.id}`)}>
-                  <td className="photo-cell"><Photo model={itemRef(game, it)} /></td>
+                <tr
+                  key={it.id}
+                  className={it.id === selected ? 'active' : ''}
+                  onClick={() => (location.hash = `#/items/${it.id}`)}
+                >
+                  <td className="photo-cell">
+                    <Photo model={itemRef(game, it)} />
+                  </td>
                   <td className="num muted">{it.id}</td>
-                  <td>{it.name}{items.changed(it.id) && <EditedMark text=" ●" />}</td>
+                  <td>
+                    {it.name}
+                    {items.changed(it.id) && <EditedMark text=" ●" />}
+                  </td>
                   <td className="muted">{it.category}</td>
                   <td className="num">{it.rarity}</td>
                   <td className="num">{it.price || ''}</td>
@@ -152,14 +232,35 @@ export function ItemPage({ session, arg, visit, data }: PageProps & { data: Item
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {it && <ItemDetail session={session} items={items} it={it} chests={chests.get(it.id) ?? []} drops={drops(it.id)} onEdit={onEdit} />}
+        {it && (
+          <ItemDetail
+            session={session}
+            items={items}
+            it={it}
+            chests={chests.get(it.id) ?? []}
+            drops={drops(it.id)}
+            onEdit={onEdit}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function ItemDetail({ session, items, it, chests, drops, onEdit }: {
-  session: Session; items: ItemBook; it: Item; chests: ChestSource[]; drops: { row: number; name: string; rate: number }[]; onEdit: () => void;
+function ItemDetail({
+  session,
+  items,
+  it,
+  chests,
+  drops,
+  onEdit,
+}: {
+  session: Session;
+  items: ItemBook;
+  it: Item;
+  chests: ChestSource[];
+  drops: { row: number; name: string; rate: number }[];
+  onEdit: () => void;
 }): ReactNode {
   const { game } = session;
   const changed = items.changed(it.id);
@@ -178,11 +279,34 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
       </div>
       <div className="row">
         <span className="muted small">変更はマスター (56562135) の itemData.bin として書き出されます。</span>
-        {changed && !items.added(it.id) && <button onClick={() => { items.revert(it.id); onEdit(); }}>このアイテムの変更を元に戻す</button>}
-        <CopyRemoveButtons copy={itemCopy(items)} from={it.id} onEdit={onEdit} remove={items.added(it.id) ? {
-          used: [...it.shops.map((s) => shopLabel(s)), ...chests.map((c) => `宝箱 #${c.row}`), ...drops.map((d) => d.name)],
-          remove: () => items.removeItem(it.id), next: '#/items',
-        } : undefined} />
+        {changed && !items.added(it.id) && (
+          <button
+            onClick={() => {
+              items.revert(it.id);
+              onEdit();
+            }}
+          >
+            このアイテムの変更を元に戻す
+          </button>
+        )}
+        <CopyRemoveButtons
+          copy={itemCopy(items)}
+          from={it.id}
+          onEdit={onEdit}
+          remove={
+            items.added(it.id)
+              ? {
+                  used: [
+                    ...it.shops.map((s) => shopLabel(s)),
+                    ...chests.map((c) => `宝箱 #${c.row}`),
+                    ...drops.map((d) => d.name),
+                  ],
+                  remove: () => items.removeItem(it.id),
+                  next: '#/items',
+                }
+              : undefined
+          }
+        />
         {it.model !== 0 && <PortItemButton target="kahara" id={it.id} onDone={onEdit} />}
       </div>
       <ItemSources
@@ -190,10 +314,22 @@ function ItemDetail({ session, items, it, chests, drops, onEdit }: {
         drops={drops.map((d) => {
           const label = dropClass(d.rate)[1];
           const odds = session.book?.battle.dropOdds(d.rate);
-          return { label: d.name, href: `#/monsters/${d.row}`, note: odds === undefined ? label : `${label}・${pct(odds)} = ${oneIn(odds)}`, title: `率の値 ${d.rate}` };
+          return {
+            label: d.name,
+            href: `#/monsters/${d.row}`,
+            note: odds === undefined ? label : `${label}・${pct(odds)} = ${oneIn(odds)}`,
+            title: `率の値 ${d.rate}`,
+          };
         })}
-        chests={chests.map((c) => ({ place: mapTitle(c.map, game.code.maps, game.master), href: `#/map/${c.map.name}`, at: `(${c.x}, ${c.y})`, table: `#${c.row}`, chance: c.chance }))}
-        noChests="なし (ダンジョンの宝箱のみ数えます)" />
+        chests={chests.map((c) => ({
+          place: mapTitle(c.map, game.code.maps, game.master),
+          href: `#/map/${c.map.name}`,
+          at: `(${c.x}, ${c.y})`,
+          table: `#${c.row}`,
+          chance: c.chance,
+        }))}
+        noChests="なし (ダンジョンの宝箱のみ数えます)"
+      />
     </>
   );
 }
@@ -209,14 +345,27 @@ const COPY_INFO = [
 /** Copying an item into an empty row of its category (the buttons of an entry and the list's "＋ 新しいアイテム"). */
 function itemCopy(items: ItemBook): CopySpec {
   return {
-    noun: 'アイテム', can: true, info: COPY_INFO,
+    noun: 'アイテム',
+    can: true,
+    info: COPY_INFO,
     cannot: (id) => (items.canCopy(id) ? null : '空きの行 (この分類の予約の行) か、メッセージの空きがありません'),
-    copy: (id) => items.copyItem(id), href: (id) => `#/items/${id}`,
+    copy: (id) => items.copyItem(id),
+    href: (id) => `#/items/${id}`,
   };
 }
 
 /** The name and the message fields (+0x10..+0x1C): editable text boxes; empty fields are left out. */
-function TextEditor({ session, items, it, onEdit }: { session: Session; items: ItemBook; it: Item; onEdit: () => void }): ReactNode {
+function TextEditor({
+  session,
+  items,
+  it,
+  onEdit,
+}: {
+  session: Session;
+  items: ItemBook;
+  it: Item;
+  onEdit: () => void;
+}): ReactNode {
   const texts = session.game.master.texts;
   const nameId = u32(session.game.master.itemData.row(it.id), 0x0c);
   const rows = it.descriptions.filter((d) => d.id && texts.text(d.id));
@@ -226,9 +375,20 @@ function TextEditor({ session, items, it, onEdit }: { session: Session; items: I
       <tr key={offset}>
         <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
         <td className="book-desc">
-          {texts.editable(id)
-            ? <TextBox key={`${it.id}:${id}`} value={t?.text ?? ''} multi={multi} edited={texts.isEdited(id)} onCommit={(v) => { items.setText(it.id, offset, v); onEdit(); }} />
-            : <span>{offset === 0x0c ? it.name : it.descriptions.find((d) => d.offset === offset)?.text}</span>}
+          {texts.editable(id) ? (
+            <TextBox
+              key={`${it.id}:${id}`}
+              value={t?.text ?? ''}
+              multi={multi}
+              edited={texts.isEdited(id)}
+              onCommit={(v) => {
+                items.setText(it.id, offset, v);
+                onEdit();
+              }}
+            />
+          ) : (
+            <span>{offset === 0x0c ? it.name : it.descriptions.find((d) => d.offset === offset)?.text}</span>
+          )}
         </td>
       </tr>
     );
@@ -266,18 +426,36 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
     items.set(it.id, patch);
     onEdit();
   };
-  const mark = <K extends keyof ItemFields>(k: K, show: (v: ItemFields[K]) => string = String): { className: string; title: string } =>
+  const mark = <K extends keyof ItemFields>(
+    k: K,
+    show: (v: ItemFields[K]) => string = String,
+  ): { className: string; title: string } =>
     it[k] !== orig[k] ? { className: 'edited', title: `元の値 ${show(orig[k])}` } : { className: '', title: '' };
   const number = (k: 'price' | 'sell' | 'rarity' | 'limit', min: number, max: number): ReactNode => {
     const m = mark(k);
-    return <NumberInput value={it[k]} min={min} max={max} className={`num-input ${m.className}`} title={m.title} onCommit={(v) => set({ [k]: v })} />;
+    return (
+      <NumberInput
+        value={it[k]}
+        min={min}
+        max={max}
+        className={`num-input ${m.className}`}
+        title={m.title}
+        onCommit={(v) => set({ [k]: v })}
+      />
+    );
   };
   const stat = (label: string, input: ReactNode, suffix = ''): ReactNode => (
-    <label className="stat"><span className="muted">{label}</span><span>{input}{suffix}</span></label>
+    <label className="stat">
+      <span className="muted">{label}</span>
+      <span>
+        {input}
+        {suffix}
+      </span>
+    </label>
   );
   const choices = items.itemActions();
   const mod = items.modEffect(it.id);
-  const chainName = (id: number): string => (id ? items.item(id)?.name ?? `#${id}` : 'なし');
+  const chainName = (id: number): string => (id ? (items.item(id)?.name ?? `#${id}`) : 'なし');
   return (
     <div className="item-fields">
       <div className="stats">
@@ -289,23 +467,40 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
       {(it.categoryByte & 0xf) === 1 && (
         <div className="model-line">
           {'効果: '}
-          <select {...mark('action', (v) => `#${v}`)} value={it.action} onChange={(e) => {
-            const v = e.target.value;
-            if (v.startsWith('mod:')) {
-              items.setModEffect(it.id, v.slice(4) as ModEffectKey);
-              onEdit();
-            } else set({ action: Number(v) });
-          }}>
+          <select
+            {...mark('action', (v) => `#${v}`)}
+            value={it.action}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith('mod:')) {
+                items.setModEffect(it.id, v.slice(4) as ModEffectKey);
+                onEdit();
+              } else set({ action: Number(v) });
+            }}
+          >
             <option value={0}>なし</option>
-            {!!it.action && !choices.some((c) => c.row === it.action) && <option value={it.action}>{`#${it.action} ${mod ? `— ${it.effect}` : '(アイテム以外のアクション)'}`}</option>}
-            {choices.map((c) => <option key={c.row} value={c.row}>{`#${c.row} ${c.name || '(名前なし)'} — ${c.effect}`}</option>)}
+            {!!it.action && !choices.some((c) => c.row === it.action) && (
+              <option
+                value={it.action}
+              >{`#${it.action} ${mod ? `— ${it.effect}` : '(アイテム以外のアクション)'}`}</option>
+            )}
+            {choices.map((c) => (
+              <option key={c.row} value={c.row}>{`#${c.row} ${c.name || '(名前なし)'} — ${c.effect}`}</option>
+            ))}
             <optgroup label="elpulse の効果 (このアイテム用のアクションを作る)">
-              {MOD_EFFECTS.map((e) => <option key={e.key} value={`mod:${e.key}`}>{e.label}</option>)}
+              {MOD_EFFECTS.map((e) => (
+                <option key={e.key} value={`mod:${e.key}`}>
+                  {e.label}
+                </option>
+              ))}
             </optgroup>
-          </select>
-          {' '}
+          </select>{' '}
           <InfoTip text={MOD_EFFECT_INFO} />
-          {!!it.action && <a href={`#/actions/${it.action}`} title="アクションで開く">↗</a>}
+          {!!it.action && (
+            <a href={`#/actions/${it.action}`} title="アクションで開く">
+              ↗
+            </a>
+          )}
           {it.effect && <span className="muted">{` ${it.effect}`}</span>}
           {mod && <div className="muted small">{`${mod.note} 書き出しの code.ips にこの効果のパッチが入ります。`}</div>}
           {usesUpWarning(items, it) && <div className="issue warn">{`⚠ ${usesUpWarning(items, it)}`}</div>}
@@ -317,10 +512,17 @@ function FieldEditor({ items, it, onEdit }: { items: ItemBook; it: Item; onEdit:
         <select {...mark('chain', chainName)} value={it.chain} onChange={(e) => set({ chain: Number(e.target.value) })}>
           <option value={0}>なし</option>
           {!!it.chain && !items.item(it.chain) && <option value={it.chain}>{`#${it.chain}`}</option>}
-          {items.items.filter((o) => o.id !== it.id).map((o) => <option key={o.id} value={o.id}>{`${o.id} ${o.name}`}</option>)}
-        </select>
-        {' '}
-        {!!it.chain && items.item(it.chain) && <a href={`#/items/${it.chain}`} title="このアイテムを開く">↗</a>}
+          {items.items
+            .filter((o) => o.id !== it.id)
+            .map((o) => (
+              <option key={o.id} value={o.id}>{`${o.id} ${o.name}`}</option>
+            ))}
+        </select>{' '}
+        {!!it.chain && items.item(it.chain) && (
+          <a href={`#/items/${it.chain}`} title="このアイテムを開く">
+            ↗
+          </a>
+        )}
       </div>
     </div>
   );
@@ -334,15 +536,34 @@ const EQUIP_INFO = [
   '装備の分類 (首・腕 …) と違う欄の状態には入りません (+0x2C の上位 4 ビットが欄の番号)。',
 ].join('\n');
 
-type Mark = <K extends keyof ItemFields>(k: K, show?: (v: ItemFields[K]) => string) => { className: string; title: string };
+type Mark = <K extends keyof ItemFields>(
+  k: K,
+  show?: (v: ItemFields[K]) => string,
+) => { className: string; title: string };
 
 /** The two states an equipment gives while it is worn, and their values. */
-function EquipEffects({ items, it, set, mark }: { items: ItemBook; it: Item; set: (patch: Partial<ItemFields>) => void; mark: Mark }): ReactNode {
+function EquipEffects({
+  items,
+  it,
+  set,
+  mark,
+}: {
+  items: ItemBook;
+  it: Item;
+  set: (patch: Partial<ItemFields>) => void;
+  mark: Mark;
+}): ReactNode {
   const stateName = (id: number): string => (id ? items.states[id]?.name || `状態 ${id}` : 'なし');
-  const slots = [['state1', 'amount1'], ['state2', 'amount2']] as const;
+  const slots = [
+    ['state1', 'amount1'],
+    ['state2', 'amount2'],
+  ] as const;
   return (
     <div className="model-line equip-effects">
-      <div className="with-info">{'装備の効果'}<InfoTip text={EQUIP_INFO} /></div>
+      <div className="with-info">
+        {'装備の効果'}
+        <InfoTip text={EQUIP_INFO} />
+      </div>
       {slots.map(([sk, ak], i) => {
         const id = it[sk];
         const st = items.states[id];
@@ -352,13 +573,32 @@ function EquipEffects({ items, it, set, mark }: { items: ItemBook; it: Item; set
             <span className="muted">{`${i + 1}: `}</span>
             <select {...mark(sk, stateName)} value={id} onChange={(e) => set({ [sk]: Number(e.target.value) })}>
               <option value={0}>なし</option>
-              {items.states.map((s) => s.id && (s.name || s.id === id) ? <option key={s.id} value={s.id}>{`${s.id} ${s.name || '(名前なし)'}`}</option> : null)}
+              {items.states.map((s) =>
+                s.id && (s.name || s.id === id) ? (
+                  <option key={s.id} value={s.id}>{`${s.id} ${s.name || '(名前なし)'}`}</option>
+                ) : null,
+              )}
               {id >= items.states.length && <option value={id}>{`状態 ${id}`}</option>}
             </select>
-            <NumberInput value={it[ak]} min={-32768} max={32767} className={`num-input ${m.className}`} title={m.title} onCommit={(v) => set({ [ak]: v })} />
-            {!!id && <span className="muted">{items.equipEffects({ ...it, state1: id, amount1: it[ak], state2: 0 })[0]}</span>}
-            {id === STATE_ACTION && <a href={`#/actions/${it[ak]}`} title="アクションで開く">↗</a>}
-            {!!id && st && <span className="muted small">{`(${COMBINE[st.combine] ?? `方式 ${st.combine}`}、範囲 ${st.min}〜${st.max})`}</span>}
+            <NumberInput
+              value={it[ak]}
+              min={-32768}
+              max={32767}
+              className={`num-input ${m.className}`}
+              title={m.title}
+              onCommit={(v) => set({ [ak]: v })}
+            />
+            {!!id && (
+              <span className="muted">{items.equipEffects({ ...it, state1: id, amount1: it[ak], state2: 0 })[0]}</span>
+            )}
+            {id === STATE_ACTION && (
+              <a href={`#/actions/${it[ak]}`} title="アクションで開く">
+                ↗
+              </a>
+            )}
+            {!!id && st && (
+              <span className="muted small">{`(${COMBINE[st.combine] ?? `方式 ${st.combine}`}、範囲 ${st.min}〜${st.max})`}</span>
+            )}
           </div>
         );
       })}

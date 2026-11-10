@@ -7,7 +7,19 @@ import { unzipSync } from 'fflate';
 import { OahuFlagPage } from '../src/oahu/FlagPage';
 import { OahuSession } from '../src/oahu/session';
 import { OahuStoryPage } from '../src/oahu/StoryPage';
-import { codeWordAt, conditionReads, editWord, emptyStoryState, OAHU_KEY, OAHU_STORY_CODE, OahuConditions, oahuNamedReads, single, storyRecords, type OahuWriteSite } from '../src/oahu/story';
+import {
+  codeWordAt,
+  conditionReads,
+  editWord,
+  emptyStoryState,
+  OAHU_KEY,
+  OAHU_STORY_CODE,
+  OahuConditions,
+  oahuNamedReads,
+  single,
+  storyRecords,
+  type OahuWriteSite,
+} from '../src/oahu/story';
 import { applyIps } from '../src/rom/ips';
 import { openImage, openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
@@ -51,10 +63,14 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     expect(base.story().writes).toEqual([]);
   });
 
-  test('the step writes: every call to FUN_00213010 but the step action\'s own run, with the steps as immediates', () => {
+  test("the step writes: every call to FUN_00213010 but the step action's own run, with the steps as immediates", () => {
     expect(steps.length).toBe(92);
     const values = new Set(steps.flatMap((w) => w.value.imms.map((i) => i.value)));
-    for (let n = 2; n < 100; n++) if (n !== 73 && n !== 96) expect(values.has(n) || s.story().writes.some((w) => w.kind === 'stepAction' && single(w.value) === n)).toBe(true);
+    for (let n = 2; n < 100; n++)
+      if (n !== 73 && n !== 96)
+        expect(values.has(n) || s.story().writes.some((w) => w.kind === 'stepAction' && single(w.value) === n)).toBe(
+          true,
+        );
     expect(values.has(73)).toBe(false);
     expect(values.has(96)).toBe(false);
     // FUN_001E8458: step 1 (FUN_001EDC14() = 1) or 2
@@ -62,7 +78,12 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     expect(first.value.imms.map((i) => i.value)).toEqual([2]);
     expect(first.value.open).toBe(true);
     // FUN_00244118: 34 / 35 / 36 by the leaders met
-    expect(steps.filter((w) => w.fn === 0x244118).flatMap((w) => w.value.imms.map((i) => i.value)).sort()).toEqual([34, 35, 36]);
+    expect(
+      steps
+        .filter((w) => w.fn === 0x244118)
+        .flatMap((w) => w.value.imms.map((i) => i.value))
+        .sort(),
+    ).toEqual([34, 35, 36]);
     // FUN_001F0EF8 picks a collection hint (rows 101〜123) once the story is over
     expect(steps.find((w) => w.at === 0x1f13b8)!.value.imms.every((i) => i.value > 100 && i.value < 124)).toBe(true);
     // "if the step < N, set N": the cmp before goes with the mov
@@ -70,20 +91,28 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     expect(single(guarded.value)).toBe(0x2b);
     expect(guarded.guard?.value).toBe(0x2b);
     // the map-entry actions: 16 steps
-    expect(s.story().writes.filter((w) => w.kind === 'stepAction').map((w) => single(w.value)).every((v) => v !== undefined)).toBe(true);
+    expect(
+      s
+        .story()
+        .writes.filter((w) => w.kind === 'stepAction')
+        .map((w) => single(w.value))
+        .every((v) => v !== undefined),
+    ).toBe(true);
   });
 
-  test('50 of the step writes are run by an EventObject row\'s script class (d10 row 17 sets step 4)', async () => {
+  test("50 of the step writes are run by an EventObject row's script class (d10 row 17 sets step 4)", async () => {
     const entries = await s.eventEntries();
     const runs = entries.flatMap((e) => e.scripts.flatMap((sc) => sc.cls.ranges.map(([a, b]) => ({ a, b, e }))));
     const owned = steps.filter((w) => runs.some((r) => w.at >= r.a && w.at < r.b));
     expect(owned.length).toBe(50);
     const d10 = s.maps.dungeons.findIndex((d) => d.code === 'D10');
     const four = steps.filter((w) => single(w.value) === 4);
-    expect(four.some((w) => runs.some((r) => r.e.dungeon === d10 && r.e.row === 17 && w.at >= r.a && w.at < r.b))).toBe(true);
+    expect(four.some((w) => runs.some((r) => r.e.dungeon === d10 && r.e.row === 17 && w.at >= r.a && w.at < r.b))).toBe(
+      true,
+    );
   });
 
-  test('the named conditions read the bosses\' values (1 -> 0xF9[4]); the preview runs FUN_004B62BC on a state', async () => {
+  test("the named conditions read the bosses' values (1 -> 0xF9[4]); the preview runs FUN_004B62BC on a state", async () => {
     const code = s.code!.code;
     const { ranges } = s.story();
     expect(oahuNamedReads(code, ranges, 1)).toEqual([{ kind: 'values', index: 4 }]);
@@ -109,18 +138,22 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 story (#87)', () => {
     expect(gone.length).toBeGreaterThan(0);
   });
 
-  test('a write\'s immediate (and its guard) and a script\'s message are changed in exefs/code.ips', async () => {
+  test("a write's immediate (and its guard) and a script's message are changed in exefs/code.ips", async () => {
     const code = s.code!.code;
     const site = steps.find((w) => w.at === 0x1d19b8)!;
-    const mov = site.value.imms[0]!.at, cmp = site.guard!.at;
+    const mov = site.value.imms[0]!.at,
+      cmp = site.guard!.at;
     // 257 has no ARM immediate
-    expect(editWord(code, { at: mov, kind: 'imm', value: 257, before: codeWordAt(code, mov) })).toContain('即値にできません');
+    expect(editWord(code, { at: mov, kind: 'imm', value: 257, before: codeWordAt(code, mov) })).toContain(
+      '即値にできません',
+    );
     s.storyEdits = [
       { at: mov, kind: 'imm', value: 0x2c, before: codeWordAt(code, mov) },
       { at: cmp, kind: 'imm', value: 0x2c, before: codeWordAt(code, cmp) },
     ];
     // a message literal of the first script class with one
-    const lit = (async () => (await s.eventEntries()).flatMap((e) => e.scripts).find((sc) => sc.cls.messageAt.length)!.cls.messageAt[0]!)();
+    const lit = (async () =>
+      (await s.eventEntries()).flatMap((e) => e.scripts).find((sc) => sc.cls.messageAt.length)!.cls.messageAt[0]!)();
     return lit.then(async ([at]) => {
       s.storyEdits.push({ at, kind: 'word', value: 42359, before: codeWordAt(code, at) });
       expect(storyRecords(code, s.storyEdits).errors).toEqual([]);

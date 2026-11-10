@@ -54,7 +54,11 @@ interface Dsp {
 }
 
 function dspInfo(d: Uint8Array, o: number): Dsp {
-  return { coefs: Int16Array.from({ length: 16 }, (_, i) => s16(d, o + i * 2)), h1: s16(d, o + 0x22), h2: s16(d, o + 0x24) };
+  return {
+    coefs: Int16Array.from({ length: 16 }, (_, i) => s16(d, o + i * 2)),
+    h1: s16(d, o + 0x22),
+    h2: s16(d, o + 0x24),
+  };
 }
 
 /** `count` samples of DSP-ADPCM at `o` (8-byte frames of 14 samples) into `out` from `at`. */
@@ -84,7 +88,15 @@ export function decodeDsp(d: Uint8Array, o: number, count: number, dsp: Dsp, out
   dsp.h2 = h2;
 }
 
-function decodeSamples(enc: number, d: Uint8Array, o: number, count: number, dsp: Dsp | null, out: Float32Array, at: number): void {
+function decodeSamples(
+  enc: number,
+  d: Uint8Array,
+  o: number,
+  count: number,
+  dsp: Dsp | null,
+  out: Float32Array,
+  at: number,
+): void {
   if (enc === Encoding.DspAdpcm) {
     if (!dsp) throw new Error('DSP-ADPCM の係数がありません');
     decodeDsp(d, o, count, dsp, out, at);
@@ -108,7 +120,15 @@ export function parseCwav(d: Uint8Array): Pcm {
   const channels = refTable(d, info + 0x14).map((ch) => {
     const out = new Float32Array(length);
     const adpcm = ref(d, ch + 8, ch);
-    decodeSamples(enc, d, ref(d, ch, data), length, adpcm >= 0 && u16(d, ch + 8) === 0x0300 ? dspInfo(d, adpcm) : null, out, 0);
+    decodeSamples(
+      enc,
+      d,
+      ref(d, ch, data),
+      length,
+      adpcm >= 0 && u16(d, ch + 8) === 0x0300 ? dspInfo(d, adpcm) : null,
+      out,
+      0,
+    );
     return out;
   });
   return { rate, channels, loop, loopStart, loopEnd: length };
@@ -221,7 +241,10 @@ function regions(d: Uint8Array, at: number, base: number): [number, number, numb
   if (t === 0x6002) {
     const min = d[p]!;
     const max = d[p + 1]!;
-    return Array.from({ length: max - min + 1 }, (_, i) => [min + i, min + i, ref(d, p + 4 + i * 8, p)] as [number, number, number]);
+    return Array.from(
+      { length: max - min + 1 },
+      (_, i) => [min + i, min + i, ref(d, p + 4 + i * 8, p)] as [number, number, number],
+    );
   }
   return [];
 }
@@ -360,7 +383,15 @@ export class SoundArchive {
       const flags = u32(d, e + 0x14);
       const detail = ref(d, e + 0x0c, e);
       const type = SOUND_TYPE[u16(d, e + 0x0c)] ?? null;
-      const s: SoundInfo = { name: flags & 1 ? strings[u32(d, e + 0x18)] ?? '' : '', type, fileId: u32(d, e), volume: d[e + 8]!, waveIndex: 0, start: 0, banks: [] };
+      const s: SoundInfo = {
+        name: flags & 1 ? (strings[u32(d, e + 0x18)] ?? '') : '',
+        type,
+        fileId: u32(d, e),
+        volume: d[e + 8]!,
+        waveIndex: 0,
+        start: 0,
+        banks: [],
+      };
       if (type === 'wave' && detail >= 0) s.waveIndex = u32(d, detail);
       if (type === 'sequence' && detail >= 0) {
         const bt = ref(d, detail, detail);

@@ -4,7 +4,13 @@ import { describe, expect, test } from 'bun:test';
 import type { Bank, Pcm } from '../src/sound/formats';
 import { renderSequence, SAMPLE_RATE } from '../src/sound/sequencer';
 
-const wave: Pcm = { rate: SAMPLE_RATE, channels: [new Float32Array(1000).fill(0.5)], loop: true, loopStart: 0, loopEnd: 1000 };
+const wave: Pcm = {
+  rate: SAMPLE_RATE,
+  channels: [new Float32Array(1000).fill(0.5)],
+  loop: true,
+  loopStart: 0,
+  loopEnd: 1000,
+};
 const bank = {
   waves: [[0, 0]],
   region: () => ({ wave: 0, root: 60, volume: 127, pan: 64, pitch: 1, env: { a: 127, d: 127, s: 127, h: 0, r: 127 } }),

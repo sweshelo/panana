@@ -54,9 +54,15 @@ export interface OahuSoundUse {
   unsure?: boolean;
 }
 
-export const OAHU_SOUND_USE_KIND: Record<OahuSoundUseKind, string> = { map: 'マップ', battle: '決まった戦闘', code: 'コード' };
+export const OAHU_SOUND_USE_KIND: Record<OahuSoundUseKind, string> = {
+  map: 'マップ',
+  battle: '決まった戦闘',
+  code: 'コード',
+};
 
-const SLOT_LABEL: Record<SoundSlot, string> = Object.fromEntries(SOUND_SLOTS.map(([slot, label]) => [slot, label])) as Record<SoundSlot, string>;
+const SLOT_LABEL: Record<SoundSlot, string> = Object.fromEntries(
+  SOUND_SLOTS.map(([slot, label]) => [slot, label]),
+) as Record<SoundSlot, string>;
 
 export interface OahuDungeon {
   row: number;
@@ -64,7 +70,10 @@ export interface OahuDungeon {
 }
 
 /** The dungeons (mapGroup rows) whose +0x2E / +0x2F is each mapData row. */
-export function oahuMapDataDungeons(master: OahuMaster, name: (id: number) => string): Map<number, { main: OahuDungeon[]; second: OahuDungeon[] }> {
+export function oahuMapDataDungeons(
+  master: OahuMaster,
+  name: (id: number) => string,
+): Map<number, { main: OahuDungeon[]; second: OahuDungeon[] }> {
   const t = master.table('mapGroup.bin');
   const out = new Map<number, { main: OahuDungeon[]; second: OahuDungeon[] }>();
   const at = (r: number) => out.get(r) ?? (out.set(r, { main: [], second: [] }), out.get(r)!);
@@ -127,7 +136,8 @@ export function codeCalls(code: OahuCode, target: number, textEnd: number): Code
       else if ((x & 0xfff00000) >>> 0 === 0xe5900000) {
         const rn = (x >>> 16) & 0xf;
         const p = loaded.get(rn);
-        if (p !== undefined && p >= BASE && p < BASE + code.code.length - 4 && ((x >>> 12) & 0xf) === rn) hash = code.word(p + (x & 0xfff));
+        if (p !== undefined && p >= BASE && p < BASE + code.code.length - 4 && ((x >>> 12) & 0xf) === rn)
+          hash = code.word(p + (x & 0xfff));
       }
     }
     out.push({ at, r0: reg[0], r1: reg[1], hash });
@@ -140,7 +150,7 @@ function writesRd(x: number): boolean {
   const op = (x >>> 26) & 3;
   if (op === 0) {
     const opcode = (x >>> 21) & 0xf;
-    return !(opcode >= 8 && opcode <= 11 && (x & (1 << 20))); // tst / teq / cmp / cmn
+    return !(opcode >= 8 && opcode <= 11 && x & (1 << 20)); // tst / teq / cmp / cmn
   }
   if (op === 1) return !!(x & (1 << 20)); // ldr
   return false;
@@ -149,7 +159,12 @@ function writesRd(x: number): boolean {
 const hexAt = (a: number): string => `0x${a.toString(16).toUpperCase().padStart(6, '0')}`;
 
 /** soundData row -> the places that use it. `code` is the Update's (null: the code uses are not listed). */
-export function oahuSoundUses(master: OahuMaster, battle: OahuBattle, code: OahuCode | null, textEnd: number): Map<number, OahuSoundUse[]> {
+export function oahuSoundUses(
+  master: OahuMaster,
+  battle: OahuBattle,
+  code: OahuCode | null,
+  textEnd: number,
+): Map<number, OahuSoundUse[]> {
   const out = new Map<number, OahuSoundUse[]>();
   const add = (row: number, u: OahuSoundUse): void => {
     if (row) out.set(row, [...(out.get(row) ?? []), u]);
@@ -189,16 +204,24 @@ export function oahuSoundUses(master: OahuMaster, battle: OahuBattle, code: Oahu
       links: [{ label: lead ? battle.monsterName(lead) : `群れ #${r}`, href: `#/groups/${r}` }],
     });
   }
-  for (const o of OAHU_FIELD_BGM_OVERRIDES) add(o.row, { kind: 'code', what: 'フィールドの BGM の差し替え', where: `${o.what} (FUN_0024CB8C)`, unsure: true });
+  for (const o of OAHU_FIELD_BGM_OVERRIDES)
+    add(o.row, { kind: 'code', what: 'フィールドの BGM の差し替え', where: `${o.what} (FUN_0024CB8C)`, unsure: true });
   if (!code) return out;
   const groupIndex = groups.hashIndex();
   for (const c of codeCalls(code, OAHU_SOUND_CODE.playBgm, textEnd)) {
-    if (c.r0 !== null) add(c.r0, { kind: 'code', what: 'BGM を鳴らす', where: `@${hexAt(c.at)} (FUN_00213970)`, unsure: true });
+    if (c.r0 !== null)
+      add(c.r0, { kind: 'code', what: 'BGM を鳴らす', where: `@${hexAt(c.at)} (FUN_00213970)`, unsure: true });
   }
   for (const target of [OAHU_SOUND_CODE.fixedBattle, OAHU_SOUND_CODE.fixedBattleRow]) {
     for (const c of codeCalls(code, target, textEnd)) {
       const group = c.hash !== null && target === OAHU_SOUND_CODE.fixedBattle ? groupIndex.get(c.hash) : undefined;
-      const bgm = c.r1 || (group !== undefined ? (groups.row(group)[0x32]! & OAHU_BOSS_BGM_BIT ? OAHU_BATTLE_BGM.boss : OAHU_BATTLE_BGM.normal) : 0);
+      const bgm =
+        c.r1 ||
+        (group !== undefined
+          ? groups.row(group)[0x32]! & OAHU_BOSS_BGM_BIT
+            ? OAHU_BATTLE_BGM.boss
+            : OAHU_BATTLE_BGM.normal
+          : 0);
       if (!bgm) continue;
       const g = group !== undefined ? battle.group(group) : null;
       const lead = g ? (g.fixed[0] ?? g.leads[0]?.monster) : undefined;
@@ -206,7 +229,10 @@ export function oahuSoundUses(master: OahuMaster, battle: OahuBattle, code: Oahu
         kind: 'battle',
         what: c.r1 ? '決まった戦闘 (BGM 指定)' : '決まった戦闘 (BGM 指定なし)',
         where: `@${hexAt(c.at)} (${target === OAHU_SOUND_CODE.fixedBattle ? 'FUN_0021112C' : 'FUN_00211228'})`,
-        links: group !== undefined ? [{ label: lead ? battle.monsterName(lead) : `群れ #${group}`, href: `#/groups/${group}` }] : undefined,
+        links:
+          group !== undefined
+            ? [{ label: lead ? battle.monsterName(lead) : `群れ #${group}`, href: `#/groups/${group}` }]
+            : undefined,
         unsure: true,
       });
     }

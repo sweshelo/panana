@@ -1,7 +1,17 @@
 // 3D view: tile models placed like the game (cell centre ((x + 0.5) * 500, 0, (y + 0.5) * 500), rotation =
 // -rot * 90° about Y; docs/map-editor-design.md §6), markers for points, editing on the ground plane.
 import * as THREE from 'three';
-import { CELL, LAYOUTS, P3, P7, POINT_SECTIONS, letterIndex, recCellPos, type MapDoc, type Rec } from '../game/sections';
+import {
+  CELL,
+  LAYOUTS,
+  P3,
+  P7,
+  POINT_SECTIONS,
+  letterIndex,
+  recCellPos,
+  type MapDoc,
+  type Rec,
+} from '../game/sections';
 import { ModelFactory } from '../cgfx/three';
 import { AnimatedModel, animationKey } from '../cgfx/player';
 import { objKey } from '../cgfx/loader';
@@ -71,7 +81,7 @@ export class View3D {
     this.view.scene.add(this.tileLayer.group, this.markerGroup, this.overlay);
     this.view.pointer = {
       down: (cx, cy, e) => this.ctl.down(cx, cy, e),
-      move: (cx, cy) => this.ctl.move(cx, cy),
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 0.15 }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
@@ -143,7 +153,12 @@ export class View3D {
     const ts = this.st.tileset;
     this.tileLayer.sync(
       this.ctl.layers.tiles
-        ? doc.tiles.map((t) => ({ x: t.x, y: t.y, sig: `${t.kind}/${t.rot}/${t.letter}/${ts}`, make: () => this.tileObject(t.kind, t.rot, t.letter) }))
+        ? doc.tiles.map((t) => ({
+            x: t.x,
+            y: t.y,
+            sig: `${t.kind}/${t.rot}/${t.letter}/${ts}`,
+            make: () => this.tileObject(t.kind, t.rot, t.letter),
+          }))
         : [],
     );
   }
@@ -204,7 +219,8 @@ export class View3D {
     let tmpl = this.doorPoses.get(key);
     if (tmpl === undefined) {
       tmpl = null;
-      const motions = f.set.models.get(entry)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
+      const motions =
+        f.set.models.get(entry)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
       const pose = motions.find((a) => animationKey(a.name) === (this.doorsOpen ? '002_' : '001_'));
       if (pose) {
         const m = new AnimatedModel(f, entry);
@@ -239,7 +255,8 @@ export class View3D {
       const src = this.src;
       for (const r of todo) this.objects.set(r, null);
       const refs = todo.map((r) => src.objectModel(r)).filter((x): x is NonNullable<typeof x> => !!x);
-      const job = src.loadObjectModels(refs)
+      const job = src
+        .loadObjectModels(refs)
         .then((sets) => {
           for (const r of todo) {
             const ref = src.objectModel(r);
@@ -271,7 +288,9 @@ export class View3D {
     return url;
   }
 
-  partThumb(row: number): Promise<string | null> { return row>0 ? this.objectThumb(row) : Promise.resolve(null); }
+  partThumb(row: number): Promise<string | null> {
+    return row > 0 ? this.objectThumb(row) : Promise.resolve(null);
+  }
 
   /** Idle-posed monster models by MonsterDesign row (a template to clone; null = none / loading). */
   private readonly bossModels = new Map<number, THREE.Object3D | null>();
@@ -305,28 +324,33 @@ export class View3D {
     this.bossRequest.clear();
     if (!todo.length) return;
     for (const m of todo) this.bossModels.set(m, null);
-    Promise.all(todo.map(async (design) => {
-      const found = await this.src.monsterModel(design);
-      if (!found) return;
-      const { set, model } = found;
-      const f = new ModelFactory(set);
-      if (!set.models.has(model)) return;
-      const m = new AnimatedModel(f, model);
-      const idle = m.motions.find((a) => animationKey(a.name) === '001_');
-      if (idle) m.select(idle.name);
-      const box = new THREE.Box3().setFromObject(m.group);
-      const size = box.getSize(new THREE.Vector3());
-      const scale = size.y > 0 ? BOSS_HEIGHT / Math.max(size.y, size.x * 0.6, size.z * 0.6) : 1;
-      m.group.scale.setScalar(scale);
-      m.group.position.y = -box.min.y * scale;
-      this.bossModels.set(design, new THREE.Group().add(m.group));
-    })).then(() => this.syncSelection(), (err) => console.warn('boss models', err));
+    Promise.all(
+      todo.map(async (design) => {
+        const found = await this.src.monsterModel(design);
+        if (!found) return;
+        const { set, model } = found;
+        const f = new ModelFactory(set);
+        if (!set.models.has(model)) return;
+        const m = new AnimatedModel(f, model);
+        const idle = m.motions.find((a) => animationKey(a.name) === '001_');
+        if (idle) m.select(idle.name);
+        const box = new THREE.Box3().setFromObject(m.group);
+        const size = box.getSize(new THREE.Vector3());
+        const scale = size.y > 0 ? BOSS_HEIGHT / Math.max(size.y, size.x * 0.6, size.z * 0.6) : 1;
+        m.group.scale.setScalar(scale);
+        m.group.position.y = -box.min.y * scale;
+        this.bossModels.set(design, new THREE.Group().add(m.group));
+      }),
+    ).then(
+      () => this.syncSelection(),
+      (err) => console.warn('boss models', err),
+    );
   }
 
   private syncMarkers(doc: MapDoc): void {
     this.markerGroup.clear();
     const sel = this.st.selection;
-    const ctx = this.showObjects ? this.objectContext?.() ?? null : null;
+    const ctx = this.showObjects ? (this.objectContext?.() ?? null) : null;
     const events = this.objectContext?.()?.events ?? null;
     for (const k of POINT_SECTIONS) {
       if (!this.ctl.layers.sections[k]) continue;
@@ -340,7 +364,8 @@ export class View3D {
         const model = boss >= 0 ? this.bossModel(boss) : row && row !== OBJ_INVISIBLE ? this.objectModel(row) : null;
         const place = this.src.placement(k, r, doc, events);
         const rotY = place.angle;
-        const ox = place.ox, oz = place.oz;
+        const ox = place.ox,
+          oz = place.oz;
         if (model) {
           model.position.set(px * CELL + ox, place.oy, py * CELL + oz);
           model.rotation.y = rotY;
@@ -391,7 +416,8 @@ export class View3D {
     this.overlayTrash = [];
     const sel = this.st.selection;
     const addRect = (x0: number, y0: number, x1: number, y1: number, color: number, fill = false): void => {
-      const w = (x1 - x0 + 1) * CELL, h = (y1 - y0 + 1) * CELL;
+      const w = (x1 - x0 + 1) * CELL,
+        h = (y1 - y0 + 1) * CELL;
       const geo = new THREE.PlaneGeometry(w, h);
       geo.rotateX(-Math.PI / 2);
       let obj: THREE.Mesh | THREE.LineSegments;
@@ -414,7 +440,12 @@ export class View3D {
         new THREE.Vector3(l.from[0] * CELL, 120, l.from[1] * CELL),
         new THREE.Vector3(l.to[0] * CELL, 120, l.to[1] * CELL),
       ]);
-      const mat = new THREE.LineBasicMaterial({ color: l.generic ? 0x50dcff : 0xffffff, transparent: true, opacity: l.selected ? 1 : 0.6, depthTest: false });
+      const mat = new THREE.LineBasicMaterial({
+        color: l.generic ? 0x50dcff : 0xffffff,
+        transparent: true,
+        opacity: l.selected ? 1 : 0.6,
+        depthTest: false,
+      });
       const line = new THREE.Line(geo, mat);
       line.renderOrder = 10;
       this.overlay.add(line);

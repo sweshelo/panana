@@ -82,7 +82,13 @@ export function oahuValueRanges(master: OahuMaster): OahuValueRange[] {
   const t = master.table('mapGroup.bin');
   return Array.from({ length: t.rows }, (_, dungeon) => {
     const r = t.row(dungeon);
-    return { dungeon, values: [u16(r, 0x26), u8(r, 0x28)], flags: [u16(r, 0x2a), u8(r, 0x2c)], place: u32(r, 8), nameId: u32(r, 0x1c) };
+    return {
+      dungeon,
+      values: [u16(r, 0x26), u8(r, 0x28)],
+      flags: [u16(r, 0x2a), u8(r, 0x2c)],
+      place: u32(r, 8),
+      nameId: u32(r, 0x1c),
+    };
   });
 }
 
@@ -95,7 +101,8 @@ export function oahuRangeOf(ranges: OahuValueRange[], kind: ValueKind, index: nu
 }
 
 /** "0xF9[4]" / "0xFA[12]". */
-export const valueLabel = (kind: ValueKind, index: number): string => `0x${VALUE_KEY[kind].toString(16).toUpperCase()}[${index}]`;
+export const valueLabel = (kind: ValueKind, index: number): string =>
+  `0x${VALUE_KEY[kind].toString(16).toUpperCase()}[${index}]`;
 /** Key of a value's name in the session ("values.4"). */
 export const valueNameKey = (kind: ValueKind, index: number): string => `${kind}.${index}`;
 
@@ -161,7 +168,8 @@ function writes(w: number, r: number): Writes {
   }
   if (top === 0x06000000) return ((w >>> 12) & 0xf) === r || ((w >>> 16) & 0xf) === r ? 'other' : 'no'; // media (uxth …)
   if (top === 0x08000000) return w & 0x100000 && w & (1 << r) ? 'other' : 'no';
-  if ((w & 0x0f100f10) === 0x0e100a10 || (w & 0x0fe00fd0) === 0x0c500a10) return ((w >>> 12) & 0xf) === r || ((w >>> 16) & 0xf) === r ? 'other' : 'no';
+  if ((w & 0x0f100f10) === 0x0e100a10 || (w & 0x0fe00fd0) === 0x0c500a10)
+    return ((w >>> 12) & 0xf) === r || ((w >>> 16) & 0xf) === r ? 'other' : 'no';
   return 'no';
 }
 
@@ -216,7 +224,12 @@ export function operandAt(code: Uint8Array, at: number, reg: number, fnStart?: n
     if (kind === 'no') continue;
     const cond = w >>> 28;
     if (kind === 'mov-imm' || kind === 'mvn-imm') {
-      imms.push({ value: kind === 'mvn-imm' ? ~rotImm(w) >>> 0 : rotImm(w), at: a, cond, ...(kind === 'mvn-imm' ? { mvn: true } : {}) });
+      imms.push({
+        value: kind === 'mvn-imm' ? ~rotImm(w) >>> 0 : rotImm(w),
+        at: a,
+        cond,
+        ...(kind === 'mvn-imm' ? { mvn: true } : {}),
+      });
       if (cond === COND_AL || cond === holds) {
         open = false;
         break;
@@ -242,7 +255,8 @@ export function operandAt(code: Uint8Array, at: number, reg: number, fnStart?: n
       const into = t === null || (w & 0x0f000000) !== 0x0a000000 ? undefined : regBefore.get(t);
       if (into === undefined || (a < at && a >= at - 4 * limit && regBefore.has(a))) continue;
       const p = word(code, a - 4);
-      if (writes(p, into) === 'mov-imm' && p >>> 28 === w >>> 28) imms.push({ value: rotImm(p), at: a - 4, cond: p >>> 28 });
+      if (writes(p, into) === 'mov-imm' && p >>> 28 === w >>> 28)
+        imms.push({ value: rotImm(p), at: a - 4, cond: p >>> 28 });
       else open = true;
     }
   return { reg, imms, open };
@@ -250,7 +264,15 @@ export function operandAt(code: Uint8Array, at: number, reg: number, fnStart?: n
 
 // ---- where the story values are written
 
-export type WriteKind = 'step' | 'stepAction' | 'value' | 'flag' | 'hereValue' | 'hereFlag' | 'dungeonValue' | 'dungeonFlag';
+export type WriteKind =
+  | 'step'
+  | 'stepAction'
+  | 'value'
+  | 'flag'
+  | 'hereValue'
+  | 'hereFlag'
+  | 'dungeonValue'
+  | 'dungeonFlag';
 
 interface Writer {
   fn: number;
@@ -331,14 +353,16 @@ export function oahuWriteSites(code: Uint8Array, index?: CodeIndex): OahuWriteSi
     const site: OahuWriteSite = { at: a, fn, kind: wr.kind, value };
     if (wr.index !== undefined) site.index = operandAt(code, a, wr.index, fn);
     if (wr.dungeon !== undefined) site.dungeon = operandAt(code, a, wr.dungeon, fn);
-    if (wr.kind === 'step' && value.imms.length === 1 && !value.imms[0]!.mvn) site.guard = findGuard(code, value.imms[0]!.at, value.imms[0]!.value);
+    if (wr.kind === 'step' && value.imms.length === 1 && !value.imms[0]!.mvn)
+      site.guard = findGuard(code, value.imms[0]!.at, value.imms[0]!.value);
     out.push(site);
   }
   return out;
 }
 
 /** The single value of an operand, or undefined when it can hold several or a computed one. */
-export const single = (o: Operand | undefined): number | undefined => (o && !o.open && o.imms.length === 1 ? o.imms[0]!.value : undefined);
+export const single = (o: Operand | undefined): number | undefined =>
+  o && !o.open && o.imms.length === 1 ? o.imms[0]!.value : undefined;
 
 /** "2 / 3 / (計算)". */
 export function operandText(o: Operand): string {
@@ -348,12 +372,22 @@ export function operandText(o: Operand): string {
 }
 
 /** Which elements of 0xF9 / 0xFA a write site writes (dungeon: the current dungeon for the "here" writers). */
-export function siteTargets(site: OahuWriteSite, ranges: OahuValueRange[], here: number[] = []): { kind: ValueKind; index: number }[] {
-  const kind: ValueKind | null = site.kind === 'value' || site.kind === 'hereValue' || site.kind === 'dungeonValue' ? 'values' : site.kind === 'flag' || site.kind === 'hereFlag' || site.kind === 'dungeonFlag' ? 'flags' : null;
+export function siteTargets(
+  site: OahuWriteSite,
+  ranges: OahuValueRange[],
+  here: number[] = [],
+): { kind: ValueKind; index: number }[] {
+  const kind: ValueKind | null =
+    site.kind === 'value' || site.kind === 'hereValue' || site.kind === 'dungeonValue'
+      ? 'values'
+      : site.kind === 'flag' || site.kind === 'hereFlag' || site.kind === 'dungeonFlag'
+        ? 'flags'
+        : null;
   if (!kind || !site.index) return [];
   const idx = site.index.imms.map((i) => i.value);
   if (site.kind === 'value' || site.kind === 'flag') return idx.map((index) => ({ kind, index }));
-  const ds = site.kind === 'dungeonValue' || site.kind === 'dungeonFlag' ? (site.dungeon?.imms.map((i) => i.value) ?? []) : here;
+  const ds =
+    site.kind === 'dungeonValue' || site.kind === 'dungeonFlag' ? (site.dungeon?.imms.map((i) => i.value) ?? []) : here;
   const out: { kind: ValueKind; index: number }[] = [];
   for (const d of ds) {
     const g = ranges[d];
@@ -391,7 +425,9 @@ export function oahuReadSites(code: Uint8Array, ranges: OahuValueRange[], index?
     let indices = i;
     if (rd.dungeon !== undefined) {
       const ds = operandAt(code, a, rd.dungeon, fn).imms.map((x) => x.value);
-      indices = ds.flatMap((d) => (ranges[d] ? i.filter((k) => k < ranges[d]![rd.kind][1]).map((k) => ranges[d]![rd.kind][0] + k) : []));
+      indices = ds.flatMap((d) =>
+        ranges[d] ? i.filter((k) => k < ranges[d]![rd.kind][1]).map((k) => ranges[d]![rd.kind][0] + k) : [],
+      );
     }
     out.push({ at: a, fn, kind: rd.kind, indices });
   }
@@ -416,12 +452,16 @@ export function editWord(code: Uint8Array, e: StoryCodeEdit): number | string {
   if (e.kind === 'word') return e.value >>> 0;
   if ((w & 0x0e000000) !== 0x02000000) return `0x${e.at.toString(16).toUpperCase()} は即値の命令ではありません`;
   const imm = encodeImm(e.value >>> 0);
-  if (imm === null) return `${e.value} は ARM の即値にできません (8 ビットの値を偶数ビット回転したものだけ。0〜255 は使えます)`;
+  if (imm === null)
+    return `${e.value} は ARM の即値にできません (8 ビットの値を偶数ビット回転したものだけ。0〜255 は使えます)`;
   return ((w & ~0xfff) | imm) >>> 0;
 }
 
 /** code.ips records of the edits, and the edits that cannot be made. */
-export function storyRecords(code: Uint8Array, edits: StoryCodeEdit[]): { records: [number, Uint8Array][]; errors: { edit: StoryCodeEdit; message: string }[] } {
+export function storyRecords(
+  code: Uint8Array,
+  edits: StoryCodeEdit[],
+): { records: [number, Uint8Array][]; errors: { edit: StoryCodeEdit; message: string }[] } {
   const records: [number, Uint8Array][] = [];
   const errors: { edit: StoryCodeEdit; message: string }[] = [];
   for (const e of edits) {
@@ -458,7 +498,12 @@ export interface StoryState {
   residents: boolean;
 }
 
-export const emptyStoryState = (values = 540, flags = 596): StoryState => ({ step: 0, values: new Array(values).fill(0), flags: new Array(flags).fill(0), residents: true });
+export const emptyStoryState = (values = 540, flags = 596): StoryState => ({
+  step: 0,
+  values: new Array(values).fill(0),
+  flags: new Array(flags).fill(0),
+  residents: true,
+});
 
 /** Functions a condition calls that the preview cannot answer (map.md §5.2 未解析). */
 const UNKNOWN = [0x1ed3f0, 0x1ed418, 0x4ef1a4, 0x4cbc68, 0x38d37c, 0x38d290, 0x38d250, 0x38d30c, 0x21152c];
@@ -498,13 +543,16 @@ export class OahuConditions {
       [C.getDungeonValue, (m) => val(this.inRange(m.r[0]!, 'values', m.r[1]!))],
       [C.getDungeonFlag, (m) => flag(this.inRange(m.r[0]!, 'flags', m.r[1]!))],
       [C.getResident, (m) => (m.r[0] === 0 || s.residents ? 1 : 0)],
-      [C.getKey, (m) => {
-        const k = m.r[1]!;
-        if (k === OAHU_KEY.step) return s.step;
-        if (k === OAHU_KEY.dungeon) return here;
-        unknown = true;
-        return 0;
-      }],
+      [
+        C.getKey,
+        (m) => {
+          const k = m.r[1]!;
+          if (k === OAHU_KEY.step) return s.step;
+          if (k === OAHU_KEY.dungeon) return here;
+          unknown = true;
+          return 0;
+        },
+      ],
       ...UNKNOWN.map((a): [number, (m: ArmMachine) => number] => [a, () => ((unknown = true), 0)]),
     ]);
     let out: Truth;
@@ -534,7 +582,11 @@ export class OahuConditions {
 }
 
 /** What a named condition (kind 0x01, FUN_001ED9B8(n)) reads: the getters it calls, found by running it. */
-export function oahuNamedReads(code: Uint8Array, ranges: OahuValueRange[], n: number): { kind: ValueKind; index: number }[] {
+export function oahuNamedReads(
+  code: Uint8Array,
+  ranges: OahuValueRange[],
+  n: number,
+): { kind: ValueKind; index: number }[] {
   const C = OAHU_STORY_CODE;
   const out: { kind: ValueKind; index: number }[] = [];
   const add = (kind: ValueKind, d: number | null, i: number): void => {
@@ -559,7 +611,14 @@ export function oahuNamedReads(code: Uint8Array, ranges: OahuValueRange[], n: nu
 }
 
 /** The elements of 0xF9 / 0xFA an EventObject condition reads (row in dungeon `here`). */
-export function conditionReads(code: Uint8Array | null, ranges: OahuValueRange[], kind: number, v1: number, v2: number, here: number): { kind: ValueKind; index: number }[] {
+export function conditionReads(
+  code: Uint8Array | null,
+  ranges: OahuValueRange[],
+  kind: number,
+  v1: number,
+  v2: number,
+  here: number,
+): { kind: ValueKind; index: number }[] {
   const at = (d: number, k: ValueKind, i: number): { kind: ValueKind; index: number }[] => {
     const g = ranges[d];
     return g && d && i < g[k][1] ? [{ kind: k, index: g[k][0] + i }] : [];

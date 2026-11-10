@@ -23,7 +23,15 @@ export function objectModelRef(game: Game, row: number): ModelRef | null {
 
 const CATEGORIES = ['ワールドマップ', '町の建物', '置物', '屋外の置物', '屋内の置物', '壁の置物', 'そのほか'];
 
-export function ObjectPicker({ game, title = 'モデルを選ぶ', current, used = [], zero, onPick, onClose }: {
+export function ObjectPicker({
+  game,
+  title = 'モデルを選ぶ',
+  current,
+  used = [],
+  zero,
+  onPick,
+  onClose,
+}: {
   game: Game;
   title?: string;
   current?: number;
@@ -41,15 +49,27 @@ export function ObjectPicker({ game, title = 'モデルを選ぶ', current, used
     if (!model) continue;
     const cat = objectCategory(row);
     const c = CATEGORIES.indexOf(cat);
-    entries.push({ id: row, name: `#${row}`, icon: <Photo model={model} className="photo photo-lg" />, sub: cat, title: `mapObject #${row} (${cat})`, category: (c < 0 ? CATEGORIES.length - 1 : c) + 1 });
+    entries.push({
+      id: row,
+      name: `#${row}`,
+      icon: <Photo model={model} className="photo photo-lg" />,
+      sub: cat,
+      title: `mapObject #${row} (${cat})`,
+      category: (c < 0 ? CATEGORIES.length - 1 : c) + 1,
+    });
   }
   const ids = new Set(entries.map((e) => e.id));
   const usedRows = [...new Set(used)].filter((r) => ids.has(r)).sort((a, b) => a - b);
   return (
-    <GridPicker title={title} entries={entries} current={current}
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
       sections={usedRows.length ? [{ label: 'ほかの入口が使っているモデル', ids: usedRows }] : []}
       choices={zero ? [{ value: 0, label: zero }] : []}
       categories={Object.fromEntries(CATEGORIES.map((n, i) => [i + 1, n]))}
-      onPick={onPick} onClose={onClose} />
+      onPick={onPick}
+      onClose={onClose}
+    />
   );
 }

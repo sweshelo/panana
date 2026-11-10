@@ -36,7 +36,16 @@ export interface MapPageView {
  * `pane3d`), the right pane and the status bar; `placeholder` (a map that cannot be shown) takes the place of all
  * but the header.
  */
-export function MapFrame({ mode, header, left, right, status, pane2d, pane3d, placeholder }: {
+export function MapFrame({
+  mode,
+  header,
+  left,
+  right,
+  status,
+  pane2d,
+  pane3d,
+  placeholder,
+}: {
   mode: MapViewMode;
   header: ReactNode;
   left: ReactNode;
@@ -65,7 +74,15 @@ export function MapFrame({ mode, header, left, right, status, pane2d, pane3d, pl
 }
 
 /** The header's right side: view mode, undo / redo, fitting the views, and reverting the map. */
-export function MapHeaderControls({ st, view, open, mode, setMode, showModes, onRevert }: {
+export function MapHeaderControls({
+  st,
+  view,
+  open,
+  mode,
+  setMode,
+  showModes,
+  onRevert,
+}: {
   st: MapEditState;
   view: MapPageView | null;
   /** The map is open in the editor (undo and the revert apply to it). */
@@ -82,13 +99,21 @@ export function MapHeaderControls({ st, view, open, mode, setMode, showModes, on
       <span className="grow" />
       {showModes && (
         <span className="seg">
-          {(['2d', 'split', '3d'] as const).map((m) => <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>{m === 'split' ? '両方' : m.toUpperCase()}</button>)}
+          {(['2d', 'split', '3d'] as const).map((m) => (
+            <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>
+              {m === 'split' ? '両方' : m.toUpperCase()}
+            </button>
+          ))}
         </span>
       )}
       {open && (
         <span className="seg">
-          <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>↶ 戻す</button>
-          <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>↷ やり直し</button>
+          <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>
+            ↶ 戻す
+          </button>
+          <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>
+            ↷ やり直し
+          </button>
         </span>
       )}
       {view && <button onClick={() => view.fit()}>全体を表示</button>}
@@ -110,15 +135,35 @@ export function MapStatus({ st, view }: { st: MapEditState; view: MapPageView })
   if (st.clip) parts.push(`コピー ${st.clip.w}×${st.clip.h}`);
   if (view.status) parts.push(view.status);
   if (view.errorMsg) parts.push(`⚠ ${view.errorMsg}`);
-  if (!view.status && !view.errorMsg) parts.push('右ドラッグ: 2D は移動、3D は回転 / 中ドラッグ: 3D の移動 / ホイール: 拡大');
+  if (!view.status && !view.errorMsg)
+    parts.push('右ドラッグ: 2D は移動、3D は回転 / 中ドラッグ: 3D の移動 / ホイール: 拡大');
   return <>{parts.join('   ')}</>;
 }
 
 /** A switch of the layers pane (redraws the views). */
-export function LayerBox({ view, label, checked, set, color }: { view: MapPageView; label: string; checked: boolean; set: (v: boolean) => void; color?: string }): ReactNode {
+export function LayerBox({
+  view,
+  label,
+  checked,
+  set,
+  color,
+}: {
+  view: MapPageView;
+  label: string;
+  checked: boolean;
+  set: (v: boolean) => void;
+  color?: string;
+}): ReactNode {
   return (
     <label className="layer">
-      <input type="checkbox" checked={checked} onChange={(e) => { set(e.target.checked); view.refresh(); }} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => {
+          set(e.target.checked);
+          view.refresh();
+        }}
+      />
       {color && <span style={{ color }}>● </span>}
       {label}
     </label>
@@ -126,7 +171,14 @@ export function LayerBox({ view, label, checked, set, color }: { view: MapPageVi
 }
 
 /** What the views show: the tiles, section 6's cells and the point sections (with their counts), then `children`. */
-export function MapLayers({ st, view, sections, layouts, room = true, children }: {
+export function MapLayers({
+  st,
+  view,
+  sections,
+  layouts,
+  room = true,
+  children,
+}: {
   st: MapEditState;
   view: MapPageView;
   sections: readonly number[];
@@ -142,10 +194,30 @@ export function MapLayers({ st, view, sections, layouts, room = true, children }
   return (
     <div className="layers">
       <h3>表示</h3>
-      <LayerBox view={view} label={`タイル ${doc.tiles.length}`} checked={layers.tiles} set={(v) => (layers.tiles = v)} />
-      {room && <LayerBox view={view} label={`区画 6 のセル ${doc.cells6.length}`} checked={layers.room} set={(v) => (layers.room = v)} color="rgba(80,200,255,0.8)" />}
+      <LayerBox
+        view={view}
+        label={`タイル ${doc.tiles.length}`}
+        checked={layers.tiles}
+        set={(v) => (layers.tiles = v)}
+      />
+      {room && (
+        <LayerBox
+          view={view}
+          label={`区画 6 のセル ${doc.cells6.length}`}
+          checked={layers.room}
+          set={(v) => (layers.room = v)}
+          color="rgba(80,200,255,0.8)"
+        />
+      )}
       {sections.map((k) => (
-        <LayerBox key={k} view={view} label={`${layouts[k]!.label} ${doc.recs[k]?.length ?? 0}`} checked={!!layers.sections[k]} set={(v) => (layers.sections[k] = v)} color={SECTION_COLORS[k]} />
+        <LayerBox
+          key={k}
+          view={view}
+          label={`${layouts[k]!.label} ${doc.recs[k]?.length ?? 0}`}
+          checked={!!layers.sections[k]}
+          set={(v) => (layers.sections[k] = v)}
+          color={SECTION_COLORS[k]}
+        />
       ))}
       {children}
     </div>
@@ -153,7 +225,17 @@ export function MapLayers({ st, view, sections, layouts, room = true, children }
 }
 
 /** The checks of the open map, run a moment after the last edit (`deps`: what else they read, e.g. the event tables). */
-export function MapChecks({ st, hash, validate, deps }: { st: MapEditState; hash: number; validate: (doc: MapDoc) => Issue[]; deps?: unknown }): ReactNode {
+export function MapChecks({
+  st,
+  hash,
+  validate,
+  deps,
+}: {
+  st: MapEditState;
+  hash: number;
+  validate: (doc: MapDoc) => Issue[];
+  deps?: unknown;
+}): ReactNode {
   const revision = useEditorState(st);
   const [issues, setIssues] = useState<Issue[]>([]);
   useEffect(() => {

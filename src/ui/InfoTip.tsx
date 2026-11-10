@@ -11,7 +11,16 @@ const TooltipId = createContext(INFO_TOOLTIP);
 export function InfoTip({ text }: { text: string }): ReactNode {
   const id = useContext(TooltipId);
   return (
-    <span className="info-icon" role="button" tabIndex={0} aria-label={text} data-tooltip-id={id} data-tooltip-content={text}>i</span>
+    <span
+      className="info-icon"
+      role="button"
+      tabIndex={0}
+      aria-label={text}
+      data-tooltip-id={id}
+      data-tooltip-content={text}
+    >
+      i
+    </span>
   );
 }
 

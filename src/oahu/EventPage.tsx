@@ -16,7 +16,15 @@ import type { OahuSession } from './session';
 
 type Filter = 'all' | 'script' | 'exit' | 'cond' | 'unplaced' | 'changed';
 
-export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSession; arg: string | undefined; onAddUpdate: () => void }): ReactNode {
+export function OahuEventPage({
+  session,
+  arg,
+  onAddUpdate,
+}: {
+  session: OahuSession;
+  arg: string | undefined;
+  onAddUpdate: () => void;
+}): ReactNode {
   const { maps } = session;
   const revision = useMaps(maps);
   const [query, setQuery] = useState('');
@@ -26,9 +34,12 @@ export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSess
   // rebuilt when the maps change (records moved, rows edited)
   useEffect(() => {
     let live = true;
-    const t = setTimeout(() => {
-      session.eventEntries().then((e) => live && setEntries(e));
-    }, entries ? 300 : 0);
+    const t = setTimeout(
+      () => {
+        session.eventEntries().then((e) => live && setEntries(e));
+      },
+      entries ? 300 : 0,
+    );
     return () => {
       live = false;
       clearTimeout(t);
@@ -36,13 +47,17 @@ export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSess
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maps, code, session, revision]);
   const byKey = useMemo(() => new Map((entries ?? []).map((e) => [oahuEventKey(e), e])), [entries]);
-  const selected = useSticky(arg, (k) => !entries || byKey.has(k), () => (entries?.[0] ? oahuEventKey(entries[0]) : ''));
+  const selected = useSticky(
+    arg,
+    (k) => !entries || byKey.has(k),
+    () => (entries?.[0] ? oahuEventKey(entries[0]) : ''),
+  );
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, `${selected} ${entries?.length}`);
   const texts = session.messages.texts;
   const firstMessage = (e: OahuEventEntry): string => {
     const id = e.scripts[0]?.cls.messages[0];
-    return id !== undefined ? texts.preview(id, true) ?? '' : '';
+    return id !== undefined ? (texts.preview(id, true) ?? '') : '';
   };
   const changed = (e: OahuEventEntry): boolean => {
     const d = maps.dungeons[e.dungeon];
@@ -61,28 +76,67 @@ export function OahuEventPage({ session, arg, onAddUpdate }: { session: OahuSess
   const rows = (entries ?? []).filter((e) => {
     if (!e.kind || !FILTERS[filter](e)) return false;
     if (!q) return true;
-    const hay = [oahuDungeonLabel(session, e.dungeon), oahuKindName(e.kind), ...e.places.map((p) => p.map.name), e.dest?.map.name ?? '', ...e.conditions.map((c) => c.text), ...e.scripts.flatMap((s) => [fnLabel(s.make), ...s.cls.messages.map((id) => texts.preview(id, true) ?? '')])];
+    const hay = [
+      oahuDungeonLabel(session, e.dungeon),
+      oahuKindName(e.kind),
+      ...e.places.map((p) => p.map.name),
+      e.dest?.map.name ?? '',
+      ...e.conditions.map((c) => c.text),
+      ...e.scripts.flatMap((s) => [fnLabel(s.make), ...s.cls.messages.map((id) => texts.preview(id, true) ?? '')]),
+    ];
     return hay.some((t) => t.includes(q));
   });
   return (
     <div className="book">
       <div className="book-side">
-        <ListFilter query={query} setQuery={setQuery} placeholder="マップ名・本文・条件で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['script', 'スクリプト (0x2E)'], ['exit', '行き先のある出入口'], ['cond', '出現条件あり'], ['unplaced', 'どのマップにも置かれていない'], ['changed', '変更した行']]} />
-        {!code && <div className="warn-box">スクリプトの中身 (作るクラスとメッセージ) には Update の code.bin が要ります。<button onClick={onAddUpdate}>Update を追加…</button></div>}
+        <ListFilter
+          query={query}
+          setQuery={setQuery}
+          placeholder="マップ名・本文・条件で検索"
+          filter={filter}
+          setFilter={setFilter}
+          options={[
+            ['all', 'すべて'],
+            ['script', 'スクリプト (0x2E)'],
+            ['exit', '行き先のある出入口'],
+            ['cond', '出現条件あり'],
+            ['unplaced', 'どのマップにも置かれていない'],
+            ['changed', '変更した行'],
+          ]}
+        />
+        {!code && (
+          <div className="warn-box">
+            スクリプトの中身 (作るクラスとメッセージ) には Update の code.bin が要ります。
+            <button onClick={onAddUpdate}>Update を追加…</button>
+          </div>
+        )}
         <div className="book-list" ref={list}>
           {!entries && <div className="muted">読み込み中…</div>}
           {entries && <Count shown={rows.length} total={entries.filter((e) => e.kind).length} unit="行" />}
           <table className="book-table">
-            <thead><tr><th></th><th>行</th><th>種類</th><th>場所・メッセージ</th></tr></thead>
+            <thead>
+              <tr>
+                <th></th>
+                <th>行</th>
+                <th>種類</th>
+                <th>場所・メッセージ</th>
+              </tr>
+            </thead>
             <tbody>
               {rows.map((e) => {
                 const k = oahuEventKey(e);
                 return (
-                  <tr key={k} className={k === selected ? 'active' : ''} onClick={() => (location.hash = `#/events/${k}`)}>
+                  <tr
+                    key={k}
+                    className={k === selected ? 'active' : ''}
+                    onClick={() => (location.hash = `#/events/${k}`)}
+                  >
                     <td className="muted nowrap">{maps.dungeons[e.dungeon]?.code || e.dungeon}</td>
                     <td className="num muted">{e.row}</td>
-                    <td className="muted nowrap">{oahuKindName(e.kind)}{changed(e) && <span className="edited-mark"> ●</span>}</td>
+                    <td className="muted nowrap">
+                      {oahuKindName(e.kind)}
+                      {changed(e) && <span className="edited-mark"> ●</span>}
+                    </td>
                     <td className="msg-cell">{firstMessage(e) || e.places[0]?.map.name || ''}</td>
                   </tr>
                 );
@@ -112,18 +166,51 @@ function ScriptMessages({ session, messageAt }: { session: OahuSession; messageA
           const changed = id !== codeWordAt(session.code!.code, lit);
           return (
             <li key={lit}>
-              <a href={`#/messages/${id}`}>{id}</a>{' '}{texts.preview(id, true) ?? <span className="muted">(なし)</span>}
-              {changed && <span className="edited-mark" title={`元は ${codeWordAt(session.code!.code, lit)}`}> ●</span>}
-              {' '}<button className="small" title={`0x${lit.toString(16).toUpperCase()} のリテラル`} onClick={() => setPicking(lit)}>差し替え</button>
-              {changed && <button className="small" onClick={() => { setWord(session, lit, codeWordAt(session.code!.code, lit)); redraw(); }}>元に戻す</button>}
+              <a href={`#/messages/${id}`}>{id}</a> {texts.preview(id, true) ?? <span className="muted">(なし)</span>}
+              {changed && (
+                <span className="edited-mark" title={`元は ${codeWordAt(session.code!.code, lit)}`}>
+                  {' '}
+                  ●
+                </span>
+              )}{' '}
+              <button
+                className="small"
+                title={`0x${lit.toString(16).toUpperCase()} のリテラル`}
+                onClick={() => setPicking(lit)}
+              >
+                差し替え
+              </button>
+              {changed && (
+                <button
+                  className="small"
+                  onClick={() => {
+                    setWord(session, lit, codeWordAt(session.code!.code, lit));
+                    redraw();
+                  }}
+                >
+                  元に戻す
+                </button>
+              )}
             </li>
           );
         })}
       </ul>
       {picking !== null && (
-        <BattleMessagePicker texts={texts} anchor={session.fieldRange()[0]} title="スクリプトのメッセージを選ぶ" current={wordAt(session, picking)} users={users} freeLabel="(絞り込みなし)"
+        <BattleMessagePicker
+          texts={texts}
+          anchor={session.fieldRange()[0]}
+          title="スクリプトのメッセージを選ぶ"
+          current={wordAt(session, picking)}
+          users={users}
+          freeLabel="(絞り込みなし)"
           info="スクリプトが出す会話は MessageField_JP にあります。追加したメッセージも選べます。"
-          onPick={(v) => { setWord(session, picking, v); setPicking(null); redraw(); }} onClose={() => setPicking(null)} />
+          onPick={(v) => {
+            setWord(session, picking, v);
+            setPicking(null);
+            redraw();
+          }}
+          onClose={() => setPicking(null)}
+        />
       )}
     </>
   );
@@ -140,7 +227,6 @@ function ScriptWrites({ session, e }: { session: OahuSession; e: OahuEventEntry 
 
 function EventDetail({ session, e }: { session: OahuSession; e: OahuEventEntry }): ReactNode {
   const { maps } = session;
-  const texts = session.messages.texts;
   const d = maps.dungeons[e.dungeon]!;
   const table = maps.loadedEventTable(d);
   return (
@@ -150,44 +236,93 @@ function EventDetail({ session, e }: { session: OahuSession; e: OahuEventEntry }
         <span className="muted">{`${oahuKindName(e.kind)}、${d.archive} の EventObject`}</span>
       </div>
       <h3>置かれている場所</h3>
-      {e.places.length
-        ? <ul>{e.places.map((p, i) => (
+      {e.places.length ? (
+        <ul>
+          {e.places.map((p, i) => (
             <li key={i}>
               <a href={oahuMapHref(p.map)}>{p.map.name}</a>
               <span className="muted">{` ${OAHU_LAYOUTS[p.section]!.label} #${p.index} (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`}</span>
             </li>
-          ))}</ul>
-        : <div className="muted">どのマップにも置かれていません</div>}
-      {e.dest && <p>{'行き先: '}<a href={oahuMapHref(e.dest.map)}>{e.dest.map.name}</a>{` ${pointLabel(maps, e.dest.map, e.dest.point)}`}</p>}
+          ))}
+        </ul>
+      ) : (
+        <div className="muted">どのマップにも置かれていません</div>
+      )}
+      {e.dest && (
+        <p>
+          {'行き先: '}
+          <a href={oahuMapHref(e.dest.map)}>{e.dest.map.name}</a>
+          {` ${pointLabel(maps, e.dest.map, e.dest.point)}`}
+        </p>
+      )}
       <h3>出現条件</h3>
-      {e.conditions.length
-        ? <ul>{e.conditions.map((c) => <li key={c.field}>{`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}<span className="muted">{` (種類 0x${c.kind.toString(16).toUpperCase()}、値 ${c.v1} / ${c.v2})`}</span></li>)}</ul>
-        : <div className="muted">条件なし (いつも置かれる)</div>}
-      <div className="muted small">+0x53 の条件が成り立つときだけ置かれ、+0x54 の条件が成り立つと置かれなくなります (FUN_004B6AC8 / FUN_004B6B38)。</div>
+      {e.conditions.length ? (
+        <ul>
+          {e.conditions.map((c) => (
+            <li key={c.field}>
+              {`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}
+              <span className="muted">{` (種類 0x${c.kind.toString(16).toUpperCase()}、値 ${c.v1} / ${c.v2})`}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="muted">条件なし (いつも置かれる)</div>
+      )}
+      <div className="muted small">
+        +0x53 の条件が成り立つときだけ置かれ、+0x54 の条件が成り立つと置かれなくなります (FUN_004B6AC8 / FUN_004B6B38)。
+      </div>
       {session.code && (
         <>
           <h3>動作のクラス</h3>
-          {e.scripts.length === 0 && <div className="muted">{e.kind === OAHU_SCRIPT_KIND ? 'コードはこの行に何も作りません (ダンジョンと行番号の組がコードにない、または進行で分けている)' : 'クラスを作れませんでした'}</div>}
+          {e.scripts.length === 0 && (
+            <div className="muted">
+              {e.kind === OAHU_SCRIPT_KIND
+                ? 'コードはこの行に何も作りません (ダンジョンと行番号の組がコードにない、または進行で分けている)'
+                : 'クラスを作れませんでした'}
+            </div>
+          )}
           {e.scripts.map((s, i) => (
             <Fragment key={i}>
               <div className="small">
                 {`${fnLabel(s.make)} が作るクラス 0x${s.cls.vtable.toString(16).toUpperCase()}。処理: `}
-                {s.cls.roots.length ? s.cls.roots.map(fnLabel).join(' ') : <span className="muted">(共通の処理だけ)</span>}
+                {s.cls.roots.length ? (
+                  s.cls.roots.map(fnLabel).join(' ')
+                ) : (
+                  <span className="muted">(共通の処理だけ)</span>
+                )}
               </div>
-              {s.cls.messageAt.length > 0
-                ? <ScriptMessages session={session} messageAt={s.cls.messageAt} />
-                : <div className="muted">コードに書かれたメッセージはありません</div>}
+              {s.cls.messageAt.length > 0 ? (
+                <ScriptMessages session={session} messageAt={s.cls.messageAt} />
+              ) : (
+                <div className="muted">コードに書かれたメッセージはありません</div>
+              )}
             </Fragment>
           ))}
-          <div className="muted small">クラスは、ハンドラの「動作の生成」関数をこの行と今のダンジョンで実際に動かして求めています (Update の code.bin)。メッセージは、そのクラスだけが持つ関数から呼ばれる関数が読み込む MessageField_JP の ID です。「差し替え」は関数のリテラルの ID を書き換え (code.ips)、同じ関数を使うほかのスクリプトのメッセージも変わります。</div>
+          <div className="muted small">
+            クラスは、ハンドラの「動作の生成」関数をこの行と今のダンジョンで実際に動かして求めています (Update の
+            code.bin)。メッセージは、そのクラスだけが持つ関数から呼ばれる関数が読み込む MessageField_JP の ID
+            です。「差し替え」は関数のリテラルの ID を書き換え
+            (code.ips)、同じ関数を使うほかのスクリプトのメッセージも変わります。
+          </div>
           <h3>このスクリプトが書く段階・物語の値</h3>
           <ScriptWrites session={session} e={e} />
         </>
       )}
       <h3>行の欄</h3>
-      {table && e.row < table.rows
-        ? <EventObjectEditor maps={maps} row={table.row(e.row)} original={maps.originalEventRow(d, e.row)} story={conditionNames(session, e.dungeon)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />
-        : <div className="muted">読み込み中…</div>}
+      {table && e.row < table.rows ? (
+        <EventObjectEditor
+          maps={maps}
+          row={table.row(e.row)}
+          original={maps.originalEventRow(d, e.row)}
+          story={conditionNames(session, e.dungeon)}
+          onEdit={() => {
+            maps.changed();
+            session.scheduleSave();
+          }}
+        />
+      ) : (
+        <div className="muted">読み込み中…</div>
+      )}
     </>
   );
 }

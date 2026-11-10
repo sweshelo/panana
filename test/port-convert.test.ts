@@ -22,7 +22,17 @@ import { decodeKeys, faceIndices, readGfx, type Gfx, type GfxAnimChannel } from 
 import { readH3D, type H3D, type H3DAnimSlot } from '../src/port/h3d';
 import { openImage, openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
-import { CIA, hasCia, hasLanai, hasOahuBase, hasOahuUpdate, LANAI_BASE, LANAI_UPDATE, OAHU_BASE, OAHU_UPDATE } from './env';
+import {
+  CIA,
+  hasCia,
+  hasLanai,
+  hasOahuBase,
+  hasOahuUpdate,
+  LANAI_BASE,
+  LANAI_UPDATE,
+  OAHU_BASE,
+  OAHU_UPDATE,
+} from './env';
 
 const TITLES: PortTitle[] = ['kahara', 'oahu', 'lanai'];
 
@@ -55,10 +65,17 @@ function sscOf(b: Uint8Array): boolean[] {
 }
 
 /** A curve's value at a frame with all its segments (the renderer's readers take the first one only). */
-type Segment = { start: number; end: number; interp: number; keys: { frame: number; value: number; inSlope: number; outSlope: number }[] };
+type Segment = {
+  start: number;
+  end: number;
+  interp: number;
+  keys: { frame: number; value: number; inSlope: number; outSlope: number }[];
+};
 
 function evalSegments(segs: Segment[], frame: number): number {
-  const s = segs.find((x) => frame >= x.start && frame <= x.end) ?? (frame < segs[0]!.start ? segs[0]! : segs[segs.length - 1]!);
+  const s =
+    segs.find((x) => frame >= x.start && frame <= x.end) ??
+    (frame < segs[0]!.start ? segs[0]! : segs[segs.length - 1]!);
   // Key frames count from the segment's start.
   const k = new Float32Array(s.keys.flatMap((x) => [x.frame, x.value, x.inSlope, x.outSlope]));
   return evalChannel({ start: 0, end: s.end - s.start, interp: s.interp, keys: k }, frame - s.start, 0);
@@ -67,14 +84,32 @@ function evalSegments(segs: Segment[], frame: number): number {
 function gfxCurve(c: GfxAnimChannel): (frame: number) => number {
   if (c === null) return () => 0;
   if (typeof c === 'number') return () => c;
-  const segs = c.segments.map((x) => ({ start: x.startFrame, end: x.endFrame, interp: (x.formatFlags >>> 2) & 7, keys: decodeKeys(x) }));
+  const segs = c.segments.map((x) => ({
+    start: x.startFrame,
+    end: x.endFrame,
+    interp: (x.formatFlags >>> 2) & 7,
+    keys: decodeKeys(x),
+  }));
   return (f) => evalSegments(segs, f);
 }
 
 function h3dCurve(c: H3DAnimSlot): (frame: number) => number {
   if (c === null) return () => 0;
   if (typeof c === 'number') return () => c;
-  const segs = [{ start: c.segmentStart ?? c.startFrame, end: c.segmentEnd ?? c.endFrame, interp: c.interpolationType, keys: c.keyFrames }, ...(c.moreSegments ?? []).map((x) => ({ start: x.startFrame, end: x.endFrame, interp: x.interpolationType, keys: x.keyFrames }))];
+  const segs = [
+    {
+      start: c.segmentStart ?? c.startFrame,
+      end: c.segmentEnd ?? c.endFrame,
+      interp: c.interpolationType,
+      keys: c.keyFrames,
+    },
+    ...(c.moreSegments ?? []).map((x) => ({
+      start: x.startFrame,
+      end: x.endFrame,
+      interp: x.interpolationType,
+      keys: x.keyFrames,
+    })),
+  ];
   return (f) => evalSegments(segs, f);
 }
 
@@ -105,7 +140,9 @@ function coordCurves(files: Uint8Array[]): View['coords'] {
           const t = e.targetType - 19;
           if (t < 0 || t > 8 || t % 3 === 1 || e.content.kind !== 'vector') continue;
           const ch = e.content.slots.map(h3dCurve);
-          add(a.name, `${e.name} ${Math.floor(t / 3)} ${t % 3 === 0 ? 'scale' : 'translate'}`, (f) => ch.map((x) => x(f)));
+          add(a.name, `${e.name} ${Math.floor(t / 3)} ${t % 3 === 0 ? 'scale' : 'translate'}`, (f) =>
+            ch.map((x) => x(f)),
+          );
         }
     }
   }
@@ -117,13 +154,24 @@ function coordCurves(files: Uint8Array[]): View['coords'] {
  * with it, so that both readers give the rest pose the same way.
  */
 function compensateRigid(file: CgfxFile, g: Gfx): void {
-  const m = file.models[0], gm = g.models[0], sk = gm?.skeleton;
+  const m = file.models[0],
+    gm = g.models[0],
+    sk = gm?.skeleton;
   if (!m || !gm || !sk || sk.scalingRule !== 1 || !sk.bones.some((b) => b.flags & 0x20)) return;
-  const poses = sk.bones.map((b) => ({ parent: b.parentIndex, scale: b.scale, rotation: b.rotation, translation: b.translation, ssc: (b.flags & 0x20) !== 0 }));
-  const plain = worldMatrices(poses.map((p) => ({ ...p, ssc: false }))), ssc = worldMatrices(poses);
-  const apply = (x: Mat34, v: number[], w: number): number[] => [0, 1, 2].map((r) => x[r * 4]! * v[0]! + x[r * 4 + 1]! * v[1]! + x[r * 4 + 2]! * v[2]! + x[r * 4 + 3]! * w);
+  const poses = sk.bones.map((b) => ({
+    parent: b.parentIndex,
+    scale: b.scale,
+    rotation: b.rotation,
+    translation: b.translation,
+    ssc: (b.flags & 0x20) !== 0,
+  }));
+  const plain = worldMatrices(poses.map((p) => ({ ...p, ssc: false }))),
+    ssc = worldMatrices(poses);
+  const apply = (x: Mat34, v: number[], w: number): number[] =>
+    [0, 1, 2].map((r) => x[r * 4]! * v[0]! + x[r * 4 + 1]! * v[1]! + x[r * 4 + 2]! * v[2]! + x[r * 4 + 3]! * w);
   gm.meshes.forEach((gmesh, mi) => {
-    const mesh = m.meshes[mi], shape = gm.shapes[gmesh.shapeIndex];
+    const mesh = m.meshes[mi],
+      shape = gm.shapes[gmesh.shapeIndex];
     if (!mesh || !shape) return;
     let v = 0;
     for (const sm of shape.subMeshes) {
@@ -135,7 +183,8 @@ function compensateRigid(file: CgfxFile, g: Gfx): void {
           const back = invert34(plain[bone]!);
           const p = apply(ssc[bone]!, apply(back, [...mesh.positions.slice(k * 3, k * 3 + 3)], 1), 1);
           mesh.positions.set(p, k * 3);
-          if (mesh.normals) mesh.normals.set(apply(ssc[bone]!, apply(back, [...mesh.normals.slice(k * 3, k * 3 + 3)], 0), 0), k * 3);
+          if (mesh.normals)
+            mesh.normals.set(apply(ssc[bone]!, apply(back, [...mesh.normals.slice(k * 3, k * 3 + 3)], 0), 0), k * 3);
         }
       v += n;
     }
@@ -165,7 +214,8 @@ function view(f: MonsterFiles): View {
   }
   const textures = new Map<string, CgfxTexture>();
   for (const t of file.textures) textures.set(t.name, t);
-  if (f.texture) for (const t of (isGfx(f.texture) ? parseCgfx(f.texture) : parseBch(f.texture)).textures) textures.set(t.name, t);
+  if (f.texture)
+    for (const t of (isGfx(f.texture) ? parseCgfx(f.texture) : parseBch(f.texture)).textures) textures.set(t.name, t);
   const animations = [...(file.models[0]?.animations ?? (gfx ? [] : bchAnimations(f.model)))];
   if (f.motion) {
     const have = new Set(animations.map((a) => a.name));
@@ -174,19 +224,32 @@ function view(f: MonsterFiles): View {
   // A lone identity bone (RPG2's models always have one; H3D items may have none) moves nothing.
   const m = file.models[0];
   const b0 = m?.bones[0];
-  if (m && m.bones.length === 1 && b0 && [...b0.scale, ...b0.rotation, ...b0.translation].join() === '1,1,1,0,0,0,0,0,0') {
+  if (
+    m &&
+    m.bones.length === 1 &&
+    b0 &&
+    [...b0.scale, ...b0.rotation, ...b0.translation].join() === '1,1,1,0,0,0,0,0,0'
+  ) {
     m.bones = [];
     for (const x of m.meshes) x.skinIndices = x.skinWeights = null;
   }
-  return { file, textures, animations, ssc: m?.bones.length ? sscOf(f.model) : [], coords: coordCurves([f.model, ...(f.motion ? [f.motion] : [])]) };
+  return {
+    file,
+    textures,
+    animations,
+    ssc: m?.bones.length ? sscOf(f.model) : [],
+    coords: coordCurves([f.model, ...(f.motion ? [f.motion] : [])]),
+  };
 }
 
 // ---- Comparisons
 
-const close = (a: number, b: number, tol = 1e-3): boolean => Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
+const close = (a: number, b: number, tol = 1e-3): boolean =>
+  Math.abs(a - b) <= tol * Math.max(1, Math.abs(a), Math.abs(b));
 
 function arrayDiff(what: string, a: ArrayLike<number> | null, b: ArrayLike<number> | null, tol = 1e-3): string | null {
-  if (!a || !b) return (a === null) === (b === null) ? null : `${what}: ${a ? 'only in the source' : 'only in the output'}`;
+  if (!a || !b)
+    return (a === null) === (b === null) ? null : `${what}: ${a ? 'only in the source' : 'only in the output'}`;
   if (a.length !== b.length) return `${what}: length ${a.length} != ${b.length}`;
   for (let i = 0; i < a.length; i++) if (!close(a[i]!, b[i]!, tol)) return `${what}[${i}]: ${a[i]} != ${b[i]}`;
   return null;
@@ -204,9 +267,15 @@ function pixels(t: CgfxTexture | undefined): string {
 function look(m: CgfxMaterial, textures: Map<string, CgfxTexture>): unknown {
   return {
     textures: m.textures.map((n) => (n ? pixels(textures.get(n)) : null)),
-    tev: m.tev, tevBuffer: m.tevBuffer, blendFunc: m.blendFunc, alphaFunc: m.alphaFunc, depthTest: m.depthTest, cull: m.cull,
+    tev: m.tev,
+    tevBuffer: m.tevBuffer,
+    blendFunc: m.blendFunc,
+    alphaFunc: m.alphaFunc,
+    depthTest: m.depthTest,
+    cull: m.cull,
     // Units without a texture: parseCgfx reports repeat, parseBch the zeros the files have.
-    units: m.units.map((u, i) => (m.textures[i] ? { ...u, name: null } : null)), polygonOffset: m.polygonOffset,
+    units: m.units.map((u, i) => (m.textures[i] ? { ...u, name: null } : null)),
+    polygonOffset: m.polygonOffset,
   };
 }
 
@@ -231,7 +300,11 @@ function deepDiff(path: string, a: unknown, b: unknown): string | null {
 }
 
 /** Skin of each vertex: (bone, weight) pairs with a weight. */
-function skinOf(m: { skinIndices: Uint16Array | null; skinWeights: Float32Array | null; positions: Float32Array }): string[] {
+function skinOf(m: {
+  skinIndices: Uint16Array | null;
+  skinWeights: Float32Array | null;
+  positions: Float32Array;
+}): string[] {
   const n = m.positions.length / 3;
   const out: string[] = [];
   for (let v = 0; v < n; v++) {
@@ -242,7 +315,12 @@ function skinOf(m: { skinIndices: Uint16Array | null; skinWeights: Float32Array 
     }
     const merged = new Map<number, number>();
     for (const [b, w] of pairs) merged.set(b, (merged.get(b) ?? 0) + w);
-    out.push([...merged].sort((x, y) => x[0] - y[0]).map(([b, w]) => `${b}:${w}`).join(' '));
+    out.push(
+      [...merged]
+        .sort((x, y) => x[0] - y[0])
+        .map(([b, w]) => `${b}:${w}`)
+        .join(' '),
+    );
   }
   return out;
 }
@@ -256,9 +334,18 @@ function quatMatrix(q: number[], s: number[], t: number[]): Mat34 {
   const l = Math.hypot(x, y, z, w) || 1;
   const [a, b, c, d] = [x / l, y / l, z / l, w / l];
   return [
-    (1 - 2 * (b * b + c * c)) * s[0]!, 2 * (a * b - c * d) * s[1]!, 2 * (a * c + b * d) * s[2]!, t[0]!,
-    2 * (a * b + c * d) * s[0]!, (1 - 2 * (a * a + c * c)) * s[1]!, 2 * (b * c - a * d) * s[2]!, t[1]!,
-    2 * (a * c - b * d) * s[0]!, 2 * (b * c + a * d) * s[1]!, (1 - 2 * (a * a + b * b)) * s[2]!, t[2]!,
+    (1 - 2 * (b * b + c * c)) * s[0]!,
+    2 * (a * b - c * d) * s[1]!,
+    2 * (a * c + b * d) * s[2]!,
+    t[0]!,
+    2 * (a * b + c * d) * s[0]!,
+    (1 - 2 * (a * a + c * c)) * s[1]!,
+    2 * (b * c - a * d) * s[2]!,
+    t[1]!,
+    2 * (a * c - b * d) * s[0]!,
+    2 * (b * c + a * d) * s[1]!,
+    (1 - 2 * (a * a + b * b)) * s[2]!,
+    t[2]!,
   ];
 }
 
@@ -266,13 +353,15 @@ function poseWorlds(v: View, anim: CgfxAnimation | null, frame: number): Mat34[]
   const bones = v.file.models[0]?.bones ?? [];
   const tracks = new Map<string, SkeletalTrack>();
   for (const t of anim?.skeletal ?? []) tracks.set(t.bone, t);
-  const world: Mat34[] = [], scale: number[][] = [];
+  const world: Mat34[] = [],
+    scale: number[][] = [];
   const tmp = [0, 0, 0, 0];
   const visit = (i: number, depth = 0): Mat34 => {
     if (world[i]) return world[i]!;
     const b = bones[i]!;
     const tr = tracks.get(b.name);
-    let s = [...b.scale], local: Mat34;
+    let s = [...b.scale],
+      local: Mat34;
     if (tr?.channels) {
       const c = tr.channels;
       s = [0, 1, 2].map((k) => evalChannel(c[k]!, frame, b.scale[k]!));
@@ -281,19 +370,27 @@ function poseWorlds(v: View, anim: CgfxAnimation | null, frame: number): Mat34[]
       local = composeTRS(s, r, t);
     } else if (tr?.baked) {
       const x = tr.baked;
-      if (x.scale) { evalBaked(x.scale, 3, x.start, frame, tmp); s = tmp.slice(0, 3); }
-      const t = x.translation ? (evalBaked(x.translation, 3, x.start, frame, tmp), tmp.slice(0, 3)) : [...b.translation];
-      if (x.rotation) { evalBaked(x.rotation, 4, x.start, frame, tmp); local = quatMatrix(tmp.slice(), s, t); }
-      else local = composeTRS(s, b.rotation, t);
+      if (x.scale) {
+        evalBaked(x.scale, 3, x.start, frame, tmp);
+        s = tmp.slice(0, 3);
+      }
+      const t = x.translation
+        ? (evalBaked(x.translation, 3, x.start, frame, tmp), tmp.slice(0, 3))
+        : [...b.translation];
+      if (x.rotation) {
+        evalBaked(x.rotation, 4, x.start, frame, tmp);
+        local = quatMatrix(tmp.slice(), s, t);
+      } else local = composeTRS(s, b.rotation, t);
     } else local = composeTRS(b.scale, b.rotation, b.translation);
     scale[i] = s;
     const p = b.parent;
     if (p >= 0 && p < bones.length && p !== i && depth < 128) {
       const pw = visit(p, depth + 1);
-      if (v.ssc[i]) for (let row = 0; row < 3; row++) {
-        const k = scale[p]![row] ? 1 / scale[p]![row]! : 1;
-        for (let col = 0; col < 3; col++) local[row * 4 + col]! *= k;
-      }
+      if (v.ssc[i])
+        for (let row = 0; row < 3; row++) {
+          const k = scale[p]![row] ? 1 / scale[p]![row]! : 1;
+          for (let col = 0; col < 3; col++) local[row * 4 + col]! *= k;
+        }
       world[i] = mul34(pw, local);
     } else world[i] = local;
     return world[i]!;
@@ -304,25 +401,39 @@ function poseWorlds(v: View, anim: CgfxAnimation | null, frame: number): Mat34[]
 
 /** Where two looks differ for the renderer (null = the same). */
 function lookDiff(a: View, b: View, poses: boolean): string | null {
-  const ma = a.file.models[0], mb = b.file.models[0];
+  const ma = a.file.models[0],
+    mb = b.file.models[0];
   if (!ma || !mb) return ma === mb ? null : 'model count';
   if (ma.bones.length !== mb.bones.length) return `bones ${ma.bones.length} != ${mb.bones.length}`;
   for (let i = 0; i < ma.bones.length; i++) {
-    const x = ma.bones[i]!, y = mb.bones[i]!;
+    const x = ma.bones[i]!,
+      y = mb.bones[i]!;
     if (x.name !== y.name || x.parent !== y.parent) return `bone ${i} ${x.name} ${y.name}`;
-    const d = arrayDiff(`bone ${x.name}`, [...x.scale, ...x.rotation, ...x.translation], [...y.scale, ...y.rotation, ...y.translation]);
+    const d = arrayDiff(
+      `bone ${x.name}`,
+      [...x.scale, ...x.rotation, ...x.translation],
+      [...y.scale, ...y.rotation, ...y.translation],
+    );
     if (d) return d;
   }
   if (a.ssc.join() !== b.ssc.join()) return 'segment scale compensate';
   if (ma.meshes.length !== mb.meshes.length) return `meshes ${ma.meshes.length} != ${mb.meshes.length}`;
   // Meshes may be ordered by render layer in H3D: match by material, size and first vertex.
-  const key = (m: (typeof ma.meshes)[number]): string => `${m.material}|${m.indices.length}|${m.positions.length}|${[...m.positions.slice(0, 3)].map((x) => x.toFixed(1))}`;
-  const sa = [...ma.meshes].sort((x, y) => key(x).localeCompare(key(y))), sb = [...mb.meshes].sort((x, y) => key(x).localeCompare(key(y)));
+  const key = (m: (typeof ma.meshes)[number]): string =>
+    `${m.material}|${m.indices.length}|${m.positions.length}|${[...m.positions.slice(0, 3)].map((x) => x.toFixed(1))}`;
+  const sa = [...ma.meshes].sort((x, y) => key(x).localeCompare(key(y))),
+    sb = [...mb.meshes].sort((x, y) => key(x).localeCompare(key(y)));
   for (let i = 0; i < sa.length; i++) {
-    const x = sa[i]!, y = sb[i]!;
+    const x = sa[i]!,
+      y = sb[i]!;
     if (x.material !== y.material) return `mesh ${i} material`;
-    const d = arrayDiff(`mesh ${i} positions`, x.positions, y.positions, 2e-3) ?? arrayDiff(`mesh ${i} uvs`, x.uvs, y.uvs) ?? arrayDiff(`mesh ${i} uvs1`, x.uvs1, y.uvs1)
-      ?? arrayDiff(`mesh ${i} indices`, x.indices, y.indices, 0) ?? arrayDiff(`mesh ${i} normals`, x.normals, y.normals, 2e-3) ?? arrayDiff(`mesh ${i} colours`, x.colors, y.colors);
+    const d =
+      arrayDiff(`mesh ${i} positions`, x.positions, y.positions, 2e-3) ??
+      arrayDiff(`mesh ${i} uvs`, x.uvs, y.uvs) ??
+      arrayDiff(`mesh ${i} uvs1`, x.uvs1, y.uvs1) ??
+      arrayDiff(`mesh ${i} indices`, x.indices, y.indices, 0) ??
+      arrayDiff(`mesh ${i} normals`, x.normals, y.normals, 2e-3) ??
+      arrayDiff(`mesh ${i} colours`, x.colors, y.colors);
     if (d) return d;
     if (skinOf(x).join('|') !== skinOf(y).join('|')) return `mesh ${i} skin`;
     if (x.visible !== y.visible) return `mesh ${i} visibility`;
@@ -331,11 +442,16 @@ function lookDiff(a: View, b: View, poses: boolean): string | null {
   }
   if (ma.materials.length !== mb.materials.length) return 'material count';
   for (let i = 0; i < ma.materials.length; i++) {
-    const d = deepDiff(`material ${ma.materials[i]!.name}`, look(ma.materials[i]!, a.textures), look(mb.materials[i]!, b.textures));
+    const d = deepDiff(
+      `material ${ma.materials[i]!.name}`,
+      look(ma.materials[i]!, a.textures),
+      look(mb.materials[i]!, b.textures),
+    );
     if (d) return d;
   }
   // Animations: the same names (but the species tag), lengths and loops.
-  const sig = (v: View): string[] => v.animations.map((x) => `${x.kind} ${motionName(x.name)} ${x.frames} ${x.loop}`).sort();
+  const sig = (v: View): string[] =>
+    v.animations.map((x) => `${x.kind} ${motionName(x.name)} ${x.frames} ${x.loop}`).sort();
   const d = deepDiff('animations', sig(a), sig(b));
   if (d) return d;
   if (poses) {
@@ -354,13 +470,15 @@ function lookDiff(a: View, b: View, poses: boolean): string | null {
       if (!y) return `${x.name}: missing`;
       for (const frame of [0, Math.floor(x.frames / 3), Math.floor(x.frames / 2) + 0.5, x.frames]) {
         if (x.kind === 'skeletal') {
-          const wa = poseWorlds(a, x, frame), wb = poseWorlds(b, y, frame);
+          const wa = poseWorlds(a, x, frame),
+            wb = poseWorlds(b, y, frame);
           for (let i = 0; i < wa.length; i++) {
             const e = arrayDiff(`${x.name} frame ${frame} bone ${ma.bones[i]!.name}`, wa[i]!, wb[i]!, 5e-3);
             if (e) return e;
           }
         } else {
-          const ca = a.coords.get(x.name), cb = b.coords.get(y.name);
+          const ca = a.coords.get(x.name),
+            cb = b.coords.get(y.name);
           for (const [track, f] of ca ?? []) {
             const g = cb?.get(track);
             if (!g) return `${x.name}: no track ${track}`;
@@ -386,7 +504,14 @@ interface Natives {
 }
 
 function h3dNatives(designs: Design[]): Natives {
-  const n: Natives = { shaders: new Set(), bools: new Set(), modelFlags: new Set(), boneScaling: new Set(), layers: new Set(), header: '' };
+  const n: Natives = {
+    shaders: new Set(),
+    bools: new Set(),
+    modelFlags: new Set(),
+    boneScaling: new Set(),
+    layers: new Set(),
+    header: '',
+  };
   for (const d of designs) {
     const h = readH3D(d.files.model);
     n.header = `${h.backwardCompatibility} ${h.forwardCompatibility} ${h.converterVersion} ${h.flags}`;
@@ -405,9 +530,11 @@ function h3dNatives(designs: Design[]): Natives {
 
 /** Where a converted H3D model differs from what the target game's own files have. */
 function h3dPlausible(h: H3D, title: 'oahu' | 'lanai', n: Natives): string | null {
-  if (`${h.backwardCompatibility} ${h.forwardCompatibility} ${h.converterVersion} ${h.flags}` !== n.header) return 'header';
+  if (`${h.backwardCompatibility} ${h.forwardCompatibility} ${h.converterVersion} ${h.flags}` !== n.header)
+    return 'header';
   for (const m of h.models) {
-    if (!n.modelFlags.has(m.flags) || !n.boneScaling.has(m.boneScaling)) return `model flags ${m.flags} / bone scaling ${m.boneScaling}`;
+    if (!n.modelFlags.has(m.flags) || !n.boneScaling.has(m.boneScaling))
+      return `model flags ${m.flags} / bone scaling ${m.boneScaling}`;
     for (const x of m.materials) {
       const s = x.materialParams.shaderReference ?? '';
       // RPG3 has no three-texture monster material; its master holds 0@DefaultShader-nl all the same.
@@ -430,7 +557,8 @@ function h3dPlausible(h: H3D, title: 'oahu' | 'lanai', n: Natives): string | nul
 /** Where a converted CGFX model differs from what RPG2's own files have. */
 function gfxPlausible(g: Gfx): string | null {
   for (const m of g.models) {
-    if (m.animationsGroup.map((x) => x.name).join() !== 'SkeletalAnimation,VisibilityAnimation,MaterialAnimation') return 'animation groups';
+    if (m.animationsGroup.map((x) => x.name).join() !== 'SkeletalAnimation,VisibilityAnimation,MaterialAnimation')
+      return 'animation groups';
     const bones = m.animationsGroup[0]!.elements.map((e) => e.name);
     if (bones.join() !== (m.skeleton?.bones ?? []).map((b) => b.name).join()) return 'skeletal animation group';
     if (m.animationsGroup[1]!.elements.length !== m.meshes.length + 2) return 'visibility animation group';
@@ -438,7 +566,12 @@ function gfxPlausible(g: Gfx): string | null {
       if (x.shader?.path !== 'DefaultShader') return 'shader';
       const c = structuredClone(x);
       setMaterialHashes(c);
-      if (c.fragOpHash !== x.fragOpHash || c.textureEnvironmentHash !== x.textureEnvironmentHash || c.materialColorsHash !== x.materialColorsHash) return 'material hashes';
+      if (
+        c.fragOpHash !== x.fragOpHash ||
+        c.textureEnvironmentHash !== x.textureEnvironmentHash ||
+        c.materialColorsHash !== x.materialColorsHash
+      )
+        return 'material hashes';
     }
     if (m.skeleton?.scalingRule !== 1) return 'scaling rule';
     for (const s of m.shapes) if (s.subMeshes.some((x) => x.boneIndices.length > 20)) return 'bone palette';
@@ -492,7 +625,9 @@ function bodyOf(arcs: Archive[], h: number): Uint8Array | null {
 }
 
 async function oahuDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] }> {
-  const dump = hasOahuUpdate ? await openImages([Bun.file(OAHU_BASE), Bun.file(OAHU_UPDATE)], (f) => (f as unknown as { name: string }).name) : await openImage(Bun.file(OAHU_BASE), 'base');
+  const dump = hasOahuUpdate
+    ? await openImages([Bun.file(OAHU_BASE), Bun.file(OAHU_UPDATE)], (f) => (f as unknown as { name: string }).name)
+    : await openImage(Bun.file(OAHU_BASE), 'base');
   const arc = parseArchive(await dump.readRomfs('28480000'));
   const table = new GsTable(findByName(parseArchive(await dump.readRomfs('402F0000')), 'monsterDesign.bin')!.body);
   const designs: Design[] = [];
@@ -504,7 +639,10 @@ async function oahuDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] }
     const key = `oahu ${m.toString(16)}/${t.toString(16)}/${mo.toString(16)}`;
     if (!model || seen.has(key)) continue;
     seen.add(key);
-    designs.push({ key: `${key} (design ${row})`, files: { model, texture: bodyOf([arc], t), motion: bodyOf([arc], mo) } });
+    designs.push({
+      key: `${key} (design ${row})`,
+      files: { model, texture: bodyOf([arc], t), motion: bodyOf([arc], mo) },
+    });
   }
   const items: Uint8Array[] = [];
   for (const name of ['838B0000', '96EB0000', 'D4270000']) {
@@ -518,7 +656,10 @@ async function oahuDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] }
 }
 
 async function lanaiDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] }> {
-  const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+  const dump = await openImages(
+    [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+    (f) => (f as unknown as { name: string }).name,
+  );
   const s = await LanaiSession.open(dump);
   const index = await lanaiModelIndex(s);
   const designs: Design[] = [];
@@ -529,7 +670,10 @@ async function lanaiDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] 
     const key = `lanai ${d.model.toString(16)}/${d.texture.toString(16)}/${d.motion.toString(16)}`;
     if (!model || seen.has(key) || (index.name(d.model) ?? '').startsWith('dummy')) continue;
     seen.add(key);
-    designs.push({ key: `${key} (design ${row})`, files: { model, texture: index.body(d.texture), motion: index.body(d.motion) } });
+    designs.push({
+      key: `${key} (design ${row})`,
+      files: { model, texture: index.body(d.texture), motion: index.body(d.motion) },
+    });
   }
   const items: Uint8Array[] = [];
   for (const name of ['1B270000', '96EB0000', 'D4270000']) {
@@ -544,14 +688,17 @@ async function lanaiDesigns(): Promise<{ designs: Design[]; items: Uint8Array[] 
 
 // ---- Tests
 
-
 describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the three games', () => {
   const designs = {} as Record<PortTitle, Design[]>;
   const items = {} as Record<PortTitle, Uint8Array[]>;
   const natives = {} as Record<'oahu' | 'lanai', Natives>;
 
   beforeAll(async () => {
-    for (const [t, f] of [['kahara', kaharaDesigns], ['oahu', oahuDesigns], ['lanai', lanaiDesigns]] as const) {
+    for (const [t, f] of [
+      ['kahara', kaharaDesigns],
+      ['oahu', oahuDesigns],
+      ['lanai', lanaiDesigns],
+    ] as const) {
       const x = await f();
       designs[t] = x.designs;
       items[t] = x.items;
@@ -568,7 +715,7 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
     designs[from].forEach((d, i) => {
       try {
         const out = convertMonster(d.files, from, to, { name: name(from, i) });
-        for (const b of [out.model, out.texture, out.motion]) if (b) (to === 'kahara' ? readGfx(b) : readH3D(b));
+        for (const b of [out.model, out.texture, out.motion]) if (b) to === 'kahara' ? readGfx(b) : readH3D(b);
         if (to === 'kahara') {
           if (out.motion) throw new Error('RPG2 has no motion file');
           const p = gfxPlausible(readGfx(out.model));
@@ -581,12 +728,16 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
           // Battle motions in the battle file, the rest in the model file.
           const battle = new Set(['002_', '005_', '006_', '007_', '008_', '009_', '010_', '011_', '012_', '013_']);
           const m = readH3D(out.model);
-          if ([...m.skeletalAnimations, ...m.materialAnimations].some((a) => battle.has(a.name.slice(0, 4)))) throw new Error('a battle motion in the model file');
-          if (out.motion && [...readH3D(out.motion).skeletalAnimations].some((a) => !battle.has(a.name.slice(0, 4)))) throw new Error('a field motion in the motion file');
+          if ([...m.skeletalAnimations, ...m.materialAnimations].some((a) => battle.has(a.name.slice(0, 4))))
+            throw new Error('a battle motion in the model file');
+          if (out.motion && [...readH3D(out.motion).skeletalAnimations].some((a) => !battle.has(a.name.slice(0, 4))))
+            throw new Error('a field motion in the motion file');
         }
         // The colour's textures stay in a texture file of their own (RPG2's colour variants too).
-        const count = (b: Uint8Array | null): number => (!b ? 0 : isGfx(b) ? readGfx(b).textures.length : readH3D(b).textures.length);
-        if (count(d.files.texture) !== count(out.texture)) throw new Error(`colour textures ${count(d.files.texture)} -> ${count(out.texture)}`);
+        const count = (b: Uint8Array | null): number =>
+          !b ? 0 : isGfx(b) ? readGfx(b).textures.length : readH3D(b).textures.length;
+        if (count(d.files.texture) !== count(out.texture))
+          throw new Error(`colour textures ${count(d.files.texture)} -> ${count(out.texture)}`);
         const diff = lookDiff(view(d.files), view(out), poses);
         if (diff) bad.push(`${d.key}: ${diff}`);
       } catch (e) {
@@ -607,7 +758,11 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
 
   test('round trips keep geometry and animation (kahara -> oahu -> kahara, oahu -> lanai -> oahu, lanai -> kahara -> lanai)', () => {
     const bad: string[] = [];
-    for (const [a, b] of [['kahara', 'oahu'], ['oahu', 'lanai'], ['lanai', 'kahara']] as const)
+    for (const [a, b] of [
+      ['kahara', 'oahu'],
+      ['oahu', 'lanai'],
+      ['lanai', 'kahara'],
+    ] as const)
       designs[a].forEach((d, i) => {
         try {
           const there = convertMonster(d.files, a, b, { name: name(a, i) });
@@ -633,7 +788,11 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
           const src = list[k * step]!;
           try {
             const out = convertItem(src, from, to, { name: `item_${from[0]}${k}` });
-            const diff = lookDiff(view({ model: src, texture: null, motion: null }), view({ model: out, texture: null, motion: null }), true);
+            const diff = lookDiff(
+              view({ model: src, texture: null, motion: null }),
+              view({ model: out, texture: null, motion: null }),
+              true,
+            );
             if (diff) bad.push(`${from} -> ${to} item ${k * step}: ${diff}`);
           } catch (e) {
             bad.push(`${from} -> ${to} item ${k * step}: ${(e as Error).message}`);
@@ -643,7 +802,7 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
     expect(bad).toEqual([]);
   }, 600_000);
 
-  test('names: the model, LUTs, textures and the animations\' species tag follow the new name', () => {
+  test("names: the model, LUTs, textures and the animations' species tag follow the new name", () => {
     const d = designs.kahara[0]!;
     const out = convertMonster(d.files, 'kahara', 'oahu', { name: 'enemy_k0' });
     const m = readH3D(out.model);
@@ -651,11 +810,17 @@ describe.skipIf(!hasCia || !hasOahuBase || !hasLanai)('model ports between the t
     expect(m.luts.every((l) => l.name.startsWith('enemy_k0'))).toBe(true);
     for (const x of m.models[0]!.materials) {
       const p = x.materialParams;
-      for (const t of [p.lutDist0TableName, p.lutDist1TableName]) if (t) expect(m.luts.some((l) => l.name === t)).toBe(true);
+      for (const t of [p.lutDist0TableName, p.lutDist1TableName])
+        if (t) expect(m.luts.some((l) => l.name === t)).toBe(true);
       expect(p.modelReference.endsWith('@enemy_k0')).toBe(true);
     }
     const textures = [...m.textures, ...(out.texture ? readH3D(out.texture).textures : [])].map((t) => t.name);
     expect(textures.every((t) => t.startsWith('enemy_k0'))).toBe(true);
-    expect(m.skeletalAnimations.map((a) => a.name).filter((n) => /^\d{3}_E/.test(n)).every((n) => n.slice(4).startsWith('Ek0'))).toBe(true);
+    expect(
+      m.skeletalAnimations
+        .map((a) => a.name)
+        .filter((n) => /^\d{3}_E/.test(n))
+        .every((n) => n.slice(4).startsWith('Ek0')),
+    ).toBe(true);
   });
 });

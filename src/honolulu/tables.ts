@@ -4,13 +4,26 @@
 // RPG2's (itemData.bin …) but the rows are not: never use kaharatables.ts for them. "unsure" fields are guesses.
 import type { FieldDef, TableDef } from '../game/tabledef';
 
-const f = (key: string, offset: number, type: FieldDef['type'], label: string, more: Partial<FieldDef> = {}): FieldDef => ({ key, offset, type, label, ...more });
+const f = (
+  key: string,
+  offset: number,
+  type: FieldDef['type'],
+  label: string,
+  more: Partial<FieldDef> = {},
+): FieldDef => ({ key, offset, type, label, ...more });
 const msg = { kind: 'message' } as const;
 const hash = { kind: 'hash' } as const;
 const row = (table: string) => ({ kind: 'row', table }) as const;
 
 /** itemData +0x1A (naauao honolulu/items.md §2). */
-export const HONOLULU_ITEM_CATEGORY: Record<number, string> = { 0: '空き', 1: '道具・だいじなもの', 3: '装備', 4: 'ふく', 5: 'あみ', 6: 'ダミー' };
+export const HONOLULU_ITEM_CATEGORY: Record<number, string> = {
+  0: '空き',
+  1: '道具・だいじなもの',
+  3: '装備',
+  4: 'ふく',
+  5: 'あみ',
+  6: 'ダミー',
+};
 
 /** itemData.bin (master エントリ 51): 298 × 0x1C, no model (naauao honolulu/items.md §2). */
 export const HONOLULU_ITEM_DATA: TableDef = {
@@ -22,9 +35,15 @@ export const HONOLULU_ITEM_DATA: TableDef = {
     f('shopDesc', 0x08, 'u32', '店員の説明', { ref: msg, note: '0 = なし' }),
     f('price', 0x0c, 'u32', '買値'),
     f('sell', 0x10, 'u32', '売値'),
-    f('kind', 0x14, 'u8', '種類のビット', { hex: true, unsure: true, note: '0x01 装備・ふく、0x10 だいじなもの系、0x08 道具、0x20 フルーツと推定' }),
+    f('kind', 0x14, 'u8', '種類のビット', {
+      hex: true,
+      unsure: true,
+      note: '0x01 装備・ふく、0x10 だいじなもの系、0x08 道具、0x20 フルーツと推定',
+    }),
     f('used', 0x18, 'u8', '中身のある行', { note: '1 = 中身のある行、0 = 空き' }),
-    f('sub', 0x19, 'u8', '装備・ふくの行', { note: '分類 3 は equipData、分類 4 は clothData の行。道具 (分類 1 の行 1〜27) は 124〜150 の連番で、何の行かは未解析 (naauao items.md は「ほかの分類は 0」としている)' }),
+    f('sub', 0x19, 'u8', '装備・ふくの行', {
+      note: '分類 3 は equipData、分類 4 は clothData の行。道具 (分類 1 の行 1〜27) は 124〜150 の連番で、何の行かは未解析 (naauao items.md は「ほかの分類は 0」としている)',
+    }),
     f('category', 0x1a, 'u8', '分類', { ref: { kind: 'enum', values: HONOLULU_ITEM_CATEGORY } }),
   ],
 };
@@ -34,8 +53,15 @@ export const HONOLULU_EQUIP_DATA: TableDef = {
   file: 'equipData.bin',
   rowSize: 0x18,
   fields: [
-    f('item', 0x08, 'u16', 'アイテム', { ref: row('itemData.bin'), note: 'itemData +0x19 から引いた行と相互に一致。naauao items.md §3.1 は u32 としているが、+0x0A が 1 の行があるので u16 (+0x0A は別の値)' }),
-    f('value', 0x0c, 'u32', '効果の値', { hex: true, unsure: true, note: 'いのちのピアス 0x1400、イヤリング 0x2300 と増える' }),
+    f('item', 0x08, 'u16', 'アイテム', {
+      ref: row('itemData.bin'),
+      note: 'itemData +0x19 から引いた行と相互に一致。naauao items.md §3.1 は u32 としているが、+0x0A が 1 の行があるので u16 (+0x0A は別の値)',
+    }),
+    f('value', 0x0c, 'u32', '効果の値', {
+      hex: true,
+      unsure: true,
+      note: 'いのちのピアス 0x1400、イヤリング 0x2300 と増える',
+    }),
   ],
 };
 
@@ -55,7 +81,10 @@ export const HONOLULU_SHOP_ITEM_DATA: TableDef = {
   rowSize: 4,
   fields: [
     f('item', 0x00, 'u16', 'アイテム', { ref: row('itemData.bin') }),
-    f('featured', 0x02, 'u8', '目玉の品', { bits: [0, 1], note: '段階が変わったときにこの品があれば入荷を知らせる (フラグ 0x27)' }),
+    f('featured', 0x02, 'u8', '目玉の品', {
+      bits: [0, 1],
+      note: '段階が変わったときにこの品があれば入荷を知らせる (フラグ 0x27)',
+    }),
   ],
 };
 
@@ -67,7 +96,9 @@ export const HONOLULU_SHOP_ITEM_GROUP: TableDef = {
     f('first', 0x00, 'u16', '最初の行', { note: 'shopItemData の行' }),
     f('last', 0x02, 'u16', '最後の行', { note: 'この行を含む' }),
     f('dungeon', 0x04, 'u16', 'ダンジョン', { ref: row('dungeonData.bin'), note: '0 = 最初の段階' }),
-    f('progress', 0x06, 'u16', '進み具合', { note: 'ダンジョンの進み具合 (セーブ変数 0x40) がこの値のとき、この段階になる' }),
+    f('progress', 0x06, 'u16', '進み具合', {
+      note: 'ダンジョンの進み具合 (セーブ変数 0x40) がこの値のとき、この段階になる',
+    }),
     f('prevFirst', 0x08, 'u16', '前の段階の最初の行'),
     f('prevLast', 0x0a, 'u16', '前の段階の最後の行'),
   ],
@@ -80,7 +111,10 @@ export const HONOLULU_DUNGEON_DATA: TableDef = {
   fields: [
     f('name', 0x10, 'u16', '名前', { ref: msg }),
     f('desc', 0x12, 'u16', '説明', { ref: msg, note: '推奨レベル' }),
-    f('mapData', 0x16, 'u8', 'mapData の行', { ref: row('mapData.bin'), note: '階の定義の頭 +0x14 が 0 の階のタイルセット (naauao honolulu/map.md §3.3)' }),
+    f('mapData', 0x16, 'u8', 'mapData の行', {
+      ref: row('mapData.bin'),
+      note: '階の定義の頭 +0x14 が 0 の階のタイルセット (naauao honolulu/map.md §3.3)',
+    }),
   ],
 };
 
@@ -91,7 +125,11 @@ export const HONOLULU_MAP_DATA: TableDef = {
   fields: [
     f('tileset', 0x00, 'u8', 'タイルセット', { note: 'mapParts のモデルの組 (0〜7)' }),
     f('resource', 0x06, 'u8', 'mapResource の行', { ref: row('mapResource.bin') }),
-    f('sound', 0x07, 'u8', '階の BGM', { ref: row('soundData.bin'), unsure: true, note: 'soundData の行。全行がタイルセットに合う BGM_FLD_* (FUN_0020C2A0 に渡す)。実機では未確認' }),
+    f('sound', 0x07, 'u8', '階の BGM', {
+      ref: row('soundData.bin'),
+      unsure: true,
+      note: 'soundData の行。全行がタイルセットに合う BGM_FLD_* (FUN_0020C2A0 に渡す)。実機では未確認',
+    }),
   ],
 };
 
@@ -111,7 +149,11 @@ export const HONOLULU_MAP_PARTS: TableDef = {
   rowSize: 0x114,
   fields: [
     f('shape', 0x08, 'u8', '形の番号', { note: '向きだけ違う行が同じ値' }),
-    f('edges', 0x10c, 'u8', '辺のビット', { hex: true, unsure: true, note: '上位 4 bit が部屋の壁 (0x40 上・0x80 右・0x20 下・0x10 左)、下位が通路の開いた辺と推定' }),
+    f('edges', 0x10c, 'u8', '辺のビット', {
+      hex: true,
+      unsure: true,
+      note: '上位 4 bit が部屋の壁 (0x40 上・0x80 右・0x20 下・0x10 左)、下位が通路の開いた辺と推定',
+    }),
     f('angle', 0x110, 's16', '回転 (度)', { note: 'Y 軸の回転。0・90・−90・180' }),
   ],
 };
@@ -126,13 +168,21 @@ export const HONOLULU_SKILL_DATA: TableDef = {
   fields: [
     f('name', 0x00, 'u32', '名前', { ref: msg }),
     f('desc', 0x04, 'u32', '説明', { ref: msg }),
-    f('name2', 0x08, 'u32', '名前 (2)', { ref: msg, unsure: true, note: '名前のある行では +0x00 と同じ値。名前が 0 でもここに値のある行がある' }),
+    f('name2', 0x08, 'u32', '名前 (2)', {
+      ref: msg,
+      unsure: true,
+      note: '名前のある行では +0x00 と同じ値。名前が 0 でもここに値のある行がある',
+    }),
     f('act2', 0x0c, 'u32', '行動 bit2', { bits: [0, 1], unsure: true }),
     f('act3', 0x0c, 'u32', '行動 bit3', { bits: [1, 1], unsure: true }),
     f('act45', 0x0c, 'u32', '行動 bit4-5', { bits: [2, 2], unsure: true }),
     f('raw0c', 0x0c, 'u32', 'w3 bit4-5', { bits: [4, 2], unsure: true, hex: true }),
     f('w4a', 0x0c, 'u32', '行動 w4 bit23-26', { bits: [6, 4], unsure: true }),
-    f('status', 0x0c, 'u32', '状態', { bits: [10, 5], ref: row('conditionData.bin'), note: '行動 w4 bit18-22。conditionData の行、0 = なし' }),
+    f('status', 0x0c, 'u32', '状態', {
+      bits: [10, 5],
+      ref: row('conditionData.bin'),
+      note: '行動 w4 bit18-22。conditionData の行、0 = なし',
+    }),
     f('w4b', 0x0c, 'u32', '行動 w4 bit3-4', { bits: [15, 2], unsure: true }),
     f('w4c', 0x0c, 'u32', '行動 w4 bit0-2', { bits: [17, 3], unsure: true }),
     f('w4d', 0x0c, 'u32', '行動 w4 bit5-8', { bits: [20, 4], unsure: true }),
@@ -162,7 +212,10 @@ export const HONOLULU_MAP_OBJECT: TableDef = {
   file: 'mapObject.bin',
   rowSize: 0x24,
   fields: [
-    f('archive', 0x00, 'u32', 'アーカイブ', { hex: true, note: 'モデルを入れたルートのアーカイブ (15BE1AD4・3A309010・FB501D1A)' }),
+    f('archive', 0x00, 'u32', 'アーカイブ', {
+      hex: true,
+      note: 'モデルを入れたルートのアーカイブ (15BE1AD4・3A309010・FB501D1A)',
+    }),
     f('model', 0x04, 'u32', 'モデル', { ref: hash }),
     f('scale', 0x14, 'f32', '+0x14', { unsure: true, note: '拡大率と推定 (多くは 1)' }),
   ],
@@ -175,7 +228,11 @@ export const HONOLULU_MAP_RESOURCE: TableDef = {
   fields: [
     f('tiles', 0x00, 'u32', 'タイルのモデルのアーカイブ', { hex: true }),
     f('texture', 0x04, 'u32', 'テクスチャ', { ref: hash, note: '469B3DC6 のエントリ' }),
-    f('extra', 0x08, 'u32', '+0x08', { ref: hash, unsure: true, note: 'タイルのモデルのアーカイブのエントリ (用途は未確認)' }),
+    f('extra', 0x08, 'u32', '+0x08', {
+      ref: hash,
+      unsure: true,
+      note: 'タイルのモデルのアーカイブのエントリ (用途は未確認)',
+    }),
   ],
 };
 
@@ -199,15 +256,33 @@ export const HONOLULU_MONSTER_DATA: TableDef = {
     f('texture', 0x08, 'u32', 'テクスチャ', { ref: hash, note: '470D2848 のエントリ' }),
     f('scale1', 0x0c, 'f32', '+0x0C', { unsure: true, note: '拡大率と推定。戦闘では +0x24 と掛ける' }),
     f('scale2', 0x10, 'f32', '+0x10', { unsure: true, note: '拡大率と推定' }),
-    f('battleScale', 0x24, 'u16', '戦闘での大きさの係数', { unsure: true, note: 'FUN_0019C338 が +0x0C の f32 と掛ける (意味は未確認)' }),
-    f('fieldRank', 0x2a, 'u8', '+0x2A', { unsure: true, note: 'FUN_00204C70 が引数と比べ、それ以下の敵だけを群れから選ぶ (フィールドに出す見た目と推定)' }),
+    f('battleScale', 0x24, 'u16', '戦闘での大きさの係数', {
+      unsure: true,
+      note: 'FUN_0019C338 が +0x0C の f32 と掛ける (意味は未確認)',
+    }),
+    f('fieldRank', 0x2a, 'u8', '+0x2A', {
+      unsure: true,
+      note: 'FUN_00204C70 が引数と比べ、それ以下の敵だけを群れから選ぶ (フィールドに出す見た目と推定)',
+    }),
   ],
 };
 
 /** The resistances of monsterBattleParameter +0x2D〜+0x2F: signed 4 bits × 6, low nibble first (naauao monsters.md §2). */
-const resist4 = Array.from({ length: 6 }, (_, k) => f(`resist${k}`, 0x2d + (k >> 1), 's8', `耐性 ${k + 1} (4 bit)`, { bits: [(k & 1) * 4, 4], unsure: true, note: '属性の耐性と推定。戦闘の物体 +0xD8〜' }));
+const resist4 = Array.from({ length: 6 }, (_, k) =>
+  f(`resist${k}`, 0x2d + (k >> 1), 's8', `耐性 ${k + 1} (4 bit)`, {
+    bits: [(k & 1) * 4, 4],
+    unsure: true,
+    note: '属性の耐性と推定。戦闘の物体 +0xD8〜',
+  }),
+);
 /** +0x30〜+0x32: 2 bits × 11, each 0〜3 picks one of 4 steps of a table (*0x31F644 +0x4C). */
-const resist2 = Array.from({ length: 11 }, (_, k) => f(`ailment${k}`, k < 8 ? 0x30 : 0x32, k < 8 ? 'u16' : 'u8', `耐性 ${k + 1} (2 bit)`, { bits: [2 * (k % 8), 2], unsure: true, note: '状態異常の耐性と推定 (値 0〜3 で 4 段階の表を引く)' }));
+const resist2 = Array.from({ length: 11 }, (_, k) =>
+  f(`ailment${k}`, k < 8 ? 0x30 : 0x32, k < 8 ? 'u16' : 'u8', `耐性 ${k + 1} (2 bit)`, {
+    bits: [2 * (k % 8), 2],
+    unsure: true,
+    note: '状態異常の耐性と推定 (値 0〜3 で 4 段階の表を引く)',
+  }),
+);
 
 /**
  * monsterBattleParameter.bin (master エントリ 48): 111 × 0x34, the bit-packed battle parameters of a monster, read by
@@ -232,27 +307,58 @@ export const HONOLULU_MONSTER_BATTLE_PARAMETER: TableDef = {
     f('exp', 0x0c, 'u32', '経験値', { bits: [0, 16] }),
     f('flag16', 0x0c, 'u32', '状態のビット 1', { bits: [16, 1], unsure: true, note: '戦闘の物体 +0xE4 bit0' }),
     f('flag17', 0x0c, 'u32', '状態のビット 2', { bits: [17, 1], unsure: true, note: '戦闘の物体 +0xE4 bit2' }),
-    f('status', 0x0c, 'u32', '開始時の状態', { bits: [18, 5], ref: row('conditionData.bin'), note: 'conditionData の行、0 = なし' }),
+    f('status', 0x0c, 'u32', '開始時の状態', {
+      bits: [18, 5],
+      ref: row('conditionData.bin'),
+      note: 'conditionData の行、0 = なし',
+    }),
     f('statusRate', 0x0c, 'u32', '開始時の状態の確率の段階', { bits: [23, 3] }),
-    f('flags26', 0x0c, 'u32', 'w3 bit26-29', { bits: [26, 4], unsure: true, hex: true, note: '戦闘の物体 +0xE4 bit23-26' }),
+    f('flags26', 0x0c, 'u32', 'w3 bit26-29', {
+      bits: [26, 4],
+      unsure: true,
+      hex: true,
+      note: '戦闘の物体 +0xE4 bit23-26',
+    }),
     f('raw0c', 0x0c, 'u32', 'w3 bit30-31', { bits: [30, 2], unsure: true, hex: true }),
     f('raw10', 0x10, 'u32', 'w4 bit0-5', { bits: [0, 6], unsure: true, hex: true }),
-    f('target', 0x10, 'u32', '狙い方', { bits: [6, 2], unsure: true, note: '2 のとき HP の少ない電波人間を狙う (FUN_002B0BC8)' }),
+    f('target', 0x10, 'u32', '狙い方', {
+      bits: [6, 2],
+      unsure: true,
+      note: '2 のとき HP の少ない電波人間を狙う (FUN_002B0BC8)',
+    }),
     f('hpMin', 0x10, 'u32', 'HP (最小)', { bits: [8, 15] }),
     f('raw10b', 0x10, 'u32', 'w4 bit23-31', { bits: [23, 9], unsure: true, hex: true }),
     f('atk2', 0x14, 'u32', 'こうげき (値 2)', { bits: [0, 10] }),
     f('def2', 0x14, 'u32', 'ぼうぎょ (値 2)', { bits: [10, 10] }),
     f('spd2', 0x14, 'u32', 'すばやさ (値 2)', { bits: [20, 10] }),
     f('raw14', 0x14, 'u32', 'w5 bit30-31', { bits: [30, 2], unsure: true, hex: true }),
-    f('growth', 0x18, 'u16', '+0x18', { unsure: true, note: 'Lv とともに増える値 (100〜4200)。FUN_002B2994 が戦闘中に読む。意味は未確認' }),
-    f('flags1a', 0x1a, 'u16', '+0x1A', { unsure: true, hex: true, note: 'bit0-1 は FUN_002B38xx が比べる、bit3-5 → +0x63、bit6・7 → +0xE4 bit1・bit3' }),
-    f('direct', 0x1c, 'u16', '演出', { unsure: true, note: 'directData (2713402F) の行。次の形態がある行の戦闘で使う' }),
+    f('growth', 0x18, 'u16', '+0x18', {
+      unsure: true,
+      note: 'Lv とともに増える値 (100〜4200)。FUN_002B2994 が戦闘中に読む。意味は未確認',
+    }),
+    f('flags1a', 0x1a, 'u16', '+0x1A', {
+      unsure: true,
+      hex: true,
+      note: 'bit0-1 は FUN_002B38xx が比べる、bit3-5 → +0x63、bit6・7 → +0xE4 bit1・bit3',
+    }),
+    f('direct', 0x1c, 'u16', '演出', {
+      unsure: true,
+      note: 'directData (2713402F) の行。次の形態がある行の戦闘で使う',
+    }),
     f('line', 0x1e, 'u16', '形態変化のセリフ', { ref: msg, note: 'この行の形態になったときのセリフ' }),
-    ...Array.from({ length: 5 }, (_, k) => f(`skill${k}`, 0x20 + 2 * k, 'u16', `ワザ ${k + 1}`, { ref: row('monsterAttackSkill.bin'), note: '0 = 空き' })),
-    f('design', 0x2c, 'u8', '見た目', { ref: row('monsterData.bin'), note: 'monsterData (2713402F) の行: 名前とモデル' }),
+    ...Array.from({ length: 5 }, (_, k) =>
+      f(`skill${k}`, 0x20 + 2 * k, 'u16', `ワザ ${k + 1}`, { ref: row('monsterAttackSkill.bin'), note: '0 = 空き' }),
+    ),
+    f('design', 0x2c, 'u8', '見た目', {
+      ref: row('monsterData.bin'),
+      note: 'monsterData (2713402F) の行: 名前とモデル',
+    }),
     ...resist4,
     ...resist2,
-    f('next', 0x33, 'u8', '次の形態', { ref: row('monsterBattleParameter.bin'), note: '0 = なし。最初の形態の経験値・お金・ドロップは 0 で、最後の形態が持つ' }),
+    f('next', 0x33, 'u8', '次の形態', {
+      ref: row('monsterBattleParameter.bin'),
+      note: '0 = なし。最初の形態の経験値・お金・ドロップは 0 で、最後の形態が持つ',
+    }),
   ],
 };
 
@@ -262,8 +368,17 @@ export const HONOLULU_MONSTER_ATTACK_SKILL: TableDef = {
   rowSize: 0x24,
   fields: [
     f('message', 0x00, 'u32', '戦闘メッセージ', { ref: msg }),
-    f('bits', 0x04, 'u32', 'ビット詰め', { hex: true, unsure: true, note: '+0x1D bit2 = 1 のとき bit4-8 が状態 (conditionData の行) など。naauao monsters.md §3' }),
-    f('status', 0x04, 'u32', '状態', { bits: [4, 5], alias: true, ref: row('conditionData.bin'), note: '+0x1D bit2 = 1 のときだけ (行動 w4 bit18-22)。conditionData の行、0 = なし' }),
+    f('bits', 0x04, 'u32', 'ビット詰め', {
+      hex: true,
+      unsure: true,
+      note: '+0x1D bit2 = 1 のとき bit4-8 が状態 (conditionData の行) など。naauao monsters.md §3',
+    }),
+    f('status', 0x04, 'u32', '状態', {
+      bits: [4, 5],
+      alias: true,
+      ref: row('conditionData.bin'),
+      note: '+0x1D bit2 = 1 のときだけ (行動 w4 bit18-22)。conditionData の行、0 = なし',
+    }),
     f('power', 0x08, 'f32', '威力の倍率', { unsure: true, note: '推定 (100 / 130 / 150 …)' }),
     f('min', 0x0c, 'u16', '量の最小'),
     f('max', 0x0e, 'u16', '量の最大'),
@@ -286,8 +401,15 @@ export const HONOLULU_MONSTER_GROUP: TableDef = {
       f(`a${k}`, 4 * k, 'u16', `枠 A ${k + 1}`, { ref: row('monsterBattleParameter.bin') }),
       f(`a${k}Weight`, 4 * k + 2, 'u8', `枠 A ${k + 1} の重み`),
     ]).flat(),
-    ...Array.from({ length: 5 }, (_, k) => f(`b${k}`, 0x14 + 4 * k, 'u16', `枠 B ${k + 1}`, { ref: row('monsterBattleParameter.bin'), note: 'フィールドに出す見た目の敵と推定' })),
-    ...Array.from({ length: 5 }, (_, k) => f(`kind${k}Weight`, 0x28 + k, 'u8', `型 ${k} の重み`, { note: '型の意味 (出てくる数と推定) は未確認' })),
+    ...Array.from({ length: 5 }, (_, k) =>
+      f(`b${k}`, 0x14 + 4 * k, 'u16', `枠 B ${k + 1}`, {
+        ref: row('monsterBattleParameter.bin'),
+        note: 'フィールドに出す見た目の敵と推定',
+      }),
+    ),
+    ...Array.from({ length: 5 }, (_, k) =>
+      f(`kind${k}Weight`, 0x28 + k, 'u8', `型 ${k} の重み`, { note: '型の意味 (出てくる数と推定) は未確認' }),
+    ),
   ],
 };
 
@@ -295,7 +417,9 @@ export const HONOLULU_MONSTER_GROUP: TableDef = {
 export const HONOLULU_MONSTER_FIX_GROUP: TableDef = {
   file: 'monsterFixGroup.bin',
   rowSize: 0x16,
-  fields: Array.from({ length: 5 }, (_, k) => f(`m${k}`, 4 * k, 'u16', `敵 ${k + 1}`, { ref: row('monsterBattleParameter.bin') })),
+  fields: Array.from({ length: 5 }, (_, k) =>
+    f(`m${k}`, 4 * k, 'u16', `敵 ${k + 1}`, { ref: row('monsterBattleParameter.bin') }),
+  ),
 };
 
 /** csvMap.bin (A90C8038): 97 × 4, the maps (naauao honolulu/analysis.md §4). */
@@ -306,7 +430,15 @@ export const HONOLULU_CSV_MAP: TableDef = {
 };
 
 /** PierData +0x02: the island's icon, a row of menuList (its layout island_*; naauao honolulu/worldmap.md §3). */
-export const HONOLULU_PIER_ICONS: Record<number, string> = { 58: 'cave', 59: 'plain', 60: 'tower', 61: 'dark', 62: 'ice', 63: 'volcano', 64: 'last' };
+export const HONOLULU_PIER_ICONS: Record<number, string> = {
+  58: 'cave',
+  59: 'plain',
+  60: 'tower',
+  61: 'dark',
+  62: 'ice',
+  63: 'volcano',
+  64: 'last',
+};
 
 /** The ship stages (セーブ変数 0x26): PierData +0x10 is the one an island needs (naauao honolulu/worldmap.md §4.5). */
 export const HONOLULU_SHIP_STAGES: Record<number, string> = { 0: 'なし', 1: 'いかだ', 2: 'ふね', 3: 'クルーザー' };
@@ -320,15 +452,24 @@ export const HONOLULU_PIER_DATA: TableDef = {
   file: 'PierData',
   rowSize: 0x12,
   fields: [
-    f('dungeon', 0x00, 'u16', '行き先のダンジョン', { ref: row('dungeonData.bin'), note: '上画面の名前・説明 (dungeonData +0x10 / +0x12) と「ここにいく」の行き先' }),
-    f('icon', 0x02, 'u16', 'アイコン', { ref: { kind: 'enum', values: HONOLULU_PIER_ICONS }, note: 'menuList の行 (島のレイアウト island_*)。星のアニメーションもこれで選ぶ' }),
+    f('dungeon', 0x00, 'u16', '行き先のダンジョン', {
+      ref: row('dungeonData.bin'),
+      note: '上画面の名前・説明 (dungeonData +0x10 / +0x12) と「ここにいく」の行き先',
+    }),
+    f('icon', 0x02, 'u16', 'アイコン', {
+      ref: { kind: 'enum', values: HONOLULU_PIER_ICONS },
+      note: 'menuList の行 (島のレイアウト island_*)。星のアニメーションもこれで選ぶ',
+    }),
     f('x1', 0x04, 's16', '位置 x (船 0〜1)'),
     f('y1', 0x06, 's16', '位置 y (船 0〜1)', { note: '上が +' }),
     f('x2', 0x08, 's16', '位置 x (船 2)'),
     f('y2', 0x0a, 's16', '位置 y (船 2)', { note: '上が +' }),
     f('x3', 0x0c, 's16', '位置 x (船 3)'),
     f('y3', 0x0e, 's16', '位置 y (船 3)', { note: '上が +' }),
-    f('ship', 0x10, 'u8', '要る船の段階', { ref: { kind: 'enum', values: HONOLULU_SHIP_STAGES }, note: 'セーブ変数 0x26 (船の段階) がこの値以上のとき島が出る。拠点の 3D の島も同じ条件 (行 2 は常に表示)' }),
+    f('ship', 0x10, 'u8', '要る船の段階', {
+      ref: { kind: 'enum', values: HONOLULU_SHIP_STAGES },
+      note: 'セーブ変数 0x26 (船の段階) がこの値以上のとき島が出る。拠点の 3D の島も同じ条件 (行 2 は常に表示)',
+    }),
   ],
 };
 

@@ -16,7 +16,16 @@ import { hasHonolulu, hasOahuBase, hasOahuUpdate, HONOLULU_BASE, OAHU_BASE, OAHU
 
 const bytes = (...b: number[]): Uint8Array => Uint8Array.from(b);
 const IPS = (off: number, data: number[]): Uint8Array =>
-  Uint8Array.from([...new TextEncoder().encode('PATCH'), (off >> 16) & 255, (off >> 8) & 255, off & 255, 0, data.length, ...data, ...new TextEncoder().encode('EOF')]);
+  Uint8Array.from([
+    ...new TextEncoder().encode('PATCH'),
+    (off >> 16) & 255,
+    (off >> 8) & 255,
+    off & 255,
+    0,
+    data.length,
+    ...data,
+    ...new TextEncoder().encode('EOF'),
+  ]);
 
 describe('base MOD (no ROM)', () => {
   test("a folder of the game's MOD is read, another game's is refused by the title ID in its path", () => {
@@ -29,23 +38,43 @@ describe('base MOD (no ROM)', () => {
     expect(mod.ips).not.toBeNull();
     expect(() => baseModFor(KAHARA, 'mod', files)).toThrow(/電波人間のRPG3/);
     // a folder without a title ID (elpulse's mod/out) is taken as it is
-    expect(baseModFor(HONOLULU, 'out', [{ name: 'A90C8038', path: 'out/A90C8038', bytes: bytes(2) }]).romfs.size).toBe(1);
+    expect(baseModFor(HONOLULU, 'out', [{ name: 'A90C8038', path: 'out/A90C8038', bytes: bytes(2) }]).romfs.size).toBe(
+      1,
+    );
   });
 
   test("the package has the base's files under the rebuilt ones", () => {
-    const mod: BaseMod = { label: 'm', romfs: new Map([['11111111', bytes(1)], ['22222222', bytes(2)]]), ips: IPS(0, [1]) };
+    const mod: BaseMod = {
+      label: 'm',
+      romfs: new Map([
+        ['11111111', bytes(1)],
+        ['22222222', bytes(2)],
+      ]),
+      ips: IPS(0, [1]),
+    };
     const pkg = packageOn(mod, new Map([['22222222', bytes(9)]]), appendIps(mod.ips, [[4, bytes(5)]]));
     expect([...pkg.keys()]).toEqual(['romfs/11111111', 'romfs/22222222', 'exefs/code.ips']);
     expect([...pkg.get('romfs/22222222')!]).toEqual([9]);
     // the base's records come first, the game's after them
-    expect([...pkg.get('exefs/code.ips')!]).toEqual([...IPS(0, [1]).subarray(0, -3), 0, 0, 4, 0, 1, 5, ...new TextEncoder().encode('EOF')]);
+    expect([...pkg.get('exefs/code.ips')!]).toEqual([
+      ...IPS(0, [1]).subarray(0, -3),
+      0,
+      0,
+      4,
+      0,
+      1,
+      5,
+      ...new TextEncoder().encode('EOF'),
+    ]);
     expect([...packageOn(null, new Map([['33333333', bytes(3)]]), null).keys()]).toEqual(['romfs/33333333']);
   });
 
   test('the model index reads each archive once and finds entries by hash (the first archive wins)', async () => {
     const archive = (entries: [number, Uint8Array][]): Uint8Array => {
       const hdr = new Uint8Array(12 + 28 * entries.length);
-      w32(hdr, 0, 5); w32(hdr, 4, 0x28480000); w32(hdr, 8, entries.length);
+      w32(hdr, 0, 5);
+      w32(hdr, 4, 0x28480000);
+      w32(hdr, 8, entries.length);
       const blobs = entries.map(([, b]) => lz10Compress(b));
       let at = hdr.length;
       entries.forEach(([hash, body], i) => {
@@ -54,7 +83,16 @@ describe('base MOD (no ROM)', () => {
       });
       return Uint8Array.from([...hdr, ...blobs.flatMap((b) => [...b])]);
     };
-    const files: Record<string, Uint8Array> = { A: archive([[0x100, bytes(1, 2)], [0x200, bytes(3)]]), B: archive([[0x200, bytes(9)], [0x300, bytes(4)]]) };
+    const files: Record<string, Uint8Array> = {
+      A: archive([
+        [0x100, bytes(1, 2)],
+        [0x200, bytes(3)],
+      ]),
+      B: archive([
+        [0x200, bytes(9)],
+        [0x300, bytes(4)],
+      ]),
+    };
     const reads: string[] = [];
     const index = await BchEntryIndex.of(['A', 'B'], async (n) => (reads.push(n), parseArchive(files[n]!)));
     expect([...index.body(0x100)!]).toEqual([1, 2]);
@@ -89,7 +127,10 @@ describe.skipIf(!hasOahuBase)('RPG3 monster models', () => {
 
 describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 on a base MOD', () => {
   test("the dump reads the MOD's files and code.ips, and the export writes them", async () => {
-    const raw = await openImages([Bun.file(OAHU_BASE), Bun.file(OAHU_UPDATE)], (f) => (f as { name?: string }).name ?? '');
+    const raw = await openImages(
+      [Bun.file(OAHU_BASE), Bun.file(OAHU_UPDATE)],
+      (f) => (f as { name?: string }).name ?? '',
+    );
     const at = raw.code.length - 4;
     const mod: BaseMod = { label: 'test', romfs: new Map([['DEADBEEF', bytes(1, 2, 3)]]), ips: IPS(at, [0xaa]) };
     const s = await OahuSession.open(raw, mod);

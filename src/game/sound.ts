@@ -33,7 +33,7 @@ export function bcsarSoundNames(d: Uint8Array): string[] {
   for (let i = 0, count = u32(d, st); i < count; i++) {
     const e = st + u32(d, st + 4 + i * 8 + 4);
     const flags = u32(d, e + 0x14);
-    out.push(flags & 1 ? strings[u32(d, e + 0x18)] ?? '' : '');
+    out.push(flags & 1 ? (strings[u32(d, e + 0x18)] ?? '') : '');
   }
   return out;
 }
@@ -81,7 +81,9 @@ export class SoundNames {
     /** soundData rows: volume (+8). */
     volumes: number[] = [],
   ) {
-    this.table = Array.isArray(items) ? { count: items.length, item: (r) => items[r] ?? 0, volume: (r) => volumes[r] ?? 0 } : items;
+    this.table = Array.isArray(items)
+      ? { count: items.length, item: (r) => items[r] ?? 0, volume: (r) => volumes[r] ?? 0 }
+      : items;
   }
 
   /** Rows of soundData (row 0 = none). */

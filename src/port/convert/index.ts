@@ -87,7 +87,9 @@ function renameAnimations(list: H3DAnimation[], tag: string): void {
 export function renameLook(h: H3D, name: string): Map<string, string> {
   const model = h.models[0];
   const old = model?.name ?? h.luts[0]?.name ?? '';
-  const prefixes = [old, species(old), ...h.luts.map((l) => l.name)].filter((x) => x).sort((a, b) => b.length - a.length);
+  const prefixes = [old, species(old), ...h.luts.map((l) => l.name)]
+    .filter((x) => x)
+    .sort((a, b) => b.length - a.length);
   const lutNames = new Map<string, string>();
   h.luts.forEach((l, i) => {
     const n = i === 0 ? name : `${name}_${i}`;
@@ -104,8 +106,8 @@ export function renameLook(h: H3D, name: string): Map<string, string> {
     texNames.set(t.name, n);
     t.name = n;
   }
-  const tex = (s: string | null): string | null => (s === null ? null : texNames.get(s) ?? s);
-  const lut = (s: string | null): string | null => (s === null ? null : lutNames.get(s) ?? s);
+  const tex = (s: string | null): string | null => (s === null ? null : (texNames.get(s) ?? s));
+  const lut = (s: string | null): string | null => (s === null ? null : (lutNames.get(s) ?? s));
   for (const m of h.models) {
     m.name = name;
     for (const mat of m.materials) {
@@ -142,7 +144,8 @@ function writeFor(h: H3D, to: 'oahu' | 'lanai'): Uint8Array {
 
 function checkTextures(textures: H3DTexture[]): void {
   for (const t of textures) {
-    if (t.width > 512 || t.height > 512) throw new Error(`texture ${t.name} is ${t.width}×${t.height} (the games' limit is 512×512)`);
+    if (t.width > 512 || t.height > 512)
+      throw new Error(`texture ${t.name} is ${t.width}×${t.height} (the games' limit is 512×512)`);
     if (t.format > 13) throw new Error(`texture ${t.name} has format ${t.format}`);
   }
 }
@@ -153,7 +156,16 @@ function writeLook(look: Look, to: PortTitle, from: PortTitle): MonsterFiles {
   const variant = h.textures.filter((t) => colour.has(t.name));
   const own = h.textures.filter((t) => !colour.has(t.name));
   if (to === 'kahara') {
-    const model = h3dToGfx(h3dOf({ models: h.models, luts: h.luts, textures: own, skeletalAnimations: h.skeletalAnimations, materialAnimations: h.materialAnimations, visibilityAnimations: h.visibilityAnimations }));
+    const model = h3dToGfx(
+      h3dOf({
+        models: h.models,
+        luts: h.luts,
+        textures: own,
+        skeletalAnimations: h.skeletalAnimations,
+        materialAnimations: h.materialAnimations,
+        visibilityAnimations: h.visibilityAnimations,
+      }),
+    );
     const tex = emptyGfx();
     tex.textures = h3dToGfx(h3dOf({ textures: variant })).textures;
     return { model: writeGfx(model), texture: variant.length ? writeGfx(tex) : null, motion: null };
@@ -161,15 +173,20 @@ function writeLook(look: Look, to: PortTitle, from: PortTitle): MonsterFiles {
   retarget(h, to, from !== 'kahara');
   const battle = (a: H3DAnimation): boolean => BATTLE_MOTIONS.has(motionKey(a.name));
   const model = h3dOf({
-    models: h.models, luts: h.luts, textures: own,
-    skeletalAnimations: h.skeletalAnimations.filter((a) => !battle(a)), materialAnimations: h.materialAnimations.filter((a) => !battle(a)) as H3DMaterialAnim[],
+    models: h.models,
+    luts: h.luts,
+    textures: own,
+    skeletalAnimations: h.skeletalAnimations.filter((a) => !battle(a)),
+    materialAnimations: h.materialAnimations.filter((a) => !battle(a)) as H3DMaterialAnim[],
     visibilityAnimations: h.visibilityAnimations.filter((a) => !battle(a)),
   });
   const motion = h3dOf({
-    skeletalAnimations: h.skeletalAnimations.filter(battle), materialAnimations: h.materialAnimations.filter(battle) as H3DMaterialAnim[],
+    skeletalAnimations: h.skeletalAnimations.filter(battle),
+    materialAnimations: h.materialAnimations.filter(battle) as H3DMaterialAnim[],
     visibilityAnimations: h.visibilityAnimations.filter(battle),
   });
-  const hasMotion = motion.skeletalAnimations.length + motion.materialAnimations.length + motion.visibilityAnimations.length > 0;
+  const hasMotion =
+    motion.skeletalAnimations.length + motion.materialAnimations.length + motion.visibilityAnimations.length > 0;
   return {
     model: writeFor(model, to),
     texture: variant.length ? writeFor(h3dOf({ textures: variant }), to) : null,
@@ -178,7 +195,12 @@ function writeLook(look: Look, to: PortTitle, from: PortTitle): MonsterFiles {
 }
 
 /** A monster's files of game `from` as the files of game `to`. */
-export function convertMonster(src: MonsterFiles, from: PortTitle, to: PortTitle, opts: ConvertOptions = {}): MonsterFiles {
+export function convertMonster(
+  src: MonsterFiles,
+  from: PortTitle,
+  to: PortTitle,
+  opts: ConvertOptions = {},
+): MonsterFiles {
   if (from === to && !opts.name) return src;
   const look = readLook(src);
   if (opts.name) {

@@ -46,17 +46,43 @@ export interface Gfx {
 
 /** Dictionaries of the DATA section, in file order. */
 export const GFX_DICTS = [
-  'models', 'textures', 'luts', 'materials', 'shaders', 'cameras', 'lights', 'fogs', 'scenes',
-  'skeletalAnimations', 'materialAnimations', 'visibilityAnimations', 'cameraAnimations', 'lightAnimations',
-  'fogAnimations', 'emitters',
+  'models',
+  'textures',
+  'luts',
+  'materials',
+  'shaders',
+  'cameras',
+  'lights',
+  'fogs',
+  'scenes',
+  'skeletalAnimations',
+  'materialAnimations',
+  'visibilityAnimations',
+  'cameraAnimations',
+  'lightAnimations',
+  'fogAnimations',
+  'emitters',
 ] as const satisfies readonly (keyof Gfx)[];
 
 export function emptyGfx(): Gfx {
   return {
     revision: 0x05000000,
-    models: [], textures: [], luts: [], materials: [], shaders: [], cameras: [], lights: [], fogs: [], scenes: [],
-    skeletalAnimations: [], materialAnimations: [], visibilityAnimations: [], cameraAnimations: [],
-    lightAnimations: [], fogAnimations: [], emitters: [],
+    models: [],
+    textures: [],
+    luts: [],
+    materials: [],
+    shaders: [],
+    cameras: [],
+    lights: [],
+    fogs: [],
+    scenes: [],
+    skeletalAnimations: [],
+    materialAnimations: [],
+    visibilityAnimations: [],
+    cameraAnimations: [],
+    lightAnimations: [],
+    fogAnimations: [],
+    emitters: [],
   };
 }
 
@@ -169,7 +195,12 @@ export interface GfxAnimGroupElementBase {
 export type GfxAnimGroupElement =
   | (GfxAnimGroupElementBase & { kind: 'bone'; boneName: string | null; objType2: number })
   | (GfxAnimGroupElementBase & { kind: 'materialColor' | 'blendOp'; materialName: string | null; objType2: number })
-  | (GfxAnimGroupElementBase & { kind: 'texSampler' | 'texMapper' | 'texCoord'; materialName: string | null; index: number; objType2: number })
+  | (GfxAnimGroupElementBase & {
+      kind: 'texSampler' | 'texMapper' | 'texCoord';
+      materialName: string | null;
+      index: number;
+      objType2: number;
+    })
   | (GfxAnimGroupElementBase & { kind: 'model'; objType2: number })
   | (GfxAnimGroupElementBase & { kind: 'mesh'; meshIndex: number; objType2: number })
   | (GfxAnimGroupElementBase & { kind: 'meshNodeVis'; nodeName: string | null; objType2: number })
@@ -1072,7 +1103,15 @@ export type GfxCameraView =
 
 export type GfxCameraProjection =
   | { kind: 'perspective'; typeId: number; zNear: number; zFar: number; aspectRatio: number; fovy: number }
-  | { kind: 'orthogonal' | 'frustum'; typeId: number; zNear: number; zFar: number; aspectRatio: number; height: number; center: Vec2 };
+  | {
+      kind: 'orthogonal' | 'frustum';
+      typeId: number;
+      zNear: number;
+      zFar: number;
+      aspectRatio: number;
+      height: number;
+      center: Vec2;
+    };
 
 export interface GfxCamera extends GfxNodeTransform {
   viewType: number;

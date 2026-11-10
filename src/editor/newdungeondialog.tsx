@@ -9,13 +9,25 @@ import { Dialog } from '../ui/Dialog';
 import { Field } from './fields';
 
 /** The dialog; `onCreated` gets the dungeon's first map. */
-export function NewDungeonDialog({ session, currentDungeon, onCreated, onClose }: {
-  session: Session; currentDungeon: number | null; onCreated: (m: MapInfo) => void; onClose: () => void;
+export function NewDungeonDialog({
+  session,
+  currentDungeon,
+  onCreated,
+  onClose,
+}: {
+  session: Session;
+  currentDungeon: number | null;
+  onCreated: (m: MapInfo) => void;
+  onClose: () => void;
 }): ReactNode {
   const game = session.game;
-  const [dungeons] = useState(() => addableDungeons(game).filter((d) => !game.code.dungeons.some((x) => x.dungeon === d.dungeon)));
-  const [slot] = useState(() => (dungeonRoom(game) > 0 ? vacantDungeons(game)[0] ?? -1 : -1));
-  const [template, setTemplate] = useState(() => (dungeons.some((d) => d.dungeon === currentDungeon) ? currentDungeon! : dungeons[0]?.dungeon ?? -1));
+  const [dungeons] = useState(() =>
+    addableDungeons(game).filter((d) => !game.code.dungeons.some((x) => x.dungeon === d.dungeon)),
+  );
+  const [slot] = useState(() => (dungeonRoom(game) > 0 ? (vacantDungeons(game)[0] ?? -1) : -1));
+  const [template, setTemplate] = useState(() =>
+    dungeons.some((d) => d.dungeon === currentDungeon) ? currentDungeon! : (dungeons[0]?.dungeon ?? -1),
+  );
   const [code, setCode] = useState<string | null>(null); // null = the suggested code
   const [name, setName] = useState('');
   const [floor, setFloor] = useState('-1');
@@ -59,29 +71,70 @@ export function NewDungeonDialog({ session, currentDungeon, onCreated, onClose }
   return (
     <Dialog title="ダンジョンを追加" wide={false} onClose={onClose}>
       <Field label="ダンジョンのコード">
-        <input type="text" maxLength={3} value={dcode} style={{ width: '5em' }} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <input
+          type="text"
+          maxLength={3}
+          value={dcode}
+          style={{ width: '5em' }}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+        />
       </Field>
       {problem && <div className="error">{problem}</div>}
       <Field label="名前 (ゲームに出る)">
-        <input type="text" value={name} placeholder="例: 風のどうくつ" style={{ width: '12em' }} onChange={(e) => setName(e.target.value)} />
+        <input
+          type="text"
+          value={name}
+          placeholder="例: 風のどうくつ"
+          style={{ width: '12em' }}
+          onChange={(e) => setName(e.target.value)}
+        />
       </Field>
       <Field label="設定を写す元">
-        <select value={template} onChange={(e) => { setTemplate(Number(e.target.value)); setTmplMap(0); setCode(null); }}>
-          {dungeons.map((x) => <option key={x.dungeon} value={x.dungeon}>{`${game.master.dungeonName(x.dungeon) || x.code}  (${x.code})`}</option>)}
+        <select
+          value={template}
+          onChange={(e) => {
+            setTemplate(Number(e.target.value));
+            setTmplMap(0);
+            setCode(null);
+          }}
+        >
+          {dungeons.map((x) => (
+            <option
+              key={x.dungeon}
+              value={x.dungeon}
+            >{`${game.master.dungeonName(x.dungeon) || x.code}  (${x.code})`}</option>
+          ))}
         </select>
       </Field>
       <Field label="最初のマップの階 (地下は負の数)">
-        <input type="number" min={-99} max={99} value={floor} style={{ width: '6em' }} onChange={(e) => setFloor(e.target.value)} />
+        <input
+          type="number"
+          min={-99}
+          max={99}
+          value={floor}
+          style={{ width: '6em' }}
+          onChange={(e) => setFloor(e.target.value)}
+        />
       </Field>
       <Field label="最初のマップのコード">
-        <input type="text" maxLength={15} value={mcode} style={{ width: '10em' }} onChange={(e) => setMapName(e.target.value)} />
+        <input
+          type="text"
+          maxLength={15}
+          value={mcode}
+          style={{ width: '10em' }}
+          onChange={(e) => setMapName(e.target.value)}
+        />
       </Field>
       <Field label="タイルを写す元のマップ">
         <select value={tmpl.hash} onChange={(e) => setTmplMap(Number(e.target.value))}>
-          {d.maps.map((m) => <option key={m.hash} value={m.hash}>{`${mapTitle(m, game.code.maps, game.master)}  ${m.name}`}</option>)}
+          {d.maps.map((m) => (
+            <option key={m.hash} value={m.hash}>{`${mapTitle(m, game.code.maps, game.master)}  ${m.name}`}</option>
+          ))}
         </select>
       </Field>
-      <label className="layer"><input type="checkbox" checked={copyTiles} onChange={(e) => setCopyTiles(e.target.checked)} /> タイルも写す</label>
+      <label className="layer">
+        <input type="checkbox" checked={copyTiles} onChange={(e) => setCopyTiles(e.target.checked)} /> タイルも写す
+      </label>
       <p className="muted small" style={{ whiteSpace: 'pre-line' }}>
         {[
           `ダンジョンの番号は ${slot} (mapGroup の空いている行) を使います。見た目 (タイルセット・BGM)・フラグは写す元のダンジョンと同じにします。セーブには空きがないので、宝箱などの状態の枠は、使っていない枠がいちばん多いダンジョンから末尾を分けてもらいます。`,
@@ -91,7 +144,11 @@ export function NewDungeonDialog({ session, currentDungeon, onCreated, onClose }
         ].join('\n')}
       </p>
       {error && <div className="error">{error}</div>}
-      <p><button className="primary" disabled={busy || !!problem || !name.trim()} onClick={() => void create()}>追加する</button></p>
+      <p>
+        <button className="primary" disabled={busy || !!problem || !name.trim()} onClick={() => void create()}>
+          追加する
+        </button>
+      </p>
     </Dialog>
   );
 }

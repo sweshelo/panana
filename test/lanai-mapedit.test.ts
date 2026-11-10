@@ -8,9 +8,24 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, LANAI_ROT_CODEC, type Rec } from '../src/game/sections';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
-import { LANAI_EVENT_SLOT, LANAI_LAYOUTS, LANAI_MAPDB_ENTRY, LANAI_MAP_FORMAT, lanaiEventSlot, lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
+import {
+  LANAI_EVENT_SLOT,
+  LANAI_LAYOUTS,
+  LANAI_MAPDB_ENTRY,
+  LANAI_MAP_FORMAT,
+  lanaiEventSlot,
+  lanaiMaps,
+  type LanaiMaps,
+} from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
-import { lanaiChestField, lanaiChestUsers, lanaiTreasureRowBytes, lanaiTreasureSlots, lanaiWriteTreasure, type LanaiChestUser } from '../src/lanai/treasure';
+import {
+  lanaiChestField,
+  lanaiChestUsers,
+  lanaiTreasureRowBytes,
+  lanaiTreasureSlots,
+  lanaiWriteTreasure,
+  type LanaiChestUser,
+} from '../src/lanai/treasure';
 import { openImages, type Dump } from '../src/rom/dump';
 import { equalBytes, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -21,8 +36,12 @@ describe('map database changes', () => {
     const b = new Uint8Array(4 + 2 * 12 + 4);
     const v = new DataView(b.buffer);
     v.setUint32(0, 2, true);
-    v.setUint32(4, 1, true); v.setUint32(8, 0, true); v.setUint32(12, 4, true);
-    v.setUint32(16, 2, true); v.setUint32(20, 0, true); v.setUint32(24, 4, true);
+    v.setUint32(4, 1, true);
+    v.setUint32(8, 0, true);
+    v.setUint32(12, 4, true);
+    v.setUint32(16, 2, true);
+    v.setUint32(20, 0, true);
+    v.setUint32(24, 4, true);
     b.set([1, 2, 3, 4], 28);
     return new MapDb(b);
   };
@@ -49,7 +68,12 @@ describe('lanai record facings', () => {
   };
 
   test('R turns sections 2〜5 through 4 → 2 → 1 → 8 and back', () => {
-    for (const [k, o] of [[2, 0x10], [3, 0x14], [4, 0x14], [5, 0x1c]] as const) {
+    for (const [k, o] of [
+      [2, 0x10],
+      [3, 0x14],
+      [4, 0x14],
+      [5, 0x1c],
+    ] as const) {
       expect(st.canRotate(k)).toBe(true);
       const r = rec(k, 4);
       const seen: number[] = [];
@@ -79,13 +103,16 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
   let content: LanaiContent;
   let maps: LanaiMaps;
   beforeAll(async () => {
-    dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump, { fresh: true });
     content = lanaiContents(s)[38]!;
     maps = await lanaiMaps(s, content);
   }, 300000);
 
-  test('every content: the map database builds as the ROM\'s, and nothing goes to the MOD unedited', async () => {
+  test("every content: the map database builds as the ROM's, and nothing goes to the MOD unedited", async () => {
     const archives = new Set<string>();
     for (const c of lanaiContents(s)) {
       const r = await s.mapDb(c.archive).catch(() => null);
@@ -132,18 +159,21 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       const o = unpackEntry(orig, e).body;
       // same size (a tile changed in place): only the 20 bytes of that record differ
       expect(a.length).toBe(o.length);
-      const db = new MapDb(a), odb = new MapDb(o);
+      const db = new MapDb(a),
+        odb = new MapDb(o);
       const tiles = info.sections[0]!;
       // the bytes that differ lie in one 20-byte run (the record), the index and the other blocks are the same
       const diff = [...a.keys()].filter((k) => a[k] !== o[k]);
       expect(diff.length).toBeGreaterThan(0);
       expect(diff[diff.length - 1]! - diff[0]!).toBeLessThan(20);
-      const nb = db.get(tiles), ob = odb.get(tiles);
+      const nb = db.get(tiles),
+        ob = odb.get(tiles);
       const d2 = [...nb.keys()].filter((k) => nb[k] !== ob[k]);
       expect(d2.every((k) => Math.floor(k / 20) === i)).toBe(true);
       expect(u32(nb, i * 20)).toBe(14);
       expect(nb[i * 20 + 0x10]).toBe(LANAI_ROT_CODEC.encode(1));
-      for (const h of info.sections) if (h && h !== tiles && odb.has(h)) expect(equalBytes(db.get(h), odb.get(h))).toBe(true);
+      for (const h of info.sections)
+        if (h && h !== tiles && odb.has(h)) expect(equalBytes(db.get(h), odb.get(h))).toBe(true);
     }
     // the edits are saved with the session's and come back on a fresh one
     const saved = s.saved();
@@ -161,7 +191,9 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(st.current!.tiles[i]!.kind).toBe(5);
     expect(maps.isChanged(info)).toBe(false);
     expect(s.modFiles().size).toBe(0);
-    expect(equalBytes(buildTiles(st.current!.tiles, LANAI_MAP_FORMAT.tile), maps.db.original(info.sections[0]!))).toBe(true);
+    expect(equalBytes(buildTiles(st.current!.tiles, LANAI_MAP_FORMAT.tile), maps.db.original(info.sections[0]!))).toBe(
+      true,
+    );
   });
 
   test('records: moving, turning, copying an exit (new point ID, its own EventObject row) and deleting', () => {
@@ -187,7 +219,9 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     // the copy names a new row of the group's table: the row's bytes, but a state slot of its own
     expect(table.rows).toBe(rows + 1);
     expect(u32(b.raw, 4)).toBe(rows);
-    expect(table.row(rows).subarray(0, LANAI_EVENT_SLOT)).toEqual(table.row(u32(a.raw, 4)).subarray(0, LANAI_EVENT_SLOT));
+    expect(table.row(rows).subarray(0, LANAI_EVENT_SLOT)).toEqual(
+      table.row(u32(a.raw, 4)).subarray(0, LANAI_EVENT_SLOT),
+    );
     expect(lanaiEventSlot(table, rows)).not.toBe(lanaiEventSlot(table, u32(a.raw, 4)));
     expect(lanaiValidate(maps, info, st.current!).filter((x) => x.key.startsWith('ev'))).toEqual([]);
     expect([...s.modFiles().keys()]).toEqual([content.archive]);
@@ -265,7 +299,9 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       if (!m || !tg) continue;
       const users = lanaiChestUsers(m);
       // a chest whose row another chest shares, so "a row of its own" is offered
-      const shared = [...users].find(([row, us]) => row < tg.rows && us.length > 1 && lanaiTreasureSlots(tg, row).length);
+      const shared = [...users].find(
+        ([row, us]) => row < tg.rows && us.length > 1 && lanaiTreasureSlots(tg, row).length,
+      );
       if (!shared) continue;
       const [row, [user]] = shared as [number, LanaiChestUser[]];
       const info = m.mapByName(user!.map)!;
@@ -294,7 +330,9 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       expect(ev.u32(user!.event, field)).toBe(rows);
       expect(lanaiTreasureSlots(tg, rows)).toEqual(before);
       expect(lanaiChestUsers(m).get(rows)?.length).toBe(users.get(row)!.filter((u) => u.event === user!.event).length);
-      st.editTreasure((t) => lanaiWriteTreasure(t, rows, [{ value: before[0]!.value, weight: 1, kind: before[0]!.kind }]));
+      st.editTreasure((t) =>
+        lanaiWriteTreasure(t, rows, [{ value: before[0]!.value, weight: 1, kind: before[0]!.kind }]),
+      );
       expect(lanaiTreasureSlots(tg, row)).toEqual(before);
       expect(lanaiValidate(m, info, st.current!).filter((i) => i.level === 'error')).toEqual([]);
       // saved and put back on a fresh session
@@ -334,7 +372,9 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(st.current!.cells6.length).toBe(n + 1);
     expect(st.current!.cells6.at(-1)).toEqual({ value: groups.at(-1)!.id, x: free.x, y: free.y });
     expect(lanaiValidate(maps, info, st.current!)).toEqual([]);
-    st.edit((d) => { d.cells6.at(-1)!.value = 0x8000ffff; });
+    st.edit((d) => {
+      d.cells6.at(-1)!.value = 0x8000ffff;
+    });
     expect(lanaiValidate(maps, info, st.current!).some((x) => x.key.startsWith('s6id/'))).toBe(true);
     st.revert();
     expect(maps.isChanged(info)).toBe(false);
@@ -348,15 +388,25 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     expect(header).toBeGreaterThanOrEqual(0);
     expect(maps.monsterGroupUses().get(header)).toContainEqual({ map: info.name, cells: 'map' });
     const last = maps.monsterGroups().at(-1)!;
-    const before = (maps.monsterGroupUses().get(last.row) ?? []).filter((u) => u.map === info.name && u.cells !== 'map');
+    const before = (maps.monsterGroupUses().get(last.row) ?? []).filter(
+      (u) => u.map === info.name && u.cells !== 'map',
+    );
     const free = st.current!.tiles.find((t) => !st.current!.cells6.some((c) => c.x === t.x && c.y === t.y))!;
-    st.edit((d) => { d.cells6.push({ value: last.id, x: free.x, y: free.y }, { value: last.id, x: free.x, y: free.y }); });
+    st.edit((d) => {
+      d.cells6.push({ value: last.id, x: free.x, y: free.y }, { value: last.id, x: free.x, y: free.y });
+    });
     const n = before.length ? (before[0]!.cells as number) : 0;
     expect(maps.monsterGroupUses().get(last.row)).toContainEqual({ map: info.name, cells: n + 2 });
     // a value the table does not have is not counted for any row
-    const counted = (): number => [...maps.monsterGroupUses().values()].flat().filter((u) => u.map === info.name).reduce((a, u) => a + (u.cells === 'map' ? 0 : u.cells), 0);
+    const counted = (): number =>
+      [...maps.monsterGroupUses().values()]
+        .flat()
+        .filter((u) => u.map === info.name)
+        .reduce((a, u) => a + (u.cells === 'map' ? 0 : u.cells), 0);
     const k = counted();
-    st.edit((d) => { d.cells6.push({ value: 0x8000ffff, x: free.x, y: free.y }); });
+    st.edit((d) => {
+      d.cells6.push({ value: 0x8000ffff, x: free.x, y: free.y });
+    });
     expect(counted()).toBe(k);
     st.revert();
     expect(maps.isChanged(info)).toBe(false);
@@ -391,13 +441,21 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     for (const c of lanaiContents(s)) {
       const m = await lanaiMaps(s, c).catch(() => null);
       if (!m) continue;
-      const info = m.maps.find((x) => !x.world && (!x.mapDataId || x.mapDataId === 0x80000000) && m.group(x)?.mapDataIndoor && !m.doc(x).tiles.some((t) => t.kind >= 15 && t.kind <= 27));
+      const info = m.maps.find(
+        (x) =>
+          !x.world &&
+          (!x.mapDataId || x.mapDataId === 0x80000000) &&
+          m.group(x)?.mapDataIndoor &&
+          !m.doc(x).tiles.some((t) => t.kind >= 15 && t.kind <= 27),
+      );
       if (!info) continue;
       const st = lanaiEditState(m);
       st.open(info);
       const before = st.source!;
       const t = st.current!.tiles[0]!;
-      st.edit(() => { t.kind = 20; });
+      st.edit(() => {
+        t.kind = 20;
+      });
       expect(st.source!.mapData).not.toBe(before.mapData);
       expect(lanaiValidateAll(m, info, st.current!).some((x) => x.key.startsWith('mapdata/'))).toBe(true);
       st.undo();

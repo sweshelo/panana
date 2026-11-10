@@ -2,7 +2,16 @@
 // entry's "#ID" link to its book. The board itself is a button (usually opening a picker).
 import type { ReactNode } from 'react';
 
-export function Board({ icon, name, sub, id, href, edited = false, title, onClick }: {
+export function Board({
+  icon,
+  name,
+  sub,
+  id,
+  href,
+  edited = false,
+  title,
+  onClick,
+}: {
   icon: ReactNode;
   name: ReactNode;
   sub?: ReactNode;
@@ -22,14 +31,31 @@ export function Board({ icon, name, sub, id, href, edited = false, title, onClic
           {sub && <span className="board-sub">{sub}</span>}
         </span>
       </button>
-      {id !== undefined && (href
-        ? <a className="board-id" href={href} draggable={false} title="図鑑で開く">{`#${id}`}</a>
-        : <span className="board-id muted">{`#${id}`}</span>)}
+      {id !== undefined &&
+        (href ? (
+          <a className="board-id" href={href} draggable={false} title="図鑑で開く">{`#${id}`}</a>
+        ) : (
+          <span className="board-id muted">{`#${id}`}</span>
+        ))}
     </div>
   );
 }
 
 /** An empty slot drawn like a board (dashed), e.g. "＋ 追加". */
-export function EmptyBoard({ label, title, disabled, onClick }: { label: string; title?: string; disabled?: boolean; onClick: () => void }): ReactNode {
-  return <button className="board board-empty" title={title} disabled={disabled} onClick={onClick}>{label}</button>;
+export function EmptyBoard({
+  label,
+  title,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  title?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}): ReactNode {
+  return (
+    <button className="board board-empty" title={title} disabled={disabled} onClick={onClick}>
+      {label}
+    </button>
+  );
 }

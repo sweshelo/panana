@@ -13,7 +13,8 @@ export function mapLabel(game: Game, hash: number): string {
 
 export const worldLabel = (code: string): string => `ワールドマップ ${code}`;
 /** #/world/W01 or #/world/W01.XXXXXXXX (an entrance ID). */
-export const worldHref = (code: string, id?: number): string => `#/world/${code}${id === undefined ? '' : `.${hex8(id)}`}`;
+export const worldHref = (code: string, id?: number): string =>
+  `#/world/${code}${id === undefined ? '' : `.${hex8(id)}`}`;
 
 /** "上り階段 (14, 14)" */
 export function pointLabel(raw: Uint8Array, x: number, y: number): string {

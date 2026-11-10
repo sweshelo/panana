@@ -10,7 +10,13 @@ import { Photo } from '../ui/Photo';
 import { ItemPhoto } from './ItemPage';
 import type { OahuBattle } from './battle';
 import type { OahuItem } from './items';
-import { OAHU_ACTION_CATEGORY, OAHU_ACTION_KIND, OAHU_ELEMENT_NAMES, OAHU_ELEMENT_PAIRS, OAHU_ITEM_KIND } from './tables';
+import {
+  OAHU_ACTION_CATEGORY,
+  OAHU_ACTION_KIND,
+  OAHU_ELEMENT_NAMES,
+  OAHU_ELEMENT_PAIRS,
+  OAHU_ITEM_KIND,
+} from './tables';
 
 export const oahuMonsterHref = (row: number): string => `#/monsters/${row}`;
 export const oahuGroupHref = (row: number): string => `#/groups/${row}`;
@@ -18,15 +24,25 @@ export const oahuActionHref = (row: number): string => `#/actions/${row}`;
 
 /** The photo of a monster's model. */
 export function oahuMonsterIcon(battle: OahuBattle, row: number, large = false): ReactNode {
-  return <Photo model={battle.monsterModel(row)} className={`photo${large ? ' photo-lg' : ''}`} title={battle.monsterName(row)} />;
+  return (
+    <Photo
+      model={battle.monsterModel(row)}
+      className={`photo${large ? ' photo-lg' : ''}`}
+      title={battle.monsterName(row)}
+    />
+  );
 }
 
 /** The photo of an item's model, or the first letter of its main category. */
 export function oahuItemIcon(battle: OahuBattle, item: OahuItem | undefined, large = false): ReactNode {
   const className = `photo${large ? ' photo-lg' : ''}`;
   if (item && battle.itemModels) return <ItemPhoto models={battle.itemModels} item={item} className={className} />;
-  const label = item ? OAHU_ITEM_KIND[item.kind] ?? '?' : '?';
-  return <span className={`${className} item-badge item-kind-${item?.kind ?? 0}`} title={item?.category}>{label[0]}</span>;
+  const label = item ? (OAHU_ITEM_KIND[item.kind] ?? '?') : '?';
+  return (
+    <span className={`${className} item-badge item-kind-${item?.kind ?? 0}`} title={item?.category}>
+      {label[0]}
+    </span>
+  );
 }
 
 /** An action's badge: the first letter of its element (of both for two elements, colored by the first), or of its category. */
@@ -34,8 +50,13 @@ export function oahuActionIcon(battle: OahuBattle, row: number): ReactNode {
   const element = row > 0 && row < battle.actions.rows ? battle.actions.get(row, 'element') : 0;
   const category = row > 0 && row < battle.actions.rows ? battle.actions.get(row, 'category') : 0;
   const pair = OAHU_ELEMENT_PAIRS[element];
-  if (pair) return <ActionBadge element={pair[0]} label={pair.map((e) => (OAHU_ELEMENT_NAMES[e] ?? '?').slice(0, 1)).join('')} />;
-  const label = element ? (OAHU_ELEMENT_NAMES[element] ?? '?').slice(0, 1) : (OAHU_ACTION_CATEGORY[category] ?? '?').slice(0, 1);
+  if (pair)
+    return (
+      <ActionBadge element={pair[0]} label={pair.map((e) => (OAHU_ELEMENT_NAMES[e] ?? '?').slice(0, 1)).join('')} />
+    );
+  const label = element
+    ? (OAHU_ELEMENT_NAMES[element] ?? '?').slice(0, 1)
+    : (OAHU_ACTION_CATEGORY[category] ?? '?').slice(0, 1);
   return <ActionBadge element={element} label={label} />;
 }
 
@@ -60,27 +81,96 @@ export function oahuGroupMonster(battle: OahuBattle): (row: number) => GroupMons
  * Pick a monster from the photos, like RPG2's MonsterPicker: `groups` come first, each under its heading (e.g. the
  * monsters with the skill), then every monster under "すべて"; `choices` are other values before them (電波人間).
  */
-export function OahuMonsterPicker({ battle, current, title = 'モンスターを選ぶ', groups = [], choices = [], onPick, onClose }: {
-  battle: OahuBattle; current: number; title?: string; groups?: MonsterGroup[]; choices?: PickerChoice[]; onPick: (row: number) => void; onClose: () => void;
+export function OahuMonsterPicker({
+  battle,
+  current,
+  title = 'モンスターを選ぶ',
+  groups = [],
+  choices = [],
+  onPick,
+  onClose,
+}: {
+  battle: OahuBattle;
+  current: number;
+  title?: string;
+  groups?: MonsterGroup[];
+  choices?: PickerChoice[];
+  onPick: (row: number) => void;
+  onClose: () => void;
 }): ReactNode {
-  const entries = useMemo(() => battle.monsterList().map((m) => ({ id: m.id, name: m.name, sub: `#${m.id} Lv${m.level}`, icon: oahuMonsterIcon(battle, m.id, true) })), [battle]);
+  const entries = useMemo(
+    () =>
+      battle.monsterList().map((m) => ({
+        id: m.id,
+        name: m.name,
+        sub: `#${m.id} Lv${m.level}`,
+        icon: oahuMonsterIcon(battle, m.id, true),
+      })),
+    [battle],
+  );
   return (
-    <GridPicker title={title} entries={entries} current={current} sections={groups.map((g) => ({ label: g.label, ids: g.rows }))} choices={choices}
-      placeholder="名前で絞り込み" onPick={onPick} onClose={onClose} />
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
+      sections={groups.map((g) => ({ label: g.label, ids: g.rows }))}
+      choices={choices}
+      placeholder="名前で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
   );
 }
 
-export function OahuItemPicker({ battle, current, title = 'アイテムを選ぶ', unavailable, onPick, onClose }: {
-  battle: OahuBattle; current: number; title?: string; unavailable?: (it: OahuItem) => string | null; onPick: (id: number) => void; onClose: () => void;
+export function OahuItemPicker({
+  battle,
+  current,
+  title = 'アイテムを選ぶ',
+  unavailable,
+  onPick,
+  onClose,
+}: {
+  battle: OahuBattle;
+  current: number;
+  title?: string;
+  unavailable?: (it: OahuItem) => string | null;
+  onPick: (id: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const entries = battle.items.items.map((it) => ({
-    id: it.id, name: it.name, icon: oahuItemIcon(battle, it, true), sub: `${it.price} G`, title: `#${it.id} ${it.category}`, unavailable: unavailable?.(it) ?? null, category: it.kind,
+    id: it.id,
+    name: it.name,
+    icon: oahuItemIcon(battle, it, true),
+    sub: `${it.price} G`,
+    title: `#${it.id} ${it.category}`,
+    unavailable: unavailable?.(it) ?? null,
+    category: it.kind,
   }));
-  return <GridPicker title={title} entries={entries} current={current} categories={OAHU_ITEM_KIND} placeholder="名前か ID で絞り込み" onPick={onPick} onClose={onClose} />;
+  return (
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
+      categories={OAHU_ITEM_KIND}
+      placeholder="名前か ID で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
 }
 
-export function OahuActionPicker({ battle, current, title = 'ワザを選ぶ', onPick, onClose }: {
-  battle: OahuBattle; current?: number; title?: string; onPick: (row: number) => void; onClose: () => void;
+export function OahuActionPicker({
+  battle,
+  current,
+  title = 'ワザを選ぶ',
+  onPick,
+  onClose,
+}: {
+  battle: OahuBattle;
+  current?: number;
+  title?: string;
+  onPick: (row: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const entries = useMemo(() => {
     const users = battle.skillUsers();
@@ -89,12 +179,24 @@ export function OahuActionPicker({ battle, current, title = 'ワザを選ぶ', o
       return {
         row: a.row,
         name: a.name,
-        kind: a.kind === 2 ? OAHU_ACTION_KIND[2]! : OAHU_ACTION_CATEGORY[a.category] ?? `種別 ${a.category}`,
-        element: a.element ? OAHU_ELEMENT_NAMES[a.element] ?? String(a.element) : '',
+        kind: a.kind === 2 ? OAHU_ACTION_KIND[2]! : (OAHU_ACTION_CATEGORY[a.category] ?? `種別 ${a.category}`),
+        element: a.element ? (OAHU_ELEMENT_NAMES[a.element] ?? String(a.element)) : '',
         users: names,
         tags: names.length ? ['skill'] : [],
       };
     });
   }, [battle]);
-  return <ActionTablePicker title={title} entries={entries} filters={[['skill', 'モンスターのワザ'], ['all', 'すべて']]} current={current} onPick={onPick} onClose={onClose} />;
+  return (
+    <ActionTablePicker
+      title={title}
+      entries={entries}
+      filters={[
+        ['skill', 'モンスターのワザ'],
+        ['all', 'すべて'],
+      ]}
+      current={current}
+      onPick={onPick}
+      onClose={onClose}
+    />
+  );
 }

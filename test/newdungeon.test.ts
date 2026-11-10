@@ -8,8 +8,34 @@ import { BASE, MAP_TABLE, MAP_TABLE_ROWS } from '../src/game/codeconst';
 import { buildMapPatch, dungeonRows, freeTableRows, readExtension } from '../src/game/mappatch';
 import { makeMap } from '../src/game/newmap';
 import {
-  AREA_TABLE, DUNGEON_LIMIT, MG, PLACE_LIMIT, PLACE_PATCH, PLACE_PATCH_ID, VANILLA_PLACES, needsPlacePatch, ownPlace, ownPlaces, SAVE_FLAGS, SAVE_STATES, SAVE_VALUES, codeProblem, dungeonRoom, freeRange, makeDungeon, rowLabel, rowLabels,
-  recodeMapName, renameDungeon, saveSize, slotsNeeded, stateDonor, suggestCode, takenCodes, usedRanges, vacantDungeons,
+  AREA_TABLE,
+  DUNGEON_LIMIT,
+  MG,
+  PLACE_LIMIT,
+  PLACE_PATCH,
+  PLACE_PATCH_ID,
+  VANILLA_PLACES,
+  needsPlacePatch,
+  ownPlace,
+  ownPlaces,
+  SAVE_FLAGS,
+  SAVE_STATES,
+  SAVE_VALUES,
+  codeProblem,
+  dungeonRoom,
+  freeRange,
+  makeDungeon,
+  rowLabel,
+  rowLabels,
+  recodeMapName,
+  renameDungeon,
+  saveSize,
+  slotsNeeded,
+  stateDonor,
+  suggestCode,
+  takenCodes,
+  usedRanges,
+  vacantDungeons,
 } from '../src/game/newdungeon';
 import { buildModFiles, codeIps, modPackage } from '../src/export/pack';
 import { buildPatches } from '../src/game/patch';
@@ -28,13 +54,19 @@ const at = (a: number): number => a - BASE;
 function gameRow(code: Uint8Array, map: number): { row: number; dungeon: number } | null {
   for (let d = 0; d < MAP_TABLE_ROWS; d++) {
     const o = at(MAP_TABLE) + d * 16;
-    const n = u32(code, o + 8), arr = u32(code, o + 12);
-    for (let j = 0; j < n; j++) if (u32(code, at(arr) + j * 0x1c) === map) return { row: arr + j * 0x1c, dungeon: u32(code, o) };
+    const n = u32(code, o + 8),
+      arr = u32(code, o + 12);
+    for (let j = 0; j < n; j++)
+      if (u32(code, at(arr) + j * 0x1c) === map) return { row: arr + j * 0x1c, dungeon: u32(code, o) };
   }
   return null;
 }
 
-const RANGE_FIELDS = [[SAVE_STATES, MG.states, MG.stateCount], [SAVE_VALUES, MG.values, MG.valueCount], [SAVE_FLAGS, MG.flags, MG.flagCount]] as const;
+const RANGE_FIELDS = [
+  [SAVE_STATES, MG.states, MG.stateCount],
+  [SAVE_VALUES, MG.values, MG.valueCount],
+  [SAVE_FLAGS, MG.flags, MG.flagCount],
+] as const;
 
 describe.skipIf(!hasCia)('new dungeons', () => {
   let game: Game;
@@ -47,7 +79,11 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     expect(game.master.mapGroup.rowSize).toBe(0x2c);
     expect(vacantDungeons(game)).toEqual([11]);
     expect(freeTableRows(game.dump.code)).toEqual([53, 52, 51, 50]);
-    expect(dungeonRows(game.dump.code).filter((d) => d.count === 0).map((d) => d.dungeon)).toEqual([0x34, 0x35, 0x36, 0x37]);
+    expect(
+      dungeonRows(game.dump.code)
+        .filter((d) => d.count === 0)
+        .map((d) => d.dungeon),
+    ).toEqual([0x34, 0x35, 0x36, 0x37]);
     expect(dungeonRoom(game)).toBe(1);
   });
 
@@ -63,7 +99,8 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     for (const [key, first, count] of RANGE_FIELDS) {
       const size = saveSize(game, key);
       const used = usedRanges(game, first, count, -1);
-      for (let i = 1; i < used.length; i++) expect(used[i]!.first).toBeGreaterThanOrEqual(used[i - 1]!.first + used[i - 1]!.count);
+      for (let i = 1; i < used.length; i++)
+        expect(used[i]!.first).toBeGreaterThanOrEqual(used[i - 1]!.first + used[i - 1]!.count);
       expect(Math.max(...used.map((u) => u.first + u.count))).toBe(size);
       expect(freeRange(size, used, 1).count).toBe(0);
     }
@@ -71,8 +108,26 @@ describe.skipIf(!hasCia)('new dungeons', () => {
   });
 
   test('freeRange: the first gap that fits, else the largest', () => {
-    expect(freeRange(100, [{ first: 0, count: 10 }, { first: 20, count: 10 }], 5)).toEqual({ first: 10, count: 5 });
-    expect(freeRange(100, [{ first: 0, count: 10 }, { first: 20, count: 75 }], 20)).toEqual({ first: 10, count: 10 });
+    expect(
+      freeRange(
+        100,
+        [
+          { first: 0, count: 10 },
+          { first: 20, count: 10 },
+        ],
+        5,
+      ),
+    ).toEqual({ first: 10, count: 5 });
+    expect(
+      freeRange(
+        100,
+        [
+          { first: 0, count: 10 },
+          { first: 20, count: 75 },
+        ],
+        20,
+      ),
+    ).toEqual({ first: 10, count: 10 });
     expect(freeRange(30, [{ first: 0, count: 30 }], 4)).toEqual({ first: 0, count: 0 });
   });
 
@@ -99,13 +154,34 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     const area0 = game.master.table(AREA_TABLE).data.slice();
     const texts0 = game.master.texts.saved();
     const tmpl = game.code.byName('D01B02001')!;
-    const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), (d) => game.eventTable(d), () => 0.37);
+    const nd = await makeDungeon(
+      game,
+      { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 },
+      new Set(game.dump.names()),
+      (d) => game.eventTable(d),
+      () => 0.37,
+    );
     try {
       // mapGroup row 11 = row 1 but for the archive, the name and the ranges
-      const r11 = game.master.mapGroup.row(11), r1 = game.master.mapGroup.row(1);
+      const r11 = game.master.mapGroup.row(11),
+        r1 = game.master.mapGroup.row(1);
       for (let o = 0; o < 0x2c; o++) {
         if ((o >= MG.archive && o < MG.archive + 4) || o === MG.name || o === MG.name + 1) continue;
-        if ([MG.states, MG.states + 1, MG.stateCount, MG.values, MG.values + 1, MG.valueCount, MG.flags, MG.flags + 1, MG.flagCount, MG.place].includes(o as never)) continue;
+        if (
+          [
+            MG.states,
+            MG.states + 1,
+            MG.stateCount,
+            MG.values,
+            MG.values + 1,
+            MG.valueCount,
+            MG.flags,
+            MG.flags + 1,
+            MG.flagCount,
+            MG.place,
+          ].includes(o as never)
+        )
+          continue;
         expect(r11[o]).toBe(r1[o]!);
       }
       expect(hex8(u32(r11, MG.archive))).toBe(nd.archiveName);
@@ -120,7 +196,8 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       expect(needsPlacePatch(game)).toBe(true);
       // 0x8E: the donor's unused tail (the donor keeps what its rows use); no 0x91 / 0x92
       expect(nd.donor).toBeGreaterThan(0);
-      const dRow = game.master.mapGroup.row(nd.donor), dOrig = mg0.subarray(game.master.mapGroup.offset + nd.donor * 0x2c);
+      const dRow = game.master.mapGroup.row(nd.donor),
+        dOrig = mg0.subarray(game.master.mapGroup.offset + nd.donor * 0x2c);
       expect(dRow[MG.stateCount]).toBe(nd.donorSlots);
       expect({ first: u16(r11, MG.states), count: r11[MG.stateCount]! }).toEqual(nd.ranges[0]!);
       expect(nd.ranges[0]!.first).toBe(u16(dOrig, MG.states) + nd.donorSlots);
@@ -128,25 +205,41 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       expect((await game.eventTable(nd.donor))!.capacity).toBe(nd.donorSlots);
       // 0x91 / 0x92: only what row 11 had of its own (the dungeons fill them without gaps)
       const o11 = mg0.subarray(game.master.mapGroup.offset + 11 * 0x2c);
-      for (const [first, count] of [[MG.values, MG.valueCount], [MG.flags, MG.flagCount]] as const) {
+      for (const [first, count] of [
+        [MG.values, MG.valueCount],
+        [MG.flags, MG.flagCount],
+      ] as const) {
         if (!r11[count]) continue;
         expect(u16(r11, first)).toBeGreaterThanOrEqual(u16(o11, first));
         expect(u16(r11, first) + r11[count]!).toBeLessThanOrEqual(u16(o11, first) + o11[count]!);
       }
-      for (const u of usedRanges(game, MG.states, MG.stateCount, 11)) expect(nd.ranges[0]!.first >= u.first + u.count || nd.ranges[0]!.first + nd.ranges[0]!.count <= u.first).toBe(true);
+      for (const u of usedRanges(game, MG.states, MG.stateCount, 11))
+        expect(nd.ranges[0]!.first >= u.first + u.count || nd.ranges[0]!.first + nd.ranges[0]!.count <= u.first).toBe(
+          true,
+        );
       expect(rowLabel(game, 11)).toBe('D11');
       // The archive: the template's entries, an empty EventObject table
       const arc = parseArchive(nd.archive);
       expect(hex8(arc.hash)).toBe(nd.archiveName);
       const src = parseArchive(await game.dump.readRomfs(hex8(game.master.eventArchive(1))));
       expect(arc.entries.map((e) => e.hash)).toEqual(src.entries.map((e) => e.hash));
-      const ev = arc.entries.map((e) => (e.comp === 1 ? unpackEntry(arc, e) : null)).find((x) => x?.name?.endsWith('_EventObject.bin'))!;
+      const ev = arc.entries
+        .map((e) => (e.comp === 1 ? unpackEntry(arc, e) : null))
+        .find((x) => x?.name?.endsWith('_EventObject.bin'))!;
       expect(new GsTable(ev.body).rows).toBe(0);
 
       game.addedFiles.set(nd.archiveName, nd.archive);
       game.forgetEvents(11);
       game.code.addDungeon({ dungeon: 11, code: nd.code });
-      const { info, doc } = makeMap(game, { dungeon: 11, floor: -1, name: 'D11B01001', template: tmpl, templateDoc: game.doc(tmpl), copyTiles: true, newDungeonCode: 'D11' });
+      const { info, doc } = makeMap(game, {
+        dungeon: 11,
+        floor: -1,
+        name: 'D11B01001',
+        template: tmpl,
+        templateDoc: game.doc(tmpl),
+        copyTiles: true,
+        newDungeonCode: 'D11',
+      });
       expect(info.dungeonCode).toBe('D11');
       game.code.addMap(info);
       const t = await game.eventTable(11);
@@ -164,9 +257,23 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       expect(cb.dungeons).toEqual([{ dungeon: 11, code: 'D11' }]);
       expect(cb.byHash(info.hash)?.dungeonCode).toBe('D11');
       for (const o of game.code.maps.slice(0, 205)) expect(cb.byHash(o.hash)).toEqual(o);
-      expect(readExtension(patched)!.dungeons).toEqual([{ tableRow: 53, dungeon: 11, original: { dungeon: 0x37, name: u32(code, at(MAP_TABLE) + 53 * 16 + 4), count: 0, array: u32(code, at(MAP_TABLE) + 53 * 16 + 12) } }]);
+      expect(readExtension(patched)!.dungeons).toEqual([
+        {
+          tableRow: 53,
+          dungeon: 11,
+          original: {
+            dungeon: 0x37,
+            name: u32(code, at(MAP_TABLE) + 53 * 16 + 4),
+            count: 0,
+            array: u32(code, at(MAP_TABLE) + 53 * 16 + 12),
+          },
+        },
+      ]);
       // rebuilding is idempotent; without the dungeon the table is the game's again
-      const again = applyIps(patched, buildIps(buildMapPatch(patched, [{ ...info }], [{ dungeon: 11, code: 'D11' }]).records));
+      const again = applyIps(
+        patched,
+        buildIps(buildMapPatch(patched, [{ ...info }], [{ dungeon: 11, code: 'D11' }]).records),
+      );
       expect(equalBytes(again, patched)).toBe(true);
       expect(equalBytes(applyIps(patched, buildIps(buildMapPatch(patched, []).records)), code)).toBe(true);
 
@@ -203,8 +310,9 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     }
   });
 
-  test('places: mapGroup +0x28 names an areaInfoData row; the setter takes 0..0x4D; ownPlace mends a dungeon that took its template\'s place', () => {
-    const mg = game.master.mapGroup, area = game.master.table(AREA_TABLE);
+  test("places: mapGroup +0x28 names an areaInfoData row; the setter takes 0..0x4D; ownPlace mends a dungeon that took its template's place", () => {
+    const mg = game.master.mapGroup,
+      area = game.master.table(AREA_TABLE);
     expect([area.rows, area.rowSize]).toEqual([VANILLA_PLACES, 8]);
     // a dungeon's place shows its name (some places have a name of their own, e.g. rows 12-14 and 41-44)
     for (const r of [1, 2, 10, 19, 57]) expect(u32(area.row(mg.row(r)[MG.place]!), 0)).toBe(u16(mg.row(r), MG.name));
@@ -214,7 +322,8 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     expect(built.errors).toEqual([]);
     expect(built.blocks.map((b) => b.lines[0]!.before)).toEqual([0xe351004e]);
     expect(built.blocks[0]!.lines[0]!.word).toBe(0xe3510097);
-    const mg0 = mg.data.slice(), area0 = area.data.slice();
+    const mg0 = mg.data.slice(),
+      area0 = area.data.slice();
     try {
       // a dungeon saved before places: row 11 as a copy of row 2 (its place 42 and its name)
       mg.row(11).set(mg.row(2));
@@ -243,15 +352,37 @@ describe.skipIf(!hasCia)('new dungeons', () => {
     const texts0 = game.master.texts.saved();
     const tmpl = game.code.byName('D01B02001')!;
     try {
-      const nd = await makeDungeon(game, { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 }, new Set(game.dump.names()), (d) => game.eventTable(d), () => 0.37);
+      const nd = await makeDungeon(
+        game,
+        { dungeon: 11, code: 'D11', name: 'テストのどうくつ', template: 1 },
+        new Set(game.dump.names()),
+        (d) => game.eventTable(d),
+        () => 0.37,
+      );
       game.addedFiles.set(nd.archiveName, nd.archive);
       game.forgetEvents(11);
       game.code.addDungeon({ dungeon: 11, code: nd.code });
-      const first = makeMap(game, { dungeon: 11, floor: -1, name: 'D11B01001', template: tmpl, templateDoc: game.doc(tmpl), copyTiles: true, newDungeonCode: 'D11' });
+      const first = makeMap(game, {
+        dungeon: 11,
+        floor: -1,
+        name: 'D11B01001',
+        template: tmpl,
+        templateDoc: game.doc(tmpl),
+        copyTiles: true,
+        newDungeonCode: 'D11',
+      });
       game.code.addMap(first.info);
-      const second = makeMap(game, { dungeon: 11, floor: -2, name: 'D11B02001', template: game.code.byHash(first.info.hash)!, templateDoc: first.doc, copyTiles: true });
+      const second = makeMap(game, {
+        dungeon: 11,
+        floor: -2,
+        name: 'D11B02001',
+        template: game.code.byHash(first.info.hash)!,
+        templateDoc: first.doc,
+        copyTiles: true,
+      });
       game.code.addMap(second.info);
-      const a = game.code.byHash(first.info.hash)!, b = game.code.byHash(second.info.hash)!;
+      const a = game.code.byHash(first.info.hash)!,
+        b = game.code.byHash(second.info.hash)!;
 
       // Rename: the message, the code, the maps' codes (their hashes stay) and the mapGroup label
       expect(recodeMapName('D11B01001', 'D11', 'D12')).toBe('D12B01001');
@@ -288,7 +419,9 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       // The tileset: [0] and the models of a row that has it; the sounds stay
       const other = m.mapData.row(m.dungeonMapDataRow(3));
       m.setTileset(own2, other[0]!);
-      expect([...m.mapData.row(own2).subarray(0, 4)]).toEqual([...m.mapData.row(m.tilesetRow(other[0]!)).subarray(0, 4)]);
+      expect([...m.mapData.row(own2).subarray(0, 4)]).toEqual([
+        ...m.mapData.row(m.tilesetRow(other[0]!)).subarray(0, 4),
+      ]);
       expect(m.tileset(ref(b))).toBe(other[0]!);
       expect(m.tileset(ref(a))).toBe(m.mapData.row(shared.row)[0]!);
       expect(m.mapData.row(own2)[4]).toBe(7);
@@ -304,7 +437,8 @@ describe.skipIf(!hasCia)('new dungeons', () => {
       const g2 = await Game.load(await openImage(Bun.file(CIA), 'cia'), mod);
       expect(g2.code.dungeons).toEqual([{ dungeon: 11, code: 'D12' }]);
       expect(g2.master.dungeonName(11)).toBe('風のどうくつ');
-      const a2 = g2.code.byName('D12B01001')!, b2 = g2.code.byName('D12B02001')!;
+      const a2 = g2.code.byName('D12B01001')!,
+        b2 = g2.code.byName('D12B02001')!;
       expect([a2.hash, b2.hash]).toEqual([a.hash, b.hash]);
       expect(g2.master.mapData.rows).toBe(rows0 + 2);
       expect(g2.master.mapDataRow(g2.mapRef(a2))).toBe(own);

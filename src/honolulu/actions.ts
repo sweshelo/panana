@@ -2,7 +2,7 @@
 // and the monsters' skills (monsterAttackSkill) are two tables the battle puts into the same kind of action
 // (FUN_00205260 / FUN_00204A40). The action page lists both; an action is named by its table and row ("s12", "w34").
 import type { TableRows } from '../game/tablerows';
-import { attackName, battleRows, monsterName, SKILL_FILE, SKILL_SLOTS, skillRows } from './monsters';
+import { attackName, battleRows, monsterName, SKILL_FILE, SKILL_SLOTS } from './monsters';
 import type { HonoluluSession } from './session';
 
 export const ANTENNA_SKILL_FILE = 'skillData.bin';
@@ -15,7 +15,10 @@ export const ACTION_FILE: Record<HonoluluActionKind, string> = { s: ANTENNA_SKIL
 
 /** The messages of an action: [field, label]. skillData +0x08 is +0x00 again where +0x00 is set. */
 export const ACTION_TEXTS: Record<HonoluluActionKind, [string, string][]> = {
-  s: [['name', '名前'], ['desc', '説明']],
+  s: [
+    ['name', '名前'],
+    ['desc', '説明'],
+  ],
   w: [['message', '戦闘メッセージ']],
 };
 
@@ -38,7 +41,8 @@ export function parseActionKey(arg: string | undefined): [HonoluluActionKind, nu
   return m ? [m[1] as HonoluluActionKind, Number(m[2])] : undefined;
 }
 
-export const actionRows = (session: HonoluluSession, kind: HonoluluActionKind): TableRows => session.master.rows(ACTION_FILE[kind]);
+export const actionRows = (session: HonoluluSession, kind: HonoluluActionKind): TableRows =>
+  session.master.rows(ACTION_FILE[kind]);
 
 /** An antenna skill's name: skillData +0x00, or +0x08 in the rows where only that one is set. */
 export function antennaSkillName(session: HonoluluSession, row: number): string {
@@ -73,7 +77,14 @@ export function honoluluActions(session: HonoluluSession): HonoluluAction[] {
   for (const kind of ['s', 'w'] as const) {
     const t = actionRows(session, kind);
     for (let row = 1; row < t.rows; row++) {
-      out.push({ kind, row, name: actionName(session, kind, row), min: t.get(row, 'min'), max: t.get(row, 'max'), users: kind === 'w' ? users.get(row) ?? [] : [] });
+      out.push({
+        kind,
+        row,
+        name: actionName(session, kind, row),
+        min: t.get(row, 'min'),
+        max: t.get(row, 'max'),
+        users: kind === 'w' ? (users.get(row) ?? []) : [],
+      });
     }
   }
   return out;
@@ -97,7 +108,10 @@ function textIds(session: HonoluluSession, kind: HonoluluActionKind, row: number
 
 /** Whether the action's row or one of its messages was changed. */
 export function actionChanged(session: HonoluluSession, kind: HonoluluActionKind, row: number): boolean {
-  return actionRows(session, kind).changed(row) || textIds(session, kind, row).some((id) => session.messages.texts.isEdited(id));
+  return (
+    actionRows(session, kind).changed(row) ||
+    textIds(session, kind, row).some((id) => session.messages.texts.isEdited(id))
+  );
 }
 
 /** Put the action's row and its messages back as they are in the master. */
@@ -108,4 +122,6 @@ export function revertAction(session: HonoluluSession, kind: HonoluluActionKind,
 }
 
 /** The monsters' names of a skill, for the lists. */
-export const userNames = (session: HonoluluSession, users: number[]): string[] => [...new Set(users.map((m) => monsterName(session, m)))];
+export const userNames = (session: HonoluluSession, users: number[]): string[] => [
+  ...new Set(users.map((m) => monsterName(session, m))),
+];

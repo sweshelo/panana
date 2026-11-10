@@ -13,7 +13,12 @@ const SHOP_ITEM = 0x67297400;
 const SHOP_TABLE = 0xd5cef800;
 
 /** Shop +0x37: what the shop takes (FUN_00232B68). */
-export const OAHU_SHOP_PAYMENT: Record<number, string> = { 0: 'ゴールド', 1: 'ジュエル', 2: '別の数 (コロシアムのポイントと推定)', 3: 'バザー (ゴールド)' };
+export const OAHU_SHOP_PAYMENT: Record<number, string> = {
+  0: 'ゴールド',
+  1: 'ジュエル',
+  2: '別の数 (コロシアムのポイントと推定)',
+  3: 'バザー (ゴールド)',
+};
 /** The unit of a ShopItem row's price (+0x08), by payment. */
 export const OAHU_PRICE_UNIT: Record<number, string> = { 1: 'ジュエル', 2: 'pt' };
 /** Shops the game reads another shop's stock for (FUN_0023119C: 17 → 16, 19 → 18). */
@@ -58,7 +63,16 @@ export interface OahuShop {
 export function decodeOahuShop(r: Uint8Array): OahuShopSettings {
   const messages: number[] = [];
   for (let o = 0x0c; o <= 0x30; o += 4) messages.push(u32(r, o));
-  return { room: u32(r, 0), camera: u32(r, 4), clerk: u32(r, 8), messages, variant: r[0x34]!, clerkKind: r[0x35]!, height: r[0x36]!, payment: r[0x37]! };
+  return {
+    room: u32(r, 0),
+    camera: u32(r, 4),
+    clerk: u32(r, 8),
+    messages,
+    variant: r[0x34]!,
+    clerkKind: r[0x35]!,
+    height: r[0x36]!,
+    payment: r[0x37]!,
+  };
 }
 
 /** ShopItem rows: shop -> [head +0x04, rows], in table order. */
@@ -96,7 +110,8 @@ export function oahuShopItemRows(shops: Map<number, { head: number; rows: OahuSh
   return out;
 }
 
-const sameRow = (a: OahuShopRow, b: OahuShopRow): boolean => a.item === b.item && a.price === b.price && a.once === b.once;
+const sameRow = (a: OahuShopRow, b: OahuShopRow): boolean =>
+  a.item === b.item && a.price === b.price && a.once === b.once;
 
 export type SavedShop = [shop: number, rows: [item: number, price: number, once: number][]];
 
@@ -117,12 +132,16 @@ export class OahuShops {
     private readonly sources: Source[],
   ) {
     this.original = parseOahuShopItems(table);
-    this.lists = new Map([...this.original].map(([s, l]) => [s, { head: l.head, rows: l.rows.map((r) => ({ ...r })) }]));
-    this.shops = [...this.original.keys()].sort((a, b) => a - b).map((id) => ({
-      id,
-      head: this.original.get(id)!.head,
-      settings: settings && id < settings.rows ? decodeOahuShop(settings.row(id)) : null,
-    }));
+    this.lists = new Map(
+      [...this.original].map(([s, l]) => [s, { head: l.head, rows: l.rows.map((r) => ({ ...r })) }]),
+    );
+    this.shops = [...this.original.keys()]
+      .sort((a, b) => a - b)
+      .map((id) => ({
+        id,
+        head: this.original.get(id)!.head,
+        settings: settings && id < settings.rows ? decodeOahuShop(settings.row(id)) : null,
+      }));
   }
 
   /** The archives' parsed copies are kept to rebuild them with the edited ShopItem. */
@@ -163,7 +182,9 @@ export class OahuShops {
 
   /** The "only once" numbers the game's rows use. */
   get onceNumbers(): number[] {
-    return [...new Set([...this.original.values()].flatMap((l) => l.rows.map((r) => r.once)).filter((n) => n))].sort((a, b) => a - b);
+    return [...new Set([...this.original.values()].flatMap((l) => l.rows.map((r) => r.once)).filter((n) => n))].sort(
+      (a, b) => a - b,
+    );
   }
 
   set(shop: number, rows: OahuShopRow[]): void {
@@ -172,7 +193,8 @@ export class OahuShops {
   }
 
   changedShop(shop: number): boolean {
-    const a = this.rows(shop), b = this.originalRows(shop);
+    const a = this.rows(shop),
+      b = this.originalRows(shop);
     return a.length !== b.length || a.some((r, i) => !sameRow(r, b[i]!));
   }
 
@@ -194,7 +216,11 @@ export class OahuShops {
   }
 
   restore(saved: SavedShop[]): void {
-    for (const [s, rows] of saved) this.set(s, rows.map(([item, price, once]) => ({ item, price, once })));
+    for (const [s, rows] of saved)
+      this.set(
+        s,
+        rows.map(([item, price, once]) => ({ item, price, once })),
+      );
   }
 
   /** The ShopItem table with the current stock. */

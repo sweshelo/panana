@@ -18,15 +18,41 @@ export interface MonsterGroup {
  * Pick a monster from the photos (with the row and the level: forms of a boss share their name). `groups` come first,
  * each under its heading, then every monster under "すべて"; `choices` are other values before them.
  */
-export function MonsterPicker({ session, book, current, title = 'モンスターを選ぶ', groups = [], choices = [], onPick, onClose }: {
-  session: Session; book: MonsterBook; current: number; title?: string; groups?: MonsterGroup[]; choices?: PickerChoice[];
-  onPick: (row: number) => void; onClose: () => void;
+export function MonsterPicker({
+  session,
+  book,
+  current,
+  title = 'モンスターを選ぶ',
+  groups = [],
+  choices = [],
+  onPick,
+  onClose,
+}: {
+  session: Session;
+  book: MonsterBook;
+  current: number;
+  title?: string;
+  groups?: MonsterGroup[];
+  choices?: PickerChoice[];
+  onPick: (row: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const entries = book.monsters.map((m) => ({
-    id: m.row, name: m.name, sub: `#${m.row} Lv${m.level}`, icon: <Photo model={monsterRef(session.game, book, m)} className="photo photo-lg" />,
+    id: m.row,
+    name: m.name,
+    sub: `#${m.row} Lv${m.level}`,
+    icon: <Photo model={monsterRef(session.game, book, m)} className="photo photo-lg" />,
   }));
   return (
-    <GridPicker title={title} entries={entries} current={current} sections={groups.map((g) => ({ label: g.label, ids: g.rows }))} choices={choices}
-      placeholder="名前で絞り込み" onPick={onPick} onClose={onClose} />
+    <GridPicker
+      title={title}
+      entries={entries}
+      current={current}
+      sections={groups.map((g) => ({ label: g.label, ids: g.rows }))}
+      choices={choices}
+      placeholder="名前で絞り込み"
+      onPick={onPick}
+      onClose={onClose}
+    />
   );
 }

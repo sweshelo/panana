@@ -22,7 +22,19 @@ import { PortStore } from '../port/store';
 import { OahuShops, type SavedShop } from './shops';
 import { OahuWorld, type OahuWorldSaved } from './worldmap';
 import { oahuEventEntries, type OahuEventEntry } from './events';
-import { oahuReadSites, oahuSaveKeys, oahuValueRanges, oahuWriteSites, storyRecords, type OahuReadSite, type OahuSaveKey, type OahuValueRange, type OahuWriteSite, type StoryCodeEdit, type StoryState } from './story';
+import {
+  oahuReadSites,
+  oahuSaveKeys,
+  oahuValueRanges,
+  oahuWriteSites,
+  storyRecords,
+  type OahuReadSite,
+  type OahuSaveKey,
+  type OahuValueRange,
+  type OahuWriteSite,
+  type StoryCodeEdit,
+  type StoryState,
+} from './story';
 import { CodeIndex } from '../game/scripts';
 import { OAHU_TEXT_END } from './scripts';
 import type { SoundNames } from '../game/sound';
@@ -127,7 +139,13 @@ export class OahuSession {
     const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
     const master = await OahuMaster.load(dump);
-    const s = new OahuSession(dump, await OahuMessages.load(dump), master, await OahuMaps.load(dump, master), await OahuShops.load(dump));
+    const s = new OahuSession(
+      dump,
+      await OahuMessages.load(dump),
+      master,
+      await OahuMaps.load(dump, master),
+      await OahuShops.load(dump),
+    );
     s.raw = raw;
     s.baseMod = baseMod;
     await s.monsterModels.rows(); // the design rows are read before the pages ask for the monsters' models
@@ -152,8 +170,17 @@ export class OahuSession {
 
   private saved(): Saved {
     return {
-      messages: this.messages.texts.saved(), rows: this.master.saved(), patches: this.codePatches, maps: this.maps.saved(), shops: this.shops?.saved() ?? [], world: this.world.saved(),
-      storyEdits: this.storyEdits, storyNames: this.storyNames, storyState: this.storyState, designs: this.monsterModels.saved(), direct: this.performances.saved(),
+      messages: this.messages.texts.saved(),
+      rows: this.master.saved(),
+      patches: this.codePatches,
+      maps: this.maps.saved(),
+      shops: this.shops?.saved() ?? [],
+      world: this.world.saved(),
+      storyEdits: this.storyEdits,
+      storyNames: this.storyNames,
+      storyState: this.storyState,
+      designs: this.monsterModels.saved(),
+      direct: this.performances.saved(),
       ...(this.dropCap ? { dropCap: true } : {}),
     };
   }
@@ -219,7 +246,10 @@ export class OahuSession {
     const base = this.baseMod?.ips ?? null;
     if (!this.code) return base;
     const patches = this.exportedPatches();
-    const records = [...(patches.length ? patchRecords(this.buildPatches(patches).values()) : []), ...storyRecords(this.code.code, this.storyEdits).records];
+    const records = [
+      ...(patches.length ? patchRecords(this.buildPatches(patches).values()) : []),
+      ...storyRecords(this.code.code, this.storyEdits).records,
+    ];
     return records.length ? appendIps(base, records, this.code.code) : base;
   }
 
@@ -255,15 +285,27 @@ export class OahuSession {
     return entry.p;
   }
 
-  private storyCache: { keys: OahuSaveKey[]; ranges: OahuValueRange[]; writes: OahuWriteSite[]; reads: OahuReadSite[] } | null = null;
+  private storyCache: {
+    keys: OahuSaveKey[];
+    ranges: OahuValueRange[];
+    writes: OahuWriteSite[];
+    reads: OahuReadSite[];
+  } | null = null;
 
   /** The save keys, the dungeons' ranges of 0xF9 / 0xFA, and (with the Update) where the code writes and reads them. */
   story(): { keys: OahuSaveKey[]; ranges: OahuValueRange[]; writes: OahuWriteSite[]; reads: OahuReadSite[] } {
     if (!this.storyCache) {
       const ranges = oahuValueRanges(this.master);
       const code = this.code?.code;
-      const index = code ? new CodeIndex(code, [], { textEnd: OAHU_TEXT_END, msgFirst: 0, msgLast: -1, complete: 0 }) : undefined;
-      this.storyCache = { keys: oahuSaveKeys(this.master), ranges, writes: code ? oahuWriteSites(code, index) : [], reads: code ? oahuReadSites(code, ranges, index) : [] };
+      const index = code
+        ? new CodeIndex(code, [], { textEnd: OAHU_TEXT_END, msgFirst: 0, msgLast: -1, complete: 0 })
+        : undefined;
+      this.storyCache = {
+        keys: oahuSaveKeys(this.master),
+        ranges,
+        writes: code ? oahuWriteSites(code, index) : [],
+        reads: code ? oahuReadSites(code, ranges, index) : [],
+      };
     }
     return this.storyCache;
   }
@@ -271,8 +313,11 @@ export class OahuSession {
   /** RomFS files of the MOD (root name -> bytes). */
   modFiles(): Map<string, Uint8Array> {
     if (!this.canExport) throw new Error('書き出しには Update の CIA が要ります');
-    const more = new Map([[OAHU_MASTER, new Map([...this.master.changedEntries(), ...this.world.changedMasterEntries()])]]);
-    for (const [name, repl] of this.shops?.changedEntries() ?? []) more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
+    const more = new Map([
+      [OAHU_MASTER, new Map([...this.master.changedEntries(), ...this.world.changedMasterEntries()])],
+    ]);
+    for (const [name, repl] of this.shops?.changedEntries() ?? [])
+      more.set(name, new Map([...(more.get(name) ?? []), ...repl]));
     const files = this.messages.changedArchives(more, this.shops?.archives());
     for (const [name, b] of this.maps.changedArchives()) files.set(name, b);
     return files;
@@ -299,7 +344,12 @@ export class OahuSession {
   sounds(): Promise<SoundNames> {
     const t = this.master.table('soundData.bin');
     // +8: the volume byte, then D0 padding
-    return (this.soundNames ??= loadSoundNames(this.dump, 'oahu/sound/names/v1', Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0)), Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!)));
+    return (this.soundNames ??= loadSoundNames(
+      this.dump,
+      'oahu/sound/names/v1',
+      Array.from({ length: t.rows }, (_, i) => u32(t.row(i), 0)),
+      Array.from({ length: t.rows }, (_, i) => t.row(i)[8]!),
+    ));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;

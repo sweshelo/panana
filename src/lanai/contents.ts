@@ -57,8 +57,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
       name: m < 0 ? '' : s.plain(msg, m, 'stage_name').trim(),
       mission: m < 0 ? '' : s.plain(msg, m, 'stage_mission').trim(),
       note: m < 0 ? '' : s.plain(msg, m, 'stage_exp'),
-      visible: {kind: row[0x24]!, v1: u32(row, 0x1c), v2: u32(row, 0x20)},
-      hidden: {kind: row[0x30]!, v1: u32(row, 0x28), v2: u32(row, 0x2c)},
+      visible: { kind: row[0x24]!, v1: u32(row, 0x1c), v2: u32(row, 0x20) },
+      hidden: { kind: row[0x30]!, v1: u32(row, 0x28), v2: u32(row, 0x2c) },
       stamina: row[0x49]!,
     };
     out[stage.content]?.stages.push(stage);
@@ -67,7 +67,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
 }
 
 /** The name of a content for lists: its first stage, or "コンテンツ N". */
-export const contentTitle = (c: LanaiContent): string => c.stages.find((x) => x.name)?.name ?? (c.index === 0 ? '島・町' : `コンテンツ ${c.index}`);
+export const contentTitle = (c: LanaiContent): string =>
+  c.stages.find((x) => x.name)?.name ?? (c.index === 0 ? '島・町' : `コンテンツ ${c.index}`);
 
 /** What a CRO module holds: its classes, and the functions of the main program it calls. */
 export interface CroInfo {

@@ -25,7 +25,10 @@ export const HONOLULU_FEATURED_BIT = 1;
 export const HONOLULU_SHOP_LIMITS = { all: 298, featured: 50, equip: 149, cloth: 170 } as const;
 
 /** What a stage's stock would overrun (`category`: itemData +0x1A of an item). */
-export function honoluluShopProblems(stock: HonoluluShopRow[], category: (item: number) => number | undefined): string[] {
+export function honoluluShopProblems(
+  stock: HonoluluShopRow[],
+  category: (item: number) => number | undefined,
+): string[] {
   const L = HONOLULU_SHOP_LIMITS;
   const out: string[] = [];
   const count = (f: (r: HonoluluShopRow) => boolean): number => stock.filter(f).length;
@@ -67,7 +70,11 @@ export function honoluluShopRowBytes(item: number, featured = false, template?: 
   return b;
 }
 
-const rowOf = (bytes: Uint8Array): HonoluluShopRow => ({ item: u16(bytes, 0), featured: !!(bytes[2]! & HONOLULU_FEATURED_BIT), bytes });
+const rowOf = (bytes: Uint8Array): HonoluluShopRow => ({
+  item: u16(bytes, 0),
+  featured: !!(bytes[2]! & HONOLULU_FEATURED_BIT),
+  bytes,
+});
 
 export class HonoluluShop {
   constructor(readonly master: HonoluluMaster) {}
@@ -96,7 +103,8 @@ export class HonoluluShop {
     const count = original ? this.master.originalRows(HONOLULU_SHOP_ITEMS) : this.items.rows;
     const out: HonoluluShopRow[] = [];
     if (last < first) return out;
-    for (let i = first; i <= last && i < count; i++) out.push(rowOf((original ? this.master.originalRow(HONOLULU_SHOP_ITEMS, i) : this.items.row(i)).slice()));
+    for (let i = first; i <= last && i < count; i++)
+      out.push(rowOf((original ? this.master.originalRow(HONOLULU_SHOP_ITEMS, i) : this.items.row(i)).slice()));
     return out;
   }
 
@@ -135,7 +143,8 @@ export class HonoluluShop {
       ranges.push(s.length || first ? [first, rows.length - 1] : [1, 0]);
     }
     // rows the ROM's stages do not cover (none in the ROM) are kept after them
-    for (let i = this.originalCoverage(); i < this.master.originalRows(HONOLULU_SHOP_ITEMS); i++) rows.push(this.master.originalRow(HONOLULU_SHOP_ITEMS, i).slice());
+    for (let i = this.originalCoverage(); i < this.master.originalRows(HONOLULU_SHOP_ITEMS); i++)
+      rows.push(this.master.originalRow(HONOLULU_SHOP_ITEMS, i).slice());
     const same = rows.length === items.rows && rows.every((b, i) => equalBytes(b, items.row(i)));
     if (!same) items.data = items.withRows(rows);
     ranges.forEach(([first, last], i) => {
@@ -175,7 +184,12 @@ export class HonoluluShop {
     const b = this.originalRows(stage);
     const c = this.condition(stage);
     const d = this.condition(stage, true);
-    return a.length !== b.length || a.some((r, i) => !equalBytes(r.bytes, b[i]!.bytes)) || c.dungeon !== d.dungeon || c.progress !== d.progress;
+    return (
+      a.length !== b.length ||
+      a.some((r, i) => !equalBytes(r.bytes, b[i]!.bytes)) ||
+      c.dungeon !== d.dungeon ||
+      c.progress !== d.progress
+    );
   }
 
   /** The stages whose stock or condition were changed. */
@@ -213,7 +227,8 @@ export class HonoluluShop {
   restore(saved: HonoluluSavedShop): void {
     if (!saved.length) return;
     const stocks = Array.from({ length: this.stages }, (_, i) => this.originalRows(i));
-    for (const [stage, rows] of saved) if (stage < stocks.length) stocks[stage] = rows.filter((b) => b.length === 4).map((b) => rowOf(b.slice()));
+    for (const [stage, rows] of saved)
+      if (stage < stocks.length) stocks[stage] = rows.filter((b) => b.length === 4).map((b) => rowOf(b.slice()));
     this.layOut(stocks);
   }
 

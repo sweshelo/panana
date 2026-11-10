@@ -37,7 +37,10 @@ export const KNOWN_FUNCTIONS: Record<number, KnownFunction> = {
   0x31c834: { name: 'アニメを再生する (s0 = 速さ, s1 = 開始位置)', args: ['ハンドル', 'アニメ'] },
   0x31c89c: { name: 'ハンドルを解放する', args: ['ハンドル'] },
   0x317524: { name: '効果音を鳴らす', args: ['番号'] },
-  0x310798: { name: 'セリフを出す (話者の指定はない。自動 ≠ 0 ならボタンを待たず s0 秒)', args: ['メッセージ ID', '書式の引数 1', '書式の引数 2', '自動'] },
+  0x310798: {
+    name: 'セリフを出す (話者の指定はない。自動 ≠ 0 ならボタンを待たず s0 秒)',
+    args: ['メッセージ ID', '書式の引数 1', '書式の引数 2', '自動'],
+  },
   0x311250: { name: 'メッセージ関連', args: ['メッセージ ID'], guess: true },
   0x311280: { name: 'メッセージ関連', args: ['メッセージ ID'], guess: true },
   0x2d7404: { name: '床スイッチの判定 (毎フレーム)' },
@@ -55,14 +58,26 @@ export const KNOWN_FUNCTIONS: Record<number, KnownFunction> = {
   0x31b67c: { name: 'アクターのハンドルを壊す', args: ['ハンドル'] },
   0x3080e4: { name: '動かす (s0 = 秒、0 = 距離 x 0.002。待たない)', args: ['ハンドル', '&位置', '0', '0'] },
   0x308068: { name: '動き・向きが終わるまで待つ', args: ['ハンドル'] },
-  0x319a7c: { name: '向きを変える (s0 = 角度 0 南 / π 北、s1 = 秒、[sp] = 1 近い回り)', args: ['ハンドル', '0', '0', '0'] },
+  0x319a7c: {
+    name: '向きを変える (s0 = 角度 0 南 / π 北、s1 = 秒、[sp] = 1 近い回り)',
+    args: ['ハンドル', '0', '0', '0'],
+  },
   0x301c50: { name: '点の方を向く (s0 = 秒)', args: ['ハンドル', '&点'] },
   0x31b400: { name: '位置を即座に変える', args: ['ハンドル', '&位置'] },
-  0x30150c: { name: 'パーティを隊列で並べる (向き 0 東 1 南 2 西 3 北)', args: ['&位置', '向き', '主人公も', '向きも'] },
+  0x30150c: {
+    name: 'パーティを隊列で並べる (向き 0 東 1 南 2 西 3 北)',
+    args: ['&位置', '向き', '主人公も', '向きも'],
+  },
   0x2f8eb0: { name: 'パーティを隊列で歩かせる (s0 = 秒)', args: ['&位置', '?', '向き', '主人公も'] },
   0x302740: { name: 'パーティを隊列で並べる', args: ['&位置', '向き', '1'], guess: true },
-  0x30250c: { name: 'パーティ全員にアニメ (s0 = 速さ, s1 = 開始。操作も止める)', args: ['アニメ', 'くり返す', 'ばらつき', '浮くキャラは 0x26'] },
-  0x30cca4: { name: 'アクターのアニメ (s0 = 速さ, s1 = 開始。主人公 0x1F = 話す、1 = 立ち、3 = 歩く)', args: ['ハンドル', 'アニメ', 'くり返す'] },
+  0x30250c: {
+    name: 'パーティ全員にアニメ (s0 = 速さ, s1 = 開始。操作も止める)',
+    args: ['アニメ', 'くり返す', 'ばらつき', '浮くキャラは 0x26'],
+  },
+  0x30cca4: {
+    name: 'アクターのアニメ (s0 = 速さ, s1 = 開始。主人公 0x1F = 話す、1 = 立ち、3 = 歩く)',
+    args: ['ハンドル', 'アニメ', 'くり返す'],
+  },
   0x30cbd8: { name: 'アニメが終わるまで待つ', args: ['ハンドル', 'アニメ'], guess: true },
   0x305f98: { name: '浮くキャラか', args: ['ハンドル'] },
   0x311878: { name: '顔の表情 (6 = 普通)', args: ['ハンドル', '表情'], guess: true },
@@ -133,7 +148,8 @@ export function annotateFunction(ctx: AsmContext, index: CodeIndex, addr: number
   const pool = new Set<number>();
   for (const i of insns) if (i.literal !== undefined && i.literal >= addr && i.literal < end) pool.add(i.literal);
   const targets = new Set<number>();
-  for (const i of insns) if (i.target !== undefined && !i.call && i.target >= addr && i.target < end) targets.add(i.target);
+  for (const i of insns)
+    if (i.target !== undefined && !i.call && i.target >= addr && i.target < end) targets.add(i.target);
 
   const lines: AsmLine[] = [];
   // constants known in r0-r3 (reset at jump targets and after calls)
@@ -165,7 +181,9 @@ export function annotateFunction(ctx: AsmContext, index: CodeIndex, addr: number
     if (insn.target !== undefined && insn.call) {
       const k = KNOWN_FUNCTIONS[insn.target];
       if (k) {
-        const args = (k.args ?? []).map((n, j) => (regs[j] === undefined ? null : `${n}=${n === '行' ? regs[j] : fmtArg(ctx, regs[j]!)}`)).filter(Boolean);
+        const args = (k.args ?? [])
+          .map((n, j) => (regs[j] === undefined ? null : `${n}=${n === '行' ? regs[j] : fmtArg(ctx, regs[j]!)}`))
+          .filter(Boolean);
         notes.push(`${k.name}${k.guess ? ' (推定)' : ''}${args.length ? ` (${args.join(', ')})` : ''}`);
       } else notes.push(fnLabel(insn.target));
       regs = [];
@@ -210,7 +228,12 @@ export function describeValue(ctx: AsmContext, v: number): string | undefined {
 export function scriptListing(ctx: AsmContext, index: CodeIndex, cls: ScriptClass, maxFunctions = 60): AsmFunction[] {
   const vt = new Map<number, number>();
   for (let k = 0; k < 8; k++) vt.set(u32(ctx.code, cls.vtable - BASE + k * 4), k);
-  const order: { addr: number; role: string }[] = cls.roots.map((r) => ({ addr: r, role: vt.has(r) ? `vtable[${vt.get(r)}]${vt.get(r) === 1 ? ' 後始末' : vt.get(r) === 2 ? ' 毎フレーム' : ''}` : 'コールバック' }));
+  const order: { addr: number; role: string }[] = cls.roots.map((r) => ({
+    addr: r,
+    role: vt.has(r)
+      ? `vtable[${vt.get(r)}]${vt.get(r) === 1 ? ' 後始末' : vt.get(r) === 2 ? ' 毎フレーム' : ''}`
+      : 'コールバック',
+  }));
   const { functions } = index.reach(cls.roots);
   const seen = new Set(order.map((o) => o.addr));
   // callees in call order (breadth first from the roots)
@@ -225,7 +248,12 @@ export function scriptListing(ctx: AsmContext, index: CodeIndex, cls: ScriptClas
         queue.push(t);
       }
   }
-  return order.slice(0, maxFunctions).map(({ addr, role }) => ({ addr, role, callers: index.fanin.get(addr) ?? 0, lines: annotateFunction(ctx, index, addr) }));
+  return order.slice(0, maxFunctions).map(({ addr, role }) => ({
+    addr,
+    role,
+    callers: index.fanin.get(addr) ?? 0,
+    lines: annotateFunction(ctx, index, addr),
+  }));
 }
 
 /** Plain text of a listing (for copying to an AI or a file). */

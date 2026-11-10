@@ -1,3 +1,4 @@
+import { RecPositionFields } from '../editor/recposition';
 import { RecordPartPanel } from '../editor/recordparts';
 import { MapSettings } from '../editor/partpalette';
 // RPG3's maps (#/maps/NAME; naauao oahu/map.md), edited with the parts of RPG2's map editor: the editing model and
@@ -11,7 +12,15 @@ import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LETTER_DEFAULT, letterLabel, type Rec } from '../game/sections';
 import { editorKey } from '../editor/controller';
 import { kindName } from '../editor/legend';
-import { LayerBox, MapChecks, MapFrame, MapHeaderControls, MapLayers, MapStatus, type MapViewMode } from '../editor/mappage';
+import {
+  LayerBox,
+  MapChecks,
+  MapFrame,
+  MapHeaderControls,
+  MapLayers,
+  MapStatus,
+  type MapViewMode,
+} from '../editor/mappage';
 import { Palette } from '../editor/palette';
 import { MapToolbox } from '../editor/tools';
 import { tileAt } from '../editor/state';
@@ -32,7 +41,11 @@ export const oahuMapHref = (m: OahuMapInfo): string => `#/maps/${encodeURICompon
 
 /** Re-render on every change of the maps (edits, loaded event tables). */
 export function useMaps(maps: OahuMaps): number {
-  return useSyncExternalStore((f) => maps.on(f), () => maps.revision, () => maps.revision);
+  return useSyncExternalStore(
+    (f) => maps.on(f),
+    () => maps.revision,
+    () => maps.revision,
+  );
 }
 
 /** "D10 ダンジョン名" for a mapGroup row. */
@@ -46,7 +59,11 @@ export function oahuDungeonLabel(session: OahuSession, row: number): string {
 export function OahuMapPage({ session, arg }: { session: OahuSession; arg: string | undefined }): ReactNode {
   const { maps } = session;
   useMaps(maps);
-  const name = useSticky(arg ? decodeURIComponent(arg) : undefined, (n) => !!maps.mapByName(n), () => (maps.mapByName('D10B01001') ?? maps.maps[0]!).name);
+  const name = useSticky(
+    arg ? decodeURIComponent(arg) : undefined,
+    (n) => !!maps.mapByName(n),
+    () => (maps.mapByName('D10B01001') ?? maps.maps[0]!).name,
+  );
   const info = maps.mapByName(name)!;
   // the dungeons' event codes (D10 …) come with their tables
   useEffect(() => {
@@ -66,10 +83,14 @@ export function useMapGroups(session: OahuSession): MapPickerGroups {
   return useMemo(() => {
     const out = new Map<number, MapPickerRow[]>();
     for (const m of maps.maps) {
-      const title = m.world ? 'ワールドマップ' : `${oahuFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
+      const title = m.world
+        ? 'ワールドマップ'
+        : `${oahuFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
       out.set(m.dungeon, [...(out.get(m.dungeon) ?? []), { hash: m.hash, title, code: m.name }]);
     }
-    return [...out].sort(([a], [b]) => a - b).map(([d, rows]): [string, MapPickerRow[]] => [oahuDungeonLabel(session, d), rows]);
+    return [...out]
+      .sort(([a], [b]) => a - b)
+      .map(([d, rows]): [string, MapPickerRow[]] => [oahuDungeonLabel(session, d), rows]);
   }, [session, maps, revision]);
 }
 
@@ -112,36 +133,78 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
   const modified = new Set(maps.maps.filter((m) => maps.isChanged(m)).map((m) => m.hash));
   const preview = useStoryPreview(session, view, info);
   return (
-    <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
+    <MapFrame
+      mode={mode}
+      pane2d={pane2d}
+      pane3d={pane3d}
       header={
         <>
-          <MapPickerButton groups={groups} value={info.hash} className="map-select" modified={modified}
+          <MapPickerButton
+            groups={groups}
+            value={info.hash}
+            className="map-select"
+            modified={modified}
             label={`${oahuDungeonLabel(session, info.dungeon)}・${oahuFloorLabel(info.floor) || '地上'}  ${info.name}`}
-            onChange={(h) => { const m = maps.map(h); if (m) location.hash = oahuMapHref(m); }} />
+            onChange={(h) => {
+              const m = maps.map(h);
+              if (m) location.hash = oahuMapHref(m);
+            }}
+          />
           <span className="muted small">{`マップ表の行 ${info.index}・${hex8(info.hash).toUpperCase()}`}</span>
-          <MapHeaderControls st={st} view={view} open={!!open} mode={mode} setMode={setMode} showModes={!info.world}
-            onRevert={maps.isChanged(info) ? () => st.revert() : undefined} />
+          <MapHeaderControls
+            st={st}
+            view={view}
+            open={!!open}
+            mode={mode}
+            setMode={setMode}
+            showModes={!info.world}
+            onRevert={maps.isChanged(info) ? () => st.revert() : undefined}
+          />
           {preview && <div className="story-preview small">{preview}</div>}
         </>
       }
-      placeholder={info.world ? <p className="book-desc" style={{ padding: 16 }}>ワールドマップ (W01) は区画の形が別 (naauao oahu/worldmap.md) なので、<a href="#/world">ワールドマップのページ</a>で表示・編集します。</p> : undefined}
-      left={open && (
-        <>
-          <MapToolbox st={st} tiles={<TilePalette st={st} view={view} />} parts={<AddPanel st={st} view={view} />}
-            onDelete={()=>view.ctl.deleteSelection()} onDuplicate={()=>view.ctl.duplicateRec()} />
-          <MapSettings><MapLayers st={st} view={view} sections={OAHU_POINT_SECTIONS} layouts={OAHU_LAYOUTS}>
-            <LayerBox view={view} label="モデル (置物・宝箱・キャラ)" checked={view.showModels} set={(v) => (view.showModels = v)} />
-          </MapLayers></MapSettings>
-        </>
-      )}
-      right={open && (
-        <>
-          <Inspector session={session} st={st} view={view} />
-          <h3>検証</h3>
-          <Checks st={st} info={info} />
-        </>
-      )}
-      status={view ? <MapStatus st={st} view={view} /> : null} />
+      placeholder={
+        info.world ? (
+          <p className="book-desc" style={{ padding: 16 }}>
+            ワールドマップ (W01) は区画の形が別 (naauao oahu/worldmap.md) なので、
+            <a href="#/world">ワールドマップのページ</a>で表示・編集します。
+          </p>
+        ) : undefined
+      }
+      left={
+        open && (
+          <>
+            <MapToolbox
+              st={st}
+              tiles={<TilePalette st={st} view={view} />}
+              parts={<AddPanel st={st} view={view} />}
+              onDelete={() => view.ctl.deleteSelection()}
+              onDuplicate={() => view.ctl.duplicateRec()}
+            />
+            <MapSettings>
+              <MapLayers st={st} view={view} sections={OAHU_POINT_SECTIONS} layouts={OAHU_LAYOUTS}>
+                <LayerBox
+                  view={view}
+                  label="モデル (置物・宝箱・キャラ)"
+                  checked={view.showModels}
+                  set={(v) => (view.showModels = v)}
+                />
+              </MapLayers>
+            </MapSettings>
+          </>
+        )
+      }
+      right={
+        open && (
+          <>
+            <Inspector session={session} st={st} view={view} />
+            <h3>検証</h3>
+            <Checks st={st} info={info} />
+          </>
+        )
+      }
+      status={view ? <MapStatus st={st} view={view} /> : null}
+    />
   );
 }
 
@@ -152,7 +215,11 @@ function MapDetail({ session, info }: { session: OahuSession; info: OahuMapInfo 
 function useStoryPreview(session: OahuSession, view: OahuMapView | null, info: OahuMapInfo): ReactNode {
   const { maps } = session;
   const revision = useMaps(maps);
-  const storyRevision = useSyncExternalStore((f) => session.onStory(f), () => session.storyRevision, () => session.storyRevision);
+  const storyRevision = useSyncExternalStore(
+    (f) => session.onStory(f),
+    () => session.storyRevision,
+    () => session.storyRevision,
+  );
   const [on, setOn] = useState(true);
   const state = session.storyState;
   const dungeon = maps.dungeonOf(info);
@@ -182,11 +249,24 @@ function useStoryPreview(session: OahuSession, view: OahuMapView | null, info: O
     setCounts(out);
   }, [view, on, state, session, table, info, revision, storyRevision]);
   if (info.world || !session.code) return null;
-  if (!state) return <span className="muted">物語の状態を決めると、出る・消えるイベントをこのマップで確かめられます (<a href="#/flags">セーブの値</a>のページでプレビューの状態を作る)。</span>;
+  if (!state)
+    return (
+      <span className="muted">
+        物語の状態を決めると、出る・消えるイベントをこのマップで確かめられます (<a href="#/flags">セーブの値</a>
+        のページでプレビューの状態を作る)。
+      </span>
+    );
   return (
     <>
-      <label><input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />{` 物語の状態で表示 (段階 ${state.step}、`}<a href="#/flags">値を変える</a>{')'}</label>
-      {counts && <span className="muted">{` ・ 置かれる ${counts.shown}・まだ出ない ${counts.hidden}・消えた ${counts.gone}${counts.unknown ? `・判定できない (?) ${counts.unknown}` : ''}`}</span>}
+      <label>
+        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        {` 物語の状態で表示 (段階 ${state.step}、`}
+        <a href="#/flags">値を変える</a>
+        {')'}
+      </label>
+      {counts && (
+        <span className="muted">{` ・ 置かれる ${counts.shown}・まだ出ない ${counts.hidden}・消えた ${counts.gone}${counts.unknown ? `・判定できない (?) ${counts.unknown}` : ''}`}</span>
+      )}
     </>
   );
 }
@@ -196,7 +276,14 @@ function TilePalette({ st, view }: { st: OahuEditState; view: OahuMapView }): Re
   useSignal(view.signal);
   useEditorState(st);
   const palette = useMemo(() => st.maps.palette(st.tileset), [st.maps, st.tileset]);
-  return <Palette st={st} factory={view.factory} palette={palette} partModel={(k, l) => st.maps.partModel(k, st.tileset, l)} />;
+  return (
+    <Palette
+      st={st}
+      factory={view.factory}
+      palette={palette}
+      partModel={(k, l) => st.maps.partModel(k, st.tileset, l)}
+    />
+  );
 }
 
 /** The checks of the open map (only the problems the ROM's map does not already have). */
@@ -207,34 +294,76 @@ function Checks({ st, info }: { st: OahuEditState; info: OahuMapInfo }): ReactNo
 
 /** Adding records: props (section 2) and copies of the dungeon's records, each with its own EventObject row. */
 function AddPanel({ st, view }: { st: OahuEditState; view: OahuMapView }): ReactNode {
-  const revision=useMaps(st.maps);
-  const dungeon=st.dungeon;
-  const table=dungeon?st.maps.loadedEventTable(dungeon):null;
-  useEffect(()=>{if(dungeon&&!table) void st.maps.eventTable(dungeon).catch(()=>null);},[st,dungeon,table]);
-  const templates=useMemo(()=>table?st.templates():[],[st,st.info,table,revision]);
-  const props=useMemo(()=>{
-    const rows=new Set<number>();
-    for(const map of st.maps.maps) if(map.dungeon===st.info?.dungeon&&!map.world)
-      for(const rec of st.maps.doc(map).recs[2]??[]) rows.add(rec.raw[0]!|(rec.raw[1]!<<8));
+  const revision = useMaps(st.maps);
+  const dungeon = st.dungeon;
+  const table = dungeon ? st.maps.loadedEventTable(dungeon) : null;
+  useEffect(() => {
+    if (dungeon && !table) void st.maps.eventTable(dungeon).catch(() => null);
+  }, [st, dungeon, table]);
+  const templates = useMemo(() => (table ? st.templates() : []), [st, st.info, table, revision]);
+  const props = useMemo(() => {
+    const rows = new Set<number>();
+    for (const map of st.maps.maps)
+      if (map.dungeon === st.info?.dungeon && !map.world)
+        for (const rec of st.maps.doc(map).recs[2] ?? []) rows.add(rec.raw[0]! | (rec.raw[1]! << 8));
     return [...rows];
-  },[st,st.info,revision]);
-  const all=useMemo(()=>Array.from({length:st.maps.objectRows},(_,i)=>i).filter(row=>!!st.maps.objectModel(row)),[st.maps]);
-  return <RecordPartPanel st={st} source={view} templates={templates} rows={all} usedRows={props} maxRow={st.maps.objectRows-1}
-    validRow={row=>!!st.maps.objectModel(row)} directions={['↓ 南','← 西','↑ 北','→ 東']}
-    modelForProp={row=>({type:'object' as const,row})} modelForTemplate={t=>view.partLook(t.section,t.raw)?.model??null}
-    status={!table?(dungeon?.archive?'イベントの表を読み込み中…':'この地域にはイベントの表がありません'):undefined}
-    help="マップをクリックして配置、Esc で選択に戻ります。出入口・宝箱・キャラ・範囲の写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。" />;
+  }, [st, st.info, revision]);
+  const all = useMemo(
+    () => Array.from({ length: st.maps.objectRows }, (_, i) => i).filter((row) => !!st.maps.objectModel(row)),
+    [st.maps],
+  );
+  return (
+    <RecordPartPanel
+      st={st}
+      source={view}
+      templates={templates}
+      rows={all}
+      usedRows={props}
+      maxRow={st.maps.objectRows - 1}
+      validRow={(row) => !!st.maps.objectModel(row)}
+      directions={['↓ 南', '← 西', '↑ 北', '→ 東']}
+      modelForProp={(row) => ({ type: 'object' as const, row })}
+      modelForTemplate={(t) => view.partLook(t.section, t.raw)?.model ?? null}
+      status={
+        !table ? (dungeon?.archive ? 'イベントの表を読み込み中…' : 'この地域にはイベントの表がありません') : undefined
+      }
+      help="マップをクリックして配置、Esc で選択に戻ります。出入口・宝箱・キャラ・範囲の写しには独立したイベントの行と状態を付けます。出入口には新しい地点 ID を付けます。"
+    />
+  );
 }
 
 /** Fields of a section's records besides the position (§3). */
 const REC_FIELDS: Record<number, FieldDef[]> = {
-  1: [{ key: 'c', offset: 0x0c, type: 'u8', label: '+0x0C' }, { key: 'kind', offset: 0x0d, type: 'u8', label: '種類 (+0x0D)' }],
-  2: [{ key: 'row', offset: 0, type: 'u16', label: 'mapObject の行' }, { key: 'dir', offset: 0x10, type: 'u8', label: '向き (0〜3)' }],
-  3: [{ key: 'id', offset: 0, type: 'u32', label: '地点 ID' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }, { key: 'dir', offset: 0x14, type: 'u8', label: '向き' }, { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (0x64 = 壁の扉)' }],
-  4: [{ key: 'a', offset: 0, type: 'u32', label: '+0x00' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }],
-  5: [{ key: 'type', offset: 0, type: 'u32', label: '種類 (0〜2 = キャラクター)' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }],
-  8: [{ key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' }, { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' }],
-  9: [{ key: 'type', offset: 0, type: 'u32', label: '種類' }, { key: 'v', offset: 8, type: 'u8', label: '+0x08' }],
+  1: [
+    { key: 'c', offset: 0x0c, type: 'u8', label: '+0x0C' },
+    { key: 'kind', offset: 0x0d, type: 'u8', label: '種類 (+0x0D)' },
+  ],
+  2: [
+    { key: 'row', offset: 0, type: 'u16', label: 'mapObject の行' },
+    { key: 'dir', offset: 0x10, type: 'u8', label: '向き (0〜3)' },
+  ],
+  3: [
+    { key: 'id', offset: 0, type: 'u32', label: '地点 ID' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+    { key: 'dir', offset: 0x14, type: 'u8', label: '向き' },
+    { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (0x64 = 壁の扉)' },
+  ],
+  4: [
+    { key: 'a', offset: 0, type: 'u32', label: '+0x00' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+  ],
+  5: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類 (0〜2 = キャラクター)' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+  ],
+  8: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' },
+    { key: 'ev', offset: 4, type: 'u32', label: 'EventObject の行' },
+  ],
+  9: [
+    { key: 'type', offset: 0, type: 'u32', label: '種類' },
+    { key: 'v', offset: 8, type: 'u8', label: '+0x08' },
+  ],
 };
 
 function Inspector({ session, st, view }: { session: OahuSession; st: OahuEditState; view: OahuMapView }): ReactNode {
@@ -243,13 +372,30 @@ function Inspector({ session, st, view }: { session: OahuSession; st: OahuEditSt
   const sel = st.selection;
   const doc = view.doc;
   if (sel.type === 'rec' && doc.recs[sel.section]?.[sel.index])
-    return <RecFields session={session} st={st} view={view} section={sel.section} rec={doc.recs[sel.section]![sel.index]!} index={sel.index} />;
+    return (
+      <RecFields
+        session={session}
+        st={st}
+        view={view}
+        section={sel.section}
+        rec={doc.recs[sel.section]![sel.index]!}
+        index={sel.index}
+      />
+    );
   if (sel.type === 'tiles' && sel.cells.length === 1) {
     const [x, y] = sel.cells[0]!;
     if (tileAt(doc, x, y)) return <TileFields st={st} x={x} y={y} />;
   }
-  if (sel.type === 'tiles' && sel.cells.length > 1) return <p className="muted small">{`${sel.cells.length} マスを選択中 (R で回す、[ ] で文字を変える、Delete で消す)`}</p>;
-  if (sel.type === 'rect') return <p className="muted small">範囲を選択中 (Ctrl+C でコピー、Ctrl+V で貼り付け、Shift+矢印で中身ごと動かす、Delete で消す)</p>;
+  if (sel.type === 'tiles' && sel.cells.length > 1)
+    return (
+      <p className="muted small">{`${sel.cells.length} マスを選択中 (R で回す、[ ] で文字を変える、Delete で消す)`}</p>
+    );
+  if (sel.type === 'rect')
+    return (
+      <p className="muted small">
+        範囲を選択中 (Ctrl+C でコピー、Ctrl+V で貼り付け、Shift+矢印で中身ごと動かす、Delete で消す)
+      </p>
+    );
   return (
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
@@ -268,27 +414,74 @@ function TileFields({ st, x, y }: { st: OahuEditState; x: number; y: number }): 
   return (
     <>
       <h3>{`タイル (${t.x}, ${t.y})`}</h3>
-      <label className="field"><span>種類</span><NumberInput value={t.kind} min={0} max={65} onCommit={(v) => st.edit(() => { t.kind = v; })} /></label>
+      <label className="field">
+        <span>種類</span>
+        <NumberInput
+          value={t.kind}
+          min={0}
+          max={65}
+          onCommit={(v) =>
+            st.edit(() => {
+              t.kind = v;
+            })
+          }
+        />
+      </label>
       <p className="muted small">{kindName(t.kind)}</p>
-      <label className="field"><span>向き</span>
-        <select value={t.rot} onChange={(e) => st.edit(() => { t.rot = Number(e.target.value); })}>
-          {['↑ 0', '→ 1', '↓ 2', '← 3'].map((l, i) => <option key={i} value={i}>{l}</option>)}
+      <label className="field">
+        <span>向き</span>
+        <select
+          value={t.rot}
+          onChange={(e) =>
+            st.edit(() => {
+              t.rot = Number(e.target.value);
+            })
+          }
+        >
+          {['↑ 0', '→ 1', '↓ 2', '← 3'].map((l, i) => (
+            <option key={i} value={i}>
+              {l}
+            </option>
+          ))}
         </select>
       </label>
-      <label className="field"><span>文字 (部品の差分)</span>
-        <select value={t.letter} onChange={(e) => st.edit(() => { t.letter = Number(e.target.value); })}>
+      <label className="field">
+        <span>文字 (部品の差分)</span>
+        <select
+          value={t.letter}
+          onChange={(e) =>
+            st.edit(() => {
+              t.letter = Number(e.target.value);
+            })
+          }
+        >
           <option value={LETTER_DEFAULT}>なし (z)</option>
-          {Array.from({ length: 7 }, (_, i) => 0x61 + i).map((c) => <option key={c} value={c}>{letterLabel(c)}</option>)}
-          {t.letter !== LETTER_DEFAULT && !(t.letter >= 0x61 && t.letter <= 0x67) && <option value={t.letter}>{`0x${t.letter.toString(16)}`}</option>}
+          {Array.from({ length: 7 }, (_, i) => 0x61 + i).map((c) => (
+            <option key={c} value={c}>
+              {letterLabel(c)}
+            </option>
+          ))}
+          {t.letter !== LETTER_DEFAULT && !(t.letter >= 0x61 && t.letter <= 0x67) && (
+            <option value={t.letter}>{`0x${t.letter.toString(16)}`}</option>
+          )}
         </select>
       </label>
       <p className="muted small">{`タイルセット ${src.tileset} (mapData ${src.mapData})・モデル ${model ? hex8(model).toUpperCase() : 'なし'} (${src.modelArchive})`}</p>
-      {cell6 && <p className="muted small">{`区画 6 のセル: 値 ${cell6.value ? hex8(cell6.value).toUpperCase() : '0 (敵が出ない)'}`}</p>}
+      {cell6 && (
+        <p className="muted small">{`区画 6 のセル: 値 ${cell6.value ? hex8(cell6.value).toUpperCase() : '0 (敵が出ない)'}`}</p>
+      )}
     </>
   );
 }
 
-function RecFields({ session, st, view, section, rec, index }: {
+function RecFields({
+  session,
+  st,
+  view,
+  section,
+  rec,
+  index,
+}: {
   session: OahuSession;
   st: OahuEditState;
   view: OahuMapView;
@@ -306,40 +499,63 @@ function RecFields({ session, st, view, section, rec, index }: {
   }, [maps, dungeon, table]);
   const evRow = oahuRecEventRow(section, rec.raw);
   const hasEvent = [3, 4, 5, 8].includes(section) && !(section === 8 && readField(rec.raw, REC_FIELDS[8]![0]!) >= 100);
-  const max = L.unit === 'cell' ? 29 : 299;
   return (
     <>
       <h3>{`${L.label} #${index}`}</h3>
       <p className="muted small">{oahuRecLabel(section, rec.raw)}</p>
       <ModelLine view={view} look={view.look(section, index)} />
-      <div className="row">
-        <label className="field"><span>{`x (${L.unit === 'cell' ? 'マス' : L.unit === 'quarter' ? '1/4 マス' : '1/5 マス'})`}</span><NumberInput value={rec.x} min={0} max={max} onCommit={(v) => st.edit(() => { rec.x = v; })} /></label>
-        <label className="field"><span>y</span><NumberInput value={rec.y} min={0} max={max} onCommit={(v) => st.edit(() => { rec.y = v; })} /></label>
-      </div>
+      <RecPositionFields st={st} rec={rec} L={L} />
       {(REC_FIELDS[section] ?? []).map((f) => (
-        <label key={f.key} className="field"><span>{f.label}</span>
-          <NumberInput value={readField(rec.raw, f)} min={0} max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff} onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))} />
+        <label key={f.key} className="field">
+          <span>{f.label}</span>
+          <NumberInput
+            value={readField(rec.raw, f)}
+            min={0}
+            max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
+            onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
+          />
         </label>
       ))}
       <details>
         <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
-        <code className="small mono" style={{ wordBreak: 'break-all' }}>{[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}</code>
+        <code className="small mono" style={{ wordBreak: 'break-all' }}>
+          {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
+        </code>
       </details>
       {hasEvent && (
         <>
           <hr />
           <h3>
-            {`EventObject の行 ${evRow}`}
-            {' '}<a className="small" href={`#/events/${info.dungeon}.${evRow}`}>イベント一覧で見る</a>
+            {`EventObject の行 ${evRow}`}{' '}
+            <a className="small" href={`#/events/${info.dungeon}.${evRow}`}>
+              イベント一覧で見る
+            </a>
           </h3>
-          {!dungeon?.archive ? <p className="muted small">このダンジョンにはイベント表がありません。</p>
-            : !table ? <p className="muted small">読み込み中…</p>
-            : evRow >= table.rows ? <p className="warn-box">{`表は ${table.rows} 行です。`}</p>
-            : <>
-                {section === 5 && u32(rec.raw, 0) <= 2 && <CharaInfo session={session} ev={table.row(evRow)} />}
-                {section === 4 && <TreasureEditor session={session} ev={table.row(evRow)} apply={(f) => st.editTables(f)} />}
-                <EventObjectEditor maps={maps} row={table.row(evRow)} original={maps.originalEventRow(dungeon, evRow)} story={conditionNames(session, info.dungeon)} edit={(f) => st.editTables(f)} onEdit={() => { maps.changed(); session.scheduleSave(); }} />
-              </>}
+          {!dungeon?.archive ? (
+            <p className="muted small">このダンジョンにはイベント表がありません。</p>
+          ) : !table ? (
+            <p className="muted small">読み込み中…</p>
+          ) : evRow >= table.rows ? (
+            <p className="warn-box">{`表は ${table.rows} 行です。`}</p>
+          ) : (
+            <>
+              {section === 5 && u32(rec.raw, 0) <= 2 && <CharaInfo session={session} ev={table.row(evRow)} />}
+              {section === 4 && (
+                <TreasureEditor session={session} ev={table.row(evRow)} apply={(f) => st.editTables(f)} />
+              )}
+              <EventObjectEditor
+                maps={maps}
+                row={table.row(evRow)}
+                original={maps.originalEventRow(dungeon, evRow)}
+                story={conditionNames(session, info.dungeon)}
+                edit={(f) => st.editTables(f)}
+                onEdit={() => {
+                  maps.changed();
+                  session.scheduleSave();
+                }}
+              />
+            </>
+          )}
         </>
       )}
     </>

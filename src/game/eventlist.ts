@@ -6,7 +6,14 @@ import { describeCondition, readConditionTypes, type ConditionType } from './con
 import { EVENT_KINDS } from './eventkinds';
 import type { EventTable } from './events';
 import type { Game } from './game';
-import { buildAction, describeClasses, makeFunction, MAKE_FUNCTIONS, type BuiltAction, type ScriptClass } from './scripts';
+import {
+  buildAction,
+  describeClasses,
+  makeFunction,
+  MAKE_FUNCTIONS,
+  type BuiltAction,
+  type ScriptClass,
+} from './scripts';
 import { LAYOUTS, P3, recCellPos, type MapDoc, type Rec } from './sections';
 import { u32 } from '../util/bytes';
 
@@ -67,7 +74,11 @@ export function conditionTypes(code: Uint8Array): Map<number, ConditionType> {
   return c;
 }
 
-export async function eventEntries(game: Game, docOf: (m: MapInfo) => MapDoc, events: (d: number) => Promise<EventTable | null>): Promise<EventEntry[]> {
+export async function eventEntries(
+  game: Game,
+  docOf: (m: MapInfo) => MapDoc,
+  events: (d: number) => Promise<EventTable | null>,
+): Promise<EventEntry[]> {
   const code = game.code.code;
   const conds = conditionTypes(code);
   const maps = new Map<number, MapInfo[]>();
@@ -92,7 +103,10 @@ export async function eventEntries(game: Game, docOf: (m: MapInfo) => MapDoc, ev
       const r = ev.table.row(row);
       const kind = ev.kind(row);
       const conditions: EventCondition[] = [];
-      for (const [field, off] of [[0x4b, 0x00], [0x4c, 0x04]] as const) {
+      for (const [field, off] of [
+        [0x4b, 0x00],
+        [0x4c, 0x04],
+      ] as const) {
         const type = r[field]!;
         if (!type) continue;
         const value = u32(r, off);

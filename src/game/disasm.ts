@@ -2,11 +2,27 @@
 // Used to show what an event script does (game/scriptasm.ts); the same instruction set that game/arm.ts runs.
 const COND = ['eq', 'ne', 'hs', 'lo', 'mi', 'pl', 'vs', 'vc', 'hi', 'ls', 'ge', 'lt', 'gt', 'le', '', ''];
 const REG = ['r0', 'r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'sb', 'sl', 'fp', 'ip', 'sp', 'lr', 'pc'];
-const DP = ['and', 'eor', 'sub', 'rsb', 'add', 'adc', 'sbc', 'rsc', 'tst', 'teq', 'cmp', 'cmn', 'orr', 'mov', 'bic', 'mvn'];
+const DP = [
+  'and',
+  'eor',
+  'sub',
+  'rsb',
+  'add',
+  'adc',
+  'sbc',
+  'rsc',
+  'tst',
+  'teq',
+  'cmp',
+  'cmn',
+  'orr',
+  'mov',
+  'bic',
+  'mvn',
+];
 const SHIFT = ['lsl', 'lsr', 'asr', 'ror'];
 
 const hex = (v: number): string => (v < 10 ? String(v) : `0x${v.toString(16)}`);
-const imm = (v: number): string => `#${v < 0 ? '-' + hex(-v) : hex(v)}`;
 const ror = (v: number, n: number): number => (n ? ((v >>> n) | (v << (32 - n))) >>> 0 : v);
 
 export interface Insn {
@@ -39,9 +55,12 @@ const sreg = (n: number): string => `s${n}`;
 const dreg = (n: number): string => `d${n}`;
 
 /** VFP register numbers: single = Vd:D, double = D:Vd. */
-const vd = (w: number, dbl: boolean): string => (dbl ? dreg((((w >>> 22) & 1) << 4) | ((w >>> 12) & 15)) : sreg((((w >>> 12) & 15) << 1) | ((w >>> 22) & 1)));
-const vn = (w: number, dbl: boolean): string => (dbl ? dreg((((w >>> 7) & 1) << 4) | ((w >>> 16) & 15)) : sreg((((w >>> 16) & 15) << 1) | ((w >>> 7) & 1)));
-const vm = (w: number, dbl: boolean): string => (dbl ? dreg((((w >>> 5) & 1) << 4) | (w & 15)) : sreg(((w & 15) << 1) | ((w >>> 5) & 1)));
+const vd = (w: number, dbl: boolean): string =>
+  dbl ? dreg((((w >>> 22) & 1) << 4) | ((w >>> 12) & 15)) : sreg((((w >>> 12) & 15) << 1) | ((w >>> 22) & 1));
+const vn = (w: number, dbl: boolean): string =>
+  dbl ? dreg((((w >>> 7) & 1) << 4) | ((w >>> 16) & 15)) : sreg((((w >>> 16) & 15) << 1) | ((w >>> 7) & 1));
+const vm = (w: number, dbl: boolean): string =>
+  dbl ? dreg((((w >>> 5) & 1) << 4) | (w & 15)) : sreg(((w & 15) << 1) | ((w >>> 5) & 1));
 
 export function disassemble(w: number, addr: number): Insn {
   const cc = COND[w >>> 28]!;
@@ -54,7 +73,8 @@ export function disassemble(w: number, addr: number): Insn {
       const t = (addr + 8 + off * 4 + ((w >>> 23) & 2)) >>> 0;
       return out(`blx #${hex(t)}`, { target: t, call: true });
     }
-    if ((w & 0xfd70f000) >>> 0 === 0xf550f000) return out(`pld [${REG[(w >>> 16) & 15]}, #${w & 0x800000 ? '' : '-'}${hex(w & 0xfff)}]`);
+    if ((w & 0xfd70f000) >>> 0 === 0xf550f000)
+      return out(`pld [${REG[(w >>> 16) & 15]}, #${w & 0x800000 ? '' : '-'}${hex(w & 0xfff)}]`);
     return bad;
   }
   const op = (w >>> 25) & 7;
@@ -68,7 +88,11 @@ export function disassemble(w: number, addr: number): Insn {
     return out(`b${link ? 'l' : ''}${cc} #${hex(t)}`, { target: t, call: link });
   }
   if (op === 4) {
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, S = (w >>> 22) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      S = (w >>> 22) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
     const list = regList(w & 0xffff);
     if (((w >>> 16) & 15) === 13 && W && !S) {
       if (L && !P && U) return out(`pop${cc} ${list}`);
@@ -81,7 +105,11 @@ export function disassemble(w: number, addr: number): Insn {
   if (op === 6 || op === 7) return vfp(w, cc, out) ?? bad;
   if (op === 2 || op === 3) {
     if (op === 3 && w & 0x10) return media(w, cc, out) ?? bad;
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, B = (w >>> 22) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      B = (w >>> 22) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
     if ((w & 0x0fff0fff) === 0x049d0004) return out(`pop${cc} {${rd}}`);
     if ((w & 0x0fff0fff) === 0x052d0004) return out(`push${cc} {${rd}}`);
     const mn = `${L ? 'ldr' : 'str'}${B ? 'b' : ''}${!P && W ? 't' : ''}${cc}`;
@@ -99,7 +127,10 @@ export function disassemble(w: number, addr: number): Insn {
   if (op === 0 && (w & 0x90) === 0x90) {
     if ((w & 0x60) === 0) {
       const S = w & 0x100000 ? 's' : '';
-      const rdH = REG[(w >>> 16) & 15], rdL = REG[(w >>> 12) & 15], rs = REG[(w >>> 8) & 15], rm = REG[w & 15];
+      const rdH = REG[(w >>> 16) & 15],
+        rdL = REG[(w >>> 12) & 15],
+        rs = REG[(w >>> 8) & 15],
+        rm = REG[w & 15];
       if ((w & 0x0f800000) === 0x00800000) {
         const mn = ['umull', 'umlal', 'smull', 'smlal'][(w >>> 21) & 3];
         return out(`${mn}${S}${cc} ${rdL}, ${rdH}, ${rm}, ${rs}`);
@@ -110,7 +141,11 @@ export function disassemble(w: number, addr: number): Insn {
       if ((w & 0x0fb00ff0) === 0x01000090) return out(`swp${w & 0x400000 ? 'b' : ''}${cc} ${rdL}, ${rm}, [${rdH}]`);
       return out(`mul${S}${cc} ${rdH}, ${rm}, ${rs}`);
     }
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, I = (w >>> 22) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      I = (w >>> 22) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
     const sh = (w >>> 5) & 3;
     const tt = !P && W && L ? 't' : '';
     const mn = L ? ['', 'ldrh', 'ldrsb', 'ldrsh'][sh] + tt : ['', 'strh', 'ldrd', 'strd'][sh];
@@ -129,12 +164,23 @@ export function disassemble(w: number, addr: number): Insn {
     if ((w & 0x90) === 0x80) {
       // signed halfword multiplies: SMLAxy / SMLAWy / SMULWy / SMLALxy / SMULxy
       const xy = `${w & 0x20 ? 't' : 'b'}${w & 0x40 ? 't' : 'b'}`;
-      const d = REG[(w >>> 16) & 15], a = REG[(w >>> 12) & 15], m = REG[w & 15], sr = REG[(w >>> 8) & 15];
+      const d = REG[(w >>> 16) & 15],
+        a = REG[(w >>> 12) & 15],
+        m = REG[w & 15],
+        sr = REG[(w >>> 8) & 15];
       switch ((w >>> 21) & 3) {
-        case 0: return out(`smla${xy}${cc} ${d}, ${m}, ${sr}, ${a}`);
-        case 1: return out(w & 0x20 ? `smulw${w & 0x40 ? 't' : 'b'}${cc} ${d}, ${m}, ${sr}` : `smlaw${w & 0x40 ? 't' : 'b'}${cc} ${d}, ${m}, ${sr}, ${a}`);
-        case 2: return out(`smlal${xy}${cc} ${a}, ${d}, ${m}, ${sr}`);
-        default: return out(`smul${xy}${cc} ${d}, ${m}, ${sr}`);
+        case 0:
+          return out(`smla${xy}${cc} ${d}, ${m}, ${sr}, ${a}`);
+        case 1:
+          return out(
+            w & 0x20
+              ? `smulw${w & 0x40 ? 't' : 'b'}${cc} ${d}, ${m}, ${sr}`
+              : `smlaw${w & 0x40 ? 't' : 'b'}${cc} ${d}, ${m}, ${sr}, ${a}`,
+          );
+        case 2:
+          return out(`smlal${xy}${cc} ${a}, ${d}, ${m}, ${sr}`);
+        default:
+          return out(`smul${xy}${cc} ${d}, ${m}, ${sr}`);
       }
     }
     return bad;
@@ -163,7 +209,8 @@ export function disassemble(w: number, addr: number): Insn {
     if (opc === 13 && !(w & 0x02000000) && (w & 0xff0) !== 0) {
       const type = (w >>> 5) & 3;
       const amt = w & 0x10 ? REG[(w >>> 8) & 15] : `#${hex((w >>> 7) & 31 || (type ? 32 : 0))}`;
-      if (!(type === 3 && !(w & 0x10) && ((w >>> 7) & 31) === 0)) return out(`${SHIFT[type]}${S ? 's' : ''}${cc} ${rd}, ${REG[w & 15]}, ${amt}`);
+      if (!(type === 3 && !(w & 0x10) && ((w >>> 7) & 31) === 0))
+        return out(`${SHIFT[type]}${S ? 's' : ''}${cc} ${rd}, ${REG[w & 15]}, ${amt}`);
     }
     return out(`${mn} ${rd}, ${op2}`);
   }
@@ -176,17 +223,22 @@ export function disassemble(w: number, addr: number): Insn {
 }
 
 function media(w: number, cc: string, out: (t: string) => Insn): Insn | null {
-  const rd = REG[(w >>> 12) & 15]!, rn = (w >>> 16) & 15, rm = REG[w & 15]!;
+  const rd = REG[(w >>> 12) & 15]!,
+    rn = (w >>> 16) & 15,
+    rm = REG[w & 15]!;
   if ((w & 0x0f8000f0) === 0x06800070) {
     const rot = (w >>> 10) & 3;
     const names: Record<number, string> = { 2: 'sxtb', 3: 'sxth', 6: 'uxtb', 7: 'uxth' };
     const base = names[(w >>> 20) & 7];
     if (!base) return null;
     const r = rot ? `, ror #${rot * 8}` : '';
-    return rn === 15 ? out(`${base}${cc} ${rd}, ${rm}${r}`) : out(`${base.slice(0, 3)}a${base.slice(3)}${cc} ${rd}, ${REG[rn]}, ${rm}${r}`);
+    return rn === 15
+      ? out(`${base}${cc} ${rd}, ${rm}${r}`)
+      : out(`${base.slice(0, 3)}a${base.slice(3)}${cc} ${rd}, ${REG[rn]}, ${rm}${r}`);
   }
   if ((w & 0x0fa00070) === 0x07a00050) {
-    const lsb = (w >>> 7) & 31, width = ((w >>> 16) & 31) + 1;
+    const lsb = (w >>> 7) & 31,
+      width = ((w >>> 16) & 31) + 1;
     return out(`${w & 0x400000 ? 'ubfx' : 'sbfx'}${cc} ${rd}, ${rm}, #${lsb}, #${width}`);
   }
   if ((w & 0x0ff000f0) === 0x06bf0f30) return out(`rev${cc} ${rd}, ${rm}`);
@@ -219,10 +271,14 @@ function vfp(w: number, cc: string, out: (t: string) => Insn): Insn | null {
       const m = dbl ? vm(w, true) : `${vm(w, false)}, s${(((w & 15) << 1) | ((w >>> 5) & 1)) + 1}`;
       return out(L ? `vmov${cc} ${rt}, ${rn}, ${m}` : `vmov${cc} ${m}, ${rt}, ${rn}`);
     }
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
     const off = (w & 0xff) * 4;
     const first = vd(w, dbl);
-    if (P && !W) return out(`${L ? 'vldr' : 'vstr'}${cc} ${first}, [${rn}${off ? `, #${U ? '' : '-'}${hex(off)}` : ''}]`);
+    if (P && !W)
+      return out(`${L ? 'vldr' : 'vstr'}${cc} ${first}, [${rn}${off ? `, #${U ? '' : '-'}${hex(off)}` : ''}]`);
     const n = dbl ? (w & 0xff) / 2 : w & 0xff;
     const num = parseInt(first.slice(1), 10);
     const list = `{${Array.from({ length: n }, (_, k) => `${first[0]}${num + k}`).join(', ')}}`;
@@ -238,13 +294,20 @@ function vfp(w: number, cc: string, out: (t: string) => Insn): Insn | null {
     if ((w & 0x0ff00f7f) === 0x0e100a10) return out(`vmov${cc} ${rt}, ${vn(w, false)}`);
     return null;
   }
-  const opc1 = (w >>> 20) & 0xb, opc3 = (w >>> 6) & 1;
-  const D = vd(w, dbl), N = vn(w, dbl), M = vm(w, dbl);
+  const opc1 = (w >>> 20) & 0xb,
+    opc3 = (w >>> 6) & 1;
+  const D = vd(w, dbl),
+    N = vn(w, dbl),
+    M = vm(w, dbl);
   switch (opc1) {
-    case 0: return out(`${opc3 ? 'vmls' : 'vmla'}${cc}.${t} ${D}, ${N}, ${M}`);
-    case 2: return out(`${opc3 ? 'vnmul' : 'vmul'}${cc}.${t} ${D}, ${N}, ${M}`);
-    case 3: return out(`${opc3 ? 'vsub' : 'vadd'}${cc}.${t} ${D}, ${N}, ${M}`);
-    case 8: return out(`vdiv${cc}.${t} ${D}, ${N}, ${M}`);
+    case 0:
+      return out(`${opc3 ? 'vmls' : 'vmla'}${cc}.${t} ${D}, ${N}, ${M}`);
+    case 2:
+      return out(`${opc3 ? 'vnmul' : 'vmul'}${cc}.${t} ${D}, ${N}, ${M}`);
+    case 3:
+      return out(`${opc3 ? 'vsub' : 'vadd'}${cc}.${t} ${D}, ${N}, ${M}`);
+    case 8:
+      return out(`vdiv${cc}.${t} ${D}, ${N}, ${M}`);
   }
   if (opc1 === 0xb) {
     const opc2 = (w >>> 16) & 15;
@@ -254,13 +317,21 @@ function vfp(w: number, cc: string, out: (t: string) => Insn): Insn | null {
       return out(`vmov${cc}.${t} ${D}, #${fpImm(v)}`);
     }
     switch (opc2) {
-      case 0: return out(`${(w >>> 7) & 1 ? 'vabs' : 'vmov'}${cc}.${t} ${D}, ${M}`);
-      case 1: return out(`${(w >>> 7) & 1 ? 'vsqrt' : 'vneg'}${cc}.${t} ${D}, ${M}`);
-      case 4: return out(`vcmp${(w >>> 7) & 1 ? 'e' : ''}${cc}.${t} ${D}, ${M}`);
-      case 5: return out(`vcmp${(w >>> 7) & 1 ? 'e' : ''}${cc}.${t} ${D}, #0`);
-      case 7: return out(`vcvt${cc}.${dbl ? 'f32.f64' : 'f64.f32'} ${vd(w, !dbl)}, ${M}`);
-      case 8: return out(`vcvt${cc}.${t}.${(w >>> 7) & 1 ? 's32' : 'u32'} ${D}, ${vm(w, false)}`);
-      case 12: case 13: return out(`vcvt${(w >>> 7) & 1 ? '' : 'r'}${cc}.${opc2 === 13 ? 's32' : 'u32'}.${t} ${vd(w, false)}, ${M}`);
+      case 0:
+        return out(`${(w >>> 7) & 1 ? 'vabs' : 'vmov'}${cc}.${t} ${D}, ${M}`);
+      case 1:
+        return out(`${(w >>> 7) & 1 ? 'vsqrt' : 'vneg'}${cc}.${t} ${D}, ${M}`);
+      case 4:
+        return out(`vcmp${(w >>> 7) & 1 ? 'e' : ''}${cc}.${t} ${D}, ${M}`);
+      case 5:
+        return out(`vcmp${(w >>> 7) & 1 ? 'e' : ''}${cc}.${t} ${D}, #0`);
+      case 7:
+        return out(`vcvt${cc}.${dbl ? 'f32.f64' : 'f64.f32'} ${vd(w, !dbl)}, ${M}`);
+      case 8:
+        return out(`vcvt${cc}.${t}.${(w >>> 7) & 1 ? 's32' : 'u32'} ${D}, ${vm(w, false)}`);
+      case 12:
+      case 13:
+        return out(`vcvt${(w >>> 7) & 1 ? '' : 'r'}${cc}.${opc2 === 13 ? 's32' : 'u32'}.${t} ${vd(w, false)}, ${M}`);
     }
   }
   return null;
@@ -268,7 +339,8 @@ function vfp(w: number, cc: string, out: (t: string) => Insn): Insn | null {
 
 function fpImm(v: number): string {
   // VFPExpandImm: exponent NOT(b):b...b:c:d, fraction efgh
-  const b = (v >>> 6) & 1, cd = (v >>> 4) & 3;
+  const b = (v >>> 6) & 1,
+    cd = (v >>> 4) & 3;
   const n = b ? cd - 3 : cd + 1;
   return String((v & 0x80 ? -1 : 1) * ((16 + (v & 15)) / 16) * 2 ** n);
 }

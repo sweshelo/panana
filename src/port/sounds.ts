@@ -25,7 +25,12 @@ export interface PortedSound {
 const KEY = 'port/kahara/sound/v1';
 
 /** Short names of the games for the new sound names (the games' own names, as the code calls them). */
-export const SOUND_PREFIX: Record<TitleKey, string> = { kahara: 'KAHARA', oahu: 'OAHU', lanai: 'LANAI', honolulu: 'HONOLULU' };
+export const SOUND_PREFIX: Record<TitleKey, string> = {
+  kahara: 'KAHARA',
+  oahu: 'OAHU',
+  lanai: 'LANAI',
+  honolulu: 'HONOLULU',
+};
 
 /** File of a ported sound, from sound/. */
 export const portedPath = (name: string): string => `stream/${name}.bcstm`;
@@ -98,7 +103,16 @@ export class SoundPortStore implements SoundPorts {
     const read = this.read;
     this.built ??= read(BCSAR_PATH).then((b) => {
       const a = new SoundArchive(b);
-      return addStreamSounds(b, templateSound(a), this.entries.map((e) => ({ name: e.name, path: portedPath(e.name), volume: e.volume, channels: cstmChannels(e.stream) })));
+      return addStreamSounds(
+        b,
+        templateSound(a),
+        this.entries.map((e) => ({
+          name: e.name,
+          path: portedPath(e.name),
+          volume: e.volume,
+          channels: cstmChannels(e.stream),
+        })),
+      );
     });
     this.built.catch(() => (this.built = null));
     return this.built;
@@ -159,7 +173,10 @@ export class SoundPortStore implements SoundPorts {
   /** RomFS files for the MOD: sound/sound.bcsar and the streams (none without ported sounds). */
   async files(): Promise<[string, Uint8Array][]> {
     if (!this.entries.length || !this.read) return [];
-    return [[BCSAR_PATH, await this.bcsar()], ...this.entries.map((e): [string, Uint8Array] => [`sound/${portedPath(e.name)}`, e.stream])];
+    return [
+      [BCSAR_PATH, await this.bcsar()],
+      ...this.entries.map((e): [string, Uint8Array] => [`sound/${portedPath(e.name)}`, e.stream]),
+    ];
   }
 
   summary(): string[] {

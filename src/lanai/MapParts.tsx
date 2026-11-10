@@ -33,17 +33,22 @@ import {
 // ---- MonsterGroup
 
 /** The group page of a content (#/groups/<content>.<row>). */
-export const lanaiGroupHref = (content: number, row?: number): string => `#/groups/${content}${row !== undefined ? `.${row}` : ''}`;
+export const lanaiGroupHref = (content: number, row?: number): string =>
+  `#/groups/${content}${row !== undefined ? `.${row}` : ''}`;
 
 /** Row 0 (row ID 0x80000000): the game's default group, where values the table does not have go (map.md §5.7). */
-export const DEFAULT_GROUP_LABEL = '既定 (行 0: 敵なし相当)';
+export const DEFAULT_GROUP_LABEL = '既定 (番号 0: 敵なし相当)';
 
 /** "いちごおばけ・おおくちばし": the monsters of a MonsterGroup row. */
 function monsterGroupNames(maps: LanaiMaps, row: number): string {
   const g = maps.monsterGroups()[row];
   const mp = maps.session.table('MonsterParameter');
   const list = lanaiMonsters(maps.session);
-  return g ? [...new Set(g.monsters.map((id) => (mp ? list[mp.find(id)]?.name : undefined) ?? hex8(id).toUpperCase()))].join('・') : '';
+  return g
+    ? [...new Set(g.monsters.map((id) => (mp ? list[mp.find(id)]?.name : undefined) ?? hex8(id).toUpperCase()))].join(
+        '・',
+      )
+    : '';
 }
 
 /** The MonsterParameter rows of a group, each once (-1 for an ID the table does not have). */
@@ -52,26 +57,43 @@ export function groupMonsterRows(maps: LanaiMaps, g: LanaiMonsterGroupRow): numb
   return [...new Set(g.monsters.map((id) => (mp ? mp.find(id) : -1)))];
 }
 
-const groupChanged = (maps: LanaiMaps, row: number): boolean => !!maps.monsterGroup && row < maps.monsterGroup.originalRows && maps.monsterGroup.rowChanged(row);
+const groupChanged = (maps: LanaiMaps, row: number): boolean =>
+  !!maps.monsterGroup && row < maps.monsterGroup.originalRows && maps.monsterGroup.rowChanged(row);
 
 /** A group at a glance: its row and the photos of its monsters ("既定" for row 0, a warning for a value not in the table). */
 export function MonsterGroupLine({ maps, value }: { maps: LanaiMaps; value: number }): ReactNode {
   const row = maps.monsterGroupRow(value);
-  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 行 0 になる)`}</span>;
+  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 番号 0 になる)`}</span>;
   if (row === 0) return <span className="muted">{DEFAULT_GROUP_LABEL}</span>;
   const g = maps.monsterGroups()[row]!;
   return (
     <>
       <span className="muted">{`#${row}`}</span>
-      <GroupIconRow icons={groupMonsterRows(maps, g).map((r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>)} changed={groupChanged(maps, row)} />
+      <GroupIconRow
+        icons={groupMonsterRows(maps, g).map((r, i) => (
+          <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>
+        ))}
+        changed={groupChanged(maps, row)}
+      />
     </>
   );
 }
 
-const useLabel = (u: LanaiMonsterGroupUse): string => `${u.map} ${u.cells === 'map' ? '(マップの群れ)' : `セル ${u.cells} 個`}`;
+const useLabel = (u: LanaiMonsterGroupUse): string =>
+  `${u.map} ${u.cells === 'map' ? '(マップの群れ)' : `セル ${u.cells} 個`}`;
 
 /** Pick a MonsterGroup row of the content (the pick is its row ID), as RPG3's group picker: search, photos, the maps that use it. */
-function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps; current: number; onPick: (id: number) => void; onClose: () => void }): ReactNode {
+function LanaiGroupPicker({
+  maps,
+  current,
+  onPick,
+  onClose,
+}: {
+  maps: LanaiMaps;
+  current: number;
+  onPick: (id: number) => void;
+  onClose: () => void;
+}): ReactNode {
   const groups = useMemo(() => maps.monsterGroups().slice(1), [maps, maps.revision]);
   // the maps' current documents (edits of the open map included); computed once per opening
   const uses = useMemo(() => maps.monsterGroupUses(), [maps]);
@@ -82,22 +104,44 @@ function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps;
   const defaultUses = uses.get(0) ?? [];
   return (
     <Dialog title="群れを選ぶ" onClose={onClose}>
-      <p className="muted small">「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは行 0 の群れになります。群れの中身は<a href={lanaiGroupHref(maps.content.index)}>「群れ」のページ</a>で編集できます (共有している群れを変えると、使っているマップ全部に効きます)。</p>
+      <p className="muted small">
+        「マップ」はこのコンテンツでこの群れを使うマップの数 (区画 6 のヘッダーかセル)。表にない値はゲームでは番号 0
+        の群れになります。群れの中身は<a href={lanaiGroupHref(maps.content.index)}>「群れ」のページ</a>で編集できます
+        (共有している群れを変えると、使っているマップ全部に効きます)。
+      </p>
       <div className="group-picker">
-        <GroupListView groups={groups} monsters={(g) => groupMonsterRows(maps, g)} name={(r) => list[r]?.name}
-          icon={(r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>} changed={(g) => groupChanged(maps, g.row)}
-          filters={[['all', 'すべて', () => true], ['used', 'マップで使う', used], ['unused', 'どのマップも使わない', (g) => !used(g)]]}
-          extra={{ head: 'マップ', cell: (g) => { const u = uses.get(g.row) ?? []; return u.length ? <span title={u.map(useLabel).join('、')}>{u.length}</span> : ''; } }}
-          selected={row} onSelect={(g) => onPick(g.id)}>
+        <GroupListView
+          groups={groups}
+          monsters={(g) => groupMonsterRows(maps, g)}
+          name={(r) => list[r]?.name}
+          icon={(r, i) => <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>}
+          changed={(g) => groupChanged(maps, g.row)}
+          filters={[
+            ['all', 'すべて', () => true],
+            ['used', 'マップで使う', used],
+            ['unused', 'どのマップも使わない', (g) => !used(g)],
+          ]}
+          extra={{
+            head: 'マップ',
+            cell: (g) => {
+              const u = uses.get(g.row) ?? [];
+              return u.length ? <span title={u.map(useLabel).join('、')}>{u.length}</span> : '';
+            },
+          }}
+          selected={row}
+          onSelect={(g) => onPick(g.id)}
+        >
           <tr className={row === 0 ? 'active' : ''} onClick={() => onPick(maps.monsterGroups()[0]?.id ?? 0x80000000)}>
             <td className="num muted">0</td>
             <td className="muted">{DEFAULT_GROUP_LABEL}</td>
-            <td className="num muted">{defaultUses.length ? <span title={defaultUses.map(useLabel).join('、')}>{defaultUses.length}</span> : ''}</td>
+            <td className="num muted">
+              {defaultUses.length ? <span title={defaultUses.map(useLabel).join('、')}>{defaultUses.length}</span> : ''}
+            </td>
           </tr>
           {row < 0 && (
             <tr className="active">
               <td></td>
-              <td className="muted">{`${hex8(current).toUpperCase()} (表にない: 行 0 になる)`}</td>
+              <td className="muted">{`${hex8(current).toUpperCase()} (表にない: 番号 0 になる)`}</td>
               <td></td>
             </tr>
           )}
@@ -112,40 +156,87 @@ function LanaiGroupPicker({ maps, current, onPick, onClose }: { maps: LanaiMaps;
  * A MonsterGroup row ID of the content (section 6 values, chest battles): the group's photos on a button that opens the
  * picker. A value the table does not have is shown as such.
  */
-export function MonsterGroupSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+export function MonsterGroupSelect({
+  maps,
+  value,
+  onChange,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactNode {
   const [picking, setPicking] = useState(false);
   const row = maps.monsterGroupRow(value);
   return (
     <>
       <div className="row group-pick-row">
-        <button className="group-pick" title={`群れを選び直す (行 ID ${hex8(value).toUpperCase()})`} onClick={() => setPicking(true)}>
+        <button
+          className="group-pick"
+          title={`群れを選び直す (ID ${hex8(value).toUpperCase()})`}
+          onClick={() => setPicking(true)}
+        >
           <MonsterGroupLine maps={maps} value={value} />
         </button>
-        {row >= 0 && <a href={lanaiGroupHref(maps.content.index, row)} title={`群れ #${row} を「群れ」のページで開く (編集)`}>↗</a>}
+        {row >= 0 && (
+          <a href={lanaiGroupHref(maps.content.index, row)} title={`群れ #${row} を「群れ」のページで開く (編集)`}>
+            ↗
+          </a>
+        )}
       </div>
       {picking && (
-        <LanaiGroupPicker maps={maps} current={value} onClose={() => setPicking(false)}
-          onPick={(v) => { setPicking(false); if (v !== value) onChange(v >>> 0); }} />
+        <LanaiGroupPicker
+          maps={maps}
+          current={value}
+          onClose={() => setPicking(false)}
+          onPick={(v) => {
+            setPicking(false);
+            if (v !== value) onChange(v >>> 0);
+          }}
+        />
       )}
     </>
   );
 }
 
 /** A MonsterGroup row number of the content (the boss battle, action 0x8000000C, names the row, not its ID), with the group picker. */
-export function MonsterGroupRowSelect({ maps, value, onChange }: { maps: LanaiMaps; value: number; onChange: (v: number) => void }): ReactNode {
+export function MonsterGroupRowSelect({
+  maps,
+  value,
+  onChange,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactNode {
   const [picking, setPicking] = useState(false);
   const g = maps.monsterGroups()[value];
   return (
     <>
       <div className="row group-pick-row">
-        <button className="group-pick" title={`群れを選び直す (行 ${value})`} onClick={() => setPicking(true)}>
-          {g ? <MonsterGroupLine maps={maps} value={g.id} /> : <span className="muted">{`行 ${value} (表は ${maps.monsterGroups().length} 行: 表の外)`}</span>}
+        <button className="group-pick" title={`群れを選び直す (番号 ${value})`} onClick={() => setPicking(true)}>
+          {g ? (
+            <MonsterGroupLine maps={maps} value={g.id} />
+          ) : (
+            <span className="muted">{`番号 ${value} (表は ${maps.monsterGroups().length} 件: 表の外)`}</span>
+          )}
         </button>
-        {g && <a href={lanaiGroupHref(maps.content.index, value)} title={`群れ #${value} を「群れ」のページで開く (編集)`}>↗</a>}
+        {g && (
+          <a href={lanaiGroupHref(maps.content.index, value)} title={`群れ #${value} を「群れ」のページで開く (編集)`}>
+            ↗
+          </a>
+        )}
       </div>
       {picking && (
-        <LanaiGroupPicker maps={maps} current={g?.id ?? 0} onClose={() => setPicking(false)}
-          onPick={(id) => { setPicking(false); const row = maps.monsterGroupRow(id); if (row >= 0 && row !== value) onChange(row); }} />
+        <LanaiGroupPicker
+          maps={maps}
+          current={g?.id ?? 0}
+          onClose={() => setPicking(false)}
+          onPick={(id) => {
+            setPicking(false);
+            const row = maps.monsterGroupRow(id);
+            if (row >= 0 && row !== value) onChange(row);
+          }}
+        />
       )}
     </>
   );
@@ -157,16 +248,40 @@ export function MonsterGroupRowSelect({ maps, value, onChange }: { maps: LanaiMa
  * A content number (the content a goal chest or the clear warp marks cleared: save flag group 0x53, FUN_00191130).
  * In the ROM every one names its own content, so another one is flagged.
  */
-export function ContentSelect({ maps, value, onChange, allowNone }: { maps: LanaiMaps; value: number; onChange: (v: number) => void; allowNone?: boolean }): ReactNode {
+export function ContentSelect({
+  maps,
+  value,
+  onChange,
+  allowNone,
+  checking = false,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  onChange: (v: number) => void;
+  allowNone?: boolean;
+  checking?: boolean;
+}): ReactNode {
   const list = useMemo(() => lanaiContents(maps.session), [maps.session]);
   const own = maps.content.index;
   return (
     <>
       <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
         {value >= list.length && <option value={value}>{`${value} (コンテンツの表にない)`}</option>}
-        {list.map((c) => <option key={c.index} value={c.index}>{c.index === 0 && allowNone ? '0: なし' : `${c.index}: ${contentTitle(c)}${c.index === own ? ' (このコンテンツ)' : ''}`}</option>)}
+        {list.map((c) => (
+          <option key={c.index} value={c.index}>
+            {c.index === 0 && allowNone
+              ? '0: なし'
+              : `${c.index}: ${contentTitle(c)}${c.index === own ? ' (このコンテンツ)' : ''}`}
+          </option>
+        ))}
       </select>
-      {value !== own && !(allowNone && value === 0) && <span className="muted small">{`このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}</span>}
+      {value !== own && !(allowNone && value === 0) && (
+        <span className="muted small">
+          {checking
+            ? '別のコンテンツのクリア状態を判定します。'
+            : `このコンテンツ (${own}) と別のコンテンツをクリア済みにします。`}
+        </span>
+      )}
     </>
   );
 }
@@ -182,7 +297,8 @@ const KIND_CHOICES: PickerChoice[] = [
 /** The badge of an entry that is not an item. */
 const KIND_BADGE: Record<number, string> = { [LANAI_TREASURE_GOLD]: 'G', 3: '3', [LANAI_TREASURE_BATTLE]: '戦' };
 
-const userLabel = (u: LanaiChestUser): string => `${u.map} ${u.section === 4 ? '宝箱' : `区画 ${u.section}`} #${u.index}`;
+const userLabel = (u: LanaiChestUser): string =>
+  `${u.map} ${u.section === 4 ? '宝箱' : `区画 ${u.section}`} #${u.index}`;
 
 function itemLabel(maps: LanaiMaps, id: number): string {
   return lanaiItemName(maps.session, id);
@@ -196,12 +312,31 @@ function groupLabel(maps: LanaiMaps, id: number): string {
 function treasureSummary(maps: LanaiMaps, slots: LanaiTreasureSlot[]): string {
   const total = slots.reduce((a, s) => a + s.weight, 0);
   if (!slots.length) return '(空)';
-  return slots.map((s) => `${lanaiTreasureLabel(s, (id) => itemLabel(maps, id), (id) => groupLabel(maps, id))}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`).join('、');
+  return slots
+    .map(
+      (s) =>
+        `${lanaiTreasureLabel(
+          s,
+          (id) => itemLabel(maps, id),
+          (id) => groupLabel(maps, id),
+        )}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`,
+    )
+    .join('、');
 }
 
 /** Pick a TreasureGroup row for a chest, or make a new one from the current contents (RPG2's / RPG3's dialog). */
-function TreasureRowPicker({ st, current, onPick, onNew, onClose }: {
-  st: LanaiEditState; current: number; onPick: (row: number) => void; onNew: () => void; onClose: () => void;
+function TreasureRowPicker({
+  st,
+  current,
+  onPick,
+  onNew,
+  onClose,
+}: {
+  st: LanaiEditState;
+  current: number;
+  onPick: (row: number) => void;
+  onNew: () => void;
+  onClose: () => void;
 }): ReactNode {
   const maps = st.maps;
   const t = maps.treasureGroup!;
@@ -222,20 +357,42 @@ function TreasureRowPicker({ st, current, onPick, onNew, onClose }: {
   return (
     <Dialog title="宝箱の中身を選ぶ" onClose={onClose}>
       <div className="row">
-        <input type="search" placeholder="アイテム名か行番号で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="layer"><input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> どの宝箱も使っていない行だけ</label>
-        <button className="primary" onClick={onNew}>今の中身を写して新しい行を作る</button>
+        <input
+          type="search"
+          placeholder="アイテム名か番号で絞り込み"
+          className="picker-search"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label className="layer">
+          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} />{' '}
+          どの宝箱も使っていない中身だけ
+        </label>
+        <button className="primary" onClick={onNew}>
+          今の中身を写して新しい中身を作る
+        </button>
       </div>
-      <p className="muted small">「使っている宝箱」は、このコンテンツのマップの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。</p>
+      <p className="muted small">
+        「使っている宝箱」は、このコンテンツのマップの宝箱のうちこの中身を指す数。共有している中身を変えると、それらの宝箱も全部変わります。
+      </p>
       <div className="picker-list" ref={list}>
         <table className="picker-table">
-          <thead><tr><th>行</th><th>中身</th><th>使っている宝箱</th></tr></thead>
+          <thead>
+            <tr>
+              <th>番号</th>
+              <th>中身</th>
+              <th>使っている宝箱</th>
+            </tr>
+          </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.row} className={'pick' + (r.row === current ? ' current' : '')} onClick={() => onPick(r.row)}>
                 <td className="num">{r.row}</td>
                 <td>{r.text}</td>
-                <td className="muted" title={r.users.join('、')}>{r.users.length ? `${r.users.length} 個` : '—'}</td>
+                <td className="muted" title={r.users.join('、')}>
+                  {r.users.length ? `${r.users.length} 個` : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -267,21 +424,41 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
     <>
       <div className="treasure">
         <h3>ゴールの宝箱: クリア判定</h3>
-        <label className="field"><span>{`開けるとクリア済みにするコンテンツ (動作 ${stages[0]!.stage + 1} の引数 2)`}</span>
-          <ContentSelect maps={maps} value={clears} allowNone onChange={(v) => st.setEventField(event, (x) => x.setU32(event, clearField, v))} />
+        <label className="field">
+          <span>{`開けるとクリア済みにするコンテンツ (動作 ${stages[0]!.stage + 1} の引数 2)`}</span>
+          <ContentSelect
+            maps={maps}
+            value={clears}
+            allowNone
+            onChange={(v) => st.setEventField(event, (x) => x.setU32(event, clearField, v))}
+          />
         </label>
         <p className="muted small">
-          {clears ? `開けると中身を渡し、コンテンツ ${clears} をクリア済みにします (セーブのフラグ群 0x53)。` : '0 なので、開けてもクリアにはなりません。'}
+          {clears
+            ? `開けると中身を渡し、コンテンツ ${clears} をクリア済みにします (セーブのフラグ群 0x53)。`
+            : '0 なので、開けてもクリアにはなりません。'}
           {'開けた後の台詞は下の動作の「台詞 (引数 3)」で選びます。'}
         </p>
       </div>
-      {stages.map((x) => <TreasureStage key={x.field} st={st} event={event} field={x.field} heading={STAGE_HEADINGS[x.stage]} />)}
+      {stages.map((x) => (
+        <TreasureStage key={x.field} st={st} event={event} field={x.field} heading={STAGE_HEADINGS[x.stage]} />
+      ))}
     </>
   );
 }
 
 /** The contents of one chest action (the TreasureGroup row at `field` of the EventObject row). */
-function TreasureStage({ st, event, field, heading }: { st: LanaiEditState; event: number; field: number; heading?: string }): ReactNode {
+function TreasureStage({
+  st,
+  event,
+  field,
+  heading,
+}: {
+  st: LanaiEditState;
+  event: number;
+  field: number;
+  heading?: string;
+}): ReactNode {
   const maps = st.maps;
   const { session } = maps;
   const t = maps.treasureGroup;
@@ -315,55 +492,96 @@ function TreasureStage({ st, event, field, heading }: { st: LanaiEditState; even
     });
   };
   /** Pick what an entry gives (an item, or a kind from the choices before the items); `s` is the entry, null for a new one. */
-  const pick = (s: LanaiTreasureSlot | null, onPick: (next: LanaiTreasureSlot) => void): void => setPicking({
-    current: !s ? undefined : s.kind === LANAI_TREASURE_ITEM ? items.find(s.value) : -s.kind,
-    onPick: (id) => {
-      if (id > 0) return onPick({ kind: LANAI_TREASURE_ITEM, value: items.rowId(id), weight: 1 });
-      const kind = -id;
-      const value = s?.kind === kind ? s.value
-        : kind === LANAI_TREASURE_BATTLE ? maps.monsterGroups()[1]?.id ?? maps.monsterGroups()[0]?.id ?? 0
-        : kind === LANAI_TREASURE_GOLD ? 100 : 1;
-      onPick({ kind, value, weight: 1 });
-    },
-  });
+  const pick = (s: LanaiTreasureSlot | null, onPick: (next: LanaiTreasureSlot) => void): void =>
+    setPicking({
+      current: !s ? undefined : s.kind === LANAI_TREASURE_ITEM ? items.find(s.value) : -s.kind,
+      onPick: (id) => {
+        if (id > 0) return onPick({ kind: LANAI_TREASURE_ITEM, value: items.rowId(id), weight: 1 });
+        const kind = -id;
+        const value =
+          s?.kind === kind
+            ? s.value
+            : kind === LANAI_TREASURE_BATTLE
+              ? (maps.monsterGroups()[1]?.id ?? maps.monsterGroups()[0]?.id ?? 0)
+              : kind === LANAI_TREASURE_GOLD
+                ? 100
+                : 1;
+        onPick({ kind, value, weight: 1 });
+      },
+    });
   return (
     <div className="treasure">
       <h3>{`宝箱の中身 (${LANAI_CHEST_ACTIONS[events.u32(event, field - 4)]}${heading ? `、${heading}` : ''})`}</h3>
       <div className="row">
         <span className="grow">
-          {`中身の表 TreasureGroup #${row}${added ? ' (追加した行)' : ''}`}
-          {users.length > 1 && <span className="badge" title={users.map(userLabel).join('、')}>{`${users.length} 個の宝箱で共有`}</span>}
+          {`中身の表 TreasureGroup #${row}${added ? ' (追加した中身)' : ''}`}
+          {users.length > 1 && (
+            <span className="badge" title={users.map(userLabel).join('、')}>{`${users.length} 個の宝箱で共有`}</span>
+          )}
         </span>
         <button onClick={() => setPickingRow(true)}>変更…</button>
       </div>
       {users.length > 1 && (
         <div className="row">
-          <button onClick={separate}>この宝箱専用の行にする</button>
+          <button onClick={separate}>この宝箱専用の中身にする</button>
         </div>
       )}
-      {!valid && <div className="error">{`中身の表 (TreasureGroup) に行 ${row} がありません`}</div>}
+      {!valid && <div className="error">{`中身の表 (TreasureGroup) に番号 ${row} がありません`}</div>}
       {valid && (
         <>
           <div className="loot">
             {slots.map((s, i) => (
               <div key={i} className="loot-row">
                 <span className="loot-item">
-                  <button className={s.kind === LANAI_TREASURE_ITEM ? 'loot-item' : 'loot-item loot-kind'} title="クリックで出るもの (アイテム・G・種類 3・戦闘) を変える" onClick={() => pick(s, (next) => update(i, { ...next, weight: s.weight }))}>
-                    {s.kind === LANAI_TREASURE_ITEM ? lanaiItemEntry(session, s.value).icon : <span className="photo item-badge item-kind-0">{KIND_BADGE[s.kind] ?? '?'}</span>}
-                    {s.kind === LANAI_TREASURE_ITEM ? itemLabel(maps, s.value) : !s.kind || s.kind === LANAI_TREASURE_BATTLE ? '' : LANAI_TREASURE_KIND[s.kind] ?? `種類 ${s.kind}`}
+                  <button
+                    className={s.kind === LANAI_TREASURE_ITEM ? 'loot-item' : 'loot-item loot-kind'}
+                    title="クリックで出るもの (アイテム・G・種類 3・戦闘) を変える"
+                    onClick={() => pick(s, (next) => update(i, { ...next, weight: s.weight }))}
+                  >
+                    {s.kind === LANAI_TREASURE_ITEM ? (
+                      lanaiItemEntry(session, s.value).icon
+                    ) : (
+                      <span className="photo item-badge item-kind-0">{KIND_BADGE[s.kind] ?? '?'}</span>
+                    )}
+                    {s.kind === LANAI_TREASURE_ITEM
+                      ? itemLabel(maps, s.value)
+                      : !s.kind || s.kind === LANAI_TREASURE_BATTLE
+                        ? ''
+                        : (LANAI_TREASURE_KIND[s.kind] ?? `種類 ${s.kind}`)}
                   </button>
-                  {s.kind === LANAI_TREASURE_BATTLE
-                    ? <MonsterGroupSelect maps={maps} value={s.value} onChange={(v) => update(i, { ...s, value: v })} />
-                    : s.kind !== LANAI_TREASURE_ITEM && <NumberInput value={s.value} min={0} max={0x7fffffff} title={s.kind === LANAI_TREASURE_GOLD ? 'G' : '値'} onCommit={(v) => update(i, { ...s, value: v })} />}
+                  {s.kind === LANAI_TREASURE_BATTLE ? (
+                    <MonsterGroupSelect maps={maps} value={s.value} onChange={(v) => update(i, { ...s, value: v })} />
+                  ) : (
+                    s.kind !== LANAI_TREASURE_ITEM && (
+                      <NumberInput
+                        value={s.value}
+                        min={0}
+                        max={0x7fffffff}
+                        title={s.kind === LANAI_TREASURE_GOLD ? 'G' : '値'}
+                        onCommit={(v) => update(i, { ...s, value: v })}
+                      />
+                    )
+                  )}
                 </span>
-                <NumberInput value={s.weight} min={1} max={0xffff} className="" title="重み (出やすさ)" onCommit={(v) => update(i, { ...s, weight: v })} />
+                <NumberInput
+                  value={s.weight}
+                  min={1}
+                  max={0xffff}
+                  className=""
+                  title="重み (出やすさ)"
+                  onCommit={(v) => update(i, { ...s, weight: v })}
+                />
                 <span className="loot-pct">{total ? `${Math.round((s.weight / total) * 100)}%` : ''}</span>
-                <button className="danger" title="外す" onClick={() => update(i, null)}>×</button>
+                <button className="danger" title="外す" onClick={() => update(i, null)}>
+                  ×
+                </button>
               </div>
             ))}
             {!slots.length && <div className="muted">空です (開けても何も出ません)。</div>}
             {slots.length < LANAI_TREASURE_SLOTS && (
-              <button className="loot-add" onClick={() => pick(null, (next) => write([...slots, next]))}>＋ 追加</button>
+              <button className="loot-add" onClick={() => pick(null, (next) => write([...slots, next]))}>
+                ＋ 追加
+              </button>
             )}
           </div>
           <div className="muted small">
@@ -372,13 +590,32 @@ function TreasureStage({ st, event, field, heading }: { st: LanaiEditState; even
         </>
       )}
       {picking && (
-        <LanaiItemPicker session={session} current={picking.current ?? 0} title="宝箱に入れるものを選ぶ" choices={KIND_CHOICES}
-          onClose={() => setPicking(null)} onPick={(r) => { setPicking(null); picking.onPick(r); }} />
+        <LanaiItemPicker
+          session={session}
+          current={picking.current ?? 0}
+          title="宝箱に入れるものを選ぶ"
+          choices={KIND_CHOICES}
+          onClose={() => setPicking(null)}
+          onPick={(r) => {
+            setPicking(null);
+            picking.onPick(r);
+          }}
+        />
       )}
       {pickingRow && (
-        <TreasureRowPicker st={st} current={row} onClose={() => setPickingRow(false)}
-          onPick={(v) => { setPickingRow(false); if (v !== row) point(v); }}
-          onNew={() => { setPickingRow(false); separate(); }} />
+        <TreasureRowPicker
+          st={st}
+          current={row}
+          onClose={() => setPickingRow(false)}
+          onPick={(v) => {
+            setPickingRow(false);
+            if (v !== row) point(v);
+          }}
+          onNew={() => {
+            setPickingRow(false);
+            separate();
+          }}
+        />
       )}
     </div>
   );

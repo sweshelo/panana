@@ -16,9 +16,21 @@ export const OAHU_WORLD = 0xa8654391;
 /** code.bin of v4096: the world's section table, 9 u32 (one row; index = slot). */
 export const OAHU_WORLD_TABLE = 0x556d54;
 /** The table's hashes (v4096; the tests read them back from code.bin). */
-export const OAHU_WORLD_SECTIONS = [0xa8654391, 0xf54b912e, 0x85175911, 0x085d1b2b, 0x6b11fa64, 0xad947450, 0x59a0b01e, 0x32407956, 0x3bf20831] as const;
+export const OAHU_WORLD_SECTIONS = [
+  0xa8654391, 0xf54b912e, 0x85175911, 0x085d1b2b, 0x6b11fa64, 0xad947450, 0x59a0b01e, 0x32407956, 0x3bf20831,
+] as const;
 /** Slots of the table (the getter of each and its user in naauao oahu/worldmap.md §2). */
-export const WS = { tiles: 0, dark: 1, entrances: 2, land: 3, sea: 4, events: 5, props: 6, explored: 7, chests: 8 } as const;
+export const WS = {
+  tiles: 0,
+  dark: 1,
+  entrances: 2,
+  land: 3,
+  sea: 4,
+  events: 5,
+  props: 6,
+  explored: 7,
+  chests: 8,
+} as const;
 export const OAHU_WORLD_SIZE = 300;
 /** World units per cell; a cell's centre is 50 + x * 100 (dungeons: 500). */
 export const OAHU_WORLD_CELL = 100;
@@ -51,9 +63,22 @@ export interface OahuWorldPart {
 export const partCategory = (name: string): string => /^bgpt_wld_(s_)?([a-z]+)/.exec(name)?.[2] ?? '';
 
 const CATEGORY_COLOR: Record<string, string> = {
-  flat: '#7cc860', hill: '#a6cf63', wood: '#3e8a3a', mount: '#9b7b52', alp: '#b9b2a6', snow: '#eef3f6', sand: '#e3d08a',
-  bog: '#708a4b', rock: '#8a8a8a', volca: '#b4513a', pond: '#4f9ed8', river: '#4f9ed8', sea: '#2b5d9c', ford: '#6fb7c9',
-  bridge: '#b58b5a', wall: '#5d5048',
+  flat: '#7cc860',
+  hill: '#a6cf63',
+  wood: '#3e8a3a',
+  mount: '#9b7b52',
+  alp: '#b9b2a6',
+  snow: '#eef3f6',
+  sand: '#e3d08a',
+  bog: '#708a4b',
+  rock: '#8a8a8a',
+  volca: '#b4513a',
+  pond: '#4f9ed8',
+  river: '#4f9ed8',
+  sea: '#2b5d9c',
+  ford: '#6fb7c9',
+  bridge: '#b58b5a',
+  wall: '#5d5048',
 };
 export function partColor(p: OahuWorldPart | undefined): string {
   if (!p) return '#ff00ff';
@@ -78,7 +103,8 @@ const N = OAHU_WORLD_SIZE;
 
 export function parseOahuGround(b: Uint8Array): OahuGround | null {
   if (b.length < GRID_AT + N * N * 2 || u32(b, 0) !== 1 || u32(b, 4) !== GRID_AT) return null;
-  const parts = new Uint8Array(N * N), rots = new Uint8Array(N * N);
+  const parts = new Uint8Array(N * N),
+    rots = new Uint8Array(N * N);
   for (let i = 0; i < N * N; i++) {
     parts[i] = b[GRID_AT + i * 2]!;
     rots[i] = b[GRID_AT + 1 + i * 2]! & 3;
@@ -115,7 +141,8 @@ export function buildOahuGround(original: Uint8Array, g: OahuGround): Uint8Array
     out[GRID_AT + i * 2] = g.parts[i]!;
     out[GRID_AT + 1 + i * 2] = (original[GRID_AT + 1 + i * 2]! & ~3) | (g.rots[i]! & 3);
   }
-  const at = u32(original, 8), end = u32(original, 12);
+  const at = u32(original, 8),
+    end = u32(original, 12);
   const count = Math.max(0, Math.floor((end - at) / 4));
   const pools = oahuGroundPools(g.parts, count);
   for (let p = 0; p < count; p++) w32(out, at + p * 4, Math.max(u32(original, at + p * 4), pools[p]!));
@@ -143,7 +170,8 @@ export function oahuCoveredBy(g: OahuGround, flags: (part: number) => number): I
   };
   for (let y = 0; y < N; y++)
     for (let x = 0; x < N; x++) {
-      const i = y * N + x, p = g.parts[i]!;
+      const i = y * N + x,
+        p = g.parts[i]!;
       if (!p) continue;
       const f = flags(p);
       if (f & WP_2X2) {
@@ -222,7 +250,8 @@ export interface OahuWorldRange {
 
 export function parseRanges(b: Uint8Array): OahuWorldRange[] {
   const out: OahuWorldRange[] = [];
-  for (let o = 0; o + RANGE_SIZE <= b.length; o += RANGE_SIZE) out.push({ hash: u32(b, o), x: s16(b, o + 4), y: s16(b, o + 6), w: b[o + 8]!, h: b[o + 9]! });
+  for (let o = 0; o + RANGE_SIZE <= b.length; o += RANGE_SIZE)
+    out.push({ hash: u32(b, o), x: s16(b, o + 4), y: s16(b, o + 6), w: b[o + 8]!, h: b[o + 9]! });
   return out;
 }
 
@@ -264,19 +293,32 @@ export const worldObjectAngle = (dir: number): number => oahuPropAngle(dir) + Ma
 
 export function parseChests(b: Uint8Array): OahuWorldPoint[] {
   const out: OahuWorldPoint[] = [];
-  for (let o = 0; o + 8 <= b.length; o += 8) out.push({ value: u32(b, o), x: s16(b, o + 4) + 0.5, y: s16(b, o + 6) + 0.5 });
+  for (let o = 0; o + 8 <= b.length; o += 8)
+    out.push({ value: u32(b, o), x: s16(b, o + 4) + 0.5, y: s16(b, o + 6) + 0.5 });
   return out;
 }
 
 export function parseProps(b: Uint8Array): OahuWorldPoint[] {
   const out: OahuWorldPoint[] = [];
-  for (let o = 0; o + 20 <= b.length; o += 20) out.push({ value: u32(b, o), x: s16(b, o + 4) + f32(b, o + 8) + 0.5, y: s16(b, o + 6) + f32(b, o + 12) + 0.5, dir: b[o + 0x10]! });
+  for (let o = 0; o + 20 <= b.length; o += 20)
+    out.push({
+      value: u32(b, o),
+      x: s16(b, o + 4) + f32(b, o + 8) + 0.5,
+      y: s16(b, o + 6) + f32(b, o + 12) + 0.5,
+      dir: b[o + 0x10]!,
+    });
   return out;
 }
 
 export function parseEventRanges(b: Uint8Array): OahuWorldPoint[] {
   const out: OahuWorldPoint[] = [];
-  for (let o = 0; o + 32 <= b.length; o += 32) out.push({ kind: u32(b, o), value: u32(b, o + 4), x: s16(b, o + 8) + f32(b, o + 12) + 0.5, y: s16(b, o + 10) + f32(b, o + 16) + 0.5 });
+  for (let o = 0; o + 32 <= b.length; o += 32)
+    out.push({
+      kind: u32(b, o),
+      value: u32(b, o + 4),
+      x: s16(b, o + 8) + f32(b, o + 12) + 0.5,
+      y: s16(b, o + 10) + f32(b, o + 16) + 0.5,
+    });
   return out;
 }
 
@@ -284,7 +326,8 @@ export function parseEventRanges(b: Uint8Array): OahuWorldPoint[] {
  * The 2-bit grids of slots 1 and 7 (300 x 300, 4 cells a byte, FUN_002ab700). Slot 1 is the dark sea: 0 = the usual sea
  * (and all land), 3 = dark, 1 and 2 the steps between (they lie between 0 and 3).
  */
-export const grid2 = (b: Uint8Array, x: number, y: number): number => ((b[(y * N + x) >> 2] ?? 0) >> (((y * N + x) & 3) * 2)) & 3;
+export const grid2 = (b: Uint8Array, x: number, y: number): number =>
+  ((b[(y * N + x) >> 2] ?? 0) >> (((y * N + x) & 3) * 2)) & 3;
 
 // ---- the world as the pages edit it
 
@@ -325,7 +368,14 @@ export class OahuWorld {
     this.parts = [];
     for (let r = 0; wp && r < wp.rows; r++) {
       const row = wp.row(r);
-      this.parts.push({ row: r, model: u32(row, 0), flags: row[4]!, object: u16(row, 8), battle: row[0x0a]!, name: '' });
+      this.parts.push({
+        row: r,
+        model: u32(row, 0),
+        flags: row[4]!,
+        object: u16(row, 8),
+        battle: row[0x0a]!,
+        name: '',
+      });
     }
     const g = findByName(master.archive, OAHU_GROUND_FILE);
     this.groundEntry = g?.entry ?? null;
@@ -411,7 +461,13 @@ export class OahuWorld {
     const t = this.eventTable();
     const ev = row && t && row < t.rows ? t.row(row) : null;
     const mapHash = ev ? u32(ev, 0x10) : 0;
-    return { row, kind: ev ? ev[0x55]! : 0, map: mapHash ? this.maps.map(mapHash) : undefined, mapHash, point: ev ? u32(ev, 0x14) : 0 };
+    return {
+      row,
+      kind: ev ? ev[0x55]! : 0,
+      map: mapHash ? this.maps.map(mapHash) : undefined,
+      mapHash,
+      point: ev ? u32(ev, 0x14) : 0,
+    };
   }
 
   /** Index of the entrance with ID `id`, -1 when none. */
@@ -421,7 +477,9 @@ export class OahuWorld {
 
   /** The maps of a dungeon (mapGroup row), by floor then name: what an entrance's destination is part of. */
   dungeonMaps(dungeon: number): OahuMapInfo[] {
-    return this.maps.maps.filter((m) => m.dungeon === dungeon && !m.world).sort((a, b) => a.floor - b.floor || a.name.localeCompare(b.name));
+    return this.maps.maps
+      .filter((m) => m.dungeon === dungeon && !m.world)
+      .sort((a, b) => a.floor - b.floor || a.name.localeCompare(b.name));
   }
 
   // ---- ranges
@@ -468,9 +526,11 @@ export class OahuWorld {
 
   /** Whether the terrain differs from the ROM's. */
   groundChanged(): boolean {
-    const g = this.ground, o = this.groundOriginal;
+    const g = this.ground,
+      o = this.groundOriginal;
     if (!g || !o) return false;
-    for (let i = 0; i < N * N; i++) if (g.parts[i] !== o[GRID_AT + i * 2] || g.rots[i] !== (o[GRID_AT + 1 + i * 2]! & 3)) return true;
+    for (let i = 0; i < N * N; i++)
+      if (g.parts[i] !== o[GRID_AT + i * 2] || g.rots[i] !== (o[GRID_AT + 1 + i * 2]! & 3)) return true;
     return false;
   }
 
@@ -495,7 +555,9 @@ export class OahuWorld {
 
   /** Slots whose bytes differ from the ROM's. */
   changedSlots(): number[] {
-    return OAHU_WORLD_SECTIONS.flatMap((h, k) => (this.maps.db.has(h) && !equalBytes(this.maps.db.get(h), this.maps.db.original(h)) ? [k] : []));
+    return OAHU_WORLD_SECTIONS.flatMap((h, k) =>
+      this.maps.db.has(h) && !equalBytes(this.maps.db.get(h), this.maps.db.original(h)) ? [k] : [],
+    );
   }
 
   isChanged(): boolean {
@@ -503,12 +565,19 @@ export class OahuWorld {
   }
 
   saved(): OahuWorldSaved {
-    const sections = this.changedSlots().map((k): [number, Uint8Array] => [OAHU_WORLD_SECTIONS[k]!, this.section(k).slice()]);
-    return { ...(this.groundChanged() ? { cells: this.groundSnapshot()! } : {}), ...(sections.length ? { sections } : {}) };
+    const sections = this.changedSlots().map((k): [number, Uint8Array] => [
+      OAHU_WORLD_SECTIONS[k]!,
+      this.section(k).slice(),
+    ]);
+    return {
+      ...(this.groundChanged() ? { cells: this.groundSnapshot()! } : {}),
+      ...(sections.length ? { sections } : {}),
+    };
   }
 
   restore(saved: OahuWorldSaved): void {
-    for (const [h, b] of saved.sections ?? []) if (this.maps.db.has(h) && (OAHU_WORLD_SECTIONS as readonly number[]).includes(h)) this.maps.db.set(h, b);
+    for (const [h, b] of saved.sections ?? [])
+      if (this.maps.db.has(h) && (OAHU_WORLD_SECTIONS as readonly number[]).includes(h)) this.maps.db.set(h, b);
     if (saved.cells) this.restoreGround(saved.cells);
     this.changed();
   }
@@ -517,7 +586,8 @@ export class OahuWorld {
   changedMasterEntries(): Map<number, Uint8Array> {
     const out = new Map<number, Uint8Array>();
     const b = this.groundBytes();
-    if (b && this.groundEntry && this.groundOriginal && !equalBytes(b, this.groundOriginal)) out.set(this.groundEntry.index, b);
+    if (b && this.groundEntry && this.groundOriginal && !equalBytes(b, this.groundOriginal))
+      out.set(this.groundEntry.index, b);
     return out;
   }
 }

@@ -6,22 +6,66 @@
 // (H3DLayout), each block goes back where it was, so an unchanged file comes out byte-identical. Otherwise the
 // blocks are placed in the order they are made (breadth first, like SPICA's serializer), the strings sorted
 // (SPICA H3DComparers), raw data after the commands, aligned like RPG FREE!'s files.
-import { fragmentShaderCommands, lutSamplerCommands, materialTextureCommands, meshCommands, subMeshCommands, textureCommands } from './commands';
+import {
+  fragmentShaderCommands,
+  lutSamplerCommands,
+  materialTextureCommands,
+  meshCommands,
+  subMeshCommands,
+  textureCommands,
+} from './commands';
 import { buildPatriciaTree } from './patricia';
 import { readCommands, Reg } from './pica';
 import {
-  animationFlagsSwapped, contentSize, headerLength, KEY_SIZE, keyBytes, legacyRelocDiff, lightContentSize, nullValues, paramsSize, Sec,
-  TEXTURE_ADDRESS_REGS, TRANSFORM_ABSENT, TRANSFORM_CONST, treeless,
+  animationFlagsSwapped,
+  contentSize,
+  headerLength,
+  KEY_SIZE,
+  keyBytes,
+  legacyRelocDiff,
+  lightContentSize,
+  nullValues,
+  paramsSize,
+  Sec,
+  TEXTURE_ADDRESS_REGS,
+  TRANSFORM_ABSENT,
+  TRANSFORM_CONST,
+  treeless,
 } from './read';
 import type {
-  H3D, H3DAnimation, H3DAnimContent, H3DAnimSlot, H3DBone, H3DCamera, H3DFloatKeyFrameGroup, H3DKeySegment, H3DLight, H3DLUT,
-  H3DMaterial, H3DMaterialAnim, H3DMaterialParams, H3DMesh, H3DMetaData, H3DModel, H3DQuatTrack, H3DShader, H3DSubMesh, H3DTexture,
-  H3DTextureMapper, KeyFrame, RGBA,
+  H3D,
+  H3DAnimation,
+  H3DAnimContent,
+  H3DAnimSlot,
+  H3DBone,
+  H3DCamera,
+  H3DFloatKeyFrameGroup,
+  H3DKeySegment,
+  H3DLight,
+  H3DLUT,
+  H3DMaterial,
+  H3DMaterialAnim,
+  H3DMaterialParams,
+  H3DMesh,
+  H3DMetaData,
+  H3DModel,
+  H3DQuatTrack,
+  H3DShader,
+  H3DSubMesh,
+  H3DTexture,
+  H3DTextureMapper,
+  KeyFrame,
+  RGBA,
 } from './types';
-import { H3DPrimitiveType } from './types';
 
 /** Sections of the file, in file order. */
-const enum S { Contents, Strings, Commands, RawData, RawExt }
+const enum S {
+  Contents,
+  Strings,
+  Commands,
+  RawData,
+  RawExt,
+}
 const SECTION_KIND = [Sec.Contents, Sec.Strings, Sec.Commands, Sec.RawData, Sec.RawExt];
 
 interface Fixup {
@@ -166,7 +210,13 @@ class Writer {
   }
 
   /** H3DDict {values, count, tree}: values are pointers to `item` blocks, or inline structs of `inline` bytes. */
-  dict<T>(b: Block, at: number, values: T[], name: (v: T) => string, item: { ptr: (v: T) => Block } | { inline: number; fill: (x: Block, o: number, v: T) => void }): void {
+  dict<T>(
+    b: Block,
+    at: number,
+    values: T[],
+    name: (v: T) => string,
+    item: { ptr: (v: T) => Block } | { inline: number; fill: (x: Block, o: number, v: T) => void },
+  ): void {
     if (!treeless.has(values)) this.tree(b, at + 8, values, values.map(name));
     if (nullValues.has(values) && !values.length) this.ptr(b, at, null);
     else {
@@ -180,20 +230,39 @@ class Writer {
   }
 
   /** {pointer, count} of a list of `size`-byte items. */
-  list<T>(b: Block, at: number, values: T[], role: string, size: number, fill: (x: Block, o: number, v: T, i: number) => void, align = 4): void {
+  list<T>(
+    b: Block,
+    at: number,
+    values: T[],
+    role: string,
+    size: number,
+    fill: (x: Block, o: number, v: T, i: number) => void,
+    align = 4,
+  ): void {
     if (nullValues.has(values) && !values.length) this.ptr(b, at, null);
-    else this.ptr(b, at, this.block(S.Contents, values.length * size, align, values, role, (x) => values.forEach((v, i) => fill(x, i * size, v, i))));
+    else
+      this.ptr(
+        b,
+        at,
+        this.block(S.Contents, values.length * size, align, values, role, (x) =>
+          values.forEach((v, i) => fill(x, i * size, v, i)),
+        ),
+      );
     b.u32(at + 4, values.length);
   }
 
   bools(b: Block, at: number, values: boolean[]): void {
     if (nullValues.has(values) && !values.length) this.ptr(b, at, null);
     else
-      this.ptr(b, at, this.block(S.Contents, Math.ceil(values.length / 8), 4, values, 'bits', (x) => {
-        values.forEach((v, i) => {
-          if (v) x.u8(i >> 3, x.bytes[i >> 3]! | (1 << (i & 7)));
-        });
-      }));
+      this.ptr(
+        b,
+        at,
+        this.block(S.Contents, Math.ceil(values.length / 8), 4, values, 'bits', (x) => {
+          values.forEach((v, i) => {
+            if (v) x.u8(i >> 3, x.bytes[i >> 3]! | (1 << (i & 7)));
+          });
+        }),
+      );
     b.u32(at + 4, values.length);
   }
 
@@ -209,30 +278,41 @@ class Writer {
           const vals = v.values as unknown[];
           if (nullValues.has(vals) && !vals.length) return this.ptr(y, o + 8, null);
           const size = [4, 4, 4, 4, 0x3c, 0x0c][v.type]!;
-          this.ptr(y, o + 8, this.block(S.Contents, vals.length * size, 4, vals, 'data', (z) => {
-            vals.forEach((e, i) => {
-              const p = i * size;
-              switch (v.type) {
-                case 0: z.u32(p, e as number); break;
-                case 1: z.f32(p, e as number); break;
-                case 2: this.str(z, p, e as string); break;
-                case 3: {
-                  const s = e as string;
-                  const u = this.block(S.Strings, (s.length + 1) * 2, 2, vals, `u16:${i}`, (w) => {
-                    for (let k = 0; k < s.length; k++) w.u16(k * 2, s.charCodeAt(k));
-                  });
-                  this.ptr(z, p, u);
-                  break;
+          this.ptr(
+            y,
+            o + 8,
+            this.block(S.Contents, vals.length * size, 4, vals, 'data', (z) => {
+              vals.forEach((e, i) => {
+                const p = i * size;
+                switch (v.type) {
+                  case 0:
+                    z.u32(p, e as number);
+                    break;
+                  case 1:
+                    z.f32(p, e as number);
+                    break;
+                  case 2:
+                    this.str(z, p, e as string);
+                    break;
+                  case 3: {
+                    const s = e as string;
+                    const u = this.block(S.Strings, (s.length + 1) * 2, 2, vals, `u16:${i}`, (w) => {
+                      for (let k = 0; k < s.length; k++) w.u16(k * 2, s.charCodeAt(k));
+                    });
+                    this.ptr(z, p, u);
+                    break;
+                  }
+                  case 4: {
+                    const bb = e as { center: number[]; orientation: number[]; size: number[] };
+                    z.floats(p, [...bb.center, ...bb.orientation, ...bb.size]);
+                    break;
+                  }
+                  default:
+                    throw new Error('vertex data metadata cannot be written');
                 }
-                case 4: {
-                  const bb = e as { center: number[]; orientation: number[]; size: number[] };
-                  z.floats(p, [...bb.center, ...bb.orientation, ...bb.size]);
-                  break;
-                }
-                default: throw new Error('vertex data metadata cannot be written');
-              }
-            });
-          }));
+              });
+            }),
+          );
         },
       });
     });
@@ -271,14 +351,18 @@ class Writer {
       b.u8(1, m.boneScaling);
       b.u16(2, m.silhouetteMaterialsCount);
       b.floats(4, m.worldTransform);
-      this.dict(b, 0x34, m.materials, (x) => x.name, { inline: v21 ? 0x2c : 0x58, fill: (x, o, mat) => this.material(x, o, mat) });
+      this.dict(b, 0x34, m.materials, (x) => x.name, {
+        inline: v21 ? 0x2c : 0x58,
+        fill: (x, o, mat) => this.material(x, o, mat),
+      });
       this.list(b, 0x40, m.meshes, 'meshes', 0x38, (x, o, mesh) => this.mesh(x, o, mesh, b));
       const meshes = this.owned.get(m.meshes)?.get('meshes') ?? null;
       let pos = 0;
       [m.meshesLayer0, m.meshesLayer1, m.meshesLayer2, m.meshesLayer3].forEach((layer, i) => {
         if (layer.length) {
           pos = m.meshes.indexOf(layer[0]!);
-          if (pos < 0 || layer.some((x, k) => m.meshes[pos + k] !== x)) throw new Error(`model ${m.name}: the meshes of layer ${i} are not a run of the mesh list`);
+          if (pos < 0 || layer.some((x, k) => m.meshes[pos + k] !== x))
+            throw new Error(`model ${m.name}: the meshes of layer ${i} are not a run of the mesh list`);
         }
         this.ptr(b, 0x48 + i * 8, meshes, pos * 0x38);
         pos += layer.length;
@@ -308,13 +392,16 @@ class Writer {
     b.u8(o + 2, (m.type & 3) | ((m.skinning & 3) << 2) | m.flagsRest);
     b.u16(o + 4, m.nodeIndex);
     b.u16(o + 6, (m.priority & 0xff) | ((m.layer & 3) << 8) | m.keyRest);
-    let enable = m.enableCommands, disable = m.disableCommands;
+    let enable = m.enableCommands,
+      disable = m.disableCommands;
     if (!enable) {
       const g = meshCommands(m);
       enable = g.enable;
       disable ??= g.disable;
     }
-    const raw = m.rawBuffer.length ? this.block(S.RawData, m.rawBuffer.length, 4, m.rawBuffer, 'raw', (x) => x.bytes.set(m.rawBuffer)) : null;
+    const raw = m.rawBuffer.length
+      ? this.block(S.RawData, m.rawBuffer.length, 4, m.rawBuffer, 'raw', (x) => x.bytes.set(m.rawBuffer))
+      : null;
     this.cmd(b, o + 8, enable, (x) => {
       for (const c of readCommands(enable!)) {
         // The base address: a BaseAddress relocation from version 0x21, before it the value RPG3's converter wrote.
@@ -346,7 +433,9 @@ class Writer {
       : null;
     const words = s.commands ?? subMeshCommands(s);
     this.cmd(b, o + 0x2c, words, (x) => {
-      for (const c of readCommands(words)) if (c.register === Reg.GPUREG_INDEXBUFFER_CONFIG && idx) this.ptr(x, c.word * 4, idx, 0, wide ? Sec.RawDataIndex16 : Sec.RawDataIndex8);
+      for (const c of readCommands(words))
+        if (c.register === Reg.GPUREG_INDEXBUFFER_CONFIG && idx)
+          this.ptr(x, c.word * 4, idx, 0, wide ? Sec.RawDataIndex16 : Sec.RawDataIndex8);
     });
   }
 
@@ -372,7 +461,14 @@ class Writer {
     this.cmd(b, o + 0x10, m.textureCommands ?? materialTextureCommands(m));
     if (v21) {
       if (nullValues.has(m.textureMappers)) this.ptr(b, o + 0x18, null);
-      else this.ptr(b, o + 0x18, this.block(S.Contents, 0x30, 4, m.textureMappers, 'mappers', (x) => m.textureMappers.forEach((t, i) => this.mapper(x, i * 0x10, t))));
+      else
+        this.ptr(
+          b,
+          o + 0x18,
+          this.block(S.Contents, 0x30, 4, m.textureMappers, 'mappers', (x) =>
+            m.textureMappers.forEach((t, i) => this.mapper(x, i * 0x10, t)),
+          ),
+        );
     } else m.textureMappers.forEach((t, i) => this.mapper(b, o + 0x18 + i * 0x10, t));
     const n = o + (v21 ? 0x1c : 0x48);
     this.str(b, n, m.texture0Name);
@@ -401,8 +497,20 @@ class Writer {
       });
       b.u16(0x54, p.lightSetIndex);
       b.u16(0x56, p.fogIndex);
-      [p.emissionColor, p.ambientColor, p.diffuseColor, p.specular0Color, p.specular1Color, p.constant0Color, p.constant1Color,
-        p.constant2Color, p.constant3Color, p.constant4Color, p.constant5Color, p.blendColor].forEach((c, i) => b.rgba(0x58 + i * 4, c));
+      [
+        p.emissionColor,
+        p.ambientColor,
+        p.diffuseColor,
+        p.specular0Color,
+        p.specular1Color,
+        p.constant0Color,
+        p.constant1Color,
+        p.constant2Color,
+        p.constant3Color,
+        p.constant4Color,
+        p.constant5Color,
+        p.blendColor,
+      ].forEach((c, i) => b.rgba(0x58 + i * 4, c));
       b.f32(0x88, p.colorScale);
       p.samplerPtrs.forEach((v, i) => b.u32(0x8c + i * 4, v));
       b.u8(0xa4, p.layerConfig);
@@ -414,9 +522,22 @@ class Writer {
       b.f32(0xc4, p.polygonOffsetUnit);
       const cb = this.cmd(b, 0xc8, fs);
       this.ptr(b, 0xd0, cb, 0, Sec.CommandsSrc);
-      [p.lutDist0TableName, p.lutDist1TableName, p.lutFresnelTableName, p.lutReflecRTableName, p.lutReflecGTableName, p.lutReflecBTableName,
-        p.lutDist0SamplerName, p.lutDist1SamplerName, p.lutFresnelSamplerName, p.lutReflecRSamplerName, p.lutReflecGSamplerName,
-        p.lutReflecBSamplerName, p.shaderReference, p.modelReference].forEach((s, i) => this.str(b, 0xd4 + i * 4, s));
+      [
+        p.lutDist0TableName,
+        p.lutDist1TableName,
+        p.lutFresnelTableName,
+        p.lutReflecRTableName,
+        p.lutReflecGTableName,
+        p.lutReflecBTableName,
+        p.lutDist0SamplerName,
+        p.lutDist1SamplerName,
+        p.lutFresnelSamplerName,
+        p.lutReflecRSamplerName,
+        p.lutReflecGSamplerName,
+        p.lutReflecBSamplerName,
+        p.shaderReference,
+        p.modelReference,
+      ].forEach((s, i) => this.str(b, 0xd4 + i * 4, s));
       if (this.v >= 7) this.metaData(b, 0x10c, p.metaData);
     });
   }
@@ -494,9 +615,14 @@ class Writer {
       b.u8(0x29, c.projectionType);
       b.u8(0x2a, c.flags);
       b.f32(0x2c, c.wScale);
-      const view = c.view, proj = c.projection;
+      const view = c.view,
+        proj = c.projection;
       this.ptr(b, 0x30, view && this.block(S.Contents, view.length * 4, 4, view, 'view', (x) => x.floats(0, view)));
-      this.ptr(b, 0x34, proj && this.block(S.Contents, proj.length * 4, 4, proj, 'projection', (x) => x.floats(0, proj)));
+      this.ptr(
+        b,
+        0x34,
+        proj && this.block(S.Contents, proj.length * 4, 4, proj, 'projection', (x) => x.floats(0, proj)),
+      );
       this.metaData(b, 0x38, c.metaData);
     });
   }
@@ -512,19 +638,30 @@ class Writer {
       b.u16(6, a.curvesCount);
       b.f32(8, a.framesCount);
       this.list(b, 0x0c, a.elements, 'elements', 4, (x, o, e) => {
-        this.ptr(x, o, this.block(S.Contents, 8 + contentSize(e.primitiveType), 4, e, 'element', (y) => {
-          this.str(y, 0, e.name);
-          y.u16(4, e.targetType);
-          y.u16(6, e.primitiveType);
-          this.content(y, 8, e.content);
-        }));
+        this.ptr(
+          x,
+          o,
+          this.block(S.Contents, 8 + contentSize(e.primitiveType), 4, e, 'element', (y) => {
+            this.str(y, 0, e.name);
+            y.u16(4, e.targetType);
+            y.u16(6, e.primitiveType);
+            this.content(y, 8, e.content);
+          }),
+        );
       });
       this.metaData(b, 0x14, a.metaData);
       if (material) this.list(b, 0x18, (a as H3DMaterialAnim).textureNames, 'names', 4, (x, o, n) => this.str(x, o, n));
     });
   }
 
-  slots(b: Block, o: number, slots: H3DAnimSlot[], constBit: (i: number) => number, absentBit: (i: number) => number, rest: number): void {
+  slots(
+    b: Block,
+    o: number,
+    slots: H3DAnimSlot[],
+    constBit: (i: number) => number,
+    absentBit: (i: number) => number,
+    rest: number,
+  ): void {
     let flags = rest;
     slots.forEach((s, i) => {
       const at = o + 4 + i * 4;
@@ -540,27 +677,59 @@ class Writer {
   content(b: Block, o: number, c: H3DAnimContent): void {
     switch (c.kind) {
       case 'vector':
-        return this.slots(b, o, c.slots, (i) => i, (i) => 8 + i, c.flagsRest);
+        return this.slots(
+          b,
+          o,
+          c.slots,
+          (i) => i,
+          (i) => 8 + i,
+          c.flagsRest,
+        );
       case 'transform': {
-        const s = [c.scaleX, c.scaleY, c.scaleZ, c.rotationX, c.rotationY, c.rotationZ, c.translationX, c.translationY, c.translationZ];
-        return this.slots(b, o, s, (i) => TRANSFORM_CONST[i]!, (i) => TRANSFORM_ABSENT[i]!, c.flagsRest);
+        const s = [
+          c.scaleX,
+          c.scaleY,
+          c.scaleZ,
+          c.rotationX,
+          c.rotationY,
+          c.rotationZ,
+          c.translationX,
+          c.translationY,
+          c.translationZ,
+        ];
+        return this.slots(
+          b,
+          o,
+          s,
+          (i) => TRANSFORM_CONST[i]!,
+          (i) => TRANSFORM_ABSENT[i]!,
+          c.flagsRest,
+        );
       }
       case 'quatTransform': {
         let flags = 0;
-        const parts: [H3DQuatTrack<number[]> | null, number][] = [[c.scales, 3], [c.rotations, 4], [c.translations, 3]];
+        const parts: [H3DQuatTrack<number[]> | null, number][] = [
+          [c.scales, 3],
+          [c.rotations, 4],
+          [c.translations, 3],
+        ];
         parts.forEach(([t, size], i) => {
           if (!t) {
             flags |= 1 << (5 - i);
             return;
           }
           if (t.constant) flags |= 1 << (2 - i);
-          this.ptr(b, o + 4 + i * 4, this.block(S.Contents, t.constant ? size * 4 : 0x14, 4, t, 'track', (x) => {
-            if (t.constant) return x.floats(0, t.frames[0]!);
-            x.f32(0, t.startFrame);
-            x.f32(4, t.endFrame);
-            x.u32(8, t.flags);
-            this.list(x, 0x0c, t.frames, 'frames', size * 4, (y, fo, f) => y.floats(fo, f));
-          }));
+          this.ptr(
+            b,
+            o + 4 + i * 4,
+            this.block(S.Contents, t.constant ? size * 4 : 0x14, 4, t, 'track', (x) => {
+              if (t.constant) return x.floats(0, t.frames[0]!);
+              x.f32(0, t.startFrame);
+              x.f32(4, t.endFrame);
+              x.u32(8, t.flags);
+              this.list(x, 0x0c, t.frames, 'frames', size * 4, (y, fo, f) => y.floats(fo, f));
+            }),
+          );
         });
         b.u32(o, flags);
         return;
@@ -600,26 +769,34 @@ class Writer {
         { ...c, startFrame: c.segmentStart ?? c.startFrame, endFrame: c.segmentEnd ?? c.endFrame },
         ...(c.moreSegments ?? []),
       ];
-      this.ptr(b, 0x0c, this.block(S.Contents, segs.length * 0x20, 4, c, 'segment', (x) => {
-        segs.forEach((s, i) => {
-          const o = i * 0x20;
-          const q = quantParams(s, s.endFrame - s.startFrame);
-          x.f32(o, s.startFrame);
-          x.f32(o + 4, s.endFrame);
-          x.u8(o + 8, s.interpolationType);
-          x.u8(o + 9, s.quantization);
-          x.u16(o + 0x0a, s.keyFrames.length);
-          x.floats(o + 0x0c, [q.invDuration, q.valueScale, q.valueOffset, q.frameScale]);
-          this.keys(x, o + 0x1c, s.keyFrames, s.quantization, q);
-        });
-      }));
+      this.ptr(
+        b,
+        0x0c,
+        this.block(S.Contents, segs.length * 0x20, 4, c, 'segment', (x) => {
+          segs.forEach((s, i) => {
+            const o = i * 0x20;
+            const q = quantParams(s, s.endFrame - s.startFrame);
+            x.f32(o, s.startFrame);
+            x.f32(o + 4, s.endFrame);
+            x.u8(o + 8, s.interpolationType);
+            x.u8(o + 9, s.quantization);
+            x.u16(o + 0x0a, s.keyFrames.length);
+            x.floats(o + 0x0c, [q.invDuration, q.valueScale, q.valueOffset, q.frameScale]);
+            this.keys(x, o + 0x1c, s.keyFrames, s.quantization, q);
+          });
+        }),
+      );
       b.u32(0x10, segs.length);
     });
   }
 
   keys(b: Block, at: number, keys: KeyFrame[], quant: number, q: QuantParams): void {
     if (nullValues.has(keys) && !keys.length) return this.ptr(b, at, null);
-    this.ptr(b, at, this.block(S.Contents, keys.length * KEY_SIZE[quant]!, 4, keys, 'keys', (x) => encodeKeys(x, keys, quant, q)));
+    this.ptr(
+      b,
+      at,
+      this.block(S.Contents, keys.length * KEY_SIZE[quant]!, 4, keys, 'keys', (x) => encodeKeys(x, keys, quant, q)),
+    );
   }
 }
 
@@ -636,27 +813,61 @@ const FLOAT_QUANT = new Set([0, 3, 6]);
 
 /** The stored quantization parameters, or SPICA's (KeyFrameQuantizationHelper) for a new curve. */
 function quantParams(s: Omit<H3DKeySegment, 'startFrame' | 'endFrame'>, duration: number): QuantParams {
-  if (s.valueScale !== undefined && s.valueOffset !== undefined && s.frameScale !== undefined && s.invDuration !== undefined)
-    return { valueScale: s.valueScale, valueOffset: s.valueOffset, frameScale: s.frameScale, invDuration: s.invDuration };
+  if (
+    s.valueScale !== undefined &&
+    s.valueOffset !== undefined &&
+    s.frameScale !== undefined &&
+    s.invDuration !== undefined
+  )
+    return {
+      valueScale: s.valueScale,
+      valueOffset: s.valueOffset,
+      frameScale: s.frameScale,
+      invDuration: s.invDuration,
+    };
   const k = s.keyFrames;
-  let minF = k[0]?.frame ?? 0, maxF = minF, minV = k[0]?.value ?? 0, maxV = minV;
+  let minF = k[0]?.frame ?? 0,
+    maxF = minF,
+    minV = k[0]?.value ?? 0,
+    maxV = minV;
   for (const x of k) {
-    minF = Math.min(minF, x.frame); maxF = Math.max(maxF, x.frame);
-    minV = Math.min(minV, x.value); maxV = Math.max(maxV, x.value);
+    minF = Math.min(minF, x.frame);
+    maxF = Math.max(maxF, x.frame);
+    minV = Math.min(minV, x.value);
+    maxV = Math.max(maxV, x.value);
   }
   const q = s.quantization;
-  const vbits = [0, 20, 16, 0, 16, 12, 0, 20][q]!, fbits = [0, 12, 8, 0, 0, 8, 0, 12][q]!;
+  const vbits = [0, 20, 16, 0, 16, 12, 0, 20][q]!,
+    fbits = [0, 12, 8, 0, 0, 8, 0, 12][q]!;
   let valueScale = vbits ? (maxV - minV) / (2 ** vbits - 1) : 1;
   let frameScale = fbits ? (maxF - minF) / (2 ** fbits - 1) : 1;
   if (!valueScale) valueScale = 1;
   if (!frameScale) frameScale = 1;
-  return { valueScale, valueOffset: valueScale === 1 && FLOAT_QUANT.has(q) ? 0 : minV, frameScale, invDuration: duration ? 1 / duration : 0 };
+  return {
+    valueScale,
+    valueOffset: valueScale === 1 && FLOAT_QUANT.has(q) ? 0 : minV,
+    frameScale,
+    invDuration: duration ? 1 / duration : 0,
+  };
 }
 
 function encodeKeys(b: Block, keys: KeyFrame[], quant: number, q: QuantParams): void {
   const kept = keyBytes.get(keys);
-  if (kept && kept.params[0] === quant && kept.params[1] === q.frameScale && kept.params[2] === q.valueScale && kept.params[3] === q.valueOffset &&
-    kept.decoded.length === keys.length && kept.decoded.every((d, i) => d.frame === keys[i]!.frame && d.value === keys[i]!.value && d.inSlope === keys[i]!.inSlope && d.outSlope === keys[i]!.outSlope)) {
+  if (
+    kept &&
+    kept.params[0] === quant &&
+    kept.params[1] === q.frameScale &&
+    kept.params[2] === q.valueScale &&
+    kept.params[3] === q.valueOffset &&
+    kept.decoded.length === keys.length &&
+    kept.decoded.every(
+      (d, i) =>
+        d.frame === keys[i]!.frame &&
+        d.value === keys[i]!.value &&
+        d.inSlope === keys[i]!.inSlope &&
+        d.outSlope === keys[i]!.outSlope,
+    )
+  ) {
     b.bytes.set(kept.bytes);
     return;
   }
@@ -666,7 +877,9 @@ function encodeKeys(b: Block, keys: KeyFrame[], quant: number, q: QuantParams): 
     const f = k.frame / q.frameScale;
     const v = q.valueScale ? (k.value - q.valueOffset) / q.valueScale : 0;
     switch (quant) {
-      case 0: b.floats(o, [f, v, k.inSlope, k.outSlope]); break;
+      case 0:
+        b.floats(o, [f, v, k.inSlope, k.outSlope]);
+        break;
       case 1:
         b.u32(o, (int(f) & 0xfff) | ((int(v) & 0xfffff) << 12));
         b.u16(o + 4, int(k.inSlope * 256));
@@ -681,7 +894,9 @@ function encodeKeys(b: Block, keys: KeyFrame[], quant: number, q: QuantParams): 
         b.u8(o + 5, sl >> 16);
         break;
       }
-      case 3: b.floats(o, [f, v, k.inSlope]); break;
+      case 3:
+        b.floats(o, [f, v, k.inSlope]);
+        break;
       case 4:
         b.u16(o, int(f * 32));
         b.u16(o + 2, int(v));
@@ -695,8 +910,12 @@ function encodeKeys(b: Block, keys: KeyFrame[], quant: number, q: QuantParams): 
         b.u8(o + 3, w >> 16);
         break;
       }
-      case 6: b.floats(o, [f, v]); break;
-      case 7: b.u32(o, (int(f) & 0xfff) | ((int(v) & 0xfffff) << 12)); break;
+      case 6:
+        b.floats(o, [f, v]);
+        break;
+      case 7:
+        b.u32(o, (int(f) & 0xfff) | ((int(v) & 0xfffff) << 12));
+        break;
     }
     o += KEY_SIZE[quant]!;
   }
@@ -708,7 +927,10 @@ function encodeKeys(b: Block, keys: KeyFrame[], quant: number, q: QuantParams): 
  * steps stay steps; a linear segment's slopes become the line's.
  */
 export function mergeSegments(c: H3DFloatKeyFrameGroup): H3DKeySegment {
-  const segs: H3DKeySegment[] = [{ ...c, startFrame: c.segmentStart ?? c.startFrame, endFrame: c.segmentEnd ?? c.endFrame }, ...(c.moreSegments ?? [])];
+  const segs: H3DKeySegment[] = [
+    { ...c, startFrame: c.segmentStart ?? c.startFrame, endFrame: c.segmentEnd ?? c.endFrame },
+    ...(c.moreSegments ?? []),
+  ];
   const keys: KeyFrame[] = [];
   for (const s of segs) {
     const k = s.keyFrames;
@@ -743,14 +965,20 @@ function hintedLayout(h: H3D, blocks: Block[], v: number): Placed | null {
   const l = h.layout;
   if (!l || l.version !== v) return null;
   for (const b of blocks) {
-    const at = b.sec === S.Strings && b.role === 'string' ? l.strings.get(b.owner as string) : typeof b.owner === 'object' && b.owner ? l.offsets.get(b.owner)?.get(b.role) : undefined;
+    const at =
+      b.sec === S.Strings && b.role === 'string'
+        ? l.strings.get(b.owner as string)
+        : typeof b.owner === 'object' && b.owner
+          ? l.offsets.get(b.owner)?.get(b.role)
+          : undefined;
     if (at === undefined) return null;
     const s = l.sections[b.sec]!;
     if (at < s.address || at + b.size > s.address + s.length || at % b.align) return null;
     b.offset = at;
   }
   const sorted = blocks.filter((b) => b.size).sort((a, b) => a.offset - b.offset);
-  for (let i = 1; i < sorted.length; i++) if (sorted[i]!.offset < sorted[i - 1]!.offset + sorted[i - 1]!.size) return null;
+  for (let i = 1; i < sorted.length; i++)
+    if (sorted[i]!.offset < sorted[i - 1]!.offset + sorted[i - 1]!.size) return null;
   return { sections: l.sections, relocationAddress: l.relocationAddress, fileLength: l.fileLength };
 }
 
@@ -761,7 +989,13 @@ function freshLayout(blocks: Block[], v: number): Placed {
   const bySec = (s: S): Block[] => blocks.filter((b) => b.sec === s);
   const strings = bySec(S.Strings).sort((a, b) => compareStrings(String(a.owner), String(b.owner)));
   const raw = bySec(S.RawData);
-  const order: Block[][] = [bySec(S.Contents), strings, bySec(S.Commands), [...raw.filter((b) => b.align === 0x80), ...raw.filter((b) => b.align !== 0x80)], bySec(S.RawExt)];
+  const order: Block[][] = [
+    bySec(S.Contents),
+    strings,
+    bySec(S.Commands),
+    [...raw.filter((b) => b.align === 0x80), ...raw.filter((b) => b.align !== 0x80)],
+    bySec(S.RawExt),
+  ];
   const sectionAlign = [4, 4, 0x10, 0x80, 0x80];
   order.forEach((list, s) => {
     pos = align(pos, sectionAlign[s]!);
@@ -799,7 +1033,15 @@ export function writeH3D(h: H3D, opts: WriteOptions = {}): Uint8Array {
   // Relocations
   const relocs: { position: number; word: number; raw: boolean }[] = [];
   const kindSection = (kind: number): S =>
-    kind === Sec.Contents ? S.Contents : kind === Sec.Strings ? S.Strings : kind <= Sec.CommandsSrc ? S.Commands : kind <= Sec.RawDataIndex8 ? S.RawData : S.RawExt;
+    kind === Sec.Contents
+      ? S.Contents
+      : kind === Sec.Strings
+        ? S.Strings
+        : kind <= Sec.CommandsSrc
+          ? S.Commands
+          : kind <= Sec.RawDataIndex8
+            ? S.RawData
+            : S.RawExt;
   const relocLength = blocks.reduce((n, b) => n + b.fixups.length, 0) * 4;
   const end = placed.relocationAddress + relocLength;
   const fileLength = Math.max(placed.fileLength ?? 0, end);
@@ -822,7 +1064,11 @@ export function writeH3D(h: H3D, opts: WriteOptions = {}): Uint8Array {
       }
       if (rel > 0x1ffffff) throw new Error('pointer out of the 25-bit range');
       const fileKind = f.kind - legacyRelocDiff(f.kind, v);
-      relocs.push({ position, word: (rel | (fileKind << 25) | (source << 29)) >>> 0, raw: f.kind >= Sec.RawData && f.kind <= Sec.RawExtIndex8 });
+      relocs.push({
+        position,
+        word: (rel | (fileKind << 25) | (source << 29)) >>> 0,
+        raw: f.kind >= Sec.RawData && f.kind <= Sec.RawExtIndex8,
+      });
     }
   // The read order when it is the same set of pointers, else commands first (as RPG FREE!'s converter does).
   const hint = placed.fileLength !== undefined ? h.layout?.relocations : undefined;
@@ -832,16 +1078,31 @@ export function writeH3D(h: H3D, opts: WriteOptions = {}): Uint8Array {
     const list = hint.map((p) => byPos.get(p));
     if (byPos.size === relocs.length && list.every((r) => r)) ordered = list as typeof relocs;
   }
-  if (ordered === relocs) ordered = [...relocs.filter((r) => r.word >>> 29 === Sec.Commands), ...relocs.filter((r) => r.word >>> 29 !== Sec.Commands)];
+  if (ordered === relocs)
+    ordered = [
+      ...relocs.filter((r) => r.word >>> 29 === Sec.Commands),
+      ...relocs.filter((r) => r.word >>> 29 !== Sec.Commands),
+    ];
   ordered.forEach((r, i) => dv.setUint32(placed.relocationAddress + i * 4, r.word, true));
   // Header
   out.set([0x42, 0x43, 0x48, 0, v, (opts.forward ?? h.forwardCompatibility) & 0xff], 0);
   dv.setUint16(6, opts.converter ?? h.converterVersion, true);
   const ext = v >= 0x21;
   const fields = [
-    sec[S.Contents]!.address, sec[S.Strings]!.address, sec[S.Commands]!.address, sec[S.RawData]!.address, ...(ext ? [sec[S.RawExt]!.address] : []), placed.relocationAddress,
-    sec[S.Contents]!.length, sec[S.Strings]!.length, sec[S.Commands]!.length, sec[S.RawData]!.length, ...(ext ? [sec[S.RawExt]!.length] : []), relocLength,
-    h.unInitDataLength ?? 0, h.unInitCommandsLength ?? 0,
+    sec[S.Contents]!.address,
+    sec[S.Strings]!.address,
+    sec[S.Commands]!.address,
+    sec[S.RawData]!.address,
+    ...(ext ? [sec[S.RawExt]!.address] : []),
+    placed.relocationAddress,
+    sec[S.Contents]!.length,
+    sec[S.Strings]!.length,
+    sec[S.Commands]!.length,
+    sec[S.RawData]!.length,
+    ...(ext ? [sec[S.RawExt]!.length] : []),
+    relocLength,
+    h.unInitDataLength ?? 0,
+    h.unInitCommandsLength ?? 0,
   ];
   if (!ext && blocks.some((b) => b.sec === S.RawExt)) throw new Error('RawExt data needs version 0x21');
   fields.forEach((x, i) => dv.setUint32(8 + i * 4, x, true));

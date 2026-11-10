@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEditorState } from '../ui/useEditorState';
 import type { Issue, MapEditState, Tool } from './model';
+import { SNAP_STEP_LABEL, SNAP_STEPS } from './snap';
 
 export const TOOLS: [Tool, string, string][] = [
   ['select', '選択・移動', 'V'],
@@ -13,14 +14,36 @@ export const TOOLS: [Tool, string, string][] = [
 ];
 
 /** The tool buttons (both games). */
-export function Tools({ st, tools = TOOLS, compact = false }: { st: MapEditState; tools?: [Tool, string, string][]; compact?: boolean }): ReactNode {
+export function Tools({
+  st,
+  tools = TOOLS,
+  compact = false,
+}: {
+  st: MapEditState;
+  tools?: [Tool, string, string][];
+  compact?: boolean;
+}): ReactNode {
   useEditorState(st);
   return (
     <div className={compact ? 'tools compact-tools' : 'tools'} role="toolbar" aria-label="マップ編集ツール">
       {tools.map(([t, label, key]) => (
-        <button key={t} className={st.tool === t ? 'active' : ''} aria-label={label} aria-pressed={st.tool === t}
-          title={`${label}${key ? ` (${key})` : ''}`} disabled={t === 'place' && !st.stamp} onClick={() => st.setTool(t)}>
-          {compact ? <ToolIcon tool={t} /> : <>{`${label} `}<kbd>{key}</kbd></>}
+        <button
+          key={t}
+          className={st.tool === t ? 'active' : ''}
+          aria-label={label}
+          aria-pressed={st.tool === t}
+          title={`${label}${key ? ` (${key})` : ''}`}
+          disabled={t === 'place' && !st.stamp}
+          onClick={() => st.setTool(t)}
+        >
+          {compact ? (
+            <ToolIcon tool={t} />
+          ) : (
+            <>
+              {`${label} `}
+              <kbd>{key}</kbd>
+            </>
+          )}
         </button>
       ))}
     </div>
@@ -37,7 +60,21 @@ const TOOL_ICONS: Record<string, string> = {
 };
 
 export function ToolIcon({ tool }: { tool: string }): ReactNode {
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={TOOL_ICONS[tool] ?? TOOL_ICONS.place} /></svg>;
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={TOOL_ICONS[tool] ?? TOOL_ICONS.place} />
+    </svg>
+  );
 }
 
 /**
@@ -45,7 +82,20 @@ export function ToolIcon({ tool }: { tool: string }): ReactNode {
  * the mode as icons, duplicate / delete of the selected part, then the mode's palette. It knows nothing about a
  * page's state; MapToolbox and the world page's toolbox fill it.
  */
-export function ToolboxLayout<T extends string>({ tiles, tools, tool, onTool, toolDisabled, onMode, partsDisabled, onDelete, onDuplicate, canEditPart, children }: {
+export function ToolboxLayout<T extends string>({
+  tiles,
+  tools,
+  tool,
+  onTool,
+  toolDisabled,
+  onMode,
+  partsDisabled,
+  onDelete,
+  onDuplicate,
+  canEditPart,
+  head,
+  children,
+}: {
   /** The "チップ" mode is shown (else "パーツ"). */
   tiles: boolean;
   tools: [T, string, string][];
@@ -60,50 +110,171 @@ export function ToolboxLayout<T extends string>({ tiles, tools, tool, onTool, to
   onDuplicate?: () => void;
   /** A part is selected (duplicate / delete can be used). */
   canEditPart?: boolean;
+  /** More controls at the bottom of the sticky head (the parts' snapping). */
+  head?: ReactNode;
   children: ReactNode;
 }): ReactNode {
-  return <div className="map-toolbox">
-    <div className="map-toolbox-head">
-      <div className="placement-modes" role="group" aria-label="配置するもの">
-        <button aria-pressed={tiles} className={tiles ? 'active' : ''} onClick={() => onMode(true)}>チップ</button>
-        <button aria-pressed={!tiles} className={!tiles ? 'active' : ''} disabled={!!partsDisabled} title={partsDisabled ?? ''} onClick={() => onMode(false)}>パーツ</button>
-      </div>
-      <div className="map-toolbox-actions">
-        <div className="tools compact-tools" role="toolbar" aria-label="マップ編集ツール">
-          {tools.map(([t, label, key]) => {
-            const why = toolDisabled?.(t) ?? null;
-            return (
-              <button key={t} className={tool === t ? 'active' : ''} aria-label={label} aria-pressed={tool === t}
-                title={why ?? `${label}${key ? ` (${key})` : ''}`} disabled={!!why} onClick={() => onTool(t)}>
-                <ToolIcon tool={t} />
-              </button>
-            );
-          })}
+  return (
+    <div className="map-toolbox">
+      <div className="map-toolbox-head">
+        <div className="placement-modes" role="group" aria-label="配置するもの">
+          <button aria-pressed={tiles} className={tiles ? 'active' : ''} onClick={() => onMode(true)}>
+            チップ
+          </button>
+          <button
+            aria-pressed={!tiles}
+            className={!tiles ? 'active' : ''}
+            disabled={!!partsDisabled}
+            title={partsDisabled ?? ''}
+            onClick={() => onMode(false)}
+          >
+            パーツ
+          </button>
         </div>
-        {!tiles && onDuplicate && <button className="part-delete" title="選んだパーツを複製 (Ctrl+D)" aria-label="選んだパーツを複製"
-          disabled={!canEditPart} onClick={onDuplicate}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M8 8h13v13H8ZM3 16V3h13" /></svg></button>}
-        {!tiles && onDelete && <button className="part-delete" title="選んだパーツを削除 (Delete)" aria-label="選んだパーツを削除"
-          disabled={!canEditPart} onClick={onDelete}><ToolIcon tool="erase" /></button>}
+        <div className="map-toolbox-actions">
+          <div className="tools compact-tools" role="toolbar" aria-label="マップ編集ツール">
+            {tools.map(([t, label, key]) => {
+              const why = toolDisabled?.(t) ?? null;
+              return (
+                <button
+                  key={t}
+                  className={tool === t ? 'active' : ''}
+                  aria-label={label}
+                  aria-pressed={tool === t}
+                  title={why ?? `${label}${key ? ` (${key})` : ''}`}
+                  disabled={!!why}
+                  onClick={() => onTool(t)}
+                >
+                  <ToolIcon tool={t} />
+                </button>
+              );
+            })}
+          </div>
+          {!tiles && onDuplicate && (
+            <button
+              className="part-delete"
+              title="選んだパーツを複製 (Ctrl+D)"
+              aria-label="選んだパーツを複製"
+              disabled={!canEditPart}
+              onClick={onDuplicate}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                aria-hidden="true"
+              >
+                <path d="M8 8h13v13H8ZM3 16V3h13" />
+              </svg>
+            </button>
+          )}
+          {!tiles && onDelete && (
+            <button
+              className="part-delete"
+              title="選んだパーツを削除 (Delete)"
+              aria-label="選んだパーツを削除"
+              disabled={!canEditPart}
+              onClick={onDelete}
+            >
+              <ToolIcon tool="erase" />
+            </button>
+          )}
+        </div>
+        {head}
       </div>
+      {children}
     </div>
-    {children}
-  </div>;
+  );
+}
+
+const SNAP_SHORT: Record<number, string> = { 1: '1', 0.5: '1/2', 0.2: '1/5', 0.1: '1/10', 0: '自由' };
+
+/**
+ * How parts snap when moved or placed: the grid step (a segmented control, like the grid menus of map makers), the
+ * alignment with the other parts, and the grid shown while dragging. Alt held while dragging snaps to nothing.
+ */
+export function SnapBar({ st }: { st: MapEditState }): ReactNode {
+  useEditorState(st);
+  const sn = st.snap;
+  return (
+    <div className="snap-bar" role="group" aria-label="パーツのスナップ">
+      <div className="snap-steps" role="radiogroup" aria-label="スナップの間隔 (マス)">
+        <span className="small muted">間隔</span>
+        {SNAP_STEPS.map((v) => (
+          <button
+            key={v}
+            role="radio"
+            aria-checked={sn.step === v}
+            className={sn.step === v ? 'active' : ''}
+            title={SNAP_STEP_LABEL[v]}
+            onClick={() => st.setSnap({ step: v })}
+          >
+            {SNAP_SHORT[v]}
+          </button>
+        ))}
+      </div>
+      <div className="snap-options small">
+        <label title="ほかのパーツと x / y が近いとき、そこに揃えてガイドの線を出します">
+          <input type="checkbox" checked={sn.align} onChange={(e) => st.setSnap({ align: e.target.checked })} />
+          ほかのパーツに揃える
+        </label>
+        <label title="動かしている間、スナップの目盛りを 2D に出します">
+          <input type="checkbox" checked={sn.showGrid} onChange={(e) => st.setSnap({ showGrid: e.target.checked })} />
+          目盛りを表示
+        </label>
+      </div>
+      <p className="small muted snap-hint">
+        Alt を押しながら動かすとスナップしません。矢印キーで 1 目盛りずつ動きます。
+      </p>
+    </div>
+  );
 }
 
 /** Switching placement modes retains the selected brush and stamp, including keyboard tool changes. */
-export function MapToolbox({ st, tiles, parts, onDelete, onDuplicate, tileTools=TOOLS }: {
-  st: MapEditState; tiles: ReactNode; parts: ReactNode; onDelete?: () => void; onDuplicate?: () => void; tileTools?: typeof TOOLS;
+export function MapToolbox({
+  st,
+  tiles,
+  parts,
+  onDelete,
+  onDuplicate,
+  tileTools = TOOLS,
+}: {
+  st: MapEditState;
+  tiles: ReactNode;
+  parts: ReactNode;
+  onDelete?: () => void;
+  onDuplicate?: () => void;
+  tileTools?: typeof TOOLS;
 }): ReactNode {
   useEditorState(st);
-  if(st.readOnly) return null;
+  if (st.readOnly) return null;
   const isTiles = st.placementMode === 'tiles';
-  const tools: [Tool,string,string][] = isTiles ? tileTools : [['select','選択・移動','V'],['place','パーツを置く',''],['rect','範囲選択','M']];
-  return <ToolboxLayout tiles={isTiles} tools={tools} tool={st.tool} onTool={(t) => st.setTool(t)}
-    toolDisabled={(t) => (t === 'place' && !st.stamp ? 'パーツを選ぶと置けます' : null)}
-    onMode={(t) => st.setPlacementMode(t ? 'tiles' : 'parts')}
-    onDelete={onDelete} onDuplicate={onDuplicate} canEditPart={st.selection.type === 'rec'}>
-    {isTiles ? tiles : parts}
-  </ToolboxLayout>;
+  const tools: [Tool, string, string][] = isTiles
+    ? tileTools
+    : [
+        ['select', '選択・移動', 'V'],
+        ['place', 'パーツを置く', ''],
+        ['rect', '範囲選択', 'M'],
+      ];
+  return (
+    <ToolboxLayout
+      tiles={isTiles}
+      tools={tools}
+      tool={st.tool}
+      onTool={(t) => st.setTool(t)}
+      toolDisabled={(t) => (t === 'place' && !st.stamp ? 'パーツを選ぶと置けます' : null)}
+      onMode={(t) => st.setPlacementMode(t ? 'tiles' : 'parts')}
+      onDelete={onDelete}
+      onDuplicate={onDuplicate}
+      canEditPart={st.selection.type === 'rec'}
+      head={isTiles ? undefined : <SnapBar st={st} />}
+    >
+      {isTiles ? tiles : parts}
+    </ToolboxLayout>
+  );
 }
 
 /** Validation results; clicking one selects what it is about (both games). */
@@ -112,7 +283,11 @@ export function IssueList({ st, issues }: { st: MapEditState; issues: Issue[] })
     <div className="issues">
       {!issues.length && <div className="ok">問題なし</div>}
       {issues.map((i, n) => (
-        <div key={n} className={`issue ${i.level}`} onClick={() => i.target && st.select(i.target)}>{`${i.level === 'error' ? '✖' : '⚠'} ${i.msg}`}</div>
+        <div
+          key={n}
+          className={`issue ${i.level}`}
+          onClick={() => i.target && st.select(i.target)}
+        >{`${i.level === 'error' ? '✖' : '⚠'} ${i.msg}`}</div>
       ))}
     </div>
   );

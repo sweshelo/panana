@@ -58,13 +58,19 @@ export class BchEntryIndex<E extends BchIndexEntry = BchIndexEntry> {
   ) {}
 
   /** The archives and their entries (`describe` makes an entry of the index, e.g. with its file name). */
-  protected static async read<E extends BchIndexEntry>(names: readonly string[], archive: (name: string) => Promise<Archive>, describe: (e: BchIndexEntry, arc: Archive) => E): Promise<[Map<string, Archive>, Map<number, E>]> {
+  protected static async read<E extends BchIndexEntry>(
+    names: readonly string[],
+    archive: (name: string) => Promise<Archive>,
+    describe: (e: BchIndexEntry, arc: Archive) => E,
+  ): Promise<[Map<string, Archive>, Map<number, E>]> {
     const archives = new Map<string, Archive>();
     const entries = new Map<number, E>();
     for (const name of names) {
       const arc = await archive(name);
       archives.set(name, arc);
-      for (const entry of arc.entries) if (!entries.has(entry.hash)) entries.set(entry.hash, describe({ hash: entry.hash, archive: name, entry }, arc));
+      for (const entry of arc.entries)
+        if (!entries.has(entry.hash))
+          entries.set(entry.hash, describe({ hash: entry.hash, archive: name, entry }, arc));
     }
     return [archives, entries];
   }

@@ -1,8 +1,14 @@
 // PICA200 register values used by CGFX materials (SPICA/PICA/Commands), the command list reader / writer
 // (SPICA/PICA/PICACommandReader.cs, PICACommandWriter.cs) and the fragment lighting LUT encoding.
 import type {
-  PICAAlphaTest, PICABlendFunction, PICAColorOperation, PICADepthColorMask, PICAStencilOperation, PICAStencilTest,
-  PICATexEnvStage, RGBA,
+  PICAAlphaTest,
+  PICABlendFunction,
+  PICAColorOperation,
+  PICADepthColorMask,
+  PICAStencilOperation,
+  PICAStencilTest,
+  PICATexEnvStage,
+  RGBA,
 } from './types';
 
 /** Registers used here (SPICA PICARegister). */
@@ -81,7 +87,10 @@ export class PICACommandWriter {
   }
   /** Several parameters: consecutive registers, or repeated writes to one register. */
   setMany(register: number, consecutive: boolean, params: readonly number[], mask = 0xf): this {
-    this.words.push(params[0]! >>> 0, (register | (mask << 16) | (((params.length - 1) & 0x7ff) << 20) | (consecutive ? 0x80000000 : 0)) >>> 0);
+    this.words.push(
+      params[0]! >>> 0,
+      (register | (mask << 16) | (((params.length - 1) & 0x7ff) << 20) | (consecutive ? 0x80000000 : 0)) >>> 0,
+    );
     for (let k = 1; k < params.length; k++) this.words.push(params[k]! >>> 0);
     if (this.words.length & 1) this.words.push(0);
     return this;
@@ -90,8 +99,14 @@ export class PICACommandWriter {
 
 // --- register values ---------------------------------------------------------------------------------------------
 
-export const rgbaFromU32 = (v: number): RGBA => ({ r: v & 0xff, g: (v >>> 8) & 0xff, b: (v >>> 16) & 0xff, a: v >>> 24 });
-export const rgbaToU32 = (c: RGBA): number => ((c.r & 0xff) | ((c.g & 0xff) << 8) | ((c.b & 0xff) << 16) | ((c.a & 0xff) << 24)) >>> 0;
+export const rgbaFromU32 = (v: number): RGBA => ({
+  r: v & 0xff,
+  g: (v >>> 8) & 0xff,
+  b: (v >>> 16) & 0xff,
+  a: v >>> 24,
+});
+export const rgbaToU32 = (c: RGBA): number =>
+  ((c.r & 0xff) | ((c.g & 0xff) << 8) | ((c.b & 0xff) << 16) | ((c.a & 0xff) << 24)) >>> 0;
 /** Colour as floats 0..1 (SPICA RGBA.ToVector4). */
 export const rgbaToVec4 = (c: RGBA): [number, number, number, number] => [c.r / 255, c.g / 255, c.b / 255, c.a / 255];
 
@@ -108,13 +123,19 @@ export function depthColorMaskFrom(v: number): PICADepthColorMask {
 }
 export function depthColorMaskTo(m: PICADepthColorMask): number {
   return (
-    (m.enabled ? 1 : 0) | ((m.depthFunc & 7) << 4) | (m.redWrite ? 0x100 : 0) | (m.greenWrite ? 0x200 : 0) |
-    (m.blueWrite ? 0x400 : 0) | (m.alphaWrite ? 0x800 : 0) | (m.depthWrite ? 0x1000 : 0)
+    (m.enabled ? 1 : 0) |
+    ((m.depthFunc & 7) << 4) |
+    (m.redWrite ? 0x100 : 0) |
+    (m.greenWrite ? 0x200 : 0) |
+    (m.blueWrite ? 0x400 : 0) |
+    (m.alphaWrite ? 0x800 : 0) |
+    (m.depthWrite ? 0x1000 : 0)
   );
 }
 
 export const colorOperationFrom = (v: number): PICAColorOperation => ({ fragOpMode: v & 3, blendMode: (v >>> 8) & 1 });
-export const colorOperationTo = (c: PICAColorOperation): number => ((c.fragOpMode & 3) | ((c.blendMode & 1) << 8) | 0xe40000) >>> 0;
+export const colorOperationTo = (c: PICAColorOperation): number =>
+  ((c.fragOpMode & 3) | ((c.blendMode & 1) << 8) | 0xe40000) >>> 0;
 
 export function blendFunctionFrom(v: number): PICABlendFunction {
   return {
@@ -128,23 +149,51 @@ export function blendFunctionFrom(v: number): PICABlendFunction {
 }
 export function blendFunctionTo(f: PICABlendFunction): number {
   return (
-    ((f.colorEquation & 7) | ((f.alphaEquation & 7) << 8) | ((f.colorSrcFunc & 15) << 16) | ((f.colorDstFunc & 15) << 20) |
-      ((f.alphaSrcFunc & 15) << 24) | ((f.alphaDstFunc & 15) << 28)) >>> 0
+    ((f.colorEquation & 7) |
+      ((f.alphaEquation & 7) << 8) |
+      ((f.colorSrcFunc & 15) << 16) |
+      ((f.colorDstFunc & 15) << 20) |
+      ((f.alphaSrcFunc & 15) << 24) |
+      ((f.alphaDstFunc & 15) << 28)) >>>
+    0
   );
 }
 
 export function stencilTestFrom(v: number): PICAStencilTest {
-  return { enabled: (v & 1) !== 0, function: (v >>> 4) & 7, bufferMask: (v >>> 8) & 0xff, reference: (v >>> 16) & 0xff, mask: v >>> 24 };
+  return {
+    enabled: (v & 1) !== 0,
+    function: (v >>> 4) & 7,
+    bufferMask: (v >>> 8) & 0xff,
+    reference: (v >>> 16) & 0xff,
+    mask: v >>> 24,
+  };
 }
 export function stencilTestTo(t: PICAStencilTest): number {
-  return ((t.enabled ? 1 : 0) | ((t.function & 7) << 4) | ((t.bufferMask & 0xff) << 8) | ((t.reference & 0xff) << 16) | ((t.mask & 0xff) << 24)) >>> 0;
+  return (
+    ((t.enabled ? 1 : 0) |
+      ((t.function & 7) << 4) |
+      ((t.bufferMask & 0xff) << 8) |
+      ((t.reference & 0xff) << 16) |
+      ((t.mask & 0xff) << 24)) >>>
+    0
+  );
 }
 
-export const stencilOperationFrom = (v: number): PICAStencilOperation => ({ failOp: v & 7, zFailOp: (v >>> 4) & 7, zPassOp: (v >>> 8) & 7 });
-export const stencilOperationTo = (o: PICAStencilOperation): number => (o.failOp & 7) | ((o.zFailOp & 7) << 4) | ((o.zPassOp & 7) << 8);
+export const stencilOperationFrom = (v: number): PICAStencilOperation => ({
+  failOp: v & 7,
+  zFailOp: (v >>> 4) & 7,
+  zPassOp: (v >>> 8) & 7,
+});
+export const stencilOperationTo = (o: PICAStencilOperation): number =>
+  (o.failOp & 7) | ((o.zFailOp & 7) << 4) | ((o.zPassOp & 7) << 8);
 
-export const alphaTestFrom = (v: number): PICAAlphaTest => ({ enabled: (v & 1) !== 0, function: (v >>> 4) & 7, reference: (v >>> 8) & 0xff });
-export const alphaTestTo = (t: PICAAlphaTest): number => (t.enabled ? 1 : 0) | ((t.function & 7) << 4) | ((t.reference & 0xff) << 8);
+export const alphaTestFrom = (v: number): PICAAlphaTest => ({
+  enabled: (v & 1) !== 0,
+  function: (v >>> 4) & 7,
+  reference: (v >>> 8) & 0xff,
+});
+export const alphaTestTo = (t: PICAAlphaTest): number =>
+  (t.enabled ? 1 : 0) | ((t.function & 7) << 4) | ((t.reference & 0xff) << 8);
 
 const SRC_MASK = 0x0fff0fff;
 const OPR_MASK = 0x00777fff;
@@ -154,8 +203,14 @@ const SCL_MASK = 0x00030003;
 /** Texture combiner stage from its five parameters (source, operand, combiner, colour, scale). */
 export function texEnvStageFrom(src: number, opr: number, cmb: number, col: number, scl: number): PICATexEnvStage {
   return {
-    source: { color: [src & 15, (src >>> 4) & 15, (src >>> 8) & 15], alpha: [(src >>> 16) & 15, (src >>> 20) & 15, (src >>> 24) & 15] },
-    operand: { color: [opr & 15, (opr >>> 4) & 15, (opr >>> 8) & 15], alpha: [(opr >>> 12) & 7, (opr >>> 16) & 7, (opr >>> 20) & 7] },
+    source: {
+      color: [src & 15, (src >>> 4) & 15, (src >>> 8) & 15],
+      alpha: [(src >>> 16) & 15, (src >>> 20) & 15, (src >>> 24) & 15],
+    },
+    operand: {
+      color: [opr & 15, (opr >>> 4) & 15, (opr >>> 8) & 15],
+      alpha: [(opr >>> 12) & 7, (opr >>> 16) & 7, (opr >>> 20) & 7],
+    },
     combiner: { color: cmb & 15, alpha: (cmb >>> 16) & 15 },
     color: rgbaFromU32(col),
     scale: { color: scl & 3, alpha: (scl >>> 16) & 3 },
@@ -168,9 +223,21 @@ export function texEnvStageFrom(src: number, opr: number, cmb: number, col: numb
 /** The five parameters of a combiner stage. */
 export function texEnvStageTo(s: PICATexEnvStage): [number, number, number, number, number] {
   const [c, a] = [s.source.color, s.source.alpha];
-  const src = (c[0] & 15) | ((c[1] & 15) << 4) | ((c[2] & 15) << 8) | ((a[0] & 15) << 16) | ((a[1] & 15) << 20) | ((a[2] & 15) << 24);
+  const src =
+    (c[0] & 15) |
+    ((c[1] & 15) << 4) |
+    ((c[2] & 15) << 8) |
+    ((a[0] & 15) << 16) |
+    ((a[1] & 15) << 20) |
+    ((a[2] & 15) << 24);
   const [oc, oa] = [s.operand.color, s.operand.alpha];
-  const opr = (oc[0] & 15) | ((oc[1] & 15) << 4) | ((oc[2] & 15) << 8) | ((oa[0] & 7) << 12) | ((oa[1] & 7) << 16) | ((oa[2] & 7) << 20);
+  const opr =
+    (oc[0] & 15) |
+    ((oc[1] & 15) << 4) |
+    ((oc[2] & 15) << 8) |
+    ((oa[0] & 7) << 12) |
+    ((oa[1] & 7) << 16) |
+    ((oa[2] & 7) << 20);
   const cmb = (s.combiner.color & 15) | ((s.combiner.alpha & 15) << 16);
   const scl = (s.scale.color & 3) | ((s.scale.alpha & 3) << 16);
   const o = s.otherBits;

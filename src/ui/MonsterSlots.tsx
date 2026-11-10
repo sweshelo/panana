@@ -8,7 +8,12 @@ import { Radar } from './Radar';
 
 /** A section heading with its explanation behind an info icon. */
 export function Heading({ title, info }: { title: string; info: string }): ReactNode {
-  return <h3 className="with-info">{title}<InfoTip text={info} /></h3>;
+  return (
+    <h3 className="with-info">
+      {title}
+      <InfoTip text={info} />
+    </h3>
+  );
 }
 
 /** Badge of an action (no model): its element, or a letter of its kind; colored by the element. */
@@ -28,7 +33,17 @@ export interface BoardEntry {
  * One slot holding a single entry (an action of a state, the next form, a model): its board, or an empty board when
  * there is none, and × to empty it. The board opens the picker.
  */
-export function BoardSlot({ entry, id, sub, edited, title, emptyLabel, clearTitle = 'なしにする', onPick, onClear }: {
+export function BoardSlot({
+  entry,
+  id,
+  sub,
+  edited,
+  title,
+  emptyLabel,
+  clearTitle = 'なしにする',
+  onPick,
+  onClear,
+}: {
   /** null when the slot is empty. */
   entry: BoardEntry | null;
   id?: number;
@@ -43,10 +58,25 @@ export function BoardSlot({ entry, id, sub, edited, title, emptyLabel, clearTitl
 }): ReactNode {
   return (
     <div className="slot-row">
-      {entry
-        ? <Board icon={entry.icon} name={entry.name} sub={sub} id={id} href={entry.href} edited={edited} title={title} onClick={onPick} />
-        : <EmptyBoard label={emptyLabel} onClick={onPick} />}
-      {onClear && <button className="small slot-remove" title={clearTitle} disabled={!entry} onClick={onClear}>×</button>}
+      {entry ? (
+        <Board
+          icon={entry.icon}
+          name={entry.name}
+          sub={sub}
+          id={id}
+          href={entry.href}
+          edited={edited}
+          title={title}
+          onClick={onPick}
+        />
+      ) : (
+        <EmptyBoard label={emptyLabel} onClick={onPick} />
+      )}
+      {onClear && (
+        <button className="small slot-remove" title={clearTitle} disabled={!entry} onClick={onClear}>
+          ×
+        </button>
+      )}
     </div>
   );
 }
@@ -65,7 +95,13 @@ export interface DropSlot {
 }
 
 /** Drop slots: the item's board (picked from the pictures), the rate, × to empty the slot. */
-export function DropSlots({ info, slots, entry, setItem, picker }: {
+export function DropSlots({
+  info,
+  slots,
+  entry,
+  setItem,
+  picker,
+}: {
   info: string;
   slots: DropSlot[];
   entry: (item: number) => BoardEntry;
@@ -81,18 +117,45 @@ export function DropSlots({ info, slots, entry, setItem, picker }: {
           const e = d.item ? entry(d.item) : null;
           return (
             <div key={k} className="slot-row">
-              {e
-                ? <Board icon={e.icon} name={e.name} sub={d.sub} id={d.item} href={e.href} edited={d.item !== d.original}
-                    title={d.item !== d.original ? `元: ${d.original ? entry(d.original).name : 'なし'}` : 'アイテムを選び直す'}
-                    onClick={() => setPicking(k)} />
-                : <EmptyBoard label="＋ アイテム" title="この枠にアイテムを入れる" onClick={() => setPicking(k)} />}
+              {e ? (
+                <Board
+                  icon={e.icon}
+                  name={e.name}
+                  sub={d.sub}
+                  id={d.item}
+                  href={e.href}
+                  edited={d.item !== d.original}
+                  title={
+                    d.item !== d.original ? `元: ${d.original ? entry(d.original).name : 'なし'}` : 'アイテムを選び直す'
+                  }
+                  onClick={() => setPicking(k)}
+                />
+              ) : (
+                <EmptyBoard label="＋ アイテム" title="この枠にアイテムを入れる" onClick={() => setPicking(k)} />
+              )}
               {d.rate}
-              <button className="small slot-remove" title="この枠を空にする" disabled={!d.item} onClick={() => setItem(k, 0)}>×</button>
+              <button
+                className="small slot-remove"
+                title="この枠を空にする"
+                disabled={!d.item}
+                onClick={() => setItem(k, 0)}
+              >
+                ×
+              </button>
             </div>
           );
         })}
       </div>
-      {picking !== null && picker(picking, slots[picking]?.item ?? 0, (id) => { setPicking(null); setItem(picking, id); }, () => setPicking(null))}
+      {picking !== null &&
+        picker(
+          picking,
+          slots[picking]?.item ?? 0,
+          (id) => {
+            setPicking(null);
+            setItem(picking, id);
+          },
+          () => setPicking(null),
+        )}
     </section>
   );
 }
@@ -111,7 +174,15 @@ export interface SkillSlot {
  * The skill slots: drag to reorder, × to remove, ＋ to add (up to `max`), a board to pick another action. The slots are
  * changed through `move`, `pick` (slot index, or -1 to add) and `remove`.
  */
-export function SkillSlots({ slots, max, move, pick, remove, picker, empty }: {
+export function SkillSlots({
+  slots,
+  max,
+  move,
+  pick,
+  remove,
+  picker,
+  empty,
+}: {
   slots: SkillSlot[];
   max: number;
   move: (from: number, to: number) => void;
@@ -134,10 +205,19 @@ export function SkillSlots({ slots, max, move, pick, remove, picker, empty }: {
     <>
       <div className="slot-list skill-slots">
         {slots.map((s, i) => {
-          const cls = ['slot-row', i === dragging ? 'dragging' : '', i === dropAt ? 'drop-before' : '',
-            dropAt === slots.length && i === slots.length - 1 ? 'drop-after' : ''].filter(Boolean).join(' ');
+          const cls = [
+            'slot-row',
+            i === dragging ? 'dragging' : '',
+            i === dropAt ? 'drop-before' : '',
+            dropAt === slots.length && i === slots.length - 1 ? 'drop-after' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
           return (
-            <div key={`${i}:${s.action}`} className={cls} draggable
+            <div
+              key={`${i}:${s.action}`}
+              className={cls}
+              draggable
               onDragStart={(e) => {
                 dragFrom.current = i;
                 e.dataTransfer.setData('text/plain', `skill ${i}`);
@@ -152,16 +232,34 @@ export function SkillSlots({ slots, max, move, pick, remove, picker, empty }: {
               }}
               onDrop={(e) => {
                 e.preventDefault();
-                if (dragFrom.current !== null && dropAt !== null && dropAt !== dragFrom.current && dropAt !== dragFrom.current + 1) move(dragFrom.current, dropAt);
+                if (
+                  dragFrom.current !== null &&
+                  dropAt !== null &&
+                  dropAt !== dragFrom.current &&
+                  dropAt !== dragFrom.current + 1
+                )
+                  move(dragFrom.current, dropAt);
                 endDrag();
               }}
               onDragEnd={endDrag}
             >
-              <span className="drag-handle" title="ドラッグで並べ替え">⠿</span>
-              <Board icon={s.entry.icon} name={s.entry.name} sub={s.sub} id={s.action} href={s.entry.href} edited={s.edited} title="ワザを選び直す"
-                onClick={() => setPicking({ slot: i, current: s.action })} />
+              <span className="drag-handle" title="ドラッグで並べ替え">
+                ⠿
+              </span>
+              <Board
+                icon={s.entry.icon}
+                name={s.entry.name}
+                sub={s.sub}
+                id={s.action}
+                href={s.entry.href}
+                edited={s.edited}
+                title="ワザを選び直す"
+                onClick={() => setPicking({ slot: i, current: s.action })}
+              />
               {s.extra}
-              <button className="small slot-remove" title="この枠を外す" onClick={() => remove(i)}>×</button>
+              <button className="small slot-remove" title="この枠を外す" onClick={() => remove(i)}>
+                ×
+              </button>
             </div>
           );
         })}
@@ -173,7 +271,15 @@ export function SkillSlots({ slots, max, move, pick, remove, picker, empty }: {
         )}
         {!slots.length && <div className="muted small">{empty}</div>}
       </div>
-      {picking && picker(picking.current, (a) => { setPicking(null); pick(picking.slot, a); }, () => setPicking(null))}
+      {picking &&
+        picker(
+          picking.current,
+          (a) => {
+            setPicking(null);
+            pick(picking.slot, a);
+          },
+          () => setPicking(null),
+        )}
     </>
   );
 }
@@ -209,7 +315,15 @@ const fmt = (v: number): string => `${v > 0 ? '+' : ''}${v}`;
  * Resistances by chart, each with its effect. The handles of the charts can be dragged; the tables (folded) pick any
  * value between `min` and `max`.
  */
-export function ResistCharts({ charts, min, max, rings, effect, cell = effect, onChange }: {
+export function ResistCharts({
+  charts,
+  min,
+  max,
+  rings,
+  effect,
+  cell = effect,
+  onChange,
+}: {
   charts: ResistChart[];
   min: number;
   max: number;
@@ -244,16 +358,30 @@ export function ResistCharts({ charts, min, max, rings, effect, cell = effect, o
         {charts.map((c, ci) => (
           <table key={c.label} className="res-table">
             <tbody>
-              <tr><th>{c.label}</th><th>値</th>{c.effectHead && <th>{c.effectHead}</th>}</tr>
+              <tr>
+                <th>{c.label}</th>
+                <th>値</th>
+                {c.effectHead && <th>{c.effectHead}</th>}
+              </tr>
               {c.axes.map((a, j) => {
                 const cls = a.value > 0 ? 'plus' : a.value < 0 ? 'minus' : '';
                 return (
                   <tr key={j}>
                     <td>{a.name}</td>
                     <td>
-                      <select className={a.value !== a.original ? 'edited' : ''} title={a.value !== a.original ? `元の値 ${fmt(a.original)}` : a.title}
-                        value={a.value} onChange={(e) => onChange(ci, j, Number(e.target.value))}>
-                        {[...new Set([...values.filter((v) => v <= (c.max ?? max)), a.value])].sort((x, y) => x - y).map((v) => <option key={v} value={v}>{fmt(v)}</option>)}
+                      <select
+                        className={a.value !== a.original ? 'edited' : ''}
+                        title={a.value !== a.original ? `元の値 ${fmt(a.original)}` : a.title}
+                        value={a.value}
+                        onChange={(e) => onChange(ci, j, Number(e.target.value))}
+                      >
+                        {[...new Set([...values.filter((v) => v <= (c.max ?? max)), a.value])]
+                          .sort((x, y) => x - y)
+                          .map((v) => (
+                            <option key={v} value={v}>
+                              {fmt(v)}
+                            </option>
+                          ))}
                       </select>
                     </td>
                     {c.effectHead && <td className={`num ${cls}`}>{cell(ci, j, a.value)}</td>}

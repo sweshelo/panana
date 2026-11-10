@@ -37,12 +37,12 @@ named exports は +0xD0 / +0xD4、segment table は +0xC8 / +0xCC。名前のオ
 
 確認済みの例:
 
-| API | Update のアドレス | 用途 |
-|---|---|---|
-| ScriptFlag::GetScriptBitFlag(unsigned short) | 0x2E7DF4 | セーブ 0x51 のフラグ |
-| ScriptFlag::GetScriptByteFlag(unsigned short) | 0x2FF158 | セーブ 0x52 の u8 数値 |
-| ScriptFlag::IsClearMapGroup(unsigned short) | 0x2F4B58 | セーブ 0x53 のクリア状態 |
-| ScriptFlag::GetScriptState(unsigned int) | 0x2C7028 | 現在の MapGroup のイベント状態 |
+| API                                           | Update のアドレス | 用途                           |
+| --------------------------------------------- | ----------------- | ------------------------------ |
+| ScriptFlag::GetScriptBitFlag(unsigned short)  | 0x2E7DF4          | セーブ 0x51 のフラグ           |
+| ScriptFlag::GetScriptByteFlag(unsigned short) | 0x2FF158          | セーブ 0x52 の u8 数値         |
+| ScriptFlag::IsClearMapGroup(unsigned short)   | 0x2F4B58          | セーブ 0x53 のクリア状態       |
+| ScriptFlag::GetScriptState(unsigned int)      | 0x2C7028          | 現在の MapGroup のイベント状態 |
 
 ## コンテンツの追加
 

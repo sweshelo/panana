@@ -64,7 +64,11 @@ export function oahuWriteTreasure(t: GsTable, row: number, slots: OahuTreasureSl
 }
 
 /** "やくそう" / "300 G" / "1 ジュエル" / "戦闘: たからばこぞう". */
-export function oahuTreasureLabel(s: OahuTreasureSlot, itemName: (id: number) => string, groupName: (row: number) => string = (r) => `群れ #${r}`): string {
+export function oahuTreasureLabel(
+  s: OahuTreasureSlot,
+  itemName: (id: number) => string,
+  groupName: (row: number) => string = (r) => `群れ #${r}`,
+): string {
   if (s.kind === 1) return itemName(s.value) || `アイテム ${s.value}`;
   if (s.kind === 2) return `${s.value} G`;
   if (s.kind === 3) return `${s.value} ジュエル`;

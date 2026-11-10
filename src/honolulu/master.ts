@@ -27,11 +27,17 @@ export class HonoluluMaster extends MasterTables {
   /** `name`: the root archive; the master, or another archive of GS tables (2713402F, HONOLULU_MONSTER_ARCHIVE). */
   constructor(bytes: Uint8Array, texts?: MessageStore, name = HONOLULU_MASTER) {
     super(parseArchive(bytes), name);
-    this.texts = texts ?? new MessageStore(this.archive.entries.flatMap((e): MessageFile[] => {
-      const { name, body } = unpackEntry(this.archive, e);
-      if (String.fromCharCode(...body.subarray(0, 4)) !== 'GMSG') return [];
-      return [{ name: name ?? `エントリ ${e.index}`, entryIndex: e.index, gmsg: new Gmsg(body), editable: false }];
-    }), HONOLULU_SYNTAX, false);
+    this.texts =
+      texts ??
+      new MessageStore(
+        this.archive.entries.flatMap((e): MessageFile[] => {
+          const { name, body } = unpackEntry(this.archive, e);
+          if (String.fromCharCode(...body.subarray(0, 4)) !== 'GMSG') return [];
+          return [{ name: name ?? `エントリ ${e.index}`, entryIndex: e.index, gmsg: new Gmsg(body), editable: false }];
+        }),
+        HONOLULU_SYNTAX,
+        false,
+      );
   }
 
   static async load(dump: Dump, texts?: MessageStore, name = HONOLULU_MASTER): Promise<HonoluluMaster> {

@@ -5,10 +5,23 @@ import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection 
 import { autoTiles, cellKey, partOf, roomGroups, type AutoCell, type AutoProfile } from './autotile';
 import { roomCenters, roomVariantLetters } from './autotile-variants';
 import type { Tile } from '../game/sections';
+import { placeRec, recPositions, snapPoint, snapsIn, snapValue, type SnapGuide, type SnapResult } from './snap';
+
+/** What the views tell the controller with a pointer move: Alt (snapping off while held) and the alignment reach. */
+export interface PointerInfo {
+  altKey?: boolean;
+  /** How near (in cells) another record's x / y must be to align with it (the 2D view: a few pixels). */
+  tol?: number;
+}
 
 interface AutoStroke {
-  doc: MapDoc; start: string; base: Tile[]; cells: Set<string>; profile: AutoProfile;
-  randomVariants: boolean; samples: Map<string,number>;
+  doc: MapDoc;
+  start: string;
+  base: Tile[];
+  cells: Set<string>;
+  profile: AutoProfile;
+  randomVariants: boolean;
+  samples: Map<string, number>;
 }
 
 export interface Layers {
@@ -21,7 +34,17 @@ export class Controller {
   hover: [number, number] | null = null;
   private drag:
     | null
-    | { kind: 'rec'; section: number; index: number; dx: number; dy: number; moved: boolean }
+    | {
+        kind: 'rec';
+        section: number;
+        index: number;
+        dx: number;
+        dy: number;
+        moved: boolean;
+        /** Where the pointer went down: a click (no drag past a few pixels) leaves the record where it is. */
+        x0: number;
+        y0: number;
+      }
     | { kind: 'paint'; last: string; auto?: AutoStroke }
     | { kind: 'erase'; last: string }
     | { kind: 'rect'; x0: number; y0: number }
@@ -30,6 +53,16 @@ export class Controller {
   /** Section 9 starts hidden (RPG2: unknown points; RPG3: plants and fishing spots, many per map). */
   layers: Layers;
   onHover: () => void = () => {};
+  /** The alignment guides of the record being moved (or of the place tool's point), for the views to draw. */
+  snapGuides: SnapGuide[] = [];
+  /** Where the place tool would put a record (snapped), while hovering with it. */
+  placePoint: [number, number] | null = null;
+  /** A record is being dragged (the views show the snap grid). */
+  get dragging(): boolean {
+    return this.drag?.kind === 'rec' && this.drag.moved;
+  }
+  private tol = 0.15;
+  private free = false;
 
   constructor(readonly st: MapEditState) {
     this.layers = { tiles: true, sections: Object.fromEntries(st.pointSections.map((k) => [k, k !== 9])), room: true };
@@ -86,14 +119,17 @@ export class Controller {
           const r = doc.recs[hit.section]![hit.index]!;
           const [px, py] = recCellPos(r, st.layouts[hit.section]!);
           st.select({ type: 'rec', ...hit });
-          this.drag = { kind: 'rec', ...hit, dx: px - cx, dy: py - cy, moved: false };
+          this.drag = { kind: 'rec', ...hit, dx: px - cx, dy: py - cy, moved: false, x0: cx, y0: cy };
           return;
         }
         if (this.layers.tiles && tileAt(doc, x, y)) {
           const cur = st.selection;
           if (e.shiftKey && cur.type === 'tiles') {
             const has = cur.cells.some(([a, b]) => a === x && b === y);
-            st.select({ type: 'tiles', cells: has ? cur.cells.filter(([a, b]) => a !== x || b !== y) : [...cur.cells, [x, y]] });
+            st.select({
+              type: 'tiles',
+              cells: has ? cur.cells.filter(([a, b]) => a !== x || b !== y) : [...cur.cells, [x, y]],
+            });
           } else st.select({ type: 'tiles', cells: [[x, y]] });
         } else st.select({ type: 'none' });
         return;
@@ -103,12 +139,20 @@ export class Controller {
         if (st.brush.auto && !st.autoProfile) return;
         st.checkpoint();
         if (st.brush.auto && st.autoProfile) {
-          const auto: AutoStroke = { doc, start: cellKey(x,y), base: doc.tiles.map(t => ({...t})), cells: new Set([cellKey(x,y)]), profile: st.autoProfile, randomVariants: st.autoRandomVariants, samples: new Map() };
-          this.drag = { kind: 'paint', last: cellKey(x,y), auto };
+          const auto: AutoStroke = {
+            doc,
+            start: cellKey(x, y),
+            base: doc.tiles.map((t) => ({ ...t })),
+            cells: new Set([cellKey(x, y)]),
+            profile: st.autoProfile,
+            randomVariants: st.autoRandomVariants,
+            samples: new Map(),
+          };
+          this.drag = { kind: 'paint', last: cellKey(x, y), auto };
           this.paintAuto(auto);
         } else {
           st.touch((d) => setTile(d, x, y, st.brush));
-          this.drag = { kind: 'paint', last: cellKey(x,y) };
+          this.drag = { kind: 'paint', last: cellKey(x, y) };
         }
         return;
       case 'erase':
@@ -124,8 +168,15 @@ export class Controller {
         const stamp = st.stamp;
         if (!stamp || !inGrid(x, y)) return;
         let placed: [number, number] | null = null;
+        const at = this.snapAt(cx, cy);
         try {
-          st.edit((d) => (placed = st.placeStamp(d, stamp, cx, cy)));
+          st.edit((d) => {
+            const p = st.placeStamp(d, stamp, cx, cy);
+            placed = p;
+            const L = st.layouts[p[0]]!;
+            // fractions of a cell: the snapped point (cell units keep the cell clicked)
+            if (snapsIn(L)) placeRec(d.recs[p[0]]![p[1]]!, L, at.x, at.y);
+          });
         } catch (err) {
           st.error = (err as Error).message;
           st.emit('tool');
@@ -145,33 +196,67 @@ export class Controller {
     }
   }
 
-  move(cx: number, cy: number): void {
+  /**
+   * Snap a point for a record: the grid of the snap settings and the other records of the visible layers (Alt held:
+   * neither). `except`: the record being moved.
+   */
+  snapAt(cx: number, cy: number, except?: { section: number; index: number }): SnapResult {
+    const st = this.st;
+    const doc = st.current;
+    if (this.free || !doc) return { x: snapValue(cx, 0), y: snapValue(cy, 0), guides: [] };
+    const sections = st.pointSections.filter((k) => this.layers.sections[k]);
+    const others = st.snap.align ? recPositions(doc.recs, st.layouts, sections, except) : [];
+    return snapPoint(cx, cy, st.snap, others, this.tol);
+  }
+
+  move(cx: number, cy: number, info: PointerInfo = {}): void {
+    this.free = !!info.altKey;
+    if (info.tol !== undefined) this.tol = info.tol;
     const x = Math.floor(cx);
     const y = Math.floor(cy);
     const prev = this.hover;
     this.hover = [x, y];
-    if (!prev || prev[0] !== x || prev[1] !== y) this.onHover();
     const st = this.st;
     const d = this.drag;
+    if (st.tool === 'place' && !d && st.stamp) {
+      const at = this.snapAt(cx, cy);
+      const was = this.placePoint;
+      this.placePoint = [at.x, at.y];
+      this.snapGuides = at.guides;
+      if (!was || was[0] !== at.x || was[1] !== at.y || !prev || prev[0] !== x || prev[1] !== y) this.onHover();
+    } else if (this.placePoint) {
+      this.placePoint = null;
+      this.snapGuides = [];
+      this.onHover();
+    } else if (!prev || prev[0] !== x || prev[1] !== y) this.onHover();
     if (!d) return;
     const key = `${x},${y}`;
     switch (d.kind) {
       case 'rec': {
         const L = st.layouts[d.section]!;
         if (!d.moved) {
+          // a click that wobbles a pixel or two does not move (and so snap) the record
+          if (Math.hypot(cx - d.x0, cy - d.y0) < this.tol * 0.4) return;
           st.checkpoint();
           d.moved = true;
         }
-        st.touch((doc) => setRecCellPos(doc.recs[d.section]![d.index]!, L, cx + d.dx, cy + d.dy));
+        if (!snapsIn(L)) {
+          st.touch((doc) => setRecCellPos(doc.recs[d.section]![d.index]!, L, cx + d.dx, cy + d.dy));
+          return;
+        }
+        const at = this.snapAt(cx + d.dx, cy + d.dy, d);
+        this.snapGuides = at.guides;
+        st.touch((doc) => placeRec(doc.recs[d.section]![d.index]!, L, at.x, at.y));
         return;
       }
       case 'paint':
         if (key === d.last || !inGrid(x, y)) return;
-        const [px,py] = d.last.split(',').map(Number) as [number,number];
+        const [px, py] = d.last.split(',').map(Number) as [number, number];
         d.last = key;
         if (d.auto) {
-          const steps = Math.max(Math.abs(x-px),Math.abs(y-py));
-          for(let i=1;i<=steps;i++) d.auto.cells.add(cellKey(Math.round(px+(x-px)*i/steps),Math.round(py+(y-py)*i/steps)));
+          const steps = Math.max(Math.abs(x - px), Math.abs(y - py));
+          for (let i = 1; i <= steps; i++)
+            d.auto.cells.add(cellKey(Math.round(px + ((x - px) * i) / steps), Math.round(py + ((y - py) * i) / steps)));
           this.paintAuto(d.auto);
         } else st.touch((doc) => setTile(doc, x, y, st.brush));
         return;
@@ -193,37 +278,55 @@ export class Controller {
 
   private paintAuto(auto: AutoStroke): void {
     // Opening a map or undoing during a captured gesture must not replay an old stroke into it.
-    if (this.st.current !== auto.doc) { this.drag = null; return; }
-    this.st.touch(doc => {
+    if (this.st.current !== auto.doc) {
+      this.drag = null;
+      return;
+    }
+    this.st.touch((doc) => {
       const updates = autoTiles(auto.base, auto.cells, auto.profile, auto.start);
-      const originals = new Map(auto.base.map(tile => [cellKey(tile.x,tile.y),tile]));
-      const resolved = new Map<string,AutoCell>(originals);
-      for (const tile of updates) resolved.set(cellKey(tile.x,tile.y),tile);
+      const originals = new Map(auto.base.map((tile) => [cellKey(tile.x, tile.y), tile]));
+      const resolved = new Map<string, AutoCell>(originals);
+      for (const tile of updates) resolved.set(cellKey(tile.x, tile.y), tile);
       const terrain = [...resolved.values()];
-      const groups = roomGroups(terrain,auto.profile);
+      const groups = roomGroups(terrain, auto.profile);
       const changed = new Set(auto.cells);
       for (const tile of updates) {
-        const key = cellKey(tile.x,tile.y), original = originals.get(key);
+        const key = cellKey(tile.x, tile.y),
+          original = originals.get(key);
         if (!original || original.kind !== tile.kind || original.rot !== tile.rot) changed.add(key);
       }
-      const touchedRooms = new Set([...changed].map(key => groups.get(key)).filter(id => id !== undefined));
-      const updatedKeys = new Set(updates.map(tile => cellKey(tile.x,tile.y)));
-      const region = terrain.filter(tile => updatedKeys.has(cellKey(tile.x,tile.y)) || touchedRooms.has(groups.get(cellKey(tile.x,tile.y))!));
-      const centers = roomCenters(region,auto.profile), previousCenters = roomCenters(auto.base,auto.profile);
-      const available = new Map<number,readonly number[]>();
-      const variants = roomVariantLetters(region,auto.profile,kind => {
-        if (!available.has(kind)) available.set(kind,this.st.autoVariantLetters(kind));
-        return available.get(kind)!;
-      },auto.randomVariants,tile => {
-        const key = `${cellKey(tile.x,tile.y)}/${tile.kind}`;
-        let sample = auto.samples.get(key);
-        if (sample === undefined) { sample = Math.random(); auto.samples.set(key,sample); }
-        return sample;
-      });
-      const encoded = new Map<string,number>();
+      const touchedRooms = new Set([...changed].map((key) => groups.get(key)).filter((id) => id !== undefined));
+      const updatedKeys = new Set(updates.map((tile) => cellKey(tile.x, tile.y)));
+      const region = terrain.filter(
+        (tile) => updatedKeys.has(cellKey(tile.x, tile.y)) || touchedRooms.has(groups.get(cellKey(tile.x, tile.y))!),
+      );
+      const centers = roomCenters(region, auto.profile),
+        previousCenters = roomCenters(auto.base, auto.profile);
+      const available = new Map<number, readonly number[]>();
+      const variants = roomVariantLetters(
+        region,
+        auto.profile,
+        (kind) => {
+          if (!available.has(kind)) available.set(kind, this.st.autoVariantLetters(kind));
+          return available.get(kind)!;
+        },
+        auto.randomVariants,
+        (tile) => {
+          const key = `${cellKey(tile.x, tile.y)}/${tile.kind}`;
+          let sample = auto.samples.get(key);
+          if (sample === undefined) {
+            sample = Math.random();
+            auto.samples.set(key, sample);
+          }
+          return sample;
+        },
+      );
+      const encoded = new Map<string, number>();
       for (const tile of region) {
-        const key = cellKey(tile.x,tile.y), original = originals.get(key);
-        const part = partOf(tile,auto.profile), role = part?.variation;
+        const key = cellKey(tile.x, tile.y),
+          original = originals.get(key);
+        const part = partOf(tile, auto.profile),
+          role = part?.variation;
         const roomTouched = touchedRooms.has(groups.get(key)!);
         if (!updatedKeys.has(key) && !(role === 'floor' && roomTouched)) continue;
         let preferred = letterByte(variants.get(key) ?? 0);
@@ -235,19 +338,24 @@ export class Controller {
           if (!roomTouched || keepFloor || keepEdge || keepCorridor) preferred = original.letter;
         }
         const codecKey = `${tile.kind}/${preferred}`;
-        if (!encoded.has(codecKey)) encoded.set(codecKey,this.st.autoLetter(tile.kind,preferred));
+        if (!encoded.has(codecKey)) encoded.set(codecKey, this.st.autoLetter(tile.kind, preferred));
         const letter = encoded.get(codecKey)!;
-        setTile(doc, tile.x, tile.y, {...tile, letter});
+        setTile(doc, tile.x, tile.y, { ...tile, letter });
       }
     });
   }
 
   up(): void {
+    const had = this.snapGuides.length > 0 || this.drag?.kind === 'rec';
     this.drag = null;
+    this.snapGuides = [];
+    if (had) this.onHover();
   }
 
   leave(): void {
     this.hover = null;
+    this.placePoint = null;
+    if (!this.drag) this.snapGuides = [];
     this.onHover();
   }
 
@@ -329,7 +437,9 @@ export class Controller {
         const L = st.layouts[s.section]!;
         const copy = st.duplicateRecord(doc, s.section, r);
         const [px, py] = recCellPos(r, L);
-        setRecCellPos(copy, L, px + (L.unit === 'cell' ? 1 : 0.4), py);
+        // one cell to the right: the copy stays on every grid the original is on
+        if (snapsIn(L)) placeRec(copy, L, px + 1, py);
+        else setRecCellPos(copy, L, px + 1, py);
         list.push(copy);
         idx = list.length - 1;
       });
@@ -388,8 +498,24 @@ export class Controller {
     const st = this.st;
     const s = st.selection;
     if (s.type === 'rec') {
-      // one unit of the record (a cell, or 1/5 cell for fine coordinates; 50 for world coordinates)
-      const step = st.layouts[s.section]?.unit === 'world' ? WORLD_SNAP : 1;
+      const L = st.layouts[s.section]!;
+      if (snapsIn(L)) {
+        // one step of the snap grid (no grid: 1/50 cell), landing on the grid
+        const step = st.snap.step || 0.02;
+        st.edit((doc) => {
+          const r = doc.recs[s.section]![s.index]!;
+          const [px, py] = recCellPos(r, L);
+          placeRec(
+            r,
+            L,
+            dx ? snapValue(px + dx * step, st.snap.step) : px,
+            dy ? snapValue(py + dy * step, st.snap.step) : py,
+          );
+        });
+        return;
+      }
+      // one unit of the record (a cell; 50 for world coordinates)
+      const step = L.unit === 'world' ? WORLD_SNAP : 1;
       st.edit((doc) => {
         const r = doc.recs[s.section]![s.index]!;
         r.x += dx * step;
@@ -416,7 +542,11 @@ export class Controller {
           setRecCellPos(p, L, px + dx, py + dy);
         }
       }
-      for (const c of doc.cells6) if (inside(c.x, c.y)) { c.x += dx; c.y += dy; }
+      for (const c of doc.cells6)
+        if (inside(c.x, c.y)) {
+          c.x += dx;
+          c.y += dy;
+        }
     });
     st.select({ type: 'rect', x0: r.x0 + dx, y0: r.y0 + dy, x1: r.x1 + dx, y1: r.y1 + dy });
   }
@@ -463,7 +593,10 @@ export function editorKey(e: KeyboardEvent, ctl: Controller, letters: () => numb
     if (st.tool === 'place') st.setTool('select');
     else st.select({ type: 'none' });
   } else if (e.key.startsWith('Arrow') && (e.shiftKey || st.selection.type === 'rec')) {
-    const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key] as [number, number];
+    const d = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[e.key] as [
+      number,
+      number,
+    ];
     ctl.shiftSelection(d[0], d[1]);
   } else return false;
   return true;

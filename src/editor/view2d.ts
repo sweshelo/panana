@@ -2,7 +2,7 @@
 import { LAYOUTS, P3, P7, POINT_SECTIONS, pointKindLabel, recCellPos, type MapDoc } from '../game/sections';
 import type { Controller } from './controller';
 import { rangeInfo } from '../game/cutscene';
-import { drawHover, drawRoomCells, drawSelection, drawTiles } from './draw2d';
+import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from './draw2d';
 import { SECTION_COLORS } from './legend';
 import { GridCanvas } from './gridcanvas';
 import { GRID, tileAt, type EventLink, type MapEditState } from './model';
@@ -34,7 +34,7 @@ export class View2D {
         const f = e.button === 0 ? this.ctl.clickFocus(cx, cy) : null;
         if (f) this.onFocus(f[0], f[1]);
       },
-      move: (cx, cy) => this.ctl.move(cx, cy),
+      move: (cx, cy, e) => this.ctl.move(cx, cy, { altKey: e.altKey, tol: 8 / this.gc.scale }),
       up: () => this.ctl.up(),
       leave: () => this.ctl.leave(),
     };
@@ -59,6 +59,7 @@ export class View2D {
     if (this.ctl.layers.room) drawRoomCells(g, s, doc);
     this.drawLinks(g, s);
     this.drawPoints(doc, g, s);
+    drawSnap(g, s, this.st, this.ctl);
     drawSelection(g, s, this.st);
     drawHover(g, s, this.st, this.ctl.hover);
   }
@@ -67,24 +68,31 @@ export class View2D {
   private drawMinimap(doc: MapDoc, g: CanvasRenderingContext2D, s: number): void {
     if (!this.ctl.layers.tiles) return;
     if (this.st.mapTopology) {
-      drawTerrainMinimap(g,s,doc.tiles,this.st.mapTopology);
+      drawTerrainMinimap(g, s, doc.tiles, this.st.mapTopology);
       return;
     }
     const room = new Set(doc.cells6.map((c) => `${c.x},${c.y}`));
     for (const t of doc.tiles) {
       if (t.kind === 0 || t.kind === 6) continue;
       const isRoom = room.has(`${t.x},${t.y}`) || [5, 7, 9, 14].includes(t.kind);
-      const px = t.x * s, py = t.y * s;
+      const px = t.x * s,
+        py = t.y * s;
       if (isRoom) {
         g.fillStyle = '#3f7fd9';
         g.fillRect(px, py, s, s);
         continue;
       }
       // corridor: a square in the middle and a bar towards each walkable neighbour
-      const c = s / 2, hw = s * 0.2;
+      const c = s / 2,
+        hw = s * 0.2;
       g.fillStyle = '#5d95d6';
       g.fillRect(px + c - hw, py + c - hw, hw * 2, hw * 2);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
         const n = tileAt(doc, t.x + dx, t.y + dy);
         if (!n || n.kind === 0 || n.kind === 6) continue;
         if (dx) g.fillRect(dx > 0 ? px + c : px, py + c - hw, c, hw * 2);
@@ -95,12 +103,18 @@ export class View2D {
     g.lineWidth = 2;
     for (const t of doc.tiles) {
       if (!(room.has(`${t.x},${t.y}`) || [5, 7, 9, 14].includes(t.kind))) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
         const n = tileAt(doc, t.x + dx, t.y + dy);
         const nRoom = n && (room.has(`${n.x},${n.y}`) || [5, 7, 9, 14].includes(n.kind));
         if (nRoom) continue;
         g.beginPath();
-        const x0 = t.x * s + (dx > 0 ? s : 0), y0 = t.y * s + (dy > 0 ? s : 0);
+        const x0 = t.x * s + (dx > 0 ? s : 0),
+          y0 = t.y * s + (dy > 0 ? s : 0);
         g.moveTo(x0, y0);
         g.lineTo(x0 + (dy ? s : 0), y0 + (dx ? s : 0));
         g.stroke();
@@ -115,7 +129,8 @@ export class View2D {
       const L = LAYOUTS[k]!;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, L);
-        const x = px * s, y = py * s;
+        const x = px * s,
+          y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         g.fillStyle = SECTION_COLORS[k]!;
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
@@ -152,10 +167,17 @@ export class View2D {
         } else if (k === 7) {
           // doors on walls: a bar along the wall, turned by +0x16; invisible exits: a small dot
           const a = -(QUARTER_2D[P7.dir(r.raw)] ?? 0);
-          const w = s * 0.2, d = s * 0.06;
+          const w = s * 0.2,
+            d = s * 0.06;
           if (P7.visible(r.raw)) {
-            const c = Math.cos(a), sn = Math.sin(a);
-            const pts = [[-w, -d], [w, -d], [w, d], [-w, d]].map(([u, v]) => [x + u! * c - v! * sn, y + u! * sn + v! * c] as const);
+            const c = Math.cos(a),
+              sn = Math.sin(a);
+            const pts = [
+              [-w, -d],
+              [w, -d],
+              [w, d],
+              [-w, d],
+            ].map(([u, v]) => [x + u! * c - v! * sn, y + u! * sn + v! * c] as const);
             g.moveTo(pts[0]![0], pts[0]![1]);
             for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
             g.closePath();
@@ -176,7 +198,13 @@ export class View2D {
   /** Switch -> target lines (generic switches solid, hard-coded script pairs dashed). */
   private drawLinks(g: CanvasRenderingContext2D, s: number): void {
     for (const l of this.links()) {
-      g.strokeStyle = l.generic ? (l.selected ? '#7ff5ff' : 'rgba(80, 220, 255, 0.75)') : l.selected ? '#ffffff' : 'rgba(255, 255, 255, 0.45)';
+      g.strokeStyle = l.generic
+        ? l.selected
+          ? '#7ff5ff'
+          : 'rgba(80, 220, 255, 0.75)'
+        : l.selected
+          ? '#ffffff'
+          : 'rgba(255, 255, 255, 0.45)';
       g.lineWidth = l.selected ? 3 : 2;
       g.setLineDash(l.generic ? [] : [5, 4]);
       g.beginPath();
@@ -185,7 +213,9 @@ export class View2D {
       g.stroke();
       // arrow head at the target
       const ang = Math.atan2(l.to[1] - l.from[1], l.to[0] - l.from[0]);
-      const tx = l.to[0] * s, ty = l.to[1] * s, a = Math.max(6, s * 0.25);
+      const tx = l.to[0] * s,
+        ty = l.to[1] * s,
+        a = Math.max(6, s * 0.25);
       g.setLineDash([]);
       g.beginPath();
       g.moveTo(tx, ty);

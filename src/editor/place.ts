@@ -6,7 +6,16 @@ import type { GimmickTemplate } from '../game/templates';
 import { LAYOUTS, P3, P7, recEventRow, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { u32, w16, w32 } from '../util/bytes';
 import { KIND_SWITCH, SWITCH_PRESETS } from '../game/eventkinds';
-import { addBossChara, addFixGroup, addSceneRow, FIX_FLAGS_BOSS, newBossCharaRecord, newBossRecord, newBossRow, newSceneRecord } from '../game/boss';
+import {
+  addBossChara,
+  addFixGroup,
+  addSceneRow,
+  FIX_FLAGS_BOSS,
+  newBossCharaRecord,
+  newBossRecord,
+  newBossRow,
+  newSceneRecord,
+} from '../game/boss';
 import { defaultChestObjectRow, floorObjectRow, isIndoor } from '../game/objects';
 
 export type Stamp =
@@ -23,24 +32,38 @@ export type Stamp =
 
 export function stampLabel(s: Stamp): string {
   switch (s.type) {
-    case 'chest': return '宝箱';
-    case 'prop': return `置物 (mapObject #${s.row})`;
-    case 'floor': return s.kind === 1 ? '凍った床' : 'ダメージ床';
-    case 'template': return `${s.t.label} (${s.t.source} から)`;
-    case 'boss': return 'ボス戦 (範囲に入ると戦闘)';
-    case 'scene': return 'イベント (範囲に入ると演出)';
-    case 'switchgate': return s.gate === undefined ? 'スイッチと柵: まず柵を置く場所 (タイル) をクリック' : `スイッチと柵: 次に柵 (イベント #${s.gate}) を開けるスイッチを置く場所をクリック`;
+    case 'chest':
+      return '宝箱';
+    case 'prop':
+      return `置物 (mapObject #${s.row})`;
+    case 'floor':
+      return s.kind === 1 ? '凍った床' : 'ダメージ床';
+    case 'template':
+      return `${s.t.label} (${s.t.source} から)`;
+    case 'boss':
+      return 'ボス戦 (範囲に入ると戦闘)';
+    case 'scene':
+      return 'イベント (範囲に入ると演出)';
+    case 'switchgate':
+      return s.gate === undefined
+        ? 'スイッチと柵: まず柵を置く場所 (タイル) をクリック'
+        : `スイッチと柵: 次に柵 (イベント #${s.gate}) を開けるスイッチを置く場所をクリック`;
   }
 }
 
 /** Preview the same model that a new placement will use, including indoor chests. */
 export function stampObjectRow(stamp: Stamp, doc: MapDoc): number {
   switch (stamp.type) {
-    case 'chest': return defaultChestObjectRow(isIndoor(doc));
-    case 'floor': return floorObjectRow(stamp.kind);
-    case 'prop': return stamp.row;
-    case 'template': return stamp.t.objectRow;
-    default: return 0;
+    case 'chest':
+      return defaultChestObjectRow(isIndoor(doc));
+    case 'floor':
+      return floorObjectRow(stamp.kind);
+    case 'prop':
+      return stamp.row;
+    case 'template':
+      return stamp.t.objectRow;
+    default:
+      return 0;
   }
 }
 
@@ -83,10 +106,22 @@ export interface PlaceContext {
 /** Add a record for `stamp` at cell coordinates (cx, cy). Returns [section, index]. */
 export function placeStamp(ctx: PlaceContext, stamp: Stamp, cx: number, cy: number): [number, number] {
   const { doc, events, master } = ctx;
-  const needsRow = stamp.type === 'chest' || stamp.type === 'switchgate' || stamp.type === 'boss' || stamp.type === 'scene' || (stamp.type === 'template' && !!stamp.t.event);
-  const rows = (stamp.type === 'switchgate' && stamp.gate === undefined) || stamp.type === 'boss' || stamp.type === 'scene' ? 2 : 1;
+  const needsRow =
+    stamp.type === 'chest' ||
+    stamp.type === 'switchgate' ||
+    stamp.type === 'boss' ||
+    stamp.type === 'scene' ||
+    (stamp.type === 'template' && !!stamp.t.event);
+  const rows =
+    (stamp.type === 'switchgate' && stamp.gate === undefined) || stamp.type === 'boss' || stamp.type === 'scene'
+      ? 2
+      : 1;
   if (needsRow && (!events || events.roomLeft() < rows))
-    throw new Error(events ? `このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)` : 'このダンジョンにはイベントの表がありません');
+    throw new Error(
+      events
+        ? `このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)`
+        : 'このダンジョンにはイベントの表がありません',
+    );
   const add = (section: number, raw: Uint8Array): [number, number] => {
     const L = LAYOUTS[section]!;
     const rec: Rec = { raw, x: 0, y: 0 };
@@ -181,7 +216,8 @@ export const SWITCH_MODEL = 29;
 export function duplicateRecord(ctx: PlaceContext, section: number, rec: Rec): Rec {
   const { events, master } = ctx;
   const ev0 = recEventRow(section, rec.raw);
-  if (ev0 && events?.has(ev0) && events.roomLeft() < 1) throw new Error(`このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)`);
+  if (ev0 && events?.has(ev0) && events.roomLeft() < 1)
+    throw new Error(`このダンジョンのイベント番号に空きがありません (${events.capacity - 1} まで)`);
   const copy: Rec = { raw: rec.raw.slice(), x: rec.x, y: rec.y };
   const r = copy.raw;
   if (section === 3) {

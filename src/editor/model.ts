@@ -2,8 +2,35 @@
 // redo (MapEditState), and the tile helpers. It imports only the map format (game/sections: MapDoc, records, layouts),
 // so the views and the controller can be used with any game. A game extends MapEditState (state.ts EditorState for
 // RPG2, src/oahu/mapedit.ts OahuEditState for RPG3). state.ts re-exports everything here.
-import { cloneDoc, LETTER_DEFAULT, letterByte, letterIndex, type MapDoc, type Rec, type RecordLayout, type Tile } from '../game/sections';
+import {
+  cloneDoc,
+  LETTER_DEFAULT,
+  letterByte,
+  letterIndex,
+  type MapDoc,
+  type Rec,
+  type RecordLayout,
+  type Tile,
+} from '../game/sections';
 import { autoTiles, cellKey, type AutoProfile } from './autotile';
+import { DEFAULT_SNAP, SNAP_STEPS, type SnapSettings } from './snap';
+
+const SNAP_KEY = 'panana.mapSnap';
+
+/** The snap settings kept between visits (per browser; defaults when storage cannot be read). */
+function loadSnap(): SnapSettings {
+  try {
+    const v = JSON.parse(globalThis.localStorage?.getItem(SNAP_KEY) ?? 'null') as Partial<SnapSettings> | null;
+    if (!v) return { ...DEFAULT_SNAP };
+    return {
+      step: SNAP_STEPS.includes(v.step as never) ? v.step! : DEFAULT_SNAP.step,
+      align: typeof v.align === 'boolean' ? v.align : DEFAULT_SNAP.align,
+      showGrid: typeof v.showGrid === 'boolean' ? v.showGrid : DEFAULT_SNAP.showGrid,
+    };
+  } catch {
+    return { ...DEFAULT_SNAP };
+  }
+}
 
 export type Tool = 'select' | 'paint' | 'erase' | 'rect' | 'room' | 'place';
 
@@ -76,6 +103,8 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   clip: Clip | null = null;
   /** What the 'place' tool adds. */
   stamp: S | null = null;
+  /** How moved and placed records snap (the grid step, alignment with the other records). */
+  snap: SnapSettings = loadSnap();
   /** The value the section 6 tool ('room') gives the cells it adds (0 = no enemies in RPG2; RPG FREE!: a MonsterGroup row ID). */
   cell6Value = 0;
   /** Last error of an edit (shown in the status bar). */
@@ -88,30 +117,37 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   readonly readOnly: boolean = false;
 
   /** Verified geometry of the open map (games opt in with their vocabulary), even when its palette lacks parts. */
-  get mapTopology(): AutoProfile | undefined { return undefined; }
+  get mapTopology(): AutoProfile | undefined {
+    return undefined;
+  }
   /** The open tileset's palette (kind -> letter indices with a model); undefined: the game has no automatic brush. */
-  protected autoPalette(): ReadonlyMap<number, readonly number[]> | undefined { return undefined; }
+  protected autoPalette(): ReadonlyMap<number, readonly number[]> | undefined {
+    return undefined;
+  }
   /** The automatic brush: the map's topology, when the tileset has a model for every one of its parts. */
   get autoProfile(): AutoProfile | undefined {
-    const profile = this.mapTopology, palette = profile && this.autoPalette();
-    return profile && palette && profile.parts.every(p => palette.has(p.kind)) ? profile : undefined;
+    const profile = this.mapTopology,
+      palette = profile && this.autoPalette();
+    return profile && palette && profile.parts.every((p) => palette.has(p.kind)) ? profile : undefined;
   }
   /** The preferred letter byte when the tileset has that variant, else the kind's first one (no palette: as preferred). */
   autoLetter(kind: number, preferred: number): number {
     const palette = this.autoPalette();
     if (!palette) return preferred;
     const letters = palette.get(kind) ?? [0];
-    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : letters[0] ?? 0);
+    return letterByte(letters.includes(letterIndex(preferred)) ? letterIndex(preferred) : (letters[0] ?? 0));
   }
-  autoVariantLetters(kind: number): readonly number[] { return this.autoPalette()?.get(kind) ?? [0]; }
+  autoVariantLetters(kind: number): readonly number[] {
+    return this.autoPalette()?.get(kind) ?? [0];
+  }
 
   /** The actual automatic tile under the pointer, shared by both views. */
   brushAt(x: number, y: number): Brush | undefined {
     if (!this.brush.auto) return this.brush;
     const profile = this.autoProfile;
     if (!this.current || !profile) return undefined;
-    const tile = autoTiles(this.current.tiles, new Set([cellKey(x,y)]), profile).find(t => t.x === x && t.y === y);
-    return tile && {...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT)};
+    const tile = autoTiles(this.current.tiles, new Set([cellKey(x, y)]), profile).find((t) => t.x === x && t.y === y);
+    return tile && { ...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT) };
   }
 
   /** Record layouts of the sections, by RPG2's section numbers. */
@@ -230,6 +266,15 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   select(s: Selection): void {
     this.selection = s;
     this.emit('selection');
+  }
+  setSnap(p: Partial<SnapSettings>): void {
+    this.snap = { ...this.snap, ...p };
+    try {
+      globalThis.localStorage?.setItem(SNAP_KEY, JSON.stringify(this.snap));
+    } catch {
+      /* storage blocked: the settings last for this page only */
+    }
+    this.emit('tool');
   }
 }
 

@@ -12,7 +12,12 @@ export interface StoryCondition {
 }
 
 const BOSS = 0xb0;
-const boss = (value: number, label: string, sure = true): StoryCondition => ({ label: `${label}を倒したあと`, type: BOSS, value, sure });
+const boss = (value: number, label: string, sure = true): StoryCondition => ({
+  label: `${label}を倒したあと`,
+  type: BOSS,
+  value,
+  sure,
+});
 
 /** In the order of the story. */
 export const STORY_CONDITIONS: StoryCondition[] = [

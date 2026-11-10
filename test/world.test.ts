@@ -3,7 +3,14 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { findByName, findEntry, parseArchive } from '../src/archive/gsarc';
 import { Game } from '../src/game/game';
-import { buildGround, copyGround, groundPools, parseGround, WORLD_MODEL_ARCHIVE, WORLD_SIZE } from '../src/game/worldmap';
+import {
+  buildGround,
+  copyGround,
+  groundPools,
+  parseGround,
+  WORLD_MODEL_ARCHIVE,
+  WORLD_SIZE,
+} from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';

@@ -33,7 +33,14 @@ import {
 import { LanaiTable } from './table';
 
 /** MapGroup fields (map.md §7). */
-export const LANAI_MG = { name: 0x00, firstMap: 0x14, firstPoint: 0x18, eventEntry: 0x1c, stateFirst: 0x28, stateCount: 0x2a } as const;
+export const LANAI_MG = {
+  name: 0x00,
+  firstMap: 0x14,
+  firstPoint: 0x18,
+  eventEntry: 0x1c,
+  stateFirst: 0x28,
+  stateCount: 0x2a,
+} as const;
 /** Map table fields besides the sections (map.md §2). */
 const ROW_GROUP = 0x2c;
 const ROW_FLOOR = 0x34;
@@ -53,7 +60,9 @@ export function mapNameProblem(maps: LanaiMaps, name: string, except?: LanaiMapI
 /** The dungeon code of a group: the first 3 letters most of its maps' names start with ("D01"), '' when it has none. */
 export function groupCode(maps: LanaiMaps, group: number): string {
   const n = new Map<string, number>();
-  for (const m of maps.maps) if (m.dungeon === group && !m.world && m.name.length >= 3) n.set(m.name.slice(0, 3), (n.get(m.name.slice(0, 3)) ?? 0) + 1);
+  for (const m of maps.maps)
+    if (m.dungeon === group && !m.world && m.name.length >= 3)
+      n.set(m.name.slice(0, 3), (n.get(m.name.slice(0, 3)) ?? 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
 }
 
@@ -74,13 +83,16 @@ export function suggestGroupCode(maps: LanaiMaps, kind = 'D'): string {
 
 /** Why a group code cannot be used for a new group or a group's new code ('' = it can). */
 export function groupCodeProblem(maps: LanaiMaps, code: string, group = -1): string {
-  if (!/^[A-Z][A-Z0-9]{2}$/.test(code)) return 'ダンジョンのコードは英大文字 1 文字 + 英数字 2 文字にしてください (例: D09)';
-  if (maps.maps.some((m) => m.dungeon !== group && m.name.startsWith(code))) return `${code} はこのステージのほかのマップが使っています`;
+  if (!/^[A-Z][A-Z0-9]{2}$/.test(code))
+    return 'ダンジョンのコードは英大文字 1 文字 + 英数字 2 文字にしてください (例: D09)';
+  if (maps.maps.some((m) => m.dungeon !== group && m.name.startsWith(code)))
+    return `${code} はこのステージのほかのマップが使っています`;
   return '';
 }
 
 /** "B01" / "F01" (floor 0 reads as F01, as the towns' maps). */
-const floorPart = (floor: number): string => (floor < 0 ? `B${String(-floor).padStart(2, '0')}` : `F${String(Math.max(1, floor)).padStart(2, '0')}`);
+const floorPart = (floor: number): string =>
+  floor < 0 ? `B${String(-floor).padStart(2, '0')}` : `F${String(Math.max(1, floor)).padStart(2, '0')}`;
 
 /** "D01003B02": the code, the next free 3-digit number, the floor (the ROM's naming: map.md §2). */
 export function suggestMapName(maps: LanaiMaps, code: string, floor: number): string {
@@ -92,13 +104,15 @@ export function suggestMapName(maps: LanaiMaps, code: string, floor: number): st
 }
 
 /** A map's name with another code ("D01001B01" with D09 -> "D09001B01"; a name that does not start with `from` is kept). */
-export const recodeMapName = (name: string, from: string, to: string): string => (from && name.startsWith(from) ? to + name.slice(from.length) : name);
+export const recodeMapName = (name: string, from: string, to: string): string =>
+  from && name.startsWith(from) ? to + name.slice(from.length) : name;
 
 /** Every hash the content's map table and database use (new hashes avoid them). */
 export function takenHashes(maps: LanaiMaps): Set<number> {
   const out = new Set<number>();
   const t = maps.tableBytes;
-  for (let i = 0; i + LANAI_MAP_ROW <= t.length; i += LANAI_MAP_ROW) for (let k = 0; k < 10; k++) out.add(u32(t, i + k * 4));
+  for (let i = 0; i + LANAI_MAP_ROW <= t.length; i += LANAI_MAP_ROW)
+    for (let k = 0; k < 10; k++) out.add(u32(t, i + k * 4));
   return out;
 }
 
@@ -167,7 +181,8 @@ export function scriptRows(maps: LanaiMaps, group: number): number {
 }
 
 /** The maps of a group (not the world map), as the map table lists them. */
-export const groupMaps = (maps: LanaiMaps, group: number): LanaiMapInfo[] => maps.maps.filter((m) => m.dungeon === group && !m.world);
+export const groupMaps = (maps: LanaiMaps, group: number): LanaiMapInfo[] =>
+  maps.maps.filter((m) => m.dungeon === group && !m.world);
 
 // ---- a new map in a group
 
@@ -195,7 +210,11 @@ export function addLanaiMap(maps: LanaiMaps, spec: LanaiNewMapSpec, rand: () => 
   const slots = newHashes(maps, 10, rand);
   const sections = sectionsOf(slots);
   const src = maps.doc(t);
-  const doc = loadDoc({ get: () => new Uint8Array(0) }, { hash: slots[0]!, name, dungeon: t.dungeon, floor: spec.floor, sections }, LANAI_MAP_FORMAT);
+  const doc = loadDoc(
+    { get: () => new Uint8Array(0) },
+    { hash: slots[0]!, name, dungeon: t.dungeon, floor: spec.floor, sections },
+    LANAI_MAP_FORMAT,
+  );
   delete doc.raw[6];
   doc.sec6Header = src.sec6Header.slice();
   if (spec.copy !== 'none') doc.tiles = src.tiles.map((x) => ({ ...x }));
@@ -289,7 +308,13 @@ function addNameRow(maps: LanaiMaps, like: number, name: string): number {
 
 /** A hash for a new entry of the content's archive (none of its entries' nor the added tables'). */
 function newEntryHash(maps: LanaiMaps, rand: () => number): number {
-  const taken = new Set([...maps.archive.entries.map((e) => e.hash), ...maps.session.addedTables().filter((t) => t.archive === maps.content.archive.toUpperCase()).map((t) => t.entry)]);
+  const taken = new Set([
+    ...maps.archive.entries.map((e) => e.hash),
+    ...maps.session
+      .addedTables()
+      .filter((t) => t.archive === maps.content.archive.toUpperCase())
+      .map((t) => t.entry),
+  ]);
   return newHash((h) => taken.has(h), rand);
 }
 
@@ -310,7 +335,11 @@ const tableResource = (maps: LanaiMaps): LanaiTable | undefined => maps.contentT
  * Add a group (a dungeon) to the content: a copy of the template's MapGroup row with its own name, EventObject table
  * and state slots, and its maps (all the template's copied, or one new map). Saved with the session's edits.
  */
-export function addLanaiGroup(maps: LanaiMaps, spec: LanaiNewGroupSpec, rand: () => number = Math.random): LanaiNewGroup {
+export function addLanaiGroup(
+  maps: LanaiMaps,
+  spec: LanaiNewGroupSpec,
+  rand: () => number = Math.random,
+): LanaiNewGroup {
   const mg = maps.mapGroup;
   const session = maps.session;
   if (!mg) throw new Error('このステージには MapGroup の表がありません');
@@ -330,11 +359,18 @@ export function addLanaiGroup(maps: LanaiMaps, spec: LanaiNewGroupSpec, rand: ()
   let plan: { from: LanaiMapInfo; name: string; floor: number; copy: 'none' | 'tiles' | 'all' }[];
   if (spec.copyMaps) {
     if (!sourceMaps.length) throw new Error('写す元のダンジョンにマップがありません');
-    plan = sourceMaps.map((m) => ({ from: m, name: from ? recodeMapName(m.name, from, code) : `${code}${m.name.slice(3)}`, floor: m.floor, copy: 'all' }));
+    plan = sourceMaps.map((m) => ({
+      from: m,
+      name: from ? recodeMapName(m.name, from, code) : `${code}${m.name.slice(3)}`,
+      floor: m.floor,
+      copy: 'all',
+    }));
   } else {
     const f = spec.first;
     if (!f) throw new Error('最初のマップを決めてください');
-    plan = [{ from: f.template, name: f.name.trim().toUpperCase(), floor: f.floor, copy: f.copyTiles ? 'tiles' : 'none' }];
+    plan = [
+      { from: f.template, name: f.name.trim().toUpperCase(), floor: f.floor, copy: f.copyTiles ? 'tiles' : 'none' },
+    ];
   }
   const names = new Set<string>();
   for (const p of plan) {
@@ -374,12 +410,17 @@ export function addLanaiGroup(maps: LanaiMaps, spec: LanaiNewGroupSpec, rand: ()
     const slots = newHashes(maps, 10, rand, reserved);
     const sections = sectionsOf(slots);
     const src = maps.doc(p.from);
-    const doc = loadDoc({ get: () => new Uint8Array(0) }, { hash: slots[0]!, name: p.name, dungeon: group, floor: p.floor, sections }, LANAI_MAP_FORMAT);
+    const doc = loadDoc(
+      { get: () => new Uint8Array(0) },
+      { hash: slots[0]!, name: p.name, dungeon: group, floor: p.floor, sections },
+      LANAI_MAP_FORMAT,
+    );
     delete doc.raw[6];
     doc.sec6Header = src.sec6Header.slice();
     if (p.copy !== 'none') doc.tiles = src.tiles.map((x) => ({ ...x }));
     if (p.copy === 'all') {
-      for (const [k, list] of Object.entries(src.recs)) doc.recs[Number(k)] = list.map((r) => ({ ...r, raw: r.raw.slice() }));
+      for (const [k, list] of Object.entries(src.recs))
+        doc.recs[Number(k)] = list.map((r) => ({ ...r, raw: r.raw.slice() }));
       doc.cells6 = src.cells6.map((c) => ({ ...c }));
       for (const [k, b] of Object.entries(src.raw)) if (Number(k) !== 6) doc.raw[Number(k)] = b.slice();
     }
@@ -504,7 +545,9 @@ export function removeLanaiGroup(maps: LanaiMaps, group: number): void {
   if (!canRemoveGroup(maps, group)) throw new Error('消せるのは、追加したダンジョンのうち最後のものだけです');
   const g = maps.groups[group]!;
   for (const m of groupMaps(maps, group).reverse()) if (m.added) removeLanaiMap(maps, m);
-  const ref = maps.session.addedTables().find((t) => t.archive === maps.content.archive.toUpperCase() && t.entry === g.eventEntry);
+  const ref = maps.session
+    .addedTables()
+    .find((t) => t.archive === maps.content.archive.toUpperCase() && t.entry === g.eventEntry);
   if (ref) {
     maps.session.removeTable(ref);
     maps.removeContentTable(ref.entry);

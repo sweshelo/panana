@@ -172,7 +172,7 @@ export class WorldView {
     this.world3d = new WorldScene('view3d', N);
     this.world3d.terrain = {
       size: N,
-      part: (i) => (this.layers.terrain ? src.ground()?.parts[i] ?? 0 : 0),
+      part: (i) => (this.layers.terrain ? (src.ground()?.parts[i] ?? 0) : 0),
       rot: (i) => src.ground()?.rots[i] ?? 0,
       flags: (p) => src.partFlags(p),
       hasModel: (p) => this.showModels && src.hasPartModel(p),
@@ -180,12 +180,15 @@ export class WorldView {
       color: (p) => src.partColor(p),
     };
     const shade = src.overlays.find((o) => o.steps);
-    if (shade) this.world3d.seaShade = (i) => (this.layers[shade.key] ? shade.value(i % N, Math.floor(i / N)) / shade.steps! : 0);
-    this.world3d.seaModel = () => (this.showModels ? src.seaModel?.() ?? null : null);
+    if (shade)
+      this.world3d.seaShade = (i) =>
+        this.layers[shade.key] ? shade.value(i % N, Math.floor(i / N)) / shade.steps! : 0;
+    this.world3d.seaModel = () => (this.showModels ? (src.seaModel?.() ?? null) : null);
     this.world3d.marks = () => this.marks3d();
     src.onModel = () => this.world3d.sync(true);
     const pointer = {
-      down: (cx: number, cy: number, e: { shiftKey: boolean; altKey?: boolean; button: number }) => this.down(cx, cy, e),
+      down: (cx: number, cy: number, e: { shiftKey: boolean; altKey?: boolean; button: number }) =>
+        this.down(cx, cy, e),
       move: (cx: number, cy: number) => this.move(cx, cy),
       up: () => {
         this.drag = null;
@@ -268,7 +271,8 @@ export class WorldView {
   setPlacementMode(mode: 'tiles' | 'parts'): void {
     this.placementMode = mode;
     if (mode === 'tiles' && this.tool === 'place') this.tool = 'select';
-    if (mode === 'parts' && (this.tool === 'paint' || this.tool === 'erase')) this.tool = this.stamp ? 'place' : 'select';
+    if (mode === 'parts' && (this.tool === 'paint' || this.tool === 'erase'))
+      this.tool = this.stamp ? 'place' : 'select';
     this.signal.emit();
     this.grid.draw();
   }
@@ -322,7 +326,10 @@ export class WorldView {
     const r = this.grid.canvas.getBoundingClientRect();
     const n = this.src.size;
     const wrap = (v: number): number => ((Math.floor(v) % n) + n) % n;
-    return [wrap((r.width / 2 - this.grid.ox) / this.grid.scale), wrap((r.height / 2 - this.grid.oy) / this.grid.scale)];
+    return [
+      wrap((r.width / 2 - this.grid.ox) / this.grid.scale),
+      wrap((r.height / 2 - this.grid.oy) / this.grid.scale),
+    ];
   }
 
   /** The whole world in the 2D view. */
@@ -338,7 +345,8 @@ export class WorldView {
 
   private hitEntrance(cx: number, cy: number): number {
     const rad = Math.max(0.8, 7 / this.grid.scale);
-    let best = -1, bd = rad * rad;
+    let best = -1,
+      bd = rad * rad;
     this.src.entrances().forEach((p, i) => {
       if (!this.pinShown(p)) return;
       const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
@@ -373,7 +381,8 @@ export class WorldView {
 
   private down(cx: number, cy: number, e: { shiftKey: boolean; altKey?: boolean; button: number }): void {
     if (e.button !== 0) return;
-    const x = Math.floor(cx), y = Math.floor(cy);
+    const x = Math.floor(cx),
+      y = Math.floor(cy);
     if ((this.tool === 'paint' || this.tool === 'erase') && this.src.ground()) {
       if (e.altKey) {
         this.pick(x, y);
@@ -408,7 +417,15 @@ export class WorldView {
     const rg = this.hitRange(cx, cy);
     if (rg) {
       const r = rg.set.list()[rg.index]!;
-      this.drag = { kind: 'range', set: rg.set, index: rg.index, ox: cx - r.x, oy: cy - r.y, resize: rg.corner, moved: false };
+      this.drag = {
+        kind: 'range',
+        set: rg.set,
+        index: rg.index,
+        ox: cx - r.x,
+        oy: cy - r.y,
+        resize: rg.corner,
+        moved: false,
+      };
       this.select({ type: 'range', set: rg.set.key, index: rg.index });
       return;
     }
@@ -416,7 +433,8 @@ export class WorldView {
   }
 
   private move(cx: number, cy: number): void {
-    const x = Math.floor(cx), y = Math.floor(cy);
+    const x = Math.floor(cx),
+      y = Math.floor(cy);
     if (!this.hover || this.hover[0] !== x || this.hover[1] !== y) {
       this.hover = [x, y];
       this.hoverSignal.emit();
@@ -430,7 +448,8 @@ export class WorldView {
     }
     if (d.kind === 'entrance') {
       const p = this.src.entrances()[d.index]!;
-      const tx = cx - d.ox, ty = cy - d.oy;
+      const tx = cx - d.ox,
+        ty = cy - d.oy;
       // a whole cell away before it moves
       if (Math.abs(tx - p.x) < 0.5 && Math.abs(ty - p.y) < 0.5) return;
       if (!d.moved) this.mark();
@@ -445,7 +464,11 @@ export class WorldView {
     const min = d.set.snap;
     const next = d.resize
       ? { ...r, w: Math.max(min, Math.min(255, snap(cx - r.x))), h: Math.max(min, Math.min(255, snap(cy - r.y))) }
-      : { ...r, x: Math.max(0, Math.min(N - min, snap(cx - d.ox))), y: Math.max(0, Math.min(N - min, snap(cy - d.oy))) };
+      : {
+          ...r,
+          x: Math.max(0, Math.min(N - min, snap(cx - d.ox))),
+          y: Math.max(0, Math.min(N - min, snap(cy - d.oy))),
+        };
     if (next.x === r.x && next.y === r.y && next.w === r.w && next.h === r.h) return;
     if (!d.moved) this.mark();
     d.moved = true;
@@ -460,7 +483,8 @@ export class WorldView {
 
   /** Take the brush from a cell (the part covering it). */
   pick(x: number, y: number): void {
-    const g = this.src.ground(), N = this.src.size;
+    const g = this.src.ground(),
+      N = this.src.size;
     if (!g || x < 0 || y < 0 || x >= N || y >= N) return;
     const c = this.coveredCells()[y * N + x]!;
     this.brush = c >= 0 ? { part: g.parts[c]!, rot: g.rots[c]! } : { part: 0, rot: 0 };
@@ -536,7 +560,8 @@ export class WorldView {
   /** The cell whose part covers each cell (-1 = none): 2 x 2 parts (0x10) and 2-cell parts (0x20) cover more. */
   private coveredCells(): Int32Array {
     if (this.covered && this.coveredRevision === this.src.revision()) return this.covered;
-    const N = this.src.size, g = this.src.ground();
+    const N = this.src.size,
+      g = this.src.ground();
     const out = new Int32Array(N * N).fill(-1);
     if (g) {
       for (let i = 0; i < N * N; i++) if (g.parts[i]) out[i] = i;
@@ -545,7 +570,8 @@ export class WorldView {
       };
       for (let y = 0; y < N; y++)
         for (let x = 0; x < N; x++) {
-          const i = y * N + x, p = g.parts[i]!;
+          const i = y * N + x,
+            p = g.parts[i]!;
           if (!p) continue;
           const f = this.src.partFlags(p);
           if (f & PART_2X2) {
@@ -565,7 +591,8 @@ export class WorldView {
 
   /** The terrain as a picture of one pixel a cell, rebuilt after edits. */
   private terrainImage(): HTMLCanvasElement | null {
-    const g = this.src.ground(), N = this.src.size;
+    const g = this.src.ground(),
+      N = this.src.size;
     if (!g) return null;
     if (this.terrain && this.terrainRevision === this.src.revision()) return this.terrain;
     const cov = this.coveredCells();
@@ -596,7 +623,9 @@ export class WorldView {
   }
 
   private paint2d(g: CanvasRenderingContext2D, s: number): void {
-    const src = this.src, L = this.layers, N = src.size;
+    const src = this.src,
+      L = this.layers,
+      N = src.size;
     const terrain = L.terrain ? this.terrainImage() : null;
     if (terrain) {
       g.imageSmoothingEnabled = false;
@@ -624,7 +653,8 @@ export class WorldView {
         for (let x = x0; x < x1; x++) {
           const i = y * N + x;
           if (!ground.parts[i]) continue;
-          const r = ground.rots[i]!, m = Math.max(1.5, s * 0.12);
+          const r = ground.rots[i]!,
+            m = Math.max(1.5, s * 0.12);
           if (r === 0) g.fillRect(x * s, y * s, s, m);
           if (r === 1) g.fillRect((x + 1) * s - m, y * s, m, s);
           if (r === 2) g.fillRect(x * s, (y + 1) * s - m, s, m);
@@ -689,15 +719,29 @@ export class WorldView {
     // the hovered cell (and what the brush would cover)
     const h = this.hover;
     if (h) {
-      g.strokeStyle = this.tool === 'paint' ? '#ffeb3b' : this.tool === 'erase' ? '#ff7070' : this.tool === 'place' ? '#7fd3ff' : 'rgba(255,255,255,0.6)';
+      g.strokeStyle =
+        this.tool === 'paint'
+          ? '#ffeb3b'
+          : this.tool === 'erase'
+            ? '#ff7070'
+            : this.tool === 'place'
+              ? '#7fd3ff'
+              : 'rgba(255,255,255,0.6)';
       g.lineWidth = 1;
       if (this.tool === 'place') {
         // where the part would go (an entrance stands in the middle of its cell), and which way it faces
-        const cx = (h[0] + 0.5) * s, cy = (h[1] + 0.5) * s, rad = Math.max(3.5, s * 0.45);
+        const cx = (h[0] + 0.5) * s,
+          cy = (h[1] + 0.5) * s,
+          rad = Math.max(3.5, s * 0.45);
         g.beginPath();
         g.arc(cx, cy, rad, 0, Math.PI * 2);
         g.stroke();
-        const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][this.stampRot]!;
+        const [dx, dy] = [
+          [0, -1],
+          [1, 0],
+          [0, 1],
+          [-1, 0],
+        ][this.stampRot]!;
         g.beginPath();
         g.moveTo(cx, cy);
         g.lineTo(cx + dx! * (rad + 4), cy + dy! * (rad + 4));
@@ -712,9 +756,16 @@ export class WorldView {
 
   /** Cells inside the 2D view: [x0, y0, x1, y1). */
   private visibleCells(s: number): [number, number, number, number] {
-    const c = this.grid.canvas, N = this.src.size;
-    const x0 = Math.max(0, Math.floor(-this.grid.ox / s)), y0 = Math.max(0, Math.floor(-this.grid.oy / s));
-    return [x0, y0, Math.min(N, Math.ceil((c.clientWidth - this.grid.ox) / s)), Math.min(N, Math.ceil((c.clientHeight - this.grid.oy) / s))];
+    const c = this.grid.canvas,
+      N = this.src.size;
+    const x0 = Math.max(0, Math.floor(-this.grid.ox / s)),
+      y0 = Math.max(0, Math.floor(-this.grid.oy / s));
+    return [
+      x0,
+      y0,
+      Math.min(N, Math.ceil((c.clientWidth - this.grid.ox) / s)),
+      Math.min(N, Math.ceil((c.clientHeight - this.grid.oy) / s)),
+    ];
   }
 
   // ---- 3D
@@ -734,7 +785,9 @@ export class WorldView {
 
   /** What the 3D view draws besides the terrain: the entrances' and points' models, markers for the rest. */
   private marks3d(): WorldMark[] {
-    const src = this.src, sel = this.sel, L = this.layers;
+    const src = this.src,
+      sel = this.sel,
+      L = this.layers;
     const out: WorldMark[] = [];
     src.entrances().forEach((p, i) => {
       if (!this.pinShown(p)) return;
@@ -744,8 +797,14 @@ export class WorldView {
     for (const set of src.pointSets) {
       if (!L[set.key]) continue;
       set.list().forEach((p, i) => {
-        const m = this.showModels ? set.mark3d?.(i) ?? null : null;
-        out.push({ x: p.x, y: p.y, ...m, color: set.color, selected: sel.type === 'point' && sel.set === set.key && sel.index === i });
+        const m = this.showModels ? (set.mark3d?.(i) ?? null) : null;
+        out.push({
+          x: p.x,
+          y: p.y,
+          ...m,
+          color: set.color,
+          selected: sel.type === 'point' && sel.set === set.key && sel.index === i,
+        });
       });
     }
     return out;
