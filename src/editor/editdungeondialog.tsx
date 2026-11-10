@@ -5,12 +5,20 @@ import type { Session } from '../session';
 import { Dialog } from '../ui/Dialog';
 import { Field } from './fields';
 
-export function EditDungeonDialog({ session, currentDungeon, onClose }: {
-  session: Session; currentDungeon: number | null; onClose: () => void;
+export function EditDungeonDialog({
+  session,
+  currentDungeon,
+  onClose,
+}: {
+  session: Session;
+  currentDungeon: number | null;
+  onClose: () => void;
 }): ReactNode {
   const game = session.game;
   const added = game.code.dungeons;
-  const [dungeon, setDungeon] = useState(() => (added.some((d) => d.dungeon === currentDungeon) ? currentDungeon! : added[0]?.dungeon ?? -1));
+  const [dungeon, setDungeon] = useState(() =>
+    added.some((d) => d.dungeon === currentDungeon) ? currentDungeon! : (added[0]?.dungeon ?? -1),
+  );
   const d = added.find((x) => x.dungeon === dungeon);
   const [code, setCode] = useState(d?.code ?? '');
   const [name, setName] = useState(() => (d ? game.master.dungeonName(d.dungeon) : ''));
@@ -46,7 +54,12 @@ export function EditDungeonDialog({ session, currentDungeon, onClose }: {
       {added.length > 1 && (
         <Field label="ダンジョン">
           <select value={dungeon} onChange={(e) => pick(Number(e.target.value))}>
-            {added.map((x) => <option key={x.dungeon} value={x.dungeon}>{`${game.master.dungeonName(x.dungeon) || x.code}  (${x.code})`}</option>)}
+            {added.map((x) => (
+              <option
+                key={x.dungeon}
+                value={x.dungeon}
+              >{`${game.master.dungeonName(x.dungeon) || x.code}  (${x.code})`}</option>
+            ))}
           </select>
         </Field>
       )}
@@ -54,13 +67,27 @@ export function EditDungeonDialog({ session, currentDungeon, onClose }: {
         <input type="text" value={name} style={{ width: '12em' }} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="ダンジョンのコード">
-        <input type="text" maxLength={3} value={code} style={{ width: '5em' }} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <input
+          type="text"
+          maxLength={3}
+          value={code}
+          style={{ width: '5em' }}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+        />
       </Field>
       {problem && <div className="error">{problem}</div>}
       <table className="sections">
         <tbody>
-          <tr><th>マップ</th><th>{c !== d.code ? '変更後' : ''}</th></tr>
-          {maps.map((m) => <tr key={m.hash}><td>{m.name}</td><td>{c !== d.code ? recodeMapName(m.name, d.code, c) : ''}</td></tr>)}
+          <tr>
+            <th>マップ</th>
+            <th>{c !== d.code ? '変更後' : ''}</th>
+          </tr>
+          {maps.map((m) => (
+            <tr key={m.hash}>
+              <td>{m.name}</td>
+              <td>{c !== d.code ? recodeMapName(m.name, d.code, c) : ''}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
       <p className="muted small" style={{ whiteSpace: 'pre-line' }}>
@@ -71,7 +98,9 @@ export function EditDungeonDialog({ session, currentDungeon, onClose }: {
       </p>
       {error && <div className="error">{error}</div>}
       <p>
-        <button className="primary" disabled={!changed || !!problem || !name.trim()} onClick={apply}>変更する</button>{' '}
+        <button className="primary" disabled={!changed || !!problem || !name.trim()} onClick={apply}>
+          変更する
+        </button>{' '}
         <button onClick={onClose}>閉じる</button>
       </p>
     </Dialog>

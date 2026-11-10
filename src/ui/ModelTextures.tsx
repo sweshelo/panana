@@ -8,7 +8,11 @@ import type { TextureImage } from '../port/textures';
 import { TextureThumb } from './TextureThumb';
 import { useAsync } from './useAsync';
 
-export function ModelTextures({ model, replace, replaceInfo }: {
+export function ModelTextures({
+  model,
+  replace,
+  replaceInfo,
+}: {
   model: ModelRef | null;
   /** Replaces texture `name` with an image of its size. */
   replace?: (name: string, image: TextureImage) => Promise<void>;
@@ -33,7 +37,11 @@ export function ModelTextures({ model, replace, replaceInfo }: {
     try {
       const { image, resized } = await readImage(file, t.width, t.height);
       await replace(t.name, image);
-      setNote({ text: resized ? `${t.name}: 画像を ${t.width}×${t.height} に合わせて差し替えました` : `${t.name} を差し替えました` });
+      setNote({
+        text: resized
+          ? `${t.name}: 画像を ${t.width}×${t.height} に合わせて差し替えました`
+          : `${t.name} を差し替えました`,
+      });
     } catch (err) {
       console.error(err);
       setNote({ text: `差し替えられませんでした: ${(err as Error).message}`, error: true });
@@ -49,7 +57,9 @@ export function ModelTextures({ model, replace, replaceInfo }: {
         {textures.map((t) => (
           <TextureThumb key={t.name} t={t}>
             <span className="row">
-              <button className="small" title="このテクスチャを PNG で保存します" onClick={() => savePng(t)}>PNG</button>
+              <button className="small" title="このテクスチャを PNG で保存します" onClick={() => savePng(t)}>
+                PNG
+              </button>
               {replace && <ReplaceButton disabled={!!busy} title={replaceInfo} onFile={(f) => void pick(t, f)} />}
             </span>
           </TextureThumb>
@@ -59,16 +69,32 @@ export function ModelTextures({ model, replace, replaceInfo }: {
   );
 }
 
-function ReplaceButton({ disabled, title, onFile }: { disabled: boolean; title?: string; onFile: (f: File) => void }): ReactNode {
+function ReplaceButton({
+  disabled,
+  title,
+  onFile,
+}: {
+  disabled: boolean;
+  title?: string;
+  onFile: (f: File) => void;
+}): ReactNode {
   const input = useRef<HTMLInputElement>(null);
   return (
     <>
-      <button className="small" disabled={disabled} title={title} onClick={() => input.current?.click()}>差し替え…</button>
-      <input ref={input} type="file" accept="image/*" hidden onChange={(e) => {
-        const f = e.currentTarget.files?.[0];
-        e.currentTarget.value = '';
-        if (f) onFile(f);
-      }} />
+      <button className="small" disabled={disabled} title={title} onClick={() => input.current?.click()}>
+        差し替え…
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const f = e.currentTarget.files?.[0];
+          e.currentTarget.value = '';
+          if (f) onFile(f);
+        }}
+      />
     </>
   );
 }

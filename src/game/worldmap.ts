@@ -209,7 +209,8 @@ export function buildGround(original: Uint8Array, g: Ground): Uint8Array {
     out[0x10 + i * 2] = g.parts[i]!;
     out[0x11 + i * 2] = (original[0x11 + i * 2]! & ~3) | (g.rots[i]! & 3);
   }
-  const t1 = u32(original, 8), t2 = u32(original, 12);
+  const t1 = u32(original, 8),
+    t2 = u32(original, 12);
   const count = Math.max(0, Math.floor((t2 - t1) / 4));
   const pools = groundPools(g.parts, count);
   for (let p = 0; p < count; p++) {

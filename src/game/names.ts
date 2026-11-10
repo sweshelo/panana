@@ -37,10 +37,12 @@ export function mapName(info: MapInfo, all: MapInfo[]): MapName {
   const p = parseMapCode(info.name);
   if (!p) return { floor: info.floor ? floorLabel(info.floor) : '', part: info.name };
   const floor = p.outdoor ? '屋外' : floorLabel(p.floor!);
-  const same = all.filter((m) => m.dungeon === info.dungeon && m.hash !== info.hash).filter((m) => {
-    const q = parseMapCode(m.name);
-    return q && q.outdoor === p.outdoor && q.floor === p.floor;
-  });
+  const same = all
+    .filter((m) => m.dungeon === info.dungeon && m.hash !== info.hash)
+    .filter((m) => {
+      const q = parseMapCode(m.name);
+      return q && q.outdoor === p.outdoor && q.floor === p.floor;
+    });
   let part = '';
   if (/^\d+$/.test(p.id)) part = same.length ? `(${Number(p.id)})` : '';
   else part = SUFFIX[p.id] ?? p.id;

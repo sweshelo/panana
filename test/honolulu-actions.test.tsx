@@ -7,7 +7,15 @@ import { findByName, parseArchive } from '../src/archive/gsarc';
 import { GsTable } from '../src/archive/gstable';
 import { readField } from '../src/game/tabledef';
 import {
-  actionChanged, actionRows, antennaSkillName, attackUsers, honoluluActionHref, honoluluActions, parseActionKey, revertAction, rowsWithText,
+  actionChanged,
+  actionRows,
+  antennaSkillName,
+  attackUsers,
+  honoluluActionHref,
+  honoluluActions,
+  parseActionKey,
+  revertAction,
+  rowsWithText,
 } from '../src/honolulu/actions';
 import { HonoluluActionPage } from '../src/honolulu/ActionPage';
 import { HonoluluSession } from '../src/honolulu/session';

@@ -9,7 +9,17 @@ import { InfoTip } from './InfoTip';
 /** A message of MessageBattle (0x17DB〜0x1BDE), to find the file when there is no current message. */
 export const BATTLE_MESSAGE = 0x1b00;
 
-export function BattleMessagePicker({ texts, anchor = BATTLE_MESSAGE, title, current, users, freeLabel, info, onPick, onClose }: {
+export function BattleMessagePicker({
+  texts,
+  anchor = BATTLE_MESSAGE,
+  title,
+  current,
+  users,
+  freeLabel,
+  info,
+  onPick,
+  onClose,
+}: {
   texts: MessageStore;
   /** A message of the file to list when there is no current message (or it is an added one). */
   anchor?: number;
@@ -28,7 +38,10 @@ export function BattleMessagePicker({ texts, anchor = BATTLE_MESSAGE, title, cur
   const file = texts.file(current && !texts.isAdded(current) ? current : anchor);
   const q = query.trim();
   const ids: number[] = [];
-  const range = [...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []), ...texts.addedIds()];
+  const range = [
+    ...(file ? Array.from({ length: file.gmsg.last - file.gmsg.first + 1 }, (_, i) => file.gmsg.first + i) : []),
+    ...texts.addedIds(),
+  ];
   for (const id of range) {
     if (free && users.has(id) && id !== current) continue;
     const t = texts.preview(id, true) ?? '';
@@ -38,13 +51,29 @@ export function BattleMessagePicker({ texts, anchor = BATTLE_MESSAGE, title, cur
   return (
     <Dialog title={title} onClose={onClose}>
       <div className="row">
-        <input type="search" className="picker-search" placeholder="本文・番号で絞り込み" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label><input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />{freeLabel}</label>
+        <input
+          type="search"
+          className="picker-search"
+          placeholder="本文・番号で絞り込み"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label>
+          <input type="checkbox" checked={free} onChange={(e) => setFree(e.target.checked)} />
+          {freeLabel}
+        </label>
         <InfoTip text={`${file?.name ?? ''} と追加したメッセージです。${info}`} />
       </div>
       <div className="picker-list">
         <table className="book-table">
-          <thead><tr><th>#</th><th>本文</th><th>使うもの</th></tr></thead>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>本文</th>
+              <th>使うもの</th>
+            </tr>
+          </thead>
           <tbody>
             {ids.slice(0, 500).map((id) => (
               <tr key={id} className={id === current ? 'active current' : ''} onClick={() => onPick(id)}>

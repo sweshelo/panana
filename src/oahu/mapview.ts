@@ -74,7 +74,12 @@ export class OahuMapView {
   private readonly markerGeo = new THREE.SphereGeometry(60, 16, 12);
   private readonly markerMats = new MarkerMaterials();
   /** Invisible walls (section 8 kinds 100〜102): a see-through box of their size. */
-  private readonly wallMat = new THREE.MeshBasicMaterial({ color: 0x9e9e9e, transparent: true, opacity: 0.3, depthWrite: false });
+  private readonly wallMat = new THREE.MeshBasicMaterial({
+    color: 0x9e9e9e,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+  });
   private readonly wallGeos = new Map<string, THREE.BoxGeometry>();
   private readonly unsubscribe: () => void;
   private disposed = false;
@@ -157,14 +162,17 @@ export class OahuMapView {
   private paint(g: CanvasRenderingContext2D, s: number): void {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash) return;
-    const st = this.st, layers = this.ctl.layers, sel = st.selection;
+    const st = this.st,
+      layers = this.ctl.layers,
+      sel = st.selection;
     if (layers.tiles) drawTiles(g, s, doc.tiles);
     if (layers.room) drawRoomCells(g, s, doc);
     for (const k of [...OAHU_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
-        const x = px * s, y = py * s;
+        const x = px * s,
+          y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         const placed = this.placement?.(k, i) ?? 'shown';
         g.globalAlpha = placed === 'hidden' || placed === 'gone' ? 0.25 : 1;
@@ -207,8 +215,10 @@ export class OahuMapView {
     const maps = this.st.maps;
     const src = maps.tileSource(this.info, this.doc);
     const hashes = this.doc.tiles.map((t) => maps.partModel(t.kind, src.tileset, letterIndex(t.letter)));
-    for (const [kind, letters] of maps.palette(src.tileset)) for (const l of letters) hashes.push(maps.partModel(kind, src.tileset, l));
-    for (const k of new Set(this.doc.tiles.map((t) => t.kind))) for (let l = 0; l < 8; l++) hashes.push(maps.partModel(k, src.tileset, l));
+    for (const [kind, letters] of maps.palette(src.tileset))
+      for (const l of letters) hashes.push(maps.partModel(kind, src.tileset, l));
+    for (const k of new Set(this.doc.tiles.map((t) => t.kind)))
+      for (let l = 0; l < 8; l++) hashes.push(maps.partModel(k, src.tileset, l));
     this.status = 'タイルのモデルを読み込み中…';
     this.signal.emit();
     try {
@@ -228,7 +238,7 @@ export class OahuMapView {
   look(section: number, index: number): OahuRecordLook | null {
     const rec = this.doc.recs[section]?.[index];
     if (!rec) return null;
-    return this.partLook(section,rec.raw);
+    return this.partLook(section, rec.raw);
   }
 
   partLook(section: number, raw: Uint8Array): OahuRecordLook | null {
@@ -246,9 +256,9 @@ export class OahuMapView {
     });
   }
 
-  private readonly partImages = new PartThumbnails<OahuRecordModel>(model => this.loadModel(model));
+  private readonly partImages = new PartThumbnails<OahuRecordModel>((model) => this.loadModel(model));
   partThumb(model: OahuRecordModel | null): Promise<string | null> {
-    return model ? this.partImages.get(JSON.stringify(model),model) : Promise.resolve(null);
+    return model ? this.partImages.get(JSON.stringify(model), model) : Promise.resolve(null);
   }
 
   /** The file name of a loaded model ("npc_22"), '' while it is loading or when there is none. */
@@ -258,7 +268,13 @@ export class OahuMapView {
   }
 
   private modelKey(m: OahuRecordModel): string | null {
-    return m.type === 'object' ? `o${m.row}` : m.type === 'monster' ? `m${m.design}` : m.type === 'denpa' ? `d${m.kind}/${m.id}` : null;
+    return m.type === 'object'
+      ? `o${m.row}`
+      : m.type === 'monster'
+        ? `m${m.design}`
+        : m.type === 'denpa'
+          ? `d${m.kind}/${m.id}`
+          : null;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -267,12 +283,15 @@ export class OahuMapView {
     if (!key) return null;
     if (!this.objects.has(key)) {
       this.objects.set(key, null);
-      void this.loadModel(m).then((loaded) => {
-        if (this.disposed || !loaded) return loaded?.factory.dispose();
-        this.objects.set(key, loaded);
-        this.sync3d();
-        this.signal.emit();
-      }, () => {});
+      void this.loadModel(m).then(
+        (loaded) => {
+          if (this.disposed || !loaded) return loaded?.factory.dispose();
+          this.objects.set(key, loaded);
+          this.sync3d();
+          this.signal.emit();
+        },
+        () => {},
+      );
       return null;
     }
     const o = this.objects.get(key);
@@ -314,7 +333,9 @@ export class OahuMapView {
     const doc = this.st.current;
     if (!doc || doc.hash !== this.info.hash || this.disposed) return;
     const maps = this.st.maps;
-    const f = this.factory, ts = this.st.tileset, layers = this.ctl.layers;
+    const f = this.factory,
+      ts = this.st.tileset,
+      layers = this.ctl.layers;
     this.tileLayer.sync(
       (layers.tiles ? doc.tiles : []).map((t) => ({
         x: t.x,

@@ -5,68 +5,120 @@ import * as THREE from 'three';
 import type { CgfxMaterial, TevStage } from './cgfx';
 
 const BLEND_FACTOR: THREE.BlendingDstFactor[] = [
-  THREE.ZeroFactor, THREE.OneFactor, THREE.SrcColorFactor, THREE.OneMinusSrcColorFactor, THREE.DstColorFactor,
-  THREE.OneMinusDstColorFactor, THREE.SrcAlphaFactor, THREE.OneMinusSrcAlphaFactor, THREE.DstAlphaFactor,
-  THREE.OneMinusDstAlphaFactor, THREE.ConstantColorFactor, THREE.OneMinusConstantColorFactor,
-  THREE.ConstantAlphaFactor, THREE.OneMinusConstantAlphaFactor, THREE.SrcAlphaSaturateFactor as THREE.BlendingDstFactor,
+  THREE.ZeroFactor,
+  THREE.OneFactor,
+  THREE.SrcColorFactor,
+  THREE.OneMinusSrcColorFactor,
+  THREE.DstColorFactor,
+  THREE.OneMinusDstColorFactor,
+  THREE.SrcAlphaFactor,
+  THREE.OneMinusSrcAlphaFactor,
+  THREE.DstAlphaFactor,
+  THREE.OneMinusDstAlphaFactor,
+  THREE.ConstantColorFactor,
+  THREE.OneMinusConstantColorFactor,
+  THREE.ConstantAlphaFactor,
+  THREE.OneMinusConstantAlphaFactor,
+  THREE.SrcAlphaSaturateFactor as THREE.BlendingDstFactor,
 ];
 const BLEND_EQ: THREE.BlendingEquation[] = [
-  THREE.AddEquation, THREE.SubtractEquation, THREE.ReverseSubtractEquation, THREE.MinEquation, THREE.MaxEquation,
+  THREE.AddEquation,
+  THREE.SubtractEquation,
+  THREE.ReverseSubtractEquation,
+  THREE.MinEquation,
+  THREE.MaxEquation,
 ];
 
 function source(s: number, k: number): string {
   switch (s) {
-    case 0: return 'vColor';
-    case 1: return 'vec4(1.0)'; // fragment lighting (primary) — not emulated
-    case 2: return 'vec4(0.0)'; // fragment lighting (secondary)
-    case 3: return 't0';
-    case 4: return 't1';
-    case 5: return 't2';
-    case 0x0d: return 'buf';
-    case 0x0e: return `konst[${k}]`;
-    default: return 'prev'; // 0x0F previous
+    case 0:
+      return 'vColor';
+    case 1:
+      return 'vec4(1.0)'; // fragment lighting (primary) — not emulated
+    case 2:
+      return 'vec4(0.0)'; // fragment lighting (secondary)
+    case 3:
+      return 't0';
+    case 4:
+      return 't1';
+    case 5:
+      return 't2';
+    case 0x0d:
+      return 'buf';
+    case 0x0e:
+      return `konst[${k}]`;
+    default:
+      return 'prev'; // 0x0F previous
   }
 }
 
 function rgbOperand(op: number, v: string): string {
   switch (op) {
-    case 1: return `(1.0 - ${v}.rgb)`;
-    case 2: return `${v}.aaa`;
-    case 3: return `(1.0 - ${v}.aaa)`;
-    case 4: return `${v}.rrr`;
-    case 5: return `(1.0 - ${v}.rrr)`;
-    case 8: return `${v}.ggg`;
-    case 9: return `(1.0 - ${v}.ggg)`;
-    case 12: return `${v}.bbb`;
-    case 13: return `(1.0 - ${v}.bbb)`;
-    default: return `${v}.rgb`;
+    case 1:
+      return `(1.0 - ${v}.rgb)`;
+    case 2:
+      return `${v}.aaa`;
+    case 3:
+      return `(1.0 - ${v}.aaa)`;
+    case 4:
+      return `${v}.rrr`;
+    case 5:
+      return `(1.0 - ${v}.rrr)`;
+    case 8:
+      return `${v}.ggg`;
+    case 9:
+      return `(1.0 - ${v}.ggg)`;
+    case 12:
+      return `${v}.bbb`;
+    case 13:
+      return `(1.0 - ${v}.bbb)`;
+    default:
+      return `${v}.rgb`;
   }
 }
 
 function alphaOperand(op: number, v: string): string {
   switch (op) {
-    case 1: return `(1.0 - ${v}.a)`;
-    case 2: return `${v}.r`;
-    case 3: return `(1.0 - ${v}.r)`;
-    case 4: return `${v}.g`;
-    case 5: return `(1.0 - ${v}.g)`;
-    case 6: return `${v}.b`;
-    case 7: return `(1.0 - ${v}.b)`;
-    default: return `${v}.a`;
+    case 1:
+      return `(1.0 - ${v}.a)`;
+    case 2:
+      return `${v}.r`;
+    case 3:
+      return `(1.0 - ${v}.r)`;
+    case 4:
+      return `${v}.g`;
+    case 5:
+      return `(1.0 - ${v}.g)`;
+    case 6:
+      return `${v}.b`;
+    case 7:
+      return `(1.0 - ${v}.b)`;
+    default:
+      return `${v}.a`;
   }
 }
 
 function combine(op: number, a: string, b: string, c: string, one: string, half: string): string {
   switch (op) {
-    case 1: return `${a} * ${b}`;
-    case 2: return `${a} + ${b}`;
-    case 3: return `${a} + ${b} - ${half}`;
-    case 4: return `${a} * ${c} + ${b} * (${one} - ${c})`;
-    case 5: return `${a} - ${b}`;
-    case 6: case 7: return `${one} * (4.0 * dot(vec3(${a}) - 0.5, vec3(${b}) - 0.5))`;
-    case 8: return `${a} * ${b} + ${c}`;
-    case 9: return `(${a} + ${b}) * ${c}`;
-    default: return a;
+    case 1:
+      return `${a} * ${b}`;
+    case 2:
+      return `${a} + ${b}`;
+    case 3:
+      return `${a} + ${b} - ${half}`;
+    case 4:
+      return `${a} * ${c} + ${b} * (${one} - ${c})`;
+    case 5:
+      return `${a} - ${b}`;
+    case 6:
+    case 7:
+      return `${one} * (4.0 * dot(vec3(${a}) - 0.5, vec3(${b}) - 0.5))`;
+    case 8:
+      return `${a} * ${b} + ${c}`;
+    case 9:
+      return `(${a} + ${b}) * ${c}`;
+    default:
+      return a;
   }
 }
 
@@ -88,8 +140,14 @@ function stageCode(st: TevStage, k: number, m: CgfxMaterial): string {
 
 // PICA test functions (never, always, ==, !=, <, <=, >, >=) as three.js depth functions.
 const DEPTH_FUNC: THREE.DepthModes[] = [
-  THREE.NeverDepth, THREE.AlwaysDepth, THREE.EqualDepth, THREE.NotEqualDepth,
-  THREE.LessDepth, THREE.LessEqualDepth, THREE.GreaterDepth, THREE.GreaterEqualDepth,
+  THREE.NeverDepth,
+  THREE.AlwaysDepth,
+  THREE.EqualDepth,
+  THREE.NotEqualDepth,
+  THREE.LessDepth,
+  THREE.LessEqualDepth,
+  THREE.GreaterDepth,
+  THREE.GreaterEqualDepth,
 ];
 
 const ALPHA_TEST = ['false', 'true', '==', '!=', '<', '<=', '>', '>='];
@@ -100,8 +158,17 @@ const ALPHA_TEST = ['false', 'true', '==', '!=', '<', '<=', '>', '>='];
  * Maya and 3ds Max turn about the texture's centre. The eyes' frames are picked by translating, so the sign matters
  * (a blink of 0 → ⅓ → ⅔ steps through the rows in order only with −T).
  */
-export function uvMatrix(out: THREE.Matrix3, type: number, su: number, sv: number, r: number, tu: number, tv: number): THREE.Matrix3 {
-  const ca = Math.cos(r), sa = Math.sin(r);
+export function uvMatrix(
+  out: THREE.Matrix3,
+  type: number,
+  su: number,
+  sv: number,
+  r: number,
+  tu: number,
+  tv: number,
+): THREE.Matrix3 {
+  const ca = Math.cos(r),
+    sa = Math.sin(r);
   let x: number, y: number;
   if (type === 1) {
     x = su * (-ca * tu - sa * tv);
@@ -139,7 +206,17 @@ export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Pla
     }
     const u = units[i]!;
     uniforms[`map${i}`] = { value: map };
-    uniforms[`uvm${i}`] = { value: uvMatrix(new THREE.Matrix3(), u.transform, u.scaleU || 1, u.scaleV || 1, u.rotate, u.translateU, u.translateV) };
+    uniforms[`uvm${i}`] = {
+      value: uvMatrix(
+        new THREE.Matrix3(),
+        u.transform,
+        u.scaleU || 1,
+        u.scaleV || 1,
+        u.rotate,
+        u.translateU,
+        u.translateV,
+      ),
+    };
     sampling += `  vec4 t${i} = texture2D(map${i}, (uvm${i} * vec3(vUv${u.source}, 1.0)).xy);\n`;
   }
   const bf = m.blendFunc;
@@ -173,7 +250,10 @@ void main() {
   const fragmentShader = `
 uniform vec4 konst[6];
 uniform vec4 bufColor;
-${[0, 1, 2].filter((i) => uniforms[`map${i}`]).map((i) => `uniform sampler2D map${i};\nuniform mat3 uvm${i};`).join('\n')}
+${[0, 1, 2]
+  .filter((i) => uniforms[`map${i}`])
+  .map((i) => `uniform sampler2D map${i};\nuniform mat3 uvm${i};`)
+  .join('\n')}
 varying vec2 vUv0;
 varying vec2 vUv1;
 varying vec2 vUv2;
@@ -191,7 +271,13 @@ ${alphaTest}
   gl_FragColor = ${opaque ? 'vec4(prev.rgb, 1.0)' : 'prev'};
 }`;
 
-  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader, clipping: true, side: THREE.DoubleSide });
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader,
+    fragmentShader,
+    clipping: true,
+    side: THREE.DoubleSide,
+  });
   mat.clippingPlanes = clipping;
   // The 3DS screen has no alpha, but the canvas has (photos and viewers are transparent around the model): its
   // alpha keeps the coverage, so an opaque material covers fully and a blended one adds its alpha over what is

@@ -22,11 +22,16 @@ export async function saveBaseMod(title: TitleKey, mod: BaseMod | null): Promise
  * A base MOD of `title` from the files of a folder (`path` relative to it). A LayeredFS folder names its title ID
  * (`00040000000EF000/romfs/…`), so another game's MOD is refused.
  */
-export function baseModFor(title: TitleDef, label: string, files: { name: string; path: string; bytes: Uint8Array }[]): BaseMod {
+export function baseModFor(
+  title: TitleDef,
+  label: string,
+  files: { name: string; path: string; bytes: Uint8Array }[],
+): BaseMod {
   for (const f of files)
     for (const part of f.path.split('/')) {
       const t = /^[0-9A-Fa-f]{16}$/.test(part) ? titleById(part) : undefined;
-      if (t && t !== title) throw new Error(`『${t.name}』の MOD です (${part})。『${title.name}』の MOD のフォルダを選んでください`);
+      if (t && t !== title)
+        throw new Error(`『${t.name}』の MOD です (${part})。『${title.name}』の MOD のフォルダを選んでください`);
     }
   return baseModFromFiles(label, files);
 }
@@ -35,7 +40,11 @@ export function baseModFor(title: TitleDef, label: string, files: { name: string
  * The files of a MOD built on a base MOD, as paths below the title folder ("romfs/…", "exefs/code.ips"): the base's
  * RomFS files unless rebuilt, the rebuilt ones, and code.ips (the base's followed by the game's own records: ips.ts appendIps).
  */
-export function packageOn(mod: BaseMod | null, files: Map<string, Uint8Array>, ips: Uint8Array | null): Map<string, Uint8Array> {
+export function packageOn(
+  mod: BaseMod | null,
+  files: Map<string, Uint8Array>,
+  ips: Uint8Array | null,
+): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   for (const [name, data] of mod?.romfs ?? []) out.set(`romfs/${name}`, data);
   for (const [name, data] of files) out.set(`romfs/${name}`, data);

@@ -59,9 +59,19 @@ export function letterLabel(letter: number): string {
  * world = world units (a cell is 500).
  */
 export type Unit = 'cell' | 'fine' | 'quarter' | 'world';
-export const UNIT_LABEL: Record<Unit, string> = { cell: 'セル', fine: '細かい単位', quarter: '1/4 セル', world: 'ワールド' };
+export const UNIT_LABEL: Record<Unit, string> = {
+  cell: 'セル',
+  fine: '細かい単位',
+  quarter: '1/4 セル',
+  world: 'ワールド',
+};
 /** How a unit maps to world units (shown next to the coordinates). */
-export const UNIT_NOTE: Record<Unit, string> = { cell: '', fine: 'ワールド = 50 + 値 × 100 (0〜299)', quarter: 'ワールド = 125 + 値 × 125 (0〜299)', world: '1 セル = 500' };
+export const UNIT_NOTE: Record<Unit, string> = {
+  cell: '',
+  fine: 'ワールド = 50 + 値 × 100 (0〜299)',
+  quarter: 'ワールド = 125 + 値 × 125 (0〜299)',
+  world: '1 セル = 500',
+};
 
 /** Record layouts of the point-like sections. x / y are edited, every other byte is kept as is. */
 export interface RecordLayout {
@@ -203,7 +213,11 @@ export function buildTiles(tiles: Tile[], L: TileLayout = KAHARA_TILE): Uint8Arr
     w32(out, o, t.kind);
     w16(out, o + 4, t.x);
     w16(out, o + 6, t.y);
-    out[o + L.rot] = L.rotCodec ? (t.rotHi && !t.rot ? t.rotHi : L.rotCodec.encode(t.rot)) : (t.rotHi & ~3) | (t.rot & 3);
+    out[o + L.rot] = L.rotCodec
+      ? t.rotHi && !t.rot
+        ? t.rotHi
+        : L.rotCodec.encode(t.rot)
+      : (t.rotHi & ~3) | (t.rot & 3);
     out[o + L.letter] = t.letter;
     w16(out, o + L.pad, t.pad);
   });
@@ -291,7 +305,8 @@ export const worldToQuarter = (w: number): number => Math.round((w - 125) / 125)
 /** The f32 offsets of a record in cells (0 when the layout has none). */
 function recOffset(r: Rec, L: RecordLayout): [number, number] {
   if (L.fxo === undefined || L.fyo === undefined) return [0, 0];
-  const dx = f32(r.raw, L.fxo), dy = f32(r.raw, L.fyo);
+  const dx = f32(r.raw, L.fxo),
+    dy = f32(r.raw, L.fyo);
   return [Number.isFinite(dx) ? (dx * 100) / CELL : 0, Number.isFinite(dy) ? (dy * 100) / CELL : 0];
 }
 
@@ -316,7 +331,8 @@ export function setRecCellPos(r: Rec, L: RecordLayout, cx: number, cy: number): 
     r.x = Math.floor(cx);
     r.y = Math.floor(cy);
   } else if (L.unit === 'world') {
-    const snap = (c: number): number => Math.max(-32768, Math.min(32767, Math.round((c * CELL) / WORLD_SNAP) * WORLD_SNAP));
+    const snap = (c: number): number =>
+      Math.max(-32768, Math.min(32767, Math.round((c * CELL) / WORLD_SNAP) * WORLD_SNAP));
     r.x = snap(cx);
     r.y = snap(cy);
   } else if (L.unit === 'quarter') {

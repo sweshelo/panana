@@ -8,7 +8,16 @@ import { isIndoor } from '../src/game/objects';
 import { lanaiContents } from '../src/lanai/contents';
 import { LANAI_ACTION_CLEAR_WARP, LANAI_ACTION_GOAL_CHEST } from '../src/lanai/actions';
 import { LANAI_EVENT_ACTIONS, LanaiMaps } from '../src/lanai/maps';
-import { LANAI_CLEAR_WARP, LANAI_EFFECT_CLEAR_WARP, LANAI_EFFECT_REPAIR_POINT, LANAI_GOAL_CHEST, LANAI_REPAIR_POINT, lanaiObjectRef, lanaiObjectScale, lanaiRecordLook } from '../src/lanai/mapObjects';
+import {
+  LANAI_CLEAR_WARP,
+  LANAI_EFFECT_CLEAR_WARP,
+  LANAI_EFFECT_REPAIR_POINT,
+  LANAI_GOAL_CHEST,
+  LANAI_REPAIR_POINT,
+  lanaiObjectRef,
+  lanaiObjectScale,
+  lanaiRecordLook,
+} from '../src/lanai/mapObjects';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -20,7 +29,10 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
   let s: LanaiSession;
   let all: LanaiMaps[];
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump);
     all = [];
     for (const c of lanaiContents(s)) {
@@ -41,8 +53,10 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
   test('the records of every map name MapObject rows; characters are npc_ models, chests trebox', async () => {
     const mapObject = s.table('MapObject');
     const rows = new Map<string, Set<number>>();
-    const designs = new Set<number>(), effects = new Map<string, Set<number>>();
-    let charas = 0, charaModels = 0;
+    const designs = new Set<number>(),
+      effects = new Map<string, Set<number>>();
+    let charas = 0,
+      charaModels = 0;
     for (const maps of all) {
       const mapChara = maps.contentTable('MapChara');
       for (const info of maps.maps) {
@@ -95,8 +109,11 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
   // the defaults the code picks (FUN_0044F9EC, FUN_0021D744, FUN_0021C844; naauao lanai/key-objects.md)
   test('every goal chest, clear warp and recovery point takes its model or effect; heals gimk_04_heal', async () => {
     const mapObject = s.table('MapObject');
-    let goals = 0, warps = 0, recovery = 0;
-    const goalRows = new Set<number>(), healRows = new Set<number>();
+    let goals = 0,
+      warps = 0,
+      recovery = 0;
+    const goalRows = new Set<number>(),
+      healRows = new Set<number>();
     for (const maps of all) {
       const mapChara = maps.contentTable('MapChara');
       for (const info of maps.maps) {
@@ -132,11 +149,13 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect(warps).toBeGreaterThan(40);
     expect(recovery).toBeGreaterThan(50);
     expect((await Promise.all([...goalRows].map(modelName))).filter((n) => n === 'gimk_05_trebox_goal').length).toBe(1);
-    if (healRows.size) expect((await Promise.all([...healRows].map(modelName))).some((n) => n.startsWith('gimk_04_heal'))).toBe(true);
+    if (healRows.size)
+      expect((await Promise.all([...healRows].map(modelName))).some((n) => n.startsWith('gimk_04_heal'))).toBe(true);
   }, 300000);
 
   test('goal chests and clear warps clear their own content', () => {
-    let chests = 0, warps = 0;
+    let chests = 0,
+      warps = 0;
     for (const maps of all)
       for (const info of maps.maps) {
         if (info.world) continue;

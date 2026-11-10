@@ -376,4 +376,9 @@ tf_build:
   b 0x28954C
 `;
 
-export const TRANSFORM_PATCH: CodePatch = { id: TRANSFORM_PATCH_ID, title: TRANSFORM_PATCH_TITLE, source: TRANSFORM_PATCH_SOURCE, enabled: true };
+export const TRANSFORM_PATCH: CodePatch = {
+  id: TRANSFORM_PATCH_ID,
+  title: TRANSFORM_PATCH_TITLE,
+  source: TRANSFORM_PATCH_SOURCE,
+  enabled: true,
+};

@@ -43,21 +43,43 @@ function runCopy(spec: CopySpec, from: number, onEdit: () => void): void {
 }
 
 /** "写して新しい…を作る" for record `from`, and "この…を消す" when `remove` is given (an added record). */
-export function CopyRemoveButtons({ copy, from, remove, onEdit }: { copy: CopySpec; from: number; remove?: RemoveSpec; onEdit: () => void }): ReactNode {
-  const no = copy.can ? copy.cannot?.(from) ?? null : copy.why ?? '';
-  const blocked = remove ? (remove.used.length ? `使われています: ${remove.used.slice(0, 8).join('・')}${remove.used.length > 8 ? ' ほか' : ''}` : remove.why ?? '') : '';
+export function CopyRemoveButtons({
+  copy,
+  from,
+  remove,
+  onEdit,
+}: {
+  copy: CopySpec;
+  from: number;
+  remove?: RemoveSpec;
+  onEdit: () => void;
+}): ReactNode {
+  const no = copy.can ? (copy.cannot?.(from) ?? null) : (copy.why ?? '');
+  const blocked = remove
+    ? remove.used.length
+      ? `使われています: ${remove.used.slice(0, 8).join('・')}${remove.used.length > 8 ? ' ほか' : ''}`
+      : (remove.why ?? '')
+    : '';
   return (
     <>
       <span className="with-info">
-        <button disabled={no !== null} title={no ?? ''} onClick={() => runCopy(copy, from, onEdit)}>{`写して新しい${copy.noun}を作る`}</button>
+        <button
+          disabled={no !== null}
+          title={no ?? ''}
+          onClick={() => runCopy(copy, from, onEdit)}
+        >{`写して新しい${copy.noun}を作る`}</button>
         {copy.info && <InfoTip text={copy.info} />}
       </span>
       {remove && (
-        <button disabled={!!blocked} title={blocked || `追加した${copy.noun}を消します`} onClick={() => {
-          remove.remove();
-          onEdit();
-          location.hash = remove.next;
-        }}>{`この${copy.noun}を消す`}</button>
+        <button
+          disabled={!!blocked}
+          title={blocked || `追加した${copy.noun}を消します`}
+          onClick={() => {
+            remove.remove();
+            onEdit();
+            location.hash = remove.next;
+          }}
+        >{`この${copy.noun}を消す`}</button>
       )}
     </>
   );
@@ -67,26 +89,45 @@ export function CopyRemoveButtons({ copy, from, remove, onEdit }: { copy: CopySp
  * "＋ 新しい…" at the top of a book's list: picks the record to start from in the book's own picker (`picker` gets the
  * title, the pick and the close), copies it and opens the copy, where its look and actions can be chosen.
  */
-export function NewRecordButton({ copy, current, picker, onEdit }: {
+export function NewRecordButton({
+  copy,
+  current,
+  picker,
+  onEdit,
+}: {
   copy: CopySpec;
   /** The record shown now (the picker starts there). */
   current: number;
-  picker: (p: { title: string; current: number; unavailable: (id: number) => string | null; onPick: (id: number) => void; onClose: () => void }) => ReactNode;
+  picker: (p: {
+    title: string;
+    current: number;
+    unavailable: (id: number) => string | null;
+    onPick: (id: number) => void;
+    onClose: () => void;
+  }) => ReactNode;
   onEdit: () => void;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   return (
     <div className="row new-record">
-      <button className="primary" disabled={!copy.can} title={copy.can ? `元にする${copy.noun}を選んで、その写しを新しい${copy.noun}として足します` : copy.why ?? ''}
-        onClick={() => setOpen(true)}>{`＋ 新しい${copy.noun}`}</button>
+      <button
+        className="primary"
+        disabled={!copy.can}
+        title={copy.can ? `元にする${copy.noun}を選んで、その写しを新しい${copy.noun}として足します` : (copy.why ?? '')}
+        onClick={() => setOpen(true)}
+      >{`＋ 新しい${copy.noun}`}</button>
       {copy.info && <InfoTip text={copy.info} />}
-      {open && picker({
-        title: `元にする${copy.noun}を選ぶ (写して新しい${copy.noun}を作ります)`,
-        current,
-        unavailable: (id) => copy.cannot?.(id) ?? null,
-        onPick: (id) => { setOpen(false); runCopy(copy, id, onEdit); },
-        onClose: () => setOpen(false),
-      })}
+      {open &&
+        picker({
+          title: `元にする${copy.noun}を選ぶ (写して新しい${copy.noun}を作ります)`,
+          current,
+          unavailable: (id) => copy.cannot?.(id) ?? null,
+          onPick: (id) => {
+            setOpen(false);
+            runCopy(copy, id, onEdit);
+          },
+          onClose: () => setOpen(false),
+        })}
     </div>
   );
 }

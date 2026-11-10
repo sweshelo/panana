@@ -35,14 +35,23 @@ export function MapSoundPanel({ session, sounds }: { session: Session; sounds: S
       sounds={sounds}
       usage={usage}
       slots={SOUND_SLOTS.map(([slot, label]) => ({
-        key: slot, label, value: s[slot], kind: SLOT_KIND[slot]!, max: MAX_MAP_SOUND, field: slot === 'steps' ? undefined : BGM_FIELD,
+        key: slot,
+        label,
+        value: s[slot],
+        kind: SLOT_KIND[slot]!,
+        max: MAX_MAP_SOUND,
+        field: slot === 'steps' ? undefined : BGM_FIELD,
         onChange: (v) => st.editTables(() => master.setSound(row, slot, v)),
       }))}
       note={
         <>
           {`mapData 行 ${row} の [4] / [5] / [6]。`}
-          {shared.length > 1 ? `同じ行を使う ${shared.length} 個のマップの音がまとめて変わります (上の「専用の行を作る」で分けられます)。` : ''}
-          {row === 0 ? '行 0 は自分の行を持たないマップ (町など) のもので、BGM の決まり方は未解析です。変えても鳴る音が変わらないかもしれません。' : ''}
+          {shared.length > 1
+            ? `同じ行を使う ${shared.length} 個のマップの音がまとめて変わります (上の「専用の行を作る」で分けられます)。`
+            : ''}
+          {row === 0
+            ? '行 0 は自分の行を持たないマップ (町など) のもので、BGM の決まり方は未解析です。変えても鳴る音が変わらないかもしれません。'
+            : ''}
           {changed ? ' 変更済み。' : ''}
         </>
       }

@@ -15,7 +15,8 @@ export const BGM_EXT_FIRST = 0x80;
 export const BGM_EXT_SLOTS = 0x80;
 
 /** soundData row of the value of a BGM field (with the patch). */
-export const bgmRow = (value: number): number => (value >= BGM_EXT_FIRST && value < BGM_EXT_FIRST + BGM_EXT_SLOTS ? BGM_EXT_BASE + value - BGM_EXT_FIRST : value);
+export const bgmRow = (value: number): number =>
+  value >= BGM_EXT_FIRST && value < BGM_EXT_FIRST + BGM_EXT_SLOTS ? BGM_EXT_BASE + value - BGM_EXT_FIRST : value;
 
 /** Value of a BGM field for a soundData row, or null when no BGM field can hold it. */
 export function bgmValue(row: number): number | null {
@@ -100,4 +101,9 @@ bgm_battle_keep:
   b 0x317E04
 `;
 
-export const BGM_EXT_PATCH: CodePatch = { id: BGM_EXT_PATCH_ID, title: BGM_EXT_PATCH_TITLE, source: BGM_EXT_PATCH_SOURCE, enabled: true };
+export const BGM_EXT_PATCH: CodePatch = {
+  id: BGM_EXT_PATCH_ID,
+  title: BGM_EXT_PATCH_TITLE,
+  source: BGM_EXT_PATCH_SOURCE,
+  enabled: true,
+};

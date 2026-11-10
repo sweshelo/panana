@@ -4,7 +4,17 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { parseArchive } from '../src/archive/gsarc';
 import { HonoluluItemPage } from '../src/honolulu/ItemPage';
-import { CLOTH_CATEGORY, HonoluluClothTextures, honoluluItemRows, honoluluItems, itemChanged, itemStages, itemSubRow, itemTextIds, revertItem } from '../src/honolulu/items';
+import {
+  CLOTH_CATEGORY,
+  HonoluluClothTextures,
+  honoluluItemRows,
+  honoluluItems,
+  itemChanged,
+  itemStages,
+  itemSubRow,
+  itemTextIds,
+  revertItem,
+} from '../src/honolulu/items';
 import { HonoluluSession } from '../src/honolulu/session';
 import { openImage } from '../src/rom/dump';
 import { HONOLULU } from '../src/rom/titles';
@@ -14,7 +24,11 @@ import { equalBytes } from '../src/util/bytes';
 import { hasHonolulu, HONOLULU_BASE } from './env';
 
 describe('the item list without photos (no ROM)', () => {
-  const rows = [{ id: 3, name: 'b', price: 0, sell: 0, kind: 4 }, { id: 1, name: 'a', price: 50, sell: 5, kind: 4 }, { id: 2, name: 'c', price: 20, sell: 2, kind: 1 }];
+  const rows = [
+    { id: 3, name: 'b', price: 0, sell: 0, kind: 4 },
+    { id: 1, name: 'a', price: 50, sell: 5, kind: 4 },
+    { id: 2, name: 'c', price: 20, sell: 2, kind: 1 },
+  ];
 
   test('the category order keeps the ID order within a category; no ☆ in the orders', () => {
     expect(sortItems(rows, 'kind', (x) => x).map((x) => x.id)).toEqual([2, 1, 3]);
@@ -23,8 +37,18 @@ describe('the item list without photos (no ROM)', () => {
   });
 
   test('no photo column, no ☆ select, the shops alone', () => {
-    const list = renderToString(<BookList rows={rows} total={3} id={(x) => x.id} selected={1} href={(id) => `#/items/${id}`} listRef={{ current: null }}
-      columns={[{ head: '名前', cell: (x) => x.name }]} changed={(x) => x.id === 2} />);
+    const list = renderToString(
+      <BookList
+        rows={rows}
+        total={3}
+        id={(x) => x.id}
+        selected={1}
+        href={(id) => `#/items/${id}`}
+        listRef={{ current: null }}
+        columns={[{ head: '名前', cell: (x) => x.name }]}
+        changed={(x) => x.id === 2}
+      />,
+    );
     expect(list).not.toContain('photo-cell');
     expect(list).toContain('<th>行</th><th>名前</th>');
     expect(list).toContain('3 / 3 件');
@@ -40,7 +64,18 @@ describe('the item list without photos (no ROM)', () => {
   });
 
   test('a photo column when the game gives photos (the other games)', () => {
-    const list = renderToString(<BookList rows={rows} total={3} id={(x) => x.id} selected={1} href={() => ''} listRef={{ current: null }} photo={() => 'P'} columns={[]} />);
+    const list = renderToString(
+      <BookList
+        rows={rows}
+        total={3}
+        id={(x) => x.id}
+        selected={1}
+        href={() => ''}
+        listRef={{ current: null }}
+        photo={() => 'P'}
+        columns={[]}
+      />,
+    );
     expect(list.match(/photo-cell/g)).toHaveLength(3);
   });
 });
@@ -97,7 +132,11 @@ describe.skipIf(!hasHonolulu)('初代の item book (ROM)', () => {
     rows.set(2, 'sell', 9);
     session.edited();
     expect(itemChanged(session, 2)).toBe(true);
-    expect(honoluluItems(session).find((x) => x.row === 2)).toMatchObject({ name: 'キズぐすりプラス', price: 99, sell: 9 });
+    expect(honoluluItems(session).find((x) => x.row === 2)).toMatchObject({
+      name: 'キズぐすりプラス',
+      price: 99,
+      sell: 9,
+    });
     const master = session.modFiles().get(HONOLULU.master)!;
     const reopened = parseArchive(master);
     expect(reopened.entries).toHaveLength(parseArchive(await session.dump.readRomfs(HONOLULU.master)).entries.length);

@@ -5,7 +5,15 @@ import { Game } from '../src/game/game';
 import { CodeBin } from '../src/game/codebin';
 import { BASE, MAP_SECTIONS, MAP_SECTIONS_ROWS, MAP_TABLE, MAP_TABLE_ROWS } from '../src/game/codeconst';
 import { MapDb } from '../src/game/mapdb';
-import { EXT_HEADER, HOOK_ADDR, HOOK_SITE, SPILL, buildMapPatch, readExtension, type AddedMap } from '../src/game/mappatch';
+import {
+  EXT_HEADER,
+  HOOK_ADDR,
+  HOOK_SITE,
+  SPILL,
+  buildMapPatch,
+  readExtension,
+  type AddedMap,
+} from '../src/game/mappatch';
 import { addableDungeons, makeMap, suggestName } from '../src/game/newmap';
 import { sectionBytes } from '../src/game/sections';
 import { buildMapDb, buildModFiles, codeIps, modPackage } from '../src/export/pack';
@@ -20,11 +28,13 @@ const at = (a: number): number => a - BASE;
 
 /** FUN_002d9b18 (+ the hook): section k of a map, as the game finds it. */
 function gameSection(code: Uint8Array, map: number, k: number): number | null {
-  for (let i = 0; i < MAP_SECTIONS_ROWS; i++) if (u32(code, at(MAP_SECTIONS) + i * 40) === map) return u32(code, at(MAP_SECTIONS) + i * 40 + k * 4);
+  for (let i = 0; i < MAP_SECTIONS_ROWS; i++)
+    if (u32(code, at(MAP_SECTIONS) + i * 40) === map) return u32(code, at(MAP_SECTIONS) + i * 40 + k * 4);
   if (u32(code, at(HOOK_SITE)) !== 0xea000000 + (((HOOK_ADDR - HOOK_SITE - 8) >> 2) & 0xffffff)) return null;
   const h = u32(code, at(u32(code, at(HOOK_ADDR) + 0x34))); // the hook's literal -> header
   expect(h).toBe(0x504d4e50);
-  const n = u32(code, at(EXT_HEADER) + 8), p = u32(code, at(EXT_HEADER) + 12);
+  const n = u32(code, at(EXT_HEADER) + 8),
+    p = u32(code, at(EXT_HEADER) + 12);
   for (let i = 0; i < n; i++) if (u32(code, at(p) + i * 40) === map) return u32(code, at(p) + i * 40 + k * 4);
   return null;
 }
@@ -33,8 +43,10 @@ function gameSection(code: Uint8Array, map: number, k: number): number | null {
 function gameRow(code: Uint8Array, map: number): { row: number; dungeon: number } | null {
   for (let d = 0; d < MAP_TABLE_ROWS; d++) {
     const o = at(MAP_TABLE) + d * 16;
-    const n = u32(code, o + 8), arr = u32(code, o + 12);
-    for (let j = 0; j < n; j++) if (u32(code, at(arr) + j * 0x1c) === map) return { row: arr + j * 0x1c, dungeon: u32(code, o) };
+    const n = u32(code, o + 8),
+      arr = u32(code, o + 12);
+    for (let j = 0; j < n; j++)
+      if (u32(code, at(arr) + j * 0x1c) === map) return { row: arr + j * 0x1c, dungeon: u32(code, o) };
   }
   return null;
 }
@@ -42,7 +54,8 @@ function gameRow(code: Uint8Array, map: number): { row: number; dungeon: number 
 /** FUN_002d9a4c: lower_bound over the index (unsigned), then the entry there. */
 function gameDbEntry(db: Uint8Array, hash: number): number {
   const n = u32(db, 0);
-  let lo = 0, len = n;
+  let lo = 0,
+    len = n;
   while (len > 0) {
     const half = len >> 1;
     if (u32(db, 4 + (lo + half) * 12) < hash) {
@@ -92,13 +105,24 @@ describe.skipIf(!hasCia)('new maps (docs/new-map.md)', () => {
     const cb = new CodeBin(patched);
     expect(cb.maps.length).toBe(206);
     const info = cb.byHash(m.hash)!;
-    expect({ name: info.name, dungeon: info.dungeon, floor: info.floor, added: info.added, sections: info.sections }).toEqual({
-      name: m.name, dungeon: 1, floor: -3, added: true, sections: m.sections,
+    expect({
+      name: info.name,
+      dungeon: info.dungeon,
+      floor: info.floor,
+      added: info.added,
+      sections: info.sections,
+    }).toEqual({
+      name: m.name,
+      dungeon: 1,
+      floor: -3,
+      added: true,
+      sections: m.sections,
     });
     // Every original map: same sections, same row contents (with the key it gets at run time), same info.
     for (const o of game.code.maps) {
       for (let k = 0; k < 10; k++) expect(gameSection(patched, o.hash, k)).toBe(o.sections[k]!);
-      const a = gameRow(code, o.hash), b = gameRow(patched, o.hash);
+      const a = gameRow(code, o.hash),
+        b = gameRow(patched, o.hash);
       if (!a) continue;
       expect(b!.dungeon).toBe(a.dungeon);
       expect(cb.byHash(o.hash)).toEqual(o);
@@ -135,7 +159,10 @@ describe.skipIf(!hasCia)('new maps (docs/new-map.md)', () => {
   });
 
   test('IPS: appended records win over the base, and the base is kept', () => {
-    const base = buildIps([[0x100, Uint8Array.of(1, 2, 3)], [0x200, Uint8Array.of(9)]]);
+    const base = buildIps([
+      [0x100, Uint8Array.of(1, 2, 3)],
+      [0x200, Uint8Array.of(9)],
+    ]);
     const both = appendIps(base, [[0x101, Uint8Array.of(7)]]);
     const out = applyIps(new Uint8Array(0x300), both);
     expect([...out.subarray(0x100, 0x103)]).toEqual([1, 7, 3]);
@@ -146,7 +173,11 @@ describe.skipIf(!hasCia)('new maps (docs/new-map.md)', () => {
     const tmpl = game.code.byName('D01B02001')!;
     const tdoc = game.doc(tmpl);
     expect(suggestName(game, 'D01', -3)).toBe('D01B03001');
-    const { info, doc } = makeMap(game, { dungeon: 1, floor: -3, name: 'D01B03001', template: tmpl, templateDoc: tdoc, copyTiles: true }, () => 0.25 + Math.random() * 0.5);
+    const { info, doc } = makeMap(
+      game,
+      { dungeon: 1, floor: -3, name: 'D01B03001', template: tmpl, templateDoc: tdoc, copyTiles: true },
+      () => 0.25 + Math.random() * 0.5,
+    );
     expect(sectionBytes(doc, 6)).toEqual(tdoc.sec6Header);
     expect(doc.tiles.length).toBe(tdoc.tiles.length);
     game.code.addMap(info);

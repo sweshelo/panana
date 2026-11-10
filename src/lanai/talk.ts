@@ -14,7 +14,12 @@ export const TALK_TONES = 8;
 
 export type TalkKind = 'set' | 'single' | 'npc' | 'none';
 
-export const TALK_KIND_LABEL: Record<TalkKind, string> = { set: '性格違いの組', single: '性格つき 1 行', npc: 'NPC', none: '話者なし' };
+export const TALK_KIND_LABEL: Record<TalkKind, string> = {
+  set: '性格違いの組',
+  single: '性格つき 1 行',
+  npc: 'NPC',
+  none: '話者なし',
+};
 
 /** One line: the 8 rows of a set of tones, or one row. */
 export interface TalkGroup {
@@ -49,7 +54,10 @@ export function talkGroups(ref: LanaiTableRef): TalkGroup[] {
   const out: TalkGroup[] = [];
   const key = (row: number): string => `${ref.archive}:${ref.entry.toString(16).toUpperCase().padStart(8, '0')}:${row}`;
   for (let r = 0; r < t.rows;) {
-    if (r + TALK_TONES <= t.rows && Array.from({ length: TALK_TONES }, (_, k) => talkSpeaker(ref, r + k) === k + 1).every(Boolean)) {
+    if (
+      r + TALK_TONES <= t.rows &&
+      Array.from({ length: TALK_TONES }, (_, k) => talkSpeaker(ref, r + k) === k + 1).every(Boolean)
+    ) {
       out.push({ ref, rows: Array.from({ length: TALK_TONES }, (_, k) => r + k), kind: 'set', key: key(r) });
       r += TALK_TONES;
       continue;
@@ -72,7 +80,9 @@ export function marksDiffer(session: LanaiSession, g: TalkGroup): boolean {
   const cols = talkColumns(g.ref);
   if (!cols || g.rows.length < 2) return false;
   const t = g.ref.table;
-  const marks = g.rows.map((r) => (t.isString(r, cols.message) ? lanaiMarks(parseLanaiMessage(t.data, t.u32(r, cols.message)).tokens).join('') : ''));
+  const marks = g.rows.map((r) =>
+    t.isString(r, cols.message) ? lanaiMarks(parseLanaiMessage(t.data, t.u32(r, cols.message)).tokens).join('') : '',
+  );
   return marks.some((m) => m !== marks[0]);
 }
 
@@ -87,5 +97,7 @@ export function voiceStale(g: TalkGroup, row: number): boolean {
 /** The plain text of every row of a line (for the list and the search). */
 export function talkPlain(session: LanaiSession, g: TalkGroup): string[] {
   const cols = talkColumns(g.ref)!;
-  return g.rows.map((r) => (g.ref.table.isString(r, cols.message) ? session.plainAt(g.ref.table, g.ref.table.u32(r, cols.message)) : ''));
+  return g.rows.map((r) =>
+    g.ref.table.isString(r, cols.message) ? session.plainAt(g.ref.table, g.ref.table.u32(r, cols.message)) : '',
+  );
 }

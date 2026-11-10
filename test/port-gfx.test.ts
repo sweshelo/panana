@@ -7,7 +7,16 @@ import { parseCgfx, type CgfxFile } from '../src/cgfx/cgfx';
 import { Game } from '../src/game/game';
 import { ITEM_MODEL_ARCHIVES } from '../src/game/items';
 import { MONSTER_MODEL_ARCHIVE } from '../src/game/monsters';
-import { readGfx, writeGfx, decodeKeys, linkBones, buildDictTree, dictFind, GfxPrimitiveType, type Gfx } from '../src/port/gfx';
+import {
+  readGfx,
+  writeGfx,
+  decodeKeys,
+  linkBones,
+  buildDictTree,
+  dictFind,
+  GfxPrimitiveType,
+  type Gfx,
+} from '../src/port/gfx';
 import { openImage } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
 import { CIA, hasCia } from './env';
@@ -50,7 +59,10 @@ describe.skipIf(!hasCia)('CGFX port (kahara)', () => {
     for (const m of book.monsters) {
       const ref = book.modelOf(m);
       if (!ref) continue;
-      for (const [kind, h] of [['model', ref.model], ['texture', ref.texture]] as const) {
+      for (const [kind, h] of [
+        ['model', ref.model],
+        ['texture', ref.texture],
+      ] as const) {
         if (!h) continue;
         const e = findEntry(arc, h);
         if (e) monsters.set(`${kind} ${h.toString(16)}`, unpackEntry(arc, e).body);
@@ -106,7 +118,12 @@ describe.skipIf(!hasCia)('CGFX port (kahara)', () => {
       const g = readGfx(b);
       if (!g.models.length || g.skeletalAnimations.length < 2) continue;
       // Layout that differs from the native one: renamed model, fewer animations, no material animations.
-      const edited: Gfx = { ...g, models: g.models.map((m) => ({ ...m, name: `${m.name}_port` })), skeletalAnimations: g.skeletalAnimations.slice(1), materialAnimations: [] };
+      const edited: Gfx = {
+        ...g,
+        models: g.models.map((m) => ({ ...m, name: `${m.name}_port` })),
+        skeletalAnimations: g.skeletalAnimations.slice(1),
+        materialAnimations: [],
+      };
       const out = writeGfx(edited);
       const again = readGfx(out);
       expect(again).toEqual(edited);
@@ -114,7 +131,9 @@ describe.skipIf(!hasCia)('CGFX port (kahara)', () => {
       const before = summary(parseCgfx(b)) as { models: { name: string }[] };
       for (const m of before.models) m.name += '_port';
       expect(summary(parseCgfx(out))).toEqual(before);
-      expect(readAnimations(out, 0x14).filter((a) => a.kind === 'skeletal').length).toBe(g.skeletalAnimations.length - 1);
+      expect(readAnimations(out, 0x14).filter((a) => a.kind === 'skeletal').length).toBe(
+        g.skeletalAnimations.length - 1,
+      );
       if (++n >= 8) break;
     }
     expect(n).toBe(8);
@@ -154,7 +173,16 @@ describe.skipIf(!hasCia)('CGFX port (kahara)', () => {
 });
 
 test('dictionary tree finds every name', () => {
-  const names = ['enemy_38_01', 'waist', 'hip_1', 'tail', 'tail_1', 'tail_2', 'Meshes[0].IsVisible', 'M_enemy_38_01_body'];
+  const names = [
+    'enemy_38_01',
+    'waist',
+    'hip_1',
+    'tail',
+    'tail_1',
+    'tail_2',
+    'Meshes[0].IsVisible',
+    'M_enemy_38_01_body',
+  ];
   const tree = buildDictTree(names);
   names.forEach((n, i) => expect(dictFind(tree, n)).toBe(i));
   expect(dictFind(tree, 'missing')).toBe(-1);

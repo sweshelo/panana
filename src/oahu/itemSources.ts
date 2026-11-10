@@ -19,7 +19,11 @@ export function oahuItemShops(session: OahuSession, item: number): SourceLink[] 
     const shop = shops.shop(id);
     const unit = OAHU_PRICE_UNIT[shop?.settings?.payment ?? 0];
     const row = shops.rows(id).find((r) => r.item === item);
-    return { label: shop ? oahuShopLabel(shop) : `店 ${id}`, href: oahuShopHref(id), note: unit && row ? `${row.price} ${unit}` : undefined };
+    return {
+      label: shop ? oahuShopLabel(shop) : `店 ${id}`,
+      href: oahuShopHref(id),
+      note: unit && row ? `${row.price} ${unit}` : undefined,
+    };
   });
 }
 
@@ -37,7 +41,12 @@ export function oahuDropIndex(session: OahuSession): Map<number, SourceLink[]> {
     for (const d of battle.drops(m.id)) {
       if (!d.item) continue;
       const odds = battle.dropOdds(d.rate);
-      const link = { label: m.name, href: oahuMonsterHref(m.id), note: `${battle.dropClass(d.rate).label}・${pct(odds)} = ${oneIn(odds)}`, title: `ドロップ ${d.slot}、率の値 ${d.rate}` };
+      const link = {
+        label: m.name,
+        href: oahuMonsterHref(m.id),
+        note: `${battle.dropClass(d.rate).label}・${pct(odds)} = ${oneIn(odds)}`,
+        title: `ドロップ ${d.slot}、率の値 ${d.rate}`,
+      };
       out.set(d.item, [...(out.get(d.item) ?? []), link]);
     }
   return out;
@@ -56,10 +65,21 @@ export function oahuChestIndex(session: OahuSession, entries: OahuEventEntry[]):
     const chance = new Map<number, number>();
     for (const s of slots) chance.set(s.value, (chance.get(s.value) ?? 0) + s.weight);
     const places = e.places.length
-      ? e.places.map((p) => ({ place: `${oahuDungeonLabel(session, p.map.dungeon)} ${p.map.name}`, href: oahuMapHref(p.map), at: `(${Math.floor(p.x)}, ${Math.floor(p.y)})` }))
-      : [{ place: `${oahuDungeonLabel(session, e.dungeon)} のイベント #${e.row} (マップに置かれていない)`, href: `#/events/${e.dungeon}.${e.row}`, at: undefined }];
+      ? e.places.map((p) => ({
+          place: `${oahuDungeonLabel(session, p.map.dungeon)} ${p.map.name}`,
+          href: oahuMapHref(p.map),
+          at: `(${Math.floor(p.x)}, ${Math.floor(p.y)})`,
+        }))
+      : [
+          {
+            place: `${oahuDungeonLabel(session, e.dungeon)} のイベント #${e.row} (マップに置かれていない)`,
+            href: `#/events/${e.dungeon}.${e.row}`,
+            at: undefined,
+          },
+        ];
     for (const [item, w] of chance)
-      for (const p of places) out.set(item, [...(out.get(item) ?? []), { ...p, table: `#${row}`, chance: total ? (w / total) * 100 : 0 }]);
+      for (const p of places)
+        out.set(item, [...(out.get(item) ?? []), { ...p, table: `#${row}`, chance: total ? (w / total) * 100 : 0 }]);
   }
   return out;
 }

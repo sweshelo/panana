@@ -9,7 +9,10 @@ export const ROMS = join(import.meta.dir, '..', 'roms');
 // 電波人間のRPG2 (kahara): the decrypted CIA, the golden data of the Python reference (test/golden/export_golden.py)
 // and, when there, the base MOD (elpulse mod/out)
 // (kahara-base.cia, named like the other titles' dumps, is read when the title ID name is not there)
-export const CIA = existsSync(join(ROMS, '00040000000A7900.cia')) || !existsSync(join(ROMS, 'kahara-base.cia')) ? join(ROMS, '00040000000A7900.cia') : join(ROMS, 'kahara-base.cia');
+export const CIA =
+  existsSync(join(ROMS, '00040000000A7900.cia')) || !existsSync(join(ROMS, 'kahara-base.cia'))
+    ? join(ROMS, '00040000000A7900.cia')
+    : join(ROMS, 'kahara-base.cia');
 export const GOLDEN = join(ROMS, 'golden.json');
 export const BASE_MOD = join(ROMS, 'mod', 'out');
 export const hasCia = existsSync(CIA);
@@ -32,6 +35,8 @@ export const hasHonolulu = existsSync(HONOLULU_BASE);
 
 // CI の ROM ジョブ (REQUIRE_ROM=1) では、スキップして緑になるのを防ぐ
 if (process.env.REQUIRE_ROM) {
-  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE, HONOLULU_BASE].filter((f) => !existsSync(f));
+  const missing = [CIA, GOLDEN, OAHU_BASE, OAHU_UPDATE, LANAI_BASE, LANAI_UPDATE, HONOLULU_BASE].filter(
+    (f) => !existsSync(f),
+  );
   if (missing.length) throw new Error(`REQUIRE_ROM is set but roms/ lacks: ${missing.join(' ')}`);
 }

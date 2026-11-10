@@ -51,18 +51,29 @@ export function oahuCodeProfile(msgFirst: number, msgLast: number): CodeProfile 
  * builds, or null. The handler holds the row at +4; the make function gets the handler, the kind (+0x55) and the
  * row's arguments (+0x10).
  */
-export function oahuBuildAction(code: Uint8Array, make: number, dungeon: number, row: number, eventRow: Uint8Array): BuiltAction | null {
+export function oahuBuildAction(
+  code: Uint8Array,
+  make: number,
+  dungeon: number,
+  row: number,
+  eventRow: Uint8Array,
+): BuiltAction | null {
   const allocs: { depth: number; p: number }[] = [];
   const stubs = new Map([
-    [OAHU_F_ALLOC, (m: ArmMachine) => {
-      const p = m.alloc(m.r[0]!);
-      allocs.push({ depth: m.depth, p });
-      return p;
-    }],
+    [
+      OAHU_F_ALLOC,
+      (m: ArmMachine) => {
+        const p = m.alloc(m.r[0]!);
+        allocs.push({ depth: m.depth, p });
+        return p;
+      },
+    ],
     [OAHU_F_DUNGEON, () => dungeon],
   ]);
   const m = new ArmMachine(code, { stubs, maxDepth: 4, textEnd: OAHU_TEXT_END });
-  const handler = m.alloc(0x40), ev = m.alloc(0x60), ctx = m.alloc(0x400);
+  const handler = m.alloc(0x40),
+    ev = m.alloc(0x60),
+    ctx = m.alloc(0x400);
   eventRow.forEach((b, k) => m.wb(ev + k, b));
   m.write(handler + 4, row, 4);
   m.write(handler + 8, ev, 4);
@@ -78,7 +89,8 @@ export function oahuBuildAction(code: Uint8Array, make: number, dungeon: number,
   }
   if (vtable < RODATA[0] || vtable >= RODATA[1]) return null;
   const pointers = new Set<number>();
-  for (const c of m.calls) if (c.target !== OAHU_F_ALLOC) for (const v of c.args) if (v >= BASE && v < OAHU_TEXT_END) pointers.add(v);
+  for (const c of m.calls)
+    if (c.target !== OAHU_F_ALLOC) for (const v of c.args) if (v >= BASE && v < OAHU_TEXT_END) pointers.add(v);
   for (const [a, v] of m.writes) if (a >= 0x30000000 && v >= BASE && v < OAHU_TEXT_END) pointers.add(v);
   return { make, vtable, pointers: [...pointers] };
 }

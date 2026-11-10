@@ -37,16 +37,22 @@ export async function itemLooks(o: Opened, title: PortTitle): Promise<ItemLook[]
     if (!s) return [];
     const game = s.game;
     const { items } = await s.items();
-    return items.items.filter((it) => it.model && it.name).map((it) => ({
-      title, id: it.id, name: it.name, model: itemRef(game, it), hash: it.model,
-      files: async () => {
-        const name = await itemModelArchive(game, it.model);
-        const arc = name ? await game.archive(name) : null;
-        const e = arc && findEntry(arc, it.model);
-        if (!arc || !e) throw new Error('モデルのエントリがありません');
-        return { body: unpackEntry(arc, e).body, extra: [] };
-      },
-    }));
+    return items.items
+      .filter((it) => it.model && it.name)
+      .map((it) => ({
+        title,
+        id: it.id,
+        name: it.name,
+        model: itemRef(game, it),
+        hash: it.model,
+        files: async () => {
+          const name = await itemModelArchive(game, it.model);
+          const arc = name ? await game.archive(name) : null;
+          const e = arc && findEntry(arc, it.model);
+          if (!arc || !e) throw new Error('モデルのエントリがありません');
+          return { body: unpackEntry(arc, e).body, extra: [] };
+        },
+      }));
   }
   if (title === 'oahu') {
     const s = o.oahu;
@@ -57,7 +63,11 @@ export async function itemLooks(o: Opened, title: PortTitle): Promise<ItemLook[]
       const m = await s.itemModels.model(it.model);
       if (m?.kind !== 'model') continue; // floors, walls and clothes patterns are a texture only
       out.push({
-        title, id: it.id, name: it.name, model: m.ref, hash: it.model,
+        title,
+        id: it.id,
+        name: it.name,
+        model: m.ref,
+        hash: it.model,
         files: async () => {
           const f = await s.itemModels.sourceFiles(it.model);
           if (!f) throw new Error('モデルのエントリがありません');
@@ -69,14 +79,20 @@ export async function itemLooks(o: Opened, title: PortTitle): Promise<ItemLook[]
   }
   const s = o.lanai;
   if (!s) return [];
-  return lanaiItems(s).filter((it) => it.model && it.name && !textureOnlyKind(it.kind)).map((it) => ({
-    title, id: it.row, name: it.name, model: lanaiItemRef(s, it), hash: it.model,
-    files: async () => {
-      const body = await lanaiItemBody(s, it);
-      if (!body) throw new Error('モデルのエントリがありません');
-      return { body, extra: [] };
-    },
-  }));
+  return lanaiItems(s)
+    .filter((it) => it.model && it.name && !textureOnlyKind(it.kind))
+    .map((it) => ({
+      title,
+      id: it.row,
+      name: it.name,
+      model: lanaiItemRef(s, it),
+      hash: it.model,
+      files: async () => {
+        const body = await lanaiItemBody(s, it);
+        if (!body) throw new Error('モデルのエントリがありません');
+        return { body, extra: [] };
+      },
+    }));
 }
 
 /** A BCH with the textures of `extra` it does not have put in (RPG3's items share some textures in other entries). */
@@ -109,7 +125,8 @@ export async function giveItemModel(o: Opened, target: PortTitle, id: number, lo
   const src = await look.files();
   // the same game's model goes in as it is (into the archive the item is read from), another game's is converted
   const whole = look.title === 'kahara' ? src.body : withTextures(src.body, src.extra);
-  const body = look.title === target ? whole : convertItem(whole, look.title, target, { name: `item_${look.title[0]}${look.id}` });
+  const body =
+    look.title === target ? whole : convertItem(whole, look.title, target, { name: `item_${look.title[0]}${look.id}` });
   const store = await PortStore.of(target);
   const add = async (archive: string, current: number, read: (n: string) => Promise<Uint8Array>): Promise<number> => {
     const arc = parseArchive(await read(archive));
@@ -117,7 +134,15 @@ export async function giveItemModel(o: Opened, target: PortTitle, id: number, lo
     const same = arc.entries.find((e) => e.hash === look.hash);
     if (same && look.title === target) return same.hash;
     const hash = entryHash(body, (h) => !!findEntry(arc, h) || store.has(archive, h));
-    store.add([{ archive, hash, name: `item_${look.title[0]}${look.id}.${target === 'kahara' ? 'bcres' : 'bch'}`, body, like: current }]);
+    store.add([
+      {
+        archive,
+        hash,
+        name: `item_${look.title[0]}${look.id}.${target === 'kahara' ? 'bcres' : 'bch'}`,
+        body,
+        like: current,
+      },
+    ]);
     return hash;
   };
   if (target === 'kahara') {

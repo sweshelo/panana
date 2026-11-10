@@ -60,7 +60,11 @@ export class Game {
   readonly db: MapDb;
   private readonly archives = new Map<string, Promise<Archive>>();
 
-  private constructor(readonly dump: Dump, masterBytes: Uint8Array, dbArchiveBytes: Uint8Array) {
+  private constructor(
+    readonly dump: Dump,
+    masterBytes: Uint8Array,
+    dbArchiveBytes: Uint8Array,
+  ) {
     this.code = new CodeBin(dump.code);
     this.master = new Master(masterBytes);
     this.masterBytes = masterBytes;
@@ -165,7 +169,9 @@ export class Game {
     let names = (await idbGet<string[]>(key).catch(() => undefined)) ?? null;
     if (!names)
       try {
-        names = bcsarSoundNames(await (this.soundPorts ? this.soundPorts.originalBcsar() : this.dump.readRomfs(BCSAR_PATH)));
+        names = bcsarSoundNames(
+          await (this.soundPorts ? this.soundPorts.originalBcsar() : this.dump.readRomfs(BCSAR_PATH)),
+        );
         await idbSet(key, names).catch(() => {});
       } catch {
         return null;
@@ -300,7 +306,14 @@ export class Game {
 
   /** Root RomFS files the editor needs for every dungeon (to cache them). */
   neededFiles(): string[] {
-    const out = new Set([MASTER_ARCHIVE, MAPDB_ARCHIVE, MONSTER_DESIGN_ARCHIVE, SHOP_ARCHIVE, MONSTER_MODEL_ARCHIVE, ...ITEM_MODEL_ARCHIVES]);
+    const out = new Set([
+      MASTER_ARCHIVE,
+      MAPDB_ARCHIVE,
+      MONSTER_DESIGN_ARCHIVE,
+      SHOP_ARCHIVE,
+      MONSTER_MODEL_ARCHIVE,
+      ...ITEM_MODEL_ARCHIVES,
+    ]);
     for (const m of this.editableMaps()) {
       const ref = this.mapRef(m);
       // Every tileset (the editor can show a map with another one).
@@ -320,4 +333,3 @@ export class Game {
     return [...out].filter((n) => have.has(n));
   }
 }
-

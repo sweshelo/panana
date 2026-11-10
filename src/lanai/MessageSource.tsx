@@ -18,7 +18,12 @@ export function revertLanaiString(t: LanaiTable, row: number, offset: number): v
 }
 
 /** The strings of the column at `offset` (named `name`) of a table, by row. */
-export function lanaiMessageSource(session: LanaiSession, t: LanaiTable, offset: number, name = t.fieldName(offset) ?? `+${offset.toString(16).toUpperCase()}`): MessageSource {
+export function lanaiMessageSource(
+  session: LanaiSession,
+  t: LanaiTable,
+  offset: number,
+  name = t.fieldName(offset) ?? `+${offset.toString(16).toUpperCase()}`,
+): MessageSource {
   let m = sources.get(t);
   if (!m) sources.set(t, (m = new Map()));
   let s = m.get(offset);

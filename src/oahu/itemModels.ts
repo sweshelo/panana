@@ -94,7 +94,9 @@ export class OahuItemModels {
     const f = parseBch(unwrapBch(at.body));
     if (!f.models.length) return null;
     const have = new Set(f.textures.map((t) => t.name));
-    const missing = [...new Set(f.models.flatMap((m) => m.materials.flatMap((x) => x.textures)))].filter((t): t is string => !!t && !have.has(t));
+    const missing = [...new Set(f.models.flatMap((m) => m.materials.flatMap((x) => x.textures)))].filter(
+      (t): t is string => !!t && !have.has(t),
+    );
     return { archive: at.name, body: at.body, extra: await this.extraTextures(at.name, missing) };
   }
 
@@ -118,9 +120,12 @@ export class OahuItemModels {
         const at = await this.locate(hash);
         if (!at || bchOffset(at.body) < 0) return null;
         const f = parseBch(unwrapBch(at.body));
-        if (!f.models.length) return f.textures[0] ? { kind: 'texture', texture: f.textures[0], archive: at.name } : null;
+        if (!f.models.length)
+          return f.textures[0] ? { kind: 'texture', texture: f.textures[0], archive: at.name } : null;
         const have = new Set(f.textures.map((t) => t.name));
-        const missing = [...new Set(f.models.flatMap((m) => m.materials.flatMap((x) => x.textures)))].filter((t): t is string => !!t && !have.has(t));
+        const missing = [...new Set(f.models.flatMap((m) => m.materials.flatMap((x) => x.textures)))].filter(
+          (t): t is string => !!t && !have.has(t),
+        );
         const extra = await this.extraTextures(at.name, missing);
         const ref: ModelRef = {
           key: `oahu-item/${this.dump.title.key}/${hex8(hash)}`,

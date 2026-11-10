@@ -31,9 +31,17 @@ export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
     }
   }, [game, monsters, visit, edits]);
   const row = arg ? Number(arg) : undefined;
-  const selected = useSticky(row, (r) => typeof book !== 'string' && !!book.action(r),
-    () => (typeof book === 'string' ? 0 : book.actions.find((a) => a.kind === 2)?.row ?? 0));
-  if (typeof book === 'string') return <div className="start"><div className="error">{book}</div></div>;
+  const selected = useSticky(
+    row,
+    (r) => typeof book !== 'string' && !!book.action(r),
+    () => (typeof book === 'string' ? 0 : (book.actions.find((a) => a.kind === 2)?.row ?? 0)),
+  );
+  if (typeof book === 'string')
+    return (
+      <div className="start">
+        <div className="error">{book}</div>
+      </div>
+    );
   const changed = (): void => {
     session.scheduleSave();
     edited();
@@ -41,11 +49,23 @@ export function ActionPage({ session, arg, visit }: PageProps): ReactNode {
   const master = game.master;
   return (
     <div className="book">
-      <ActionView book={book} selected={selected} context={{ message: (id) => master.message(id) }}
-        original={(r) => (r < master.originalRows('actionData.bin') ? master.originalRow('actionData.bin', r) : undefined)}
+      <ActionView
+        book={book}
+        selected={selected}
+        context={{ message: (id) => master.message(id) }}
+        original={(r) =>
+          r < master.originalRows('actionData.bin') ? master.originalRow('actionData.bin', r) : undefined
+        }
         editor={(a) => <ActionEdit session={session} book={book} row={a.row} onChange={changed} />}
-        top={<NewRecordButton copy={actionCopy(session)} current={selected} onEdit={changed}
-          picker={(p) => <ActionPicker actions={book} {...p} />} />} />
+        top={
+          <NewRecordButton
+            copy={actionCopy(session)}
+            current={selected}
+            onEdit={changed}
+            picker={(p) => <ActionPicker actions={book} {...p} />}
+          />
+        }
+      />
     </div>
   );
 }
@@ -63,29 +83,77 @@ function actionCopy(session: Session): CopySpec {
 }
 
 /** The editable fields of the action, copying it, putting it back, and the preview of its performance. */
-function ActionEdit({ session, book, row, onChange }: { session: Session; book: ActionBook; row: number; onChange: () => void }): ReactNode {
+function ActionEdit({
+  session,
+  book,
+  row,
+  onChange,
+}: {
+  session: Session;
+  book: ActionBook;
+  row: number;
+  onChange: () => void;
+}): ReactNode {
   const edits = actionEdits(session);
-  const users = book.refsOf(row).monsters.map((m) => session.book?.monster(m.row)).filter((m): m is Monster => !!m);
+  const users = book
+    .refsOf(row)
+    .monsters.map((m) => session.book?.monster(m.row))
+    .filter((m): m is Monster => !!m);
   const added = edits.added(row);
   const refs = book.refsOf(row);
   return (
     <>
       <ActionEditor session={session} actions={book} row={row} monsters={users} onChange={onChange} />
-      <ActionButtons note="変更はマスター (56562135) の actionData.bin と、演出を変えたときは 2713402F の directData.bin として書き出されます。"
-        copy={actionCopy(session)} from={row} onEdit={onChange} remove={added ? {
-          used: [...refs.monsters.map((m) => m.name), ...refs.items.map((i) => i.name)],
-          why: edits.canRemove(row) ? undefined : '消せるのは最後に追加したアクションだけです',
-          remove: () => { edits.remove(row); session.book?.reload(); }, next: actionHref(row - 1),
-        } : undefined}
-        onRevert={!added && edits.changed(row) ? () => { edits.revert(row); session.book?.reload(); onChange(); } : undefined} />
-      {session.book?.directData && <ActionPreview session={session} actions={book} edits={edits} row={row} users={users} onChange={onChange} />}
+      <ActionButtons
+        note="変更はマスター (56562135) の actionData.bin と、演出を変えたときは 2713402F の directData.bin として書き出されます。"
+        copy={actionCopy(session)}
+        from={row}
+        onEdit={onChange}
+        remove={
+          added
+            ? {
+                used: [...refs.monsters.map((m) => m.name), ...refs.items.map((i) => i.name)],
+                why: edits.canRemove(row) ? undefined : '消せるのは最後に追加したアクションだけです',
+                remove: () => {
+                  edits.remove(row);
+                  session.book?.reload();
+                },
+                next: actionHref(row - 1),
+              }
+            : undefined
+        }
+        onRevert={
+          !added && edits.changed(row)
+            ? () => {
+                edits.revert(row);
+                session.book?.reload();
+                onChange();
+              }
+            : undefined
+        }
+      />
+      {session.book?.directData && (
+        <ActionPreview session={session} actions={book} edits={edits} row={row} users={users} onChange={onChange} />
+      )}
     </>
   );
 }
 
-const FILTERS: [Filter, string][] = [['item', 'アイテムの効果 (種類 2)'], ['used-item', 'アイテムが使う'], ['skill', 'モンスターのワザ'], ['all', 'すべて']];
+const FILTERS: [Filter, string][] = [
+  ['item', 'アイテムの効果 (種類 2)'],
+  ['used-item', 'アイテムが使う'],
+  ['skill', 'モンスターのワザ'],
+  ['all', 'すべて'],
+];
 
-export function ActionView({ book, selected, editor, context, original, top }: {
+export function ActionView({
+  book,
+  selected,
+  editor,
+  context,
+  original,
+  top,
+}: {
   book: Book;
   /** Above the list's search (the "＋ 新しいアクション" button). */
   top?: ReactNode;
@@ -106,38 +174,80 @@ export function ActionView({ book, selected, editor, context, original, top }: {
         rows={rows.map((x) => {
           const refs = book.refsOf(x.row);
           const n = refs.items.length + refs.monsters.length;
-          return { row: x.row, name: x.name || <span className="muted">(名前なし)</span>, cells: [itemEffect(x) || actionKindLabel(x.kind, x.type), n ? String(n) : ''] };
+          return {
+            row: x.row,
+            name: x.name || <span className="muted">(名前なし)</span>,
+            cells: [itemEffect(x) || actionKindLabel(x.kind, x.type), n ? String(n) : ''],
+          };
         })}
-        total={book.actions.length} columns={[['内容'], ['参照', '使うアイテムとモンスターの数']]} selected={selected} href={actionHref}
-        query={query} setQuery={setQuery} placeholder="名前・効果・アイテム・モンスターで検索" filter={filter} setFilter={setFilter} filters={FILTERS} top={top} />
-      <div className="book-detail">{a && <ActionDetail action={a} book={book} editor={editor} context={context} original={original?.(a.row)} />}</div>
+        total={book.actions.length}
+        columns={[['内容'], ['参照', '使うアイテムとモンスターの数']]}
+        selected={selected}
+        href={actionHref}
+        query={query}
+        setQuery={setQuery}
+        placeholder="名前・効果・アイテム・モンスターで検索"
+        filter={filter}
+        setFilter={setFilter}
+        filters={FILTERS}
+        top={top}
+      />
+      <div className="book-detail">
+        {a && <ActionDetail action={a} book={book} editor={editor} context={context} original={original?.(a.row)} />}
+      </div>
     </>
   );
 }
 
 function matches(book: Book, a: Action, q: string, f: Filter): boolean {
   const refs = book.refsOf(a.row);
-  if (q && String(a.row) !== q && ![a.name, itemEffect(a), ...refs.items.map((i) => i.name), ...refs.monsters.map((m) => m.name)].some((t) => t.includes(q))) return false;
+  if (
+    q &&
+    String(a.row) !== q &&
+    ![a.name, itemEffect(a), ...refs.items.map((i) => i.name), ...refs.monsters.map((m) => m.name)].some((t) =>
+      t.includes(q),
+    )
+  )
+    return false;
   if (f === 'item') return a.kind === 2;
   if (f === 'used-item') return refs.items.length > 0;
   if (f === 'skill') return refs.monsters.length > 0;
   return true;
 }
 
-function ActionDetail({ action: a, book, editor, context, original }: { action: Action; book: Book; editor?: (a: Action) => ReactNode; context?: FieldContext; original?: Uint8Array }): ReactNode {
+function ActionDetail({
+  action: a,
+  book,
+  editor,
+  context,
+  original,
+}: {
+  action: Action;
+  book: Book;
+  editor?: (a: Action) => ReactNode;
+  context?: FieldContext;
+  original?: Uint8Array;
+}): ReactNode {
   const refs = book.refsOf(a.row);
   return (
     <>
-      <ActionHead title={a.name || `アクション #${a.row}`} sub={`actionData の行 ${a.row}  ${actionKindLabel(a.kind, a.type)}`} />
+      <ActionHead
+        title={a.name || `アクション #${a.row}`}
+        sub={`actionData の行 ${a.row}  ${actionKindLabel(a.kind, a.type)}`}
+      />
       {itemEffect(a) && <div className="model-line">{`効果: ${itemEffect(a)}`}</div>}
       {editor?.(a)}
-      <ActionUsers monsters={refs.monsters.map((m) => ({ key: `m${m.row}`, name: m.name, href: `#/monsters/${m.row}` }))}
-        items={refs.items.map((i) => ({ key: `i${i.id}`, name: i.name, href: `#/items/${i.id}` }))} />
+      <ActionUsers
+        monsters={refs.monsters.map((m) => ({ key: `m${m.row}`, name: m.name, href: `#/monsters/${m.row}` }))}
+        items={refs.items.map((i) => ({ key: `i${i.id}`, name: i.name, href: `#/items/${i.id}` }))}
+      />
       <details className="row-fields-box" open={!editor}>
         <summary>{`actionData の行 ${a.row} のすべての欄`}</summary>
-        {a.raw.length >= KAHARA_ACTION_DATA.rowSize
-          ? <RowFields def={KAHARA_ACTION_DATA} row={a.raw} original={original} context={context} />
-          : <div className="muted">{`行が短い (${a.raw.length} バイト)`}</div>}
+        {a.raw.length >= KAHARA_ACTION_DATA.rowSize ? (
+          <RowFields def={KAHARA_ACTION_DATA} row={a.raw} original={original} context={context} />
+        ) : (
+          <div className="muted">{`行が短い (${a.raw.length} バイト)`}</div>
+        )}
       </details>
     </>
   );

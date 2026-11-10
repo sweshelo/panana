@@ -11,10 +11,20 @@ import type { Dump } from '../rom/dump';
  * IslandEvent), 0901BA07 (the opening's talk, 3300〜3304, no file name), 1D37838B (MessageEvent), 6F896E38 (MessageNagomi),
  * 90EACC05 (MessageAntenna and a copy of EventIntro2), 91B0619D (MessageCommand), FBADD94C (MessageStaffroll).
  */
-export const HONOLULU_MESSAGE_ARCHIVES = ['56562135', '0901BA07', '1D37838B', '6F896E38', '90EACC05', '91B0619D', 'FBADD94C'];
+export const HONOLULU_MESSAGE_ARCHIVES = [
+  '56562135',
+  '0901BA07',
+  '1D37838B',
+  '6F896E38',
+  '90EACC05',
+  '91B0619D',
+  'FBADD94C',
+];
 
 export class HonoluluMessages extends ArchiveMessages {
   static async load(dump: Dump): Promise<HonoluluMessages> {
-    return new HonoluluMessages(...(await ArchiveMessages.read(dump, HONOLULU_MESSAGE_ARCHIVES, HONOLULU_SYNTAX, false)));
+    return new HonoluluMessages(
+      ...(await ArchiveMessages.read(dump, HONOLULU_MESSAGE_ARCHIVES, HONOLULU_SYNTAX, false)),
+    );
   }
 }

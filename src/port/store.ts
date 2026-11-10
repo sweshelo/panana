@@ -84,7 +84,11 @@ export class PortStore {
     const add = this.entries.filter((e) => e.archive === archive && !findEntry(arc, e.hash));
     if (!add.length) return bytes;
     const like = (h: number): ArcEntry => findEntry(arc, h) ?? arc.entries[0]!;
-    return rebuildArchive(arc, new Map(), add.map((e) => ({ hash: e.hash, name: e.name, body: e.body, like: like(e.like) })));
+    return rebuildArchive(
+      arc,
+      new Map(),
+      add.map((e) => ({ hash: e.hash, name: e.name, body: e.body, like: like(e.like) })),
+    );
   }
 
   /** The archive as the game has it (without the ported entries). */

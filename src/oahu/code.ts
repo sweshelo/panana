@@ -33,7 +33,11 @@ export const OAHU_CODE = {
 } as const;
 
 /** Sections of the Update's code.bin (ExHeader). */
-export const OAHU_SECTIONS = { text: [0x100000, 0x4558c0], ro: [0x556000, 0x4023c], data: [0x597000, 0x34568] } as const;
+export const OAHU_SECTIONS = {
+  text: [0x100000, 0x4558c0],
+  ro: [0x556000, 0x4023c],
+  data: [0x597000, 0x34568],
+} as const;
 
 /** Where patches go: the cave is the zero padding between the end of .text and .rodata (0x740 bytes). */
 export const OAHU_LAYOUT: CodeLayout = {
@@ -65,7 +69,10 @@ export class OahuCode {
   static of(dump: Dump): OahuCode | null {
     if (!dump.update) return null;
     const v = dump.update.titleVersion;
-    if (v !== undefined && v !== OAHU_CODE_VERSION) throw new Error(`Update のバージョンが v${v} です。Panana が調べた v${OAHU_CODE_VERSION} の Update を選んでください。`);
+    if (v !== undefined && v !== OAHU_CODE_VERSION)
+      throw new Error(
+        `Update のバージョンが v${v} です。Panana が調べた v${OAHU_CODE_VERSION} の Update を選んでください。`,
+      );
     return OahuCode.check(dump.code);
   }
 
@@ -99,7 +106,8 @@ export class OahuCode {
       const at = this.word(OAHU_CODE.effectConditionTable + k * 4);
       const op = this.word(at);
       if (op === 0xe12fff1e) out.push(0); // bx lr: r0 is still 0
-      else if (((op & 0xfffff000) >>> 0) === 0xe3a00000 && this.word(at + 4) === 0xe12fff1e) out.push(ror(op & 0xff, ((op >> 8) & 0xf) * 2));
+      else if ((op & 0xfffff000) >>> 0 === 0xe3a00000 && this.word(at + 4) === 0xe12fff1e)
+        out.push(ror(op & 0xff, ((op >> 8) & 0xf) * 2));
       else throw new Error(`FUN_001A6348 の種類 0x${k.toString(16)} が読めません (0x${at.toString(16)})`);
     }
     return out;

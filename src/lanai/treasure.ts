@@ -16,14 +16,23 @@ export const LANAI_TREASURE_SLOTS = 10;
 export const LANAI_TREASURE_EMPTY = 0x80000000;
 
 /** Action types of chests (map.md §5.2): their first argument is the TreasureGroup row. */
-export const LANAI_CHEST_ACTIONS: Record<number, string> = { 0x8000000e: '宝箱 (見た目 0 / 2)', 0x80000010: '宝箱 (見た目 1)', [LANAI_ACTION_GOAL_CHEST]: 'ゴールの宝箱' };
+export const LANAI_CHEST_ACTIONS: Record<number, string> = {
+  0x8000000e: '宝箱 (見た目 0 / 2)',
+  0x80000010: '宝箱 (見た目 1)',
+  [LANAI_ACTION_GOAL_CHEST]: 'ゴールの宝箱',
+};
 
 /**
  * What an entry gives (+0x06), as seen in the ROM's rows: 1 an item (an ItemData row ID), 2 G (the value is the
  * amount), 3 (values are about all 1; RPG3's jewels), 4 a MonsterGroup row ID of the content (RPG3's chest battle;
  * not confirmed). The code that reads 3 and 4 is not found yet.
  */
-export const LANAI_TREASURE_KIND: Record<number, string> = { 1: 'アイテム', 2: 'G', 3: '種類 3 (ジュエル?)', 4: '戦闘 (群れ)' };
+export const LANAI_TREASURE_KIND: Record<number, string> = {
+  1: 'アイテム',
+  2: 'G',
+  3: '種類 3 (ジュエル?)',
+  4: '戦闘 (群れ)',
+};
 export const LANAI_TREASURE_ITEM = 1;
 export const LANAI_TREASURE_GOLD = 2;
 export const LANAI_TREASURE_BATTLE = 4;
@@ -100,7 +109,11 @@ export function lanaiWriteTreasure(t: LanaiTable, row: number, slots: LanaiTreas
 }
 
 /** "キズぐすり" / "300 G" / "群れ 80000015" (names given by the caller). */
-export function lanaiTreasureLabel(s: LanaiTreasureSlot, itemName: (id: number) => string, groupName: (id: number) => string): string {
+export function lanaiTreasureLabel(
+  s: LanaiTreasureSlot,
+  itemName: (id: number) => string,
+  groupName: (id: number) => string,
+): string {
   if (s.kind === LANAI_TREASURE_ITEM) return itemName(s.value);
   if (s.kind === LANAI_TREASURE_GOLD) return `${s.value} G`;
   if (s.kind === LANAI_TREASURE_BATTLE) return `戦闘: ${groupName(s.value)}`;

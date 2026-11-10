@@ -17,7 +17,11 @@ interface Block {
 
 function blockTable(d: Uint8Array, magic: string): Block[] {
   if (String.fromCharCode(...d.subarray(0, 4)) !== magic) throw new Error(`${magic} ではありません`);
-  return Array.from({ length: u16(d, 0x10) }, (_, i) => ({ type: u16(d, 0x14 + i * 12), offset: u32(d, 0x18 + i * 12), size: u32(d, 0x1c + i * 12) }));
+  return Array.from({ length: u16(d, 0x10) }, (_, i) => ({
+    type: u16(d, 0x14 + i * 12),
+    offset: u32(d, 0x18 + i * 12),
+    size: u32(d, 0x1c + i * 12),
+  }));
 }
 
 /** A file of `blocks` (bodies with their 8-byte headers), each aligned to 0x20, after a header like `like`'s. */
@@ -108,7 +112,11 @@ export function cstmForKahara(d: Uint8Array): Uint8Array {
   const infoBlock = new Uint8Array(8 + out.length);
   infoBlock.set(d.subarray(info.offset, info.offset + 8));
   infoBlock.set(out, 8);
-  return buildBlocks(d, CSTM_V21, blocks.map((b) => [b.type, b === info ? trimmed(infoBlock) : d.slice(b.offset, b.offset + b.size)]));
+  return buildBlocks(
+    d,
+    CSTM_V21,
+    blocks.map((b) => [b.type, b === info ? trimmed(infoBlock) : d.slice(b.offset, b.offset + b.size)]),
+  );
 }
 
 /** Channels of a CSTM file. */
@@ -142,8 +150,14 @@ function readTable(body: Uint8Array, type: number, start: number, end: number): 
   const n = u32(body, start);
   const refs = Array.from({ length: n }, (_, i) => s32(body, start + 8 + i * 8));
   const restAt = start + 4 + n * 8;
-  for (const r of refs) if (r !== -1 && r < restAt - start) throw new Error(`INFO の表 ${type.toString(16)} の参照が想定と違います`);
-  return { type, refType: n ? u16(body, start + 4) : 0, refs: refs.map((r) => (r === -1 ? -1 : r - (restAt - start))), rest: body.slice(restAt, end) };
+  for (const r of refs)
+    if (r !== -1 && r < restAt - start) throw new Error(`INFO の表 ${type.toString(16)} の参照が想定と違います`);
+  return {
+    type,
+    refType: n ? u16(body, start + 4) : 0,
+    refs: refs.map((r) => (r === -1 ? -1 : r - (restAt - start))),
+    rest: body.slice(restAt, end),
+  };
 }
 
 function writeTable(t: Table): Uint8Array {
@@ -178,7 +192,8 @@ const FILE_TABLE = 0x2106;
 export function soundCount(bcsar: Uint8Array): number {
   const info = blockTable(bcsar, 'CSAR').find((b) => b.type === 0x2001)!;
   const body = info.offset + 8;
-  for (let i = 0; i < 8; i++) if (u16(bcsar, body + i * 8) === SOUND_TABLE) return u32(bcsar, body + s32(bcsar, body + i * 8 + 4));
+  for (let i = 0; i < 8; i++)
+    if (u16(bcsar, body + i * 8) === SOUND_TABLE) return u32(bcsar, body + s32(bcsar, body + i * 8 + 4));
   throw new Error('CSAR に音の一覧がありません');
 }
 
@@ -238,7 +253,10 @@ export function addStreamSounds(bcsar: Uint8Array, template: number, adds: NewSt
   const parts = new Map<number, Uint8Array | Table>();
   order.forEach((h, i) => {
     const end = order[i + 1]?.at ?? ib.length;
-    parts.set(h.type, h.type === SOUND_TABLE || h.type === FILE_TABLE ? readTable(ib, h.type, h.at, end) : ib.subarray(h.at, end));
+    parts.set(
+      h.type,
+      h.type === SOUND_TABLE || h.type === FILE_TABLE ? readTable(ib, h.type, h.at, end) : ib.subarray(h.at, end),
+    );
   });
   const sounds = parts.get(SOUND_TABLE) as Table | undefined;
   const files = parts.get(FILE_TABLE) as Table | undefined;
@@ -255,21 +273,27 @@ export function addStreamSounds(bcsar: Uint8Array, template: number, adds: NewSt
   const tFile = entryOf(files, u32(tSound, 0));
   if (u16(tFile, 0) !== 0x220d) throw new Error(`音 ${template} のファイルが外部ファイルではありません`);
   const detail = s32(tSound, 0x10);
-  const fileIds = append(files, adds.map((a) => {
-    const path = new TextEncoder().encode(`${a.path}\0`);
-    const e = new Uint8Array(align(0x0c + path.length, 4));
-    e.set(tFile.subarray(0, 0x0c));
-    e.set(path, 0x0c);
-    return e;
-  }));
-  append(sounds, adds.map((a, k) => {
-    const e = tSound.slice();
-    w32(e, 0, fileIds[k]!);
-    e[8] = a.volume;
-    w32(e, 0x18, nStr + k);
-    w16(e, detail + 2, a.channels);
-    return e;
-  }));
+  const fileIds = append(
+    files,
+    adds.map((a) => {
+      const path = new TextEncoder().encode(`${a.path}\0`);
+      const e = new Uint8Array(align(0x0c + path.length, 4));
+      e.set(tFile.subarray(0, 0x0c));
+      e.set(path, 0x0c);
+      return e;
+    }),
+  );
+  append(
+    sounds,
+    adds.map((a, k) => {
+      const e = tSound.slice();
+      w32(e, 0, fileIds[k]!);
+      e[8] = a.volume;
+      w32(e, 0x18, nStr + k);
+      w16(e, detail + 2, a.channels);
+      return e;
+    }),
+  );
   // the header's references, then the tables at their new places
   const chunks: Uint8Array[] = [new Uint8Array(0x40)];
   let pos = 0x40;
@@ -290,6 +314,12 @@ export function addStreamSounds(bcsar: Uint8Array, template: number, adds: NewSt
   });
   const infoBlock = concat([bcsar.subarray(infoB.offset, infoB.offset + 8), ...chunks]);
 
-  return buildBlocks(bcsar, u32(bcsar, 8), blocks.map((b) => [b.type,
-    b === strg ? trimmed(strgBlock) : b === infoB ? trimmed(infoBlock) : bcsar.slice(b.offset, b.offset + b.size)]));
+  return buildBlocks(
+    bcsar,
+    u32(bcsar, 8),
+    blocks.map((b) => [
+      b.type,
+      b === strg ? trimmed(strgBlock) : b === infoB ? trimmed(infoBlock) : bcsar.slice(b.offset, b.offset + b.size),
+    ]),
+  );
 }

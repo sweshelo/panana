@@ -28,8 +28,29 @@ function fakeState(palette: Map<number, number[]>): LanaiEditState {
   } as unknown as LanaiMaps;
   return new LanaiEditState(maps);
 }
-const doc = (): MapDoc => ({ hash: 1, name: 'D01001B01', dungeon: 0, floor: 1, tiles: [], recs: {}, sec6Header: new Uint8Array(8), cells6: [] } as unknown as MapDoc);
-const info = (world = false): LanaiMapInfo => ({ index: 0, hash: 1, name: world ? 'W01' : 'D01001B01', sections: [], mapDataId: 0, dungeon: 0, encounterLevel: 0, floor: 1, world, added: false });
+const doc = (): MapDoc =>
+  ({
+    hash: 1,
+    name: 'D01001B01',
+    dungeon: 0,
+    floor: 1,
+    tiles: [],
+    recs: {},
+    sec6Header: new Uint8Array(8),
+    cells6: [],
+  }) as unknown as MapDoc;
+const info = (world = false): LanaiMapInfo => ({
+  index: 0,
+  hash: 1,
+  name: world ? 'W01' : 'D01001B01',
+  sections: [],
+  mapDataId: 0,
+  dungeon: 0,
+  encounterLevel: 0,
+  floor: 1,
+  world,
+  added: false,
+});
 const full = (): Map<number, number[]> => new Map(LANAI_AUTO.parts.map((p) => [p.kind, [0, 1]]));
 
 describe('RPG FREE! automatic brush', () => {
@@ -61,14 +82,29 @@ describe('RPG FREE! automatic brush', () => {
     st.setTool('paint');
     const ctl = new Controller(st);
     ctl.down(1, 1, { button: 0, shiftKey: false });
-    for (const [x, y] of [[2, 1], [3, 1], [3, 2], [2, 2], [1, 2], [1, 3], [2, 3], [3, 3]] as const) ctl.move(x, y);
+    for (const [x, y] of [
+      [2, 1],
+      [3, 1],
+      [3, 2],
+      [2, 2],
+      [1, 2],
+      [1, 3],
+      [2, 3],
+      [3, 3],
+    ] as const)
+      ctl.move(x, y);
     ctl.up();
     const tiles = st.current.tiles;
     expect(tiles).toHaveLength(9);
     const at = (x: number, y: number) => tiles.find((t) => t.x === x && t.y === y)!;
     expect(at(2, 2).kind).toBe(5);
     // edges face the centre: north edge rot 0 (byte 4), east 1 (2), south 2 (1), west 3 (8): map.md §3.2
-    for (const [x, y, byte] of [[2, 1, 4], [3, 2, 2], [2, 3, 1], [1, 2, 8]] as const) {
+    for (const [x, y, byte] of [
+      [2, 1, 4],
+      [3, 2, 2],
+      [2, 3, 1],
+      [1, 2, 8],
+    ] as const) {
       expect(at(x, y).kind).toBe(7);
       expect(LANAI_ROT_CODEC.encode(at(x, y).rot)).toBe(byte);
     }
@@ -81,18 +117,32 @@ describe('RPG FREE! automatic brush', () => {
 describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
   let s: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump, { fresh: true });
   }, 300000);
 
-  test('placed parts fit the profile\'s open edges and inward corners better than any other turn', async () => {
-    const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
-    const diagonals = [[1, -1], [1, 1], [-1, 1], [-1, -1]] as const;
+  test("placed parts fit the profile's open edges and inward corners better than any other turn", async () => {
+    const dirs = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ] as const;
+    const diagonals = [
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+      [-1, -1],
+    ] as const;
     // per kind and per extra turn r (0 = the profile's own facing): tiles whose neighbours fill the open edges, and
     // (8 / 13) tiles without room tiles on the inward diagonals. The game's maps also have floors next to empty cells
     // and corners beside other rooms, so the profile must fit most tiles and fit better than any other turn.
     const seen = new Map<number, { n: number; edges: number[]; corners: number[] }>();
-    let offered = 0, dungeons = 0;
+    let offered = 0,
+      dungeons = 0;
     for (const c of lanaiContents(s)) {
       const m = await lanaiMaps(s, c).catch(() => null);
       if (!m) continue;
@@ -104,17 +154,25 @@ describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
         st.open(info);
         if (st.autoProfile) offered++;
         const grid = new Set(doc.tiles.filter((t) => t.kind !== 33).map((t) => `${t.x},${t.y}`));
-        const room = new Set(doc.tiles.filter((t) => LANAI_AUTO.parts.find((p) => p.kind === t.kind)?.wide).map((t) => `${t.x},${t.y}`));
+        const room = new Set(
+          doc.tiles.filter((t) => LANAI_AUTO.parts.find((p) => p.kind === t.kind)?.wide).map((t) => `${t.x},${t.y}`),
+        );
         for (const t of doc.tiles) {
           const part = LANAI_AUTO.parts.find((p) => p.kind === t.kind);
           if (!part) continue;
-          let occ = 0, diag = 0;
-          dirs.forEach(([dx, dy], i) => { if (grid.has(`${t.x + dx},${t.y + dy}`)) occ |= 1 << i; });
-          diagonals.forEach(([dx, dy], i) => { if (room.has(`${t.x + dx},${t.y + dy}`)) diag |= 1 << i; });
+          let occ = 0,
+            diag = 0;
+          dirs.forEach(([dx, dy], i) => {
+            if (grid.has(`${t.x + dx},${t.y + dy}`)) occ |= 1 << i;
+          });
+          diagonals.forEach(([dx, dy], i) => {
+            if (room.has(`${t.x + dx},${t.y + dy}`)) diag |= 1 << i;
+          });
           const e = seen.get(t.kind) ?? { n: 0, edges: [0, 0, 0, 0], corners: [0, 0, 0, 0] };
           e.n++;
           for (let r = 0; r < 4; r++) {
-            const open = turnMask(part.wide | part.narrow, (t.rot + r) % 4), corners = turnMask(part.corners ?? 0, (t.rot + r) % 4);
+            const open = turnMask(part.wide | part.narrow, (t.rot + r) % 4),
+              corners = turnMask(part.corners ?? 0, (t.rot + r) % 4);
             if ((occ & open) === open) e.edges[r]!++;
             if ((diag & corners) === 0) e.corners[r]!++;
           }
@@ -122,7 +180,9 @@ describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
         }
       }
     }
-    console.log(`dungeon maps ${dungeons}, brush offered on ${offered}; fits by kind (n, edges per extra turn, corners per extra turn): ${JSON.stringify([...seen])}`);
+    console.log(
+      `dungeon maps ${dungeons}, brush offered on ${offered}; fits by kind (n, edges per extra turn, corners per extra turn): ${JSON.stringify([...seen])}`,
+    );
     expect(dungeons).toBe(507);
     // most dungeon tilesets have every part (the brush is offered on them)
     expect(offered).toBeGreaterThan(dungeons / 2);

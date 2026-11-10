@@ -5,7 +5,22 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findByName, parseArchive } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
 import { OahuSession } from '../src/oahu/session';
-import { buildOahuGround, oahuCoveredBy, oahuGroundPools, OAHU_WORLD, OAHU_WORLD_SECTIONS, OAHU_WORLD_SIZE, OAHU_WORLD_TABLE, parseChests, parseEventRanges, parseOahuGround, parseProps, WE, WS, type OahuWorld } from '../src/oahu/worldmap';
+import {
+  buildOahuGround,
+  oahuCoveredBy,
+  oahuGroundPools,
+  OAHU_WORLD,
+  OAHU_WORLD_SECTIONS,
+  OAHU_WORLD_SIZE,
+  OAHU_WORLD_TABLE,
+  parseChests,
+  parseEventRanges,
+  parseOahuGround,
+  parseProps,
+  WE,
+  WS,
+  type OahuWorld,
+} from '../src/oahu/worldmap';
 import { findEntry, unpackEntry } from '../src/archive/gsarc';
 import { OAHU_MAP_ARCHIVE, OAHU_MAPDB_ENTRY } from '../src/oahu/maps';
 import { openImage, openUpdate, withUpdate, type Dump } from '../src/rom/dump';
@@ -72,7 +87,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 world map', () => {
   });
 
   test('ranges, chests, props and event ranges', () => {
-    const land = world.ranges(WS.land), sea = world.ranges(WS.sea);
+    const land = world.ranges(WS.land),
+      sea = world.ranges(WS.sea);
     expect(land.length).toBe(251);
     expect(sea.length).toBe(609);
     const ai = session.master.table('areaInfoData.bin');

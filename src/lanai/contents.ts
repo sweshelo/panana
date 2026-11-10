@@ -65,7 +65,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
 }
 
 /** The name of a content for lists: its first stage, or "コンテンツ N". */
-export const contentTitle = (c: LanaiContent): string => c.stages.find((x) => x.name)?.name ?? (c.index === 0 ? '島・町' : `コンテンツ ${c.index}`);
+export const contentTitle = (c: LanaiContent): string =>
+  c.stages.find((x) => x.name)?.name ?? (c.index === 0 ? '島・町' : `コンテンツ ${c.index}`);
 
 /** What a CRO module holds: its classes, and the functions of the main program it calls. */
 export interface CroInfo {

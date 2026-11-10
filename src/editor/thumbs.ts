@@ -35,7 +35,11 @@ export function renderPartThumb(factory: ModelFactory, model: THREE.Object3D): s
  * Thumbnail of an object (prop, gimmick) seen from the front and above, framed to its size. `dir` is the
  * direction from the model to the camera instead (e.g. straight at a board model).
  */
-export function renderObjectThumb(factory: ModelFactory, model: THREE.Object3D, dir: THREE.Vector3 | null = null): string | null {
+export function renderObjectThumb(
+  factory: ModelFactory,
+  model: THREE.Object3D,
+  dir: THREE.Vector3 | null = null,
+): string | null {
   const box = new THREE.Box3().setFromObject(model);
   if (box.isEmpty()) return null;
   const center = box.getCenter(new THREE.Vector3());

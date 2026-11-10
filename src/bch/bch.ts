@@ -2,7 +2,16 @@
 // structures as the CGFX reader (cgfx/cgfx.ts) so that cgfx/three.ts, cgfx/tev.ts and cgfx/player.ts draw them.
 // Layouts follow SPICA (gdkchan, public domain) H3D for backward compatibility 8, the only version RPG3 has
 // (converter 39824). naauao oahu/analysis.md §4: entry types 2 and 10 are BCH, type 8 is a 0x180-byte header + BCH.
-import type { CgfxBone, CgfxFile, CgfxMaterial, CgfxMesh, CgfxModel, CgfxTexture, TevStage, TexUnit } from '../cgfx/cgfx';
+import type {
+  CgfxBone,
+  CgfxFile,
+  CgfxMaterial,
+  CgfxMesh,
+  CgfxModel,
+  CgfxTexture,
+  TevStage,
+  TexUnit,
+} from '../cgfx/cgfx';
 import { decodeTexture, textureDataSize } from '../cgfx/texture';
 import { ascii, cstr, f32, s16, u16, u32, u8 } from '../util/bytes';
 import { readBchAnimations } from './anim';
@@ -51,31 +60,79 @@ export function readBchHeader(b: Uint8Array): BchHeader {
     o += 4;
     return v;
   };
-  const contents = next(), strings = next(), commands = next(), rawData = next();
+  const contents = next(),
+    strings = next(),
+    commands = next(),
+    rawData = next();
   const rawExt = ext ? next() : 0;
   const relocation = next();
-  const contentsLength = next(), stringsLength = next(), commandsLength = next(), rawDataLength = next();
+  const contentsLength = next(),
+    stringsLength = next(),
+    commandsLength = next(),
+    rawDataLength = next();
   const rawExtLength = ext ? next() : 0;
   const relocationLength = next();
   return {
-    backward, forward: b[5]!, converter: u16(b, 6), contents, strings, commands, rawData, rawExt, relocation,
-    contentsLength, stringsLength, commandsLength, rawDataLength, rawExtLength, relocationLength,
+    backward,
+    forward: b[5]!,
+    converter: u16(b, 6),
+    contents,
+    strings,
+    commands,
+    rawData,
+    rawExt,
+    relocation,
+    contentsLength,
+    stringsLength,
+    commandsLength,
+    rawDataLength,
+    rawExtLength,
+    relocationLength,
   };
 }
 
 // Sections of the relocation table (SPICA H3DSection).
-const enum Sec { Contents, Strings, Commands, CommandsSrc, RawData, RawDataTexture, RawDataVertex, RawDataIndex16, RawDataIndex8, RawExt, RawExtTexture, RawExtVertex, RawExtIndex16, RawExtIndex8 }
+const enum Sec {
+  Contents,
+  Strings,
+  Commands,
+  CommandsSrc,
+  RawData,
+  RawDataTexture,
+  RawDataVertex,
+  RawDataIndex16,
+  RawDataIndex8,
+  RawExt,
+  RawExtTexture,
+  RawExtVertex,
+  RawExtIndex16,
+  RawExtIndex8,
+}
 
 function sectionAddress(h: BchHeader, s: number): number {
   const ext = h.rawExt || h.rawData;
   switch (s) {
-    case Sec.Contents: return h.contents;
-    case Sec.Strings: return h.strings;
-    case Sec.Commands: case Sec.CommandsSrc: return h.commands;
-    case Sec.RawData: case Sec.RawDataTexture: case Sec.RawDataVertex: case Sec.RawDataIndex8: return h.rawData;
-    case Sec.RawDataIndex16: return (h.rawData | 0x80000000) >>> 0;
-    case Sec.RawExt: case Sec.RawExtTexture: case Sec.RawExtVertex: case Sec.RawExtIndex8: return ext;
-    case Sec.RawExtIndex16: return (ext | 0x80000000) >>> 0;
+    case Sec.Contents:
+      return h.contents;
+    case Sec.Strings:
+      return h.strings;
+    case Sec.Commands:
+    case Sec.CommandsSrc:
+      return h.commands;
+    case Sec.RawData:
+    case Sec.RawDataTexture:
+    case Sec.RawDataVertex:
+    case Sec.RawDataIndex8:
+      return h.rawData;
+    case Sec.RawDataIndex16:
+      return (h.rawData | 0x80000000) >>> 0;
+    case Sec.RawExt:
+    case Sec.RawExtTexture:
+    case Sec.RawExtVertex:
+    case Sec.RawExtIndex8:
+      return ext;
+    case Sec.RawExtIndex16:
+      return (ext | 0x80000000) >>> 0;
   }
   return 0;
 }
@@ -114,21 +171,24 @@ class Reader {
   };
   /** List {u32 pointer, u32 count} of pointers. */
   ptrList = (o: number): number[] => {
-    const p = this.u32(o), n = this.u32(o + 4);
+    const p = this.u32(o),
+      n = this.u32(o + 4);
     const out: number[] = [];
     if (p) for (let i = 0; i < n; i++) out.push(this.u32(p + i * 4));
     return out;
   };
   /** List {u32 pointer, u32 count} of inline structs of `size` bytes. */
   inlineList = (o: number, size: number): number[] => {
-    const p = this.u32(o), n = this.u32(o + 4);
+    const p = this.u32(o),
+      n = this.u32(o + 4);
     const out: number[] = [];
     if (p) for (let i = 0; i < n; i++) out.push(p + i * size);
     return out;
   };
   /** Command list {u32 pointer, u32 words}. */
   pica = (o: number): PicaState => {
-    const p = this.u32(o), n = this.u32(o + 4);
+    const p = this.u32(o),
+      n = this.u32(o + 4);
     return p ? readPica(this.b, p, n) : { regs: new Map(), uniforms: new Map(), fixed: new Map() };
   };
   vec3 = (o: number): [number, number, number] => [this.f32(o), this.f32(o + 4), this.f32(o + 8)];
@@ -144,7 +204,8 @@ function readTexture(r: Reader, o: number): CgfxTexture | null {
   const dim = cmd.regs.get(0x82);
   const addr = cmd.regs.get(0x85);
   if (dim === undefined || addr === undefined || format > 13) return null;
-  const height = dim & 0x7ff, width = (dim >>> 16) & 0x7ff;
+  const height = dim & 0x7ff,
+    width = (dim >>> 16) & 0x7ff;
   const need = textureDataSize(format, width, height);
   if (!width || !height || addr + need > r.b.length) return null;
   return { name, width, height, format, rgba: decodeTexture(r.b.subarray(addr, addr + need), width, height, format) };
@@ -166,7 +227,10 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
   const name = r.str(o + at + 12);
   const textures = names.map((n) => n || null);
   const mappers = v21 ? r.u32(o + 0x18) : o + 0x18;
-  const mapper = (i: number): { wrapS: number; wrapT: number } => (mappers ? { wrapS: u8(r.b, mappers + i * 0x10 + 1), wrapT: u8(r.b, mappers + i * 0x10 + 2) } : { wrapS: 0, wrapT: 0 });
+  const mapper = (i: number): { wrapS: number; wrapT: number } =>
+    mappers
+      ? { wrapS: u8(r.b, mappers + i * 0x10 + 1), wrapT: u8(r.b, mappers + i * 0x10 + 2) }
+      : { wrapS: 0, wrapT: 0 };
 
   // H3DMaterialParams: 3 texture coordinators at +0x0C (0x18 each), colours at +0x58 (constants 0-5 at +0x6C),
   // constant assignment at +0xC0, polygon offset at +0xC4, fragment shader commands at +0xC8.
@@ -222,7 +286,11 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
     });
     const bc = fs.regs.get(0xfd);
     const up = fs.regs.get(0xe0) ?? 0;
-    tevBuffer = { color: bc === undefined ? [0, 0, 0, 0] : rgba(bc), updateRgb: (up >> 8) & 15, updateA: (up >> 12) & 15 };
+    tevBuffer = {
+      color: bc === undefined ? [0, 0, 0, 0] : rgba(bc),
+      updateRgb: (up >> 8) & 15,
+      updateA: (up >> 12) & 15,
+    };
     const op = fs.regs.get(0x100);
     const bf = fs.regs.get(0x101);
     if (op !== undefined && bf !== undefined)
@@ -261,7 +329,13 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
     alphaTest: !blend,
     depthWrite,
     depthTest,
-    uv: { scaleU: u0.scaleU, scaleV: u0.scaleV, rotate: u0.rotate, translateU: u0.translateU, translateV: u0.translateV },
+    uv: {
+      scaleU: u0.scaleU,
+      scaleV: u0.scaleV,
+      rotate: u0.rotate,
+      translateU: u0.translateU,
+      translateV: u0.translateV,
+    },
     units,
     tev,
     tevBuffer,
@@ -279,14 +353,29 @@ function composeTRS(sc: [number, number, number], rot: [number, number, number],
   const [cx, cy, cz] = rot.map(Math.cos) as [number, number, number];
   const [sx, sy, sz] = rot.map(Math.sin) as [number, number, number];
   const m = [
-    cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
-    sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
-    -sy, cy * sx, cy * cx,
+    cz * cy,
+    cz * sy * sx - sz * cx,
+    cz * sy * cx + sz * sx,
+    sz * cy,
+    sz * sy * sx + cz * cx,
+    sz * sy * cx - cz * sx,
+    -sy,
+    cy * sx,
+    cy * cx,
   ];
   return [
-    m[0]! * sc[0], m[1]! * sc[1], m[2]! * sc[2], t[0],
-    m[3]! * sc[0], m[4]! * sc[1], m[5]! * sc[2], t[1],
-    m[6]! * sc[0], m[7]! * sc[1], m[8]! * sc[2], t[2],
+    m[0]! * sc[0],
+    m[1]! * sc[1],
+    m[2]! * sc[2],
+    t[0],
+    m[3]! * sc[0],
+    m[4]! * sc[1],
+    m[5]! * sc[2],
+    t[1],
+    m[6]! * sc[0],
+    m[7]! * sc[1],
+    m[8]! * sc[2],
+    t[2],
   ];
 }
 
@@ -342,7 +431,10 @@ function worldMatrices(bones: CgfxBone[]): Mat34[] {
     const parent = b.parent >= 0 && b.parent < bones.length && b.parent !== i ? bones[b.parent] : undefined;
     const local = composeTRS(b.scale, b.rotation, b.translation);
     if (b.ssc && parent) compensateScale(local, parent.scale);
-    const m = b.parent >= 0 && b.parent < bones.length && b.parent !== i && depth < 64 ? mul34(get(b.parent, depth + 1), local) : local;
+    const m =
+      b.parent >= 0 && b.parent < bones.length && b.parent !== i && depth < 64
+        ? mul34(get(b.parent, depth + 1), local)
+        : local;
     world[i] = m;
     return m;
   };
@@ -367,7 +459,13 @@ interface Attr {
 const FORMAT_SIZE = [1, 1, 2, 4];
 
 /** Vertex layout of a mesh from its enable commands (SPICA H3DMesh.Deserialize). */
-function vertexLayout(cmd: PicaState): { address: number; stride: number; attrs: Attr[]; fixed: Map<number, number[]>; posOffset: number[] } {
+function vertexLayout(cmd: PicaState): {
+  address: number;
+  stride: number;
+  attrs: Attr[];
+  fixed: Map<number, number[]>;
+  posOffset: number[];
+} {
   const g = (r: number): number => cmd.regs.get(r) ?? 0;
   const formats = BigInt(g(0x201)) | (BigInt(g(0x202)) << 32n);
   const attributes = BigInt(g(0x204)) | (BigInt(g(0x205) & 0xffff) << 32n);
@@ -376,8 +474,7 @@ function vertexLayout(cmd: PicaState): { address: number; stride: number; attrs:
   const total = (cmd.regs.get(0x242) ?? -1) + 1;
   const u7 = cmd.uniforms.get(7) ?? [1, 1, 1, 1];
   const u8v = cmd.uniforms.get(8) ?? [1, 1, 1, 1];
-  const scaleOf = (n: number): number =>
-    [u7[0], u7[1], u7[2], u7[3], u8v[0], u8v[1], u8v[2], 1, u8v[3]][n] ?? 1;
+  const scaleOf = (n: number): number => [u7[0], u7[1], u7[2], u7[3], u8v[0], u8v[1], u8v[2], 1, u8v[3]][n] ?? 1;
   const attrs: Attr[] = [];
   const fixed = new Map<number, number[]>();
   const nib = (v: bigint, i: number): number => Number((v >> BigInt(i * 4)) & 0xfn);
@@ -391,7 +488,8 @@ function vertexLayout(cmd: PicaState): { address: number; stride: number; attrs:
     const perm = nib(attributes, i);
     const name = nib(permutation, perm);
     const fmt = nib(formats, perm);
-    const format = fmt & 3, elements = (fmt >> 2) + 1;
+    const format = fmt & 3,
+      elements = (fmt >> 2) + 1;
     const size = FORMAT_SIZE[format]!;
     if (size > 1) offset = (offset + size - 1) & ~(size - 1);
     attrs.push({ name, format, elements, scale: scaleOf(name) || 1, offset });
@@ -405,10 +503,18 @@ function readValue(b: Uint8Array, o: number, a: Attr, out: number[]): void {
   for (let i = 0; i < 4; i++) out[i] = i === 3 ? 1 : 0;
   for (let i = 0; i < a.elements; i++) {
     switch (a.format) {
-      case 0: out[i] = (b[o + i]! << 24) >> 24; break;
-      case 1: out[i] = b[o + i]!; break;
-      case 2: out[i] = (u16(b, o + i * 2) << 16) >> 16; break;
-      case 3: out[i] = f32(b, o + i * 4); break;
+      case 0:
+        out[i] = (b[o + i]! << 24) >> 24;
+        break;
+      case 1:
+        out[i] = b[o + i]!;
+        break;
+      case 2:
+        out[i] = (u16(b, o + i * 2) << 16) >> 16;
+        break;
+      case 3:
+        out[i] = f32(b, o + i * 4);
+        break;
     }
   }
 }
@@ -432,10 +538,13 @@ function readSubMesh(r: Reader, o: number): SubMesh {
   const wide = buf >>> 31 === 1;
   const at = buf & 0x7fffffff;
   const raw: number[] = [];
-  for (let i = 0; i < count && at + (wide ? i * 2 + 2 : i + 1) <= r.b.length; i++) raw.push(wide ? u16(r.b, at + i * 2) : r.b[at + i]!);
+  for (let i = 0; i < count && at + (wide ? i * 2 + 2 : i + 1) <= r.b.length; i++)
+    raw.push(wide ? u16(r.b, at + i * 2) : r.b[at + i]!);
   // Strips (1) and fans (2) become triangle lists.
   const indices: number[] = [];
-  if (mode === 1) for (let i = 2; i < raw.length; i++) indices.push(...(i & 1 ? [raw[i - 1]!, raw[i - 2]!, raw[i]!] : [raw[i - 2]!, raw[i - 1]!, raw[i]!]));
+  if (mode === 1)
+    for (let i = 2; i < raw.length; i++)
+      indices.push(...(i & 1 ? [raw[i - 1]!, raw[i - 2]!, raw[i]!] : [raw[i - 2]!, raw[i - 1]!, raw[i]!]));
   else if (mode === 2) for (let i = 2; i < raw.length; i++) indices.push(raw[0]!, raw[i - 1]!, raw[i]!);
   else indices.push(...raw);
   return { skinning, bones, indices };
@@ -445,7 +554,11 @@ function readSubMesh(r: Reader, o: number): SubMesh {
  * H3DMesh (0x38 bytes): u16 material, u8 flags, u16 node, u16 key (priority, layer << 8), enable commands, sub
  * meshes, disable commands, centre, parent, user data, metadata.
  */
-function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'name' | 'visible'> & { node: number; layer: number } {
+function readMesh(
+  r: Reader,
+  o: number,
+  boneWorld: Mat34[],
+): Omit<CgfxMesh, 'name' | 'visible'> & { node: number; layer: number } {
   const material = u16(r.b, o);
   const node = u16(r.b, o + 4);
   const key = u16(r.b, o + 6);
@@ -458,10 +571,21 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
   // 4 weights per vertex with fixed indices; taking 3 dropped the 4th bone), else 3 as before.
   const partner = (n: number): number | undefined => attrs.find((a) => a.name === n)?.elements;
   const fixedElements = (name: number): number =>
-    name === ATTR.boneIndex ? partner(ATTR.boneWeight) ?? 3 : name === ATTR.boneWeight ? partner(ATTR.boneIndex) ?? 3 : 4;
+    name === ATTR.boneIndex
+      ? (partner(ATTR.boneWeight) ?? 3)
+      : name === ATTR.boneWeight
+        ? (partner(ATTR.boneIndex) ?? 3)
+        : 4;
 
-  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], uv1: number[] = [], uv2: number[] = [], col: number[] = [], idx: number[] = [];
-  const skinIdx: number[] = [], skinW: number[] = [];
+  const pos: number[] = [],
+    nrm: number[] = [],
+    uv: number[] = [],
+    uv1: number[] = [],
+    uv2: number[] = [],
+    col: number[] = [],
+    idx: number[] = [];
+  const skinIdx: number[] = [],
+    skinW: number[] = [];
   let skinned = false;
   const tmp = [0, 0, 0, 0];
   const vmap = new Map<number, number>();
@@ -473,18 +597,36 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
         out = pos.length / 3;
         vmap.set(vi, out);
         const base = address + vi * stride;
-        let p = [0, 0, 0], n = [0, 0, 1];
-        let c = [1, 1, 1, 1], t = [0, 0], t1 = [0, 0], t2 = [0, 0];
-        const bi = [0, 0, 0, 0], bw = [0, 0, 0, 0];
-        let biCount = 0, hasWeights = false;
+        let p = [0, 0, 0],
+          n = [0, 0, 1];
+        let c = [1, 1, 1, 1],
+          t = [0, 0],
+          t1 = [0, 0],
+          t2 = [0, 0];
+        const bi = [0, 0, 0, 0],
+          bw = [0, 0, 0, 0];
+        let biCount = 0,
+          hasWeights = false;
         const take = (name: number, v: number[], elements: number): void => {
           switch (name) {
-            case ATTR.position: p = [v[0]! + posOffset[0]!, v[1]! + posOffset[1]!, v[2]! + posOffset[2]!]; break;
-            case ATTR.normal: n = [v[0]!, v[1]!, v[2]!]; break;
-            case ATTR.color: c = [v[0]!, v[1]!, v[2]!, v[3]!]; break;
-            case ATTR.uv0: t = [v[0]!, v[1]!]; break;
-            case ATTR.uv1: t1 = [v[0]!, v[1]!]; break;
-            case ATTR.uv2: t2 = [v[0]!, v[1]!]; break;
+            case ATTR.position:
+              p = [v[0]! + posOffset[0]!, v[1]! + posOffset[1]!, v[2]! + posOffset[2]!];
+              break;
+            case ATTR.normal:
+              n = [v[0]!, v[1]!, v[2]!];
+              break;
+            case ATTR.color:
+              c = [v[0]!, v[1]!, v[2]!, v[3]!];
+              break;
+            case ATTR.uv0:
+              t = [v[0]!, v[1]!];
+              break;
+            case ATTR.uv1:
+              t1 = [v[0]!, v[1]!];
+              break;
+            case ATTR.uv2:
+              t2 = [v[0]!, v[1]!];
+              break;
             case ATTR.boneIndex:
               for (let k = 0; k < elements; k++) bi[k] = Math.round(v[k]!);
               biCount = elements;
@@ -503,7 +645,7 @@ function readMesh(r: Reader, o: number, boneWorld: Mat34[]): Omit<CgfxMesh, 'nam
         }
         // Bone indices pick from the sub mesh's bone list; smooth skinning uses the weights, the others follow one bone.
         const smooth = sm.skinning === 1 && hasWeights;
-        const bones = [0, 1, 2, 3].map((k) => (k < Math.max(biCount, 1) ? sm.bones[bi[k]!] ?? -1 : -1));
+        const bones = [0, 1, 2, 3].map((k) => (k < Math.max(biCount, 1) ? (sm.bones[bi[k]!] ?? -1) : -1));
         const weights = smooth ? bw : [bones[0]! >= 0 ? 1 : 0, 0, 0, 0];
         for (let k = 0; k < 4; k++) {
           const w = bones[k]! >= 0 ? weights[k]! : 0;
@@ -563,8 +705,10 @@ function readModel(r: Reader, o: number, v21 = false): CgfxModel {
   const world = worldMatrices(bones);
   const nodeCount = r.u32(o + 0x88);
   const nodeNames = treeNames(r, r.u32(o + 0x8c), nodeCount);
-  const visPtr = r.u32(o + 0x7c), visCount = r.u32(o + 0x80);
-  const visible = (node: number): boolean => !visPtr || node >= visCount || ((r.u32(visPtr + (node >> 5) * 4) >>> (node & 31)) & 1) === 1;
+  const visPtr = r.u32(o + 0x7c),
+    visCount = r.u32(o + 0x80);
+  const visible = (node: number): boolean =>
+    !visPtr || node >= visCount || ((r.u32(visPtr + (node >> 5) * 4) >>> (node & 31)) & 1) === 1;
   const meshes: CgfxMesh[] = r.inlineList(o + 0x40, 0x38).map((m, i) => {
     const { node, layer, ...mesh } = readMesh(r, m, world);
     const mat = materials[mesh.material];
@@ -575,7 +719,13 @@ function readModel(r: Reader, o: number, v21 = false): CgfxModel {
 }
 
 /** H3D root: 15 dictionaries {pointer, count, name tree} — models, materials, shaders, textures, LUTs, … */
-const DICT = { models: 0, textures: 3, skeletalAnimations: 8, materialAnimations: 9, visibilityAnimations: 10 } as const;
+const DICT = {
+  models: 0,
+  textures: 3,
+  skeletalAnimations: 8,
+  materialAnimations: 9,
+  visibilityAnimations: 10,
+} as const;
 
 export interface BchSummary {
   header: BchHeader;
@@ -608,7 +758,12 @@ export function parseBch(src: Uint8Array): CgfxFile {
     const t = readTexture(r, p);
     if (t) textures.push(t);
   }
-  const animations = readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
+  const animations = readBchAnimations(
+    r.b,
+    r.ptrList(h.contents + DICT.skeletalAnimations * 12),
+    r.ptrList(h.contents + DICT.materialAnimations * 12),
+    h.backward,
+  );
   for (const m of models) m.animations = animations;
   return { models, textures };
 }
@@ -617,7 +772,12 @@ export function parseBch(src: Uint8Array): CgfxFile {
 export function bchAnimations(src: Uint8Array): CgfxFile['models'][number]['animations'] {
   const { b, h } = relocateBch(src);
   const r = new Reader(b);
-  return readBchAnimations(r.b, r.ptrList(h.contents + DICT.skeletalAnimations * 12), r.ptrList(h.contents + DICT.materialAnimations * 12), h.backward);
+  return readBchAnimations(
+    r.b,
+    r.ptrList(h.contents + DICT.skeletalAnimations * 12),
+    r.ptrList(h.contents + DICT.materialAnimations * 12),
+    h.backward,
+  );
 }
 
 /** Type 8 entries: a 0x180-byte header, then the BCH. */

@@ -22,7 +22,9 @@ export interface GimmickTemplate {
 
 /** Templates, those of `preferDungeon` first (their event rows fit that dungeon best). */
 export async function gimmickTemplates(game: Game, preferDungeon: number): Promise<GimmickTemplate[]> {
-  const maps = [...game.editableMaps()].sort((a, b) => (a.dungeon === preferDungeon ? -1 : 0) - (b.dungeon === preferDungeon ? -1 : 0));
+  const maps = [...game.editableMaps()].sort(
+    (a, b) => (a.dungeon === preferDungeon ? -1 : 0) - (b.dungeon === preferDungeon ? -1 : 0),
+  );
   const out = new Map<string, GimmickTemplate>();
   for (const info of maps) {
     const events = await game.eventTable(info.dungeon);
@@ -41,7 +43,10 @@ export async function gimmickTemplates(game: Game, preferDungeon: number): Promi
           evRow = u32(r, 0);
           if (!events.has(evRow)) continue;
           key = `5/${objectRow}/${r[8]}/${events.kind(evRow)}`;
-          label = objectRow && objectRow !== OBJ_INVISIBLE ? objectCategory(objectRow) : `見えないギミック (種類 ${events.kind(evRow)})`;
+          label =
+            objectRow && objectRow !== OBJ_INVISIBLE
+              ? objectCategory(objectRow)
+              : `見えないギミック (種類 ${events.kind(evRow)})`;
         } else {
           evRow = P3.door(r);
           if (evRow && !events.has(evRow)) continue;

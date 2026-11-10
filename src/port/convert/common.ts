@@ -21,34 +21,82 @@ export const IDENTITY34: Mat34 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 export function composeTRS(s: readonly number[], r: readonly number[], t: readonly number[]): Mat34 {
   const [cx, cy, cz] = [Math.cos(r[0]!), Math.cos(r[1]!), Math.cos(r[2]!)];
   const [sx, sy, sz] = [Math.sin(r[0]!), Math.sin(r[1]!), Math.sin(r[2]!)];
-  const m = [cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx, sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx, -sy, cy * sx, cy * cx];
+  const m = [
+    cz * cy,
+    cz * sy * sx - sz * cx,
+    cz * sy * cx + sz * sx,
+    sz * cy,
+    sz * sy * sx + cz * cx,
+    sz * sy * cx - cz * sx,
+    -sy,
+    cy * sx,
+    cy * cx,
+  ];
   return [
-    m[0]! * s[0]!, m[1]! * s[1]!, m[2]! * s[2]!, t[0]!,
-    m[3]! * s[0]!, m[4]! * s[1]!, m[5]! * s[2]!, t[1]!,
-    m[6]! * s[0]!, m[7]! * s[1]!, m[8]! * s[2]!, t[2]!,
+    m[0]! * s[0]!,
+    m[1]! * s[1]!,
+    m[2]! * s[2]!,
+    t[0]!,
+    m[3]! * s[0]!,
+    m[4]! * s[1]!,
+    m[5]! * s[2]!,
+    t[1]!,
+    m[6]! * s[0]!,
+    m[7]! * s[1]!,
+    m[8]! * s[2]!,
+    t[2]!,
   ];
 }
 
 export function mul34(a: Mat34, b: Mat34): Mat34 {
   const o: number[] = [];
   for (let i = 0; i < 3; i++)
-    for (let j = 0; j < 4; j++) o.push(a[i * 4]! * b[j]! + a[i * 4 + 1]! * b[4 + j]! + a[i * 4 + 2]! * b[8 + j]! + (j === 3 ? a[i * 4 + 3]! : 0));
+    for (let j = 0; j < 4; j++)
+      o.push(a[i * 4]! * b[j]! + a[i * 4 + 1]! * b[4 + j]! + a[i * 4 + 2]! * b[8 + j]! + (j === 3 ? a[i * 4 + 3]! : 0));
   return o;
 }
 
 export function invert34(m: Mat34): Mat34 {
-  const [a, b, c, d, e, f, g, h, i, j, k, l] = m as [number, number, number, number, number, number, number, number, number, number, number, number];
+  const [a, b, c, d, e, f, g, h, i, j, k, l] = m as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
   const det = a * (f * k - g * j) - b * (e * k - g * i) + c * (e * j - f * i);
   const s = det ? 1 / det : 0;
   const r = [
-    (f * k - g * j) * s, (c * j - b * k) * s, (b * g - c * f) * s,
-    (g * i - e * k) * s, (a * k - c * i) * s, (c * e - a * g) * s,
-    (e * j - f * i) * s, (b * i - a * j) * s, (a * f - b * e) * s,
+    (f * k - g * j) * s,
+    (c * j - b * k) * s,
+    (b * g - c * f) * s,
+    (g * i - e * k) * s,
+    (a * k - c * i) * s,
+    (c * e - a * g) * s,
+    (e * j - f * i) * s,
+    (b * i - a * j) * s,
+    (a * f - b * e) * s,
   ];
   return [
-    r[0]!, r[1]!, r[2]!, -(r[0]! * d + r[1]! * h + r[2]! * l),
-    r[3]!, r[4]!, r[5]!, -(r[3]! * d + r[4]! * h + r[5]! * l),
-    r[6]!, r[7]!, r[8]!, -(r[6]! * d + r[7]! * h + r[8]! * l),
+    r[0]!,
+    r[1]!,
+    r[2]!,
+    -(r[0]! * d + r[1]! * h + r[2]! * l),
+    r[3]!,
+    r[4]!,
+    r[5]!,
+    -(r[3]! * d + r[4]! * h + r[5]! * l),
+    r[6]!,
+    r[7]!,
+    r[8]!,
+    -(r[6]! * d + r[7]! * h + r[8]! * l),
   ];
 }
 

@@ -3,7 +3,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { PageShell, type Visit } from '../src/ui/PageShell';
 
-const PAGES = [['list', '一覧'], ['world', '世界'], ['outside', '外']] as const;
+const PAGES = [
+  ['list', '一覧'],
+  ['world', '世界'],
+  ['outside', '外'],
+] as const;
 type P = (typeof PAGES)[number][0];
 const TITLES: Record<P, string> = { list: 'リスト', world: 'ワールド', outside: '外のページ' };
 
@@ -13,17 +17,28 @@ function at(hash: string): void {
 
 function shell(extra: Partial<Parameters<typeof PageShell<P>>[0]> = {}, seen: [P, Visit][] = []): string {
   return renderToString(
-    <PageShell<P> pages={PAGES} titles={TITLES} fallback="list" brand="テスト" romLabel="ROM"
+    <PageShell<P>
+      pages={PAGES}
+      titles={TITLES}
+      fallback="list"
+      brand="テスト"
+      romLabel="ROM"
       actions={() => <button className="act">書き出し…</button>}
-      render={(page, v) => { seen.push([page, v]); return page === 'outside' ? null : <i>{`${page}:${v.arg ?? ''}`}</i>; }}
-      {...extra} />,
+      render={(page, v) => {
+        seen.push([page, v]);
+        return page === 'outside' ? null : <i>{`${page}:${v.arg ?? ''}`}</i>;
+      }}
+      {...extra}
+    />,
   );
 }
 
 describe('page shell', () => {
-  afterEach(() => { delete (globalThis as { location?: unknown }).location; });
+  afterEach(() => {
+    delete (globalThis as { location?: unknown }).location;
+  });
 
-  test('tabs, the active page, the brand and the game\'s buttons', () => {
+  test("tabs, the active page, the brand and the game's buttons", () => {
     at('#/world/W01');
     const html = shell();
     expect(html).toContain('data-page="world"');
@@ -45,7 +60,10 @@ describe('page shell', () => {
   });
 
   test('a game decides what an entry is and where its back bar leads', () => {
-    const detail = { isDetail: (p: P, a: string) => p !== 'world' || a.includes('.'), backHref: (p: P, a: string) => `#/${p}/${a.split('.')[0]}` };
+    const detail = {
+      isDetail: (p: P, a: string) => p !== 'world' || a.includes('.'),
+      backHref: (p: P, a: string) => `#/${p}/${a.split('.')[0]}`,
+    };
     at('#/world/W01');
     expect(shell(detail)).not.toContain('back-bar');
     at('#/world/W01.2');
@@ -62,7 +80,10 @@ describe('page shell', () => {
   test('a page drawn outside of React has no wrapper; the outside nodes and the dialogs are put in', () => {
     at('#/outside');
     const seen: [P, Visit][] = [];
-    const html = shell({ outside: <div className="page page-outside">外</div>, children: <div className="dialog" /> }, seen);
+    const html = shell(
+      { outside: <div className="page page-outside">外</div>, children: <div className="dialog" /> },
+      seen,
+    );
     expect(html.match(/page-outside/g)).toHaveLength(1);
     expect(html).toContain('<div class="dialog"></div>');
     expect(seen).toEqual([['outside', { hash: '#/outside', arg: undefined, n: 1 }]]);

@@ -71,7 +71,9 @@ function build(session: LanaiSession): { list: LanaiBattleAction[]; refs: LanaiA
   for (const it of lanaiItems(session)) {
     const ref = lanaiEquipRow(session, it);
     if (ref) {
-      for (const e of lanaiEffects(ref)) if (isAutoEffect(e.kind)) add(e.value, { item: it.row, name: it.name, how: `装備・${LANAI_AUTO_EFFECTS[e.kind]}` });
+      for (const e of lanaiEffects(ref))
+        if (isAutoEffect(e.kind))
+          add(e.value, { item: it.row, name: it.name, how: `装備・${LANAI_AUTO_EFFECTS[e.kind]}` });
       continue;
     }
     const u = use && usesItemInfo(it.kind) ? use.find(core.u32(it.core, 0x00)) : -1;
@@ -108,7 +110,8 @@ export function lanaiActionMonsterRows(session: LanaiSession, row: number): numb
   return [...new Set((lanaiActionRefs(session).monsters.get(row) ?? []).map((u) => u.monster))];
 }
 
-export const lanaiActionAdded = (session: LanaiSession, row: number): boolean => row >= session.need('ActionData').originalRows;
+export const lanaiActionAdded = (session: LanaiSession, row: number): boolean =>
+  row >= session.need('ActionData').originalRows;
 
 /** The other rows with the same text: editing it changes them too. */
 export function lanaiActionsWithText(session: LanaiSession, row: number, key: ActionTextKey): number[] {
@@ -122,7 +125,11 @@ export function lanaiActionsWithText(session: LanaiSession, row: number, key: Ac
 }
 
 /** The MessageAction row of one of an action's texts (null when it has none). */
-export function lanaiActionMessageRow(session: LanaiSession, row: number, key: ActionTextKey = 'message'): { table: LanaiTable; row: number } | null {
+export function lanaiActionMessageRow(
+  session: LanaiSession,
+  row: number,
+  key: ActionTextKey = 'message',
+): { table: LanaiTable; row: number } | null {
   return lanaiActionMessageAt(session, session.need('ActionData').u32(row, textOffset(key)));
 }
 
@@ -143,7 +150,8 @@ export function lanaiCopyAction(session: LanaiSession, from: number): number {
   if (from <= 0 || from >= t.rows) throw new Error(`ActionData に行 ${from} がありません`);
   const row = t.addRow(from);
   // "〈name〉" alone (0x80000016, 396 rows) is a text no action owns: it stays shared
-  if (lanaiActionMessageRow(session, row) && lanaiActionsWithText(session, row, 'message').length < 50) lanaiOwnActionText(session, row);
+  if (lanaiActionMessageRow(session, row) && lanaiActionsWithText(session, row, 'message').length < 50)
+    lanaiOwnActionText(session, row);
   return row;
 }
 
@@ -165,9 +173,12 @@ export function lanaiActionUsedBy(session: LanaiSession, row: number): string[] 
 export function lanaiRemoveAction(session: LanaiSession, row: number): void {
   const why = lanaiActionRemoveBlock(session, row);
   if (why) throw new Error(why);
-  const own = ACTION_TEXTS.map((x) => lanaiActionsWithText(session, row, x.key).length ? null : lanaiActionMessageRow(session, row, x.key));
+  const own = ACTION_TEXTS.map((x) =>
+    lanaiActionsWithText(session, row, x.key).length ? null : lanaiActionMessageRow(session, row, x.key),
+  );
   session.need('ActionData').removeLastRow();
-  for (const msg of own) if (msg && msg.row === msg.table.rows - 1 && msg.row >= msg.table.originalRows) msg.table.removeLastRow();
+  for (const msg of own)
+    if (msg && msg.row === msg.table.rows - 1 && msg.row >= msg.table.originalRows) msg.table.removeLastRow();
 }
 
 /** Puts an action of the game back as read, with the texts of the game it names. */

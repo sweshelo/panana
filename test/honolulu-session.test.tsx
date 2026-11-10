@@ -43,12 +43,17 @@ describe.skipIf(!hasHonolulu)('初代の session (ROM)', () => {
     t.data = t.withRows(Array.from({ length: n - 2 }, (_, i) => t.row(i).slice()));
     const counts = m.savedRowCounts();
     expect(counts).toEqual([['shopItemData.bin', n - 2]]);
-    t.data = t.withRows(Array.from({ length: n }, (_, i) => (i < n - 2 ? t.row(i).slice() : m.originalRow('shopItemData.bin', i))));
+    t.data = t.withRows(
+      Array.from({ length: n }, (_, i) => (i < n - 2 ? t.row(i).slice() : m.originalRow('shopItemData.bin', i))),
+    );
     expect(m.savedRowCounts()).toEqual([]);
     m.restoreRowCounts(counts);
     expect(t.rows).toBe(n - 2);
     m.restoreRowCounts([['shopItemData.bin', n]]);
-    m.restore([['shopItemData.bin', n - 2, new Uint8Array(4), m.originalRow('shopItemData.bin', n - 2)], ['shopItemData.bin', n - 1, new Uint8Array(4), m.originalRow('shopItemData.bin', n - 1)]]);
+    m.restore([
+      ['shopItemData.bin', n - 2, new Uint8Array(4), m.originalRow('shopItemData.bin', n - 2)],
+      ['shopItemData.bin', n - 1, new Uint8Array(4), m.originalRow('shopItemData.bin', n - 1)],
+    ]);
     expect(m.changedEntries().size).toBe(0);
   });
 });

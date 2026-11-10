@@ -38,7 +38,11 @@ export class MapScene {
 
     this.camera.position.set(8000, 9000, 16000);
     this.controls = new OrbitControls(this.camera, this.canvas);
-    this.controls.mouseButtons = { LEFT: null as unknown as THREE.MOUSE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    this.controls.mouseButtons = {
+      LEFT: null as unknown as THREE.MOUSE,
+      MIDDLE: THREE.MOUSE.PAN,
+      RIGHT: THREE.MOUSE.ROTATE,
+    };
     this.controls.enableDamping = false;
     this.controls.screenSpacePanning = false;
     this.controls.addEventListener('change', () => this.draw());
@@ -77,7 +81,8 @@ export class MapScene {
 
   private resize(): void {
     const c = this.canvas;
-    const w = c.clientWidth, h = c.clientHeight;
+    const w = c.clientWidth,
+      h = c.clientHeight;
     if (!w || !h) return;
     this.renderer.setPixelRatio(window.devicePixelRatio || 1);
     this.renderer.setSize(w, h, false);
@@ -89,7 +94,8 @@ export class MapScene {
   /** Look at a map's tiles from above and in front. */
   fitCells(cells: readonly { x: number; y: number }[]): void {
     if (!cells.length) return;
-    const xs = cells.map((t) => t.x), ys = cells.map((t) => t.y);
+    const xs = cells.map((t) => t.x),
+      ys = cells.map((t) => t.y);
     const cx = ((Math.min(...xs) + Math.max(...xs) + 1) / 2) * CELL;
     const cz = ((Math.min(...ys) + Math.max(...ys) + 1) / 2) * CELL;
     const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) + 2;
@@ -108,7 +114,8 @@ export class MapScene {
     const to = new THREE.Vector3(cx * CELL, 0, cy * CELL);
     const from = t.clone();
     if (from.distanceTo(to) < 1) return;
-    const start = performance.now(), ms = 220;
+    const start = performance.now(),
+      ms = 220;
     cancelAnimationFrame(this.glide);
     const step = (): void => {
       const k = Math.min(1, (performance.now() - start) / ms);
@@ -217,7 +224,10 @@ export class MarkerMaterials {
     const key = color + selected;
     let m = this.mats.get(key);
     if (!m) {
-      m = new THREE.MeshLambertMaterial({ color: new THREE.Color(color), emissive: new THREE.Color(selected ? 0x777777 : 0) });
+      m = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(color),
+        emissive: new THREE.Color(selected ? 0x777777 : 0),
+      });
       this.mats.set(key, m);
     }
     return m;
@@ -228,7 +238,12 @@ export class MarkerMaterials {
 export class CellOverlay {
   readonly group = new THREE.Group();
   private readonly roomGeo = new THREE.PlaneGeometry(CELL * 0.9, CELL * 0.9).rotateX(-Math.PI / 2);
-  private readonly roomMat = new THREE.MeshBasicMaterial({ color: 0x50c8ff, transparent: true, opacity: 0.35, depthWrite: false });
+  private readonly roomMat = new THREE.MeshBasicMaterial({
+    color: 0x50c8ff,
+    transparent: true,
+    opacity: 0.35,
+    depthWrite: false,
+  });
   private readonly selGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(CELL, 40, CELL));
   private readonly selMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
 

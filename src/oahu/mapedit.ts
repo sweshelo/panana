@@ -36,8 +36,7 @@ export interface OahuTemplate {
 
 export type OahuStamp =
   /** A prop (section 2): mapObject row and facing. */
-  | { type: 'prop'; row: number; dir: number }
-  | { type: 'template'; t: OahuTemplate };
+  { type: 'prop'; row: number; dir: number } | { type: 'template'; t: OahuTemplate };
 
 export function oahuStampLabel(s: OahuStamp): string {
   return s.type === 'prop' ? `置物 (mapObject #${s.row})` : `${s.t.label} (${s.t.source} から)`;
@@ -51,13 +50,20 @@ const SLOT_FIELD = 0x4c;
 /** What a section's record is, for the add panel and the checks. */
 export function oahuRecLabel(section: number, raw: Uint8Array): string {
   switch (section) {
-    case 1: return `床のギミック ${raw[0x0d]}`;
-    case 2: return `置物 #${u16(raw, 0)}`;
-    case 3: return oahuExitLabel(oahuExitKind(raw));
-    case 4: return '宝箱';
-    case 5: return oahuCharaLabel(oahuCharaKind(raw));
-    case 8: return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
-    case 9: return `地点 ${u32(raw, 0)}`;
+    case 1:
+      return `床のギミック ${raw[0x0d]}`;
+    case 2:
+      return `置物 #${u16(raw, 0)}`;
+    case 3:
+      return oahuExitLabel(oahuExitKind(raw));
+    case 4:
+      return '宝箱';
+    case 5:
+      return oahuCharaLabel(oahuCharaKind(raw));
+    case 8:
+      return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
+    case 9:
+      return `地点 ${u32(raw, 0)}`;
   }
   return `区画 ${section}`;
 }
@@ -87,9 +93,9 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   }
 
   open(info: OahuMapInfo): void {
-    if(this.stamp?.type==='template' && this.info?.dungeon!==info.dungeon) {
-      this.stamp=null;
-      if(this.tool==='place') this.tool='select';
+    if (this.stamp?.type === 'template' && this.info?.dungeon !== info.dungeon) {
+      this.stamp = null;
+      if (this.tool === 'place') this.tool = 'select';
     }
     const doc = this.maps.doc(info);
     this.docs.set(info.hash, doc);
@@ -108,7 +114,12 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
 
   protected saveTables(): Tables {
     const treasure = this.treasureTable();
-    return { events: this.maps.eventTableBytes(), treasure: treasure ? treasure.data.slice() : null, mapTable: this.maps.mapTableBytes(), masterTables: UNDO_MASTER_TABLES.map((n) => [n, this.maps.master.table(n).data.slice()]) };
+    return {
+      events: this.maps.eventTableBytes(),
+      treasure: treasure ? treasure.data.slice() : null,
+      mapTable: this.maps.mapTableBytes(),
+      masterTables: UNDO_MASTER_TABLES.map((n) => [n, this.maps.master.table(n).data.slice()]),
+    };
   }
   protected restoreTables(t: Tables): void {
     const treasure = this.treasureTable();
@@ -144,7 +155,8 @@ export class OahuEditState extends MapEditState<OahuStamp, Tables> {
   /** A point ID (section 3 +0x00) no map uses. */
   private newPointId(): number {
     const used = new Set<number>();
-    for (const m of this.maps.maps) if (!m.world) for (const r of this.maps.doc(m).recs[3] ?? []) used.add(u32(r.raw, 0));
+    for (const m of this.maps.maps)
+      if (!m.world) for (const r of this.maps.doc(m).recs[3] ?? []) used.add(u32(r.raw, 0));
     let id: number;
     do id = (Math.random() * 0xffffffff) >>> 0;
     while (!id || used.has(id));
@@ -259,14 +271,29 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
     const k = `${t.x},${t.y}`;
     seen.set(k, (seen.get(k) ?? 0) + 1);
     if (t.x < 0 || t.y < 0 || t.x >= GRID || t.y >= GRID)
-      out.push({ level: 'error', msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`, target: cell(t.x, t.y), key: `range/${k}` });
+      out.push({
+        level: 'error',
+        msg: `タイル (${t.x}, ${t.y}) が範囲 0〜${GRID - 1} の外です`,
+        target: cell(t.x, t.y),
+        key: `range/${k}`,
+      });
     if (!maps.partModel(t.kind, tileset, letterIndex(t.letter)))
-      out.push({ level: 'warn', msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセットにモデルがありません`, target: cell(t.x, t.y), key: `model/${k}/${t.kind}/${letterIndex(t.letter)}` });
+      out.push({
+        level: 'warn',
+        msg: `タイル (${t.x}, ${t.y}) 種類 ${t.kind}: このタイルセットにモデルがありません`,
+        target: cell(t.x, t.y),
+        key: `model/${k}/${t.kind}/${letterIndex(t.letter)}`,
+      });
   }
   for (const [k, n] of seen)
     if (n > 1) {
       const [x, y] = k.split(',').map(Number) as [number, number];
-      out.push({ level: 'warn', msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`, target: cell(x, y), key: `dup/${k}` });
+      out.push({
+        level: 'warn',
+        msg: `セル (${x}, ${y}) にタイルが ${n} 枚あります (後の 1 枚が使われます)`,
+        target: cell(x, y),
+        key: `dup/${k}`,
+      });
     }
   if (!doc.tiles.length) out.push({ level: 'error', msg: 'タイルがありません', key: 'empty' });
 
@@ -274,7 +301,12 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
   for (const k of [2, 4, 5, 8]) {
     (doc.recs[k] ?? []).forEach((r, i) => {
       if (r.x < 0 || r.x > 299 || r.y < 0 || r.y > 299)
-        out.push({ level: 'error', msg: `${OAHU_LAYOUTS[k]!.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`, target: rec(k, i), key: `fine/${k}/${r.x},${r.y}` });
+        out.push({
+          level: 'error',
+          msg: `${OAHU_LAYOUTS[k]!.label} #${i}: 座標 (${r.x}, ${r.y}) が 0〜299 の外です`,
+          target: rec(k, i),
+          key: `fine/${k}/${r.x},${r.y}`,
+        });
     });
   }
   // records on cells without a tile
@@ -282,7 +314,12 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
     (doc.recs[k] ?? []).forEach((r, i) => {
       const [px, py] = recCellPos(r, OAHU_LAYOUTS[k]!);
       if (!tileAt(doc, Math.floor(px), Math.floor(py)))
-        out.push({ level: 'warn', msg: `${OAHU_LAYOUTS[k]!.label} #${i}: セル (${Math.floor(px)}, ${Math.floor(py)}) にタイルがありません`, target: rec(k, i), key: `notile/${k}/${hex8(u32(r.raw, 0))}/${r.x},${r.y}` });
+        out.push({
+          level: 'warn',
+          msg: `${OAHU_LAYOUTS[k]!.label} #${i}: セル (${Math.floor(px)}, ${Math.floor(py)}) にタイルがありません`,
+          target: rec(k, i),
+          key: `notile/${k}/${hex8(u32(r.raw, 0))}/${r.x},${r.y}`,
+        });
     });
   }
 
@@ -294,7 +331,12 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
         const row = oahuRecEventRow(k, r.raw);
         if (!row) return;
         if (row >= table.rows) {
-          out.push({ level: 'error', msg: `${OAHU_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`, target: rec(k, i), key: `evrow/${k}/${row}` });
+          out.push({
+            level: 'error',
+            msg: `${OAHU_LAYOUTS[k]!.label} #${i}: EventObject の行 ${row} がありません (表は ${table.rows} 行)`,
+            target: rec(k, i),
+            key: `evrow/${k}/${row}`,
+          });
           return;
         }
         const s = u16(table.row(row), SLOT_FIELD);
@@ -304,11 +346,21 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
     }
     for (const [slot, rows] of slots)
       if (rows.size > 1)
-        out.push({ level: 'warn', msg: `EventObject の行 ${[...rows].join(', ')} が同じ状態の枠 ${slot} を使っています (開けた・倒したなどの状態を共有します)`, key: `slotdup/${slot}/${[...rows].join(',')}` });
+        out.push({
+          level: 'warn',
+          msg: `EventObject の行 ${[...rows].join(', ')} が同じ状態の枠 ${slot} を使っています (開けた・倒したなどの状態を共有します)`,
+          key: `slotdup/${slot}/${[...rows].join(',')}`,
+        });
     const chests = new Map<number, number>();
-    for (const r of doc.recs[4] ?? []) chests.set(oahuRecEventRow(4, r.raw), (chests.get(oahuRecEventRow(4, r.raw)) ?? 0) + 1);
+    for (const r of doc.recs[4] ?? [])
+      chests.set(oahuRecEventRow(4, r.raw), (chests.get(oahuRecEventRow(4, r.raw)) ?? 0) + 1);
     for (const [row, n] of chests)
-      if (n > 1) out.push({ level: 'warn', msg: `宝箱 ${n} 個が同じ EventObject の行 ${row} を使っています (中身と「開けた」状態を共有します)`, key: `chestdup/${row}` });
+      if (n > 1)
+        out.push({
+          level: 'warn',
+          msg: `宝箱 ${n} 個が同じ EventObject の行 ${row} を使っています (中身と「開けた」状態を共有します)`,
+          key: `chestdup/${row}`,
+        });
   }
 
   // section 3: point IDs are what the exits of other maps lead to (EventObject +0x14)
@@ -317,17 +369,33 @@ export function oahuValidateAll(maps: OahuMaps, info: OahuMapInfo, doc: MapDoc):
   (doc.recs[3] ?? []).forEach((r, i) => {
     const id = u32(r.raw, 0);
     if (id && ids.get(id)! > 1 && oahuExitKind(r.raw) !== 0x64)
-      out.push({ level: 'warn', msg: `出入口 #${i}: 地点 ID ${hex8(id).toUpperCase()} がこのマップでほかにも使われています`, target: rec(3, i), key: `iddup/${hex8(id)}` });
+      out.push({
+        level: 'warn',
+        msg: `出入口 #${i}: 地点 ID ${hex8(id).toUpperCase()} がこのマップでほかにも使われています`,
+        target: rec(3, i),
+        key: `iddup/${hex8(id)}`,
+      });
   });
   const now = new Set(ids.keys());
   for (const r of maps.originalDoc(info).recs[3] ?? []) {
     const id = u32(r.raw, 0);
-    if (!now.has(id)) out.push({ level: 'warn', msg: `元の出入口 (地点 ${hex8(id).toUpperCase()}) が消えています。ここへ来る出入口の行き先がなくなります`, key: `gone/${hex8(id)}` });
+    if (!now.has(id))
+      out.push({
+        level: 'warn',
+        msg: `元の出入口 (地点 ${hex8(id).toUpperCase()}) が消えています。ここへ来る出入口の行き先がなくなります`,
+        key: `gone/${hex8(id)}`,
+      });
   }
 
   // section 6: cells on tiles
   doc.cells6.forEach((c) => {
-    if (!tileAt(doc, c.x, c.y)) out.push({ level: 'warn', msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`, target: cell(c.x, c.y), key: `s6/${c.x},${c.y}` });
+    if (!tileAt(doc, c.x, c.y))
+      out.push({
+        level: 'warn',
+        msg: `区画 6 のセル (${c.x}, ${c.y}) にタイルがありません`,
+        target: cell(c.x, c.y),
+        key: `s6/${c.x},${c.y}`,
+      });
   });
   return out;
 }

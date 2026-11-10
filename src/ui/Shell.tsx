@@ -38,17 +38,35 @@ export const PAGES = [
 type Page = (typeof PAGES)[number][0];
 
 const TITLES: Record<Page, string> = {
-  map: 'マップ編集', world: 'ワールドマップ', monsters: 'モンスター図鑑', items: 'アイテム図鑑', shops: 'ショップ', groups: '群れ', actions: 'アクション', events: 'イベント', messages: 'メッセージ', sounds: 'BGM・効果音', romfs: 'RomFS',
+  map: 'マップ編集',
+  world: 'ワールドマップ',
+  monsters: 'モンスター図鑑',
+  items: 'アイテム図鑑',
+  shops: 'ショップ',
+  groups: '群れ',
+  actions: 'アクション',
+  events: 'イベント',
+  messages: 'メッセージ',
+  sounds: 'BGM・効果音',
+  romfs: 'RomFS',
 };
 
 // The routes: #/map[/MAPNAME], #/world[/W01[.ENTRANCE]], #/monsters[/row], #/items[/id], #/groups[/row], #/actions[/row], #/shops[/id], #/events[/dungeon.row], #/messages[/dungeon.row | /0xID], #/sounds[/row] or #/romfs[/path[:entry]].
 
 function Loading(): ReactNode {
-  return <div className="start"><p>読み込み中…</p></div>;
+  return (
+    <div className="start">
+      <p>読み込み中…</p>
+    </div>
+  );
 }
 
 function Failed({ message }: { message: string }): ReactNode {
-  return <div className="start"><div className="error">{message}</div></div>;
+  return (
+    <div className="start">
+      <div className="error">{message}</div>
+    </div>
+  );
 }
 
 function ItemsRoute(props: PageProps): ReactNode {
@@ -74,8 +92,11 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
   const book = props.session.book;
   switch (page) {
     case 'monsters':
-      return book ? <MonsterPage {...props} book={book} />
-        : <Failed message="モンスターのデータ (2713402F) を読めませんでした。展開済みのフォルダで開いた場合は、そのファイルも入れてください。" />;
+      return book ? (
+        <MonsterPage {...props} book={book} />
+      ) : (
+        <Failed message="モンスターのデータ (2713402F) を読めませんでした。展開済みのフォルダで開いた場合は、そのファイルも入れてください。" />
+      );
     case 'groups':
       return book ? <GroupPage {...props} book={book} /> : <Failed message="モンスターのデータを読めませんでした。" />;
     case 'items':
@@ -91,13 +112,28 @@ function PageBody({ page, ...props }: PageProps & { page: Exclude<Page, 'map'> }
     case 'world':
       return <WorldPage {...props} />;
     case 'romfs':
-      return <RomfsPage dump={props.session.game.dump} profile={kaharaRomfsProfile} arg={props.arg} context={{ message: (id) => props.session.game.master.texts.preview(id, true) }} />;
+      return (
+        <RomfsPage
+          dump={props.session.game.dump}
+          profile={kaharaRomfsProfile}
+          arg={props.arg}
+          context={{ message: (id) => props.session.game.master.texts.preview(id, true) }}
+        />
+      );
     case 'sounds':
-      return props.session.sounds ? <SoundPage {...props} sounds={props.session.sounds} /> : <Failed message="音の表 (soundData) を読めませんでした。" />;
+      return props.session.sounds ? (
+        <SoundPage {...props} sounds={props.session.sounds} />
+      ) : (
+        <Failed message="音の表 (soundData) を読めませんでした。" />
+      );
   }
 }
 
-export function Shell({ session, editor, onBaseMod }: {
+export function Shell({
+  session,
+  editor,
+  onBaseMod,
+}: {
   session: Session;
   editor: MapEditor;
   /** Reopens the dump on another base MOD (null: none), keeping the edits. */
@@ -106,20 +142,35 @@ export function Shell({ session, editor, onBaseMod }: {
   const { game } = session;
   const [exporting, setExporting] = useState(false);
   return (
-    <PageShell pages={PAGES} titles={TITLES} fallback="map" brand="電波人間のRPG2 エディタ" romLabel={game.dump.label}
+    <PageShell
+      pages={PAGES}
+      titles={TITLES}
+      fallback="map"
+      brand="電波人間のRPG2 エディタ"
+      romLabel={game.dump.label}
       isDetail={(page, arg) => page !== 'map' && (page !== 'world' || arg.includes('.'))}
       backHref={(page, arg) => (page === 'world' ? `#/world/${arg.split('.')[0]}` : `#/${page}`)}
       onRoute={(page, arg) => (page === 'map' ? editor.show(arg) : editor.hide())}
       actions={(closeMenu) => (
         <>
-          <button className="primary" title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
+          <button
+            className="primary"
+            title="マップ・ワールドマップの入口・イベント・宝箱の中身・モンスター・メッセージの変更を MOD として書き出します"
+            onClick={() => {
+              closeMenu();
+              setExporting(true);
+            }}
+          >
+            書き出し…
+          </button>
           <BaseModButton title={game.dump.title} mod={game.baseMod} onChange={onBaseMod}>
             {`土台の MOD: ${game.baseMod?.label ?? 'なし'}${game.switchVersion ? ' (汎用スイッチあり)' : ''}`}
           </BaseModButton>
         </>
       )}
       render={(page, v) => (page === 'map' ? null : <PageBody page={page} session={session} arg={v.arg} visit={v.n} />)}
-      outside={<Dom node={editor.el} className="page page-map" />}>
+      outside={<Dom node={editor.el} className="page page-map" />}
+    >
       {exporting && <ExportDialog session={session} onClose={() => setExporting(false)} />}
     </PageShell>
   );

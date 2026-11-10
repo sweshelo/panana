@@ -53,15 +53,18 @@ export class OahuMonsterModels {
   constructor(readonly dump: Dump) {}
 
   private load(): Promise<DesignTable | null> {
-    this.table ??= this.dump.readRomfs(OAHU_DESIGN_ARCHIVE).then((b) => {
-      const arc = parseArchive(b);
-      const f = findByName(arc, 'monsterDesign.bin');
-      if (!f) return null;
-      const t: DesignTable = { arc, entry: f.entry, table: new GsTable(f.body.slice()), original: f.body };
-      if (this.pending) t.table.data = this.pending.slice();
-      this.loaded = t;
-      return t;
-    }, () => null);
+    this.table ??= this.dump.readRomfs(OAHU_DESIGN_ARCHIVE).then(
+      (b) => {
+        const arc = parseArchive(b);
+        const f = findByName(arc, 'monsterDesign.bin');
+        if (!f) return null;
+        const t: DesignTable = { arc, entry: f.entry, table: new GsTable(f.body.slice()), original: f.body };
+        if (this.pending) t.table.data = this.pending.slice();
+        this.loaded = t;
+        return t;
+      },
+      () => null,
+    );
     return this.table;
   }
 
@@ -160,7 +163,11 @@ export class OahuMonsterModels {
     // A row is named by its files: the photos are cached by the key, and a row may be another look (one a port added
     // (#100) after the edits are discarded and redone, any one on a base MOD).
     const t = this.loaded;
-    const added = !t ? `/r${Math.random()}` : design >= 0 && design < t.table.rows ? `/${[0x0c, 0x10, 0x14].map((o) => u32(t.table.row(design), o).toString(16)).join('-')}` : '';
+    const added = !t
+      ? `/r${Math.random()}`
+      : design >= 0 && design < t.table.rows
+        ? `/${[0x0c, 0x10, 0x14].map((o) => u32(t.table.row(design), o).toString(16)).join('-')}`
+        : '';
     return {
       key: `oahu-monster/${this.dump.title.key}/${design}${added}${motions ? '/motions' : ''}`,
       load: async () => {

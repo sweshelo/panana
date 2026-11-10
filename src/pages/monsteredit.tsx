@@ -4,10 +4,32 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ACTION_KIND, ELEMENT, type ActionBook } from '../game/actions';
 import {
-  AI_MODE, AI_MODE_NOTE, BOSS_CONDITION, dropClass, fieldMax, PARAM, SKILL_MOTION, SKILL_SLOTS, skillShares, TARGET_MODE,
-  type Monster, type MonsterBook, type ParamKey,
+  AI_MODE,
+  AI_MODE_NOTE,
+  BOSS_CONDITION,
+  dropClass,
+  fieldMax,
+  PARAM,
+  SKILL_MOTION,
+  SKILL_SLOTS,
+  skillShares,
+  TARGET_MODE,
+  type Monster,
+  type MonsterBook,
+  type ParamKey,
 } from '../game/monsters';
-import { CHASE, CHASE_KIND, CHASE_KIND_NOTE, CHASE_SPEED_MAX, CHASE_SPEEDS, CHASE_STYLE, CHASE_STYLE_NOTE, changedSpeeds, type ChaseKey, type ChaseSpeed } from '../game/chase';
+import {
+  CHASE,
+  CHASE_KIND,
+  CHASE_KIND_NOTE,
+  CHASE_SPEED_MAX,
+  CHASE_SPEEDS,
+  CHASE_STYLE,
+  CHASE_STYLE_NOTE,
+  changedSpeeds,
+  type ChaseKey,
+  type ChaseSpeed,
+} from '../game/chase';
 import { TRANSFORM_PATCH_TITLE } from '../game/transform';
 import type { Session } from '../session';
 import { NumberInput } from '../ui/book';
@@ -15,7 +37,13 @@ import { ActionPicker } from '../ui/ActionPicker';
 import { actionEdits, ActionEditor } from '../ui/ActionEditor';
 import { BattleMessagePicker } from '../ui/BattleMessagePicker';
 import { Dialog } from '../ui/Dialog';
-import { FieldCheck as SharedFieldCheck, FieldChoice, FieldNumber, StatFields, type FieldAccess } from '../ui/FieldEdit';
+import {
+  FieldCheck as SharedFieldCheck,
+  FieldChoice,
+  FieldNumber,
+  StatFields,
+  type FieldAccess,
+} from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import { performancePhase, TransformPreview } from '../ui/PerformanceEditor';
 import { ItemPicker } from '../ui/ItemPicker';
@@ -48,7 +76,13 @@ function Field({ book, m, edited, k }: EditProps & { k: ParamKey }): ReactNode {
 }
 
 /** A select of a field's values with labels. */
-function FieldSelect({ book, m, edited, k, labels }: EditProps & { k: ParamKey; labels: (v: number) => string }): ReactNode {
+function FieldSelect({
+  book,
+  m,
+  edited,
+  k,
+  labels,
+}: EditProps & { k: ParamKey; labels: (v: number) => string }): ReactNode {
   return <FieldChoice f={paramAccess(book, m)} k={k} edited={edited} labels={labels} />;
 }
 
@@ -66,10 +100,13 @@ const NAME_INFO = [
 export function NameEditor({ session, book, m, edited }: EditProps & { session: Session }): ReactNode {
   const texts = session.game.master.texts;
   const id = book.nameId(m.row);
-  const current = id ? texts.text(id)?.text ?? '' : '';
+  const current = id ? (texts.text(id)?.text ?? '') : '';
   const [text, setText] = useState(current);
   const [error, setError] = useState('');
-  useEffect(() => { setText(current); setError(''); }, [current, m.row]);
+  useEffect(() => {
+    setText(current);
+    setError('');
+  }, [current, m.row]);
   const sharers = book.nameSharers(m.row);
   const commit = (): void => {
     if (text === current) return;
@@ -84,15 +121,34 @@ export function NameEditor({ session, book, m, edited }: EditProps & { session: 
   if (!id) return null;
   return (
     <div className="stat name-edit">
-      <span className="muted with-info">名前<InfoTip text={NAME_INFO} /></span>
+      <span className="muted with-info">
+        名前
+        <InfoTip text={NAME_INFO} />
+      </span>
       <span>
-        <input type="text" className={`${texts.isEdited(id) ? 'edited' : ''}${error ? ' bad' : ''}`} value={text} title={error || `メッセージ ${id}`}
-          onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />
+        <input
+          type="text"
+          className={`${texts.isEdited(id) ? 'edited' : ''}${error ? ' bad' : ''}`}
+          value={text}
+          title={error || `メッセージ ${id}`}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === 'Enter' && commit()}
+        />
         {sharers.length > 0 && (
           <>
             <span className="muted small">{` 同じ名前: ${sharers.map((r) => `#${r}`).join(' ')}`}</span>
-            <button className="small" disabled={!book.canOwnDesign()} title="デザインの行と名前のメッセージを足して、この行だけの名前にします"
-              onClick={() => { book.ownDesign(m.row); edited(); }}>このモンスターだけの名前にする</button>
+            <button
+              className="small"
+              disabled={!book.canOwnDesign()}
+              title="デザインの行と名前のメッセージを足して、この行だけの名前にします"
+              onClick={() => {
+                book.ownDesign(m.row);
+                edited();
+              }}
+            >
+              このモンスターだけの名前にする
+            </button>
           </>
         )}
       </span>
@@ -100,24 +156,29 @@ export function NameEditor({ session, book, m, edited }: EditProps & { session: 
   );
 }
 
-const RANGE_INFO = '出現ごとに「最小〜最大」の乱数になります。\n最小 0 の欄は元のデータにも多く、最大の値で固定と見られます。';
+const RANGE_INFO =
+  '出現ごとに「最小〜最大」の乱数になります。\n最小 0 の欄は元のデータにも多く、最大の値で固定と見られます。';
 
 /** Level, the stat ranges (min 〜 max), evasion, rewards, HP regeneration and ghost. */
 export function StatEditor(p: EditProps): ReactNode {
   const f = paramAccess(p.book, p.m);
   return (
-    <StatFields f={f} edited={p.edited} stats={[
-      { label: 'Lv', k: 'level' },
-      { label: 'HP', range: ['hpMin', 'hpMax'], info: RANGE_INFO },
-      { label: 'こうげき', range: ['attackMin', 'attackMax'] },
-      { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
-      { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
-      { label: '回避', k: 'evasion', unit: '%' },
-      { label: '経験値', k: 'exp' },
-      { label: 'ゴールド', k: 'gold' },
-      { label: 'HP 自動回復', k: 'regen' },
-      { label: 'ゴースト', node: <FieldCheck {...p} k="ghost" label="状態 21" /> },
-    ]} />
+    <StatFields
+      f={f}
+      edited={p.edited}
+      stats={[
+        { label: 'Lv', k: 'level' },
+        { label: 'HP', range: ['hpMin', 'hpMax'], info: RANGE_INFO },
+        { label: 'こうげき', range: ['attackMin', 'attackMax'] },
+        { label: 'ぼうぎょ', range: ['defenseMin', 'defenseMax'] },
+        { label: 'すばやさ', range: ['speedMin', 'speedMax'] },
+        { label: '回避', k: 'evasion', unit: '%' },
+        { label: '経験値', k: 'exp' },
+        { label: 'ゴールド', k: 'gold' },
+        { label: 'HP 自動回復', k: 'regen' },
+        { label: 'ゴースト', node: <FieldCheck {...p} k="ghost" label="状態 21" /> },
+      ]}
+    />
   );
 }
 
@@ -125,9 +186,14 @@ export function StatEditor(p: EditProps): ReactNode {
 export const oneIn = (n: number): string => (n === 1 ? '必ず' : Number.isFinite(n) ? `1/${n}` : '出ない');
 
 /** "16.7%" of "1 in n"; two digits under 1% ("0.024%"). */
-export const pct = (n: number): string => (!Number.isFinite(n) ? '0%' : n > 100 ? `${Number((100 / n).toPrecision(2))}%` : `${Math.round(1000 / n) / 10}%`);
+export const pct = (n: number): string =>
+  !Number.isFinite(n) ? '0%' : n > 100 ? `${Number((100 / n).toPrecision(2))}%` : `${Math.round(1000 / n) / 10}%`;
 
-const DROPS: [ParamKey, ParamKey][] = [['drop0', 'rate0'], ['drop1', 'rate1'], ['drop2', 'rate2']];
+const DROPS: [ParamKey, ParamKey][] = [
+  ['drop0', 'rate0'],
+  ['drop1', 'rate1'],
+  ['drop2', 'rate2'],
+];
 
 const DROP_INFO = [
   '率の値ごとに BattleParameter の表 (+0x10C) で「何回に 1 回落とすか」が決まり、3 枠はそれぞれ別に抽選されます。',
@@ -143,7 +209,11 @@ export function DropEditor({ session, ...p }: EditProps & { session: Session }):
   const items = data && !(data instanceof Error) ? data.items : null;
   const entry = (id: number): BoardEntry => {
     const it = items?.item(id);
-    return { icon: <Photo model={it ? itemRef(game, it) : null} />, name: game.master.itemName(id) || `#${id}`, href: `#/items/${id}` };
+    return {
+      icon: <Photo model={it ? itemRef(game, it) : null} />,
+      name: game.master.itemName(id) || `#${id}`,
+      href: `#/items/${id}`,
+    };
   };
   return (
     <>
@@ -156,12 +226,25 @@ export function DropEditor({ session, ...p }: EditProps & { session: Session }):
           rate: <FieldSelect {...p} k={DROPS[k]![1]} labels={(v) => `${v}: ${oneIn(book.battle.dropOdds(v))}`} />,
         }))}
         entry={entry}
-        setItem={(k, id) => { book.set(m.row, DROPS[k]![0], id); edited(); }}
-        picker={(k, current, pick, close) => items && (
-          <ItemPicker game={game} items={items} title={`ドロップ ${k + 1} のアイテムを選ぶ`} current={current}
-            unavailable={(it) => (it.id > fieldMax(PARAM.drop0) ? 'ドロップの欄 (10 ビット) に入らない番号です' : null)}
-            onClose={close} onPick={pick} />
-        )}
+        setItem={(k, id) => {
+          book.set(m.row, DROPS[k]![0], id);
+          edited();
+        }}
+        picker={(k, current, pick, close) =>
+          items && (
+            <ItemPicker
+              game={game}
+              items={items}
+              title={`ドロップ ${k + 1} のアイテムを選ぶ`}
+              current={current}
+              unavailable={(it) =>
+                it.id > fieldMax(PARAM.drop0) ? 'ドロップの欄 (10 ビット) に入らない番号です' : null
+              }
+              onClose={close}
+              onPick={pick}
+            />
+          )
+        }
       />
       {data instanceof Error && <div className="error">{data.message}</div>}
     </>
@@ -176,7 +259,9 @@ function motionLabel(n: number): string {
 }
 
 /** Badge of an RPG2 action: its element, or its kind. */
-const badge = (element: number, kind: number): ReactNode => <ActionBadge element={element} label={ELEMENT[element] || (ACTION_KIND[kind] ?? '?').slice(0, 1)} />;
+const badge = (element: number, kind: number): ReactNode => (
+  <ActionBadge element={element} label={ELEMENT[element] || (ACTION_KIND[kind] ?? '?').slice(0, 1)} />
+);
 
 const SKILL_INFO = [
   '最大 6 枠。ドラッグで並べ替え、× で外します。',
@@ -188,7 +273,11 @@ const SKILL_INFO = [
  * The 6 skill slots (drag to reorder, × to remove, ＋ to add) with each one's share under AI mode 0, and
  * the AI fields (mode, target, actions per turn, focus).
  */
-export function SkillEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
+export function SkillEditor({
+  session,
+  actions,
+  ...p
+}: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
   const [editing, setEditing] = useState<number | null>(null);
   const skills = m.skills.map((s) => s.action);
@@ -204,7 +293,9 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
       <SkillSlots
         slots={m.skills.map((s, i) => {
           const a = actions.action(s.action);
-          const sub = [motionLabel(actions.motion(s.action)), a?.formChange ? `→ #${a.formChange} に変身` : ''].filter(Boolean).join('・');
+          const sub = [motionLabel(actions.motion(s.action)), a?.formChange ? `→ #${a.formChange} に変身` : '']
+            .filter(Boolean)
+            .join('・');
           return {
             action: s.action,
             entry: { icon: badge(a?.element ?? 0, a?.kind ?? 0), name: s.name, href: `#/actions/${s.action}` },
@@ -212,8 +303,12 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
             edited: orig[i] !== s.action,
             extra: (
               <>
-                <span className="num slot-share" title="AI が「均等」のときの出やすさ">{m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}</span>
-                <button className="small" title="このワザを編集 (名前・モーションなど)" onClick={() => setEditing(i)}>✎</button>
+                <span className="num slot-share" title="AI が「均等」のときの出やすさ">
+                  {m.aiMode === 0 ? `${Math.round((shares.get(s.action) ?? 0) * 100)}%` : ''}
+                </span>
+                <button className="small" title="このワザを編集 (名前・モーションなど)" onClick={() => setEditing(i)}>
+                  ✎
+                </button>
               </>
             ),
           };
@@ -222,23 +317,62 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
         move={(from, to) => set(moveTo(skills, from, to))}
         pick={(i, x) => set(i < 0 ? [...skills, x] : skills.map((y, j) => (j === i ? x : y)))}
         remove={(i) => set(skills.filter((_, j) => j !== i))}
-        picker={(current, pick, close) => <ActionPicker actions={actions} current={current} onClose={close} onPick={pick} />}
+        picker={(current, pick, close) => (
+          <ActionPicker actions={actions} current={current} onClose={close} onPick={pick} />
+        )}
         empty="ワザがないと既定の行動だけになります。"
       />
       <table className="enc-table ai-fields">
         <tbody>
           <tr>
-            <td className="with-info">AI<InfoTip text={AI_MODE.slice(0, 5).map((n, v) => `${v} ${n}: ${AI_MODE_NOTE[v]}`).join('\n')} /></td>
-            <td><FieldSelect {...p} k="ai" labels={(v) => `${v} ${AI_MODE[v]}`} /></td>
+            <td className="with-info">
+              AI
+              <InfoTip
+                text={AI_MODE.slice(0, 5)
+                  .map((n, v) => `${v} ${n}: ${AI_MODE_NOTE[v]}`)
+                  .join('\n')}
+              />
+            </td>
+            <td>
+              <FieldSelect {...p} k="ai" labels={(v) => `${v} ${AI_MODE[v]}`} />
+            </td>
           </tr>
-          <tr><td>狙い方</td><td><FieldSelect {...p} k="target" labels={(v) => TARGET_MODE[v] ?? String(v)} /></td></tr>
-          <tr><td className="with-info">行動回数<InfoTip text="1 ターンに行動する回数 (状態 86)" /></td><td><FieldSelect {...p} k="actions" labels={String} /></td></tr>
-          <tr><td className="with-info">集中攻撃<InfoTip text="状態 85。狙い方 2 のとき、HP が一番低い味方を狙います" /></td><td><FieldCheck {...p} k="focus" label="あり" /></td></tr>
+          <tr>
+            <td>狙い方</td>
+            <td>
+              <FieldSelect {...p} k="target" labels={(v) => TARGET_MODE[v] ?? String(v)} />
+            </td>
+          </tr>
+          <tr>
+            <td className="with-info">
+              行動回数
+              <InfoTip text="1 ターンに行動する回数 (状態 86)" />
+            </td>
+            <td>
+              <FieldSelect {...p} k="actions" labels={String} />
+            </td>
+          </tr>
+          <tr>
+            <td className="with-info">
+              集中攻撃
+              <InfoTip text="状態 85。狙い方 2 のとき、HP が一番低い味方を狙います" />
+            </td>
+            <td>
+              <FieldCheck {...p} k="focus" label="あり" />
+            </td>
+          </tr>
         </tbody>
       </table>
       {editing !== null && skills[editing] !== undefined && (
-        <SkillEditDialog session={session} actions={actions} m={m} action={skills[editing]!} edited={edited}
-          onCopy={(n) => set(skills.map((y, j) => (j === editing ? n : y)))} onClose={() => setEditing(null)} />
+        <SkillEditDialog
+          session={session}
+          actions={actions}
+          m={m}
+          action={skills[editing]!}
+          edited={edited}
+          onCopy={(n) => set(skills.map((y, j) => (j === editing ? n : y)))}
+          onClose={() => setEditing(null)}
+        />
       )}
     </section>
   );
@@ -248,7 +382,15 @@ export function SkillEditor({ session, actions, ...p }: EditProps & { session: S
  * Editing the action of a skill slot. When other monsters or items use it too, the edit changes them as well, so
  * the dialog offers a copy for this monster first (the slot then holds the copy).
  */
-function SkillEditDialog({ session, actions, m, action, edited, onCopy, onClose }: {
+function SkillEditDialog({
+  session,
+  actions,
+  m,
+  action,
+  edited,
+  onCopy,
+  onClose,
+}: {
   session: Session;
   actions: ActionBook;
   m: Monster;
@@ -270,11 +412,15 @@ function SkillEditDialog({ session, actions, m, action, edited, onCopy, onClose 
       {shared > 0 && (
         <div className="warn-box">
           {`このワザは ${[...others.slice(0, 3), ...refs.items.slice(0, 2).map((i) => `アイテム ${i.name}`)].join('・')}${shared > 5 ? ' など' : ''} も使っています。ここで変えるとそちらも変わります。`}
-          <div className="row"><button className="primary" onClick={copy}>{`複製して ${m.name} 専用にする`}</button></div>
+          <div className="row">
+            <button className="primary" onClick={copy}>{`複製して ${m.name} 専用にする`}</button>
+          </div>
         </div>
       )}
       <ActionEditor session={session} actions={actions} row={action} monsters={[m]} onChange={edited} />
-      <div className="muted small"><a href={`#/actions/${action}`}>{`アクション #${action} を開く`}</a></div>
+      <div className="muted small">
+        <a href={`#/actions/${action}`}>{`アクション #${action} を開く`}</a>
+      </div>
     </Dialog>
   );
 }
@@ -292,7 +438,13 @@ const LINE_INFO = [
 ].join('\n');
 
 /** The line of a form (+0x38): its text, sharing, picking another message, a new one, none. */
-function LineEditor({ session, actions, book, m, edited }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
+function LineEditor({
+  session,
+  actions,
+  book,
+  m,
+  edited,
+}: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const [picking, setPicking] = useState(false);
   const texts = session.game.master.texts;
   const line = book.get(m.row, 'line');
@@ -310,81 +462,182 @@ function LineEditor({ session, actions, book, m, edited }: EditProps & { session
   const users = (): Map<number, string[]> => {
     const out = new Map<number, string[]>();
     const add = (id: number, who: string): void => void out.set(id, [...(out.get(id) ?? []), who]);
-    for (const o of book.monsters) { const l = book.get(o.row, 'line'); if (l) add(l, `${o.name} #${o.row}`); }
+    for (const o of book.monsters) {
+      const l = book.get(o.row, 'line');
+      if (l) add(l, `${o.name} #${o.row}`);
+    }
     for (const a of actions.actions) if (a.nameId) add(a.nameId, `アクション #${a.row}`);
     return out;
   };
   return (
     <div>
       {line > 0 && texts.text(line) ? (
-        texts.editable(line)
-          ? <LineInput key={`${m.row}:${line}`} value={texts.text(line)!.text} edited={texts.isEdited(line) || line !== orig}
-              onCommit={(t) => apply(() => { texts.setText(line, t); book.reload(); })} />
-          : <span>{texts.preview(line, true)}</span>
-      ) : <span className="muted">{line ? `メッセージ ${line} (見つかりません)` : 'なし'}</span>}
+        texts.editable(line) ? (
+          <LineInput
+            key={`${m.row}:${line}`}
+            value={texts.text(line)!.text}
+            edited={texts.isEdited(line) || line !== orig}
+            onCommit={(t) =>
+              apply(() => {
+                texts.setText(line, t);
+                book.reload();
+              })
+            }
+          />
+        ) : (
+          <span>{texts.preview(line, true)}</span>
+        )
+      ) : (
+        <span className="muted">{line ? `メッセージ ${line} (見つかりません)` : 'なし'}</span>
+      )}
       <div className="small">
         {line > 0 && <span className="muted">{`${line} `}</span>}
-        {sharers.length > 0 && <span className="muted">{`同じセリフ: ${sharers.slice(0, 3).map((r) => `${book.monster(r)?.name ?? '?'} #${r}`).join('、')}${sharers.length > 3 ? ` ほか ${sharers.length - 3}` : ''} `}</span>}
-        {line > 0 && sharers.length > 0 && <button className="small" disabled={!texts.canAdd()} onClick={() => apply(() => book.ownLine(m.row))}>この形態だけのセリフにする</button>}
-        {!line && <button className="small" disabled={!texts.canAdd()} title="新しいメッセージを作ってこの形態のセリフにします" onClick={() => apply(() => book.ownLine(m.row))}>セリフを作る</button>}
-        <button className="small" onClick={() => setPicking(true)}>別のメッセージにする</button>
-        {line > 0 && <button className="small" title="セリフを出さないようにします (+0x38 = 0)" onClick={() => apply(() => book.set(m.row, 'line', 0))}>なしにする</button>}
+        {sharers.length > 0 && (
+          <span className="muted">{`同じセリフ: ${sharers
+            .slice(0, 3)
+            .map((r) => `${book.monster(r)?.name ?? '?'} #${r}`)
+            .join('、')}${sharers.length > 3 ? ` ほか ${sharers.length - 3}` : ''} `}</span>
+        )}
+        {line > 0 && sharers.length > 0 && (
+          <button className="small" disabled={!texts.canAdd()} onClick={() => apply(() => book.ownLine(m.row))}>
+            この形態だけのセリフにする
+          </button>
+        )}
+        {!line && (
+          <button
+            className="small"
+            disabled={!texts.canAdd()}
+            title="新しいメッセージを作ってこの形態のセリフにします"
+            onClick={() => apply(() => book.ownLine(m.row))}
+          >
+            セリフを作る
+          </button>
+        )}
+        <button className="small" onClick={() => setPicking(true)}>
+          別のメッセージにする
+        </button>
+        {line > 0 && (
+          <button
+            className="small"
+            title="セリフを出さないようにします (+0x38 = 0)"
+            onClick={() => apply(() => book.set(m.row, 'line', 0))}
+          >
+            なしにする
+          </button>
+        )}
       </div>
       {picking && (
-        <BattleMessagePicker texts={session.game.master.texts} title="セリフのメッセージを選ぶ" current={line} users={users()} freeLabel="使われていないものだけ"
+        <BattleMessagePicker
+          texts={session.game.master.texts}
+          title="セリフのメッセージを選ぶ"
+          current={line}
+          users={users()}
+          freeLabel="使われていないものだけ"
           info="戦闘の文章などコードが直接使うものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
-          onClose={() => setPicking(false)} onPick={(id) => { setPicking(false); apply(() => book.set(m.row, 'line', id)); }} />
+          onClose={() => setPicking(false)}
+          onPick={(id) => {
+            setPicking(false);
+            apply(() => book.set(m.row, 'line', id));
+          }}
+        />
       )}
     </div>
   );
 }
 
 /** A one-line text box applied on Enter or when left. */
-function LineInput({ value, edited, onCommit }: { value: string; edited: boolean; onCommit: (t: string) => void }): ReactNode {
+function LineInput({
+  value,
+  edited,
+  onCommit,
+}: {
+  value: string;
+  edited: boolean;
+  onCommit: (t: string) => void;
+}): ReactNode {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   const commit = (): void => {
     if (text !== value) onCommit(text);
   };
-  return <input type="text" className={`name-input${edited ? ' edited' : ''}`} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
+  return (
+    <input
+      type="text"
+      className={`name-input${edited ? ' edited' : ''}`}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
+  );
 }
 
 /** The forms of a boss: what the others turn into, and this row's condition, next form, effect and start condition. */
-export function BossEditor({ session, actions, ...p }: EditProps & { session: Session; actions: ActionBook }): ReactNode {
+export function BossEditor({
+  session,
+  actions,
+  ...p
+}: EditProps & { session: Session; actions: ActionBook }): ReactNode {
   const { book, m, edited } = p;
   const [picking, setPicking] = useState(false);
   const [preview, setPreview] = useState(false);
   const effect = book.get(m.row, 'effect');
   const transformPhase = effect ? performancePhase(session, effect, m, '変身', null) : null;
-  const link = (row: number): ReactNode => <a href={`#/monsters/${row}`}>{`${book.monster(row)?.name ?? '?'} #${row}`}</a>;
+  const link = (row: number): ReactNode => (
+    <a href={`#/monsters/${row}`}>{`${book.monster(row)?.name ?? '?'} #${row}`}</a>
+  );
   const skillForms = m.skills.map((s) => ({ s, to: actions.action(s.action)?.formChange ?? 0 })).filter((x) => x.to);
   // Rows turning into this one: by a condition (+0x50) or by a skill (kind 3 type 5).
   const fromCond = book.monsters.filter((o) => o.nextForm === m.row);
-  const fromSkill = book.monsters.flatMap((o) => o.skills.filter((s) => actions.action(s.action)?.formChange === m.row).map((s) => ({ o, s })));
+  const fromSkill = book.monsters.flatMap((o) =>
+    o.skills.filter((s) => actions.action(s.action)?.formChange === m.row).map((s) => ({ o, s })),
+  );
   const next = m.nextForm ? book.monster(m.nextForm) : undefined;
   // A form of another design: the game keeps the first model, so the export adds TRANSFORM_PATCH (game/transform.ts).
-  const newLook = [m.nextForm, ...skillForms.map((x) => x.to)].some((r) => r > 0 && book.monster(r) !== undefined && book.monster(r)!.design !== m.design);
-  const cond =(v: number): string => (v ? `${v} ${book.conditions[v] ?? ''}` : '0 なし');
+  const newLook = [m.nextForm, ...skillForms.map((x) => x.to)].some(
+    (r) => r > 0 && book.monster(r) !== undefined && book.monster(r)!.design !== m.design,
+  );
+  const cond = (v: number): string => (v ? `${v} ${book.conditions[v] ?? ''}` : '0 なし');
   return (
     <section>
       <Heading title="ボス・変身" info={BOSS_INFO} />
       {(fromCond.length > 0 || fromSkill.length > 0) && (
         <div className="small form-from">
-          {fromCond.map((o) => <div key={`c${o.row}`}>{link(o.row)}{` が「${BOSS_CONDITION[o.boss] ?? `番号 ${o.boss}`}」にこの形態になる`}</div>)}
-          {fromSkill.map(({ o, s }, i) => <div key={`s${i}`}>{link(o.row)}{` がワザ「${s.name}」でこの形態になる`}</div>)}
+          {fromCond.map((o) => (
+            <div key={`c${o.row}`}>
+              {link(o.row)}
+              {` が「${BOSS_CONDITION[o.boss] ?? `番号 ${o.boss}`}」にこの形態になる`}
+            </div>
+          ))}
+          {fromSkill.map(({ o, s }, i) => (
+            <div key={`s${i}`}>
+              {link(o.row)}
+              {` がワザ「${s.name}」でこの形態になる`}
+            </div>
+          ))}
         </div>
       )}
       <table className="enc-table ai-fields">
         <tbody>
           <tr>
             <td>変身の条件</td>
-            <td><FieldSelect {...p} k="boss" labels={(v) => `${v} ${BOSS_CONDITION[v] ?? '未確認'}`} /></td>
+            <td>
+              <FieldSelect {...p} k="boss" labels={(v) => `${v} ${BOSS_CONDITION[v] ?? '未確認'}`} />
+            </td>
           </tr>
           <tr>
             <td>次の形態</td>
             <td>
               <BoardSlot
-                entry={m.nextForm ? { icon: <Photo model={next ? monsterRef(session.game, book, next) : null} />, name: next?.name ?? '?', href: `#/monsters/${m.nextForm}` } : null}
+                entry={
+                  m.nextForm
+                    ? {
+                        icon: <Photo model={next ? monsterRef(session.game, book, next) : null} />,
+                        name: next?.name ?? '?',
+                        href: `#/monsters/${m.nextForm}`,
+                      }
+                    : null
+                }
                 id={m.nextForm}
                 sub={next ? `Lv${next.level}` : undefined}
                 edited={m.nextForm !== book.original(m.row, 'nextForm')}
@@ -392,39 +645,98 @@ export function BossEditor({ session, actions, ...p }: EditProps & { session: Se
                 emptyLabel="＋ 次の形態"
                 clearTitle="次の形態をなくす"
                 onPick={() => setPicking(true)}
-                onClear={() => { book.set(m.row, 'nextForm', 0); edited(); }}
+                onClear={() => {
+                  book.set(m.row, 'nextForm', 0);
+                  edited();
+                }}
               />
             </td>
           </tr>
           <tr>
-            <td className="with-info">変身のエフェクト<InfoTip text="+0x36。変身の条件を満たしたときに再生する演出 (2713402F の directData の行)。0 = なし" /></td>
+            <td className="with-info">
+              変身のエフェクト
+              <InfoTip text="+0x36。変身の条件を満たしたときに再生する演出 (2713402F の directData の行)。0 = なし" />
+            </td>
             <td>
               <div className="inline-fields">
                 <Field {...p} k="effect" />
-                <button className="small" disabled={!transformPhase} title="変身の演出をこのモンスターで再生します" onClick={() => setPreview(!preview)}>{preview ? '閉じる' : '▶ プレビュー'}</button>
+                <button
+                  className="small"
+                  disabled={!transformPhase}
+                  title="変身の演出をこのモンスターで再生します"
+                  onClick={() => setPreview(!preview)}
+                >
+                  {preview ? '閉じる' : '▶ プレビュー'}
+                </button>
               </div>
-              {effect > 0 && <div className="muted small">{transformPhase ? transformPhase.title.replace(/^変身: [^—]*— /, '') : '(演出の表の外)'}</div>}
+              {effect > 0 && (
+                <div className="muted small">
+                  {transformPhase ? transformPhase.title.replace(/^変身: [^—]*— /, '') : '(演出の表の外)'}
+                </div>
+              )}
             </td>
           </tr>
-          {preview && transformPhase && <tr><td colSpan={2}><TransformPreview session={session} monster={m} row={effect} /></td></tr>}
+          {preview && transformPhase && (
+            <tr>
+              <td colSpan={2}>
+                <TransformPreview session={session} monster={m} row={effect} />
+              </td>
+            </tr>
+          )}
           <tr>
-            <td className="with-info">変身時のセリフ<InfoTip text={LINE_INFO} /></td>
-            <td><LineEditor session={session} actions={actions} {...p} /></td>
+            <td className="with-info">
+              変身時のセリフ
+              <InfoTip text={LINE_INFO} />
+            </td>
+            <td>
+              <LineEditor session={session} actions={actions} {...p} />
+            </td>
           </tr>
           <tr>
-            <td className="with-info">開始時の状態<InfoTip text="戦闘の開始時にかかっている状態 (w10 bit12-16)、その強さ (bit17-20) とターン数 (+0x3A)" /></td>
-            <td><FieldSelect {...p} k="startCondition" labels={cond} /></td>
+            <td className="with-info">
+              開始時の状態
+              <InfoTip text="戦闘の開始時にかかっている状態 (w10 bit12-16)、その強さ (bit17-20) とターン数 (+0x3A)" />
+            </td>
+            <td>
+              <FieldSelect {...p} k="startCondition" labels={cond} />
+            </td>
           </tr>
-          <tr><td>強さ・ターン</td><td className="inline-fields"><Field {...p} k="startPower" /><Field {...p} k="startTurns" /></td></tr>
+          <tr>
+            <td>強さ・ターン</td>
+            <td className="inline-fields">
+              <Field {...p} k="startPower" />
+              <Field {...p} k="startTurns" />
+            </td>
+          </tr>
         </tbody>
       </table>
       {m.boss > 0 && !m.nextForm && <div className="issue warn">⚠ 変身の条件がありますが、次の形態がありません。</div>}
-      {m.nextForm > 0 && !m.boss && !skillForms.length && <div className="issue warn">⚠ 次の形態はありますが、変身の条件が 0 なので攻撃では変身しません。</div>}
-      {skillForms.map(({ s, to }, i) => <div key={i} className="small">{`ワザ「${s.name}」で `}{link(to)}{' に変身する'}</div>)}
-      {newLook && <div className="muted small">{`見た目 (デザイン) の違う形態に変身します。書き出しの code.ips にパッチ「${TRANSFORM_PATCH_TITLE}」が入ります。`}</div>}
+      {m.nextForm > 0 && !m.boss && !skillForms.length && (
+        <div className="issue warn">⚠ 次の形態はありますが、変身の条件が 0 なので攻撃では変身しません。</div>
+      )}
+      {skillForms.map(({ s, to }, i) => (
+        <div key={i} className="small">
+          {`ワザ「${s.name}」で `}
+          {link(to)}
+          {' に変身する'}
+        </div>
+      ))}
+      {newLook && (
+        <div className="muted small">{`見た目 (デザイン) の違う形態に変身します。書き出しの code.ips にパッチ「${TRANSFORM_PATCH_TITLE}」が入ります。`}</div>
+      )}
       {picking && (
-        <MonsterPicker session={session} book={book} current={m.nextForm} title="次の形態を選ぶ" onClose={() => setPicking(false)}
-          onPick={(row) => { setPicking(false); book.set(m.row, 'nextForm', row); edited(); }} />
+        <MonsterPicker
+          session={session}
+          book={book}
+          current={m.nextForm}
+          title="次の形態を選ぶ"
+          onClose={() => setPicking(false)}
+          onPick={(row) => {
+            setPicking(false);
+            book.set(m.row, 'nextForm', row);
+            edited();
+          }}
+        />
       )}
     </section>
   );
@@ -483,45 +795,111 @@ export function ChaseEditor({ session, book, m, edited }: EditProps & { session:
       <Heading title="マップでの動き" info={CHASE_INFO} />
       {sharers.length > 0 && (
         <div className="small">
-          <span className="muted">{`同じ動き (デザイン ${d}): ${sharers.slice(0, 4).map((r) => `${book.monster(r)?.name ?? '?'} #${r}`).join('、')}${sharers.length > 4 ? ` ほか ${sharers.length - 4}` : ''} `}</span>
-          <button className="small" disabled={!book.canNewLook()} title="デザインの行を複製して、このモンスターだけの動きにします (名前・見た目は同じまま)" onClick={own}>このモンスターだけの動きにする</button>
+          <span className="muted">{`同じ動き (デザイン ${d}): ${sharers
+            .slice(0, 4)
+            .map((r) => `${book.monster(r)?.name ?? '?'} #${r}`)
+            .join('、')}${sharers.length > 4 ? ` ほか ${sharers.length - 4}` : ''} `}</span>
+          <button
+            className="small"
+            disabled={!book.canNewLook()}
+            title="デザインの行を複製して、このモンスターだけの動きにします (名前・見た目は同じまま)"
+            onClick={own}
+          >
+            このモンスターだけの動きにする
+          </button>
         </div>
       )}
       <table className="enc-table ai-fields">
         <tbody>
           <tr>
-            <td className="with-info">動き方<InfoTip text={CHASE_KIND.slice(0, 7).map((n, v) => `${v} ${n}: ${CHASE_KIND_NOTE[v]}`).join('\n')} /></td>
-            <td><FieldChoice {...fp} k="kind" labels={(v) => `${v} ${CHASE_KIND[v]}`} title={CHASE_KIND_NOTE[kind]} /></td>
+            <td className="with-info">
+              動き方
+              <InfoTip
+                text={CHASE_KIND.slice(0, 7)
+                  .map((n, v) => `${v} ${n}: ${CHASE_KIND_NOTE[v]}`)
+                  .join('\n')}
+              />
+            </td>
+            <td>
+              <FieldChoice {...fp} k="kind" labels={(v) => `${v} ${CHASE_KIND[v]}`} title={CHASE_KIND_NOTE[kind]} />
+            </td>
           </tr>
           <tr>
-            <td className="with-info">出方・歩き方<InfoTip text={CHASE_STYLE.map((n, v) => `${v} ${n}: ${CHASE_STYLE_NOTE[v]}`).join('\n')} /></td>
-            <td><FieldChoice {...fp} k="style" labels={(v) => `${v} ${CHASE_STYLE[v]}`} /></td>
+            <td className="with-info">
+              出方・歩き方
+              <InfoTip text={CHASE_STYLE.map((n, v) => `${v} ${n}: ${CHASE_STYLE_NOTE[v]}`).join('\n')} />
+            </td>
+            <td>
+              <FieldChoice {...fp} k="style" labels={(v) => `${v} ${CHASE_STYLE[v]}`} />
+            </td>
           </tr>
           <tr>
-            <td className="with-info">待つ時間<InfoTip text="歩く前に立ち止まる時間。毎回「最小〜最大」の乱数です (+0x08 bit5-11 / bit12-18、0.1 秒単位)" /></td>
-            <td><div className="inline-fields"><FieldNumber {...fp} k="waitMin" />〜<FieldNumber {...fp} k="waitMax" /><span className="muted small">{`${tenths(f.get('waitMin'))}〜${tenths(f.get('waitMax'))}`}</span></div></td>
+            <td className="with-info">
+              待つ時間
+              <InfoTip text="歩く前に立ち止まる時間。毎回「最小〜最大」の乱数です (+0x08 bit5-11 / bit12-18、0.1 秒単位)" />
+            </td>
+            <td>
+              <div className="inline-fields">
+                <FieldNumber {...fp} k="waitMin" />〜<FieldNumber {...fp} k="waitMax" />
+                <span className="muted small">{`${tenths(f.get('waitMin'))}〜${tenths(f.get('waitMax'))}`}</span>
+              </div>
+            </td>
           </tr>
           <tr>
-            <td className="with-info">歩く時間<InfoTip text="気づく前に歩き回る 1 回の長さ (+0x08 bit19-25、0.1 秒単位)。壁に当たると向きを変えます" /></td>
-            <td><div className="inline-fields"><FieldNumber {...fp} k="walk" /><span className="muted small">{tenths(f.get('walk'))}</span></div></td>
+            <td className="with-info">
+              歩く時間
+              <InfoTip text="気づく前に歩き回る 1 回の長さ (+0x08 bit19-25、0.1 秒単位)。壁に当たると向きを変えます" />
+            </td>
+            <td>
+              <div className="inline-fields">
+                <FieldNumber {...fp} k="walk" />
+                <span className="muted small">{tenths(f.get('walk'))}</span>
+              </div>
+            </td>
           </tr>
           <tr>
-            <td className="with-info">追う時間<InfoTip text="気づいてから追いかける長さ (+0x0C bit0-6、0.1 秒単位)。見える距離 + 100 (最低 800) より離れても追うのをやめます。突進・逃げるには使いません" /></td>
-            <td><div className="inline-fields"><FieldNumber {...fp} k="chase" /><span className="muted small">{tenths(f.get('chase'))}</span></div></td>
+            <td className="with-info">
+              追う時間
+              <InfoTip text="気づいてから追いかける長さ (+0x0C bit0-6、0.1 秒単位)。見える距離 + 100 (最低 800) より離れても追うのをやめます。突進・逃げるには使いません" />
+            </td>
+            <td>
+              <div className="inline-fields">
+                <FieldNumber {...fp} k="chase" />
+                <span className="muted small">{tenths(f.get('chase'))}</span>
+              </div>
+            </td>
           </tr>
           <tr>
-            <td className="with-info">見える距離<InfoTip text="この距離の中で、前方 ±90° にプレイヤーがいると気づきます (+0x0C bit7-16)。ワールドマップでは 2 倍。逃げる種類はこの欄を使いません" /></td>
-            <td><div className="inline-fields"><FieldNumber {...fp} k="sight" /><span className="muted small">{`${(f.get('sight') / 500).toFixed(1)} マス`}</span></div></td>
+            <td className="with-info">
+              見える距離
+              <InfoTip text="この距離の中で、前方 ±90° にプレイヤーがいると気づきます (+0x0C bit7-16)。ワールドマップでは 2 倍。逃げる種類はこの欄を使いません" />
+            </td>
+            <td>
+              <div className="inline-fields">
+                <FieldNumber {...fp} k="sight" />
+                <span className="muted small">{`${(f.get('sight') / 500).toFixed(1)} マス`}</span>
+              </div>
+            </td>
           </tr>
           <tr>
-            <td className="with-info">飛ぶ<InfoTip text="+0x0C bit17。穴の上も通れます。マップの見た目 (mapData) の [1] が 5 のマップでだけ効きます (FUN_0043df38)" /></td>
-            <td><SharedFieldCheck {...fp} k="fly" label="穴の上を飛ぶ" /></td>
+            <td className="with-info">
+              飛ぶ
+              <InfoTip text="+0x0C bit17。穴の上も通れます。マップの見た目 (mapData) の [1] が 5 のマップでだけ効きます (FUN_0043df38)" />
+            </td>
+            <td>
+              <SharedFieldCheck {...fp} k="fly" label="穴の上を飛ぶ" />
+            </td>
           </tr>
         </tbody>
       </table>
-      {f.get('waitMin') > f.get('waitMax') && <div className="issue warn">⚠ 待つ時間の最小が最大より大きくなっています。</div>}
+      {f.get('waitMin') > f.get('waitMax') && (
+        <div className="issue warn">⚠ 待つ時間の最小が最大より大きくなっています。</div>
+      )}
       <details>
-        <summary className="with-info">{`速さ (全モンスター共通)${speedsChanged ? ' ・変更あり' : ''}`}<InfoTip text={SPEED_INFO} /></summary>
+        <summary className="with-info">
+          {`速さ (全モンスター共通)${speedsChanged ? ' ・変更あり' : ''}`}
+          <InfoTip text={SPEED_INFO} />
+        </summary>
         <table className="enc-table ai-fields">
           <tbody>
             {CHASE_SPEEDS.map((s) => {
@@ -530,18 +908,48 @@ export function ChaseEditor({ session, book, m, edited }: EditProps & { session:
               return (
                 <tr key={s.key}>
                   <td>{`${s.kinds.includes(kind) ? '★ ' : ''}${s.label}`}</td>
-                  <td><div className="inline-fields">
-                    {s.unit === 'speed'
-                      ? <NumberInput value={Math.round(v)} min={0} max={CHASE_SPEED_MAX.speed} className={`num-input${ch ? ' edited' : ''}`} title={`元の値 ${s.vanilla}`} onCommit={(x) => setSpeed(s, x)} />
-                      : <NumberInput value={Math.round(v * 10)} min={0} max={CHASE_SPEED_MAX.time * 10} className={`num-input${ch ? ' edited' : ''}`} title={`元の値 ${s.vanilla} 秒 (0.1 秒単位)`} onCommit={(x) => setSpeed(s, x / 10)} />}
-                    <span className="muted small">{s.unit === 'speed' ? `${(v / 500).toFixed(2)} マス/秒` : `${v.toFixed(1)} 秒`}</span>
-                  </div></td>
+                  <td>
+                    <div className="inline-fields">
+                      {s.unit === 'speed' ? (
+                        <NumberInput
+                          value={Math.round(v)}
+                          min={0}
+                          max={CHASE_SPEED_MAX.speed}
+                          className={`num-input${ch ? ' edited' : ''}`}
+                          title={`元の値 ${s.vanilla}`}
+                          onCommit={(x) => setSpeed(s, x)}
+                        />
+                      ) : (
+                        <NumberInput
+                          value={Math.round(v * 10)}
+                          min={0}
+                          max={CHASE_SPEED_MAX.time * 10}
+                          className={`num-input${ch ? ' edited' : ''}`}
+                          title={`元の値 ${s.vanilla} 秒 (0.1 秒単位)`}
+                          onCommit={(x) => setSpeed(s, x / 10)}
+                        />
+                      )}
+                      <span className="muted small">
+                        {s.unit === 'speed' ? `${(v / 500).toFixed(2)} マス/秒` : `${v.toFixed(1)} 秒`}
+                      </span>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {speedsChanged && <button className="small" onClick={() => { game.chaseSpeeds = {}; edited(); }}>速さを元に戻す</button>}
+        {speedsChanged && (
+          <button
+            className="small"
+            onClick={() => {
+              game.chaseSpeeds = {};
+              edited();
+            }}
+          >
+            速さを元に戻す
+          </button>
+        )}
       </details>
     </section>
   );

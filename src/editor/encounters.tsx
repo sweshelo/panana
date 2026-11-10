@@ -7,11 +7,25 @@ import { GroupDetail, GroupIcons, GroupPicker } from '../ui/GroupDetail';
 import { Field } from './fields';
 import type { EditorState } from './state';
 
-export function EncounterPanel({ session, st, book }: { session: Session; st: EditorState; book: MonsterBook | null }): ReactNode {
+export function EncounterPanel({
+  session,
+  st,
+  book,
+}: {
+  session: Session;
+  st: EditorState;
+  book: MonsterBook | null;
+}): ReactNode {
   const [picking, setPicking] = useState(false);
   const doc = st.current!;
   const head = <h3>出現する敵</h3>;
-  if (!book) return <div className="enc-box">{head}<div className="muted">モンスターのデータを読めませんでした</div></div>;
+  if (!book)
+    return (
+      <div className="enc-box">
+        {head}
+        <div className="muted">モンスターのデータを読めませんでした</div>
+      </div>
+    );
   const enc = mapEncounters(doc);
   const cur = book.group(enc.group);
   const setGroup = (hash: number): void =>
@@ -30,15 +44,28 @@ export function EncounterPanel({ session, st, book }: { session: Session; st: Ed
       {head}
       <Field label="マップの群れ (区画 6 のヘッダー)">
         <button className="group-pick" title="群れを選び直す" onClick={() => setPicking(true)}>
-          {cur
-            ? <><span className="muted">{`#${cur.row}`}</span><GroupIcons game={st.game} book={book} g={cur} /></>
-            : <span className="muted">{enc.group ? `不明な群れ ${hex8(enc.group)}` : '(なし: 敵が出ない)'}</span>}
+          {cur ? (
+            <>
+              <span className="muted">{`#${cur.row}`}</span>
+              <GroupIcons game={st.game} book={book} g={cur} />
+            </>
+          ) : (
+            <span className="muted">{enc.group ? `不明な群れ ${hex8(enc.group)}` : '(なし: 敵が出ない)'}</span>
+          )}
         </button>
       </Field>
       {cur && <GroupDetail game={st.game} book={book} group={cur} />}
       {picking && (
-        <GroupPicker session={session} book={book} current={enc.group} onClose={() => setPicking(false)}
-          onPick={(hash) => { setPicking(false); if (hash !== enc.group) setGroup(hash); }} />
+        <GroupPicker
+          session={session}
+          book={book}
+          current={enc.group}
+          onClose={() => setPicking(false)}
+          onPick={(hash) => {
+            setPicking(false);
+            if (hash !== enc.group) setGroup(hash);
+          }}
+        />
       )}
       <div className="muted small">
         {`敵が出ないセル (区画 6): ${plain} 個${ownCount ? `、群れを指定したセル ${ownCount} 個` : ''}。マップの群れは、区画 6 にないセルにだけ出ます。左の「敵が出ないセル」ツールで付け外しできます。`}
@@ -49,7 +76,14 @@ export function EncounterPanel({ session, st, book }: { session: Session; st: Ed
           <details key={hash} className="enc-cells">
             <summary>
               {`セル ${cells.length} 個: `}
-              {g ? <><span className="muted">{`#${g.row} `}</span><GroupIcons game={st.game} book={book} g={g} /></> : `不明な群れ ${hex8(hash)}`}
+              {g ? (
+                <>
+                  <span className="muted">{`#${g.row} `}</span>
+                  <GroupIcons game={st.game} book={book} g={g} />
+                </>
+              ) : (
+                `不明な群れ ${hex8(hash)}`
+              )}
             </summary>
             <div className="muted small">{cells.map(([x, y]) => `(${x}, ${y})`).join(' ')}</div>
             {g && <GroupDetail game={st.game} book={book} group={g} />}

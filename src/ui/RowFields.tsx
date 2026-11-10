@@ -4,11 +4,26 @@ import type { ReactNode } from 'react';
 import { fieldPlace, fieldText, fieldValue, readField, type FieldContext, type TableDef } from '../game/tabledef';
 import { InfoTip } from './InfoTip';
 
-export function RowFields({ def, row, original, context }: { def: TableDef; row: Uint8Array; original?: Uint8Array; context?: FieldContext }): ReactNode {
+export function RowFields({
+  def,
+  row,
+  original,
+  context,
+}: {
+  def: TableDef;
+  row: Uint8Array;
+  original?: Uint8Array;
+  context?: FieldContext;
+}): ReactNode {
   return (
     <table className="enc-table row-fields">
       <tbody>
-        <tr><th>欄</th><th>場所</th><th>値</th><th>意味</th></tr>
+        <tr>
+          <th>欄</th>
+          <th>場所</th>
+          <th>値</th>
+          <th>意味</th>
+        </tr>
         {def.fields.map((f) => {
           const v = readField(row, f);
           const o = original && readField(original, f);
@@ -23,7 +38,12 @@ export function RowFields({ def, row, original, context }: { def: TableDef; row:
                 {f.note && <InfoTip text={f.note} />}
               </td>
               <td className="mono muted">{fieldPlace(f)}</td>
-              <td className={`num${changed ? ' edited' : ''}`} title={changed ? `元の値 ${fieldText(f, o!, context)}` : undefined}>{f.hex ? text : value}</td>
+              <td
+                className={`num${changed ? ' edited' : ''}`}
+                title={changed ? `元の値 ${fieldText(f, o!, context)}` : undefined}
+              >
+                {f.hex ? text : value}
+              </td>
               <td className="row-fields-text">{f.hex || text === value || text === String(v) ? '' : text}</td>
             </tr>
           );

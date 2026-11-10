@@ -26,7 +26,20 @@ export interface ActionListRow {
  * The left pane: a search box and a filter, the count, and the table (shown in pages of 200, always far enough to
  * show the selected row).
  */
-export function ActionListPane<F extends string>({ rows, total, columns, selected, href, query, setQuery, placeholder, filter, setFilter, filters, top }: {
+export function ActionListPane<F extends string>({
+  rows,
+  total,
+  columns,
+  selected,
+  href,
+  query,
+  setQuery,
+  placeholder,
+  filter,
+  setFilter,
+  filters,
+  top,
+}: {
   rows: ActionListRow[];
   total: number;
   /** Headers of the cells after 行 and 名前, with a tooltip each when given. */
@@ -51,22 +64,54 @@ export function ActionListPane<F extends string>({ rows, total, columns, selecte
   return (
     <div className="book-side">
       {top}
-      <ListFilter query={query} setQuery={setQuery} placeholder={placeholder} filter={filter} setFilter={setFilter} options={filters} />
+      <ListFilter
+        query={query}
+        setQuery={setQuery}
+        placeholder={placeholder}
+        filter={filter}
+        setFilter={setFilter}
+        options={filters}
+      />
       <div className="book-list" ref={list}>
         <Count shown={rows.length} total={total} />
         <table className="book-table">
-          <thead><tr><th>行</th><th>名前</th>{columns.map(([c, title]) => <th key={c} title={title}>{c}</th>)}</tr></thead>
+          <thead>
+            <tr>
+              <th>行</th>
+              <th>名前</th>
+              {columns.map(([c, title]) => (
+                <th key={c} title={title}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
             {rows.slice(0, shown).map((a) => (
-              <tr key={a.row} className={a.row === selected ? 'active' : ''} onClick={() => (location.hash = href(a.row))}>
+              <tr
+                key={a.row}
+                className={a.row === selected ? 'active' : ''}
+                onClick={() => (location.hash = href(a.row))}
+              >
                 <td className="num muted">{a.rowLabel ?? a.row}</td>
-                <td className={`action-name ${a.nameClass ?? ''}`}>{a.name}{a.edited && <EditedMark text=" ●" />}</td>
-                {a.cells.map((c, i) => <td key={i} className="muted nowrap">{c}</td>)}
+                <td className={`action-name ${a.nameClass ?? ''}`}>
+                  {a.name}
+                  {a.edited && <EditedMark text=" ●" />}
+                </td>
+                {a.cells.map((c, i) => (
+                  <td key={i} className="muted nowrap">
+                    {c}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
         </table>
-        {rows.length > shown && <div className="row"><button onClick={() => setLimit(shown + PAGE * 5)}>{`続きを表示 (${rows.length - shown} 件)`}</button></div>}
+        {rows.length > shown && (
+          <div className="row">
+            <button onClick={() => setLimit(shown + PAGE * 5)}>{`続きを表示 (${rows.length - shown} 件)`}</button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -98,7 +143,13 @@ export interface ActionText {
 }
 
 /** The message boxes (the editors' text form), with the actions sharing them and a button to make one this row's own. */
-export function ActionTexts({ texts, fields, message, onEdit, href }: {
+export function ActionTexts({
+  texts,
+  fields,
+  message,
+  onEdit,
+  href,
+}: {
   texts: MessageStore;
   fields: ActionText[];
   message: (id: number) => string;
@@ -114,20 +165,46 @@ export function ActionTexts({ texts, fields, message, onEdit, href }: {
           <tr key={t.key}>
             <th title={`${t.place}、メッセージ ${t.id}`}>{t.label}</th>
             <td className="book-desc">
-              {texts.editable(t.id) || texts.isAdded(t.id)
-                ? <MessageEditor texts={texts} id={t.id} compact apply={(f) => { f(); onEdit(); }} />
-                : <span>{message(t.id)}</span>}
+              {texts.editable(t.id) || texts.isAdded(t.id) ? (
+                <MessageEditor
+                  texts={texts}
+                  id={t.id}
+                  compact
+                  apply={(f) => {
+                    f();
+                    onEdit();
+                  }}
+                />
+              ) : (
+                <span>{message(t.id)}</span>
+              )}
               {(t.shared.length > 0 || t.extra) && (
                 <div className="small">
                   {t.shared.length > 0 && (
                     <span className="muted with-info">
                       {'同じメッセージ: '}
-                      {t.shared.slice(0, 4).map((r, i) => <span key={r}>{i > 0 && '、'}<a href={href(r)}>{`#${r}`}</a></span>)}
+                      {t.shared.slice(0, 4).map((r, i) => (
+                        <span key={r}>
+                          {i > 0 && '、'}
+                          <a href={href(r)}>{`#${r}`}</a>
+                        </span>
+                      ))}
                       {t.shared.length > 4 && ` ほか ${t.shared.length - 4}`}
                       <InfoTip text="書き換えると、同じメッセージを使うすべてのアクションで変わります。「このアクションだけの文にする」で、同じ本文の新しいメッセージを作ってこの行だけに付けられます。" />
                     </span>
                   )}
-                  {t.shared.length > 0 && t.own && <button className="small" title="同じ本文の新しいメッセージを作り、この行に付けます" onClick={() => { t.own!(); onEdit(); }}>このアクションだけの文にする</button>}
+                  {t.shared.length > 0 && t.own && (
+                    <button
+                      className="small"
+                      title="同じ本文の新しいメッセージを作り、この行に付けます"
+                      onClick={() => {
+                        t.own!();
+                        onEdit();
+                      }}
+                    >
+                      このアクションだけの文にする
+                    </button>
+                  )}
                   {t.extra}
                 </div>
               )}
@@ -149,7 +226,12 @@ export interface ActionUser {
 
 /** The monsters and items that use the action, as links. */
 export function ActionUsers({ monsters, items }: { monsters: ActionUser[]; items: ActionUser[] }): ReactNode {
-  const link = (u: ActionUser): ReactNode => <a key={u.key} href={u.href}>{u.name}{u.note && <span className="muted small">{` (${u.note})`}</span>}</a>;
+  const link = (u: ActionUser): ReactNode => (
+    <a key={u.key} href={u.href}>
+      {u.name}
+      {u.note && <span className="muted small">{` (${u.note})`}</span>}
+    </a>
+  );
   return (
     <div className="row action-users">
       <span className="muted">{`ワザとして持つモンスター (${monsters.length}): `}</span>
@@ -161,7 +243,14 @@ export function ActionUsers({ monsters, items }: { monsters: ActionUser[]; items
 }
 
 /** Copying the action to a new row, removing an added one, putting the row back; with where the edits are written. */
-export function ActionButtons({ note, copy, from, remove, onEdit, onRevert }: {
+export function ActionButtons({
+  note,
+  copy,
+  from,
+  remove,
+  onEdit,
+  onRevert,
+}: {
   note: string;
   copy: CopySpec;
   from: number;

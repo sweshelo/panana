@@ -10,7 +10,8 @@ import type { LanaiSession } from './session';
 
 const sets = new Map<string, Promise<TilesetModels>>();
 
-const keyOf = (d: LanaiMonsterDesign, motions: boolean): string => `lanai-monster/${hex8(d.model)}/${hex8(d.texture)}${motions ? `/${hex8(d.motion)}` : ''}`;
+const keyOf = (d: LanaiMonsterDesign, motions: boolean): string =>
+  `lanai-monster/${hex8(d.model)}/${hex8(d.texture)}${motions ? `/${hex8(d.motion)}` : ''}`;
 
 /** The model set of a design (built once; rejects when the model BCH cannot be read). */
 export function lanaiMonsterSet(session: LanaiSession, d: LanaiMonsterDesign, motions = true): Promise<TilesetModels> {

@@ -4,18 +4,61 @@
 import { GfxReader, hex } from './bin';
 import { buildDictTree } from './dict';
 import {
-  alphaTestFrom, blendFunctionFrom, colorOperationFrom, depthColorMaskFrom, readCommands, rgbaFromU32, stencilOperationFrom,
-  stencilTestFrom, texEnvStageFrom,
+  alphaTestFrom,
+  blendFunctionFrom,
+  colorOperationFrom,
+  depthColorMaskFrom,
+  readCommands,
+  rgbaFromU32,
+  stencilOperationFrom,
+  stencilTestFrom,
+  texEnvStageFrom,
 } from './pica';
 import {
-  GFX_DICTS, GfxPrimitiveType, emptyGfx, type Gfx, type GfxAnimChannel, type GfxAnimContent, type GfxAnimGroup,
-  type GfxAnimGroupElement, type GfxAnimation, type GfxAnimationElement, type GfxAttribute, type GfxBakedTrack,
-  type GfxBone, type GfxCamera, type GfxCameraProjection, type GfxCameraView, type GfxCurveSegment, type GfxFace,
-  type GfxFaceDescriptor, type GfxFloatKeyFrameGroup, type GfxFragLightLUT, type GfxFragShader, type GfxLUT,
-  type GfxLUTReference, type GfxMaterial, type GfxMaterialColor, type GfxMesh, type GfxMetaData, type GfxModel,
-  type GfxNodeTransform, type GfxObject, type GfxRawKey, type GfxShape, type GfxSkeleton, type GfxSubMesh,
-  type GfxTexEnv, type GfxTexture, type GfxTextureCoord, type GfxTextureReference, type GfxTextureImageData, type GfxTextureMapper,
-  type GfxVertexBuffer, type RGBA, type Vec4,
+  GFX_DICTS,
+  GfxPrimitiveType,
+  emptyGfx,
+  type Gfx,
+  type GfxAnimChannel,
+  type GfxAnimContent,
+  type GfxAnimGroup,
+  type GfxAnimGroupElement,
+  type GfxAnimation,
+  type GfxAnimationElement,
+  type GfxAttribute,
+  type GfxBakedTrack,
+  type GfxBone,
+  type GfxCamera,
+  type GfxCameraProjection,
+  type GfxCameraView,
+  type GfxCurveSegment,
+  type GfxFace,
+  type GfxFaceDescriptor,
+  type GfxFloatKeyFrameGroup,
+  type GfxFragLightLUT,
+  type GfxFragShader,
+  type GfxLUT,
+  type GfxLUTReference,
+  type GfxMaterial,
+  type GfxMaterialColor,
+  type GfxMesh,
+  type GfxMetaData,
+  type GfxModel,
+  type GfxNodeTransform,
+  type GfxObject,
+  type GfxRawKey,
+  type GfxShape,
+  type GfxSkeleton,
+  type GfxSubMesh,
+  type GfxTexEnv,
+  type GfxTexture,
+  type GfxTextureCoord,
+  type GfxTextureReference,
+  type GfxTextureImageData,
+  type GfxTextureMapper,
+  type GfxVertexBuffer,
+  type RGBA,
+  type Vec4,
 } from './types';
 
 /** Object type ids (GfxObject TypeChoice) and magics. */
@@ -133,7 +176,13 @@ class GfxParser {
           const format = r.u32(p + 12);
           if (format !== 0) this.fail(p, 'non-ASCII metadata strings are not supported');
           const n = r.u32(p + 16);
-          return { kind: 'string', name, type: t, format, values: Array.from({ length: n }, (_, i) => r.str(p + 20 + i * 4) ?? '') };
+          return {
+            kind: 'string',
+            name,
+            type: t,
+            format,
+            values: Array.from({ length: n }, (_, i) => r.str(p + 20 + i * 4) ?? ''),
+          };
         }
       }
       return this.fail(p, `metadata type ${hex(type)}`);
@@ -202,11 +251,29 @@ class GfxParser {
       case 0x04000000:
         return { ...base, kind: 'blendOp', materialName: r.str(o + 0x1c), objType2: r.u32(o + 0x20) };
       case 0x02000000:
-        return { ...base, kind: 'texSampler', materialName: r.str(o + 0x1c), index: r.s32(o + 0x20), objType2: r.u32(o + 0x24) };
+        return {
+          ...base,
+          kind: 'texSampler',
+          materialName: r.str(o + 0x1c),
+          index: r.s32(o + 0x20),
+          objType2: r.u32(o + 0x24),
+        };
       case 0x20000000:
-        return { ...base, kind: 'texMapper', materialName: r.str(o + 0x1c), index: r.s32(o + 0x20), objType2: r.u32(o + 0x24) };
+        return {
+          ...base,
+          kind: 'texMapper',
+          materialName: r.str(o + 0x1c),
+          index: r.s32(o + 0x20),
+          objType2: r.u32(o + 0x24),
+        };
       case 0x80000000:
-        return { ...base, kind: 'texCoord', materialName: r.str(o + 0x1c), index: r.s32(o + 0x20), objType2: r.u32(o + 0x24) };
+        return {
+          ...base,
+          kind: 'texCoord',
+          materialName: r.str(o + 0x1c),
+          index: r.s32(o + 0x20),
+          objType2: r.u32(o + 0x24),
+        };
       case 0x10000000:
         return { ...base, kind: 'model', objType2: r.u32(o + 0x1c) };
       case 0x01000000:
@@ -251,7 +318,7 @@ class GfxParser {
 
   mesh(o: number, model: number): GfxMesh {
     const { r } = this;
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.mesh]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.mesh]);
     if (r.ptr(o + 0x20) !== model) this.fail(o, 'mesh parent is not its model');
     return {
       ...base,
@@ -276,7 +343,7 @@ class GfxParser {
 
   skeleton(o: number): GfxSkeleton {
     const { r } = this;
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.skeleton]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.skeleton]);
     const entries = this.dict(o + 0x18);
     const addr = entries.map((e) => e.data);
     const index = (p: number, at: number): number => {
@@ -285,7 +352,7 @@ class GfxParser {
       if (i < 0) this.fail(at, 'bone pointer outside the skeleton');
       return i;
     };
-    const bones = entries.map((e, i): GfxBone => {
+    const bones = entries.map((e): GfxBone => {
       const p = e.data;
       const name = r.str(p)!;
       if (name !== e.name) this.fail(p, 'bone key');
@@ -308,12 +375,18 @@ class GfxParser {
         metaData: this.metaData(p + 0xd8),
       };
     });
-    return { ...base, bones, rootBone: index(r.ptr(o + 0x20), o + 0x20), scalingRule: r.u32(o + 0x24), flags: r.u32(o + 0x28) };
+    return {
+      ...base,
+      bones,
+      rootBone: index(r.ptr(o + 0x20), o + 0x20),
+      scalingRule: r.u32(o + 0x24),
+      flags: r.u32(o + 0x28),
+    };
   }
 
   shape(o: number): GfxShape {
     const { r } = this;
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.shape]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.shape]);
     const bb = r.ptr(o + 0x1c);
     const bs = r.ptr(o + 0x40);
     let blendShape: GfxShape['blendShape'] = null;
@@ -326,7 +399,9 @@ class GfxParser {
     return {
       ...base,
       flags: r.u32(o + 0x18),
-      boundingBox: bb ? { typeId: r.u32(bb), center: r.vec3(bb + 4), orientation: r.floats(bb + 0x10, 9), size: r.vec3(bb + 0x34) } : null,
+      boundingBox: bb
+        ? { typeId: r.u32(bb), center: r.vec3(bb + 4), orientation: r.floats(bb + 0x10, 9), size: r.vec3(bb + 0x34) }
+        : null,
       positionOffset: r.vec3(o + 0x20),
       subMeshes: r.ptrList(o + 0x2c).map((p) => this.subMesh(p)),
       baseAddress: r.u32(o + 0x34),
@@ -447,14 +522,32 @@ class GfxParser {
 
   material(o: number): GfxMaterial {
     const { r } = this;
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.material]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.material]);
     const v4 = (i: number): Vec4 => r.vec4(o + 0x24 + i * 16);
     const c = (i: number): RGBA => this.rgba(o + 0xd4 + i * 4);
     const colors: GfxMaterialColor = {
-      emissionF: v4(0), ambientF: v4(1), diffuseF: v4(2), specular0F: v4(3), specular1F: v4(4),
-      constant0F: v4(5), constant1F: v4(6), constant2F: v4(7), constant3F: v4(8), constant4F: v4(9), constant5F: v4(10),
-      emission: c(0), ambient: c(1), diffuse: c(2), specular0: c(3), specular1: c(4),
-      constant0: c(5), constant1: c(6), constant2: c(7), constant3: c(8), constant4: c(9), constant5: c(10),
+      emissionF: v4(0),
+      ambientF: v4(1),
+      diffuseF: v4(2),
+      specular0F: v4(3),
+      specular1F: v4(4),
+      constant0F: v4(5),
+      constant1F: v4(6),
+      constant2F: v4(7),
+      constant3F: v4(8),
+      constant4F: v4(9),
+      constant5F: v4(10),
+      emission: c(0),
+      ambient: c(1),
+      diffuse: c(2),
+      specular0: c(3),
+      specular1: c(4),
+      constant0: c(5),
+      constant1: c(6),
+      constant2: c(7),
+      constant3: c(8),
+      constant4: c(9),
+      constant5: c(10),
       commandCache: r.u32(o + 0x100),
     };
     const depth = this.commands(o + 0x11c, 4);
@@ -548,7 +641,12 @@ class GfxParser {
     // TYPE (mask 1), then BORDER_COLOR.. as 10 consecutive parameters.
     const typeReg = words[1]! & 0xffff;
     const unit = [0x8e, 0x96, 0x9e].indexOf(typeReg);
-    if (unit < 0 || words[1] !== (0x00010000 | typeReg) || words[3] !== ((0x809f0000 | [0x81, 0x91, 0x99][unit]!) >>> 0) || words[13] !== 0)
+    if (
+      unit < 0 ||
+      words[1] !== (0x00010000 | typeReg) ||
+      words[3] !== (0x809f0000 | [0x81, 0x91, 0x99][unit]!) >>> 0 ||
+      words[13] !== 0
+    )
       this.fail(o, 'texture mapper commands');
     const param = words[4 + 1]!;
     const lod = words[4 + 2]!;
@@ -557,7 +655,12 @@ class GfxParser {
     let sampler: GfxTextureMapper['sampler'] = null;
     if (samp) {
       if (r.ptr(samp + 4) !== o) this.fail(samp, 'sampler parent is not its mapper');
-      sampler = { typeId: r.u32(samp), minFilter: r.u32(samp + 8), borderColor: r.vec4(samp + 0x0c), lodBias: r.f32(samp + 0x1c) };
+      sampler = {
+        typeId: r.u32(samp),
+        minFilter: r.u32(samp + 8),
+        borderColor: r.vec4(samp + 0x0c),
+        lodBias: r.f32(samp + 0x1c),
+      };
     }
     return {
       dynamicAlloc: r.u32(o + 4),
@@ -571,7 +674,7 @@ class GfxParser {
       mipFilter: (param >>> 24) & 1,
       wrapV: (param >>> 8) & 7,
       wrapU: (param >>> 12) & 7,
-      paramOtherBits: (param & ~(0x01007706)) >>> 0,
+      paramOtherBits: (param & ~0x01007706) >>> 0,
       lodBias: ((lod << 19) >> 19) / 256,
       minLOD: (lod >>> 24) & 0xf,
       maxLOD: (lod >>> 16) & 0xf,
@@ -580,12 +683,12 @@ class GfxParser {
   }
 
   textureReference(o: number): GfxTextureReference {
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.textureReference]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.textureReference]);
     return { ...base, path: this.r.str(o + 0x18), texturePtr: this.r.u32(o + 0x1c) };
   }
 
   shaderReference(o: number): NonNullable<GfxMaterial['shader']> {
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.shaderReference]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.shaderReference]);
     return { ...base, path: this.r.str(o + 0x18), shaderPtr: this.r.u32(o + 0x1c) };
   }
 
@@ -599,7 +702,8 @@ class GfxParser {
         if (!p) return null;
         const s = r.ptr(p + 8);
         let sampler: GfxLUTReference | null = null;
-        if (s) sampler = { typeId: r.u32(s), samplerName: r.str(s + 4), tableName: r.str(s + 8), targetLUT: r.u32(s + 12) };
+        if (s)
+          sampler = { typeId: r.u32(s), samplerName: r.str(s + 4), tableName: r.str(s + 8), targetLUT: r.u32(s + 12) };
         return { input: r.u32(p), scale: r.u32(p + 4), sampler };
       };
       luts = { reflecR: lut(0), reflecG: lut(1), reflecB: lut(2), dist0: lut(3), dist1: lut(4), fresnel: lut(5) };
@@ -614,7 +718,8 @@ class GfxParser {
     const at = r.words(o + 0xd4, 2);
     if (at[1] !== 0x000f0104) this.fail(o + 0xd4, 'alpha test command');
     const cmd = r.words(o + 0xdc, 6);
-    if (cmd[1] !== 0x000f00fd || cmd[3] !== 0x000200e0 || cmd[5] !== 0x000201c3) this.fail(o + 0xdc, 'fragment shader commands');
+    if (cmd[1] !== 0x000f00fd || cmd[3] !== 0x000200e0 || cmd[5] !== 0x000201c3)
+      this.fail(o + 0xdc, 'fragment shader commands');
     const update = cmd[2]!;
     for (let i = 1; i <= 4; i++) {
       textureEnvironments[i]!.stage.updateColorBuffer = ((update >>> (7 + i)) & 1) !== 0;
@@ -675,14 +780,19 @@ class GfxParser {
 
   lut(o: number): GfxLUT {
     const { r } = this;
-    const { typeId, ...base } = this.object(o, [GFX_TYPE.lut]);
+    const { typeId: _typeId, ...base } = this.object(o, [GFX_TYPE.lut]);
     return {
       ...base,
       samplers: this.named(o + 0x18, (p) => {
         if (r.u32(p) !== 0x80000000) this.fail(p, 'LUT sampler type');
         const n = r.u32(p + 0x0c);
         if (n & 3) this.fail(p, 'LUT command length');
-        return { typeId: r.u32(p), name: r.str(p + 4)!, isAbsolute: r.bool(p + 8), commands: r.words(r.ptr(p + 0x10), n >> 2) };
+        return {
+          typeId: r.u32(p),
+          name: r.str(p + 4)!,
+          isAbsolute: r.bool(p + 8),
+          commands: r.words(r.ptr(p + 0x10), n >> 2),
+        };
       }),
     };
   }
@@ -697,7 +807,9 @@ class GfxParser {
     if (!fmt) this.fail(o, `key quantization ${quant}`);
     const n = r.u32(o + 0x0c);
     let p = o + 0x14;
-    let valueScale = 1, valueOffset = 0, frameScale = 1;
+    let valueScale = 1,
+      valueOffset = 0,
+      frameScale = 1;
     if (fmt.scaled) {
       valueScale = r.f32(p);
       valueOffset = r.f32(p + 4);
@@ -706,7 +818,16 @@ class GfxParser {
     }
     const keys: GfxRawKey[] = [];
     for (let i = 0; i < n; i++, p += fmt.size) keys.push(readKey(r, p, quant));
-    return { startFrame: r.f32(o), endFrame: r.f32(o + 4), formatFlags, invDuration: r.f32(o + 0x10), valueScale, valueOffset, frameScale, keys };
+    return {
+      startFrame: r.f32(o),
+      endFrame: r.f32(o + 4),
+      formatFlags,
+      invDuration: r.f32(o + 0x10),
+      valueScale,
+      valueOffset,
+      frameScale,
+      keys,
+    };
   }
 
   curve(o: number): GfxFloatKeyFrameGroup {
@@ -785,7 +906,10 @@ class GfxParser {
         content = { type, channels: this.channels(o, 3, 0, 3) as [GfxAnimChannel, GfxAnimChannel, GfxAnimChannel] };
         break;
       case GfxPrimitiveType.RGBA:
-        content = { type, channels: this.channels(o, 4, 0, 4) as [GfxAnimChannel, GfxAnimChannel, GfxAnimChannel, GfxAnimChannel] };
+        content = {
+          type,
+          channels: this.channels(o, 4, 0, 4) as [GfxAnimChannel, GfxAnimChannel, GfxAnimChannel, GfxAnimChannel],
+        };
         break;
       case GfxPrimitiveType.Transform:
         content = { type, channels: this.channels(o, 10, 6, 16) };
@@ -808,7 +932,17 @@ class GfxParser {
         const values: boolean[] = [];
         const n = boolCount(startFrame, endFrame);
         for (let i = 0; i < n; i++) values.push(((r.u8(bits + (i >> 3)) >> (i & 7)) & 1) !== 0);
-        content = { type, value: { startFrame, endFrame, preRepeat: r.u8(p + 8), postRepeat: r.u8(p + 9), padding: r.u16(p + 10), values } };
+        content = {
+          type,
+          value: {
+            startFrame,
+            endFrame,
+            preRepeat: r.u8(p + 8),
+            postRepeat: r.u8(p + 9),
+            padding: r.u16(p + 10),
+            values,
+          },
+        };
         break;
       }
       default:
@@ -840,30 +974,52 @@ class GfxParser {
 
   camera(o: number): GfxCamera {
     const { r } = this;
-    const { typeId, ...node } = this.nodeTransform(o, [GFX_TYPE.camera]);
+    const { typeId: _typeId, ...node } = this.nodeTransform(o, [GFX_TYPE.camera]);
     const v = r.ptr(o + 0xbc);
     const p = r.ptr(o + 0xc0);
     let view: GfxCameraView | null = null;
     if (v) {
       const t = r.u32(v);
-      if (t === 0x80000000) view = { kind: 'aim', typeId: t, flags: r.u32(v + 4), target: r.vec3(v + 8), twist: r.f32(v + 0x14) };
-      else if (t === 0x40000000) view = { kind: 'lookAt', typeId: t, flags: r.u32(v + 4), target: r.vec3(v + 8), upVector: r.vec3(v + 0x14) };
-      else if (t === 0x20000000) view = { kind: 'rotation', typeId: t, isInheritingRotation: r.bool(v + 4), rotation: r.vec3(v + 8) };
+      if (t === 0x80000000)
+        view = { kind: 'aim', typeId: t, flags: r.u32(v + 4), target: r.vec3(v + 8), twist: r.f32(v + 0x14) };
+      else if (t === 0x40000000)
+        view = { kind: 'lookAt', typeId: t, flags: r.u32(v + 4), target: r.vec3(v + 8), upVector: r.vec3(v + 0x14) };
+      else if (t === 0x20000000)
+        view = { kind: 'rotation', typeId: t, isInheritingRotation: r.bool(v + 4), rotation: r.vec3(v + 8) };
       else this.fail(v, `camera view type ${hex(t)}`);
     }
     let projection: GfxCameraProjection | null = null;
     if (p) {
       const t = r.u32(p);
       if (t === 0x20000000)
-        projection = { kind: 'perspective', typeId: t, zNear: r.f32(p + 4), zFar: r.f32(p + 8), aspectRatio: r.f32(p + 12), fovy: r.f32(p + 16) };
+        projection = {
+          kind: 'perspective',
+          typeId: t,
+          zNear: r.f32(p + 4),
+          zFar: r.f32(p + 8),
+          aspectRatio: r.f32(p + 12),
+          fovy: r.f32(p + 16),
+        };
       else if (t === 0x40000000 || t === 0x80000000)
         projection = {
-          kind: t === 0x40000000 ? 'orthogonal' : 'frustum', typeId: t, zNear: r.f32(p + 4), zFar: r.f32(p + 8),
-          aspectRatio: r.f32(p + 12), height: r.f32(p + 16), center: r.vec2(p + 20),
+          kind: t === 0x40000000 ? 'orthogonal' : 'frustum',
+          typeId: t,
+          zNear: r.f32(p + 4),
+          zFar: r.f32(p + 8),
+          aspectRatio: r.f32(p + 12),
+          height: r.f32(p + 16),
+          center: r.vec2(p + 20),
         };
       else this.fail(p, `camera projection type ${hex(t)}`);
     }
-    return { ...node, viewType: r.u32(o + 0xb4), projectionType: r.u32(o + 0xb8), view, projection, wScale: r.f32(o + 0xc4) };
+    return {
+      ...node,
+      viewType: r.u32(o + 0xb4),
+      projectionType: r.u32(o + 0xb8),
+      view,
+      projection,
+      wScale: r.f32(o + 0xc4),
+    };
   }
 }
 

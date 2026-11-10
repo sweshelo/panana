@@ -42,7 +42,9 @@ describe('rows in use', () => {
     const ev = events([0, CHEST, KIND_SWITCH, 0, 0, KIND_BOSS, 0, 0, 0, 0]);
     w32(ev.table.row(2), 0x08, 3);
     w32(ev.table.row(2), 0x0c, 0);
-    writeStages(ev.table.row(5), [{ fix: 0, bgm: 0, repeat: false, messages: [0, 0, 0], script: { first: 7, rows: 2 } }]);
+    writeStages(ev.table.row(5), [
+      { fix: 0, bgm: 0, repeat: false, messages: [0, 0, 0], script: { first: 7, rows: 2 } },
+    ]);
     expect([...liveRows(ev, [1, 2, 5], 2)].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 5, 7, 8]);
     // D01's script row 2 opens rows 10 (outside the table here, ignored)
     expect(liveRows(ev, [2], 1).has(3)).toBe(true);

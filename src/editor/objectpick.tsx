@@ -52,10 +52,15 @@ export function entranceRef(game: Game, model: number, part: number): ModelRef |
   return {
     key: `worldpart/${hex8(entry)}`,
     load: async () => {
-      const sets = await loadObjectModels(game, [{ archive: WORLD_MODEL_ARCHIVE, entry }, { archive: WORLD_MODEL_ARCHIVE, entry: WORLD_TEXTURES }]);
+      const sets = await loadObjectModels(game, [
+        { archive: WORLD_MODEL_ARCHIVE, entry },
+        { archive: WORLD_MODEL_ARCHIVE, entry: WORLD_TEXTURES },
+      ]);
       const set = sets.get(objKey(WORLD_MODEL_ARCHIVE, entry));
       const shared = sets.get(objKey(WORLD_MODEL_ARCHIVE, WORLD_TEXTURES))?.textures ?? new Map();
-      return set?.models.has(entry) ? { set: { ...set, textures: new Map([...shared, ...set.textures]) }, hash: entry } : null;
+      return set?.models.has(entry)
+        ? { set: { ...set, textures: new Map([...shared, ...set.textures]) }, hash: entry }
+        : null;
     },
   };
 }
@@ -85,16 +90,20 @@ export function MapSpot({ doc, x, y }: { doc: MapDoc; x: number; y: number }): R
     const tiles = doc.tiles;
     const xs = tiles.map((t) => t.x).concat([Math.floor(x)]);
     const ys = tiles.map((t) => t.y).concat([Math.floor(y)]);
-    const x0 = Math.min(...xs), y0 = Math.min(...ys);
-    const w = Math.max(...xs) - x0 + 1, h = Math.max(...ys) - y0 + 1;
+    const x0 = Math.min(...xs),
+      y0 = Math.min(...ys);
+    const w = Math.max(...xs) - x0 + 1,
+      h = Math.max(...ys) - y0 + 1;
     const s = Math.max(1, Math.min(8, Math.floor(c.width / Math.max(w, h))));
-    const ox = Math.floor((c.width - w * s) / 2), oy = Math.floor((c.height - h * s) / 2);
+    const ox = Math.floor((c.width - w * s) / 2),
+      oy = Math.floor((c.height - h * s) / 2);
     g.clearRect(0, 0, c.width, c.height);
     for (const t of tiles) {
       g.fillStyle = kindColor(t.kind);
       g.fillRect(ox + (t.x - x0) * s, oy + (t.y - y0) * s, s, s);
     }
-    const px = ox + (x - x0) * s, py = oy + (y - y0) * s;
+    const px = ox + (x - x0) * s,
+      py = oy + (y - y0) * s;
     g.beginPath();
     g.arc(px, py, Math.max(3, s * 0.8), 0, Math.PI * 2);
     g.fillStyle = '#ff3b3b';
@@ -109,8 +118,13 @@ export function MapSpot({ doc, x, y }: { doc: MapDoc; x: number; y: number }): R
 function ChoiceIcon({ c }: { c: PlacedChoice }): ReactNode {
   return (
     <span className="placed-icons">
-      {c.model ? <Photo model={c.model} className="photo photo-lg" />
-        : <span className="photo photo-lg stamp-badge" aria-hidden="true">{c.badge ?? '◇'}</span>}
+      {c.model ? (
+        <Photo model={c.model} className="photo photo-lg" />
+      ) : (
+        <span className="photo photo-lg stamp-badge" aria-hidden="true">
+          {c.badge ?? '◇'}
+        </span>
+      )}
       {c.where && <MapSpot doc={c.where.doc} x={c.where.x} y={c.where.y} />}
     </span>
   );
@@ -121,7 +135,14 @@ function ChoiceIcon({ c }: { c: PlacedChoice }): ReactNode {
  * and its place on the map. `extra` are choices that are not on the map (なし, 主人公 …). A value that is neither is
  * shown with `missing` as its label.
  */
-export function PlacedPickButton({ title, value, choices, extra = [], missing, onChange }: {
+export function PlacedPickButton({
+  title,
+  value,
+  choices,
+  extra = [],
+  missing,
+  onChange,
+}: {
   title: string;
   value: number;
   choices: PlacedChoice[];
@@ -136,7 +157,11 @@ export function PlacedPickButton({ title, value, choices, extra = [], missing, o
   // GridPicker wants distinct ids: index the entries, and put the extra choices below 0.
   const cats = categoryIds(choices);
   const entries: GridEntry[] = choices.map((c, i) => ({
-    id: i + 1, name: c.name, sub: c.sub, icon: <ChoiceIcon c={c} />, keywords: `${c.keywords ?? ''} ${c.sub ?? ''}`,
+    id: i + 1,
+    name: c.name,
+    sub: c.sub,
+    icon: <ChoiceIcon c={c} />,
+    keywords: `${c.keywords ?? ''} ${c.sub ?? ''}`,
     category: c.category ? cats.get(c.category) : undefined,
   }));
   const categories = cats.size > 1 ? Object.fromEntries([...cats].map(([k, v]) => [v, k])) : undefined;
@@ -144,19 +169,45 @@ export function PlacedPickButton({ title, value, choices, extra = [], missing, o
   const current = cur ? choices.indexOf(cur) + 1 : curExtra ? -1 - extra.indexOf(curExtra) : undefined;
   return (
     <>
-      <button type="button" className="tileset-button placed-button" title={cur?.sub ?? curExtra?.sub ?? ''} aria-haspopup="dialog" onClick={() => setOpen(true)}>
-        {cur ? (cur.model ? <Photo model={cur.model} /> : <span className="photo stamp-badge" aria-hidden="true">{cur.badge ?? '◇'}</span>) : null}
-        <span>{label}{cur?.sub && <span className="muted small">{`  ${cur.sub}`}</span>}<span className="muted"> ▾</span></span>
+      <button
+        type="button"
+        className="tileset-button placed-button"
+        title={cur?.sub ?? curExtra?.sub ?? ''}
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        {cur ? (
+          cur.model ? (
+            <Photo model={cur.model} />
+          ) : (
+            <span className="photo stamp-badge" aria-hidden="true">
+              {cur.badge ?? '◇'}
+            </span>
+          )
+        ) : null}
+        <span>
+          {label}
+          {cur?.sub && <span className="muted small">{`  ${cur.sub}`}</span>}
+          <span className="muted"> ▾</span>
+        </span>
       </button>
       {open && (
-        <GridPicker title={title} entries={entries} current={current} choices={pickerChoices} categories={categories} groupByCategory={!!categories}
-          wide placeholder="名前・種類・番号で絞り込み"
+        <GridPicker
+          title={title}
+          entries={entries}
+          current={current}
+          choices={pickerChoices}
+          categories={categories}
+          groupByCategory={!!categories}
+          wide
+          placeholder="名前・種類・番号で絞り込み"
           onClose={() => setOpen(false)}
           onPick={(id) => {
             setOpen(false);
             const v = id > 0 ? choices[id - 1]?.value : extra[-1 - id]?.value;
             if (v !== undefined) onChange(v);
-          }} />
+          }}
+        />
       )}
     </>
   );

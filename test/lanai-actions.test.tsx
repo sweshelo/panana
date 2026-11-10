@@ -4,8 +4,15 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { LanaiActionPage } from '../src/lanai/ActionPage';
 import {
-  lanaiActionAdded, lanaiActionChanged, lanaiActionMessageRow, lanaiActionRefs, lanaiActionRemoveBlock, lanaiBattleActions, lanaiCopyAction,
-  lanaiItemUseAction, lanaiRemoveAction,
+  lanaiActionAdded,
+  lanaiActionChanged,
+  lanaiActionMessageRow,
+  lanaiActionRefs,
+  lanaiActionRemoveBlock,
+  lanaiBattleActions,
+  lanaiCopyAction,
+  lanaiItemUseAction,
+  lanaiRemoveAction,
 } from '../src/lanai/battleActions';
 import { lanaiItems } from '../src/lanai/items';
 import { lanaiActionEntry, lanaiItemEntry } from '../src/lanai/pickers';
@@ -16,7 +23,10 @@ import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 describe.skipIf(!hasLanai)('RPG FREE! actions (ROM)', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump, { fresh: true });
   });
 
@@ -25,7 +35,10 @@ describe.skipIf(!hasLanai)('RPG FREE! actions (ROM)', () => {
     expect(list.length).toBe(5017);
     const rows = session.rows('ActionData');
     // つかまえる / つかまえる2ばい: system 21, the multiplier 10 / 20
-    expect([142, 143].map((r) => [list[r]!.system, rows.get(r, 'scale')])).toEqual([[21, 10], [21, 20]]);
+    expect([142, 143].map((r) => [list[r]!.system, rows.get(r, 'scale')])).toEqual([
+      [21, 10],
+      [21, 20],
+    ]);
     // ウインドロール is wind (3), 根っこをのばした earth (4)
     expect(rows.get(4000, 'element')).toBe(3);
     expect(rows.get(1000, 'element')).toBe(4);
@@ -42,7 +55,12 @@ describe.skipIf(!hasLanai)('RPG FREE! actions (ROM)', () => {
     // the tools: UseItemInfo +0x04 is the row (キズぐすり 707 → system 14, もとどおりスプレー 748)
     expect(refs.items.get(707)?.map((e) => [e.name, e.how])).toEqual([['キズぐすり', '使う']]);
     expect(lanaiBattleActions(session)[707]!.system).toBe(14);
-    expect(lanaiItemUseAction(session, lanaiItems(session).find((x) => x.name === 'もとどおりスプレー')!)).toBe(748);
+    expect(
+      lanaiItemUseAction(
+        session,
+        lanaiItems(session).find((x) => x.name === 'もとどおりスプレー')!,
+      ),
+    ).toBe(748);
     const kizu = lanaiBattleActions(session)[707]!;
     expect(kizu.name).toBe(kizu.named ? kizu.name : 'キズぐすり の効果');
   });
@@ -81,7 +99,9 @@ describe.skipIf(!hasLanai)('RPG FREE! actions (ROM)', () => {
     expect(a.rowId(copy)).not.toBe(a.rowId(422));
     const own = lanaiActionMessageRow(session, copy)!;
     expect(own.row).toBe(msgRows);
-    expect(session.plain(own.table, own.row, 'individual')).toBe(session.plain(own.table, lanaiActionMessageRow(session, 422)!.row, 'individual'));
+    expect(session.plain(own.table, own.row, 'individual')).toBe(
+      session.plain(own.table, lanaiActionMessageRow(session, 422)!.row, 'individual'),
+    );
     expect(lanaiBattleActions(session)[copy]!.system).toBe(lanaiBattleActions(session)[422]!.system);
     expect(lanaiActionRemoveBlock(session, 422)).not.toBe('');
     lanaiRemoveAction(session, copy);

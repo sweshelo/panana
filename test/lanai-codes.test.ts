@@ -5,7 +5,17 @@ import { createHash } from 'node:crypto';
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import {
-  CHECKIN_ARCHIVE, CHECKIN_TABLES, CODE_TABLE, codeVerdict, decodeCode, encodeCode, OFFLINE_SWITCH, rewardLabel, rewardRows, rowCode, sha256,
+  CHECKIN_ARCHIVE,
+  CHECKIN_TABLES,
+  CODE_TABLE,
+  codeVerdict,
+  decodeCode,
+  encodeCode,
+  OFFLINE_SWITCH,
+  rewardLabel,
+  rewardRows,
+  rowCode,
+  sha256,
 } from '../src/lanai/codes';
 import { LanaiCodePage } from '../src/lanai/CodePage';
 import { LanaiSession } from '../src/lanai/session';
@@ -56,7 +66,10 @@ describe('lanai codes (no ROM)', () => {
 describe.skipIf(!hasLanai)('lanai codes (ROM)', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as { name?: string }).name ?? '');
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as { name?: string }).name ?? '',
+    );
     session = await LanaiSession.open(dump);
   });
 

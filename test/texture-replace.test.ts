@@ -32,18 +32,32 @@ function image(w: number, h: number): Uint8Array {
 
 /** Mean absolute difference of the channels `ch` (0..3). */
 function diff(a: Uint8Array, b: Uint8Array, ch: number[]): number {
-  let s = 0, n = 0;
-  for (let i = 0; i < a.length; i += 4) for (const c of ch) { s += Math.abs(a[i + c]! - b[i + c]!); n++; }
+  let s = 0,
+    n = 0;
+  for (let i = 0; i < a.length; i += 4)
+    for (const c of ch) {
+      s += Math.abs(a[i + c]! - b[i + c]!);
+      n++;
+    }
   return s / n;
 }
 
 describe('PICA texture encoding', () => {
-  const w = 64, h = 32;
+  const w = 64,
+    h = 32;
   const img = image(w, h);
   // [format, channels compared, largest mean error]
   const cases: [number, number[], number][] = [
-    [0, [0, 1, 2, 3], 0], [1, [0, 1, 2], 0], [2, [0, 1, 2], 3], [3, [0, 1, 2], 3], [4, [0, 1, 2, 3], 5],
-    [8, [3], 0], [11, [3], 9], [12, [0, 1, 2], 6], [13, [0, 1, 2], 6], [13, [3], 9],
+    [0, [0, 1, 2, 3], 0],
+    [1, [0, 1, 2], 0],
+    [2, [0, 1, 2], 3],
+    [3, [0, 1, 2], 3],
+    [4, [0, 1, 2, 3], 5],
+    [8, [3], 0],
+    [11, [3], 9],
+    [12, [0, 1, 2], 6],
+    [13, [0, 1, 2], 6],
+    [13, [3], 9],
   ];
   for (const [f, ch, max] of cases) {
     test(`format ${f} decodes back to the image`, () => {
@@ -83,8 +97,12 @@ describe.skipIf(!hasCia)('replacing an RPG2 monster texture', () => {
 
   const files = async (design: Uint8Array): Promise<{ model: Uint8Array; colour: Uint8Array | null }> => {
     const arc = parseArchive(await game.dump.readRomfs(MONSTER_MODEL_ARCHIVE));
-    const body = (h: number): Uint8Array | null => (h && findEntry(arc, h) ? unpackEntry(arc, findEntry(arc, h)!).body : null);
-    return { model: body(u32(design, 0x10))!, colour: u32(design, 0x14) === u32(design, 0x10) ? null : body(u32(design, 0x14)) };
+    const body = (h: number): Uint8Array | null =>
+      h && findEntry(arc, h) ? unpackEntry(arc, findEntry(arc, h)!).body : null;
+    return {
+      model: body(u32(design, 0x10))!,
+      colour: u32(design, 0x14) === u32(design, 0x10) ? null : body(u32(design, 0x14)),
+    };
   };
 
   test('the texture is written again and only this monster shows it', async () => {
@@ -93,7 +111,9 @@ describe.skipIf(!hasCia)('replacing an RPG2 monster texture', () => {
     const before = book.designBytes(m.design);
     const other = book.designUsers(m.design).find((r) => r !== m.row)!;
     const { model, colour } = await files(before);
-    const textures = [...parseCgfx(model).textures, ...(colour ? parseCgfx(colour).textures : [])].filter((t) => t.name !== 'dummy');
+    const textures = [...parseCgfx(model).textures, ...(colour ? parseCgfx(colour).textures : [])].filter(
+      (t) => t.name !== 'dummy',
+    );
     const t = textures.at(-1)!;
     const img = image(t.width, t.height);
 
@@ -113,7 +133,11 @@ describe.skipIf(!hasCia)('replacing an RPG2 monster texture', () => {
     // a second replacement changes the row the first one added, and drops the file nothing names any more
     const store = await PortStore.of('kahara');
     const first = store.list().length;
-    const d2 = await replaceMonsterTexture(session, m.row, t.name, { width: t.width, height: t.height, rgba: image(t.width, t.height).reverse() });
+    const d2 = await replaceMonsterTexture(session, m.row, t.name, {
+      width: t.width,
+      height: t.height,
+      rgba: image(t.width, t.height).reverse(),
+    });
     expect(d2).toBe(d);
     expect(store.list().length).toBe(first);
   }, 120_000);

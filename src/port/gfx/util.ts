@@ -1,8 +1,15 @@
 // Helpers over the CGFX object model for converters: decoded animation keys, vertex attributes, index buffers and
 // the bone links of a skeleton.
 import {
-  GfxGLDataType, KeyFrameQuantization, type GfxAttribute, type GfxBone, type GfxCurveSegment, type GfxFaceDescriptor,
-  type GfxRawKey, type GfxSkeleton, type GfxVertexBuffer,
+  GfxGLDataType,
+  KeyFrameQuantization,
+  type GfxAttribute,
+  type GfxBone,
+  type GfxCurveSegment,
+  type GfxFaceDescriptor,
+  type GfxRawKey,
+  type GfxSkeleton,
+  type GfxVertexBuffer,
 } from './types';
 
 /** A decoded key: frame, value and slopes (SPICA KeyFrame). */
@@ -37,7 +44,12 @@ export function decodeKeys(s: GfxCurveSegment): KeyFrame[] {
 /**
  * A segment from decoded keys, stored without loss: Hermite128 (interpolation 2) or StepLinear64 (0 step / 1 linear).
  */
-export function encodeSegment(keys: KeyFrame[], interpolation: 0 | 1 | 2, startFrame?: number, endFrame?: number): GfxCurveSegment {
+export function encodeSegment(
+  keys: KeyFrame[],
+  interpolation: 0 | 1 | 2,
+  startFrame?: number,
+  endFrame?: number,
+): GfxCurveSegment {
   const start = startFrame ?? keys[0]?.frame ?? 0;
   const end = endFrame ?? keys[keys.length - 1]?.frame ?? 0;
   const quant = interpolation === 2 ? KeyFrameQuantization.Hermite128 : KeyFrameQuantization.StepLinear64;
@@ -77,7 +89,10 @@ export function vertexCount(buffers: GfxVertexBuffer[]): number {
  * Values of an attribute (elements per vertex, scale applied) of an interleaved buffer (`buffer` = its owner) or of
  * a stream of its own. Bone indices come out as stored (their scale is 1).
  */
-export function attributeValues(attr: GfxAttribute, buffer?: { rawBuffer: Uint8Array; vertexStride: number }): Float32Array {
+export function attributeValues(
+  attr: GfxAttribute,
+  buffer?: { rawBuffer: Uint8Array; vertexStride: number },
+): Float32Array {
   const size = FORMAT_SIZE[attr.format];
   if (!size) throw new Error(`CGFX: attribute format ${attr.format}`);
   const raw = buffer ? buffer.rawBuffer : attr.rawBuffer;
@@ -91,11 +106,21 @@ export function attributeValues(attr: GfxAttribute, buffer?: { rawBuffer: Uint8A
       const o = i * stride + (buffer ? attr.offset : 0) + e * size;
       let v = 0;
       switch (attr.format) {
-        case GfxGLDataType.GL_BYTE: v = dv.getInt8(o); break;
-        case GfxGLDataType.GL_UNSIGNED_BYTE: v = dv.getUint8(o); break;
-        case GfxGLDataType.GL_SHORT: v = dv.getInt16(o, true); break;
-        case GfxGLDataType.GL_UNSIGNED_SHORT: v = dv.getUint16(o, true); break;
-        case GfxGLDataType.GL_FLOAT: v = dv.getFloat32(o, true); break;
+        case GfxGLDataType.GL_BYTE:
+          v = dv.getInt8(o);
+          break;
+        case GfxGLDataType.GL_UNSIGNED_BYTE:
+          v = dv.getUint8(o);
+          break;
+        case GfxGLDataType.GL_SHORT:
+          v = dv.getInt16(o, true);
+          break;
+        case GfxGLDataType.GL_UNSIGNED_SHORT:
+          v = dv.getUint16(o, true);
+          break;
+        case GfxGLDataType.GL_FLOAT:
+          v = dv.getFloat32(o, true);
+          break;
       }
       out[i * attr.elements + e] = v * attr.scale;
     }
@@ -117,7 +142,8 @@ export function faceIndices(fd: GfxFaceDescriptor): Uint16Array {
 export function encodeIndices(indices: ArrayLike<number>): { format: GfxGLDataType; rawBuffer: Uint8Array } {
   let max = 0;
   for (let i = 0; i < indices.length; i++) max = Math.max(max, indices[i]!);
-  if (max < 256) return { format: GfxGLDataType.GL_UNSIGNED_BYTE, rawBuffer: Uint8Array.from(indices as ArrayLike<number>) };
+  if (max < 256)
+    return { format: GfxGLDataType.GL_UNSIGNED_BYTE, rawBuffer: Uint8Array.from(indices as ArrayLike<number>) };
   const out = new Uint8Array(indices.length * 2);
   for (let i = 0; i < indices.length; i++) {
     out[i * 2] = indices[i]! & 0xff;

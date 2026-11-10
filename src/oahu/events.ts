@@ -9,7 +9,22 @@ import { OAHU_EVENT_SECTIONS, OAHU_LAYOUTS, oahuRecEventRow, type OahuMapInfo, t
 import { OAHU_MAKE_FUNCTIONS, oahuBuildAction, oahuCodeProfile, oahuMakeFunction, OAHU_SCRIPT_KIND } from './scripts';
 
 /** EventObject offsets (§5.1). */
-export const EO = { appear1: 0x00, appear2: 0x04, gone1: 0x08, gone2: 0x0c, args: 0x10, slot: 0x4c, model: 0x4e, flags: 0x50, arg52: 0x52, appear: 0x53, gone: 0x54, kind: 0x55, done1: 0x56, done2: 0x57 } as const;
+export const EO = {
+  appear1: 0x00,
+  appear2: 0x04,
+  gone1: 0x08,
+  gone2: 0x0c,
+  args: 0x10,
+  slot: 0x4c,
+  model: 0x4e,
+  flags: 0x50,
+  arg52: 0x52,
+  appear: 0x53,
+  gone: 0x54,
+  kind: 0x55,
+  done1: 0x56,
+  done2: 0x57,
+} as const;
 export const OAHU_EVENT_ROW = 0x58;
 
 /** Kinds that FUN_004BC7C8 (the exits' make function) handles (§5.3). */
@@ -30,7 +45,8 @@ export function oahuKindName(kind: number): string {
 /** What a condition (kind, value 1, value 2) checks (§5.2). */
 export function oahuConditionText(kind: number, v1: number, v2: number): string {
   if (kind === 0x01) return `進行の条件 ${v1}`;
-  if (kind === 0x02 || kind === 0x03) return `ダンジョン ${v1} のフラグ ${v2} が${kind === 0x02 ? '立っている' : '立っていない'}`;
+  if (kind === 0x02 || kind === 0x03)
+    return `ダンジョン ${v1} のフラグ ${v2} が${kind === 0x02 ? '立っている' : '立っていない'}`;
   if (kind >= 0x04 && kind <= 0x06) return `今のダンジョンの値 ${v1} ${['=', '≥', '≤'][kind - 4]} ${v2}`;
   if (kind >= 0x07 && kind <= 0x11) return `ダンジョン ${v1} の値 ${v2} = ${kind - 7}`;
   if (kind === 0x12 || kind === 0x13) return `フラグ 0xFA[${v1}] が${kind === 0x12 ? '立っている' : '立っていない'}`;
@@ -78,10 +94,14 @@ export const oahuEventKey = (e: { dungeon: number; row: number }): string => `${
 
 export function oahuConditions(r: Uint8Array): OahuEventCondition[] {
   const out: OahuEventCondition[] = [];
-  for (const [field, o] of [[EO.appear, EO.appear1], [EO.gone, EO.gone1]] as const) {
+  for (const [field, o] of [
+    [EO.appear, EO.appear1],
+    [EO.gone, EO.gone1],
+  ] as const) {
     const kind = r[field]!;
     if (!kind) continue;
-    const v1 = u32(r, o), v2 = u32(r, o + 4);
+    const v1 = u32(r, o),
+      v2 = u32(r, o + 4);
     out.push({ field, kind, v1, v2, text: oahuConditionText(kind, v1, v2) });
   }
   return out;
@@ -91,7 +111,11 @@ export function oahuConditions(r: Uint8Array): OahuEventCondition[] {
  * Every row of every dungeon's EventObject table. With the Update's code.bin (`code`), the classes of the rows are
  * built (`fieldMessages` = MessageField_JP's ID range, the messages the scripts' code names).
  */
-export async function oahuEventEntries(maps: OahuMaps, code: Uint8Array | null, fieldMessages: [number, number]): Promise<OahuEventEntry[]> {
+export async function oahuEventEntries(
+  maps: OahuMaps,
+  code: Uint8Array | null,
+  fieldMessages: [number, number],
+): Promise<OahuEventEntry[]> {
   const byDungeon = new Map<number, OahuMapInfo[]>();
   for (const m of maps.maps) if (!m.world) byDungeon.set(m.dungeon, [...(byDungeon.get(m.dungeon) ?? []), m]);
   const out: OahuEventEntry[] = [];
@@ -107,7 +131,10 @@ export async function oahuEventEntries(maps: OahuMaps, code: Uint8Array | null, 
           const row = oahuRecEventRow(section, rec.raw);
           if (section === 8 && u32(rec.raw, 0) >= 100) return;
           const [x, y] = recCellPos(rec, OAHU_LAYOUTS[section]!);
-          places.set(row, [...(places.get(row) ?? []), { map: m, section, index, x, y, make: oahuMakeFunction(section, rec.raw) }]);
+          places.set(row, [
+            ...(places.get(row) ?? []),
+            { map: m, section, index, x, y, make: oahuMakeFunction(section, rec.raw) },
+          ]);
         });
     }
     for (let row = 0; row < t.rows; row++) {
@@ -138,7 +165,12 @@ export async function oahuEventEntries(maps: OahuMaps, code: Uint8Array | null, 
     }
   }
   if (code) {
-    const classes = describeClasses(code, pending.map((p) => p.built), [], oahuCodeProfile(...fieldMessages));
+    const classes = describeClasses(
+      code,
+      pending.map((p) => p.built),
+      [],
+      oahuCodeProfile(...fieldMessages),
+    );
     for (const { entry, built } of pending) entry.scripts.push({ make: built.make, cls: classes.get(built.vtable)! });
   }
   return out;
@@ -158,7 +190,13 @@ export const OAHU_EVENT_OBJECT: TableDef = {
     { key: 'gone2', offset: EO.gone2, type: 'u32', label: '消える条件の値 2' },
     { key: 'arg0', offset: 0x10, type: 'u32', label: '引数 +0x10 (出入口: 行き先のマップ)', hex: true },
     { key: 'arg1', offset: 0x14, type: 'u32', label: '引数 +0x14 (出入口: 行き先の地点)' },
-    ...Array.from({ length: 14 }, (_, i): FieldDef => ({ key: `arg${i + 2}`, offset: 0x18 + i * 4, type: 'u32', label: `引数 +0x${(0x18 + i * 4).toString(16).toUpperCase()}`, unsure: true })),
+    ...Array.from({ length: 14 }, (_, i): FieldDef => ({
+      key: `arg${i + 2}`,
+      offset: 0x18 + i * 4,
+      type: 'u32',
+      label: `引数 +0x${(0x18 + i * 4).toString(16).toUpperCase()}`,
+      unsure: true,
+    })),
     { key: 'slot', offset: EO.slot, type: 'u16', label: '状態の枠', note: '0xFFFF = 行番号 (推定)' },
     { key: 'model', offset: EO.model, type: 'u16', label: 'モデル (mapObject の行) / 範囲の半径' },
     { key: 'flags', offset: EO.flags, type: 'u16', label: '範囲の登録に渡す値', hex: true, unsure: true },

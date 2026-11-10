@@ -14,7 +14,9 @@ import { CIA, hasCia } from './env';
 
 describe.skipIf(!hasCia)('Kahara fixed encounter editor', () => {
   let dump: Dump;
-  beforeAll(async () => { dump = await openImage(Bun.file(CIA), 'cia'); });
+  beforeAll(async () => {
+    dump = await openImage(Bun.file(CIA), 'cia');
+  });
   async function fixture() {
     const game = await Game.load(dump);
     return { game, book: await game.monsters() };
@@ -80,7 +82,9 @@ describe.skipIf(!hasCia)('Kahara fixed encounter editor', () => {
     const row = master.table('monsterGroup.bin').row(142);
     const stubs = new Map<number, (m: ArmMachine) => number>();
     const m = new ArmMachine(dump.code, { stubs });
-    const group = m.alloc(0x30), rng = m.alloc(8), slot = m.alloc(0x1c);
+    const group = m.alloc(0x30),
+      rng = m.alloc(8),
+      slot = m.alloc(0x1c);
     row.forEach((b, i) => m.wb(group + i, b));
     // ArmMachine copies the options' Map by reference.
     stubs.set(0x30f984, () => group);

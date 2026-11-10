@@ -84,14 +84,19 @@ export interface ShopBookProps<T extends { item: number }> {
   unit?: string;
 }
 
-const sameList = <T,>(a: T[], b: T[], same: (x: T, y: T) => boolean): boolean => a.length === b.length && a.every((r, i) => same(r, b[i]!));
+const sameList = <T,>(a: T[], b: T[], same: (x: T, y: T) => boolean): boolean =>
+  a.length === b.length && a.every((r, i) => same(r, b[i]!));
 
 export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): ReactNode {
   const { shops, arg, texts, rows: rowsOf, original, item, columns, setRows, same } = props;
   const [, edited] = useEdits();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'changed'>('all');
-  const selected = useSticky(arg !== undefined && arg !== '' ? Number(arg) : undefined, (id) => shops.some((s) => s.id === id), () => shops[0]?.id ?? -1);
+  const selected = useSticky(
+    arg !== undefined && arg !== '' ? Number(arg) : undefined,
+    (id) => shops.some((s) => s.id === id),
+    () => shops[0]?.id ?? -1,
+  );
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   useActiveRow(list, selected);
@@ -109,7 +114,7 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
   /** First clerk message on one line (to tell the shops apart in the list). */
   const greeting = (s: ShopBookShop): string => {
     const id = s.messages?.find((m) => m) ?? 0;
-    return id && texts ? texts.preview(id, true) ?? '' : '';
+    return id && texts ? (texts.preview(id, true) ?? '') : '';
   };
   const matches = (s: ShopBookShop): boolean => {
     if (filter === 'changed' && !changed(s)) return false;
@@ -140,42 +145,68 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
     }
     return rs.length;
   };
-  const dropZone = setRows && shop ? {
-    onDragOver: (e: DragEvent) => {
-      if (!drag.current) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setDropAt(gap(e));
-    },
-    onDragLeave: (e: DragEvent) => {
-      if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropAt(-1);
-    },
-    onDrop: (e: DragEvent) => {
-      const d = drag.current;
-      if (!d) return;
-      e.preventDefault();
-      const at = gap(e);
-      endDrag();
-      const next = dropRows(stock, d, at, (id) => props.newRow(shop, id));
-      if (!sameList(next, stock, same)) edit(shop, next);
-    },
-  } : {};
+  const dropZone =
+    setRows && shop
+      ? {
+          onDragOver: (e: DragEvent) => {
+            if (!drag.current) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDropAt(gap(e));
+          },
+          onDragLeave: (e: DragEvent) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropAt(-1);
+          },
+          onDrop: (e: DragEvent) => {
+            const d = drag.current;
+            if (!d) return;
+            e.preventDefault();
+            const at = gap(e);
+            endDrag();
+            const next = dropRows(stock, d, at, (id) => props.newRow(shop, id));
+            if (!sameList(next, stock, same)) edit(shop, next);
+          },
+        }
+      : {};
 
   return (
     <div className="book">
       <div className="book-side">
         {props.side}
-        <ListFilter query={query} setQuery={setQuery} placeholder="アイテム名・店員の台詞で検索" filter={filter} setFilter={setFilter}
-          options={[['all', 'すべて'], ['changed', '変更した']]} />
+        <ListFilter
+          query={query}
+          setQuery={setQuery}
+          placeholder="アイテム名・店員の台詞で検索"
+          filter={filter}
+          setFilter={setFilter}
+          options={[
+            ['all', 'すべて'],
+            ['changed', '変更した'],
+          ]}
+        />
         <div className="book-list" ref={list}>
           <Count shown={shown.length} total={shops.length} unit={props.unit ?? '店'} />
           <table className="book-table">
-            <thead><tr><th>ID</th><th>{props.unit ?? '店'}</th><th>品数</th></tr></thead>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>{props.unit ?? '店'}</th>
+                <th>品数</th>
+              </tr>
+            </thead>
             <tbody>
               {shown.map((s) => (
-                <tr key={s.id} className={s.id === selected ? 'active' : ''} onClick={() => (location.hash = props.href(s.id))}>
+                <tr
+                  key={s.id}
+                  className={s.id === selected ? 'active' : ''}
+                  onClick={() => (location.hash = props.href(s.id))}
+                >
                   <td className="num muted">{s.id}</td>
-                  <td>{s.label}{changed(s) && <EditedMark text=" ●" />}<div className="muted small">{props.sub?.(s) ?? greeting(s)}</div></td>
+                  <td>
+                    {s.label}
+                    {changed(s) && <EditedMark text=" ●" />}
+                    <div className="muted small">{props.sub?.(s) ?? greeting(s)}</div>
+                  </td>
                   <td className="num">{rowsOf(s).length}</td>
                 </tr>
               ))}
@@ -195,7 +226,15 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
             <h3>品揃え</h3>
             <table ref={table} className={`enc-table shop-items${setRows ? ' editable' : ''}`}>
               <thead>
-                <tr>{setRows && <th></th>}<th>#</th><th>名前</th>{columns(shop).map((c) => <th key={c.head}>{c.head}</th>)}{setRows && <th></th>}</tr>
+                <tr>
+                  {setRows && <th></th>}
+                  <th>#</th>
+                  <th>名前</th>
+                  {columns(shop).map((c) => (
+                    <th key={c.head}>{c.head}</th>
+                  ))}
+                  {setRows && <th></th>}
+                </tr>
               </thead>
               <tbody>
                 {stock.map((r, i) => {
@@ -207,36 +246,76 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                     i === dragging ? 'dragging' : '',
                     i === dropAt ? 'drop-before' : '',
                     dropAt === stock.length && i === stock.length - 1 ? 'drop-after' : '',
-                  ].filter(Boolean).join(' ');
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
                   return (
                     <tr
                       key={`${i}:${r.item}`}
                       className={cls}
                       draggable={!!setRows}
-                      onDragStart={setRows ? (e) => {
-                        drag.current = { kind: 'row', index: i };
-                        e.dataTransfer.setData('text/plain', `row ${i}`); // Firefox needs data
-                        e.dataTransfer.effectAllowed = 'move';
-                        requestAnimationFrame(() => setDragging(i));
-                      } : undefined}
+                      onDragStart={
+                        setRows
+                          ? (e) => {
+                              drag.current = { kind: 'row', index: i };
+                              e.dataTransfer.setData('text/plain', `row ${i}`); // Firefox needs data
+                              e.dataTransfer.effectAllowed = 'move';
+                              requestAnimationFrame(() => setDragging(i));
+                            }
+                          : undefined
+                      }
                       onDragEnd={setRows ? endDrag : undefined}
                     >
-                      {setRows && <td className="drag-handle" title="ドラッグで並べ替え">⠿</td>}
+                      {setRows && (
+                        <td className="drag-handle" title="ドラッグで並べ替え">
+                          ⠿
+                        </td>
+                      )}
                       <td className="num muted">{i + 1}</td>
                       <td className="shop-item">
                         <Board
                           icon={it?.icon ?? <span className="photo item-badge item-kind-0">?</span>}
-                          name={it ? <>{it.name}{it.changed && <EditedMark title="アイテム図鑑で変更した" text=" ●" />}</> : <span className="error">ないアイテム</span>}
+                          name={
+                            it ? (
+                              <>
+                                {it.name}
+                                {it.changed && <EditedMark title="アイテム図鑑で変更した" text=" ●" />}
+                              </>
+                            ) : (
+                              <span className="error">ないアイテム</span>
+                            )
+                          }
                           id={r.item}
                           href={it?.href}
                           edited={!!setRows && !!before[i] && before[i]!.item !== r.item}
                           title={setRows ? 'ほかのアイテムに替える' : it?.name}
-                          onClick={setRows ? () => setReplacing(i) : undefined} />
+                          onClick={setRows ? () => setReplacing(i) : undefined}
+                        />
                       </td>
-                      {columns(shop).map((c) => <td key={c.head} className={c.className}>{c.cell(r, i, (next) => edit(shop, stock.map((x, j) => (j === i ? next : x))))}</td>)}
+                      {columns(shop).map((c) => (
+                        <td key={c.head} className={c.className}>
+                          {c.cell(r, i, (next) =>
+                            edit(
+                              shop,
+                              stock.map((x, j) => (j === i ? next : x)),
+                            ),
+                          )}
+                        </td>
+                      ))}
                       {setRows && (
                         <td className="shop-ops">
-                          <button className="small" title={`この${props.unit ?? '店'}から外す`} onClick={() => edit(shop, stock.filter((_, j) => j !== i))}>×</button>
+                          <button
+                            className="small"
+                            title={`この${props.unit ?? '店'}から外す`}
+                            onClick={() =>
+                              edit(
+                                shop,
+                                stock.filter((_, j) => j !== i),
+                              )
+                            }
+                          >
+                            ×
+                          </button>
                         </td>
                       )}
                     </tr>
@@ -244,35 +323,55 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
                 })}
               </tbody>
             </table>
-            {setRows && replacing >= 0 && replacing < stock.length && props.picker({
-              title: '替えるアイテムを選ぶ',
-              onClose: () => setReplacing(-1),
-              onPick: (id) => {
-                const at = replacing;
-                setReplacing(-1);
-                edit(shop, stock.map((r, j) => (j === at ? props.replaceItem?.(r, id) ?? props.newRow(shop, id) : r)));
-              },
-            })}
-            {setRows && <StockEditor {...props} shop={shop} stock={stock} changed={changed(shop)} edit={(next) => edit(shop, next)} />}
+            {setRows &&
+              replacing >= 0 &&
+              replacing < stock.length &&
+              props.picker({
+                title: '替えるアイテムを選ぶ',
+                onClose: () => setReplacing(-1),
+                onPick: (id) => {
+                  const at = replacing;
+                  setReplacing(-1);
+                  edit(
+                    shop,
+                    stock.map((r, j) => (j === at ? (props.replaceItem?.(r, id) ?? props.newRow(shop, id)) : r)),
+                  );
+                },
+              })}
+            {setRows && (
+              <StockEditor
+                {...props}
+                shop={shop}
+                stock={stock}
+                changed={changed(shop)}
+                edit={(next) => edit(shop, next)}
+              />
+            )}
             {props.stockNote && <div className="muted small">{props.stockNote}</div>}
             {shop.messages && texts && <h3>店員のメッセージ</h3>}
-            {!shop.messages || !texts ? null : shop.messages.length
-              ? <table className="enc-table">
-                  <tbody>
-                    <tr><th>欄</th><th>ID</th><th>本文</th></tr>
-                    {shop.messages.map((id, i) => {
-                      const units = id ? texts.units(id) : undefined;
-                      return (
-                        <tr key={i}>
-                          <td className="mono muted">{`+0x${((shop.messageOffset ?? 0x0c) + i * 4).toString(16).toUpperCase()}`}</td>
-                          <td className="mono">{id ? <a href={props.messageHref?.(id)}>{hexId(id)}</a> : '0'}</td>
-                          <td>{units && <MessagePreview texts={texts} units={units} />}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              : <div className="muted">Shop の表 (0xD5CEF800) に行がありません</div>}
+            {!shop.messages || !texts ? null : shop.messages.length ? (
+              <table className="enc-table">
+                <tbody>
+                  <tr>
+                    <th>欄</th>
+                    <th>ID</th>
+                    <th>本文</th>
+                  </tr>
+                  {shop.messages.map((id, i) => {
+                    const units = id ? texts.units(id) : undefined;
+                    return (
+                      <tr key={i}>
+                        <td className="mono muted">{`+0x${((shop.messageOffset ?? 0x0c) + i * 4).toString(16).toUpperCase()}`}</td>
+                        <td className="mono">{id ? <a href={props.messageHref?.(id)}>{hexId(id)}</a> : '0'}</td>
+                        <td>{units && <MessagePreview texts={texts} units={units} />}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="muted">Shop の表 (0xD5CEF800) に行がありません</div>
+            )}
             {props.footer?.(shop)}
           </>
         )}
@@ -282,15 +381,31 @@ export function ShopBook<T extends { item: number }>(props: ShopBookProps<T>): R
 }
 
 /** Adding an item, reverting the shop, and warnings about lists the game was not seen with. */
-function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, item, original, picker, newRow, warnings, exportNote, unit = '店' }: ShopBookProps<T> & {
-  shop: ShopBookShop; stock: T[]; changed: boolean; edit: (next: T[]) => void;
+function StockEditor<T extends { item: number }>({
+  shop,
+  stock,
+  changed,
+  edit,
+  item,
+  original,
+  picker,
+  newRow,
+  warnings,
+  exportNote,
+  unit = '店',
+}: ShopBookProps<T> & {
+  shop: ShopBookShop;
+  stock: T[];
+  changed: boolean;
+  edit: (next: T[]) => void;
 }): ReactNode {
   const [picking, setPicking] = useState(false);
   const notes = [...(warnings?.(shop, stock) ?? [])];
   if (stock.some((r) => !item(r.item))) notes.push('ないアイテムが入っています。');
   // the game lists an item as often as it is in ShopItem (RPG3's 幻影 shop sells only キズぐすり), so this is only a note
   const twice = [...new Set(stock.map((r) => r.item).filter((id, i, all) => all.indexOf(id) !== i && !item(id)?.many))];
-  if (twice.length) notes.push(`同一アイテムが既に陳列されています (${twice.map((id) => item(id)?.name ?? `#${id}`).join('、')})。`);
+  if (twice.length)
+    notes.push(`同一アイテムが既に陳列されています (${twice.map((id) => item(id)?.name ?? `#${id}`).join('、')})。`);
   return (
     <div>
       <div className="row">
@@ -299,12 +414,18 @@ function StockEditor<T extends { item: number }>({ shop, stock, changed, edit, i
         {changed && <button onClick={() => edit(original(shop))}>{`この${unit}の変更を元に戻す`}</button>}
       </div>
       {exportNote && <div className="muted small">{exportNote}</div>}
-      {notes.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
-      {picking && picker({
-        title: '追加するアイテムを選ぶ',
-        onClose: () => setPicking(false),
-        onPick: (id) => { setPicking(false); edit([...stock, newRow(shop, id)]); },
-      })}
+      {notes.map((w) => (
+        <div key={w} className="issue warn">{`⚠ ${w}`}</div>
+      ))}
+      {picking &&
+        picker({
+          title: '追加するアイテムを選ぶ',
+          onClose: () => setPicking(false),
+          onPick: (id) => {
+            setPicking(false);
+            edit([...stock, newRow(shop, id)]);
+          },
+        })}
     </div>
   );
 }

@@ -19,7 +19,12 @@ export async function giveMonsterLook(o: Opened, target: PortTitle, row: number,
     if (!s || !book) throw new Error('電波人間のRPG2 のモンスターを読めていません');
     if (!book.canNewLook()) throw new Error('モンスターのデザインはこれ以上増やせません (256 行まで)');
     const template = book.designBytes(book.monster(row)!.design);
-    const { entries, hashes, altIdle } = await portedEntries(look, target, template, await takenIn(target, (n) => s.game.dump.readRomfs(n)));
+    const { entries, hashes, altIdle } = await portedEntries(
+      look,
+      target,
+      template,
+      await takenIn(target, (n) => s.game.dump.readRomfs(n)),
+    );
     store.add(entries);
     forgetArchives(MONSTER_MODEL_ARCHIVE);
     const d = book.newLook(row, (r) => r.set(portedDesign(look, target, r, hashes)));
@@ -35,11 +40,17 @@ export async function giveMonsterLook(o: Opened, target: PortTitle, row: number,
   if (target === 'oahu') {
     const s = o.oahu;
     if (!s) throw new Error('電波人間のRPG3 を開いていません');
-    if ((await s.monsterModels.rows()) >= 0x100) throw new Error('モンスターのデザインはこれ以上増やせません (256 行まで)');
+    if ((await s.monsterModels.rows()) >= 0x100)
+      throw new Error('モンスターのデザインはこれ以上増やせません (256 行まで)');
     const mons = s.battle.monsters;
     const template = await s.monsterModels.rowBytes(mons.get(row, 'design'));
     if (!template) throw new Error('このモンスターのデザインの行がありません');
-    const { entries, hashes, altIdle } = await portedEntries(look, target, template, await takenIn(target, (n) => s.dump.readRomfs(n)));
+    const { entries, hashes, altIdle } = await portedEntries(
+      look,
+      target,
+      template,
+      await takenIn(target, (n) => s.dump.readRomfs(n)),
+    );
     store.add(entries);
     s.monsterModels.forgetModels();
     const d = await s.monsterModels.addRow(portedDesign(look, target, template, hashes));
@@ -57,7 +68,12 @@ export async function giveMonsterLook(o: Opened, target: PortTitle, row: number,
   if (designs.rows >= 0x400) throw new Error('モンスターのデザインはこれ以上増やせません (1024 行まで)');
   const current = params.bits(row, 0x00, 20, 10);
   const from = lanaiTemplate((i) => designs.row(i), designs.rows, current);
-  const { entries, hashes, altIdle } = await portedEntries(look, target, designs.row(from).slice(), await takenIn(target, (n) => s.dump.readRomfs(n)));
+  const { entries, hashes, altIdle } = await portedEntries(
+    look,
+    target,
+    designs.row(from).slice(),
+    await takenIn(target, (n) => s.dump.readRomfs(n)),
+  );
   store.add(entries);
   const d = designs.addRow(from);
   designs.setRow(d, portedDesign(look, target, designs.row(d).slice(), hashes));

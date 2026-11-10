@@ -3,7 +3,13 @@ import * as THREE from 'three';
 import { GsTable } from '../src/archive/gstable';
 import { AnimatedModel } from '../src/cgfx/player';
 import { ModelFactory } from '../src/cgfx/three';
-import { denpaAppearance, denpaFaceUv, denpaPreviewRow, denpaSourceLabel, OahuDenpaModels } from '../src/oahu/denpaModels';
+import {
+  denpaAppearance,
+  denpaFaceUv,
+  denpaPreviewRow,
+  denpaSourceLabel,
+  OahuDenpaModels,
+} from '../src/oahu/denpaModels';
 import { oahuCharaModel } from '../src/oahu/mapObjects';
 import { OahuMessages } from '../src/oahu/messages';
 import { OahuMaster } from '../src/oahu/master';
@@ -14,7 +20,9 @@ import { hasOahuBase, hasOahuUpdate, OAHU_BASE, OAHU_UPDATE } from './env';
 describe('RPG3 Denpa character selectors', () => {
   test('all three variants keep the kind and selector; invalid variants and unknown kinds have no model', () => {
     const bytes = new Uint8Array(0x40 + 3 * 0x14);
-    w32(bytes, 0, 3); w32(bytes, 4, 0x14); w32(bytes, 0x10, 0x40);
+    w32(bytes, 0, 3);
+    w32(bytes, 4, 0x14);
+    w32(bytes, 0x10, 0x40);
     const t = new GsTable(bytes);
     for (const kind of [2, 3] as const) {
       w32(t.row(1), 0, kind);
@@ -79,7 +87,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 Denpa ROM models', () => {
         expect(box.max.y).toBeLessThan(400);
         pose.update(20);
         expect(pose.boneMatrix('head')!.elements.every(Number.isFinite)).toBe(true);
-      } finally { factory.dispose(); }
+      } finally {
+        factory.dispose();
+      }
     }
   }, 60_000);
 
@@ -92,26 +102,40 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 Denpa ROM models', () => {
       const row = master.table('denpaCustom.bin').row(id);
       expect(messages.texts.preview(new DataView(row.buffer, row.byteOffset).getUint32(0, true), true)).toBe(name);
       const appearance = denpaAppearance(row);
-      expect(appearance).toMatchObject({ antennaGroup, head, body, bodyColor: color, face: 1, hair: 17, brow, eye, nose, mouth, hairColor });
+      expect(appearance).toMatchObject({
+        antennaGroup,
+        head,
+        body,
+        bodyColor: color,
+        face: 1,
+        hair: 17,
+        brow,
+        eye,
+        nose,
+        mouth,
+        hairColor,
+      });
       const { set, hash } = await models.load({ type: 'denpa', kind: 2, id });
       const model = set.models.get(hash)!;
-      expect(model.bones.some(b => b.name.endsWith(id === 79 ? '/antenna_01' : '/antenna_00'))).toBe(true);
-      const antenna = model.materials.find(m => m.name === 'Antenna_alp')!;
+      expect(model.bones.some((b) => b.name.endsWith(id === 79 ? '/antenna_01' : '/antenna_00'))).toBe(true);
+      const antenna = model.materials.find((m) => m.name === 'Antenna_alp')!;
       expect(antenna.units[0]!.translateU).toBeCloseTo(0);
       expect(antenna.units[0]!.translateV).toBe(0.25);
-      const faceMaterial = model.materials.find(m => m.name === 'Hair')!;
+      const faceMaterial = model.materials.find((m) => m.name === 'Hair')!;
       expect(faceMaterial.units[0]!.translateU).toBe(-0.5);
       expect(faceMaterial.units[0]!.translateV).toBe(0);
       const factory = new ModelFactory(set);
       try {
         const pose = new AnimatedModel(factory, hash);
         pose.select(null);
-        const headRoot = model.bones.find(b => /\/hum_head_/.test(b.name))!;
+        const headRoot = model.bones.find((b) => /\/hum_head_/.test(b.name))!;
         const actual = new THREE.Vector3().setFromMatrixScale(pose.boneMatrix(headRoot.name)!);
         const bodyRow = master.table('bodyData.bin').row(body);
         const expected = new DataView(bodyRow.buffer, bodyRow.byteOffset).getFloat32(0, true);
         for (const value of actual.toArray()) expect(value).toBeCloseTo(expected, 5);
-      } finally { factory.dispose(); }
+      } finally {
+        factory.dispose();
+      }
     }
   });
 
@@ -122,7 +146,14 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 Denpa ROM models', () => {
     const saved = oahuCharaModel(chara, 36, 0)!;
     expect(saved).toEqual({ type: 'denpa', kind: 3, id: 166 });
     if (fixed.type !== 'denpa' || saved.type !== 'denpa') throw new Error('not Denpa');
-    expect(denpaAppearance(master.table('denpaCustom.bin').row(115))).toMatchObject({ head: 0, body: 26, bodyColor: 4, face: 1, hair: 17, skinColor: 2 });
+    expect(denpaAppearance(master.table('denpaCustom.bin').row(115))).toMatchObject({
+      head: 0,
+      body: 26,
+      bodyColor: 4,
+      face: 1,
+      hair: 17,
+      skinColor: 2,
+    });
     expect((await models.load(saved)).set.models.get(0)!.name).toContain('/body0/color0');
     const base = await openImage(Bun.file(OAHU_BASE), 'base');
     const baseModels = new OahuDenpaModels(base, await OahuMaster.load(base));

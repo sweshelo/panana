@@ -28,7 +28,12 @@ export interface CodeProfile {
 }
 
 /** RPG2's code.bin. */
-export const KAHARA_CODE: CodeProfile = { textEnd: TEXT_END, msgFirst: MSG_FIRST, msgLast: MSG_LAST, complete: F_COMPLETE };
+export const KAHARA_CODE: CodeProfile = {
+  textEnd: TEXT_END,
+  msgFirst: MSG_FIRST,
+  msgLast: MSG_LAST,
+  complete: F_COMPLETE,
+};
 
 /**
  * "Make the action" (vtable[4] of the handler the map record builds) by section and record kind.
@@ -55,7 +60,10 @@ export function makeFunction(section: number, kind: number): number | null {
 }
 
 /** Every "make the action" function, tried for rows no map uses. */
-export const MAKE_FUNCTIONS = [0x1c0270, 0x1d1970, 0x1da97c, 0x1e1d3c, 0x1f0ff0, 0x1f41c8, 0x42b52c, 0x4300a4, 0x4362b4, 0x436400, 0x4365d4, 0x439bbc];
+export const MAKE_FUNCTIONS = [
+  0x1c0270, 0x1d1970, 0x1da97c, 0x1e1d3c, 0x1f0ff0, 0x1f41c8, 0x42b52c, 0x4300a4, 0x4362b4, 0x436400, 0x4365d4,
+  0x439bbc,
+];
 
 export interface BuiltAction {
   make: number;
@@ -68,18 +76,31 @@ export interface BuiltAction {
  * Run `make` for one EventObject row as if the game loaded it in `dungeon`; the class it builds, or null when it
  * builds nothing. `kind` is the kind the handler passes (EventObject +0x4D).
  */
-export function buildAction(code: Uint8Array, make: number, dungeon: number, row: number, eventRow: Uint8Array, kind = eventRow[0x4d] ?? 0x24): BuiltAction | null {
+export function buildAction(
+  code: Uint8Array,
+  make: number,
+  dungeon: number,
+  row: number,
+  eventRow: Uint8Array,
+  kind = eventRow[0x4d] ?? 0x24,
+): BuiltAction | null {
   const allocs: { depth: number; p: number }[] = [];
   const stubs = new Map([
-    [F_ALLOC, (m: ArmMachine) => {
-      const p = m.alloc(m.r[0]!);
-      allocs.push({ depth: m.depth, p });
-      return p;
-    }],
+    [
+      F_ALLOC,
+      (m: ArmMachine) => {
+        const p = m.alloc(m.r[0]!);
+        allocs.push({ depth: m.depth, p });
+        return p;
+      },
+    ],
     [F_DUNGEON, () => dungeon],
   ]);
   const m = new ArmMachine(code, { stubs, maxDepth: 4 });
-  const handler = m.alloc(0x40), ev = m.alloc(0x50), dun = m.alloc(0x400), arg = m.alloc(0x20);
+  const handler = m.alloc(0x40),
+    ev = m.alloc(0x50),
+    dun = m.alloc(0x400),
+    arg = m.alloc(0x20);
   eventRow.forEach((b, k) => m.wb(ev + k, b));
   m.write(handler + 4, row, 4);
   m.write(handler + 8, ev, 4);
@@ -96,7 +117,8 @@ export function buildAction(code: Uint8Array, make: number, dungeon: number, row
   }
   if (!vtable) return null;
   const pointers = new Set<number>();
-  for (const c of m.calls) if (c.target !== F_ALLOC) for (const v of c.args) if (v >= BASE && v < TEXT_END) pointers.add(v);
+  for (const c of m.calls)
+    if (c.target !== F_ALLOC) for (const v of c.args) if (v >= BASE && v < TEXT_END) pointers.add(v);
   for (const [a, v] of m.writes) if (a >= 0x30000000 && v >= BASE && v < TEXT_END) pointers.add(v);
   return { make, vtable, pointers: [...pointers] };
 }
@@ -160,7 +182,8 @@ export class CodeIndex {
 
   /** Start of the function that holds `a` (the last start at or before it). */
   startOf(a: number): number {
-    let lo = 0, hi = this.starts.length;
+    let lo = 0,
+      hi = this.starts.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (this.starts[mid]! <= a) lo = mid + 1;
@@ -171,7 +194,8 @@ export class CodeIndex {
 
   /** End of the function at `f` (the next start). */
   end(f: number): number {
-    let lo = 0, hi = this.starts.length;
+    let lo = 0,
+      hi = this.starts.length;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (this.starts[mid]! <= f) lo = mid + 1;
@@ -217,10 +241,16 @@ export class CodeIndex {
   }
 
   /** Messages and completed rows of the functions reachable from `roots` (callees with few callers only). */
-  reach(roots: number[]): { functions: number[]; messages: number[]; messageAt: [number, number][]; completes: number[] } {
+  reach(roots: number[]): {
+    functions: number[];
+    messages: number[];
+    messageAt: [number, number][];
+    completes: number[];
+  } {
     const seen = new Set<number>();
     const stack = [...roots];
-    const messages = new Set<number>(), completes = new Set<number>();
+    const messages = new Set<number>(),
+      completes = new Set<number>();
     const messageAt = new Map<number, number>();
     while (stack.length) {
       const f = stack.pop()!;
@@ -233,7 +263,12 @@ export class CodeIndex {
       for (const t of s.calls) if ((this.fanin.get(t) ?? 0) <= MAX_FANIN) stack.push(t);
     }
     const num = (a: number, b: number) => a - b;
-    return { functions: [...seen].sort(num), messages: [...messages].sort(num), messageAt: [...messageAt].sort(([a], [b]) => a - b), completes: [...completes].sort(num) };
+    return {
+      functions: [...seen].sort(num),
+      messages: [...messages].sort(num),
+      messageAt: [...messageAt].sort(([a], [b]) => a - b),
+      completes: [...completes].sort(num),
+    };
   }
 }
 
@@ -259,7 +294,12 @@ export interface ScriptClass {
  * Describe the classes: roots = vtable entries unique among `built` plus the callbacks the builds registered;
  * then the messages / completed rows reachable from them.
  */
-export function describeClasses(code: Uint8Array, built: BuiltAction[], others: Iterable<number> = [], profile: CodeProfile = KAHARA_CODE): Map<number, ScriptClass> {
+export function describeClasses(
+  code: Uint8Array,
+  built: BuiltAction[],
+  others: Iterable<number> = [],
+  profile: CodeProfile = KAHARA_CODE,
+): Map<number, ScriptClass> {
   const vtables = new Set(built.map((b) => b.vtable));
   // entries shared with any script class (`others`: the classes of the other rows) are not the class's own
   const all = new Set([...vtables, ...others]);
@@ -275,7 +315,8 @@ export function describeClasses(code: Uint8Array, built: BuiltAction[], others: 
   const out = new Map<number, ScriptClass>();
   for (const vt of vtables) {
     const roots = vtableEntries(code, vt).filter((e) => e >= BASE && e < profile.textEnd && shared.get(e) === 1);
-    for (const p of pointers.get(vt) ?? []) if (index.isStart(p) && (index.fanin.get(p) ?? 0) <= MAX_FANIN && !roots.includes(p)) roots.push(p);
+    for (const p of pointers.get(vt) ?? [])
+      if (index.isStart(p) && (index.fanin.get(p) ?? 0) <= MAX_FANIN && !roots.includes(p)) roots.push(p);
     const { functions, messages, messageAt, completes } = index.reach(roots);
     out.set(vt, { vtable: vt, roots, messages, messageAt, completes, ranges: functions.map((f) => [f, index.end(f)]) });
   }

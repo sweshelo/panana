@@ -12,7 +12,8 @@ const kept = new Map<string, Archive>();
 
 self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
   const req = ev.data;
-  const post = (msg: unknown, transfer: ArrayBuffer[] = []): void => (self as unknown as Worker).postMessage(msg, transfer);
+  const post = (msg: unknown, transfer: ArrayBuffer[] = []): void =>
+    (self as unknown as Worker).postMessage(msg, transfer);
   try {
     if (req.kind === 'tileset') {
       const t = buildTileset(req.modelArchive, req.textureArchive, req.textureEntry);
@@ -32,7 +33,8 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
     } else {
       const m = buildObjects(req.archive, req.entries);
       const transfer: ArrayBuffer[] = [];
-      for (const t of m.values()) for (const b of transferables(t as TilesetModels)) if (!transfer.includes(b)) transfer.push(b);
+      for (const t of m.values())
+        for (const b of transferables(t as TilesetModels)) if (!transfer.includes(b)) transfer.push(b);
       post({ id: req.id, result: m }, transfer);
     }
   } catch (err) {

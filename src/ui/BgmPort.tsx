@@ -18,18 +18,29 @@ function CandidatePlay({ opened, c }: { opened: Opened; c: BgmCandidate }): Reac
   const on = st.key === key;
   const error = st.error?.key === key ? st.error.message : null;
   return (
-    <button type="button" className={`play-button${on ? ' on' : ''}${error ? ' failed' : ''}`} title={error ? `再生できません: ${error}` : on ? '止める' : `${c.name} を試聴`}
+    <button
+      type="button"
+      className={`play-button${on ? ' on' : ''}${error ? ' failed' : ''}`}
+      title={error ? `再生できません: ${error}` : on ? '止める' : `${c.name} を試聴`}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        void soundPlayer.toggle(key, async () => (await rendererOf(opened, c.title)!).render(c.index, BGM_SECONDS, true));
-      }}>
+        void soundPlayer.toggle(key, async () =>
+          (await rendererOf(opened, c.title)!).render(c.index, BGM_SECONDS, true),
+        );
+      }}
+    >
       {on ? (st.loading ? '…' : '■') : '▶'}
     </button>
   );
 }
 
-export function BgmPortTab({ opened, session, query, onPicked }: {
+export function BgmPortTab({
+  opened,
+  session,
+  query,
+  onPicked,
+}: {
   opened: Opened;
   /** RPG2's session. */
   session: Session;
@@ -45,7 +56,13 @@ export function BgmPortTab({ opened, session, query, onPicked }: {
 
   if (list === undefined) return <div className="muted">ほかの作品の音を読んでいます…</div>;
   if (list instanceof Error) return <div className="error">{`ほかの作品の音を読めません: ${list.message}`}</div>;
-  if (!list.length) return <div className="muted">ほかの作品を開いていないか、移植できるストリームの曲がありません。上のバーの「ROM」から、ほかの作品の CIA を追加してください。</div>;
+  if (!list.length)
+    return (
+      <div className="muted">
+        ほかの作品を開いていないか、移植できるストリームの曲がありません。上のバーの「ROM」から、ほかの作品の CIA
+        を追加してください。
+      </div>
+    );
   const rows = ported instanceof Map ? ported : new Map<string, number>();
 
   const port = async (c: BgmCandidate): Promise<void> => {
@@ -76,19 +93,29 @@ export function BgmPortTab({ opened, session, query, onPicked }: {
         <div key={t}>
           <h3>{titleName(t)}</h3>
           <div className="sound-grid">
-            {shown.filter((c) => c.title === t).map((c) => {
-              const row = rows.get(`${c.title}/${c.name}`);
-              return (
-                <div key={c.index} role="button" tabIndex={0} aria-disabled={!!busy} className="sound-cell" title={row === undefined ? `${c.name} を移植して選ぶ` : `移植済みの行 ${row} を選ぶ`}
-                  onClick={() => void port(c)} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), void port(c))}>
-                  <CandidatePlay opened={opened} c={c} />
-                  <span className="sound-cell-text">
-                    <span className="mono sound-name">{c.name}</span>
-                    <span className="muted small">{`${c.kind === 'bgm' ? 'BGM' : 'ME (短い曲)'}${row === undefined ? '' : `・移植済み (#${row})`}`}</span>
-                  </span>
-                </div>
-              );
-            })}
+            {shown
+              .filter((c) => c.title === t)
+              .map((c) => {
+                const row = rows.get(`${c.title}/${c.name}`);
+                return (
+                  <div
+                    key={c.index}
+                    role="button"
+                    tabIndex={0}
+                    aria-disabled={!!busy}
+                    className="sound-cell"
+                    title={row === undefined ? `${c.name} を移植して選ぶ` : `移植済みの行 ${row} を選ぶ`}
+                    onClick={() => void port(c)}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), void port(c))}
+                  >
+                    <CandidatePlay opened={opened} c={c} />
+                    <span className="sound-cell-text">
+                      <span className="mono sound-name">{c.name}</span>
+                      <span className="muted small">{`${c.kind === 'bgm' ? 'BGM' : 'ME (短い曲)'}${row === undefined ? '' : `・移植済み (#${row})`}`}</span>
+                    </span>
+                  </div>
+                );
+              })}
           </div>
         </div>
       ))}

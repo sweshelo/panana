@@ -22,7 +22,8 @@ export function lanaiMonsterChanged(session: LanaiSession, row: number): boolean
   return !!s && session.need(s.table).rowChanged(s.row);
 }
 
-export const lanaiMonsterName = (session: LanaiSession, row: number): string => lanaiMonsters(session)[row]?.name || `(行 ${row})`;
+export const lanaiMonsterName = (session: LanaiSession, row: number): string =>
+  lanaiMonsters(session)[row]?.name || `(行 ${row})`;
 
 /** An action's text without the actor ("〈name〉は　ひっかいた！" → "ひっかいた！"); '' when it has none. */
 export function lanaiActionText(a: LanaiAction): string {
@@ -58,7 +59,12 @@ export interface LanaiSkillSlot {
 
 /** The skill slots up to the last one holding an action (an empty slot before it stays, as "なし"). */
 export function lanaiSkillSlots(session: LanaiSession, f: FieldAccess): LanaiSkillSlot[] {
-  const all = [1, 2, 3, 4, 5, 6].map((i) => ({ id: f.get(`skill${i}`), target: f.get(`target${i}`), lv: f.get(`slotLv${i}`), from: i - 1 }));
+  const all = [1, 2, 3, 4, 5, 6].map((i) => ({
+    id: f.get(`skill${i}`),
+    target: f.get(`target${i}`),
+    lv: f.get(`slotLv${i}`),
+    from: i - 1,
+  }));
   let n = all.length;
   while (n > 0 && isNoAction(session, all[n - 1]!.id)) n--;
   return all.slice(0, n);

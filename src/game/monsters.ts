@@ -34,16 +34,27 @@ export const MONSTER_MOTIONS: Record<string, string> = {
 
 /** Motion of a skill by animation number (actionData +0x1E → performance row +0x0A); the prefix of the CANM name. */
 export const SKILL_MOTION: Record<number, [string, string]> = {
-  0x43: ['歩く', '003_'], 0x44: ['走る', '004_'], 0x45: ['ワザ A', '005_'], 0x46: ['ワザ B', '006_'], 0x47: ['ワザ C', '007_'], 0x48: ['ワザ D', '010_'],
-  0x49: ['被弾', '008_'], 0x4a: ['倒れる', '009_'],
+  0x43: ['歩く', '003_'],
+  0x44: ['走る', '004_'],
+  0x45: ['ワザ A', '005_'],
+  0x46: ['ワザ B', '006_'],
+  0x47: ['ワザ C', '007_'],
+  0x48: ['ワザ D', '010_'],
+  0x49: ['被弾', '008_'],
+  0x4a: ['倒れる', '009_'],
 };
 
 /**
  * Drop classes by the 4-bit rate value: which party bonus (conditionData 80〜82, a percentage, 100 = none)
  * applies to it (FUN_00199c00 sorts the drops into 3 × 3 unit slots by rate; FUN_00283e68 rolls them).
  */
-export const DROP_CLASS: [number, string, number][] = [[0, 'おたから', 80], [10, 'レア', 81], [13, '激レア', 82]];
-export const dropClass = (rate: number): [number, string, number] => [...DROP_CLASS].reverse().find(([lo]) => rate >= lo)!;
+export const DROP_CLASS: [number, string, number][] = [
+  [0, 'おたから', 80],
+  [10, 'レア', 81],
+  [13, '激レア', 82],
+];
+export const dropClass = (rate: number): [number, string, number] =>
+  [...DROP_CLASS].reverse().find(([lo]) => rate >= lo)!;
 
 const bits = (w: number, lo: number, n: number, signed = false): number => {
   const v = Math.floor(w / 2 ** lo) % 2 ** n;
@@ -52,9 +63,17 @@ const bits = (w: number, lo: number, n: number, signed = false): number => {
 
 // Resistances in the order FUN_00199c00 stores them: (word, low bit) -> conditionData IDs 51..77.
 const RESIST_FIELDS: [number, number][] = [
-  ...[0, 5, 10, 15, 20, 25].map((b) => [5, b] as [number, number]), [6, 0], [6, 5],
-  ...[0, 5, 10, 15, 20, 25].map((b) => [7, b] as [number, number]), ...[0, 5, 10, 15, 20].map((b) => [8, b] as [number, number]),
-  [9, 20], [8, 25], [9, 0], [9, 5], [9, 10], [9, 15],
+  ...[0, 5, 10, 15, 20, 25].map((b) => [5, b] as [number, number]),
+  [6, 0],
+  [6, 5],
+  ...[0, 5, 10, 15, 20, 25].map((b) => [7, b] as [number, number]),
+  ...[0, 5, 10, 15, 20].map((b) => [8, b] as [number, number]),
+  [9, 20],
+  [8, 25],
+  [9, 0],
+  [9, 5],
+  [9, 10],
+  [9, 15],
 ];
 const RESIST_IDS = [51, 52, 53, 54, 55, 56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 73, 74, 75, 76, 77];
 /** Resistances range: -9..+9 in the tables; an element at +10 (or more) is void. The field is 5-bit signed. */
@@ -129,7 +148,9 @@ export const AI_MODE_NOTE = [
   '先頭の枠を確率 20/(19+n) で優先し、外れたら残りから均等に選ぶ',
   '枠を順番に使う',
   '2 枠ずつの組 (1-2, 3-4, 5-6) を順番に回し、組の中は均等に選ぶ',
-  '未確認', '未確認', '未確認',
+  '未確認',
+  '未確認',
+  '未確認',
 ];
 /** Target mode (w10 bit27-28). */
 export const TARGET_MODE = ['0', '1', '2 (集中攻撃のとき HP 最小を狙う)', '3'];
@@ -320,13 +341,18 @@ const MATES_OFFSET = 0x14;
 /** Slots of a monsterGroup row: leads (+0x00) and mates (+0x14); empty slots (no monster or weight 0) are left out. */
 export function decodeGroupSlots(r: Uint8Array): { leads: GroupSlot[]; mates: GroupSlot[] } {
   const slots = (o: number): GroupSlot[] =>
-    Array.from({ length: GROUP_SLOTS }, (_, k) => ({ monster: u16(r, o + k * 4), weight: r[o + k * 4 + 2]!, count: r[o + k * 4 + 3]! })).filter((s) => s.monster && s.weight);
+    Array.from({ length: GROUP_SLOTS }, (_, k) => ({
+      monster: u16(r, o + k * 4),
+      weight: r[o + k * 4 + 2]!,
+      count: r[o + k * 4 + 3]!,
+    })).filter((s) => s.monster && s.weight);
   return { leads: slots(0), mates: slots(MATES_OFFSET) };
 }
 
 /** Write the slots of a monsterGroup row (packed to the front, the rest zeroed); other bytes are kept. */
 export function encodeGroupSlots(r: Uint8Array, leads: GroupSlot[], mates: GroupSlot[]): void {
-  if (leads.length > GROUP_SLOTS || mates.length > GROUP_SLOTS) throw new Error(`群れの候補は ${GROUP_SLOTS} 個までです`);
+  if (leads.length > GROUP_SLOTS || mates.length > GROUP_SLOTS)
+    throw new Error(`群れの候補は ${GROUP_SLOTS} 個までです`);
   const put = (o: number, slots: GroupSlot[]): void => {
     for (let k = 0; k < GROUP_SLOTS; k++) {
       const s = slots[k];
@@ -380,7 +406,12 @@ export const MONSTER_ROWS_PATCH_SOURCE = `; 追加したモンスター: 行番�
 @0x3FCA10
   cmp r1, #0x100
 `;
-export const MONSTER_ROWS_PATCH: CodePatch = { id: MONSTER_ROWS_PATCH_ID, title: MONSTER_ROWS_PATCH_TITLE, source: MONSTER_ROWS_PATCH_SOURCE, enabled: true };
+export const MONSTER_ROWS_PATCH: CodePatch = {
+  id: MONSTER_ROWS_PATCH_ID,
+  title: MONSTER_ROWS_PATCH_TITLE,
+  source: MONSTER_ROWS_PATCH_SOURCE,
+  enabled: true,
+};
 
 /** What refers to a monster row: encounter groups, fixed battle groups (monsterFixGroup rows), next forms. */
 export interface MonsterUsers {
@@ -412,7 +443,10 @@ export class MonsterBook {
   /** conditionData names (+0x14) by ID. */
   readonly conditions: string[];
 
-  constructor(private readonly master: Master, designArchive: Uint8Array) {
+  constructor(
+    private readonly master: Master,
+    designArchive: Uint8Array,
+  ) {
     this.designArchive = parseArchive(designArchive);
     const f = findByName(this.designArchive, 'monsterDesign.bin');
     if (!f) throw new Error(`${MONSTER_DESIGN_ARCHIVE} に monsterDesign.bin がありません`);
@@ -472,8 +506,16 @@ export class MonsterBook {
       const des = w[19]! & 0xff;
       const d = des < design.rows ? design.row(des) : null;
       const f = (k: ParamKey): number => getField(r, PARAM[k]);
-      const dropSlots = ([['drop0', 'rate0'], ['drop1', 'rate1'], ['drop2', 'rate2']] as const).map(([d, rt]) => ({ item: f(d), rate: f(rt) }));
-      const drops = dropSlots.filter((d) => d.item).map((d) => ({ ...d, name: master.itemName(d.item) || `#${d.item}` }));
+      const dropSlots = (
+        [
+          ['drop0', 'rate0'],
+          ['drop1', 'rate1'],
+          ['drop2', 'rate2'],
+        ] as const
+      ).map(([d, rt]) => ({ item: f(d), rate: f(rt) }));
+      const drops = dropSlots
+        .filter((d) => d.item)
+        .map((d) => ({ ...d, name: master.itemName(d.item) || `#${d.item}` }));
       const skills = decodeSkills(r).map((a) => ({ action: a, name: skillName(a) }));
       this.monsters.push({
         row: i,
@@ -493,7 +535,11 @@ export class MonsterBook {
         dropSlots,
         skills,
         museum: bits(u16(r, 0x4a), 4, 8),
-        resist: RESIST_FIELDS.map(([wi, b], k) => ({ id: RESIST_IDS[k]!, name: condShort[RESIST_IDS[k]!] ?? '?', value: bits(w[wi]!, b, 5, true) })),
+        resist: RESIST_FIELDS.map(([wi, b], k) => ({
+          id: RESIST_IDS[k]!,
+          name: condShort[RESIST_IDS[k]!] ?? '?',
+          value: bits(w[wi]!, b, 5, true),
+        })),
         boss: bits(w[10]!, 8, 4),
         nextForm: r[0x50]!,
         line: msg(u16(r, 0x38)),
@@ -518,7 +564,12 @@ export class MonsterBook {
     this.groupByHash.clear();
     for (let i = 0; i < mg.rows; i++) {
       const r = mg.row(i);
-      const g: MonsterGroup = { row: i, hash: hashOf.get(i) ?? 0, ...decodeGroupSlots(r), extra: [...r.subarray(0x28, 0x2e)] };
+      const g: MonsterGroup = {
+        row: i,
+        hash: hashOf.get(i) ?? 0,
+        ...decodeGroupSlots(r),
+        extra: [...r.subarray(0x28, 0x2e)],
+      };
       this.groups.push(g);
       if (g.hash) this.groupByHash.set(g.hash, g);
     }
@@ -532,8 +583,10 @@ export class MonsterBook {
 
   /** Change formation weights and the fixed-table reference, preserving the candidates. */
   setGroupFormation(row: number, weights: number[], fix: number): void {
-    if (weights.length !== 5 || weights.some((v) => !Number.isInteger(v) || v < 0 || v > 255)) throw new Error('編成方式の重みは 0〜255 です');
-    if (!Number.isInteger(fix) || fix < 0 || fix >= this.master.table(FIX_TABLE).rows || fix > 255) throw new Error('固定編成の番号が範囲外です');
+    if (weights.length !== 5 || weights.some((v) => !Number.isInteger(v) || v < 0 || v > 255))
+      throw new Error('編成方式の重みは 0〜255 です');
+    if (!Number.isInteger(fix) || fix < 0 || fix >= this.master.table(FIX_TABLE).rows || fix > 255)
+      throw new Error('固定編成の番号が範囲外です');
     const r = this.master.table('monsterGroup.bin').row(row);
     r.set(weights, 0x28);
     r[0x2d] = fix;
@@ -550,7 +603,11 @@ export class MonsterBook {
     const current = g.extra[5] ?? 0;
     const next = { flags: this.groupFix(g)?.flags ?? FIX_FLAGS_BOSS, slots };
     let fix = current;
-    if (!fix || this.privateGroupFixes.get(row) !== fix || this.groups.some((other) => other.row !== row && other.extra[5] === fix)) {
+    if (
+      !fix ||
+      this.privateGroupFixes.get(row) !== fix ||
+      this.groups.some((other) => other.row !== row && other.extra[5] === fix)
+    ) {
       fix = addFixGroup(this.master, next);
       this.privateGroupFixes.set(row, fix);
     } else setFixGroup(this.master, fix, next);
@@ -559,12 +616,20 @@ export class MonsterBook {
 
   groupFixRoom(g: MonsterGroup): boolean {
     const fix = g.extra[5] ?? 0;
-    return (!!fix && this.privateGroupFixes.get(g.row) === fix && !this.groups.some((other) => other.row !== g.row && other.extra[5] === fix)) || this.master.table(FIX_TABLE).rows < 0x100;
+    return (
+      (!!fix &&
+        this.privateGroupFixes.get(g.row) === fix &&
+        !this.groups.some((other) => other.row !== g.row && other.extra[5] === fix)) ||
+      this.master.table(FIX_TABLE).rows < 0x100
+    );
   }
 
   groupFixChoices(): { row: number; slots: FixSlot[] }[] {
     const table = this.master.table(FIX_TABLE);
-    return Array.from({ length: Math.min(table.rows, 256) - 1 }, (_, i) => ({ row: i + 1, slots: decodeFix(table.row(i + 1)).slots }));
+    return Array.from({ length: Math.min(table.rows, 256) - 1 }, (_, i) => ({
+      row: i + 1,
+      slots: decodeFix(table.row(i + 1)).slots,
+    }));
   }
 
   /** Append a copy of a group as a new row (with a new hash in the index). Returns the new row number. */
@@ -600,7 +665,10 @@ export class MonsterBook {
   groupChanged(row: number): boolean {
     if (this.groupAdded(row)) return true;
     const o = this.master.originalRow('monsterGroup.bin', row);
-    return this.master.table('monsterGroup.bin').row(row).some((v, i) => v !== o[i]);
+    return this.master
+      .table('monsterGroup.bin')
+      .row(row)
+      .some((v, i) => v !== o[i]);
   }
 
   /** Put an original group row back as in the archive (added rows are kept). */
@@ -845,8 +913,6 @@ export class MonsterBook {
     setField(this.design.row(design), CHASE[key], value);
   }
 
-
-
   /** What refers to a row (groups, fixed battles and other rows' next form). */
   users(row: number): MonsterUsers {
     const fix = this.master.table(FIX_TABLE);
@@ -877,7 +943,8 @@ export class MonsterBook {
       const name = u32(d.row(design), 0);
       d.data = d.withRows(Array.from({ length: d.rows - 1 }, (_, i) => d.row(i).slice()));
       const texts = this.master.texts;
-      if (texts.isAdded(name) && !Array.from({ length: d.rows }, (_, i) => u32(d.row(i), 0)).includes(name)) texts.removeAdded(name);
+      if (texts.isAdded(name) && !Array.from({ length: d.rows }, (_, i) => u32(d.row(i), 0)).includes(name))
+        texts.removeAdded(name);
       this.reload();
     }
   }
@@ -946,7 +1013,7 @@ export class MonsterBook {
 
   /** Monster rows of a group (leads first), without duplicates. */
   groupMonsters(g: MonsterGroup): number[] {
-    const fixed = g.extra[0] ? this.groupFix(g)?.slots ?? [] : [];
+    const fixed = g.extra[0] ? (this.groupFix(g)?.slots ?? []) : [];
     return [...new Set([...g.leads, ...g.mates, ...fixed].map((s) => s.monster))];
   }
 }

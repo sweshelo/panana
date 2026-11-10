@@ -22,9 +22,39 @@ import { RomfsPage } from '../romfs/RomfsPage';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
 
-export const OAHU_PAGES = [['maps', 'マップ'], ['world', 'ワールドマップ'], ['events', 'イベント'], ['story', 'ストーリー'], ['flags', 'セーブの値'], ['messages', 'メッセージ'], ['items', 'アイテム'], ['shops', 'ショップ'], ['monsters', 'モンスター'], ['groups', '群れ'], ['actions', 'アクション'], ['sounds', 'BGM・効果音'], ['code', 'コード'], ['romfs', 'RomFS']] as const;
+export const OAHU_PAGES = [
+  ['maps', 'マップ'],
+  ['world', 'ワールドマップ'],
+  ['events', 'イベント'],
+  ['story', 'ストーリー'],
+  ['flags', 'セーブの値'],
+  ['messages', 'メッセージ'],
+  ['items', 'アイテム'],
+  ['shops', 'ショップ'],
+  ['monsters', 'モンスター'],
+  ['groups', '群れ'],
+  ['actions', 'アクション'],
+  ['sounds', 'BGM・効果音'],
+  ['code', 'コード'],
+  ['romfs', 'RomFS'],
+] as const;
 type OahuPage = (typeof OAHU_PAGES)[number][0];
-const TITLES: Record<OahuPage, string> = { maps: 'マップ', world: 'ワールドマップ', events: 'イベント一覧', story: 'ストーリー', flags: 'セーブの値', messages: 'メッセージ', items: 'アイテム図鑑', shops: 'ショップ', monsters: 'モンスター図鑑', groups: '群れ', actions: 'アクション', sounds: 'BGM・効果音', code: 'コード', romfs: 'RomFS' };
+const TITLES: Record<OahuPage, string> = {
+  maps: 'マップ',
+  world: 'ワールドマップ',
+  events: 'イベント一覧',
+  story: 'ストーリー',
+  flags: 'セーブの値',
+  messages: 'メッセージ',
+  items: 'アイテム図鑑',
+  shops: 'ショップ',
+  monsters: 'モンスター図鑑',
+  groups: '群れ',
+  actions: 'アクション',
+  sounds: 'BGM・効果音',
+  code: 'コード',
+  romfs: 'RomFS',
+};
 
 /** Asks for the Update's CIA and opens it. */
 function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void {
@@ -43,7 +73,11 @@ function pickUpdate(session: OahuSession, done: (s: OahuSession) => void): void 
   input.click();
 }
 
-export function OahuShell({ session, onSession, onBaseMod }: {
+export function OahuShell({
+  session,
+  onSession,
+  onBaseMod,
+}: {
   session: OahuSession;
   /** The session with the Update added (same edits). */
   onSession: (s: OahuSession) => void;
@@ -54,34 +88,88 @@ export function OahuShell({ session, onSession, onBaseMod }: {
   const [exporting, setExporting] = useState(false);
   const addUpdate = (): void => pickUpdate(session, onSession);
   const u = dump.update;
-  const context = useMemo((): FieldContext => ({ ...battleContext(session.battle), message: (id) => session.messages.texts.preview(id, true) }), [session]);
+  const context = useMemo(
+    (): FieldContext => ({
+      ...battleContext(session.battle),
+      message: (id) => session.messages.texts.preview(id, true),
+    }),
+    [session],
+  );
   return (
-    <PageShell pages={OAHU_PAGES} titles={TITLES} fallback="maps" brand="電波人間のRPG3 エディタ" titleSuffix=" (RPG3)" romLabel={dump.label}
+    <PageShell
+      pages={OAHU_PAGES}
+      titles={TITLES}
+      fallback="maps"
+      brand="電波人間のRPG3 エディタ"
+      titleSuffix=" (RPG3)"
+      romLabel={dump.label}
       actions={(closeMenu) => (
         <>
-          {u ? <span className="muted small" title={`patchList.bin: ${u.patched.join(', ')}`}>{`Update v${u.titleVersion ?? '?'}`}</span>
-            : <button title="書き出しと、code.bin を使う機能には Update が要ります" onClick={addUpdate}>Update を追加…</button>}
-          <button className="primary" title="変更したメッセージ・表・コードのパッチを LayeredFS 用の MOD として書き出します (Update が必要)" onClick={() => { closeMenu(); setExporting(true); }}>書き出し…</button>
+          {u ? (
+            <span
+              className="muted small"
+              title={`patchList.bin: ${u.patched.join(', ')}`}
+            >{`Update v${u.titleVersion ?? '?'}`}</span>
+          ) : (
+            <button title="書き出しと、code.bin を使う機能には Update が要ります" onClick={addUpdate}>
+              Update を追加…
+            </button>
+          )}
+          <button
+            className="primary"
+            title="変更したメッセージ・表・コードのパッチを LayeredFS 用の MOD として書き出します (Update が必要)"
+            onClick={() => {
+              closeMenu();
+              setExporting(true);
+            }}
+          >
+            書き出し…
+          </button>
           <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
-      render={(id, { arg: a }) => (
-        id === 'maps' ? <OahuMapPage session={session} arg={a} />
-          : id === 'world' ? <OahuWorldPage session={session} arg={a} />
-          : id === 'events' ? <OahuEventPage session={session} arg={a} onAddUpdate={addUpdate} />
-          : id === 'story' ? <OahuStoryPage session={session} arg={a} onAddUpdate={addUpdate} />
-          : id === 'flags' ? <OahuFlagPage session={session} arg={a} onAddUpdate={addUpdate} />
-          : id === 'messages' ? <OahuMessagePage session={session} arg={a} />
-          : id === 'items' ? <OahuItemPage session={session} arg={a} />
-          : id === 'shops' ? <OahuShopPage session={session} arg={a} />
-          : id === 'monsters' ? <OahuMonsterPage session={session} arg={a} />
-          : id === 'groups' ? <OahuGroupPage session={session} arg={a} />
-          : id === 'actions' ? <OahuActionPage session={session} arg={a} />
-          : id === 'sounds' ? <OahuSoundPage session={session} arg={a} />
-          : id === 'code' ? <OahuCodePage session={session} onAddUpdate={addUpdate} />
-          : <RomfsPage dump={dump} profile={oahuRomfsProfile} arg={a} context={context} />
-      )}>
-      {exporting && <OahuExportDialog session={session} onAddUpdate={() => { setExporting(false); addUpdate(); }} onClose={() => setExporting(false)} />}
+      render={(id, { arg: a }) =>
+        id === 'maps' ? (
+          <OahuMapPage session={session} arg={a} />
+        ) : id === 'world' ? (
+          <OahuWorldPage session={session} arg={a} />
+        ) : id === 'events' ? (
+          <OahuEventPage session={session} arg={a} onAddUpdate={addUpdate} />
+        ) : id === 'story' ? (
+          <OahuStoryPage session={session} arg={a} onAddUpdate={addUpdate} />
+        ) : id === 'flags' ? (
+          <OahuFlagPage session={session} arg={a} onAddUpdate={addUpdate} />
+        ) : id === 'messages' ? (
+          <OahuMessagePage session={session} arg={a} />
+        ) : id === 'items' ? (
+          <OahuItemPage session={session} arg={a} />
+        ) : id === 'shops' ? (
+          <OahuShopPage session={session} arg={a} />
+        ) : id === 'monsters' ? (
+          <OahuMonsterPage session={session} arg={a} />
+        ) : id === 'groups' ? (
+          <OahuGroupPage session={session} arg={a} />
+        ) : id === 'actions' ? (
+          <OahuActionPage session={session} arg={a} />
+        ) : id === 'sounds' ? (
+          <OahuSoundPage session={session} arg={a} />
+        ) : id === 'code' ? (
+          <OahuCodePage session={session} onAddUpdate={addUpdate} />
+        ) : (
+          <RomfsPage dump={dump} profile={oahuRomfsProfile} arg={a} context={context} />
+        )
+      }
+    >
+      {exporting && (
+        <OahuExportDialog
+          session={session}
+          onAddUpdate={() => {
+            setExporting(false);
+            addUpdate();
+          }}
+          onClose={() => setExporting(false)}
+        />
+      )}
     </PageShell>
   );
 }

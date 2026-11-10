@@ -17,14 +17,37 @@ describe('PlacedPickButton', () => {
     expect(html).toContain('セル (3.5, 4.5)');
   });
   test('shows extra choices and unknown values', () => {
-    expect(renderToString(<PlacedPickButton title="t" value={0} choices={choices} extra={[{ value: 0, label: '(なし)' }]} onChange={() => {}} />)).toContain('(なし)');
-    expect(renderToString(<PlacedPickButton title="t" value={99} choices={choices} missing={(v) => `${v} (行き先にない)`} onChange={() => {}} />)).toContain('99 (行き先にない)');
+    expect(
+      renderToString(
+        <PlacedPickButton
+          title="t"
+          value={0}
+          choices={choices}
+          extra={[{ value: 0, label: '(なし)' }]}
+          onChange={() => {}}
+        />,
+      ),
+    ).toContain('(なし)');
+    expect(
+      renderToString(
+        <PlacedPickButton
+          title="t"
+          value={99}
+          choices={choices}
+          missing={(v) => `${v} (行き先にない)`}
+          onChange={() => {}}
+        />,
+      ),
+    ).toContain('99 (行き先にない)');
   });
 });
 
 describe('monster models', () => {
   const book = {
-    monsters: [{ row: 1, design: 4 }, { row: 2, design: 9 }],
+    monsters: [
+      { row: 1, design: 4 },
+      { row: 2, design: 9 },
+    ],
     monster: (row: number) => book.monsters[row - 1],
     modelOf: (m: { design: number }) => (m.design === 9 ? { model: 0xabc, texture: 0xdef } : null),
   } as unknown as MonsterBook;

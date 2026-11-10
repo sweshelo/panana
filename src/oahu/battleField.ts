@@ -98,5 +98,8 @@ export function oahuResourceUsers(master: OahuMaster): Map<number, number[]> {
 export function oahuBattleBackgroundRef(dump: Dump, hash: number): ModelRef | null {
   if (!hash) return null;
   const archive = hex8(OAHU_BATTLE_BG_ARCHIVE).toUpperCase();
-  return { key: `oahu-btmp/${dump.title.key}/${hex8(hash)}`, load: async () => ({ set: await oahuObjectModels(dump, { archive, entry: hash >>> 0 }), hash: hash >>> 0 }) };
+  return {
+    key: `oahu-btmp/${dump.title.key}/${hex8(hash)}`,
+    load: async () => ({ set: await oahuObjectModels(dump, { archive, entry: hash >>> 0 }), hash: hash >>> 0 }),
+  };
 }

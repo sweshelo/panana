@@ -12,11 +12,15 @@ export const SAMPLE_RATE = 32728;
 const DEFAULT_TIMEBASE = 48;
 const ENV_STEP = 0.003;
 const SILENT = -92544;
-const ATTACK_TABLE = [0x00, 0x01, 0x05, 0x0e, 0x1a, 0x26, 0x33, 0x3f, 0x49, 0x54, 0x5c, 0x64, 0x6d, 0x74, 0x7b, 0x7f, 0x84, 0x89, 0x8f];
+const ATTACK_TABLE = [
+  0x00, 0x01, 0x05, 0x0e, 0x1a, 0x26, 0x33, 0x3f, 0x49, 0x54, 0x5c, 0x64, 0x6d, 0x74, 0x7b, 0x7f, 0x84, 0x89, 0x8f,
+];
 
 const attackRate = (a: number): number => (a >= 109 ? ATTACK_TABLE[127 - a]! : 255 - a);
-const fallRate = (r: number): number => (r >= 127 ? 0xffff : r === 126 ? 0x3c00 : r >= 50 ? 0x1e00 / (126 - r) : r * 2 + 1);
-const sustainLevel = (s: number): number => (s >= 127 ? 0 : s <= 0 ? SILENT : Math.max(SILENT, 128 * 40 * Math.log10(s / 127)));
+const fallRate = (r: number): number =>
+  r >= 127 ? 0xffff : r === 126 ? 0x3c00 : r >= 50 ? 0x1e00 / (126 - r) : r * 2 + 1;
+const sustainLevel = (s: number): number =>
+  s >= 127 ? 0 : s <= 0 ? SILENT : Math.max(SILENT, 128 * 40 * Math.log10(s / 127));
 /** 0-127 as the console's volume curve (squared). */
 const vol = (v: number): number => (Math.max(0, Math.min(127, v)) / 127) ** 2;
 
@@ -93,9 +97,27 @@ export interface SequenceSource {
 
 function newTrack(pc: number): Track {
   return {
-    pc, alive: true, wait: 0, program: 0, volume: new Ramp(127), volume2: new Ramp(127), pan: new Ramp(64), bend: new Ramp(0),
-    transpose: 0, bendRange: 2, noteWait: true, env: {}, modDepth: 0, modSpeed: 16, modType: 0, modRange: 1, modDelay: 0,
-    sweep: 0, calls: [], loops: [], cond: false,
+    pc,
+    alive: true,
+    wait: 0,
+    program: 0,
+    volume: new Ramp(127),
+    volume2: new Ramp(127),
+    pan: new Ramp(64),
+    bend: new Ramp(0),
+    transpose: 0,
+    bendRange: 2,
+    noteWait: true,
+    env: {},
+    modDepth: 0,
+    modSpeed: 16,
+    modType: 0,
+    modRange: 1,
+    modDelay: 0,
+    sweep: 0,
+    calls: [],
+    loops: [],
+    cond: false,
   };
 }
 
@@ -140,9 +162,22 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
     if (!wave) return;
     const env = { ...r.env, ...t.env };
     voices.push({
-      track: t, wave, pos: 0, key, root: r.root, gain: vol(velocity) * vol(r.volume), pan: r.pan - 64, pitch: r.pitch, env,
-      level: env.a >= 127 ? 0 : SILENT, phase: 'attack', hold: 0, left: length > 0 ? length : -1, age: 0,
-      sweep: t.sweep / 64, sweepTicks: length > 0 ? length : timebase,
+      track: t,
+      wave,
+      pos: 0,
+      key,
+      root: r.root,
+      gain: vol(velocity) * vol(r.volume),
+      pan: r.pan - 64,
+      pitch: r.pitch,
+      env,
+      level: env.a >= 127 ? 0 : SILENT,
+      phase: 'attack',
+      hold: 0,
+      left: length > 0 ? length : -1,
+      age: 0,
+      sweep: t.sweep / 64,
+      sweepTicks: length > 0 ? length : timebase,
     });
   }
 
@@ -257,12 +292,24 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
           if (!exec) break;
           const x = vars[n]!;
           const ops: Record<number, () => void> = {
-            0x80: () => (vars[n] = v), 0x81: () => (vars[n] = x + v), 0x82: () => (vars[n] = x - v), 0x83: () => (vars[n] = x * v),
-            0x84: () => (vars[n] = v ? Math.trunc(x / v) : x), 0x85: () => (vars[n] = v >= 0 ? x << v : x >> -v),
+            0x80: () => (vars[n] = v),
+            0x81: () => (vars[n] = x + v),
+            0x82: () => (vars[n] = x - v),
+            0x83: () => (vars[n] = x * v),
+            0x84: () => (vars[n] = v ? Math.trunc(x / v) : x),
+            0x85: () => (vars[n] = v >= 0 ? x << v : x >> -v),
             0x86: () => (vars[n] = Math.floor(Math.random() * (Math.abs(v) + 1)) * Math.sign(v || 1)),
-            0x87: () => (vars[n] = x & v), 0x88: () => (vars[n] = x | v), 0x89: () => (vars[n] = x ^ v), 0x8a: () => (vars[n] = ~v), 0x8b: () => (vars[n] = v ? x % v : x),
-            0x90: () => (t.cond = x === v), 0x91: () => (t.cond = x >= v), 0x92: () => (t.cond = x > v),
-            0x93: () => (t.cond = x <= v), 0x94: () => (t.cond = x < v), 0x95: () => (t.cond = x !== v),
+            0x87: () => (vars[n] = x & v),
+            0x88: () => (vars[n] = x | v),
+            0x89: () => (vars[n] = x ^ v),
+            0x8a: () => (vars[n] = ~v),
+            0x8b: () => (vars[n] = v ? x % v : x),
+            0x90: () => (t.cond = x === v),
+            0x91: () => (t.cond = x >= v),
+            0x92: () => (t.cond = x > v),
+            0x93: () => (t.cond = x <= v),
+            0x94: () => (t.cond = x < v),
+            0x95: () => (t.cond = x !== v),
           };
           ops[ext]?.();
           break;
@@ -274,25 +321,62 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
             const v = raw & 0xff;
             const s8 = (v << 24) >> 24;
             switch (cmd) {
-              case 0xc0: t.pan.set(v, time); break;
-              case 0xc1: t.volume.set(v, time); break;
-              case 0xc3: t.transpose = prefix === 0xa0 || prefix === 0xa1 ? raw : s8; break;
-              case 0xc4: t.bend.set(prefix === 0xa0 || prefix === 0xa1 || prefix === 0xa4 || prefix === 0xa5 ? raw : s8, time); break;
-              case 0xc5: t.bendRange = v; break;
-              case 0xc7: t.noteWait = v !== 0; break;
-              case 0xca: t.modDepth = v; break;
-              case 0xcb: t.modSpeed = v; break;
-              case 0xcc: t.modType = v; break;
-              case 0xcd: t.modRange = v; break;
-              case 0xd0: t.env.a = v; break;
-              case 0xd1: t.env.d = v; break;
-              case 0xd2: t.env.s = v; break;
-              case 0xd3: t.env.r = v; break;
-              case 0xb0: if (v) timebase = v; break;
-              case 0xb1: t.env.h = v; break;
-              case 0xd4: t.loops.push({ pc: t.pc, count: v }); break;
-              case 0xd5: t.volume2.set(v, time); break;
-              default: break; // priority, sends, filters, ... (not heard in a preview)
+              case 0xc0:
+                t.pan.set(v, time);
+                break;
+              case 0xc1:
+                t.volume.set(v, time);
+                break;
+              case 0xc3:
+                t.transpose = prefix === 0xa0 || prefix === 0xa1 ? raw : s8;
+                break;
+              case 0xc4:
+                t.bend.set(prefix === 0xa0 || prefix === 0xa1 || prefix === 0xa4 || prefix === 0xa5 ? raw : s8, time);
+                break;
+              case 0xc5:
+                t.bendRange = v;
+                break;
+              case 0xc7:
+                t.noteWait = v !== 0;
+                break;
+              case 0xca:
+                t.modDepth = v;
+                break;
+              case 0xcb:
+                t.modSpeed = v;
+                break;
+              case 0xcc:
+                t.modType = v;
+                break;
+              case 0xcd:
+                t.modRange = v;
+                break;
+              case 0xd0:
+                t.env.a = v;
+                break;
+              case 0xd1:
+                t.env.d = v;
+                break;
+              case 0xd2:
+                t.env.s = v;
+                break;
+              case 0xd3:
+                t.env.r = v;
+                break;
+              case 0xb0:
+                if (v) timebase = v;
+                break;
+              case 0xb1:
+                t.env.h = v;
+                break;
+              case 0xd4:
+                t.loops.push({ pc: t.pc, count: v });
+                break;
+              case 0xd5:
+                t.volume2.set(v, time);
+                break;
+              default:
+                break; // priority, sends, filters, ... (not heard in a preview)
             }
           } else if (cmd >= 0xe0 && cmd <= 0xe3) {
             const [v] = arg(() => {
@@ -387,7 +471,7 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
       const lfoOn = t.modDepth > 0 && v.age * tickSeconds * 1000 >= t.modDelay * 5;
       const lfo = lfoOn ? Math.sin(2 * Math.PI * t.modSpeed * 0.39 * v.age * tickSeconds) * (t.modDepth / 128) : 0;
       if (t.modType === 0) semis += lfo * t.modRange;
-      const ratio = ((v.wave.rate / SAMPLE_RATE) * v.pitch * 2 ** (semis / 12));
+      const ratio = (v.wave.rate / SAMPLE_RATE) * v.pitch * 2 ** (semis / 12);
       let amp = master * v.gain * vol(t.volume.value) * vol(t.volume2.value);
       if (t.modType === 1) amp *= 1 + lfo * 0.5;
       const pan = Math.max(-64, Math.min(63, t.pan.value - 64 + v.pan + (t.modType === 2 ? lfo * 64 : 0)));
@@ -437,5 +521,7 @@ export function renderSequence(src: SequenceSource, volume = 127, maxSeconds = 8
   let peak = 0;
   for (const c of channels) for (const x of c) peak = Math.max(peak, Math.abs(x));
   if (peak > 0.98) for (const c of channels) for (let i = 0; i < c.length; i++) c[i]! *= 0.98 / peak;
-  return looped ? { rate: SAMPLE_RATE, channels, loop: true, loopStart: looped[0], loopEnd: looped[1] } : { rate: SAMPLE_RATE, channels, loop: false, loopStart: 0, loopEnd: length };
+  return looped
+    ? { rate: SAMPLE_RATE, channels, loop: true, loopStart: looped[0], loopEnd: looped[1] }
+    : { rate: SAMPLE_RATE, channels, loop: false, loopStart: 0, loopEnd: length };
 }

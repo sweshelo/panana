@@ -60,9 +60,11 @@ function asOneSegment(o: Record<string, unknown>): Record<string, unknown> {
 /** Where `a` and `b` differ (floats compared as float32, quantization parameters only when both have them). */
 function semanticDiff(a: unknown, b: unknown, path = '', root = true): string | null {
   if (a === b) return null;
-  if (typeof a === 'number' && typeof b === 'number') return Math.fround(a) === Math.fround(b) || Math.abs(a - b) < 1e-5 ? null : `${path}: ${a} != ${b}`;
+  if (typeof a === 'number' && typeof b === 'number')
+    return Math.fround(a) === Math.fround(b) || Math.abs(a - b) < 1e-5 ? null : `${path}: ${a} != ${b}`;
   if (ArrayBuffer.isView(a) && ArrayBuffer.isView(b)) {
-    const x = a as unknown as ArrayLike<number>, y = b as unknown as ArrayLike<number>;
+    const x = a as unknown as ArrayLike<number>,
+      y = b as unknown as ArrayLike<number>;
     if (x.length !== y.length) return `${path}: length ${x.length} != ${y.length}`;
     for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return `${path}[${i}]: ${x[i]} != ${y[i]}`;
     return null;
@@ -77,7 +79,8 @@ function semanticDiff(a: unknown, b: unknown, path = '', root = true): string | 
     return null;
   }
   if (a && b && typeof a === 'object' && typeof b === 'object') {
-    const x = asOneSegment(a as Record<string, unknown>), y = asOneSegment(b as Record<string, unknown>);
+    const x = asOneSegment(a as Record<string, unknown>),
+      y = asOneSegment(b as Record<string, unknown>);
     for (const k of new Set([...Object.keys(x), ...Object.keys(y)])) {
       if (root && HEADER.has(k)) continue;
       if (QUANT.has(k) && (x[k] === undefined || y[k] === undefined)) continue;
@@ -112,18 +115,45 @@ function conversionDiff(b: Uint8Array): string | null {
 
 /** The renderer's reader sees the same models in both files. */
 function rendererDiff(a: Uint8Array, b: Uint8Array): string | null {
-  const x = parseBch(a), y = parseBch(b);
-  if (x.models.length !== y.models.length || x.textures.length !== y.textures.length) return 'parseBch: model / texture count';
-  for (let i = 0; i < x.textures.length; i++) if (x.textures[i]!.name !== y.textures[i]!.name || semanticDiff(x.textures[i]!.rgba, y.textures[i]!.rgba)) return `parseBch: texture ${i}`;
+  const x = parseBch(a),
+    y = parseBch(b);
+  if (x.models.length !== y.models.length || x.textures.length !== y.textures.length)
+    return 'parseBch: model / texture count';
+  for (let i = 0; i < x.textures.length; i++)
+    if (x.textures[i]!.name !== y.textures[i]!.name || semanticDiff(x.textures[i]!.rgba, y.textures[i]!.rgba))
+      return `parseBch: texture ${i}`;
   for (let m = 0; m < x.models.length; m++) {
-    const p = x.models[m]!, q = y.models[m]!;
-    if (p.meshes.length !== q.meshes.length || p.bones.length !== q.bones.length || p.materials.length !== q.materials.length) return `parseBch: model ${m} counts`;
-    if (p.animations.length !== q.animations.length || p.animations.some((an, k) => an.name !== q.animations[k]!.name || an.loop !== q.animations[k]!.loop)) return `parseBch: model ${m} animations`;
+    const p = x.models[m]!,
+      q = y.models[m]!;
+    if (
+      p.meshes.length !== q.meshes.length ||
+      p.bones.length !== q.bones.length ||
+      p.materials.length !== q.materials.length
+    )
+      return `parseBch: model ${m} counts`;
+    if (
+      p.animations.length !== q.animations.length ||
+      p.animations.some((an, k) => an.name !== q.animations[k]!.name || an.loop !== q.animations[k]!.loop)
+    )
+      return `parseBch: model ${m} animations`;
     for (let k = 0; k < p.meshes.length; k++) {
-      const d = semanticDiff(p.meshes[k]!.positions, q.meshes[k]!.positions) ?? semanticDiff(p.meshes[k]!.uvs, q.meshes[k]!.uvs) ?? semanticDiff(p.meshes[k]!.indices, q.meshes[k]!.indices);
+      const d =
+        semanticDiff(p.meshes[k]!.positions, q.meshes[k]!.positions) ??
+        semanticDiff(p.meshes[k]!.uvs, q.meshes[k]!.uvs) ??
+        semanticDiff(p.meshes[k]!.indices, q.meshes[k]!.indices);
       if (d) return `parseBch: model ${m} mesh ${k} ${d}`;
     }
-    const look = (t: (typeof p.materials)[number]): unknown => [t.textures, t.tev, t.tevBuffer, t.blendFunc, t.alphaFunc, t.depthTest, t.depthWrite, t.cull, t.units];
+    const look = (t: (typeof p.materials)[number]): unknown => [
+      t.textures,
+      t.tev,
+      t.tevBuffer,
+      t.blendFunc,
+      t.alphaFunc,
+      t.depthTest,
+      t.depthWrite,
+      t.cull,
+      t.units,
+    ];
     const d = semanticDiff(p.bones, q.bones) ?? semanticDiff(p.materials.map(look), q.materials.map(look));
     if (d) return `parseBch: model ${m} ${d}`;
   }
@@ -192,7 +222,12 @@ describe.skipIf(!hasOahuBase)('H3D port: RPG3 (version 8)', () => {
   }, 300_000);
 
   test('item BCHs (every 4th) convert to version 0x21 and back', () => {
-    expect(check(items.filter((_, i) => i % 4 === 0), conversionDiff)).toEqual([]);
+    expect(
+      check(
+        items.filter((_, i) => i % 4 === 0),
+        conversionDiff,
+      ),
+    ).toEqual([]);
   }, 300_000);
 
   test('a fresh layout (no read layout) reads back the same', () => {
@@ -201,7 +236,12 @@ describe.skipIf(!hasOahuBase)('H3D port: RPG3 (version 8)', () => {
       const out = writeH3D(h, { freshLayout: true });
       return semanticDiff(h, readH3D(out)) ?? rendererDiff(b, out);
     };
-    expect(check(monsters.filter((_, i) => i % 3 === 0), fresh)).toEqual([]);
+    expect(
+      check(
+        monsters.filter((_, i) => i % 3 === 0),
+        fresh,
+      ),
+    ).toEqual([]);
   }, 300_000);
 
   test('generated commands (as for a converted model) draw the same meshes', () => {
@@ -211,7 +251,12 @@ describe.skipIf(!hasOahuBase)('H3D port: RPG3 (version 8)', () => {
       stripCommands(h);
       return rendererDiff(b, writeH3D(h, TARGET[0x21]));
     };
-    expect(check(monsters.filter((_, i) => i % 3 === 0), generated)).toEqual([]);
+    expect(
+      check(
+        monsters.filter((_, i) => i % 3 === 0),
+        generated,
+      ),
+    ).toEqual([]);
   }, 300_000);
 
   test('a monster: enemy_03_01 (skeleton, smooth skinning, layer ranges, curves of one segment per v8 curve list)', () => {
@@ -228,7 +273,10 @@ describe.skipIf(!hasOahuBase)('H3D port: RPG3 (version 8)', () => {
 describe.skipIf(!hasLanai)('H3D port: RPG FREE! (version 0x21)', () => {
   let monsters: Bch[];
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     monsters = await bchs(dump, LANAI_MONSTERS);
   }, 120_000);
 
@@ -248,7 +296,12 @@ describe.skipIf(!hasLanai)('H3D port: RPG FREE! (version 0x21)', () => {
       const out = writeH3D(h, { freshLayout: true });
       return semanticDiff(h, readH3D(out)) ?? rendererDiff(b, out);
     };
-    expect(check(monsters.filter((_, i) => i % 3 === 0), fresh)).toEqual([]);
+    expect(
+      check(
+        monsters.filter((_, i) => i % 3 === 0),
+        fresh,
+      ),
+    ).toEqual([]);
   }, 300_000);
 
   test('generated commands (as for a converted model) draw the same meshes', () => {
@@ -257,6 +310,11 @@ describe.skipIf(!hasLanai)('H3D port: RPG FREE! (version 0x21)', () => {
       stripCommands(h);
       return rendererDiff(b, writeH3D(h, TARGET[8]));
     };
-    expect(check(monsters.filter((_, i) => i % 3 === 0), generated)).toEqual([]);
+    expect(
+      check(
+        monsters.filter((_, i) => i % 3 === 0),
+        generated,
+      ),
+    ).toEqual([]);
   }, 300_000);
 });

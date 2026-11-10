@@ -7,7 +7,20 @@ import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
 import { CAVE_START, applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import {
-  JP, JUMP_GAME_ROWS, JUMP_MAX_ROWS, JUMP_PATCH_ID, JUMP_ROW_SIZE, JUMP_TABLE, NEVER, jumpChecks, jumpPatch, jumpPatchSource, jumpRowOf, newJumpRow, setJumpFollows, type JumpCheck,
+  JP,
+  JUMP_GAME_ROWS,
+  JUMP_MAX_ROWS,
+  JUMP_PATCH_ID,
+  JUMP_ROW_SIZE,
+  JUMP_TABLE,
+  NEVER,
+  jumpChecks,
+  jumpPatch,
+  jumpPatchSource,
+  jumpRowOf,
+  newJumpRow,
+  setJumpFollows,
+  type JumpCheck,
 } from '../src/game/jumppoints';
 import { ENT, parseEntrances } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
@@ -16,7 +29,10 @@ import { CIA, hasCia } from './env';
 
 const BLANK = new Uint8Array(0x420000);
 const COND = 0x30b8a4;
-const rowsOf = (n: number, f: (i: number) => Uint8Array = (i) => newJumpRow(100 + i, 0x1000 + i, 0, false)): Uint8Array[] => Array.from({ length: n }, (_, i) => f(i));
+const rowsOf = (
+  n: number,
+  f: (i: number) => Uint8Array = (i) => newJumpRow(100 + i, 0x1000 + i, 0, false),
+): Uint8Array[] => Array.from({ length: n }, (_, i) => f(i));
 
 describe('jump rows', () => {
   test('fields, a new row, the Panana flag', () => {
@@ -42,8 +58,16 @@ describe('jump rows', () => {
     ev[0x00] = 0x0e;
     ev[0x4c] = 0x37;
     ev[0x04] = 1;
-    const ents = new Map([[0x102, 30], [0x103, 0], [0x105, 31]]);
-    const { checks, missing } = jumpChecks(rows, (_w, id) => (ents.has(id) ? { event: ents.get(id)! } : null), (_w, row) => (row === 30 ? ev : null));
+    const ents = new Map([
+      [0x102, 30],
+      [0x103, 0],
+      [0x105, 31],
+    ]);
+    const { checks, missing } = jumpChecks(
+      rows,
+      (_w, id) => (ents.has(id) ? { event: ents.get(id)! } : null),
+      (_w, row) => (row === 30 ? ev : null),
+    );
     expect(checks).toEqual([
       { row: 2, show: [0xb0, 0x0e], hide: [0x37, 1] },
       { row: 4, show: [NEVER, 0], hide: [0, 0] },
@@ -51,9 +75,15 @@ describe('jump rows', () => {
     expect(missing).toEqual([5]);
   });
 
-  test('no patch for the game\'s table as it is', () => {
+  test("no patch for the game's table as it is", () => {
     expect(jumpPatchSource(JUMP_GAME_ROWS, [])).toBeNull();
-    expect(jumpPatch(rowsOf(JUMP_GAME_ROWS), () => ({ event: 0 }), () => null).patch).toBeNull();
+    expect(
+      jumpPatch(
+        rowsOf(JUMP_GAME_ROWS),
+        () => ({ event: 0 }),
+        () => null,
+      ).patch,
+    ).toBeNull();
   });
 });
 
@@ -87,7 +117,9 @@ describe('jump patch (blank code.bin)', () => {
 
   test('a row is listed when its conditions let it; rows without a check always', () => {
     const listed = (row: number, holds: (type: number, value: number) => boolean): number => {
-      const m = new ArmMachine(code, { stubs: new Map([[COND, (mm: ArmMachine) => (mm.r[1]! < 0xb6 && holds(mm.r[1]!, mm.r[2]!) ? 1 : 0)]]) });
+      const m = new ArmMachine(code, {
+        stubs: new Map([[COND, (mm: ArmMachine) => (mm.r[1]! < 0xb6 && holds(mm.r[1]!, mm.r[2]!) ? 1 : 0)]]),
+      });
       return m.run(built.labels.get('jp_listed')!, [row]);
     };
     expect(listed(1, () => false)).toBe(1); // no check
@@ -110,11 +142,17 @@ describe('jump patch (blank code.bin)', () => {
  * FUN_00265f1c's loop of the ROM, run from 0x265F38 to 0x266078 (a `bx lr` put there): the list it makes from
  * `rows`, with `visited` rows' 0x65 bits set and FUN_0030b8a4 answering `holds`.
  */
-function listOf(code: Uint8Array, rows: Uint8Array[], visited: (row: number) => boolean, holds: (type: number, value: number) => boolean): number[][] {
+function listOf(
+  code: Uint8Array,
+  rows: Uint8Array[],
+  visited: (row: number) => boolean,
+  holds: (type: number, value: number) => boolean,
+): number[][] {
   // a trampoline at the bottom of the code cave: push {lr}; sub sp, #0xC (the function's frame: the loop uses [sp] and
   // [sp + 4]); b 0x265F38, and add sp, #0xC; pop {pc} at 0x266078 (the part run here has no prologue of its own)
   const c = code.slice();
-  const put = (a: number, w: number): void => c.set([w & 0xff, (w >>> 8) & 0xff, (w >>> 16) & 0xff, w >>> 24], a - 0x100000);
+  const put = (a: number, w: number): void =>
+    c.set([w & 0xff, (w >>> 8) & 0xff, (w >>> 16) & 0xff, w >>> 24], a - 0x100000);
   const TRAMP = CAVE_START; // patches fill the cave from the top
   put(TRAMP, 0xe52de004); // push {lr}
   put(TRAMP + 4, 0xe24dd00c); // sub sp, sp, #0xC
@@ -171,7 +209,10 @@ describe.skipIf(!hasCia)('jump patch on code.bin', () => {
 
   test('the rows lead to the entrances of W01 / W02', () => {
     const [w01, w02] = game.worldMaps();
-    const ids = [new Set(parseEntrances(game.db.get(w01!.sections[2]!)).map(ENT.id)), new Set(parseEntrances(game.db.get(w02!.sections[2]!)).map(ENT.id))];
+    const ids = [
+      new Set(parseEntrances(game.db.get(w01!.sections[2]!)).map(ENT.id)),
+      new Set(parseEntrances(game.db.get(w02!.sections[2]!)).map(ENT.id)),
+    ];
     for (let i = 1; i < rows.length; i++) expect(ids[JP.world(rows[i]!)]!.has(JP.id(rows[i]!))).toBe(true);
   });
 
@@ -183,7 +224,11 @@ describe.skipIf(!hasCia)('jump patch on code.bin', () => {
     expect(vanilla.length).toBe(JUMP_GAME_ROWS - 2);
     expect(vanilla[0]).toEqual([JP.name(rows[1]!), 0xa8654391, JP.id(rows[1]!)]);
 
-    const more = [...rows.map((r) => r.slice()), newJumpRow(0x2c00, 0xabcdef01, 0, true), newJumpRow(0x2c01, 0xabcdef02, 0, true)];
+    const more = [
+      ...rows.map((r) => r.slice()),
+      newJumpRow(0x2c00, 0xabcdef01, 0, true),
+      newJumpRow(0x2c01, 0xabcdef02, 0, true),
+    ];
     setJumpFollows(more[5]!, true);
     const checks: JumpCheck[] = [
       { row: 5, show: [0xb0, 0x0e], hide: [0, 0] },

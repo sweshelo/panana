@@ -44,11 +44,45 @@ class Bytes {
 const TEST_FUNC = [0, 1, 4, 7, 2, 3, 6, 5];
 /** PICALogicalOp -> GfxLogicalOp. */
 const LOGIC_OP = [0, 8, 6, 1, 3, 4, 2, 5, 10, 9, 11, 12, 13, 14, 7, 15];
-const GL_BLEND = [0x0000, 0x0001, 0x0300, 0x0301, 0x0306, 0x0307, 0x0302, 0x0303, 0x0304, 0x0305, 0x8001, 0x8002, 0x8003, 0x8004, 0x0308];
+const GL_BLEND = [
+  0x0000, 0x0001, 0x0300, 0x0301, 0x0306, 0x0307, 0x0302, 0x0303, 0x0304, 0x0305, 0x8001, 0x8002, 0x8003, 0x8004,
+  0x0308,
+];
 const GL_EQUATION = [0x8006, 0x800a, 0x800b, 0x8007, 0x8008];
-const GL_SRC: Record<number, number> = { 3: 0x84c0, 4: 0x84c1, 5: 0x84c2, 6: 0x84c3, 14: 0x8576, 0: 0x8577, 15: 0x8578, 13: 0x8579, 1: 0x6210, 2: 0x6211 };
-const GL_COLOR_OP: Record<number, number> = { 0: 0x300, 1: 0x301, 2: 0x302, 3: 0x303, 4: 0x8580, 8: 0x8581, 12: 0x8582, 5: 0x8583, 9: 0x8584, 13: 0x8585 };
-const GL_ALPHA_OP: Record<number, number> = { 0: 0x302, 1: 0x303, 2: 0x8580, 3: 0x8583, 4: 0x8581, 5: 0x8584, 6: 0x8582, 7: 0x8585 };
+const GL_SRC: Record<number, number> = {
+  3: 0x84c0,
+  4: 0x84c1,
+  5: 0x84c2,
+  6: 0x84c3,
+  14: 0x8576,
+  0: 0x8577,
+  15: 0x8578,
+  13: 0x8579,
+  1: 0x6210,
+  2: 0x6211,
+};
+const GL_COLOR_OP: Record<number, number> = {
+  0: 0x300,
+  1: 0x301,
+  2: 0x302,
+  3: 0x303,
+  4: 0x8580,
+  8: 0x8581,
+  12: 0x8582,
+  5: 0x8583,
+  9: 0x8584,
+  13: 0x8585,
+};
+const GL_ALPHA_OP: Record<number, number> = {
+  0: 0x302,
+  1: 0x303,
+  2: 0x8580,
+  3: 0x8583,
+  4: 0x8581,
+  5: 0x8584,
+  6: 0x8582,
+  7: 0x8585,
+};
 
 /** The alpha operands of a stage (bits 12, 16, 20 of the PICA operand word). */
 export function alphaOperands(s: GfxTexEnv['stage']): [number, number, number] {
@@ -57,8 +91,24 @@ export function alphaOperands(s: GfxTexEnv['stage']): [number, number, number] {
 
 function blendWords(b: Bytes, mode: number, f: PICABlendFunction): void {
   const w = (x: number[]): void => void x.forEach((v) => b.u32(v));
-  if (mode === 1) w([GL_BLEND[f.colorSrcFunc]!, GL_BLEND[f.colorDstFunc]!, GL_EQUATION[f.colorEquation]!, GL_BLEND[1]!, GL_BLEND[0]!, GL_EQUATION[0]!]);
-  else if (mode === 2) w([GL_BLEND[f.colorSrcFunc]!, GL_BLEND[f.colorDstFunc]!, GL_EQUATION[f.colorEquation]!, GL_BLEND[f.alphaSrcFunc]!, GL_BLEND[f.alphaDstFunc]!, GL_EQUATION[f.alphaEquation]!]);
+  if (mode === 1)
+    w([
+      GL_BLEND[f.colorSrcFunc]!,
+      GL_BLEND[f.colorDstFunc]!,
+      GL_EQUATION[f.colorEquation]!,
+      GL_BLEND[1]!,
+      GL_BLEND[0]!,
+      GL_EQUATION[0]!,
+    ]);
+  else if (mode === 2)
+    w([
+      GL_BLEND[f.colorSrcFunc]!,
+      GL_BLEND[f.colorDstFunc]!,
+      GL_EQUATION[f.colorEquation]!,
+      GL_BLEND[f.alphaSrcFunc]!,
+      GL_BLEND[f.alphaDstFunc]!,
+      GL_EQUATION[f.alphaEquation]!,
+    ]);
   else w([GL_BLEND[6]!, GL_BLEND[7]!, GL_EQUATION[0]!, GL_BLEND[1]!, GL_BLEND[0]!, GL_EQUATION[0]!]);
 }
 
@@ -89,24 +139,56 @@ export function setMaterialHashes(m: GfxMaterial): void {
   const wraps = [2, 3, 0, 1];
   for (const t of m.textureMappers) {
     if (!t || !t.sampler) continue;
-    ts.rgba(t.borderColor).u32(wraps[t.wrapU]!).u32(wraps[t.wrapV]!).f32(t.minLOD).f32(t.lodBias).u32(t.sampler.minFilter).u32(t.magFilter);
+    ts.rgba(t.borderColor)
+      .u32(wraps[t.wrapU]!)
+      .u32(wraps[t.wrapV]!)
+      .f32(t.minLOD)
+      .f32(t.lodBias)
+      .u32(t.sampler.minFilter)
+      .u32(t.magFilter);
   }
   m.textureSamplersHash = ts.hash();
   m.textureMappersHash = 0;
   const c = m.colors;
   const rgb = (v: readonly number[]): number[] => v.slice(0, 3);
-  m.materialColorsHash = new Bytes().floats(rgb(c.emissionF)).floats(rgb(c.ambientF)).f32(c.ambientF[3]).floats(c.diffuseF).floats(rgb(c.specular0F))
-    .floats(rgb(c.specular1F)).floats(c.constant0F).floats(c.constant1F).floats(c.constant2F).floats(c.constant3F).floats(c.constant4F).floats(c.constant5F).hash();
+  m.materialColorsHash = new Bytes()
+    .floats(rgb(c.emissionF))
+    .floats(rgb(c.ambientF))
+    .f32(c.ambientF[3])
+    .floats(c.diffuseF)
+    .floats(rgb(c.specular0F))
+    .floats(rgb(c.specular1F))
+    .floats(c.constant0F)
+    .floats(c.constant1F)
+    .floats(c.constant2F)
+    .floats(c.constant3F)
+    .floats(c.constant4F)
+    .floats(c.constant5F)
+    .hash();
   const r = m.rasterization;
-  m.rasterizationHash = new Bytes().u32(r.isPolygonOffsetEnabled ? 1 : 0).u32(r.faceCullingCommand).u32(0x00010040).f32(r.polygonOffsetUnit).hash();
+  m.rasterizationHash = new Bytes()
+    .u32(r.isPolygonOffsetEnabled ? 1 : 0)
+    .u32(r.faceCullingCommand)
+    .u32(0x00010040)
+    .f32(r.polygonOffsetUnit)
+    .hash();
   const fs = m.fragmentShader;
   if (fs) {
     const l = fs.lighting;
-    m.fragLightHash = new Bytes().u32(l.flags).u32(l.translucencyKind).u32(l.fresnelSelector).s32(l.bumpTexture).u32(l.bumpMode).u8(l.isBumpRenormalize ? 1 : 0)
-      .u8(m.flags & 1).hash();
+    m.fragLightHash = new Bytes()
+      .u32(l.flags)
+      .u32(l.translucencyKind)
+      .u32(l.fresnelSelector)
+      .s32(l.bumpTexture)
+      .u32(l.bumpMode)
+      .u8(l.isBumpRenormalize ? 1 : 0)
+      .u8(m.flags & 1)
+      .hash();
     const lb = new Bytes();
     const u = fs.luts;
-    if (u) for (const x of [u.reflecR, u.reflecG, u.reflecB, u.dist0, u.dist1, u.fresnel] as (GfxFragLightLUT | null)[]) if (x) lb.u32(x.input).u32(x.scale);
+    if (u)
+      for (const x of [u.reflecR, u.reflecG, u.reflecB, u.dist0, u.dist1, u.fresnel] as (GfxFragLightLUT | null)[])
+        if (x) lb.u32(x.input).u32(x.scale);
     m.fragLightLUTSampHash = lb.hash();
     const te = new Bytes().floats(fs.texEnvBufferColorF);
     fs.textureEnvironments.forEach((t, i) => {
@@ -120,13 +202,25 @@ export function setMaterialHashes(m: GfxMaterial): void {
     });
     m.textureEnvironmentHash = te.hash();
     const at = fs.alphaTest;
-    m.alphaTestHash = new Bytes().u8(at.enabled ? 1 : 0).u32(TEST_FUNC[at.function]!).f32(refFloat(at.reference)).hash();
+    m.alphaTestHash = new Bytes()
+      .u8(at.enabled ? 1 : 0)
+      .u32(TEST_FUNC[at.function]!)
+      .f32(refFloat(at.reference))
+      .hash();
   }
   m.fragLightLUTHash = 0;
   const fo = m.fragmentOperation;
-  const op = new Bytes().u32(fo.depth.flags).u32(TEST_FUNC[fo.depth.colorMask.depthFunc]!).u32(0).u32(fo.blend.mode).rgba(fo.blend.color);
+  const op = new Bytes()
+    .u32(fo.depth.flags)
+    .u32(TEST_FUNC[fo.depth.colorMask.depthFunc]!)
+    .u32(0)
+    .u32(fo.blend.mode)
+    .rgba(fo.blend.color);
   op.u32(fo.blend.mode === 3 ? LOGIC_OP[fo.blend.logicalOperation]! : 1);
   blendWords(op, fo.blend.mode, fo.blend.function);
-  for (const w of new PICACommandWriter().set(0x105, stencilTestTo(fo.stencil.test), 13).set(0x106, stencilOperationTo(fo.stencil.operation)).words) op.u32(w);
+  for (const w of new PICACommandWriter()
+    .set(0x105, stencilTestTo(fo.stencil.test), 13)
+    .set(0x106, stencilOperationTo(fo.stencil.operation)).words)
+    op.u32(w);
   m.fragOpHash = op.hash();
 }

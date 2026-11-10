@@ -32,7 +32,11 @@ export interface MessageUser {
 
 export const userKey = (u: { dungeon: number; row: number }): string => `${u.dungeon}.${u.row}`;
 
-export async function messageUsers(game: Game, docOf: (m: MapInfo) => MapDoc, events: (d: number) => Promise<EventTable | null>): Promise<MessageUser[]> {
+export async function messageUsers(
+  game: Game,
+  docOf: (m: MapInfo) => MapDoc,
+  events: (d: number) => Promise<EventTable | null>,
+): Promise<MessageUser[]> {
   const maps = new Map<number, MapInfo[]>();
   for (const m of game.editableMaps()) maps.set(m.dungeon, [...(maps.get(m.dungeon) ?? []), m]);
   const out: MessageUser[] = [];
@@ -55,7 +59,14 @@ export async function messageUsers(game: Game, docOf: (m: MapInfo) => MapDoc, ev
       const offs = EVENT_KINDS[kind]?.messages;
       if (!offs) continue;
       const r = ev.table.row(row);
-      out.push({ dungeon, row, kind, slots: offs.map((off) => ({ off, id: u32(r, off) })), model: ev.model(row), places: places.get(row) ?? [] });
+      out.push({
+        dungeon,
+        row,
+        kind,
+        slots: offs.map((off) => ({ off, id: u32(r, off) })),
+        model: ev.model(row),
+        places: places.get(row) ?? [],
+      });
     }
   }
   return out;
@@ -65,7 +76,6 @@ export async function messageUsers(game: Game, docOf: (m: MapInfo) => MapDoc, ev
 export function usersById(users: MessageUser[]): Map<number, MessageUser[]> {
   const out = new Map<number, MessageUser[]>();
   for (const u of users)
-    for (const id of new Set(u.slots.map((s) => s.id)))
-      if (id) out.set(id, [...(out.get(id) ?? []), u]);
+    for (const id of new Set(u.slots.map((s) => s.id))) if (id) out.set(id, [...(out.get(id) ?? []), u]);
   return out;
 }

@@ -9,10 +9,40 @@ import type { FieldContext } from '../game/tabledef';
 import { FieldCheck, FieldChoice, FieldNumber, StatFields, type FieldAccess } from '../ui/FieldEdit';
 import { InfoTip } from '../ui/InfoTip';
 import { BoardSlot, DropSlots, Heading, moveTo, ResistCharts, SkillSlots, type ResistChart } from '../ui/MonsterSlots';
-import { isNoAction, lanaiActionName, lanaiActionUsers, lanaiMonsterIndex, lanaiMonsterName, lanaiSetSkillSlots, lanaiSkillSlots, type LanaiSkillSlot } from './monsterBook';
-import { ACTION_SLOT_KEYS, ACTION_SLOT_OFFSETS, isTransform, lanaiAction, lanaiConditionLabel, lanaiCopyActionInto, lanaiCopyStats, LANAI_ACTION_COUNT_LABELS, LANAI_AI_LABELS, lanaiSetTransformTarget, lanaiStatsSharers, type LanaiStatsRef } from './monsterStats';
+import {
+  isNoAction,
+  lanaiActionName,
+  lanaiActionUsers,
+  lanaiMonsterIndex,
+  lanaiMonsterName,
+  lanaiSetSkillSlots,
+  lanaiSkillSlots,
+  type LanaiSkillSlot,
+} from './monsterBook';
+import {
+  ACTION_SLOT_KEYS,
+  ACTION_SLOT_OFFSETS,
+  isTransform,
+  lanaiAction,
+  lanaiConditionLabel,
+  lanaiCopyActionInto,
+  lanaiCopyStats,
+  LANAI_ACTION_COUNT_LABELS,
+  LANAI_AI_LABELS,
+  lanaiSetTransformTarget,
+  lanaiStatsSharers,
+  type LanaiStatsRef,
+} from './monsterStats';
 import { lanaiMonsterHref } from './monsters';
-import { lanaiActionEntry, lanaiActionSub, LanaiActionPicker, lanaiItemEntry, LanaiItemPicker, lanaiMonsterEntry, LanaiMonsterPicker } from './pickers';
+import {
+  lanaiActionEntry,
+  lanaiActionSub,
+  LanaiActionPicker,
+  lanaiItemEntry,
+  LanaiItemPicker,
+  lanaiMonsterEntry,
+  LanaiMonsterPicker,
+} from './pickers';
 import { lanaiActionHref } from './hrefs';
 import type { LanaiSession } from './session';
 import { LANAI_AUTO_SLOTS, LANAI_ELEMENTS, LANAI_RACES, LANAI_STATES } from './tables';
@@ -40,43 +70,103 @@ const SHARE_INFO = [
 ].join('\n');
 
 /** The warning that the ability row is shared, with the copy for this monster alone. */
-export function SharedStatsWarning({ session, monster, statsRef, edited }: { session: LanaiSession; monster: number; statsRef: LanaiStatsRef; edited: () => void }): ReactNode {
+export function SharedStatsWarning({
+  session,
+  monster,
+  statsRef,
+  edited,
+}: {
+  session: LanaiSession;
+  monster: number;
+  statsRef: LanaiStatsRef;
+  edited: () => void;
+}): ReactNode {
   const sharers = lanaiStatsSharers(session, statsRef);
   const others = sharers.filter((m) => m !== monster);
   if (!others.length) return null;
   return (
     <div className="warn-box">
       {`この能力の行は ${sharers.length} 体が共有しています。ここでの編集は ${sharers.length} 体すべてに影響します: `}
-      {others.slice(0, 12).map((m, i) => <span key={m}>{i ? '、' : ''}<a href={lanaiMonsterHref(m)}>{`#${m} ${lanaiMonsterName(session, m)}`}</a></span>)}
-      {others.length > 12 && ' ほか'}
-      {' '}
-      <button onClick={() => { lanaiCopyStats(session, monster); edited(); }}>複製して付け替え</button>
+      {others.slice(0, 12).map((m, i) => (
+        <span key={m}>
+          {i ? '、' : ''}
+          <a href={lanaiMonsterHref(m)}>{`#${m} ${lanaiMonsterName(session, m)}`}</a>
+        </span>
+      ))}
+      {others.length > 12 && ' ほか'}{' '}
+      <button
+        onClick={() => {
+          lanaiCopyStats(session, monster);
+          edited();
+        }}
+      >
+        複製して付け替え
+      </button>
       <InfoTip text={SHARE_INFO} />
     </div>
   );
 }
 
-const RANGE_INFO = '戦闘のたびに、2 つの値の間の一様乱数になります (左が下側、右が上側。FUN_002B4928)。見積もりの表示は上側を使います。';
+const RANGE_INFO =
+  '戦闘のたびに、2 つの値の間の一様乱数になります (左が下側、右が上側。FUN_002B4928)。見積もりの表示は上側を使います。';
 
 /** Level, the stat ranges, rewards, and the other numbers of the ability row (the races as check boxes). */
 export function LanaiStatFields({ f, edited }: Omit<LanaiEditProps, 'session'>): ReactNode {
   return (
-    <StatFields f={f} edited={edited} stats={[
-      { label: 'Lv', k: 'level' },
-      { label: 'HP', range: ['hpLo', 'hpHi'], info: RANGE_INFO },
-      { label: 'AP', range: ['apLo', 'apHi'] },
-      { label: 'こうげき', range: ['atkLo', 'atkHi'] },
-      { label: 'ぼうぎょ', range: ['defLo', 'defHi'] },
-      { label: 'すばやさ', range: ['spdLo', 'spdHi'] },
-      { label: '回避', node: <span><FieldNumber f={f} k="evade" edited={edited} max={100} />%</span> },
-      { label: '経験値', k: 'exp' },
-      { label: 'ゴールド', k: 'gold' },
-      { label: '狙われやすさ', k: 'weight', info: '対象を選ぶときの重み (標準 100、推定)' },
-      { label: 'ワザのレベル', k: 'skillLevel', info: 'ワザ枠ごとのレベルと大きいほうを使う (推定)' },
-      { label: 'ゆうわくのオーラ', node: <span><FieldNumber f={f} k="auraCharm" edited={edited} max={100} />%</span>, info: '毎ターン相手にゆうわくを付ける率 (推定)' },
-      { label: 'きょうふのオーラ', node: <span><FieldNumber f={f} k="auraFear" edited={edited} max={100} />%</span>, info: '毎ターン相手にきょうふを付ける率 (推定)' },
-      { label: '種族タイプ', wide: true, info: '+0x8D bit0-7、+0x8E bit0。1 体に複数立てられます (図鑑は 2 つまで表示)', node: <span className="inline-fields">{LANAI_RACES.map(([k, l]) => <FieldCheck key={k} f={f} k={`race_${k}`} edited={edited} label={l} />)}</span> },
-    ]} />
+    <StatFields
+      f={f}
+      edited={edited}
+      stats={[
+        { label: 'Lv', k: 'level' },
+        { label: 'HP', range: ['hpLo', 'hpHi'], info: RANGE_INFO },
+        { label: 'AP', range: ['apLo', 'apHi'] },
+        { label: 'こうげき', range: ['atkLo', 'atkHi'] },
+        { label: 'ぼうぎょ', range: ['defLo', 'defHi'] },
+        { label: 'すばやさ', range: ['spdLo', 'spdHi'] },
+        {
+          label: '回避',
+          node: (
+            <span>
+              <FieldNumber f={f} k="evade" edited={edited} max={100} />%
+            </span>
+          ),
+        },
+        { label: '経験値', k: 'exp' },
+        { label: 'ゴールド', k: 'gold' },
+        { label: '狙われやすさ', k: 'weight', info: '対象を選ぶときの重み (標準 100、推定)' },
+        { label: 'ワザのレベル', k: 'skillLevel', info: 'ワザ枠ごとのレベルと大きいほうを使う (推定)' },
+        {
+          label: 'ゆうわくのオーラ',
+          node: (
+            <span>
+              <FieldNumber f={f} k="auraCharm" edited={edited} max={100} />%
+            </span>
+          ),
+          info: '毎ターン相手にゆうわくを付ける率 (推定)',
+        },
+        {
+          label: 'きょうふのオーラ',
+          node: (
+            <span>
+              <FieldNumber f={f} k="auraFear" edited={edited} max={100} />%
+            </span>
+          ),
+          info: '毎ターン相手にきょうふを付ける率 (推定)',
+        },
+        {
+          label: '種族タイプ',
+          wide: true,
+          info: '+0x8D bit0-7、+0x8E bit0。1 体に複数立てられます (図鑑は 2 つまで表示)',
+          node: (
+            <span className="inline-fields">
+              {LANAI_RACES.map(([k, l]) => (
+                <FieldCheck key={k} f={f} k={`race_${k}`} edited={edited} label={l} />
+              ))}
+            </span>
+          ),
+        },
+      ]}
+    />
   );
 }
 
@@ -108,8 +198,19 @@ export function LanaiDropEditor({ session, f, edited }: LanaiEditProps): ReactNo
         };
       })}
       entry={(row) => lanaiItemEntry(session, items.rowId(row))}
-      setItem={(k, row) => { f.set(`drop${k + 1}`, row ? items.rowId(row) : 0); edited(); }}
-      picker={(k, current, pick, close) => <LanaiItemPicker session={session} title={`ドロップ ${k + 1} のアイテムを選ぶ`} current={current} onPick={pick} onClose={close} />}
+      setItem={(k, row) => {
+        f.set(`drop${k + 1}`, row ? items.rowId(row) : 0);
+        edited();
+      }}
+      picker={(k, current, pick, close) => (
+        <LanaiItemPicker
+          session={session}
+          title={`ドロップ ${k + 1} のアイテムを選ぶ`}
+          current={current}
+          onPick={pick}
+          onClose={close}
+        />
+      )}
     />
   );
 }
@@ -142,8 +243,10 @@ export function LanaiSkillEditor({ session, f, edited }: LanaiEditProps): ReactN
           edited: !f.added && f.original(`skill${i + 1}`) !== s.id,
           extra: (
             <span className="slot-cond">
-              {'狙い '}<FieldNumber f={f} k={`target${i + 1}`} edited={edited} />
-              {' Lv '}<FieldNumber f={f} k={`slotLv${i + 1}`} edited={edited} />
+              {'狙い '}
+              <FieldNumber f={f} k={`target${i + 1}`} edited={edited} />
+              {' Lv '}
+              <FieldNumber f={f} k={`slotLv${i + 1}`} edited={edited} />
             </span>
           ),
         }))}
@@ -154,18 +257,54 @@ export function LanaiSkillEditor({ session, f, edited }: LanaiEditProps): ReactN
           set(i < 0 ? [...now, { id, target: 1, lv: 0, from: -1 }] : now.map((s, j) => (j === i ? { ...s, id } : s)));
         }}
         remove={(i) => set(now.filter((_, j) => j !== i))}
-        picker={(current, pick, close) => <LanaiActionPicker session={session} current={current} onPick={pick} onClose={close} />}
+        picker={(current, pick, close) => (
+          <LanaiActionPicker session={session} current={current} onPick={pick} onClose={close} />
+        )}
         empty="ワザがありません。"
       />
       <table className="enc-table ai-fields">
         <tbody>
-          <tr><td className="with-info">AI<InfoTip text={AI_INFO} /></td>
-            <td><FieldChoice f={f} k="ai" edited={edited} options={LANAI_AI_LABELS.map((l, i) => [i, `${i}: ${l}`])} /></td></tr>
-          <tr><td className="with-info">使えないとき<InfoTip text="どのワザも狙いの対象がいないときに使う枠 (+0x9A bit3-5)" /></td>
-            <td><FieldChoice f={f} k="fallback" edited={edited} options={[0, 1, 2, 3, 4, 5].map((i) => [i, `${i + 1}: ${i < now.length ? lanaiActionName(session, now[i]!.id) : '(空)'}`])} />
-              {fallback >= now.length && <span className="muted small">{` 枠 ${fallback + 1} (空)`}</span>}</td></tr>
-          <tr><td className="with-info">行動回数<InfoTip text="1 ターンに行動する回数 (+0x90 bit0-2、能力 0x08)" /></td>
-            <td><FieldChoice f={f} k="actions" edited={edited} options={LANAI_ACTION_COUNT_LABELS.map((l, i) => [i, l])} /></td></tr>
+          <tr>
+            <td className="with-info">
+              AI
+              <InfoTip text={AI_INFO} />
+            </td>
+            <td>
+              <FieldChoice f={f} k="ai" edited={edited} options={LANAI_AI_LABELS.map((l, i) => [i, `${i}: ${l}`])} />
+            </td>
+          </tr>
+          <tr>
+            <td className="with-info">
+              使えないとき
+              <InfoTip text="どのワザも狙いの対象がいないときに使う枠 (+0x9A bit3-5)" />
+            </td>
+            <td>
+              <FieldChoice
+                f={f}
+                k="fallback"
+                edited={edited}
+                options={[0, 1, 2, 3, 4, 5].map((i) => [
+                  i,
+                  `${i + 1}: ${i < now.length ? lanaiActionName(session, now[i]!.id) : '(空)'}`,
+                ])}
+              />
+              {fallback >= now.length && <span className="muted small">{` 枠 ${fallback + 1} (空)`}</span>}
+            </td>
+          </tr>
+          <tr>
+            <td className="with-info">
+              行動回数
+              <InfoTip text="1 ターンに行動する回数 (+0x90 bit0-2、能力 0x08)" />
+            </td>
+            <td>
+              <FieldChoice
+                f={f}
+                k="actions"
+                edited={edited}
+                options={LANAI_ACTION_COUNT_LABELS.map((l, i) => [i, l])}
+              />
+            </td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -176,10 +315,20 @@ const CONDITIONS: [number, string][] = Array.from({ length: 0xc4 }, (_, v) => [v
 
 /** The slots of the other actions: key, label, the condition's key, and the explanation. */
 const OTHER_ACTIONS: { key: string; label: string; cond?: string; info: string }[] = [
-  { key: 'actBattle', label: '戦闘開始時', info: '+0x38 (能力 0x40)。戦闘の始めに使うアクション。状態を付けるもの (系統 9 / 10) が多い。' },
-  { key: 'actDefault', label: '既定の行動', info: '+0x3C。『つかまえる』で捕まえたこのモンスターを連れたユニットの既定の行動 (同じ種族の行のものを使います)。敵として出るときは使わず、「使えるワザがないときの枠」を使います (naauao lanai/monsters.md §3.2)。' },
+  {
+    key: 'actBattle',
+    label: '戦闘開始時',
+    info: '+0x38 (能力 0x40)。戦闘の始めに使うアクション。状態を付けるもの (系統 9 / 10) が多い。',
+  },
+  {
+    key: 'actDefault',
+    label: '既定の行動',
+    info: '+0x3C。『つかまえる』で捕まえたこのモンスターを連れたユニットの既定の行動 (同じ種族の行のものを使います)。敵として出るときは使わず、「使えるワザがないときの枠」を使います (naauao lanai/monsters.md §3.2)。',
+  },
   ...LANAI_AUTO_SLOTS.filter((s) => s.cond).map((s) => ({
-    key: s.key, label: s.label, cond: s.cond,
+    key: s.key,
+    label: s.label,
+    cond: s.cond,
     info: s.key.startsWith('actHit')
       ? `${s.key === 'actHit1' ? '+0x44 / 条件 +0x97' : '+0x48 / 条件 +0x98'} (能力 0x44)。攻撃を受けたときに条件を満たすと出るアクション。+0x14 下位 4 ビットが 5 か 8 のものだけ動きます。条件 0x65 (倒される一撃) で変身させるのが多い。`
       : `${s.key === 'actTurnStart' ? '+0x40 / 条件 +0x96 (能力 0x41)' : '+0x4C / 条件 +0x99 (能力 0x42)'}。ターンの${s.key === 'actTurnStart' ? '始め' : '終わり'}に条件を満たすと自動で使うアクション。`,
@@ -192,7 +341,12 @@ export function LanaiOtherActions({ session, f, edited }: LanaiEditProps): React
   const actions = session.need('ActionData');
   return (
     <section>
-      <Heading title="ほかのアクション" info={'AI が選ぶワザのほかに、戦闘開始・ターン開始/終了・被弾時に使うアクションと、その発動条件 (+0x96〜+0x99、naauao lanai/monsters.md §7)。\n「なし」は ActionData の行 0 (0x80000000)。'} />
+      <Heading
+        title="ほかのアクション"
+        info={
+          'AI が選ぶワザのほかに、戦闘開始・ターン開始/終了・被弾時に使うアクションと、その発動条件 (+0x96〜+0x99、naauao lanai/monsters.md §7)。\n「なし」は ActionData の行 0 (0x80000000)。'
+        }
+      />
       <table className="enc-table ai-fields">
         <tbody>
           {OTHER_ACTIONS.map(({ key, label, cond, info }) => {
@@ -200,12 +354,29 @@ export function LanaiOtherActions({ session, f, edited }: LanaiEditProps): React
             const none = isNoAction(session, v);
             return (
               <tr key={key}>
-                <td className="with-info">{label}<InfoTip text={info} /></td>
+                <td className="with-info">
+                  {label}
+                  <InfoTip text={info} />
+                </td>
                 <td>
-                  <BoardSlot entry={none ? null : lanaiActionEntry(session, v)} id={actions.find(v)} sub={lanaiActionSub(session, v)}
-                    edited={!f.added && v !== f.original(key)} title="アクションを選び直す" emptyLabel="＋ アクション"
-                    onPick={() => setPicking(key)} onClear={() => { f.set(key, NO_ACTION); edited(); }} />
-                  {cond && <div className="slot-cond">条件 <FieldChoice f={f} k={cond} edited={edited} options={CONDITIONS} /></div>}
+                  <BoardSlot
+                    entry={none ? null : lanaiActionEntry(session, v)}
+                    id={actions.find(v)}
+                    sub={lanaiActionSub(session, v)}
+                    edited={!f.added && v !== f.original(key)}
+                    title="アクションを選び直す"
+                    emptyLabel="＋ アクション"
+                    onPick={() => setPicking(key)}
+                    onClear={() => {
+                      f.set(key, NO_ACTION);
+                      edited();
+                    }}
+                  />
+                  {cond && (
+                    <div className="slot-cond">
+                      条件 <FieldChoice f={f} k={cond} edited={edited} options={CONDITIONS} />
+                    </div>
+                  )}
                 </td>
               </tr>
             );
@@ -213,8 +384,18 @@ export function LanaiOtherActions({ session, f, edited }: LanaiEditProps): React
         </tbody>
       </table>
       {picking && (
-        <LanaiActionPicker session={session} title="アクションを選ぶ" current={actions.find(f.get(picking))} onClose={() => setPicking(null)}
-          onPick={(row) => { const k = picking; setPicking(null); f.set(k, actions.rowId(row)); edited(); }} />
+        <LanaiActionPicker
+          session={session}
+          title="アクションを選ぶ"
+          current={actions.find(f.get(picking))}
+          onClose={() => setPicking(null)}
+          onPick={(row) => {
+            const k = picking;
+            setPicking(null);
+            f.set(k, actions.rowId(row));
+            edited();
+          }}
+        />
       )}
     </section>
   );
@@ -242,11 +423,21 @@ function slotWhen(f: FieldAccess, offset: number): string {
 }
 
 /** The transformations from this monster (the slots with an action of system 29 / 30) and into it. */
-export function LanaiTransforms({ session, monster, statsRef, f, edited }: LanaiEditProps & { monster: number; statsRef: LanaiStatsRef }): ReactNode {
+export function LanaiTransforms({
+  session,
+  monster,
+  statsRef,
+  f,
+  edited,
+}: LanaiEditProps & { monster: number; statsRef: LanaiStatsRef }): ReactNode {
   const [picking, setPicking] = useState<number | 'morph30' | null>(null);
   const params = session.need('MonsterParameter');
   const actions = session.need('ActionData');
-  const slots = ACTION_SLOT_KEYS.map((k, i) => ({ k, offset: ACTION_SLOT_OFFSETS[i]!, action: lanaiAction(session, f.get(k)) })).filter((s) => isTransform(s.action));
+  const slots = ACTION_SLOT_KEYS.map((k, i) => ({
+    k,
+    offset: ACTION_SLOT_OFFSETS[i]!,
+    action: lanaiAction(session, f.get(k)),
+  })).filter((s) => isTransform(s.action));
   const into = (lanaiMonsterIndex(session).into.get(monster) ?? []).filter((x) => x.use.monster !== monster);
   const morph = f.get('morph30');
   const morphRow = morph ? params.find(morph) : -1;
@@ -266,16 +457,34 @@ export function LanaiTransforms({ session, monster, statsRef, f, edited }: Lanai
                 <td>{slotLabel(s.offset)}</td>
                 <td>
                   <div>
-                    <a href={lanaiActionHref(a.row)}>{`#${a.row}`}</a>{` ${lanaiActionName(session, a.id)}`}
+                    <a href={lanaiActionHref(a.row)}>{`#${a.row}`}</a>
+                    {` ${lanaiActionName(session, a.id)}`}
                     <span className="muted">{` (系統 ${a.system}・${slotWhen(f, s.offset)})${orig ? '' : ' 追加したアクション'} → `}</span>
                   </div>
-                  <BoardSlot entry={target >= 0 ? lanaiMonsterEntry(session, target) : null} id={target >= 0 ? target : undefined}
-                    edited={!!orig && actions.rowChanged(a.row)} title="変身先を選び直す" emptyLabel={`＋ 変身先 (0x${a.target.toString(16).toUpperCase()} は表にない)`}
-                    onPick={() => setPicking(a.id)} />
+                  <BoardSlot
+                    entry={target >= 0 ? lanaiMonsterEntry(session, target) : null}
+                    id={target >= 0 ? target : undefined}
+                    edited={!!orig && actions.rowChanged(a.row)}
+                    title="変身先を選び直す"
+                    emptyLabel={`＋ 変身先 (0x${a.target.toString(16).toUpperCase()} は表にない)`}
+                    onPick={() => setPicking(a.id)}
+                  />
                   {users.length > 0 && (
                     <div className="warn-box">
-                      {`このアクションはほかに ${users.length} 体 (${users.slice(0, 8).map((m) => `#${m} ${lanaiMonsterName(session, m)}`).join('、')}${users.length > 8 ? ' ほか' : ''}) が使っています。変身先の変更はすべてに影響します。 `}
-                      <button onClick={() => { lanaiCopyActionInto(session, a.id, statsRef, s.offset); edited(); }}>アクションを複製してこの枠に付け替え</button>
+                      {`このアクションはほかに ${users.length} 体 (${users
+                        .slice(0, 8)
+                        .map((m) => `#${m} ${lanaiMonsterName(session, m)}`)
+                        .join(
+                          '、',
+                        )}${users.length > 8 ? ' ほか' : ''}) が使っています。変身先の変更はすべてに影響します。 `}
+                      <button
+                        onClick={() => {
+                          lanaiCopyActionInto(session, a.id, statsRef, s.offset);
+                          edited();
+                        }}
+                      >
+                        アクションを複製してこの枠に付け替え
+                      </button>
                     </div>
                   )}
                 </td>
@@ -284,24 +493,49 @@ export function LanaiTransforms({ session, monster, statsRef, f, edited }: Lanai
           })}
           {(morph !== 0 || slots.some((s) => s.action!.system === 30)) && (
             <tr>
-              <td className="with-info">変身の先読み<InfoTip text={'能力の行 +0x50。系統 30 の変身先を戦闘開始時に読み込みます (モデルの入れ替えと推定、RPG3 の「変身の見た目」に当たる)。変身先と同じにしておきます (0 = なし)。'} /></td>
+              <td className="with-info">
+                変身の先読み
+                <InfoTip
+                  text={
+                    '能力の行 +0x50。系統 30 の変身先を戦闘開始時に読み込みます (モデルの入れ替えと推定、RPG3 の「変身の見た目」に当たる)。変身先と同じにしておきます (0 = なし)。'
+                  }
+                />
+              </td>
               <td>
-                <BoardSlot entry={morphRow >= 0 ? lanaiMonsterEntry(session, morphRow) : null} id={morphRow >= 0 ? morphRow : undefined}
-                  edited={!f.added && morph !== f.original('morph30')} title="モンスターを選び直す" emptyLabel="＋ モンスター"
-                  onPick={() => setPicking('morph30')} onClear={() => { f.set('morph30', 0); edited(); }} />
+                <BoardSlot
+                  entry={morphRow >= 0 ? lanaiMonsterEntry(session, morphRow) : null}
+                  id={morphRow >= 0 ? morphRow : undefined}
+                  edited={!f.added && morph !== f.original('morph30')}
+                  title="モンスターを選び直す"
+                  emptyLabel="＋ モンスター"
+                  onPick={() => setPicking('morph30')}
+                  onClear={() => {
+                    f.set('morph30', 0);
+                    edited();
+                  }}
+                />
               </td>
             </tr>
           )}
           {into.map(({ action, use }, i) => (
             <tr key={`i${i}`}>
               <td>この形態になる</td>
-              <td><a href={lanaiMonsterHref(use.monster)}>{`${lanaiMonsterName(session, use.monster)} (#${use.monster})`}</a>{` の${slotLabel(use.offset)} `}<a href={lanaiActionHref(action.row)}>{`#${action.row}`}</a>{` ${lanaiActionName(session, action.id)}`}</td>
+              <td>
+                <a
+                  href={lanaiMonsterHref(use.monster)}
+                >{`${lanaiMonsterName(session, use.monster)} (#${use.monster})`}</a>
+                {` の${slotLabel(use.offset)} `}
+                <a href={lanaiActionHref(action.row)}>{`#${action.row}`}</a>
+                {` ${lanaiActionName(session, action.id)}`}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       {picking !== null && (
-        <LanaiMonsterPicker session={session} title={picking === 'morph30' ? '先読みするモンスターを選ぶ' : '変身先を選ぶ'}
+        <LanaiMonsterPicker
+          session={session}
+          title={picking === 'morph30' ? '先読みするモンスターを選ぶ' : '変身先を選ぶ'}
           current={picking === 'morph30' ? morphRow : params.find(lanaiAction(session, picking)?.target ?? -1)}
           onClose={() => setPicking(null)}
           onPick={(row) => {
@@ -310,7 +544,8 @@ export function LanaiTransforms({ session, monster, statsRef, f, edited }: Lanai
             if (p === 'morph30') f.set('morph30', params.rowId(row));
             else lanaiSetTransformTarget(session, p, row, statsRef);
             edited();
-          }} />
+          }}
+        />
       )}
     </section>
   );
@@ -336,8 +571,17 @@ export function LanaiResistEditor({ f, edited }: Omit<LanaiEditProps, 'session'>
     axes: c.axes.map(([k, name]) => ({ name, value: f.get(k), original: f.added ? f.get(k) : f.original(k) })),
   }));
   return (
-    <ResistCharts charts={charts} min={-9} max={10} rings={[-9, -5, 0, 5, 10]} effect={() => ''}
-      onChange={(c, j, v) => { f.set(RESIST_CHARTS[c]!.axes[j]![0], v); edited(); }} />
+    <ResistCharts
+      charts={charts}
+      min={-9}
+      max={10}
+      rings={[-9, -5, 0, 5, 10]}
+      effect={() => ''}
+      onChange={(c, j, v) => {
+        f.set(RESIST_CHARTS[c]!.axes[j]![0], v);
+        edited();
+      }}
+    />
   );
 }
 
@@ -347,7 +591,10 @@ export function statsContext(session: LanaiSession, statsRef: LanaiStatsRef): Fi
     rowName: (table, v) => {
       if (table === 'ItemData') return session.insert('ItemData', v, 'name');
       if (table === 'ActionData') return lanaiAction(session, v) ? lanaiActionName(session, v) : undefined;
-      if (table === 'MonsterParameter') { const r = session.need('MonsterParameter').find(v); return r < 0 ? undefined : lanaiMonsterName(session, r); }
+      if (table === 'MonsterParameter') {
+        const r = session.need('MonsterParameter').find(v);
+        return r < 0 ? undefined : lanaiMonsterName(session, r);
+      }
       return undefined;
     },
   });
