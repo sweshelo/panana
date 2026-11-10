@@ -9,7 +9,19 @@ import { parseConditionScript, conditionScriptPatch } from '../src/lanai/conditi
 import { lanaiContents, readContent } from '../src/lanai/contents';
 import { crsExports } from '../src/lanai/scriptApi';
 import { LanaiSession } from '../src/lanai/session';
-import { cloneLanaiContent, editLanaiStage } from '../src/lanai/stageEdit';
+import {
+  cloneLanaiContent,
+  editLanaiStage,
+  lanaiStageStart,
+  LANAI_EMPTY_SCRIPT_CONTENT,
+  setLanaiStageStart,
+} from '../src/lanai/stageEdit';
+import { CRO_COMMON_HOOKS, CRO_HOOK_START_EVENT, croHooks } from '../src/lanai/contents';
+import { lanaiMaps } from '../src/lanai/maps';
+import { lanaiEditState } from '../src/lanai/mapedit';
+import { Controller } from '../src/editor/controller';
+import { findEntry } from '../src/archive/gsarc';
+import { u32 } from '../src/util/bytes';
 import { LanaiTable } from '../src/lanai/table';
 import { LanaiStagePage } from '../src/lanai/StagePage';
 import { parseLanaiText } from '../src/lanai/message';
@@ -249,4 +261,105 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(restored.need('Contents').rows).toBe(originalRows);
     expect(restored.modFiles().size).toBe(0);
   });
+
+  test('every stage starts at a map of its own map table: MapStage +0x3A names the MapGroup, +0x14 / +0x18 the map and the arrival point', async () => {
+    const s = await fresh();
+    let checked = 0;
+    for (const c of lanaiContents(s)) {
+      if (!c.index) continue;
+      const local = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')!.table;
+      for (const stage of c.stages) {
+        const start = await lanaiStageStart(s, c, stage);
+        // the integration row and the content's own row agree
+        expect(local.u16(0, 0x3a) === start.group || c.stages.length > 1).toBe(true);
+        if (!start.group) continue;
+        const maps = await lanaiMaps(s, c);
+        const info = maps.map(start.map)!;
+        expect(info).toBeDefined();
+        expect(info.world).toBe(false);
+        expect((maps.doc(info).recs[3] ?? []).some((r) => u32(r.raw, 0) === start.point)).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBe(126);
+  }, 300000);
+
+  test('the CROs share 41 hooks; hook 3 is the opening event, and content 99 has only the common ones', async () => {
+    const s = await fresh();
+    const cs = lanaiContents(s);
+    const one = (await readContent(s, cs[1]!)).cro!.info.hooks;
+    expect(one).toContain(CRO_HOOK_START_EVENT);
+    const empty = (await readContent(s, cs[LANAI_EMPTY_SCRIPT_CONTENT]!)).cro!.info.hooks;
+    expect(empty.filter((h) => !(CRO_COMMON_HOOKS as readonly number[]).includes(h))).toEqual([]);
+    expect(croHooks(new Uint8Array(0x200))).toEqual([]);
+  });
+
+  test('a new stage: its maps open and edit, its start moves to an added map, and an empty script is registered', async () => {
+    const s = await fresh(),
+      source = lanaiContents(s)[1]!;
+    const index = await cloneLanaiContent(s, source, '白紙の島', { script: 'empty' });
+    const c = lanaiContents(s)[index]!;
+    const a = await readContent(s, c);
+    expect(a.cro!.info.hooks).not.toContain(CRO_HOOK_START_EVENT);
+    expect(a.cro!.info.classes).toEqual([]);
+    const files = s.modFiles();
+    const crr = files.get(`.crr/contents${index.toString().padStart(4, '0')}.crr`)!;
+    expect(equalBytesOf(crr, await dump.readUpdateRomfs!('.crr/contents0099.crr'))).toBe(true);
+    // the copy keeps the source's own tables, and the source is untouched
+    expect((await readContent(s, source)).cro!.info.hooks).toContain(CRO_HOOK_START_EVENT);
+
+    // the maps of the new content are its own: painting a tile changes the new archive only
+    const maps = await lanaiMaps(s, c);
+    expect(maps.content.index).toBe(index);
+    const info = maps.mapByName('D01001B01')!;
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const doc = st.current!;
+    const t = doc.tiles.find((x) => x.kind === 5)!;
+    st.brush = { kind: 14, letter: 0x7a, rot: 1 };
+    st.setTool('paint');
+    const ctl = new Controller(st);
+    ctl.down(t.x + 0.5, t.y + 0.5, { shiftKey: false, button: 0 });
+    ctl.up();
+    expect(s.changedMapDbs().map((x) => x.archive)).toEqual([c.archive]);
+    const out = parseArchive(s.modFiles().get(c.archive)!);
+    const srcArc = await s.archive(source.archive);
+    const built = unpackEntry(out, findEntry(out, 0xc9f79000)!).body;
+    expect(equalBytesOf(built, unpackEntry(srcArc, findEntry(srcArc, 0xc9f79000)!).body)).toBe(false);
+    expect(s.modFiles().has(source.archive)).toBe(false);
+
+    // start at the second map's first arrival point
+    const second = maps.mapByName('D01001B02')!;
+    const point = u32(maps.doc(second).recs[3]![0]!.raw, 0);
+    await setLanaiStageStart(s, c, c.stages[0]!, second.hash, point);
+    expect(await lanaiStageStart(s, c, c.stages[0]!)).toEqual({ group: second.dungeon, map: second.hash, point });
+    expect(await lanaiStageStart(s, source, source.stages[0]!)).not.toEqual({
+      group: second.dungeon,
+      map: second.hash,
+      point,
+    });
+    // saved and restored with the new content
+    const restored = await fresh();
+    await restored.restore(s.saved());
+    const rc = lanaiContents(restored)[index]!;
+    expect(await lanaiStageStart(restored, rc, rc.stages[0]!)).toEqual({
+      group: second.dungeon,
+      map: second.hash,
+      point,
+    });
+    const rm = await lanaiMaps(restored, rc);
+    expect(rm.isChanged(rm.mapByName('D01001B01')!)).toBe(true);
+
+    // taken out and added again: the maps are read anew, not the ones of the content taken out
+    s.revertAll();
+    const again = await cloneLanaiContent(s, lanaiContents(s)[1]!, '白紙の島');
+    expect(again).toBe(index);
+    const fresh2 = await lanaiMaps(s, lanaiContents(s)[again]!);
+    expect(fresh2).not.toBe(maps);
+    expect(fresh2.isChanged(fresh2.mapByName('D01001B01')!)).toBe(false);
+  }, 300000);
 });
+
+function equalBytesOf(a: Uint8Array, b: Uint8Array): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}

@@ -13,7 +13,7 @@ import { lanaiMapHref } from './MapPage';
 import { messagesHref, textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
 import { conditionText } from './conditions';
-import { LanaiContentCreator, LanaiStageEditor } from './StageEditor';
+import { LanaiContentCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
 import { ScriptApiBrowser } from './ScriptApiBrowser';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
@@ -189,7 +189,16 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
       ) : read instanceof Error ? (
         <div className="error">{read.message}</div>
       ) : (
-        <ContentArchiveView session={session} c={c} a={read} />
+        <>
+          {c.stages.length > 0 && <h3>ステージの始まり</h3>}
+          {c.stages.map((st) => (
+            <div key={st.row}>
+              {c.stages.length > 1 && <h4>{st.name || `ステージの行 ${st.row}`}</h4>}
+              <LanaiStageStartEditor session={session} content={c} stage={st} archive={read} />
+            </div>
+          ))}
+          <ContentArchiveView session={session} c={c} a={read} />
+        </>
       )}
     </>
   );

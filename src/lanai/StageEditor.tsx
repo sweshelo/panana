@@ -1,10 +1,90 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Dialog } from '../ui/Dialog';
+import { useAsync } from '../ui/useAsync';
+import { hex8 } from '../util/bytes';
 import { LanaiConditionEditor } from './ConditionEditor';
-import type { LanaiContent, LanaiStage } from './contents';
+import { CRO_HOOK_START_EVENT, type ContentArchive, type LanaiContent, type LanaiStage } from './contents';
+import { DestinationFields } from './DestinationFields';
+import { lanaiMapHref } from './MapPage';
+import { lanaiFloorLabel, lanaiMaps } from './maps';
+import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiSession } from './session';
 import type { LanaiCondition } from './conditions';
-import { cloneLanaiContent, editLanaiStage } from './stageEdit';
+import {
+  cloneLanaiContent,
+  editLanaiStage,
+  lanaiStageStart,
+  LANAI_EMPTY_SCRIPT_CONTENT,
+  setLanaiStageStart,
+  type LanaiCloneOptions,
+} from './stageEdit';
+
+/**
+ * Where the stage starts and what plays first: the first map and arrival point (MapStage +0x3A → MapGroup +0x14 /
+ * +0x18) and whether the content's CRO has an opening event (hook 3).
+ */
+export function LanaiStageStartEditor({
+  session,
+  content,
+  stage,
+  archive,
+}: {
+  session: LanaiSession;
+  content: LanaiContent;
+  stage: LanaiStage;
+  archive: ContentArchive;
+}): ReactNode {
+  const revision = useLanaiRevision(session);
+  const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
+  const start = useAsync(() => lanaiStageStart(session, content, stage), [session, content, stage, revision]);
+  const [error, setError] = useState('');
+  const hooks = archive.cro?.info.hooks ?? [];
+  const opening = hooks.includes(CRO_HOOK_START_EVENT);
+  if (!maps || !start) return <p className="muted">マップを読み込み中…</p>;
+  if (maps instanceof Error) return <p className="muted">{maps.message}</p>;
+  if (start instanceof Error) return <p className="error">{start.message}</p>;
+  const info = maps.map(start.map);
+  return (
+    <div className="stage-start">
+      <p className="small muted">
+        {`ステージ選択から入ると、MapGroup ${start.group} 「${maps.groupName(start.group) || '名前なし'}」の最初のマップ・入口から始まります (MapStage +0x3A → MapGroup +0x14 / +0x18)。マップを選ぶと、そのマップの MapGroup が始まりになります。同じ MapGroup の「最初のマップ」はほかの場面でも使う見込みです。`}
+      </p>
+      <DestinationFields
+        maps={maps}
+        map={start.map}
+        point={start.point}
+        labels={['最初のマップ', '最初の入口 (到着する出入口)']}
+        onChange={(map, point) => {
+          setError('');
+          setLanaiStageStart(session, content, stage, map, point).catch((e: Error) => setError(e.message));
+        }}
+      />
+      {info ? (
+        <p className="small">
+          <a
+            href={lanaiMapHref(content.index, info.name)}
+          >{`${info.name} (${lanaiFloorLabel(info.floor) || '地上'}) を開く`}</a>
+        </p>
+      ) : start.map === 0 ? (
+        <p className="muted small">{`始まりのマップがありません (MapGroup ${start.group})。`}</p>
+      ) : (
+        <p className="error small">{`最初のマップ ${hex8(start.map).toUpperCase()} がこのステージのマップ表にありません。`}</p>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <p className="small">
+        {!archive.cro
+          ? '最初のイベント: CRO がありません。'
+          : opening
+            ? `最初のイベント: あり (CRO ${archive.cro.info.module} の関数 ${CRO_HOOK_START_EVENT})。マップに入ると CRO が MapGroup やフラグを見て開始の演出 (${archive.cro.info.classes.filter((c) => /Intro$/.test(c)).join('、') || 'Intro'} など) を返します。CRO は書き換えられないので、止めるには「イベントなしで追加」でステージを作り直します。`
+            : `最初のイベント: なし (CRO ${archive.cro.info.module} に開始の演出がありません)。`}
+      </p>
+    </div>
+  );
+}
 export function LanaiStageEditor({
   session,
   content,
@@ -101,6 +181,7 @@ export function LanaiContentCreator({
   onClose: () => void;
 }): ReactNode {
   const [title, setTitle] = useState('新しいステージ'),
+    [script, setScript] = useState<NonNullable<LanaiCloneOptions['script']>>('copy'),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
@@ -110,6 +191,17 @@ export function LanaiContentCreator({
         <span>ステージ名</span>
         <input value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
+      <fieldset className="field">
+        <legend>イベントのスクリプト (CRO)</legend>
+        <label>
+          <input type="radio" checked={script === 'copy'} onChange={() => setScript('copy')} />
+          元のステージのまま写す (開始の演出・会話・扉などのイベントも写し、元のステージとフラグを共有します)
+        </label>
+        <label>
+          <input type="radio" checked={script === 'empty'} onChange={() => setScript('empty')} />
+          {`イベントなし (コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT} の空の CRO を使います。マップ・宝箱・出入口・クリアは表のデータで動きます。CRO に書かれた会話やギミックは動きません)`}
+        </label>
+      </fieldset>
       <p className="muted small">
         実験機能です。元の CRO
         のイベントコードも写します。元のコンテンツ番号をコード内で使う処理やセーブの共有は自動変換しません。コンテンツ数のゲーム側の上限と実機での動作は未確認です。
@@ -125,7 +217,7 @@ export function LanaiContentCreator({
         onClick={async () => {
           setBusy(true);
           try {
-            const index = await cloneLanaiContent(session, content, title);
+            const index = await cloneLanaiContent(session, content, title, { script });
             location.hash = `#/stages/${index}`;
             onClose();
           } catch (e) {

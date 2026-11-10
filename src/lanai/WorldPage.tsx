@@ -13,7 +13,8 @@ import { useSignal } from '../ui/useEditorState';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { grid2, moveEntrance, parseEventRanges, parseProps, setEntranceByte, setEntranceU32 } from '../oahu/worldmap';
 import { lanaiActionName } from './actions';
-import { contentTitle, lanaiContents, type LanaiContent } from './contents';
+import { contentTitle, type LanaiContent } from './contents';
+import { useLanaiContents } from './useContents';
 import { lanaiMapHref } from './MapPage';
 import { lanaiGroupHref } from './MapParts';
 import { lanaiObjectModels } from './mapModels';
@@ -87,7 +88,7 @@ function objectRef(session: LanaiSession, row: number): ModelRef | null {
 }
 
 export function LanaiWorldPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const m = /^(\d+)(?:\.(W\d\d))?(?:@(\d+))?$/.exec(arg ?? '');
   const content =
     contents.find((c) => c.index === (m ? Number(m[1]) : LANAI_WORLD_CONTENTS[0])) ??

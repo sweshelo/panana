@@ -9,7 +9,8 @@ import { InfoTip } from '../ui/InfoTip';
 import { ShopBook, type ShopBookShop, type ShopColumn } from '../ui/ShopBook';
 import { useAsync } from '../ui/useAsync';
 import { hex8, u32 } from '../util/bytes';
-import { contentTitle, lanaiContents, type LanaiContent } from './contents';
+import { contentTitle, type LanaiContent } from './contents';
+import { useLanaiContents } from './useContents';
 import { lanaiItemHref } from './ItemPage';
 import { LANAI_ITEM_KINDS, lanaiItems, type LanaiItem } from './items';
 import { lanaiMapHref } from './MapPage';
@@ -103,7 +104,7 @@ export function LanaiShopPage({ session, arg }: { session: LanaiSession; arg: st
 }
 
 function ShopsPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const m = /^(\d+)(?:\.(\d+))?$/.exec(arg ?? '');
   const index = useSticky<number>(
     m ? Number(m[1]) : undefined,
@@ -692,7 +693,7 @@ function SlotPools({
  */
 function SlotKindPage({ session, kind }: { session: LanaiSession; kind: number }): ReactNode {
   const revision = useLanaiRevision(session);
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const [all, setAll] = useState(false);
   // the shops of content 0 (the ROM's slots are there), or of every content when asked
   const users = useAsync(async () => {

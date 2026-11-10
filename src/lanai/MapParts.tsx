@@ -8,7 +8,8 @@ import { GroupIconRow, GroupListView } from '../ui/GroupDetail';
 import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
 import { LANAI_ACTION_GOAL_CHEST } from './actions';
-import { contentTitle, lanaiContents } from './contents';
+import { contentTitle } from './contents';
+import { useLanaiContents } from './useContents';
 import type { LanaiEditState } from './mapedit';
 import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './maps';
 import { lanaiItemName } from './monsterBook';
@@ -261,7 +262,7 @@ export function ContentSelect({
   allowNone?: boolean;
   checking?: boolean;
 }): ReactNode {
-  const list = useMemo(() => lanaiContents(maps.session), [maps.session]);
+  const list = useLanaiContents(maps.session);
   const own = maps.content.index;
   return (
     <>

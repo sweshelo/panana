@@ -10,7 +10,8 @@ import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/
 import { MessageEditor } from '../ui/message';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
-import { contentTitle, lanaiContents } from './contents';
+import { contentTitle } from './contents';
+import { useLanaiContents } from './useContents';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiMessageSource } from './MessageSource';
 import type { LanaiSession, LanaiTableRef } from './session';
@@ -51,7 +52,7 @@ export const talksHref = (scope: string, g?: TalkGroup): string =>
 const PAGE = 300;
 
 export function LanaiTalkPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const scopes = useMemo(
     (): [string, string][] => [
       [MASTER, 'master・言語版の表'],
