@@ -1,56 +1,54 @@
 // TEMPORARY probe of ActionData (removed before the PR).
 import { test } from 'bun:test';
 import { LanaiSession } from '../src/lanai/session';
+import { lanaiItems } from '../src/lanai/items';
 import { openImages } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 const h = (v: number, n = 8) => (v >>> 0).toString(16).toUpperCase().padStart(n, '0');
-test.skipIf(!hasLanai)('probe ActionData', async () => {
+test.skipIf(!hasLanai)('probe ActionData 2', async () => {
   const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
   const s = await LanaiSession.open(dump, { fresh: true });
   const out: string[] = [];
   const t = s.need('ActionData');
-  out.push(`ActionData rows ${t.rows} size ${t.rowSize} ids ${t.rowIds.length} fields ${JSON.stringify(t.fields)} relocs ${t.relocs.size} extra ${t.extra.length}`);
-  for (let o = 0; o < t.rowSize; o += 4) {
-    const c = new Map<number, number>();
-    for (let r = 0; r < t.rows; r++) { const v = t.u32(r, o); c.set(v, (c.get(v) ?? 0) + 1); }
-    const top = [...c].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([v, n]) => `${h(v)}:${n}`).join(' ');
-    out.push(`+${h(o, 2)} distinct ${c.size} str ${t.isString(1, o)} | ${top}`);
-  }
-  for (let o = 0x10; o < t.rowSize; o += 1) {
-    const c = new Map<number, number>();
-    for (let r = 0; r < t.rows; r++) { const v = t.row(r)[o]!; c.set(v, (c.get(v) ?? 0) + 1); }
-    out.push(`b+${h(o, 2)} distinct ${c.size} | ${[...c].sort((a, b) => b[1] - a[1]).slice(0, 16).map(([v, n]) => `${h(v, 2)}:${n}`).join(' ')}`);
-  }
-  const ma = s.table('MessageAction');
-  out.push(`MessageAction ${ma?.rows} fields ${JSON.stringify(ma?.fields)}`);
-  const sys = new Map<number, number>();
-  for (let r = 0; r < t.rows; r++) { const k = (t.u32(r, 0x14) >>> 4) & 0xff; sys.set(k, (sys.get(k) ?? 0) + 1); }
-  out.push(`systems ${[...sys].sort((a, b) => a[0] - b[0]).map(([k, n]) => `${k}:${n}`).join(' ')}`);
-  const sample = (r: number) => {
-    const b = t.row(r);
-    const words = Array.from({ length: t.rowSize / 4 }, (_, i) => h(t.u32(r, i * 4))).join(' ');
-    const msg = s.insert('MessageAction', t.u32(r, 0x0c), 'individual') ?? '';
-    void b;
-    return `#${r} ${h(t.rowId(r))} ${words} | ${msg.slice(0, 40)}`;
-  };
-  for (let r = 0; r < 120; r++) out.push(sample(r));
-  // one sample per system
-  const seen = new Set<number>();
-  for (let r = 0; r < t.rows; r++) { const k = (t.u32(r, 0x14) >>> 4) & 0xff; if (seen.has(k)) continue; seen.add(k); out.push(`sys ${k}: ${sample(r)}`); }
-  for (const r of [142, 143, 420, 421, 658, 659, 660, 1000, 2000, 3000, 4000, 5000]) if (r < t.rows) out.push(sample(r));
-  // tables that hold ActionData IDs / rows in some u32 column (master only)
-  const ids = new Set(t.rowIds);
-  for (const ref of s.tables) {
-    const x = ref.table;
-    if (x === t || x.rowSize < 4) continue;
-    for (let o = 0; o + 4 <= x.rowSize; o += 4) {
-      let hit = 0, nz = 0;
-      for (let r = 0; r < x.rows; r++) { const v = x.u32(r, o); if (v && v !== 0x80000000) { nz++; if (ids.has(v)) hit++; } }
-      if (nz >= 3 && hit / nz > 0.9) out.push(`ref ${ref.archive} ${x.name} +${h(o, 2)} ${hit}/${nz}/${x.rows}`);
+  out.push('TABLES ' + s.tables.map((r) => `${r.archive}:${r.table.name}:${r.table.rows}x${r.table.rowSize}:${r.table.fields.map((f) => f.name).join('/')}`).join(' | '));
+  // which tables hold the row IDs of each u32 column / u16 half
+  const cols: [string, (r: number) => number][] = [];
+  for (let o = 0; o < 0x2c; o += 4) cols.push([`u32+${h(o, 2)}`, (r) => t.u32(r, o)]);
+  for (let o = 0x18; o < 0x2c; o += 2) cols.push([`u16+${h(o, 2)}`, (r) => t.u16(r, o)]);
+  for (const [label, get] of cols) {
+    const vals = new Set<number>();
+    for (let r = 0; r < t.rows; r++) { const v = get(r); if (v && v !== 0x80000000) vals.add(v); }
+    if (vals.size < 3) continue;
+    const hits: string[] = [];
+    for (const ref of s.tables) {
+      const x = ref.table;
+      if (!x.rowIds.length) continue;
+      const ids = new Set(x.rowIds);
+      let n = 0, nr = 0;
+      for (const v of vals) { if (ids.has(v) || ids.has((v | 0x80000000) >>> 0)) n++; if (v < x.rows) nr++; }
+      if (n / vals.size > 0.85) hits.push(`${x.name}(id ${n}/${vals.size})`);
     }
+    out.push(`${label} distinct ${vals.size} max ${h(Math.max(...vals))} -> ${hits.join(', ')}`);
   }
-  const u = s.table('UseItemInfo');
-  if (u) { out.push(`UseItemInfo ${u.rows}x${u.rowSize} fields ${JSON.stringify(u.fields)}`); for (let r = 0; r < Math.min(u.rows, 40); r++) out.push(`U#${r} ${h(u.rowId(r))} ${h(u.u32(r, 0))} ${h(u.u32(r, 4))}`); }
+  const ma = s.need('MessageAction');
+  const msg = (id: number, f = 'individual') => (s.insert('MessageAction', id, f) ?? '?').replace(/\n/g, '⏎').slice(0, 40);
+  for (const r of [2, 20, 26, 56, 110, 142, 180, 407, 415, 422, 433, 540, 658, 856, 977, 1000, 1096, 1289, 2000, 4000, 5000]) {
+    out.push(`#${r} c=${msg(t.u32(r, 0x0c))} | c.multi=${msg(t.u32(r, 0x0c), 'multiple')} | 10=${msg(t.u32(r, 0x10))} | 10.multi=${msg(t.u32(r, 0x10), 'multiple')}`);
+  }
+  out.push(`MA rows ${ma.rows}; 80000016=${msg(0x80000016)} 80000017=${msg(0x80000017)} 80000020=${msg(0x80000020)} 80000014=${msg(0x80000014)}`);
+  // the items' use effects
+  const u = s.need('UseItemInfo');
+  const core = s.need('ItemDataCore');
+  let shown = 0;
+  for (const it of lanaiItems(s)) {
+    const k = it.kind;
+    if (!((k & 0xf0) === 0x10 || k === 0x02 || k === 0x37)) continue;
+    const ur = u.find(core.u32(it.core, 0x00));
+    if (ur < 0) { out.push(`ITEM ${it.row} ${it.name} k${h(k, 2)} no UseItemInfo`); continue; }
+    const a = u.u32(ur, 4), b = u.u32(ur, 0);
+    const ar = a < t.rows ? a : -1;
+    if (shown++ < 140) out.push(`ITEM ${it.row} ${it.name} k${h(k, 2)} U#${ur} +0=${h(b)} +4=${h(a)} -> A#${ar} sys ${ar >= 0 ? (t.u32(ar, 0x14) >>> 4) & 0xff : '-'} ${ar >= 0 ? msg(t.u32(ar, 0x0c)) + ' / ' + msg(t.u32(ar, 0x10)) : ''}`);
+  }
   console.log(`PROBE-BEGIN\n${out.join('\n')}\nPROBE-END`);
 }, 120000);
