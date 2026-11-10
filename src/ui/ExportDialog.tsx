@@ -25,6 +25,7 @@ import { tableLabel, type Session } from '../session';
 import { CodeModOption } from './CodeModOption';
 import { LevelStealthOption } from './LevelStealthOption';
 import { download } from './download';
+import { SAVE_PATCH_TITLE, savePatchProblem } from '../game/savepatch';
 
 
 export function ExportDialog({ session, onClose }: { session: Session; onClose: () => void }): ReactNode {
@@ -98,6 +99,7 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const { issues } = what;
   // Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts), switched here and built with the other patches
   const [dropCap, setDropCap] = useState(game.dropCap);
+  const [extSave, setExtSave] = useState(game.extSave);
   // game.dump.code has the base MOD's code.ips applied, so a base MOD that rewrote the same code is caught too
   const capProblem = useState(() => dropCapProblem(game.dump.code, 'kahara'))[0];
   // Panana's code MOD "レベルステルス" (game/levelstealth.ts): its Lv difference, 0 = off
@@ -108,14 +110,16 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
   const built = dropCap || stealthOn ? buildPatches(game.dump.code, exportedPatches(game, extra)) : null;
   const capError = dropCap && !capProblem ? built?.get(DROP_CAP_ID)?.errors[0] : undefined;
   const stealthError = stealthOn ? built?.get(LEVEL_STEALTH_ID)?.errors[0] : undefined;
+  const saveProblem = savePatchProblem(game.dump.code, exportedPatches(game, extra));
   // models ported from other games (#100): the archives that hold them
   const ported = useAsync(async () => [...(await PortStore.of('kahara')).summary(), ...(await SoundPortStore.of()).summary()], []);
   const changes = [...what.changes, ...(dropCap && !capProblem ? [`コードの MOD「${DROP_CAP_TITLE}」 (exefs/code.ips)`] : []),
-    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []), ...(Array.isArray(ported) ? ported : [])];
+    ...(stealthOn ? [`コードの MOD「${LEVEL_STEALTH_TITLE}」 (Lv の差 ${stealth}、exefs/code.ips)`] : []), ...(extSave ? [SAVE_PATCH_TITLE] : []), ...(Array.isArray(ported) ? ported : [])];
   const errors = issues.filter((i) => i.issue.level === 'error').length;
 
   const build = async (): Promise<Map<string, Uint8Array> | null> => {
     try {
+      if (extSave && saveProblem) throw new Error(saveProblem);
       const files = buildModFiles(game, what.docs, what.events, game.master.changed(), what.worlds);
       for (const [name, bytes] of await (await PortStore.of('kahara')).archives()) if (!files.has(name)) files.set(name, bytes);
       // BGMs ported from other games: sound.bcsar and their streams
@@ -172,6 +176,15 @@ export function ExportDialog({ session, onClose }: { session: Session; onClose: 
           setStealth(d);
           session.scheduleSave();
         }} />
+        <div className="code-mods">
+          <label><input type="checkbox" checked={extSave} disabled={!!saveProblem && !extSave} onChange={e => {
+            game.extSave = e.target.checked;
+            setExtSave(e.target.checked);
+            session.scheduleSave();
+          }} /> {SAVE_PATCH_TITLE}</label>
+          <div className="muted small">初回起動で移行し、その後はExtDataに保存します。元のセーブは残りますが、移行後の進行は元のファイルには反映されません。</div>
+          {saveProblem && <div className={extSave ? 'error' : 'muted small'}>{saveProblem}</div>}
+        </div>
         {errors > 0 && <div className="error">{`エラーが ${errors} 件あります。このまま書き出すとゲームが正しく動かないおそれがあります。`}</div>}
         {game.baseMod
           ? <div className="muted">{`土台の MOD「${game.baseMod.label}」の全ファイル${game.baseMod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</div>
