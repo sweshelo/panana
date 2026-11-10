@@ -14,3 +14,10 @@ export const KAHARA_AUTO: AutoProfile = {
     {kind:14,wide:6,narrow:0,variation:'corner'},
   ],
 };
+
+/** RPG FREE! dungeon parts: the same shapes as RPG2's outdoor parts. Checked against the 507 outdoor maps of the ROM
+ * (facings decoded by LANAI_ROT_CODEC; test/lanai-autotile.test.ts): each part's neighbours fill its wide | narrow
+ * edges for most placed tiles and better than under any other turn, and 8 / 13 lack room tiles on their inward
+ * diagonals. Kind 6 (a floor that is never turned) and 33 (empty) are not parts: the brush keeps them as they are.
+ */
+export const LANAI_AUTO: AutoProfile = KAHARA_AUTO;
