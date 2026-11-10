@@ -21,8 +21,11 @@ const textOffset = (key: ActionTextKey): number => ACTION_TEXTS.find((x) => x.ke
 /** UseItemInfo +0x04: the ActionData row a tool does (0 = none: the boosts, the keys, ヒロビーロ). */
 export const USE_ITEM_ACTION = 0x04;
 
-/** The kinds whose ItemDataCore +0x00 is a UseItemInfo row (0x1x tools, 0x02 ふくぶくろ, 0x37; naauao lanai/items.md §4). */
-export const usesItemInfo = (kind: number): boolean => (kind & 0xf0) === 0x10 || kind === 0x02 || kind === 0x37;
+/**
+ * The kinds whose UseItemInfo +0x04 is an action: the tools 0x1x. 0x02 (ふくぶくろ) and 0x37 have UseItemInfo rows too
+ * (naauao lanai/items.md §4), but their +0x04 is something else (おしょうがつぶくろ has 707, the row of キズぐすり).
+ */
+export const usesItemInfo = (kind: number): boolean => (kind & 0xf0) === 0x10;
 
 /** An action of the book. */
 export interface LanaiBattleAction extends LanaiAction {
