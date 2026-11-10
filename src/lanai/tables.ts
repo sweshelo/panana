@@ -154,4 +154,39 @@ export const LANAI_MONSTER_DESIGN: TableDef = {
 };
 
 /** The definitions by table name. */
-export const LANAI_TABLES: Record<string, TableDef> = Object.fromEntries([LANAI_MONSTER_PARAMETER, LANAI_MONSTER_DESIGN, ...LANAI_STATS].map((d) => [d.file, d]));
+/** The elements of ActionData +0x28 (0 = none; the same order as the resistances, naauao lanai/actions.md). */
+export const LANAI_ACTION_ELEMENTS: Record<number, string> = { 0: 'なし', 1: '火', 2: '氷', 3: '風', 4: '土', 5: '電気', 6: '水', 7: '光', 8: '闇' };
+
+/**
+ * ActionData (5017 × 0x2C, row IDs; naauao lanai/actions.md): the battle's actions (the monsters' skills, the automatic
+ * actions, the items' and the equipment's actions). The meanings come from the data (the values against the texts:
+ * つかまえる2ばい has 20 at +0x06, ウインドロール 3 at +0x28 …) unless the note names the code.
+ */
+export const LANAI_ACTION_DATA: TableDef = {
+  file: 'ActionData',
+  rowSize: 0x2c,
+  fields: [
+    f('target', 0x00, 'u32', 'モンスター (変身先・呼ぶ相手)', { ref: { kind: 'row', table: 'MonsterParameter' }, note: '系統 29 / 30 (変身) では変身先の MonsterParameter の行 ID (確定、naauao lanai/monsters.md §11)。系統 27 (呼ぶ) などの行にも MonsterParameter の行 ID が入る (推定)。ほかは 0' }),
+    f('max', 0x04, 'u16', '量の上限 (推定)', { note: '回復・ダメージの量の上側と推定 (+0x16 が下側)。自動回復 (行 658〜663) は 9999' }),
+    f('scale', 0x06, 'u8', '倍率 (推定。10 = 1 倍)', { note: 'ほぼすべての行が 10。『つかまえる2ばい』は 20 で、10 を 1 倍とする倍率と推定' }),
+    f('b07', 0x07, 'u8', '+0x07', { unsure: true, hex: true, note: '0 が大半。0x80 / 0x14 / 0x0F / 0x0A / 3 など' }),
+    f('flags8', 0x08, 'u32', '+0x08 (ビット)', { unsure: true, hex: true, note: '0x26480000 が大半。攻撃呪文は bit10-14 が属性ごとに違う (推定: 対象・範囲・属性の印)' }),
+    f('message', 0x0c, 'u32', '文 (MessageAction)', { ref: { kind: 'row', table: 'MessageAction' }, note: 'MessageAction の行 ID。individual が戦闘の文。多くの行は「〈name〉」だけ (0x80000016) で、文はほかで出す' }),
+    f('u10', 0x10, 'u32', '+0x10 (行 ID)', { unsure: true, hex: true, note: '0x80000020 が大半 (2657 行)。演出の表の行 ID と推定' }),
+    f('kind', 0x14, 'u32', '+0x14 bit0-3', { bits: [0, 4], note: '被弾時の枠では 5 / 8 のとき働く。5 は倒される一撃で HP が戻る (naauao lanai/monsters.md §11)' }),
+    f('system', 0x14, 'u32', '系統', { bits: [4, 8], note: '戦闘の結果の種類 (確定: 29 / 30 = 変身、21 = つかまえる)。ほかの番号の意味は一部だけ' }),
+    f('b14hi', 0x14, 'u32', '+0x14 bit12-15', { bits: [12, 4], unsure: true, note: '1 / 2 / 3 / 6 / 7 が多い' }),
+    f('min', 0x16, 'u16', '量の下限・値 (推定)', { note: '量の下側と推定。自動回復 (表示用の種類 0x56 / 0x57) では回復の値 (FUN_0024F6C0、naauao lanai/equipment.md §4)' }),
+    ...unknown(0x18, 0x24),
+    f('u24', 0x24, 'u16', '+0x24', { unsure: true, note: '0x13B〜0x142 が多い' }),
+    f('display', 0x26, 'u8', '表示用の種類', { note: '装備の自動のアクションの画面で、ConditionData の行を引く種類 (FUN_00165F60、naauao lanai/equipment.md §4)。0 が大半' }),
+    f('b27', 0x27, 'u8', '+0x27', { unsure: true, hex: true, note: '0 / 4 が大半 (0x80 / 0x10 / 0x40 も)' }),
+    f('element', 0x28, 'u8', '属性 (推定)', { ref: { kind: 'enum', values: LANAI_ACTION_ELEMENTS }, note: '0〜8。ワザの名前と合う (ウインドロール 3 = 風、根っこをのばした 4 = 土)。データからの推定' }),
+    f('b2b', 0x2b, 'u8', '+0x2B', { unsure: true, hex: true, note: '0 が大半。0x80 が 41 行' }),
+  ],
+};
+
+/** The fields of ActionData the action page edits as numbers (the others are shown in the table of all fields). */
+export const LANAI_ACTION_EDITS = ['min', 'max', 'scale'] as const;
+
+export const LANAI_TABLES: Record<string, TableDef> = Object.fromEntries([LANAI_MONSTER_PARAMETER, LANAI_MONSTER_DESIGN, ...LANAI_STATS, LANAI_ACTION_DATA].map((d) => [d.file, d]));

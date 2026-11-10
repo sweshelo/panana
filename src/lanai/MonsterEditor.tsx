@@ -13,6 +13,7 @@ import { isNoAction, lanaiActionName, lanaiActionUsers, lanaiMonsterIndex, lanai
 import { ACTION_SLOT_KEYS, ACTION_SLOT_OFFSETS, isTransform, lanaiAction, lanaiConditionLabel, lanaiCopyActionInto, lanaiCopyStats, LANAI_ACTION_COUNT_LABELS, LANAI_AI_LABELS, lanaiSetTransformTarget, lanaiStatsSharers, type LanaiStatsRef } from './monsterStats';
 import { lanaiMonsterHref } from './monsters';
 import { lanaiActionEntry, lanaiActionSub, LanaiActionPicker, lanaiItemEntry, LanaiItemPicker, lanaiMonsterEntry, LanaiMonsterPicker } from './pickers';
+import { lanaiActionHref } from './hrefs';
 import type { LanaiSession } from './session';
 import { LANAI_AUTO_SLOTS, LANAI_ELEMENTS, LANAI_RACES, LANAI_STATES } from './tables';
 
@@ -226,7 +227,7 @@ const TRANSFORM_INFO = [
 ].join('\n');
 
 /** "ワザ 2", "被弾時 1": the slot at an offset of an ability row. */
-function slotLabel(offset: number): string {
+export function slotLabel(offset: number): string {
   const k = ACTION_SLOT_KEYS[ACTION_SLOT_OFFSETS.indexOf(offset)] ?? '';
   if (k.startsWith('skill')) return `ワザ ${k.slice(5)}`;
   return OTHER_ACTIONS.find((x) => x.key === k)?.label ?? k;
@@ -265,7 +266,7 @@ export function LanaiTransforms({ session, monster, statsRef, f, edited }: Lanai
                 <td>{slotLabel(s.offset)}</td>
                 <td>
                   <div>
-                    {`#${a.row} ${lanaiActionName(session, a.id)}`}
+                    <a href={lanaiActionHref(a.row)}>{`#${a.row}`}</a>{` ${lanaiActionName(session, a.id)}`}
                     <span className="muted">{` (系統 ${a.system}・${slotWhen(f, s.offset)})${orig ? '' : ' 追加したアクション'} → `}</span>
                   </div>
                   <BoardSlot entry={target >= 0 ? lanaiMonsterEntry(session, target) : null} id={target >= 0 ? target : undefined}
@@ -294,7 +295,7 @@ export function LanaiTransforms({ session, monster, statsRef, f, edited }: Lanai
           {into.map(({ action, use }, i) => (
             <tr key={`i${i}`}>
               <td>この形態になる</td>
-              <td><a href={lanaiMonsterHref(use.monster)}>{`${lanaiMonsterName(session, use.monster)} (#${use.monster})`}</a>{` の${slotLabel(use.offset)} #${action.row} ${lanaiActionName(session, action.id)}`}</td>
+              <td><a href={lanaiMonsterHref(use.monster)}>{`${lanaiMonsterName(session, use.monster)} (#${use.monster})`}</a>{` の${slotLabel(use.offset)} `}<a href={lanaiActionHref(action.row)}>{`#${action.row}`}</a>{` ${lanaiActionName(session, action.id)}`}</td>
             </tr>
           ))}
         </tbody>
