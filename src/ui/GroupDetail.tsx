@@ -4,7 +4,7 @@
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import type { MapInfo } from '../game/codebin';
 import type { Game } from '../game/game';
-import { countLabel, mapEncounters, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
+import { countLabel, GROUP_PATTERNS, mapEncounters, type GroupSlot, type MonsterBook, type MonsterGroup } from '../game/monsters';
 import type { MapDoc } from '../game/sections';
 import { hex8 } from '../util/bytes';
 import { monsterRef } from '../pages/monsters';
@@ -110,7 +110,8 @@ export function GroupDetail({ game, book, group: g }: { game: Game; book: Monste
       <div className="small"><a href={groupHref(g.row)}>{`群れ #${g.row} を開く (編集)`}</a></div>
       <SlotTiles title="先頭 (マップで見える敵)・3 体目" slots={g.leads} monster={monster} />
       <SlotTiles title="2・4 体目" slots={g.mates} monster={monster} />
-      <div className="muted small">{`+0x28〜: ${g.extra.join(' ')} (未解析)`}</div>
+      {!!g.extra[0] && <SlotTiles title={`固定編成 #${g.extra[5]}`} slots={(book.groupFix(g)?.slots ?? []).map((s) => ({ ...s, weight: 0 }))} monster={monster} />}
+      <div className="muted small">{GROUP_PATTERNS.filter((_, i) => g.extra[i]).join(' / ') || '編成方式なし'}</div>
     </div>
   );
 }
@@ -237,7 +238,7 @@ export function GroupPicker({ session, book, current, onPick, onClose }: {
  * Table of one side's candidates: monster (picked from the pictures), weight (with its share), count; add and remove.
  * `counts` are the choices of the count code.
  */
-export function GroupSlotEditor({ title, info, slots, max, monster, counts, set, picker }: {
+export function GroupSlotEditor({ title, info, slots, max, monster, counts, set, picker, weighted = true }: {
   title: string;
   info?: string;
   slots: GroupSlot[];
@@ -246,6 +247,7 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
   counts: (current: number) => [number, string][];
   set: (next: GroupSlot[]) => void;
   picker: (current: number, pick: (row: number) => void, close: () => void) => ReactNode;
+  weighted?: boolean;
 }): ReactNode {
   /** The monster picker, and what to do with the pick. */
   const [picking, setPicking] = useState<{ current: number; onPick: (row: number) => void } | null>(null);
@@ -256,7 +258,7 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
       <h3 className={info ? 'with-info' : undefined}>{title}{info && <InfoTip text={info} />}</h3>
       <table className="enc-table group-slots">
         <tbody>
-          <tr><th>モンスター</th><th>重み</th><th>割合</th><th>数</th><th></th></tr>
+          <tr><th>モンスター</th>{weighted && <><th>重み</th><th>割合</th></>}<th>数</th><th></th></tr>
           {slots.map((s, k) => {
             const m = monster(s.monster);
             const options = counts(s.count);
@@ -271,11 +273,11 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
                     <a href={monsterHref(s.monster)} title="モンスター図鑑で開く">↗</a>
                   </div>
                 </td>
-                <td>
+                {weighted && <><td>
                   {/* weight 0 would drop the slot (the game skips it), so removing is done with × */}
                   <NumberInput value={s.weight} min={1} max={255} onCommit={(v) => change(k, { weight: v })} />
                 </td>
-                <td className="num">{`${Math.round((s.weight / total) * 100)}%`}</td>
+                <td className="num">{`${Math.round((s.weight / total) * 100)}%`}</td></>}
                 <td>
                   <select value={s.count} onChange={(e) => change(k, { count: Number(e.target.value) })}>
                     {[...options, ...(options.some(([c]) => c === s.count) ? [] : [[s.count, String(s.count)] as [number, string]])].map(([c, label]) => <option key={c} value={c}>{label}</option>)}
@@ -285,7 +287,7 @@ export function GroupSlotEditor({ title, info, slots, max, monster, counts, set,
               </tr>
             );
           })}
-          {!slots.length && <tr><td className="muted" colSpan={5}>なし</td></tr>}
+          {!slots.length && <tr><td className="muted" colSpan={weighted ? 5 : 3}>なし</td></tr>}
         </tbody>
       </table>
       <button

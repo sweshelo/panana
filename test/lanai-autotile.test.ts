@@ -29,7 +29,7 @@ function fakeState(palette: Map<number, number[]>): LanaiEditState {
   return new LanaiEditState(maps);
 }
 const doc = (): MapDoc => ({ hash: 1, name: 'D01001B01', dungeon: 0, floor: 1, tiles: [], recs: {}, sec6Header: new Uint8Array(8), cells6: [] } as unknown as MapDoc);
-const info = (world = false): LanaiMapInfo => ({ index: 0, hash: 1, name: world ? 'W01' : 'D01001B01', sections: [], mapDataId: 0, dungeon: 0, encounterLevel: 0, floor: 1, world });
+const info = (world = false): LanaiMapInfo => ({ index: 0, hash: 1, name: world ? 'W01' : 'D01001B01', sections: [], mapDataId: 0, dungeon: 0, encounterLevel: 0, floor: 1, world, added: false });
 const full = (): Map<number, number[]> => new Map(LANAI_AUTO.parts.map((p) => [p.kind, [0, 1]]));
 
 describe('RPG FREE! automatic brush', () => {
