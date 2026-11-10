@@ -44,6 +44,7 @@ const info = (world = false): LanaiMapInfo => ({
   hash: 1,
   name: world ? 'W01' : 'D01001B01',
   sections: [],
+  slots: [],
   mapDataId: 0,
   dungeon: 0,
   encounterLevel: 0,
