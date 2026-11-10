@@ -85,10 +85,13 @@ describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
     s = await LanaiSession.open(dump, { fresh: true });
   }, 300000);
 
-  test('every open edge of a placed part has a neighbour, and 8 / 13 lack their inward diagonals', async () => {
+  test('placed parts fit the profile\'s open edges and inward corners better than any other turn', async () => {
     const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]] as const;
     const diagonals = [[1, -1], [1, 1], [-1, 1], [-1, -1]] as const;
-    const seen = new Map<number, { n: number; bad: number }>();
+    // per kind and per extra turn r (0 = the profile's own facing): tiles whose neighbours fill the open edges, and
+    // (8 / 13) tiles without room tiles on the inward diagonals. The game's maps also have floors next to empty cells
+    // and corners beside other rooms, so the profile must fit most tiles and fit better than any other turn.
+    const seen = new Map<number, { n: number; edges: number[]; corners: number[] }>();
     let offered = 0, dungeons = 0;
     for (const c of lanaiContents(s)) {
       const m = await lanaiMaps(s, c).catch(() => null);
@@ -101,7 +104,6 @@ describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
         st.open(info);
         if (st.autoProfile) offered++;
         const grid = new Set(doc.tiles.filter((t) => t.kind !== 33).map((t) => `${t.x},${t.y}`));
-        // room tiles (parts with full-width edges): an inward corner's diagonal is outside the room
         const room = new Set(doc.tiles.filter((t) => LANAI_AUTO.parts.find((p) => p.kind === t.kind)?.wide).map((t) => `${t.x},${t.y}`));
         for (const t of doc.tiles) {
           const part = LANAI_AUTO.parts.find((p) => p.kind === t.kind);
@@ -109,23 +111,30 @@ describe.skipIf(!hasLanai)('RPG FREE! ROM: part shapes', () => {
           let occ = 0, diag = 0;
           dirs.forEach(([dx, dy], i) => { if (grid.has(`${t.x + dx},${t.y + dy}`)) occ |= 1 << i; });
           diagonals.forEach(([dx, dy], i) => { if (room.has(`${t.x + dx},${t.y + dy}`)) diag |= 1 << i; });
-          const open = turnMask(part.wide | part.narrow, t.rot), corners = turnMask(part.corners ?? 0, t.rot);
-          const ok = (occ & open) === open && (diag & corners) === 0;
-          const e = seen.get(t.kind) ?? { n: 0, bad: 0 };
+          const e = seen.get(t.kind) ?? { n: 0, edges: [0, 0, 0, 0], corners: [0, 0, 0, 0] };
           e.n++;
-          if (!ok) e.bad++;
+          for (let r = 0; r < 4; r++) {
+            const open = turnMask(part.wide | part.narrow, (t.rot + r) % 4), corners = turnMask(part.corners ?? 0, (t.rot + r) % 4);
+            if ((occ & open) === open) e.edges[r]!++;
+            if ((diag & corners) === 0) e.corners[r]!++;
+          }
           seen.set(t.kind, e);
         }
       }
     }
+    console.log(`dungeon maps ${dungeons}, brush offered on ${offered}; fits by kind (n, edges per extra turn, corners per extra turn): ${JSON.stringify([...seen])}`);
     expect(dungeons).toBe(507);
     // most dungeon tilesets have every part (the brush is offered on them)
     expect(offered).toBeGreaterThan(dungeons / 2);
-    console.log(`dungeon maps ${dungeons}, brush offered on ${offered}; misfits by kind: ${JSON.stringify([...seen])}`);
     for (const p of LANAI_AUTO.parts) {
       const e = seen.get(p.kind)!;
       expect(e.n).toBeGreaterThan(0);
-      expect(e.bad / e.n).toBeLessThan(0.01);
+      expect(e.edges[0]! / e.n).toBeGreaterThan(0.85);
+      expect(e.edges[0]!).toBe(Math.max(...e.edges));
+      if (p.corners) {
+        expect(e.corners[0]! / e.n).toBeGreaterThan(0.5);
+        expect(e.corners[0]!).toBe(Math.max(...e.corners));
+      }
     }
   }, 300000);
 });
