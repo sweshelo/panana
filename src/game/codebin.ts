@@ -3,7 +3,17 @@ import { cstr, s32, u32 } from '../util/bytes';
 import { readWorldTable, type WorldInfo } from './worldmap';
 
 export * from './codeconst';
-import { BASE, MAP_DATA_KEYS, MAP_DATA_NONE, MAP_ROWS, MAP_SECTIONS, MAP_SECTIONS_ROWS, MAP_TABLE, MAP_TABLE_ROWS, PROBE_MAP } from './codeconst';
+import {
+  BASE,
+  MAP_DATA_KEYS,
+  MAP_DATA_NONE,
+  MAP_ROWS,
+  MAP_SECTIONS,
+  MAP_SECTIONS_ROWS,
+  MAP_TABLE,
+  MAP_TABLE_ROWS,
+  PROBE_MAP,
+} from './codeconst';
 import { readExtension, type AddedDungeon } from './mappatch';
 
 export interface MapInfo {
@@ -36,7 +46,8 @@ export class CodeBin {
     const at = (addr: number): number => addr - BASE;
     if (code.length < at(MAP_TABLE) + MAP_TABLE_ROWS * 16) throw new Error('code.bin が短すぎます');
     const str = (ptr: number): string => {
-      if (ptr < BASE || ptr >= BASE + code.length) throw new Error('code.bin: 文字列のポインタが範囲外です (バージョン違い?)');
+      if (ptr < BASE || ptr >= BASE + code.length)
+        throw new Error('code.bin: 文字列のポインタが範囲外です (バージョン違い?)');
       return cstr(code, at(ptr));
     };
     const sections = new Map<number, number[]>();
@@ -88,7 +99,9 @@ export class CodeBin {
       }
     }
     if (!sections.has(PROBE_MAP) || info.get(PROBE_MAP)?.name !== 'D01B02001') {
-      throw new Error('code.bin の表が v1.1.0 の位置にありません。v1.1.0 (TitleVersion 1040) のダンプを使ってください。');
+      throw new Error(
+        'code.bin の表が v1.1.0 の位置にありません。v1.1.0 (TitleVersion 1040) のダンプを使ってください。',
+      );
     }
     // Table order of 0x4C1A74 (maps without a name keep "?").
     this.maps = [...sections.values()].map(

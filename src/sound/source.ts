@@ -7,7 +7,12 @@ import { SoundArchive } from './formats';
 import { SoundRenderer } from './render';
 
 /** The soundData rows (item IDs, volumes) with the names of the dump's sound.bcsar; without one, rows are only numbered. */
-export async function loadSoundNames(dump: Dump, cacheKey: string, items: number[], volumes?: number[]): Promise<SoundNames> {
+export async function loadSoundNames(
+  dump: Dump,
+  cacheKey: string,
+  items: number[],
+  volumes?: number[],
+): Promise<SoundNames> {
   let names = (await idbGet<string[]>(cacheKey).catch(() => undefined)) ?? null;
   if (!names)
     try {

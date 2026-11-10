@@ -19,7 +19,17 @@ export interface SoundSlot {
   onChange: (row: number) => void;
 }
 
-export function SoundSlotsBox({ title, shared, game, sounds, slots, usage, note, children, className = 'enc-box' }: {
+export function SoundSlotsBox({
+  title,
+  shared,
+  game,
+  sounds,
+  slots,
+  usage,
+  note,
+  children,
+  className = 'enc-box',
+}: {
   title: string;
   /** The places sharing these fields (a badge "N マップで共有" when more than one). */
   shared?: { count: number; title: string };
@@ -37,15 +47,29 @@ export function SoundSlotsBox({ title, shared, game, sounds, slots, usage, note,
     <div className={className}>
       <h3>
         {title}
-        {shared && shared.count > 1 && <span className="badge" title={shared.title}>{`${shared.count} マップで共有`}</span>}
+        {shared && shared.count > 1 && (
+          <span className="badge" title={shared.title}>{`${shared.count} マップで共有`}</span>
+        )}
       </h3>
       {slots.map((s) => (
         // Not a <label>: a click on the caption would press the play button.
         <div key={s.key} className="field" title={s.note}>
           <span>{s.label}</span>
-          {sounds
-            ? <SoundButton game={game} sounds={sounds} value={s.value} kind={s.kind} max={s.max} field={s.field} usage={usage} title={`${s.label} を選ぶ`} onChange={s.onChange} />
-            : <span>{`サウンド ${s.value}`}</span>}
+          {sounds ? (
+            <SoundButton
+              game={game}
+              sounds={sounds}
+              value={s.value}
+              kind={s.kind}
+              max={s.max}
+              field={s.field}
+              usage={usage}
+              title={`${s.label} を選ぶ`}
+              onChange={s.onChange}
+            />
+          ) : (
+            <span>{`サウンド ${s.value}`}</span>
+          )}
         </div>
       ))}
       {children}

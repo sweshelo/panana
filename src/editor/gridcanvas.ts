@@ -99,7 +99,8 @@ export class GridCanvas {
   /** Fit cells with a margin of one cell around them. */
   fitCells(cells: readonly { x: number; y: number }[]): void {
     if (!cells.length) return;
-    const xs = cells.map((t) => t.x), ys = cells.map((t) => t.y);
+    const xs = cells.map((t) => t.x),
+      ys = cells.map((t) => t.y);
     this.fitBox(Math.min(...xs) - 1, Math.min(...ys) - 1, Math.max(...xs) + 2, Math.max(...ys) + 2);
   }
 
@@ -114,7 +115,8 @@ export class GridCanvas {
   private render(): void {
     const c = this.canvas;
     const dpr = window.devicePixelRatio || 1;
-    const w = c.clientWidth, h = c.clientHeight;
+    const w = c.clientWidth,
+      h = c.clientHeight;
     if (!w || !h) return;
     if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
       c.width = Math.round(w * dpr);
@@ -125,7 +127,8 @@ export class GridCanvas {
     const css = getComputedStyle(c);
     g.fillStyle = css.getPropertyValue('--view-bg') || '#1b1d22';
     g.fillRect(0, 0, w, h);
-    const s = this.scale, n = this.grid;
+    const s = this.scale,
+      n = this.grid;
     g.save();
     g.translate(this.ox, this.oy);
     g.strokeStyle = css.getPropertyValue('--grid') || 'rgba(255,255,255,0.07)';
@@ -159,8 +162,18 @@ export class GridCanvas {
  * A tile: a coloured square with a notch on the side it faces (rot 0..3 = up, right, down, left), its label when the
  * cells are big enough, and an arrow in the corner when bigger still.
  */
-export function drawTileGlyph(g: CanvasRenderingContext2D, s: number, x: number, y: number, color: string, rot: number, label: string, arrow?: string): void {
-  const px = x * s, py = y * s;
+export function drawTileGlyph(
+  g: CanvasRenderingContext2D,
+  s: number,
+  x: number,
+  y: number,
+  color: string,
+  rot: number,
+  label: string,
+  arrow?: string,
+): void {
+  const px = x * s,
+    py = y * s;
   g.fillStyle = color;
   g.fillRect(px + 1, py + 1, s - 2, s - 2);
   g.fillStyle = 'rgba(0,0,0,0.45)';

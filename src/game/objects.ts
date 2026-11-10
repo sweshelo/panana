@@ -9,20 +9,40 @@ export const OBJ_INVISIBLE = 0x134;
 /** Section 3 kind (+0x14) -> cell +0x23 "gimmick" code (FUN_0021f9f4). */
 export function gimmickCode(kind: number): number {
   switch (kind) {
-    case 0: case 1: return 1;
-    case 2: return 5;
-    case 3: return 0x0d;
-    case 4: case 5: return 2;
-    case 6: return 3;
-    case 7: return 4;
-    case 8: return 6;
-    case 9: return 7;
-    case 10: return 8;
-    case 0x0b: case 0x0c: case 0x0d: case 0x0e: case 0x0f: return 0;
-    case 0x10: return 10;
-    case 0x11: return 11;
-    case 0x12: return 12;
-    default: return kind >= 0x13 && kind < 0x2f ? kind : 1;
+    case 0:
+    case 1:
+      return 1;
+    case 2:
+      return 5;
+    case 3:
+      return 0x0d;
+    case 4:
+    case 5:
+      return 2;
+    case 6:
+      return 3;
+    case 7:
+      return 4;
+    case 8:
+      return 6;
+    case 9:
+      return 7;
+    case 10:
+      return 8;
+    case 0x0b:
+    case 0x0c:
+    case 0x0d:
+    case 0x0e:
+    case 0x0f:
+      return 0;
+    case 0x10:
+      return 10;
+    case 0x11:
+      return 11;
+    case 0x12:
+      return 12;
+    default:
+      return kind >= 0x13 && kind < 0x2f ? kind : 1;
   }
 }
 
@@ -30,7 +50,23 @@ export function gimmickCode(kind: number): number {
 export function lockCode(kind: number, value: number): number {
   if (kind >= 0x0b && kind <= 0x0e) return kind - 0x0a;
   if (kind !== 0x0f) return 0;
-  const map: Record<number, number> = { 5: 5, 10: 6, 15: 7, 20: 8, 25: 9, 30: 10, 35: 11, 40: 12, 45: 13, 50: 14, 60: 15, 70: 16, 80: 17, 90: 18, 99: 19 };
+  const map: Record<number, number> = {
+    5: 5,
+    10: 6,
+    15: 7,
+    20: 8,
+    25: 9,
+    30: 10,
+    35: 11,
+    40: 12,
+    45: 13,
+    50: 14,
+    60: 15,
+    70: 16,
+    80: 17,
+    90: 18,
+    99: 19,
+  };
   return map[value] ?? 0;
 }
 
@@ -42,9 +78,33 @@ export function stairCode(kind: number): number {
 }
 
 const TOWN: Record<number, number> = {
-  0x13: 0x7f, 0x14: 0x81, 0x15: 0x82, 0x16: 0x83, 0x17: 0x84, 0x18: 0x85, 0x19: 0x86, 0x1b: 0x88, 0x1c: 0x89,
-  0x1d: 0x8a, 0x1e: 0x8b, 0x1f: 0x8c, 0x20: 0x8d, 0x21: 0x8f, 0x22: 0x90, 0x23: 0x92, 0x24: 0x93, 0x25: 0x94,
-  0x26: 0x95, 0x27: 0x96, 0x28: 0x97, 0x29: 0x98, 0x2a: 0x99, 0x2b: 0x9a, 0x2c: 0x9b, 0x2d: 0x9c, 0x2e: 0x8e,
+  0x13: 0x7f,
+  0x14: 0x81,
+  0x15: 0x82,
+  0x16: 0x83,
+  0x17: 0x84,
+  0x18: 0x85,
+  0x19: 0x86,
+  0x1b: 0x88,
+  0x1c: 0x89,
+  0x1d: 0x8a,
+  0x1e: 0x8b,
+  0x1f: 0x8c,
+  0x20: 0x8d,
+  0x21: 0x8f,
+  0x22: 0x90,
+  0x23: 0x92,
+  0x24: 0x93,
+  0x25: 0x94,
+  0x26: 0x95,
+  0x27: 0x96,
+  0x28: 0x97,
+  0x29: 0x98,
+  0x2a: 0x99,
+  0x2b: 0x9a,
+  0x2c: 0x9b,
+  0x2d: 0x9c,
+  0x2e: 0x8e,
 };
 
 /** Model of an exit / door / stair record (FUN_002effa0; warp holes use FUN_001c9088). */
@@ -98,7 +158,7 @@ export function floorObjectRow(kind: number): number {
 }
 
 export function defaultChestObjectRow(indoor: boolean, dir = 0): number {
-  const set = indoor ? [0x18,0x1a,0x19] : [0x15,0x17,0x16];
+  const set = indoor ? [0x18, 0x1a, 0x19] : [0x15, 0x17, 0x16];
   return set[dir] ?? set[0]!;
 }
 
@@ -119,7 +179,7 @@ export function recordObjectRow(section: number, rec: Rec, ctx: ObjectContext): 
     case 4: {
       const m = ctx.events?.model(u32(r, 0)) ?? 0;
       if (m) return m;
-      return defaultChestObjectRow(ctx.indoor,r[8]!);
+      return defaultChestObjectRow(ctx.indoor, r[8]!);
     }
     case 5: {
       const m = ctx.events?.model(u32(r, 0)) ?? 0;
@@ -143,11 +203,30 @@ export const section1Kind = (r: Uint8Array): number => r[5]!;
 /** Rough category of a mapObject row (from the model names in v1.1.0). */
 export function objectCategory(row: number): string {
   const ranges: [number, number, string][] = [
-    [1, 3, '階段'], [4, 8, '扉'], [9, 19, '門'], [20, 20, '回復の泉'], [21, 26, '宝箱'], [27, 39, 'スイッチ'],
-    [40, 44, '穴'], [45, 46, 'ダメージ床'], [47, 55, 'ランプ'], [56, 58, 'シンボル'], [59, 62, 'ワープホール'],
-    [63, 63, '看板'], [64, 65, 'ローラー'], [66, 66, 'エサ'], [67, 68, '凍った床'], [69, 126, '置物'],
-    [127, 157, '町の建物'], [158, 181, '壁の置物'], [182, 222, '屋内の置物'], [223, 236, '屋外の置物'],
-    [237, 262, 'ワールドマップ'], [263, 307, 'NPC'], [308, 311, '見えない'], [313, 322, 'ランプ'],
+    [1, 3, '階段'],
+    [4, 8, '扉'],
+    [9, 19, '門'],
+    [20, 20, '回復の泉'],
+    [21, 26, '宝箱'],
+    [27, 39, 'スイッチ'],
+    [40, 44, '穴'],
+    [45, 46, 'ダメージ床'],
+    [47, 55, 'ランプ'],
+    [56, 58, 'シンボル'],
+    [59, 62, 'ワープホール'],
+    [63, 63, '看板'],
+    [64, 65, 'ローラー'],
+    [66, 66, 'エサ'],
+    [67, 68, '凍った床'],
+    [69, 126, '置物'],
+    [127, 157, '町の建物'],
+    [158, 181, '壁の置物'],
+    [182, 222, '屋内の置物'],
+    [223, 236, '屋外の置物'],
+    [237, 262, 'ワールドマップ'],
+    [263, 307, 'NPC'],
+    [308, 311, '見えない'],
+    [313, 322, 'ランプ'],
   ];
   for (const [a, b, n] of ranges) if (row >= a && row <= b) return n;
   return row === OBJ_INVISIBLE ? '見えない' : 'オブジェクト';
@@ -184,18 +263,39 @@ const LONG = new Set([0xbb, 0xbc, 0xd0, 0xd1, 0xda]); // FUN_0044e100 with a len
 export function section2Offset(id: number, dir: number): [number, number, number] {
   if (WALL_SNAP.has(id)) {
     // pushed half a fine unit towards the wall of the direction and 5 down
-    const s = ([[0, 50], [50, 0], [0, -50], [-50, 0]] as const)[dir];
+    const s = (
+      [
+        [0, 50],
+        [50, 0],
+        [0, -50],
+        [-50, 0],
+      ] as const
+    )[dir];
     return s ? [s[0], -5, s[1]] : [0, 0, 0];
   }
   if (SUNK.has(id)) return [0, -5, 0];
   if (CORNER.has(id)) {
     // x / z = v * 100 + (30 | 80 | -80) instead of + 50
-    const s = ([[-20, -20], [30, -130], [30, -20], [-20, 30]] as const)[dir];
+    const s = (
+      [
+        [-20, -20],
+        [30, -130],
+        [30, -20],
+        [-20, 30],
+      ] as const
+    )[dir];
     return s ? [s[0], 0, s[1]] : [0, 0, 0];
   }
   if (LONG.has(id)) {
     // (length - 1) * 50 = 200 along the direction (+ another 100 for direction 1)
-    const s = ([[150, 0], [0, 250], [-250, 0], [0, -250]] as const)[dir];
+    const s = (
+      [
+        [150, 0],
+        [0, 250],
+        [-250, 0],
+        [0, -250],
+      ] as const
+    )[dir];
     return s ? [s[0], 0, s[1]] : [0, 0, 0];
   }
   return [0, 0, 0];
@@ -218,7 +318,15 @@ function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: n
   if (!tile) return [0, 0];
   const u = tile.kind + 1;
   const rot = tile.rot & 3;
-  if (u === 5) return ([[1, 0], [0, 1], [-1, 0], [0, -1]] as const)[rot] as [number, number];
+  if (u === 5)
+    return (
+      [
+        [1, 0],
+        [0, 1],
+        [-1, 0],
+        [0, -1],
+      ] as const
+    )[rot] as [number, number];
   if (u - 1 < 5) return [0, 0];
   if (u >= master.mapParts.rows) return [0, 0];
   const m = u32(master.mapParts.row(u), 0x188);
@@ -236,7 +344,13 @@ function stairOffset(doc: MapDoc, master: Master, x: number, y: number, stair: n
 }
 
 /** How the game places the model of a record (FUN_001c6b64, FUN_002effa0, FUN_001c7614, FUN_002ef5b8). */
-export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: Master, events: EventTable | null = null): Placement {
+export function recordPlacement(
+  section: number,
+  rec: Rec,
+  doc: MapDoc,
+  master: Master,
+  events: EventTable | null = null,
+): Placement {
   const r = rec.raw;
   const none = { angle: 0, ox: 0, oy: 0, oz: 0 };
   switch (section) {
@@ -248,8 +362,15 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
     case 5: {
       const kind = r[8]!;
       const d = r[9]!;
-      if (kind === 0) return { angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
-      if ([2, 3, 4, 8].includes(kind)) return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
+      if (kind === 0)
+        return {
+          angle: ({ 0: Math.PI, 1: HALF, 2: 0, 3: -HALF } as Record<number, number>)[d] ?? 0,
+          ox: 0,
+          oy: 0,
+          oz: 0,
+        };
+      if ([2, 3, 4, 8].includes(kind))
+        return { angle: ({ 1: Math.PI, 2: HALF, 4: -HALF } as Record<number, number>)[d] ?? 0, ox: 0, oy: 0, oz: 0 };
       return none;
     }
     case 7: {
@@ -262,7 +383,14 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       const angle = (QUARTER[dir + 1] ?? 0) + (flip ? Math.PI : 0);
       if (!r[0x17]) return { angle, ox: 0, oy: -5, oz: 0 };
       const s = r[0x15] ? -1 : 1;
-      const [ox, oz] = ([[-50 * s, 0], [0, 50 * s], [50 * s, 0], [0, -50 * s]] as const)[dir] ?? [-50 * s, 0];
+      const [ox, oz] = (
+        [
+          [-50 * s, 0],
+          [0, 50 * s],
+          [50 * s, 0],
+          [0, -50 * s],
+        ] as const
+      )[dir] ?? [-50 * s, 0];
       return { angle, ox, oy: -5, oz };
     }
     case 3: {
@@ -274,7 +402,7 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       const [sx, sz] = slotOffset(r[0x19]!);
       const side = SIDE[c] ?? SIDE[1]!;
       // warp patterns / holes / invisible points: at their slot of the cell
-      if (g === 3 || g === 4 || g === 5) return { angle: g === 5 ? 0 : QUARTER[c] ?? 0, ox: sx, oy: 0, oz: sz };
+      if (g === 3 || g === 4 || g === 5) return { angle: g === 5 ? 0 : (QUARTER[c] ?? 0), ox: sx, oy: 0, oz: sz };
       if (g === 0x0c) return { angle: QUARTER[c] ?? 0, ox: side[0] * 250, oy: 0, oz: side[1] * 250 };
       if (stair === 0 || g === 0 || g === 10 || g === 11) {
         // doors / gates: a step towards the side given by +0x15 (250 with +0x1A set, except on two maps)
@@ -283,7 +411,8 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       }
       // stairs: face along the tile's open side; up stairs turn -90°, down stairs +90°
       const turn = stair === 1 ? -HALF : HALF;
-      if (isIndoor(doc)) return { angle: (QUARTER[c] ?? 0) + turn, ox: sx + side[0] * 50, oy: 0, oz: sz + side[1] * 50 };
+      if (isIndoor(doc))
+        return { angle: (QUARTER[c] ?? 0) + turn, ox: sx + side[0] * 50, oy: 0, oz: sz + side[1] * 50 };
       const [x, z] = stairOffset(doc, master, rec.x, rec.y, stair);
       let base: number | null = null;
       if (x < 0) base = -HALF;
@@ -291,7 +420,8 @@ export function recordPlacement(section: number, rec: Rec, doc: MapDoc, master: 
       else if (z < 0) base = Math.PI;
       else if (z > 0) base = 0;
       // down stairs move 100 along the open side; up stairs only in z, and only when both are set
-      let ox = sx, oz = sz;
+      let ox = sx,
+        oz = sz;
       if (stair === 2) {
         ox += x * 100;
         oz += z * 100;

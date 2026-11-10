@@ -40,7 +40,9 @@ export function lanaiCopyItem(session: LanaiSession, from: number): number {
   if (equip) core.setU32(c, 0x00, equip.table.rowId(equip.table.addRow(equip.row)));
   data.setU16(r, 0x08, data.u16(from, 0x08));
   data.setU16(r, 0x0c, c);
-  for (const o of [0x00, 0x04]) if (data.isString(from, o) && data.isString(r, o)) session.setText(data, r, o, session.stringAt(data, data.u32(from, o)).text);
+  for (const o of [0x00, 0x04])
+    if (data.isString(from, o) && data.isString(r, o))
+      session.setText(data, r, o, session.stringAt(data, data.u32(from, o)).text);
   session.edited();
   return r;
 }
@@ -55,7 +57,8 @@ export function lanaiRemoveItem(session: LanaiSession, it: LanaiItem): void {
   const used = (c: number): boolean => Array.from({ length: data.rows }, (_, r) => data.u16(r, 0x0c)).includes(c);
   if (it.core === core.rows - 1 && it.core >= core.originalRows && !used(it.core)) {
     core.removeLastRow();
-    if (equip && equip.row === equip.table.rows - 1 && equip.row >= equip.table.originalRows) equip.table.removeLastRow();
+    if (equip && equip.row === equip.table.rows - 1 && equip.row >= equip.table.originalRows)
+      equip.table.removeLastRow();
   }
   session.edited();
 }

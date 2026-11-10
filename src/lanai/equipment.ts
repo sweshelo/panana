@@ -27,19 +27,87 @@ export const isLanaiEquipment = (kind: number): boolean => (kind & 0xf0) in LANA
 export const LANAI_EFFECT_OFFSETS = [0x04, 0x08] as const;
 
 /** Kinds 0x40〜0x44: an automatic action (the value is an ActionData row, the number its condition). */
-export const LANAI_AUTO_EFFECTS: Record<number, string> = { 0x40: '戦闘開始時', 0x41: 'ターン開始時', 0x42: 'ターン終了時', 0x43: '攻撃時', 0x44: '被弾時' };
+export const LANAI_AUTO_EFFECTS: Record<number, string> = {
+  0x40: '戦闘開始時',
+  0x41: 'ターン開始時',
+  0x42: 'ターン終了時',
+  0x43: '攻撃時',
+  0x44: '被弾時',
+};
 export const isAutoEffect = (kind: number): boolean => kind >= 0x40 && kind <= 0x44;
 
 // ---- FUN_00165F60 (kind, number, value) -> ConditionData row
 
 const SIMPLE: Record<number, number> = {
-  0x01: 38, 0x02: 79, 0x03: 78, 0x04: 80, 0x05: 81, 0x06: 82, 0x07: 84, 0x08: 83, 0x0b: 97, 0x0c: 39,
-  0x0d: 53, 0x0e: 54, 0x0f: 55, 0x10: 56, 0x11: 57, 0x12: 58, 0x13: 59, 0x14: 62, 0x15: 63, 0x16: 64,
-  0x17: 65, 0x18: 66, 0x19: 67, 0x1a: 68, 0x1b: 69, 0x1c: 60, 0x1d: 61, 0x1e: 99, 0x1f: 100, 0x20: 101,
-  0x24: 139, 0x25: 140, 0x26: 141, 0x27: 142, 0x33: 143, 0x35: 151, 0x36: 152, 0x37: 28, 0x38: 32, 0x39: 33, 0x3a: 35,
-  0x3b: 70, 0x3c: 71, 0x3d: 72, 0x3e: 73, 0x3f: 74, 0x45: 189, 0x46: 190, 0x47: 186, 0x48: 187, 0x49: 76,
-  0x4a: 188, 0x4b: 191, 0x4c: 98, 0x56: 154, 0x57: 155, 0x58: 156, 0x59: 157, 0x5a: 158, 0x5b: 159, 0x5c: 160,
-  0x5d: 161, 0x5e: 162, 0x5f: 163, 0x60: 164, 0x61: 165, 0x62: 166, 0x63: 37, 0x64: 175,
+  0x01: 38,
+  0x02: 79,
+  0x03: 78,
+  0x04: 80,
+  0x05: 81,
+  0x06: 82,
+  0x07: 84,
+  0x08: 83,
+  0x0b: 97,
+  0x0c: 39,
+  0x0d: 53,
+  0x0e: 54,
+  0x0f: 55,
+  0x10: 56,
+  0x11: 57,
+  0x12: 58,
+  0x13: 59,
+  0x14: 62,
+  0x15: 63,
+  0x16: 64,
+  0x17: 65,
+  0x18: 66,
+  0x19: 67,
+  0x1a: 68,
+  0x1b: 69,
+  0x1c: 60,
+  0x1d: 61,
+  0x1e: 99,
+  0x1f: 100,
+  0x20: 101,
+  0x24: 139,
+  0x25: 140,
+  0x26: 141,
+  0x27: 142,
+  0x33: 143,
+  0x35: 151,
+  0x36: 152,
+  0x37: 28,
+  0x38: 32,
+  0x39: 33,
+  0x3a: 35,
+  0x3b: 70,
+  0x3c: 71,
+  0x3d: 72,
+  0x3e: 73,
+  0x3f: 74,
+  0x45: 189,
+  0x46: 190,
+  0x47: 186,
+  0x48: 187,
+  0x49: 76,
+  0x4a: 188,
+  0x4b: 191,
+  0x4c: 98,
+  0x56: 154,
+  0x57: 155,
+  0x58: 156,
+  0x59: 157,
+  0x5a: 158,
+  0x5b: 159,
+  0x5c: 160,
+  0x5d: 161,
+  0x5e: 162,
+  0x5f: 163,
+  0x60: 164,
+  0x61: 165,
+  0x62: 166,
+  0x63: 37,
+  0x64: 175,
 };
 for (let k = 0x28; k <= 0x32; k++) SIMPLE[k] = 42 + (k - 0x28);
 for (let k = 0x4d; k <= 0x54; k++) SIMPLE[k] = 167 + (k - 0x4d);
@@ -48,31 +116,65 @@ for (let k = 0x65; k <= 0x6e; k++) SIMPLE[k] = 176 + (k - 0x65);
 for (let k = 0x40; k <= 0x44; k++) SIMPLE[k] = 153;
 
 /** The elements of kinds 0x09 (by the value) and 0x21 (by the number), and their rows. */
-export const LANAI_EFFECT_ELEMENTS: Record<number, string> = { 1: '火', 2: '氷', 3: '風', 4: '土', 5: '電気', 6: '水', 7: '光', 8: '闇' };
+export const LANAI_EFFECT_ELEMENTS: Record<number, string> = {
+  1: '火',
+  2: '氷',
+  3: '風',
+  4: '土',
+  5: '電気',
+  6: '水',
+  7: '光',
+  8: '闇',
+};
 const K09: Record<number, number> = { 1: 86, 2: 87, 3: 88, 4: 89, 5: 90, 6: 91, 7: 93, 8: 92 };
 const K21: Record<number, number> = { 1: 103, 2: 104, 3: 105, 4: 106, 5: 107, 6: 108, 7: 110, 8: 109 };
 /** Kind 0x22 (ailment resistance): number = the state (12 ふうかく is not in 100 = all ailments). */
-const K22: Record<number, number> = { 1: 112, 2: 113, 7: 114, 4: 115, 5: 116, 8: 117, 6: 118, 3: 119, 9: 120, 10: 121, 0x15: 122, 11: 123, 0x17: 124, 100: 125, 12: 127 };
+const K22: Record<number, number> = {
+  1: 112,
+  2: 113,
+  7: 114,
+  4: 115,
+  5: 116,
+  8: 117,
+  6: 118,
+  3: 119,
+  9: 120,
+  10: 121,
+  0x15: 122,
+  11: 123,
+  0x17: 124,
+  100: 125,
+  12: 127,
+};
 /** Kind 0x23 (element resistance): number 1〜8 = the element, 9 = all; kind 0x34 (stats): number 0〜5. */
 const K34: Record<number, number> = { 0: 145, 1: 146, 2: 147, 3: 148, 4: 149, 5: 150 };
 
 /** The ConditionData row (its index) of an effect: FUN_00165F60. 0 = none. */
 export function lanaiEffectCondition(kind: number, number: number, value: number): number {
   switch (kind) {
-    case 0x09: return K09[value] ?? 85;
-    case 0x0a: return value === 3 ? 95 : value === 4 ? 96 : 94;
-    case 0x21: return K21[number] ?? 102;
-    case 0x22: return K22[number] ?? 111;
-    case 0x23: return number >= 1 && number <= 9 ? 0x80 + number : 0x80;
-    case 0x34: return K34[number] ?? 144;
-    default: return SIMPLE[kind] ?? 0;
+    case 0x09:
+      return K09[value] ?? 85;
+    case 0x0a:
+      return value === 3 ? 95 : value === 4 ? 96 : 94;
+    case 0x21:
+      return K21[number] ?? 102;
+    case 0x22:
+      return K22[number] ?? 111;
+    case 0x23:
+      return number >= 1 && number <= 9 ? 0x80 + number : 0x80;
+    case 0x34:
+      return K34[number] ?? 144;
+    default:
+      return SIMPLE[kind] ?? 0;
   }
 }
 
 /** Kinds whose number picks the state, with the numbers that have a row (in the game's order of the rows). */
 export const LANAI_EFFECT_NUMBERS: Record<number, number[]> = {
   0x21: [1, 2, 3, 4, 5, 6, 7, 8],
-  0x22: Object.entries(K22).sort((a, b) => a[1] - b[1]).map(([n]) => Number(n)),
+  0x22: Object.entries(K22)
+    .sort((a, b) => a[1] - b[1])
+    .map(([n]) => Number(n)),
   0x23: [1, 2, 3, 4, 5, 6, 7, 8, 9],
   0x34: [0, 1, 2, 3, 4, 5],
 };
@@ -82,7 +184,11 @@ export function lanaiEffectKinds(session: LanaiSession): number[] {
   const out: number[] = [];
   for (let k = 1; k < 0x100; k++) {
     if (isAutoEffect(k)) out.push(k);
-    else if (lanaiEffectCondition(k, LANAI_EFFECT_NUMBERS[k]?.[0] ?? 0, k === 0x09 ? 1 : k === 0x0a ? 3 : 0) && kindLabel(session, k)) out.push(k);
+    else if (
+      lanaiEffectCondition(k, LANAI_EFFECT_NUMBERS[k]?.[0] ?? 0, k === 0x09 ? 1 : k === 0x0a ? 3 : 0) &&
+      kindLabel(session, k)
+    )
+      out.push(k);
   }
   return out;
 }
@@ -150,7 +256,14 @@ export function lanaiCondition(session: LanaiSession, row: number): LanaiConditi
   const t = session.table('ConditionData');
   if (!t || row <= 0 || row >= t.rows) return null;
   const s16 = (o: number): number => (t.u16(row, o) << 16) >> 16;
-  return { row, name: session.plain(t, row, 'msg_equip'), base: s16(0x18), min: s16(0x1c), max: s16(0x1e), merge: t.u8(row, 0x23) & 0xf };
+  return {
+    row,
+    name: session.plain(t, row, 'msg_equip'),
+    base: s16(0x18),
+    min: s16(0x1c),
+    max: s16(0x1e),
+    merge: t.u8(row, 0x23) & 0xf,
+  };
 }
 
 /** The name of a kind on its own (the state of its first number), '' when the game shows none. */
@@ -188,17 +301,22 @@ function formatValue(session: LanaiSession, row: number, value: number): string 
   const o = t.named(row, 'msg_value');
   if (o < 0) return '';
   const signed = (v: number): string => (v < 0 ? `${v}` : `+${v}`);
-  return parseLanaiMessage(t.data, o).tokens.map((x) => {
-    switch (x.t) {
-      case 'text': return x.s;
-      case 'ruby': return x.base;
-      case 'tag':
-        if (x.code === 0x103 || x.code === 0x105) return signed(value);
-        if (x.code === 0x106 || x.code === 0x107) return String(Math.round(value) / 100);
-        return String(value);
-      default: return '';
-    }
-  }).join('');
+  return parseLanaiMessage(t.data, o)
+    .tokens.map((x) => {
+      switch (x.t) {
+        case 'text':
+          return x.s;
+        case 'ruby':
+          return x.base;
+        case 'tag':
+          if (x.code === 0x103 || x.code === 0x105) return signed(value);
+          if (x.code === 0x106 || x.code === 0x107) return String(Math.round(value) / 100);
+          return String(value);
+        default:
+          return '';
+      }
+    })
+    .join('');
 }
 
 /** "こうげき +0.4倍", "毒たいせい +2", "ターン終了時: HP自動回復 +4% (ハートのブローチ…)". '' for an empty effect. */
@@ -232,5 +350,9 @@ export function lanaiEffectText(session: LanaiSession, e: LanaiEffect): string {
 /** The effects of an item as text ([] for other items). */
 export function lanaiItemEffects(session: LanaiSession, it: Pick<LanaiItem, 'kind' | 'core'>): string[] {
   const ref = lanaiEquipRow(session, it);
-  return ref ? lanaiEffects(ref).filter((e) => e.kind).map((e) => lanaiEffectText(session, e)) : [];
+  return ref
+    ? lanaiEffects(ref)
+        .filter((e) => e.kind)
+        .map((e) => lanaiEffectText(session, e))
+    : [];
 }

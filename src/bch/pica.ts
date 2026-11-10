@@ -30,14 +30,21 @@ export function float24(v: number): number {
 
 /** Three words holding four float24 (w first) -> x, y, z, w. */
 function vector24(w0: number, w1: number, w2: number): number[] {
-  return [float24(w2 & 0xffffff), float24((w2 >>> 24) | ((w1 & 0xffff) << 8)), float24((w1 >>> 16) | ((w0 & 0xff) << 16)), float24(w0 >>> 8)];
+  return [
+    float24(w2 & 0xffffff),
+    float24((w2 >>> 24) | ((w1 & 0xffff) << 8)),
+    float24((w1 >>> 16) | ((w0 & 0xff) << 16)),
+    float24(w0 >>> 8),
+  ];
 }
 
 export function readPica(b: Uint8Array, o: number, words: number): PicaState {
   const regs = new Map<number, number>();
   const uniforms = new Map<number, [number, number, number, number]>();
   const fixed = new Map<number, number[]>();
-  let uIndex = 0, u32bit = false, fixedIndex = 0;
+  let uIndex = 0,
+    u32bit = false,
+    fixedIndex = 0;
   const f24: number[] = [];
   const fixedWords = [0, 0, 0];
   const write = (reg: number, v: number): void => {
@@ -45,7 +52,8 @@ export function readPica(b: Uint8Array, o: number, words: number): PicaState {
     if (reg === FIXEDATTRIB_INDEX) fixedIndex = v & 0xf;
     else if (reg >= FIXEDATTRIB_DATA0 && reg <= FIXEDATTRIB_DATA0 + 2) {
       fixedWords[reg - FIXEDATTRIB_DATA0] = v;
-      if (reg === FIXEDATTRIB_DATA0 + 2) fixed.set(fixedIndex, vector24(fixedWords[0]!, fixedWords[1]!, fixedWords[2]!));
+      if (reg === FIXEDATTRIB_DATA0 + 2)
+        fixed.set(fixedIndex, vector24(fixedWords[0]!, fixedWords[1]!, fixedWords[2]!));
     } else if (reg === VSH_FLOATUNIFORM_INDEX) {
       uIndex = (v & 0xff) << 2;
       u32bit = v >>> 31 === 1;

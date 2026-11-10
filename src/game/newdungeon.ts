@@ -54,7 +54,11 @@ const RANGES = [
 /** The ID of every dungeon of the game's dungeon table (as it was before any row was given to a new dungeon). */
 function tableDungeons(game: Game): Set<number> {
   const given = new Set(game.code.dungeons.map((d) => d.dungeon));
-  return new Set(dungeonRows(game.dump.code).filter((d) => d.count > 0 && !given.has(d.dungeon)).map((d) => d.dungeon));
+  return new Set(
+    dungeonRows(game.dump.code)
+      .filter((d) => d.count > 0 && !given.has(d.dungeon))
+      .map((d) => d.dungeon),
+  );
 }
 
 /**
@@ -112,7 +116,8 @@ export function takenCodes(game: Game, except = -1): Set<string> {
   const out = new Set<string>();
   // A new dungeon's own code (and its maps') is not taken for itself (renaming it, game/newdungeon.ts renameDungeon).
   const ownNew = game.code.dungeons.some((d) => d.dungeon === except);
-  for (const m of game.code.maps) if (m.dungeonCode && !(ownNew && m.dungeon === except)) out.add(m.dungeonCode.toUpperCase());
+  for (const m of game.code.maps)
+    if (m.dungeonCode && !(ownNew && m.dungeon === except)) out.add(m.dungeonCode.toUpperCase());
   for (const d of dungeonRows(game.dump.code)) {
     let s = '';
     for (let a = d.name - 0x100000; a >= 0 && game.dump.code[a]; a++) s += String.fromCharCode(game.dump.code[a]!);
@@ -225,7 +230,11 @@ export function slotsNeeded(t: EventTable | null): number {
 }
 
 /** The dungeon with the most unused 0x8E slots at the end of its range: its row, how many it needs, and the tail. */
-export async function stateDonor(game: Game, eventsOf: (d: number) => Promise<EventTable | null>, except: number): Promise<{ donor: number; need: number; tail: Range } | null> {
+export async function stateDonor(
+  game: Game,
+  eventsOf: (d: number) => Promise<EventTable | null>,
+  except: number,
+): Promise<{ donor: number; need: number; tail: Range } | null> {
   const t = game.master.mapGroup;
   let best: { donor: number; need: number; tail: Range } | null = null;
   for (let r = 1; r < t.rows; r++) {
@@ -242,7 +251,11 @@ export async function stateDonor(game: Game, eventsOf: (d: number) => Promise<Ev
 }
 
 export async function makeDungeon(
-  game: Game, spec: NewDungeonSpec, existing: Set<string>, eventsOf: (d: number) => Promise<EventTable | null> = (d) => game.eventTable(d), rand: () => number = Math.random,
+  game: Game,
+  spec: NewDungeonSpec,
+  existing: Set<string>,
+  eventsOf: (d: number) => Promise<EventTable | null> = (d) => game.eventTable(d),
+  rand: () => number = Math.random,
 ): Promise<NewDungeon> {
   const code = spec.code.trim().toUpperCase();
   const name = spec.name.trim();
@@ -252,7 +265,8 @@ export async function makeDungeon(
   if (problem) throw new Error(problem);
   if (!name) throw new Error('ダンジョンの名前を入れてください');
   const mg = game.master.table('mapGroup.bin');
-  if (spec.template <= 0 || spec.template >= mg.rows || spec.template === spec.dungeon) throw new Error('写す元のダンジョンが不正です');
+  if (spec.template <= 0 || spec.template >= mg.rows || spec.template === spec.dungeon)
+    throw new Error('写す元のダンジョンが不正です');
   const tmpl = mg.row(spec.template);
   const archiveOf = u32(tmpl, MG.archive);
   if (!archiveOf) throw new Error('写す元のダンジョンにイベントのアーカイブがありません');
@@ -278,7 +292,8 @@ export async function makeDungeon(
     const f = freeRange(saveSize(game, r.key), usedRanges(game, r.first, r.count, spec.dungeon), tmpl[r.count]!);
     return f.count ? f : { first: 0, count: 0 };
   });
-  let donor = -1, donorSlots = 0;
+  let donor = -1,
+    donorSlots = 0;
   if (!ranges[0]!.count) {
     const d = await stateDonor(game, eventsOf, spec.dungeon);
     if (d) {
@@ -334,7 +349,7 @@ export function renameDungeon(game: Game, dungeon: number, change: { name?: stri
   if (change.name !== undefined && !name) throw new Error('ダンジョンの名前を入れてください');
   const code = change.code?.trim().toUpperCase();
   const maps = game.code.maps.filter((m) => m.dungeon === dungeon);
-  const renames: [typeof maps[number], string][] = [];
+  const renames: [(typeof maps)[number], string][] = [];
   if (code !== undefined && code !== d.code) {
     const problem = codeProblem(game, code, dungeon);
     if (problem) throw new Error(problem);
@@ -382,7 +397,9 @@ export function ownPlace(game: Game, dungeon: number): void {
   const t = game.master.table(AREA_TABLE);
   const place = row[MG.place]!;
   const original = game.master.originalRows(AREA_TABLE);
-  const shared = Array.from({ length: mg.rows }, (_, r) => r).some((r) => r !== dungeon && mg.row(r)[MG.place] === place);
+  const shared = Array.from({ length: mg.rows }, (_, r) => r).some(
+    (r) => r !== dungeon && mg.row(r)[MG.place] === place,
+  );
   if (place >= original && place < t.rows && !shared) {
     w32(t.row(place), 0, nameId);
     return;
@@ -411,4 +428,9 @@ export const PLACE_PATCH_SOURCE = `; 追加したダンジョンの場所: い�
 @0x2E59BC                    ; FUN_002e59bc (いる場所を入れる)
   cmp r1, #0x97
 `;
-export const PLACE_PATCH: CodePatch = { id: PLACE_PATCH_ID, title: PLACE_PATCH_TITLE, source: PLACE_PATCH_SOURCE, enabled: true };
+export const PLACE_PATCH: CodePatch = {
+  id: PLACE_PATCH_ID,
+  title: PLACE_PATCH_TITLE,
+  source: PLACE_PATCH_SOURCE,
+  enabled: true,
+};

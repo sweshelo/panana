@@ -6,7 +6,15 @@ import { renderToString } from 'react-dom/server';
 import { bchSummary, unwrapBch } from '../src/bch/bch';
 import { lanaiMonsterSet } from '../src/lanai/monsterModels';
 import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
-import { forgetLanaiMonsters, lanaiModelIndex, lanaiMonsterDesign, lanaiMonsters, lanaiVoice, monstersWithModel, type LanaiModelIndex } from '../src/lanai/monsters';
+import {
+  forgetLanaiMonsters,
+  lanaiModelIndex,
+  lanaiMonsterDesign,
+  lanaiMonsters,
+  lanaiVoice,
+  monstersWithModel,
+  type LanaiModelIndex,
+} from '../src/lanai/monsters';
 import { LanaiSession } from '../src/lanai/session';
 import { lanaiCanRemoveMonster, lanaiCopyMonster, lanaiRemoveMonster } from '../src/lanai/monsterCopy';
 import { lanaiCopyItem, lanaiFreeItemRow, lanaiItemAdded, lanaiRemoveItem } from '../src/lanai/itemCopy';
@@ -20,7 +28,10 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
   let s: LanaiSession;
   let index: LanaiModelIndex;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump);
     index = await lanaiModelIndex(s);
   });
@@ -35,7 +46,10 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
   });
 
   test('the model archives are version 10 and hold only BCHs', () => {
-    expect([...index.archives.values()].map((a) => [a.version, a.entries.length])).toEqual([[10, 349], [10, 497]]);
+    expect([...index.archives.values()].map((a) => [a.version, a.entries.length])).toEqual([
+      [10, 349],
+      [10, 497],
+    ]);
     expect(index.name(0x78bfb000)).toBe('enemy_01.bch');
     expect(index.name(0xf8d5d800)).toBe('enemy_01_01_tex.bch');
     expect(index.name(0x5c4e3400)).toBe('enemy_01_battle.bch');
@@ -77,7 +91,7 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
     expect(lanaiVoice(t, 1).bytes.length).toBe(0);
     const voiced = lanaiMonsters(s).filter((m) => lanaiVoice(t, m.row).bytes.length);
     expect(voiced.length).toBe(72);
-    const KANA = /^[｡-ﾟ'/>|.\-]+$/;
+    const KANA = /^[｡-ﾟ'/>|.-]+$/;
     expect(voiced.map((m) => lanaiVoice(t, m.row).text).filter((v) => !KANA.test(v))).toEqual([]);
     expect(lanaiVoice(t, 23).text).toBe("ﾊﾝﾏｰｱ'ﾝｺｰ"); // ハンマーアンコウ: ﾊﾝﾏｰｱ'ﾝｺｰ
   });
@@ -108,15 +122,27 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
     for (const mesh of model.meshes) {
       const w = mesh.skinWeights;
       if (!w) continue;
-      for (let v = 0; v < w.length; v += 4) expect(Math.abs(w[v]! + w[v + 1]! + w[v + 2]! + w[v + 3]! - 1)).toBeLessThan(0.02);
+      for (let v = 0; v < w.length; v += 4)
+        expect(Math.abs(w[v]! + w[v + 1]! + w[v + 2]! + w[v + 3]! - 1)).toBeLessThan(0.02);
     }
     // the tongue bones scale with segment scale compensate (Maya bone scaling, flag bit 22)
-    expect(model.bones.filter((b) => b.ssc).map((b) => b.name)).toEqual(expect.arrayContaining(['tongue_1', 'tongue_2', 'tongue_3']));
+    expect(model.bones.filter((b) => b.ssc).map((b) => b.name)).toEqual(
+      expect.arrayContaining(['tongue_1', 'tongue_2', 'tongue_3']),
+    );
   });
 
   test('the page', () => {
     const html = renderToString(createElement(LanaiMonsterPage, { session: s, arg: '50' }));
-    for (const t of ['アイスバード', 'アイスバードたち', 'MonsterParameter の行', 'MonsterDesign 行 8', '同じモデルのモンスター', 'おおくちばし', 'モデルあり', '1231 / 1231'])
+    for (const t of [
+      'アイスバード',
+      'アイスバードたち',
+      'MonsterParameter の行',
+      'MonsterDesign 行 8',
+      '同じモデルのモンスター',
+      'おおくちばし',
+      'モデルあり',
+      '1231 / 1231',
+    ])
       expect(html).toContain(t);
   });
 
@@ -151,7 +177,13 @@ describe.skipIf(!hasLanai)('RPG FREE! monsters', () => {
     const r = lanaiCopyItem(s, from.row);
     expect(r).toBe(free);
     const it = lanaiItems(s).find((x) => x.row === r)!;
-    expect([it.name, it.core, it.model, it.kind, lanaiItemAdded(s, r)]).toEqual([from.name, cores, from.model, from.kind, true]);
+    expect([it.name, it.core, it.model, it.kind, lanaiItemAdded(s, r)]).toEqual([
+      from.name,
+      cores,
+      from.model,
+      from.kind,
+      true,
+    ]);
     lanaiRemoveItem(s, it);
     expect([core.rows, data.u16(r, 0x0c), lanaiItems(s).some((x) => x.row === r)]).toEqual([cores, 0, false]);
   });

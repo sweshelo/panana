@@ -11,12 +11,26 @@ import type { MapEditState } from './model';
  * A tile of `kind` turned `rot` (0..3). `rotDir` says where each turn faces, as an index of ROT_ARROW (default:
  * north, east, south, west; RPG FREE!: LANAI_ROT_DIR).
  */
-export function drawTile(g: CanvasRenderingContext2D, s: number, x: number, y: number, kind: number, rot: number, letter: number, rotDir?: readonly number[]): void {
+export function drawTile(
+  g: CanvasRenderingContext2D,
+  s: number,
+  x: number,
+  y: number,
+  kind: number,
+  rot: number,
+  letter: number,
+  rotDir?: readonly number[],
+): void {
   const dir = rotDir?.[rot] ?? rot;
   drawTileGlyph(g, s, x, y, kindColor(kind), dir, `${kind}${letterLabel(letter)}`, ROT_ARROW[dir]);
 }
 
-export function drawTiles(g: CanvasRenderingContext2D, s: number, tiles: readonly Tile[], rotDir?: readonly number[]): void {
+export function drawTiles(
+  g: CanvasRenderingContext2D,
+  s: number,
+  tiles: readonly Tile[],
+  rotDir?: readonly number[],
+): void {
   for (const t of tiles) drawTile(g, s, t.x, t.y, t.kind, t.rot, t.letter, rotDir);
 }
 
@@ -41,11 +55,17 @@ export function drawSelection(g: CanvasRenderingContext2D, s: number, st: MapEdi
 }
 
 /** The hovered cell: the brush when painting, the copied range when selecting a range, and its outline. */
-export function drawHover(g: CanvasRenderingContext2D, s: number, st: MapEditState, hover: [number, number] | null, rotDir?: readonly number[]): void {
+export function drawHover(
+  g: CanvasRenderingContext2D,
+  s: number,
+  st: MapEditState,
+  hover: [number, number] | null,
+  rotDir?: readonly number[],
+): void {
   if (!hover) return;
   const [x, y] = hover;
   if (st.tool === 'paint') {
-    const brush = st.brushAt(x,y);
+    const brush = st.brushAt(x, y);
     g.globalAlpha = 0.6;
     if (brush) drawTile(g, s, x, y, brush.kind, brush.rot, brush.letter, rotDir);
     g.globalAlpha = 1;

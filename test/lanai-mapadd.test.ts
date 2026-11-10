@@ -23,7 +23,14 @@ import {
   suggestGroupCode,
   suggestMapName,
 } from '../src/lanai/mapadd';
-import { LANAI_EVENT_ACTIONS, LANAI_MAP_ROW, LANAI_MAP_TABLE_ENTRY, LANAI_MAPDB_ENTRY, lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
+import {
+  LANAI_EVENT_ACTIONS,
+  LANAI_MAP_ROW,
+  LANAI_MAP_TABLE_ENTRY,
+  LANAI_MAPDB_ENTRY,
+  lanaiMaps,
+  type LanaiMaps,
+} from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages, type Dump } from '../src/rom/dump';
@@ -98,14 +105,21 @@ describe('LanaiTable.copyOf', () => {
 describe('copies of a dungeon', () => {
   test('the actions that name a map of the group go to its copy; the others stay', () => {
     const t = new LanaiTable(plainTable(3, 100));
-    for (let r = 0; r < 3; r++) for (const o of LANAI_EVENT_ACTIONS) for (let a = 0; a < 6; a++) t.setU32(r, o + a * 4, 0);
+    for (let r = 0; r < 3; r++)
+      for (const o of LANAI_EVENT_ACTIONS) for (let a = 0; a < 6; a++) t.setU32(r, o + a * 4, 0);
     t.setU32(1, 0x10, 0x80000013);
     t.setU32(1, 0x14, 0xaaaa0001); // a map of the group
     t.setU32(1, 0x18, 5); // the point
     t.setU32(2, 0x40, 0x80000011);
     t.setU32(2, 0x44, 0xbbbb0001); // a map of another group
     t.setU32(2, 0x2c, 0xaaaa0002);
-    const n = remapEventMaps(t, new Map([[0xaaaa0001, 0xcccc0001], [0xaaaa0002, 0xcccc0002]]));
+    const n = remapEventMaps(
+      t,
+      new Map([
+        [0xaaaa0001, 0xcccc0001],
+        [0xaaaa0002, 0xcccc0002],
+      ]),
+    );
     expect(n).toBe(2);
     expect(t.u32(1, 0x14)).toBe(0xcccc0001);
     expect(t.u32(1, 0x18)).toBe(5);
@@ -127,7 +141,10 @@ describe.skipIf(!hasLanai)('RPG FREE! maps and dungeons added (ROM)', () => {
   let content: LanaiContent;
   let maps: LanaiMaps;
   beforeAll(async () => {
-    dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump, { fresh: true });
     content = lanaiContents(s)[38]!;
     maps = await lanaiMaps(s, content);
@@ -147,16 +164,18 @@ describe.skipIf(!hasLanai)('RPG FREE! maps and dungeons added (ROM)', () => {
     expect(m.dungeon).toBe(src.dungeon);
     expect(maps.maps.length).toBe(romMaps + 1);
     expect(m.sections.every((h, k) => (k === 7 ? h === 0 : !src.sections.includes(h)))).toBe(true);
-    const a = maps.doc(src), b = maps.doc(m);
+    const a = maps.doc(src),
+      b = maps.doc(m);
     expect(b.tiles.length).toBe(a.tiles.length);
     // each EventObject row the records name got a copy (shared ones share it)
     const named = new Set<number>();
     for (const k of [3, 4, 5, 8]) for (const r of a.recs[k] ?? []) if (u32(r.raw, 4) > 0) named.add(u32(r.raw, 4));
     expect(ev.rows).toBe(rows + named.size);
-    for (const k of [3, 4, 5, 8]) for (const [i, r] of (b.recs[k] ?? []).entries()) {
-      const was = u32(a.recs[k]![i]!.raw, 4);
-      expect(u32(r.raw, 4) >= rows || was === 0).toBe(true);
-    }
+    for (const k of [3, 4, 5, 8])
+      for (const [i, r] of (b.recs[k] ?? []).entries()) {
+        const was = u32(a.recs[k]![i]!.raw, 4);
+        expect(u32(r.raw, 4) >= rows || was === 0).toBe(true);
+      }
 
     // the export: one more row in the map table, the sections in the database
     const arc = parseArchive(s.modFiles().get(content.archive)!);
@@ -188,7 +207,9 @@ describe.skipIf(!hasLanai)('RPG FREE! maps and dungeons added (ROM)', () => {
   test('a dungeon copied with its maps: own MapGroup row, name, EventObject table and slots; stairs lead to the copies', async () => {
     const mg = maps.mapGroup!;
     const groupRows = mg.rows;
-    const tmpl = maps.maps.find((m) => !m.world && groupMaps(maps, m.dungeon).length > 1)?.dungeon ?? maps.mapByName('D01001B01')!.dungeon;
+    const tmpl =
+      maps.maps.find((m) => !m.world && groupMaps(maps, m.dungeon).length > 1)?.dungeon ??
+      maps.mapByName('D01001B01')!.dungeon;
     const g = maps.groups[tmpl]!;
     const list = groupMaps(maps, tmpl);
     const from = groupCode(maps, tmpl);

@@ -23,7 +23,18 @@ import { findByName, findEntry, unpackEntry, type ArcEntry } from './archive/gsa
 import { equalBytes } from './util/bytes';
 import { idbGet, idbSet } from './util/idb';
 
-const TABLE_LABELS: Record<string, string> = { 'monsterParameter.bin': 'モンスターの能力', 'monsterGroup.bin': 'モンスターの群れ', 'itemData.bin': 'アイテム', 'mapData.bin': 'マップの設定 (BGM・足音)', 'soundData.bin': '音', 'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)', 'mapChara.bin': 'マップのキャラ (ボスの姿)', 'actionData.bin': 'アクション (ワザ)', 'mapGroup.bin': 'ダンジョンの設定', 'mapJumpPoint.bin': 'ジャンプの行き先' };
+const TABLE_LABELS: Record<string, string> = {
+  'monsterParameter.bin': 'モンスターの能力',
+  'monsterGroup.bin': 'モンスターの群れ',
+  'itemData.bin': 'アイテム',
+  'mapData.bin': 'マップの設定 (BGM・足音)',
+  'soundData.bin': '音',
+  'monsterFixGroup.bin': 'ボス戦の敵 (固定の組)',
+  'mapChara.bin': 'マップのキャラ (ボスの姿)',
+  'actionData.bin': 'アクション (ワザ)',
+  'mapGroup.bin': 'ダンジョンの設定',
+  'mapJumpPoint.bin': 'ジャンプの行き先',
+};
 export const tableLabel = (name: string): string => TABLE_LABELS[name] ?? name;
 const EDITS_KEY = 'edits/v2';
 
@@ -144,10 +155,12 @@ export class Session {
     if (!w.groundFile) return null;
     if (!this.groundEntries.has(w.hash)) {
       const arc = this.game.master.archive;
-      const e = findByName(arc, w.groundFile) ?? (() => {
-        const x = findEntry(arc, w.groundEntry);
-        return x ? { entry: x, body: unpackEntry(arc, x).body } : undefined;
-      })();
+      const e =
+        findByName(arc, w.groundFile) ??
+        (() => {
+          const x = findEntry(arc, w.groundEntry);
+          return x ? { entry: x, body: unpackEntry(arc, x).body } : undefined;
+        })();
       this.groundEntries.set(w.hash, e ?? null);
     }
     return this.groundEntries.get(w.hash)!;
@@ -180,7 +193,8 @@ export class Session {
   /** World maps whose terrain differs from the ROM's. */
   changedGrounds(): WorldInfo[] {
     return this.game.code.worlds.filter((w) => {
-      const e = this.groundEdits.get(w.hash), o = this.game.ground(w);
+      const e = this.groundEdits.get(w.hash),
+        o = this.game.ground(w);
       return !!e && !!o && (!equalBytes(e.parts, o.parts) || !equalBytes(e.rots, o.rots));
     });
   }
@@ -288,12 +302,39 @@ export class Session {
     }
     const added = this.game.code
       .addedMaps()
-      .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }));
+      .map(({ hash, name, dungeon, dungeonCode, floor, mapDataKey, sections, extra }) => ({
+        hash,
+        name,
+        dungeon,
+        dungeonCode,
+        floor,
+        mapDataKey,
+        sections,
+        extra,
+      }));
     const dungeons: AddedDungeon[] = this.game.code.dungeons.map(({ dungeon, code }) => ({ dungeon, code }));
     const files: Record<string, Uint8Array> = Object.fromEntries(this.game.addedFiles);
     const patches = this.game.codePatches;
     const direct = this.book?.directChanged() ? this.book.directData!.data : null;
-    idbSet(EDITS_KEY, { added, dungeons, files, worlds, grounds, maps, events, treasure: master.treasureChanged() ? master.treasureGroup.data : null, tables, messages: master.texts.saved(), shops, patches, ...(this.game.dropCap ? { dropCap: true } : {}), ...(this.game.levelStealth ? { levelStealth: this.game.levelStealth } : {}), ...(changedSpeeds(this.game.chaseSpeeds).length ? { chaseSpeeds: this.game.chaseSpeeds } : {}), direct, design: this.book?.designChanged() ? this.book.designData() : null });
+    idbSet(EDITS_KEY, {
+      added,
+      dungeons,
+      files,
+      worlds,
+      grounds,
+      maps,
+      events,
+      treasure: master.treasureChanged() ? master.treasureGroup.data : null,
+      tables,
+      messages: master.texts.saved(),
+      shops,
+      patches,
+      ...(this.game.dropCap ? { dropCap: true } : {}),
+      ...(this.game.levelStealth ? { levelStealth: this.game.levelStealth } : {}),
+      ...(changedSpeeds(this.game.chaseSpeeds).length ? { chaseSpeeds: this.game.chaseSpeeds } : {}),
+      direct,
+      design: this.book?.designChanged() ? this.book.designData() : null,
+    });
   }
 
   private async restoreEdits(auto: boolean): Promise<void> {
@@ -340,8 +381,41 @@ export class Session {
     const grounds = Object.keys(edits.grounds ?? {}).map((h) => mapLabel(game, Number(h)));
     const nPatches = edits.patches?.length ?? 0;
     const direct = edits.direct && this.book?.directData ? edits.direct : null;
-    if (!names.length && !nEvents && !edits.treasure && !tables.length && !nMessages && !nShops && !worlds.length && !grounds.length && !nPatches && !edits.dropCap && !edits.levelStealth && !edits.chaseSpeeds && !direct && !edits.design) return;
-    const what = [names.join(', '), worlds.map((w) => `${w} の入口`).join(', '), grounds.map((w) => `${w} の地形`).join(', '), nEvents ? `イベントの表 ${nEvents} 個` : '', edits.treasure ? '宝箱の中身' : '', tables.map(tableLabel).join(', '), edits.design ? 'モンスターのデザイン' : '', nMessages ? `メッセージ ${nMessages} 個` : '', nShops ? `店の品揃え ${nShops} 店` : '', nPatches ? `コードのパッチ ${nPatches} 個` : '', edits.dropCap ? 'ドロップ率の天井の撤廃' : '', edits.levelStealth ? 'レベルステルス' : '', edits.chaseSpeeds ? 'シンボルの速さ' : '', direct ? 'ワザの演出' : ''].filter(Boolean).join(' / ');
+    if (
+      !names.length &&
+      !nEvents &&
+      !edits.treasure &&
+      !tables.length &&
+      !nMessages &&
+      !nShops &&
+      !worlds.length &&
+      !grounds.length &&
+      !nPatches &&
+      !edits.dropCap &&
+      !edits.levelStealth &&
+      !edits.chaseSpeeds &&
+      !direct &&
+      !edits.design
+    )
+      return;
+    const what = [
+      names.join(', '),
+      worlds.map((w) => `${w} の入口`).join(', '),
+      grounds.map((w) => `${w} の地形`).join(', '),
+      nEvents ? `イベントの表 ${nEvents} 個` : '',
+      edits.treasure ? '宝箱の中身' : '',
+      tables.map(tableLabel).join(', '),
+      edits.design ? 'モンスターのデザイン' : '',
+      nMessages ? `メッセージ ${nMessages} 個` : '',
+      nShops ? `店の品揃え ${nShops} 店` : '',
+      nPatches ? `コードのパッチ ${nPatches} 個` : '',
+      edits.dropCap ? 'ドロップ率の天井の撤廃' : '',
+      edits.levelStealth ? 'レベルステルス' : '',
+      edits.chaseSpeeds ? 'シンボルの速さ' : '',
+      direct ? 'ワザの演出' : '',
+    ]
+      .filter(Boolean)
+      .join(' / ');
     if (!auto && !confirm(`前回の編集が残っています (${what})。読み込みますか?\n「キャンセル」で破棄します。`)) {
       game.code.removeMaps(added.map((m) => m.hash));
       for (const d of dungeons) game.code.removeDungeon(d.dungeon);
@@ -369,7 +443,8 @@ export class Session {
     for (const [hash, bytes] of Object.entries(edits.grounds ?? {})) {
       const w = game.code.worlds.find((x) => x.hash === Number(hash));
       const n = bytes.length / 2;
-      if (w && this.groundEditable(w) && n === this.game.ground(w)!.parts.length) this.setGround(w, { parts: bytes.slice(0, n), rots: bytes.slice(n) });
+      if (w && this.groundEditable(w) && n === this.game.ground(w)!.parts.length)
+        this.setGround(w, { parts: bytes.slice(0, n), rots: bytes.slice(n) });
     }
     this.flushGrounds();
     for (const [d, bytes] of Object.entries(edits.events)) {

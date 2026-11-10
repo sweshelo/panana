@@ -6,13 +6,35 @@ import { renderPartThumb } from '../editor/thumbs';
 import type * as THREE from 'three';
 import { loadObjectModels, objKey } from '../cgfx/loader';
 import { ModelFactory } from '../cgfx/three';
-import type { WorldOverlay, WorldPaletteRow, WorldPin, WorldPointSet, WorldRangeSet, WorldSource } from '../editor/worldview';
-import { copyGround, ENT, moveEntrance, parseWorldPoints, WORLD_MODEL_ARCHIVE, WORLD_SIZE, WORLD_TEXTURES, type Ground, type WorldInfo } from '../game/worldmap';
+import type {
+  WorldOverlay,
+  WorldPaletteRow,
+  WorldPin,
+  WorldPointSet,
+  WorldRangeSet,
+  WorldSource,
+} from '../editor/worldview';
+import {
+  copyGround,
+  ENT,
+  moveEntrance,
+  parseWorldPoints,
+  WORLD_MODEL_ARCHIVE,
+  WORLD_SIZE,
+  WORLD_TEXTURES,
+  type Ground,
+  type WorldInfo,
+} from '../game/worldmap';
 import type { Session } from '../session';
 import { equalBytes } from '../util/bytes';
 
 /** Base colours by terrain type (worldmapParts +4 bits 0-1). */
-const TERRAIN_RGB: [number, number, number][] = [[84, 140, 76], [196, 176, 112], [118, 118, 126], [92, 146, 170]];
+const TERRAIN_RGB: [number, number, number][] = [
+  [84, 140, 76],
+  [196, 176, 112],
+  [118, 118, 126],
+  [92, 146, 170],
+];
 
 /** Colour of a worldmapParts row: its terrain type, a little lighter or darker per row. */
 export function partRgb(part: number, flags: Uint8Array | null): [number, number, number] {
@@ -21,7 +43,8 @@ export function partRgb(part: number, flags: Uint8Array | null): [number, number
   const k = 0.85 + ((part * 7) % 5) * 0.06;
   return base.map((c) => Math.min(255, Math.round(c * k))) as [number, number, number];
 }
-export const rgbHex = ([r, g, b]: [number, number, number]): string => `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
+export const rgbHex = ([r, g, b]: [number, number, number]): string =>
+  `#${((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)}`;
 
 interface Snapshot {
   entrances: Uint8Array[];
@@ -57,10 +80,26 @@ export class KaharaWorldSource implements WorldSource {
     const first = session.entrancesOf(world)[0];
     this.start = first ? [ENT.x(first) + 0.5, ENT.y(first) + 0.5] : [150, 150];
     const points = parseWorldPoints(game.db.get(world.sections[3]!));
-    this.pointSets = [{ key: 'points', label: '区画 3 の地点', color: '#ffffff', square: true, list: () => points.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 })) }];
+    this.pointSets = [
+      {
+        key: 'points',
+        label: '区画 3 の地点',
+        color: '#ffffff',
+        square: true,
+        list: () => points.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 })),
+      },
+    ];
     const zone = game.db.get(world.sections[1]!);
     this.overlays = zone.length
-      ? [{ key: 'zone', label: '区画 1 (環境のゾーン、推定)', on: false, colors: ['', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0.32)', 'rgba(220,240,255,0.45)'], value: (x, y) => ((zone[(y * WORLD_SIZE + x) >> 2] ?? 0) >> (((y * WORLD_SIZE + x) & 3) * 2)) & 3 }]
+      ? [
+          {
+            key: 'zone',
+            label: '区画 1 (環境のゾーン、推定)',
+            on: false,
+            colors: ['', 'rgba(255,255,255,0.18)', 'rgba(255,255,255,0.32)', 'rgba(220,240,255,0.45)'],
+            value: (x, y) => ((zone[(y * WORLD_SIZE + x) >> 2] ?? 0) >> (((y * WORLD_SIZE + x) & 3) * 2)) & 3,
+          },
+        ]
       : [];
   }
 
@@ -82,7 +121,13 @@ export class KaharaWorldSource implements WorldSource {
   }
   palette(): WorldPaletteRow[] {
     // row 1 is the sea (bgpt_wld_sea), not put in cells
-    return [{ row: 0, label: 'なし (海)', flags: 0 }, ...this.session.game.worldParts().filter((p) => p.model && p.row !== 1).map((p) => ({ row: p.row, label: this.names.get(p.model) ?? `種類 ${p.flags & 3}`, flags: p.flags }))];
+    return [
+      { row: 0, label: 'なし (海)', flags: 0 },
+      ...this.session.game
+        .worldParts()
+        .filter((p) => p.model && p.row !== 1)
+        .map((p) => ({ row: p.row, label: this.names.get(p.model) ?? `種類 ${p.flags & 3}`, flags: p.flags })),
+    ];
   }
   partFlags(part: number): number {
     return this.session.game.worldPartFlags()?.[part] ?? 0;
@@ -106,7 +151,9 @@ export class KaharaWorldSource implements WorldSource {
   entrances(): WorldPin[] {
     const original = this.session.originalEntrances(this.world);
     return this.session.entrancesOf(this.world).map((r, i) => ({
-      x: ENT.x(r) + 0.5, y: ENT.y(r) + 0.5, plain: false,
+      x: ENT.x(r) + 0.5,
+      y: ENT.y(r) + 0.5,
+      plain: false,
       color: !original[i] || !equalBytes(original[i]!, r) ? '#e0b04c' : '#ff5a5a',
     }));
   }
@@ -128,7 +175,11 @@ export class KaharaWorldSource implements WorldSource {
   snapshot(): Snapshot {
     const g = this.ground();
     const events = this.session.st.events.get(this.world.dungeon);
-    return { entrances: this.session.entrancesOf(this.world).map((r) => r.slice()), ground: g && copyGround(g), events: events ? events.data.slice() : null };
+    return {
+      entrances: this.session.entrancesOf(this.world).map((r) => r.slice()),
+      ground: g && copyGround(g),
+      events: events ? events.data.slice() : null,
+    };
   }
   restore(s: unknown): void {
     const snap = s as Snapshot;
@@ -142,7 +193,14 @@ export class KaharaWorldSource implements WorldSource {
 
   async load3d(): Promise<string> {
     const { game } = this.session;
-    const refs = [...new Set(game.worldParts().map((p) => p.model).filter((h) => h))].map((entry) => ({ archive: WORLD_MODEL_ARCHIVE, entry }));
+    const refs = [
+      ...new Set(
+        game
+          .worldParts()
+          .map((p) => p.model)
+          .filter((h) => h),
+      ),
+    ].map((entry) => ({ archive: WORLD_MODEL_ARCHIVE, entry }));
     const sets = await loadObjectModels(game, [...refs, { archive: WORLD_MODEL_ARCHIVE, entry: WORLD_TEXTURES }]);
     if (this.disposed) return '';
     const errors: string[] = [];
@@ -186,7 +244,9 @@ export class KaharaWorldSource implements WorldSource {
     if (!r) return null;
     const row = ENT.model(r) || (this.session.game.worldParts()[ENT.part(r)]?.object ?? 0);
     const ref = row ? this.session.game.master.objectModel(row) : null;
-    return ref ? { make: () => this.object(row)?.instance(ref.entry) ?? null, angle: (-ENT.rot(r) * Math.PI) / 2 } : null;
+    return ref
+      ? { make: () => this.object(row)?.instance(ref.entry) ?? null, angle: (-ENT.rot(r) * Math.PI) / 2 }
+      : null;
   }
 
   private object(row: number): ModelFactory | null {
@@ -194,12 +254,15 @@ export class KaharaWorldSource implements WorldSource {
       this.objects.set(row, null);
       const ref = this.session.game.master.objectModel(row);
       if (ref)
-        void loadObjectModels(this.session.game, [ref]).then((sets) => {
-          const set = sets.get(objKey(ref.archive, ref.entry));
-          if (this.disposed || !set?.models.size) return;
-          this.objects.set(row, new ModelFactory(set));
-          this.onModel();
-        }, () => {});
+        void loadObjectModels(this.session.game, [ref]).then(
+          (sets) => {
+            const set = sets.get(objKey(ref.archive, ref.entry));
+            if (this.disposed || !set?.models.size) return;
+            this.objects.set(row, new ModelFactory(set));
+            this.onModel();
+          },
+          () => {},
+        );
     }
     return this.objects.get(row) ?? null;
   }

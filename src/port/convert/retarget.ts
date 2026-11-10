@@ -11,7 +11,17 @@
 //               2+ textures 0x2400 | 3 textures 0x4800
 //   ("lit" = the material's fragment lighting flag; RPG3 has no vertex colour model, 0x80 is assumed as in RPG FREE!.)
 // - Baked (quaternion) tracks: RPG3 numbers them in the flags (index << 16), RPG FREE! has 0xFFFF0000.
-import { PICAAttributeName, type H3D, type H3DAnimation, type H3DFloatKeyFrameGroup, type H3DMaterial, type H3DMesh, type H3DModel, type H3DSubMesh, type KeyFrame } from '../h3d';
+import {
+  PICAAttributeName,
+  type H3D,
+  type H3DAnimation,
+  type H3DFloatKeyFrameGroup,
+  type H3DMaterial,
+  type H3DMesh,
+  type H3DModel,
+  type H3DSubMesh,
+  type KeyFrame,
+} from '../h3d';
 
 export type H3DTitle = 'oahu' | 'lanai';
 
@@ -34,7 +44,8 @@ function weightCount(mesh: H3DMesh): number {
   return find(PICAAttributeName.BoneWeight) ?? find(PICAAttributeName.BoneIndex) ?? 0;
 }
 
-const hasAttribute = (mesh: H3DMesh, name: number): boolean => mesh.attributes.some((a) => a.name === name) || mesh.fixedAttributes.some((a) => a.name === name);
+const hasAttribute = (mesh: H3DMesh, name: number): boolean =>
+  mesh.attributes.some((a) => a.name === name) || mesh.fixedAttributes.some((a) => a.name === name);
 
 /** The bool uniforms of a sub mesh in the target game. */
 export function boolUniforms(title: H3DTitle, mesh: H3DMesh, sm: H3DSubMesh, m: H3DMaterial): number {
@@ -66,7 +77,9 @@ function retargetModel(title: H3DTitle, m: H3DModel, keepShaders: boolean): void
     // Texture coordinate flags: RPG3 sets all three, RPG FREE! those of its textures.
     const n = textureCount(mat);
     p.textureCoords.forEach((t, k) => (t.flags = title === 'oahu' || k < n ? 1 : 0));
-    const skinnings = new Set(m.meshes.filter((x) => x.materialIndex === i).flatMap((x) => x.subMeshes.map((s) => s.skinning)));
+    const skinnings = new Set(
+      m.meshes.filter((x) => x.materialIndex === i).flatMap((x) => x.subMeshes.map((s) => s.skinning)),
+    );
     const own = p.shaderReference ?? '';
     // A native name of the other game stays (both games' masters hold the 36 programs); other names are recomputed.
     if (!keepShaders || !SHADER.test(own)) p.shaderReference = shaderFor(mat, skinnings);
@@ -88,7 +101,12 @@ function retargetModel(title: H3DTitle, m: H3DModel, keepShaders: boolean): void
     for (const x of m.meshes) x.layer = layer(x.layer);
     const layers = [0, 1, 2, 3].map((l) => m.meshes.filter((x) => x.layer === l));
     m.meshes = layers.flat();
-    [m.meshesLayer0, m.meshesLayer1, m.meshesLayer2, m.meshesLayer3] = layers as [H3DMesh[], H3DMesh[], H3DMesh[], H3DMesh[]];
+    [m.meshesLayer0, m.meshesLayer1, m.meshesLayer2, m.meshesLayer3] = layers as [
+      H3DMesh[],
+      H3DMesh[],
+      H3DMesh[],
+      H3DMesh[],
+    ];
   }
   m.flags = m.skeleton.length ? m.flags | 2 : m.flags & ~2;
 }
@@ -100,7 +118,10 @@ function retargetModel(title: H3DTitle, m: H3DModel, keepShaders: boolean): void
  */
 export function mergeCurve(c: H3DFloatKeyFrameGroup): void {
   if (!c.moreSegments?.length) return;
-  const segs = [{ ...c, startFrame: c.segmentStart ?? c.startFrame, endFrame: c.segmentEnd ?? c.endFrame }, ...c.moreSegments];
+  const segs = [
+    { ...c, startFrame: c.segmentStart ?? c.startFrame, endFrame: c.segmentEnd ?? c.endFrame },
+    ...c.moreSegments,
+  ];
   const keys: KeyFrame[] = [];
   const push = (k: KeyFrame): void => {
     const last = keys[keys.length - 1];
@@ -127,7 +148,15 @@ export function mergeCurve(c: H3DFloatKeyFrameGroup): void {
     });
   }
   const dur = c.endFrame - c.startFrame;
-  Object.assign(c, { interpolationType: 2, quantization: 0, valueScale: 1, valueOffset: 0, frameScale: 1, invDuration: dur ? 1 / dur : 0, keyFrames: keys });
+  Object.assign(c, {
+    interpolationType: 2,
+    quantization: 0,
+    valueScale: 1,
+    valueOffset: 0,
+    frameScale: 1,
+    invDuration: dur ? 1 / dur : 0,
+    keyFrames: keys,
+  });
   delete c.moreSegments;
   delete c.segmentStart;
   delete c.segmentEnd;
@@ -137,7 +166,22 @@ function curves(a: H3DAnimation): H3DFloatKeyFrameGroup[] {
   const out: H3DFloatKeyFrameGroup[] = [];
   for (const e of a.elements) {
     const c = e.content;
-    const slots = c.kind === 'transform' ? [c.scaleX, c.scaleY, c.scaleZ, c.rotationX, c.rotationY, c.rotationZ, c.translationX, c.translationY, c.translationZ] : c.kind === 'vector' ? c.slots : [];
+    const slots =
+      c.kind === 'transform'
+        ? [
+            c.scaleX,
+            c.scaleY,
+            c.scaleZ,
+            c.rotationX,
+            c.rotationY,
+            c.rotationZ,
+            c.translationX,
+            c.translationY,
+            c.translationZ,
+          ]
+        : c.kind === 'vector'
+          ? c.slots
+          : [];
     for (const x of slots) if (x !== null && typeof x === 'object') out.push(x);
   }
   return out;
@@ -146,7 +190,9 @@ function curves(a: H3DAnimation): H3DFloatKeyFrameGroup[] {
 /** Sets the target game's conventions on an H3D (in place). `keepShaders`: the H3D comes from the other H3D game. */
 export function retarget(h: H3D, title: H3DTitle, keepShaders: boolean): void {
   for (const m of h.models) retargetModel(title, m, keepShaders);
-  if (title === 'lanai') for (const a of [...h.skeletalAnimations, ...h.materialAnimations, ...h.visibilityAnimations]) curves(a).forEach(mergeCurve);
+  if (title === 'lanai')
+    for (const a of [...h.skeletalAnimations, ...h.materialAnimations, ...h.visibilityAnimations])
+      curves(a).forEach(mergeCurve);
   for (const a of h.skeletalAnimations) {
     let n = 0;
     for (const e of a.elements) {

@@ -1,7 +1,6 @@
 // Items (itemData, 713 rows x 0x30) with their use effect (actionData) and the shops that sell them
 // (ShopItem, see shops.ts). Fields: elpulse docs/analysis.md "itemData.bin".
-import { GsTable } from '../archive/gstable';
-import { findEntry, unpackEntry } from '../archive/gsarc';
+import { findEntry } from '../archive/gsarc';
 import { equalBytes, s16, u16, u32, w16, w32 } from '../util/bytes';
 import { ActionEdits, cleanActionName, decodeAction, ELEMENT, itemEffect } from './actions';
 import { assignModEffect, modEffectOf, type ModEffectKey } from './itemeffects';
@@ -16,7 +15,12 @@ export const ITEM_CATEGORY: Record<number, string> = { 1: '道具', 2: 'ゴー�
 export const EQUIP_SLOT: Record<number, string> = { 0x03: '首', 0x13: '腕', 0x23: '足', 0x33: '背中', 0x43: '服' };
 
 /** Message fields of an item row (+0x10..+0x1C): offset and label. */
-export const DESCRIPTION_FIELDS: [number, string][] = [[0x10, '説明'], [0x14, '+0x14'], [0x18, '+0x18'], [0x1c, '+0x1C']];
+export const DESCRIPTION_FIELDS: [number, string][] = [
+  [0x10, '説明'],
+  [0x14, '+0x14'],
+  [0x18, '+0x18'],
+  [0x1c, '+0x1C'],
+];
 
 export interface ItemDescription {
   offset: number;
@@ -114,7 +118,13 @@ export function readStates(master: Master): StateInfo[] {
   const t = master.table('conditionData.bin');
   return Array.from({ length: t.rows }, (_, id) => {
     const r = t.row(id);
-    return { id, name: (master.message(u16(r, 0x14)) ?? '').replace(/Ē/g, '(色)'), combine: r[0x32]! & 0xf, min: s16(r, 4), max: s16(r, 6) };
+    return {
+      id,
+      name: (master.message(u16(r, 0x14)) ?? '').replace(/Ē/g, '(色)'),
+      combine: r[0x32]! & 0xf,
+      min: s16(r, 4),
+      max: s16(r, 6),
+    };
   });
 }
 
@@ -126,17 +136,28 @@ export const STATE_ACTION = 48;
  * "毒たいせい +1", "経験値増加 120%", "必中": a state an equipment gives and its value, as the game adds it up.
  * `actionName` names the action of {@link STATE_ACTION}.
  */
-export function equipEffectText(state: StateInfo | undefined, id: number, amount: number, actionName?: (row: number) => string): string {
+export function equipEffectText(
+  state: StateInfo | undefined,
+  id: number,
+  amount: number,
+  actionName?: (row: number) => string,
+): string {
   const name = state?.name || `状態 ${id}`;
   if (id === STATE_ELEMENT) return `${name}: ${ELEMENT[amount] || `属性 ${amount}`}`;
   if (id === STATE_ACTION) return `${name}: ${actionName?.(amount) || `#${amount}`}`;
   switch (state?.combine) {
-    case 3: return `${name} ×${amount}`;
-    case 4: return `${name} ${amount}%`;
-    case 6: return amount === 1 ? name : `${name} (${amount})`;
-    case 7: return `${name} ${amount}`;
-    case 0: return `${name} (${amount}、効かない)`;
-    default: return `${name} ${amount < 0 ? '' : '+'}${amount}`;
+    case 3:
+      return `${name} ×${amount}`;
+    case 4:
+      return `${name} ${amount}%`;
+    case 6:
+      return amount === 1 ? name : `${name} (${amount})`;
+    case 7:
+      return `${name} ${amount}`;
+    case 0:
+      return `${name} (${amount}、効かない)`;
+    default:
+      return `${name} ${amount < 0 ? '' : '+'}${amount}`;
   }
 }
 
@@ -194,12 +215,18 @@ export function needsItemActionPatch(master: Master): boolean {
   for (let id = 1; id < items.rows; id++) {
     const r = items.row(id);
     const a = u32(r, 0x24);
-    if (u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && a >= ITEM_ACTION_END && a < actions.rows && u16(actions.row(a), 0x14)) return true;
+    if (u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && a >= ITEM_ACTION_END && a < actions.rows && u16(actions.row(a), 0x14))
+      return true;
   }
   return false;
 }
 
-export const ITEM_ACTION_PATCH: CodePatch = { id: ITEM_ACTION_PATCH_ID, title: ITEM_ACTION_PATCH_TITLE, source: ITEM_ACTION_PATCH_SOURCE, enabled: true };
+export const ITEM_ACTION_PATCH: CodePatch = {
+  id: ITEM_ACTION_PATCH_ID,
+  title: ITEM_ACTION_PATCH_TITLE,
+  source: ITEM_ACTION_PATCH_SOURCE,
+  enabled: true,
+};
 
 export class ItemBook {
   readonly items: Item[] = [];
@@ -233,18 +260,30 @@ export class ItemBook {
     const actions = this.master.table('actionData.bin');
     const fields = readItemFields(r);
     const cat = r[0x2c]!;
-    const descriptions = DESCRIPTION_FIELDS.map(([offset, label]) => ({ offset, label, id: u32(r, offset), text: this.msg(u32(r, offset)) }));
+    const descriptions = DESCRIPTION_FIELDS.map(([offset, label]) => ({
+      offset,
+      label,
+      id: u32(r, offset),
+      text: this.msg(u32(r, offset)),
+    }));
     return {
       ...fields,
       id,
       name: this.msg(nameId) || `#${id}`,
-      description: descriptions.map((d) => d.text).filter(Boolean).join(' '),
+      description: descriptions
+        .map((d) => d.text)
+        .filter(Boolean)
+        .join(' '),
       descriptions,
       categoryByte: cat,
       category: categoryLabel(cat),
       flags: u32(r, 8),
-      effect: (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows ? this.toolEffect(fields.action)
-        : (cat & 0xf) === 3 ? this.equipEffects(fields).join('、') : '',
+      effect:
+        (cat & 0xf) === 1 && fields.action > 0 && fields.action < actions.rows
+          ? this.toolEffect(fields.action)
+          : (cat & 0xf) === 3
+            ? this.equipEffects(fields).join('、')
+            : '',
       model: u32(r, 0x20),
       shops: this.soldAt.get(id) ?? [],
     };
@@ -254,7 +293,8 @@ export class ItemBook {
   private toolEffect(action: number): string {
     const f = decodeAction(this.master.table('actionData.bin').row(action));
     const mod = modEffectOf(this.master, action);
-    if (mod?.key === 'teleporter-plus') return `${mod.label} (MOD)${f.scenes.length ? ` (${f.scenes.join('・')})` : ''}`;
+    if (mod?.key === 'teleporter-plus')
+      return `${mod.label} (MOD)${f.scenes.length ? ` (${f.scenes.join('・')})` : ''}`;
     return itemEffect(f);
   }
 
@@ -274,7 +314,14 @@ export class ItemBook {
 
   /** The states an equipment gives, as text (FUN_0030a3d0 reads them; FUN_0030a420 adds them to the unit). */
   equipEffects(f: ItemFields): string[] {
-    return ([[f.state1, f.amount1], [f.state2, f.amount2]] as const).filter(([id]) => id).map(([id, v]) => equipEffectText(this.states[id], id, v, (row) => this.actionName(row)));
+    return (
+      [
+        [f.state1, f.amount1],
+        [f.state2, f.amount2],
+      ] as const
+    )
+      .filter(([id]) => id)
+      .map(([id, v]) => equipEffectText(this.states[id], id, v, (row) => this.actionName(row)));
   }
 
   private actionName(row: number): string {
@@ -286,7 +333,9 @@ export class ItemBook {
 
   private indexShops(shops: Map<number, number[]>): void {
     this.soldAt.clear();
-    for (const [shop, ids] of shops) for (const id of ids) if (!this.soldAt.get(id)?.includes(shop)) this.soldAt.set(id, [...(this.soldAt.get(id) ?? []), shop]);
+    for (const [shop, ids] of shops)
+      for (const id of ids)
+        if (!this.soldAt.get(id)?.includes(shop)) this.soldAt.set(id, [...(this.soldAt.get(id) ?? []), shop]);
   }
 
   /** The shops' lists changed (shop edits): update where each item is sold. */
@@ -339,7 +388,12 @@ export class ItemBook {
 
   /** Whether an item fills a row that is empty in the archive (added by copyItem). */
   added(id: number): boolean {
-    return id > 0 && id < this.master.itemData.rows && !u32(this.master.originalRow(ITEM_TABLE, id), 0x0c) && !!u32(this.master.itemData.row(id), 0x0c);
+    return (
+      id > 0 &&
+      id < this.master.itemData.rows &&
+      !u32(this.master.originalRow(ITEM_TABLE, id), 0x0c) &&
+      !!u32(this.master.itemData.row(id), 0x0c)
+    );
   }
 
   /**
@@ -401,17 +455,28 @@ export class ItemBook {
     if (!this.added(id)) throw new Error('消せるのは追加したアイテムだけです');
     const t = this.master.itemData;
     const texts = this.master.texts;
-    const ids = [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)].map((o) => u32(t.row(id), o)).filter((m) => m && texts.isAdded(m));
+    const ids = [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)]
+      .map((o) => u32(t.row(id), o))
+      .filter((m) => m && texts.isAdded(m));
     const act = (t.row(id)[0x2c]! & 0xf) === 1 ? u32(t.row(id), 0x24) : 0;
     t.row(id).set(this.master.originalRow(ITEM_TABLE, id));
     // the action copied for it (copyItem) goes too, when it is the last added row and no other item uses it
     const actions = this.master.table('actionData.bin');
-    const usedAct = Array.from({ length: t.rows }, (_, i) => t.row(i)).some((r) => u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && u32(r, 0x24) === act);
-    if (act && act === actions.rows - 1 && act >= this.master.originalRows('actionData.bin') && !usedAct && u16(actions.row(act), 0x14) === id) {
+    const usedAct = Array.from({ length: t.rows }, (_, i) => t.row(i)).some(
+      (r) => u32(r, 0x0c) && (r[0x2c]! & 0xf) === 1 && u32(r, 0x24) === act,
+    );
+    if (
+      act &&
+      act === actions.rows - 1 &&
+      act >= this.master.originalRows('actionData.bin') &&
+      !usedAct &&
+      u16(actions.row(act), 0x14) === id
+    ) {
       actions.data = actions.withRows(Array.from({ length: actions.rows - 1 }, (_, i) => actions.row(i).slice()));
     }
     const used = new Set<number>();
-    for (let i = 1; i < t.rows; i++) for (const o of [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)]) used.add(u32(t.row(i), o));
+    for (let i = 1; i < t.rows; i++)
+      for (const o of [0x0c, ...DESCRIPTION_FIELDS.map(([o]) => o)]) used.add(u32(t.row(i), o));
     for (const m of [...new Set(ids)].sort((a, b) => b - a)) {
       const last = texts.addedIds().at(-1);
       if (m === last && !used.has(m)) texts.removeAdded(m);
@@ -469,7 +534,11 @@ export class ItemBook {
     for (let row = 1; row < t.rows; row++) {
       const f = decodeAction(t.row(row));
       if (f.kind !== 2) continue;
-      out.push({ row, name: f.nameId ? cleanActionName(this.master.message(f.nameId) ?? '') : '', effect: itemEffect(f) });
+      out.push({
+        row,
+        name: f.nameId ? cleanActionName(this.master.message(f.nameId) ?? '') : '',
+        effect: itemEffect(f),
+      });
     }
     return out;
   }

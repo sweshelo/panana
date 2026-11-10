@@ -25,7 +25,12 @@ describe('lanai tile facing', () => {
   };
 
   test('4 / 2 / 1 / 8 are the turns 0 / 1 / 2 / 3', () => {
-    for (const [byte, rot] of [[4, 0], [2, 1], [1, 2], [8, 3]] as const) {
+    for (const [byte, rot] of [
+      [4, 0],
+      [2, 1],
+      [1, 2],
+      [8, 3],
+    ] as const) {
       const [t] = parseTiles(rec(byte), LAYOUT);
       expect(t).toMatchObject({ kind: 5, x: 3, y: 4, rot, rotHi: 0 });
       expect(buildTiles([t!], LAYOUT)).toEqual(rec(byte));
@@ -45,7 +50,10 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
   let s: LanaiSession;
   let all: LanaiMaps[];
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump);
     all = [];
     // the contents with a map table (map.md §1)
@@ -102,20 +110,21 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
     expect(s.plain(m12.talkTable(6)!, 146, 'message')).toStartWith('電波人間よ、よく来ました。');
     // the first line of every talking action of an NPC (section 5) is a row of its group's talk table
     let n = 0;
-    for (const m of all) for (const info of m.maps) {
-      const ev = m.eventTable(info.dungeon);
-      const talk = m.talkTable(info.dungeon);
-      for (const rec of info.world || !ev ? [] : m.doc(info).recs[5] ?? []) {
-        const r = u32(rec.raw, 4);
-        if (!r || r >= ev!.rows) continue;
-        for (const o of [0x10, 0x28, 0x40]) {
-          if (!LANAI_ACTIONS[ev!.u32(r, o)]?.talk) continue;
-          n++;
-          expect(talk).toBeDefined();
-          expect(ev!.u32(r, o + 4)).toBeLessThan(talk!.rows);
+    for (const m of all)
+      for (const info of m.maps) {
+        const ev = m.eventTable(info.dungeon);
+        const talk = m.talkTable(info.dungeon);
+        for (const rec of info.world || !ev ? [] : (m.doc(info).recs[5] ?? [])) {
+          const r = u32(rec.raw, 4);
+          if (!r || r >= ev!.rows) continue;
+          for (const o of [0x10, 0x28, 0x40]) {
+            if (!LANAI_ACTIONS[ev!.u32(r, o)]?.talk) continue;
+            n++;
+            expect(talk).toBeDefined();
+            expect(ev!.u32(r, o + 4)).toBeLessThan(talk!.rows);
+          }
         }
       }
-    }
     expect(n).toBeGreaterThan(450);
   });
 
@@ -144,7 +153,8 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
         if (info.world) continue;
         const doc = m.doc(info);
         const src = m.tileSource(info, doc);
-        for (const t of doc.tiles) if (!m.partRef(src, t.kind, letterIndex(t.letter))) missing.set(t.kind, (missing.get(t.kind) ?? 0) + 1);
+        for (const t of doc.tiles)
+          if (!m.partRef(src, t.kind, letterIndex(t.letter))) missing.set(t.kind, (missing.get(t.kind) ?? 0) + 1);
       }
     expect([...missing.keys()].every((k) => k === 33)).toBe(true);
   }, 300000);
@@ -154,7 +164,9 @@ describe.skipIf(!hasLanai)('RPG FREE! maps', () => {
     const info = m.mapByName('D01001B01')!;
     const doc = m.doc(info);
     const src = m.tileSource(info, doc);
-    const refs = doc.tiles.map((t) => m.partRef(src, t.kind, letterIndex(t.letter))).filter((r): r is NonNullable<typeof r> => !!r);
+    const refs = doc.tiles
+      .map((t) => m.partRef(src, t.kind, letterIndex(t.letter)))
+      .filter((r): r is NonNullable<typeof r> => !!r);
     const set = await lanaiTileModels(s, src, refs);
     expect(set.errors).toEqual([]);
     expect(set.models.size).toBeGreaterThan(3);

@@ -21,7 +21,12 @@ export class GfxReader {
   };
   vec2 = (o: number): [number, number] => [this.f32(o), this.f32(o + 4)];
   vec3 = (o: number): [number, number, number] => [this.f32(o), this.f32(o + 4), this.f32(o + 8)];
-  vec4 = (o: number): [number, number, number, number] => [this.f32(o), this.f32(o + 4), this.f32(o + 8), this.f32(o + 12)];
+  vec4 = (o: number): [number, number, number, number] => [
+    this.f32(o),
+    this.f32(o + 4),
+    this.f32(o + 8),
+    this.f32(o + 12),
+  ];
   floats = (o: number, n: number): number[] => Array.from({ length: n }, (_, i) => this.f32(o + i * 4));
   words = (o: number, n: number): number[] => Array.from({ length: n }, (_, i) => this.u32(o + i * 4));
   magic = (o: number): string => String.fromCharCode(this.b[o]!, this.b[o + 1]!, this.b[o + 2]!, this.b[o + 3]!);
@@ -80,7 +85,11 @@ export class Block {
   readonly fixes: Fix[] = [];
   readonly strings: { at: number; s: string }[] = [];
   readonly images: { at: number; data: Uint8Array; align: number }[] = [];
-  constructor(size: number, readonly label = '', readonly alignment = 4) {
+  constructor(
+    size: number,
+    readonly label = '',
+    readonly alignment = 4,
+  ) {
     this.bytes = new Uint8Array(size);
     this.dv = new DataView(this.bytes.buffer);
   }
@@ -156,11 +165,13 @@ export class GfxLayout {
   /** Places a new block of `size` bytes. */
   add(size: number, label = '', alignment = 4): Block {
     return this.place(new Block(size, label, alignment));
-
   }
 
   /** Builds the file. `start` = offset of the first block, `header(total, dataEnd, imageStart)` writes the header. */
-  build(start: number, finish: (out: Uint8Array, contentEnd: number, imageStart: number, imageEnd: number) => void): Uint8Array {
+  build(
+    start: number,
+    finish: (out: Uint8Array, contentEnd: number, imageStart: number, imageEnd: number) => void,
+  ): Uint8Array {
     let pos = start;
     for (const b of this.blocks) {
       pos = align(pos, b.alignment);
@@ -184,7 +195,8 @@ export class GfxLayout {
     const strEnd = pos;
     // Image data in order of reference.
     const imgs: { at: number; data: Uint8Array; align: number }[] = [];
-    for (const b of this.blocks) for (const r of b.images) imgs.push({ at: b.pos + r.at, data: r.data, align: r.align });
+    for (const b of this.blocks)
+      for (const r of b.images) imgs.push({ at: b.pos + r.at, data: r.data, align: r.align });
     imgs.sort((a, b) => a.at - b.at);
     // The IMAG header follows the strings, placed so that its data starts at the largest alignment of the chunks.
     pos = align(pos, 4);
@@ -203,7 +215,8 @@ export class GfxLayout {
     for (const b of this.blocks) {
       out.set(b.bytes, b.pos);
       for (const f of b.fixes) {
-        if (f.target.pos < 0) throw new Error(`CGFX writer: block ${f.target.label} (pointed from ${b.label}) was never placed`);
+        if (f.target.pos < 0)
+          throw new Error(`CGFX writer: block ${f.target.label} (pointed from ${b.label}) was never placed`);
         dv.setUint32(b.pos + f.at, (f.target.pos + f.add - (b.pos + f.at)) >>> 0, true);
       }
       for (const r of b.strings) dv.setUint32(b.pos + r.at, (strPos.get(r.s)! - (b.pos + r.at)) >>> 0, true);

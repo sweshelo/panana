@@ -19,17 +19,32 @@ const hex = (n: number, w = 8): string => n.toString(16).toUpperCase().padStart(
 export function NeedsUpdate({ session, onAddUpdate }: { session: OahuSession; onAddUpdate: () => void }): ReactNode {
   return (
     <div className="needs-update">
-      {session.codeError
-        ? <p className="error">{session.codeError}</p>
-        : <p>この機能は code.bin を使うので、Update の CIA も選んでください。アドレスは Update (v4096) の code.bin のものを使い、Base の code.bin は使いません。</p>}
-      <div className="row"><button className="primary" onClick={onAddUpdate}>Update の CIA を選ぶ…</button></div>
+      {session.codeError ? (
+        <p className="error">{session.codeError}</p>
+      ) : (
+        <p>
+          この機能は code.bin を使うので、Update の CIA も選んでください。アドレスは Update (v4096) の code.bin
+          のものを使い、Base の code.bin は使いません。
+        </p>
+      )}
+      <div className="row">
+        <button className="primary" onClick={onAddUpdate}>
+          Update の CIA を選ぶ…
+        </button>
+      </div>
     </div>
   );
 }
 
 export function OahuCodePage({ session, onAddUpdate }: { session: OahuSession; onAddUpdate: () => void }): ReactNode {
   const { code } = session;
-  if (!code) return <div className="book-detail code-page"><h2>コード</h2><NeedsUpdate session={session} onAddUpdate={onAddUpdate} /></div>;
+  if (!code)
+    return (
+      <div className="book-detail code-page">
+        <h2>コード</h2>
+        <NeedsUpdate session={session} onAddUpdate={onAddUpdate} />
+      </div>
+    );
   return (
     <div className="book-detail code-page">
       <h2>コード</h2>
@@ -60,7 +75,9 @@ function Patches({ session, code }: { session: OahuSession; code: OahuCode }): R
   /** Assembles the draft after the other enabled patches, so the cave is shared as in the export. */
   const check = (): void => {
     const draft: CodePatch = { id: '__draft', title: title || '(新しいパッチ)', source, enabled: true };
-    setChecked(session.buildPatches([...session.enabledPatches().filter((p) => p.id !== editing), draft]).get('__draft')!);
+    setChecked(
+      session.buildPatches([...session.enabledPatches().filter((p) => p.id !== editing), draft]).get('__draft')!,
+    );
   };
   const keep = (): void => {
     const t = title.trim() || '(名前なし)';
@@ -85,40 +102,106 @@ function Patches({ session, code }: { session: OahuSession; code: OahuCode }): R
             const err = session.buildPatches([p]).get(p.id)!.errors.length;
             return (
               <li key={p.id}>
-                <label><input type="checkbox" checked={p.enabled} onChange={(e) => { p.enabled = e.target.checked; save(); }} /> {p.title}</label>
-                {err > 0 && <span className="error-text small"> 誤りあり (書き出されません)</span>}
-                {' '}<button onClick={() => open(p)}>編集</button>
-                {' '}<button onClick={() => { if (confirm(`パッチ「${p.title}」を消しますか?`)) { session.codePatches = session.codePatches.filter((x) => x !== p); save(); } }}>消す</button>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={p.enabled}
+                    onChange={(e) => {
+                      p.enabled = e.target.checked;
+                      save();
+                    }}
+                  />{' '}
+                  {p.title}
+                </label>
+                {err > 0 && <span className="error-text small"> 誤りあり (書き出されません)</span>}{' '}
+                <button onClick={() => open(p)}>編集</button>{' '}
+                <button
+                  onClick={() => {
+                    if (confirm(`パッチ「${p.title}」を消しますか?`)) {
+                      session.codePatches = session.codePatches.filter((x) => x !== p);
+                      save();
+                    }
+                  }}
+                >
+                  消す
+                </button>
               </li>
             );
           })}
         </ul>
       )}
-      {editing === null && <div className="row"><button onClick={() => open(null)}>パッチを書く</button></div>}
+      {editing === null && (
+        <div className="row">
+          <button onClick={() => open(null)}>パッチを書く</button>
+        </div>
+      )}
       {editing !== null && (
         <div className="patch-editor">
           <div className="row">
-            <input type="text" placeholder="パッチの名前" size={40} value={title} onChange={(e) => setTitle(e.target.value)} />
+            <input
+              type="text"
+              placeholder="パッチの名前"
+              size={40}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
           </div>
-          <textarea className="asm-edit" rows={14} spellCheck={false} value={source} onChange={(e) => { setSource(e.target.value); setChecked(null); }} />
+          <textarea
+            className="asm-edit"
+            rows={14}
+            spellCheck={false}
+            value={source}
+            onChange={(e) => {
+              setSource(e.target.value);
+              setChecked(null);
+            }}
+          />
           <div className="row">
             <button onClick={check}>組み立てる</button>
-            <button className="primary" disabled={!checked || checked.errors.length > 0} onClick={keep}>{editing ? 'パッチを更新' : 'パッチに加える'}</button>
-            <button onClick={() => { setEditing(null); setChecked(null); }}>やめる</button>
+            <button className="primary" disabled={!checked || checked.errors.length > 0} onClick={keep}>
+              {editing ? 'パッチを更新' : 'パッチに加える'}
+            </button>
+            <button
+              onClick={() => {
+                setEditing(null);
+                setChecked(null);
+              }}
+            >
+              やめる
+            </button>
           </div>
-          <details><summary className="muted small">書式</summary><pre className="small patch-help">{PATCH_FORMAT}</pre></details>
+          <details>
+            <summary className="muted small">書式</summary>
+            <pre className="small patch-help">{PATCH_FORMAT}</pre>
+          </details>
           {checked && (
             <div className="patch-result">
-              {checked.errors.length > 0 && <div className="error">{checked.errors.map((e, i) => <div key={i}>{`${e.line} 行目: ${e.message}`}</div>)}</div>}
+              {checked.errors.length > 0 && (
+                <div className="error">
+                  {checked.errors.map((e, i) => (
+                    <div key={i}>{`${e.line} 行目: ${e.message}`}</div>
+                  ))}
+                </div>
+              )}
               {checked.blocks.map((b, i) => (
                 <Fragment key={i}>
-                  <div className="small"><b>{b.kind === 'cave' ? `code cave 0x${hex(b.addr)}${b.label ? ` (${b.label})` : ''}` : `0x${hex(b.addr)} を上書き`}</b></div>
+                  <div className="small">
+                    <b>
+                      {b.kind === 'cave'
+                        ? `code cave 0x${hex(b.addr)}${b.label ? ` (${b.label})` : ''}`
+                        : `0x${hex(b.addr)} を上書き`}
+                    </b>
+                  </div>
                   <pre className="asm">
-                    {blockDiff(b).map((d) => `${hex(d.addr)}  ${b.kind === 'at' ? `${d.before.padEnd(30)} → ` : ''}${d.after}\n`).join('')}
+                    {blockDiff(b)
+                      .map((d) => `${hex(d.addr)}  ${b.kind === 'at' ? `${d.before.padEnd(30)} → ` : ''}${d.after}\n`)
+                      .join('')}
                   </pre>
                 </Fragment>
               ))}
-              <div className="muted small">RPG3 のイベント実行器はまだないので、動きはエミュレータで確かめてください。</div>
+              <div className="muted small">
+                RPG3 のイベント実行器はまだないので、動きはエミュレータで確かめてください。
+              </div>
             </div>
           )}
         </div>
@@ -137,18 +220,34 @@ function Disassembly({ code }: { code: OahuCode }): ReactNode {
   const addr = Number.isFinite(v) ? v & ~3 : NaN;
   const ok = addr >= BASE && addr < END;
   const lines: string[] = [];
-  if (ok) for (let a = addr; a < Math.min(addr + count * 4, END); a += 4) {
-    const w = code.word(a);
-    lines.push(`${hex(a)}  ${hex(w)}  ${disassemble(w, a).text}`);
-  }
+  if (ok)
+    for (let a = addr; a < Math.min(addr + count * 4, END); a += 4) {
+      const w = code.word(a);
+      lines.push(`${hex(a)}  ${hex(w)}  ${disassemble(w, a).text}`);
+    }
   return (
     <section>
       <h3>逆アセンブル</h3>
       <div className="row">
-        <label>アドレス <input type="text" size={14} value={text} onChange={(e) => setText(e.target.value)} /></label>
-        <label>命令の数 <input type="number" min={1} max={512} value={count} onChange={(e) => setCount(Math.max(1, Math.min(512, Number(e.target.value) || 1)))} /></label>
+        <label>
+          アドレス <input type="text" size={14} value={text} onChange={(e) => setText(e.target.value)} />
+        </label>
+        <label>
+          命令の数{' '}
+          <input
+            type="number"
+            min={1}
+            max={512}
+            value={count}
+            onChange={(e) => setCount(Math.max(1, Math.min(512, Number(e.target.value) || 1)))}
+          />
+        </label>
       </div>
-      {ok ? <pre className="asm">{lines.join('\n')}</pre> : <div className="muted small">{`0x${hex(BASE)}〜0x${hex(END)} (.text と .rodata) のアドレスを 16 進で入れてください。`}</div>}
+      {ok ? (
+        <pre className="asm">{lines.join('\n')}</pre>
+      ) : (
+        <div className="muted small">{`0x${hex(BASE)}〜0x${hex(END)} (.text と .rodata) のアドレスを 16 進で入れてください。`}</div>
+      )}
     </section>
   );
 }
@@ -171,7 +270,12 @@ function Addresses(): ReactNode {
       <table className="small">
         <tbody>
           {ADDRESS_NOTES.map(([k, note]) => (
-            <tr key={k}><td><code>{`0x${hex(OAHU_CODE[k])}`}</code></td><td>{note}</td></tr>
+            <tr key={k}>
+              <td>
+                <code>{`0x${hex(OAHU_CODE[k])}`}</code>
+              </td>
+              <td>{note}</td>
+            </tr>
           ))}
         </tbody>
       </table>

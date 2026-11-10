@@ -72,7 +72,14 @@ export interface H3DLayout {
 
 // ---- Metadata
 
-export const H3DMetaDataType = { Integer: 0, Single: 1, ASCIIString: 2, UnicodeString: 3, BoundingBox: 4, VertexData: 5 } as const;
+export const H3DMetaDataType = {
+  Integer: 0,
+  Single: 1,
+  ASCIIString: 2,
+  UnicodeString: 3,
+  BoundingBox: 4,
+  VertexData: 5,
+} as const;
 
 export interface H3DBoundingBox {
   center: Vector3;
@@ -178,8 +185,18 @@ export const H3DSubMeshSkinning = { None: 0, Smooth: 1, Rigid: 2 } as const;
 
 /** PICAAttributeName. */
 export const PICAAttributeName = {
-  Position: 0, Normal: 1, Tangent: 2, Color: 3, TexCoord0: 4, TexCoord1: 5, TexCoord2: 6, BoneIndex: 7, BoneWeight: 8,
-  UserAttribute0: 9, UserAttribute1: 10, UserAttribute2: 11,
+  Position: 0,
+  Normal: 1,
+  Tangent: 2,
+  Color: 3,
+  TexCoord0: 4,
+  TexCoord1: 5,
+  TexCoord2: 6,
+  BoneIndex: 7,
+  BoneWeight: 8,
+  UserAttribute0: 9,
+  UserAttribute1: 10,
+  UserAttribute2: 11,
 } as const;
 /** PICAAttributeFormat. */
 export const PICAAttributeFormat = { Byte: 0, Ubyte: 1, Short: 2, Float: 3 } as const;
@@ -446,7 +463,20 @@ export const texCoordConfig = (p: H3DMaterialParams): number => p.layerConfig >>
 
 /** PICATextureFormat. */
 export const PICATextureFormat = {
-  RGBA8: 0, RGB8: 1, RGBA5551: 2, RGB565: 3, RGBA4: 4, LA8: 5, HiLo8: 6, L8: 7, A8: 8, LA4: 9, L4: 10, A4: 11, ETC1: 12, ETC1A4: 13,
+  RGBA8: 0,
+  RGB8: 1,
+  RGBA5551: 2,
+  RGB565: 3,
+  RGBA4: 4,
+  LA8: 5,
+  HiLo8: 6,
+  L8: 7,
+  A8: 8,
+  LA4: 9,
+  L4: 10,
+  A4: 11,
+  ETC1: 12,
+  ETC1A4: 13,
 } as const;
 
 export interface H3DTexture {
@@ -538,26 +568,83 @@ export interface H3DScene {
 export const H3DAnimationType = { Skeletal: 0, Material: 1, Visibility: 2, Light: 3, Camera: 4, Fog: 5 } as const;
 export const H3DAnimationFlags = { IsLooping: 1, IsConstant: 2 } as const;
 export const H3DPrimitiveType = {
-  Float: 0, Integer: 1, Vector2D: 2, Vector3D: 3, Transform: 4, RGBA: 5, Texture: 6, QuatTransform: 7, Boolean: 8, MtxTransform: 9,
+  Float: 0,
+  Integer: 1,
+  Vector2D: 2,
+  Vector3D: 3,
+  Transform: 4,
+  RGBA: 5,
+  Texture: 6,
+  QuatTransform: 7,
+  Boolean: 8,
+  MtxTransform: 9,
 } as const;
 export const H3DTargetType = {
-  Bone: 0, MaterialConstant0: 1, MaterialConstant1: 2, MaterialConstant2: 3, MaterialConstant3: 4, MaterialConstant4: 5,
-  MaterialConstant5: 6, MaterialEmission: 7, MaterialAmbient: 8, MaterialDiffuse: 9, MaterialSpecular0: 10,
-  MaterialSpecular1: 11, MaterialMapper0BorderCol: 12, MaterialMapper0Texture: 13, MaterialMapper1BorderCol: 14,
-  MaterialMapper1Texture: 15, MaterialMapper2BorderCol: 16, MaterialMapper2Texture: 17, MaterialBlendColor: 18,
-  MaterialTexCoord0Scale: 19, MaterialTexCoord0Rot: 20, MaterialTexCoord0Trans: 21, MaterialTexCoord1Scale: 22,
-  MaterialTexCoord1Rot: 23, MaterialTexCoord1Trans: 24, MaterialTexCoord2Scale: 25, MaterialTexCoord2Rot: 26,
-  MaterialTexCoord2Trans: 27, LightTransform: 28, LightAmbient: 29, LightDiffuse: 30, LightSpecular0: 31,
-  LightSpecular1: 32, LightGround: 33, LightSky: 34, LightDirection: 35, LightAttenuationStart: 36,
-  LightAttenuationEnd: 37, LightInterpolationFactor: 38, LightEnabled: 39, CameraTransform: 40, CameraTargetPos: 41,
-  CameraTwist: 42, CameraUpVector: 43, CameraViewRotation: 44, CameraZNear: 45, CameraZFar: 46, CameraAspectRatio: 47,
-  CameraHeight: 48, MeshNodeVisibility: 49, ModelVisibility: 50, FogColor: 51,
+  Bone: 0,
+  MaterialConstant0: 1,
+  MaterialConstant1: 2,
+  MaterialConstant2: 3,
+  MaterialConstant3: 4,
+  MaterialConstant4: 5,
+  MaterialConstant5: 6,
+  MaterialEmission: 7,
+  MaterialAmbient: 8,
+  MaterialDiffuse: 9,
+  MaterialSpecular0: 10,
+  MaterialSpecular1: 11,
+  MaterialMapper0BorderCol: 12,
+  MaterialMapper0Texture: 13,
+  MaterialMapper1BorderCol: 14,
+  MaterialMapper1Texture: 15,
+  MaterialMapper2BorderCol: 16,
+  MaterialMapper2Texture: 17,
+  MaterialBlendColor: 18,
+  MaterialTexCoord0Scale: 19,
+  MaterialTexCoord0Rot: 20,
+  MaterialTexCoord0Trans: 21,
+  MaterialTexCoord1Scale: 22,
+  MaterialTexCoord1Rot: 23,
+  MaterialTexCoord1Trans: 24,
+  MaterialTexCoord2Scale: 25,
+  MaterialTexCoord2Rot: 26,
+  MaterialTexCoord2Trans: 27,
+  LightTransform: 28,
+  LightAmbient: 29,
+  LightDiffuse: 30,
+  LightSpecular0: 31,
+  LightSpecular1: 32,
+  LightGround: 33,
+  LightSky: 34,
+  LightDirection: 35,
+  LightAttenuationStart: 36,
+  LightAttenuationEnd: 37,
+  LightInterpolationFactor: 38,
+  LightEnabled: 39,
+  CameraTransform: 40,
+  CameraTargetPos: 41,
+  CameraTwist: 42,
+  CameraUpVector: 43,
+  CameraViewRotation: 44,
+  CameraZNear: 45,
+  CameraZFar: 46,
+  CameraAspectRatio: 47,
+  CameraHeight: 48,
+  MeshNodeVisibility: 49,
+  ModelVisibility: 50,
+  FogColor: 51,
 } as const;
 export const H3DInterpolationType = { Step: 0, Linear: 1, Hermite: 2 } as const;
 export const H3DLoopType = { None: 0, Repeat: 1, MirroredRepeat: 2, RelativeRepeat: 3 } as const;
 /** KeyFrameQuantization. */
 export const KeyFrameQuantization = {
-  Hermite128: 0, Hermite64: 1, Hermite48: 2, UnifiedHermite96: 3, UnifiedHermite48: 4, UnifiedHermite32: 5, StepLinear64: 6, StepLinear32: 7,
+  Hermite128: 0,
+  Hermite64: 1,
+  Hermite48: 2,
+  UnifiedHermite96: 3,
+  UnifiedHermite48: 4,
+  UnifiedHermite32: 5,
+  StepLinear64: 6,
+  StepLinear32: 7,
 } as const;
 
 export interface KeyFrame {
@@ -666,7 +753,12 @@ export interface H3DAnimMtxTransform extends H3DAnimationCurve {
   frames: Matrix3x4[];
 }
 
-export type H3DAnimContent = H3DAnimVector | H3DAnimTransform | H3DAnimQuatTransform | H3DAnimBoolean | H3DAnimMtxTransform;
+export type H3DAnimContent =
+  | H3DAnimVector
+  | H3DAnimTransform
+  | H3DAnimQuatTransform
+  | H3DAnimBoolean
+  | H3DAnimMtxTransform;
 
 export interface H3DAnimationElement {
   name: string;
@@ -696,9 +788,12 @@ export const vectorSlots = (primitiveType: number): number => {
     case H3DPrimitiveType.Integer:
     case H3DPrimitiveType.Texture:
       return 1;
-    case H3DPrimitiveType.Vector2D: return 2;
-    case H3DPrimitiveType.Vector3D: return 3;
-    case H3DPrimitiveType.RGBA: return 4;
+    case H3DPrimitiveType.Vector2D:
+      return 2;
+    case H3DPrimitiveType.Vector3D:
+      return 3;
+    case H3DPrimitiveType.RGBA:
+      return 4;
   }
   return 0;
 };

@@ -86,8 +86,9 @@ export function oahuExitCell(kind: number): { stairs: number; key: number; gimmi
 const EXIT_GIMMICK = [1, 1, 5, 0x0d, 2, 2, 3, 4, 6, 7, 8, 0, 0, 0, 0, 0, 0x0a, 0x0b, 0x0c, 0x0e];
 /** Buildings (gimmick 0x14〜0x42) → mapObject (twn_bill00〜; FUN_00365294's table). */
 const EXIT_BUILDINGS = [
-  0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xd0, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8,
-  0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xcc, 0xee,
+  0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xd0, 0xd2, 0xd3,
+  0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xdc, 0xdd, 0xde, 0xdf, 0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6,
+  0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xed, 0xcc, 0xee,
 ];
 /** Maps where kind 0x13 (the ship) is gimk_18_ship_01 (0xD0); elsewhere 0xD1. */
 const SHIP_01_MAPS = new Set([0x249b26f7 /* M10OUT000 */, 0xbf209b55 /* M90OUT000 */]);
@@ -123,7 +124,16 @@ export const OAHU_INVISIBLE_ROWS = new Set([0x170, 0x1e4, 0x1e5, 0x1e6, 0x1e7, 0
 /** FUN_00225B64: c = direction + 1 → 1: 0°, 2: −90°, 3: 180°, 4: +90° (RPG2's section 3 table). */
 const exitAngle = (c: number): number => [0, 0, -HALF, Math.PI, HALF][c] ?? 0;
 /** FUN_00225C98: the way c faces (x, z): 1 north, 2 east, 3 south, 4 west. */
-const exitStep = (c: number): [number, number] => ([[0, 0], [0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][])[c] ?? [0, 0];
+const exitStep = (c: number): [number, number] =>
+  (
+    [
+      [0, 0],
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ] as [number, number][]
+  )[c] ?? [0, 0];
 
 /**
  * How an exit is turned and moved from its cell (FUN_00365294 with the cell of FUN_002CA100): doors and gates stand
@@ -131,7 +141,11 @@ const exitStep = (c: number): [number, number] => ([[0, 0], [0, -1], [1, 0], [0,
  * the direction (inside ±90°, outside by a table) and inside step 50 towards it. Outside, the game also moves down
  * stairs 100 towards the open side of their tile (not done here).
  */
-export function oahuExitPlacement(kind: number, dir: number, indoor: boolean): { angle: number; offset: [number, number] } {
+export function oahuExitPlacement(
+  kind: number,
+  dir: number,
+  indoor: boolean,
+): { angle: number; offset: [number, number] } {
   const c = dir + 1;
   if (kind === OAHU_WALL_DOOR) return { angle: exitAngle(propC(dir)), offset: [0, 0] };
   if (kind === OAHU_WARP) return { angle: 0, offset: [0, 0] };
@@ -217,17 +231,28 @@ export function oahuRecordLook(section: number, raw: Uint8Array, ctx: OahuLookCo
       const dir = raw[0x1c]!;
       if (kind <= 2) {
         if (!ev) return { model: null, angle: 0, chara: 0 };
-        return { model: oahuCharaModel(ctx.mapChara, evModel, u16(ev, EO.flags)), angle: CHARA_ANGLE[dir] ?? 0, chara: evModel };
+        return {
+          model: oahuCharaModel(ctx.mapChara, evModel, u16(ev, EO.flags)),
+          angle: CHARA_ANGLE[dir] ?? 0,
+          chara: evModel,
+        };
       }
       if (!ev) return null;
       const row = evModel || OAHU_OBJECT_DEFAULT[kind] || 0;
       if (!row) return null;
       switch (kind) {
         // the healing spring, the rollers and kind 0x0C (an effect under the object) are not turned
-        case 3: case 7: case 8: case 0x0c: return object(row, 0);
-        case 9: case 0x0a: return object(row, propAngle(dir));
+        case 3:
+        case 7:
+        case 8:
+        case 0x0c:
+          return object(row, 0);
+        case 9:
+        case 0x0a:
+          return object(row, propAngle(dir));
         // 4〜6 / 0x0B / 0x0D / 0x0E: c = direction + 1, other values keep 0° (FUN_003667A4 → FUN_00366880)
-        default: return object(row, QUARTER2[dir] ?? 0, true);
+        default:
+          return object(row, QUARTER2[dir] ?? 0, true);
       }
     }
     case 8: {
@@ -235,7 +260,10 @@ export function oahuRecordLook(section: number, raw: Uint8Array, ctx: OahuLookCo
       if (kind < OAHU_INVISIBLE_KIND) return null;
       const row = OAHU_INVISIBLE_OBJECTS[kind - OAHU_INVISIBLE_KIND] ?? OAHU_INVISIBLE_OBJECTS[0];
       const o = row < ctx.mapObject.rows ? ctx.mapObject.row(row) : null;
-      return { model: { type: 'invisible', row, width: o ? f32(o, 0x10) : 0, depth: o ? f32(o, 0x18) : 0 }, angle: propAngle(raw[0x1c]!) };
+      return {
+        model: { type: 'invisible', row, width: o ? f32(o, 0x10) : 0, depth: o ? f32(o, 0x18) : 0 },
+        angle: propAngle(raw[0x1c]!),
+      };
     }
   }
   return null;

@@ -6,16 +6,43 @@
 // play. 電波人間 are shown as the stand-in.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { GsTable } from '../archive/gstable';
-import { animKeys, effectLabel, slotTimeline, type EffectModel, type EffectTable, type PerfField } from '../game/performance';
+import {
+  animKeys,
+  effectLabel,
+  slotTimeline,
+  type EffectModel,
+  type EffectTable,
+  type PerfField,
+} from '../game/performance';
 import type { SoundNames } from '../game/sound';
 import { PerformanceViewer, type PhaseTiming, type PreviewEffect, type PreviewPhase } from '../pages/perfview';
 import { soundPlayer } from '../sound/player';
 import { InfoTip } from '../ui/InfoTip';
 import { Dom } from '../ui/mount';
 import { Photo } from '../ui/Photo';
-import { AddEffectSelect, EffectButton, MotionSelect, PerformancePicker, perfEffects, SlotTimelines, type PerfSource, type TimelineSlot } from '../ui/PerformanceEditor';
+import {
+  AddEffectSelect,
+  EffectButton,
+  MotionSelect,
+  PerformancePicker,
+  perfEffects,
+  SlotTimelines,
+  type PerfSource,
+  type TimelineSlot,
+} from '../ui/PerformanceEditor';
 import { SoundButton } from '../ui/SoundPicker';
-import { decodeOahuPerformance, OAHU_MONSTER_ANIMS, OAHU_PERF, OAHU_PERF_SLOTS, OahuPerfEdits, OahuPerformances, oahuPerformanceUses, oahuProgression, oahuProgressionLabel, type OahuPerfUse } from './performance';
+import {
+  decodeOahuPerformance,
+  OAHU_MONSTER_ANIMS,
+  OAHU_PERF,
+  OAHU_PERF_SLOTS,
+  OahuPerfEdits,
+  OahuPerformances,
+  oahuPerformanceUses,
+  oahuProgression,
+  oahuProgressionLabel,
+  type OahuPerfUse,
+} from './performance';
 import { OahuActionPicker, OahuMonsterPicker } from './pickers';
 import type { OahuSession } from './session';
 
@@ -39,7 +66,11 @@ export function useLoaded(session: OahuSession): Loaded | null | 'none' {
   const [out, setOut] = useState<Loaded | null | 'none'>(null);
   useEffect(() => {
     let live = true;
-    void Promise.all([session.performances.tables(), session.performances.effectNames(), session.sounds().catch(() => null)]).then(([t, names, sounds]) => {
+    void Promise.all([
+      session.performances.tables(),
+      session.performances.effectNames(),
+      session.sounds().catch(() => null),
+    ]).then(([t, names, sounds]) => {
       if (live) setOut(t ? { ...t, names, sounds } : 'none');
     });
     return () => {
@@ -50,16 +81,26 @@ export function useLoaded(session: OahuSession): Loaded | null | 'none' {
 }
 
 /** One phase: the rows of the slots played together on one unit (the first one sets the motion and the timing). */
-function phase(session: OahuSession, l: Loaded, keys: string[], rows: number[], who: number, place: string, model: number = who): PreviewPhase | null {
+function phase(
+  session: OahuSession,
+  l: Loaded,
+  keys: string[],
+  rows: number[],
+  who: number,
+  place: string,
+  model: number = who,
+): PreviewPhase | null {
   const { battle } = session;
   const perfs = rows.map((r) => OahuPerformances.forUnit(l.direct, r, who > 0)).filter((p) => !!p);
   const main = perfs[0];
   if (!main) return null;
-  const effects: PreviewEffect[] = perfs.flatMap((p) => [p.effect, ...l.effects.addEffects(p.addEffect)])
-    .map((e) => l.effects.effect(e)).filter((e) => !!e)
+  const effects: PreviewEffect[] = perfs
+    .flatMap((p) => [p.effect, ...l.effects.addEffects(p.addEffect)])
+    .map((e) => l.effects.effect(e))
+    .filter((e) => !!e)
     .map((e) => ({ label: effectLabel(e, l.names), bone: e.bone, offset: e.offset, length: e.length || 60 }));
   const se = perfs.find((p) => p.se)?.se ?? 0;
-  const index = se ? l.sounds?.index(se) ?? null : null;
+  const index = se ? (l.sounds?.index(se) ?? null) : null;
   const name = who ? battle.monsterName(who) : '電波人間';
   return {
     title: `${place}: ${name} — D${perfs.map((p) => p.row).join('+')} ${keys[main.anim] ? `(${keys[main.anim]})` : ''}${l.sounds && se ? ` ${l.sounds.name(se)}` : ''}`,
@@ -67,18 +108,31 @@ function phase(session: OahuSession, l: Loaded, keys: string[], rows: number[], 
     anim: keys[main.anim] ?? '',
     timeline: (mf) => slotTimeline(main, l.effects, mf),
     effects,
-    sound: index === null ? null : () => void soundPlayer.play(`oahu-perf-se:${index}`, async () => (await session.soundRenderer()).render(index)),
+    sound:
+      index === null
+        ? null
+        : () =>
+            void soundPlayer.play(`oahu-perf-se:${index}`, async () => (await session.soundRenderer()).render(index)),
   };
 }
 
 /** The phases of the action for a user and a target (0 = a 電波人間). */
-export function oahuPreviewPhases(session: OahuSession, l: Loaded, row: number, user: number, target: number): PreviewPhase[] {
+export function oahuPreviewPhases(
+  session: OahuSession,
+  l: Loaded,
+  row: number,
+  user: number,
+  target: number,
+): PreviewPhase[] {
   const a = session.battle.actions;
   const keys = animKeys(session.master);
   const slot = (key: string): number => a.get(row, key);
   const label = (key: string): string => OAHU_PERF_SLOTS.find((s) => s.key === key)!.label;
   // A transform with the look (category 22) swaps the model before the target's step (@0x219F98), the target being the user.
-  const formed = a.get(row, 'category') === 22 && target === user && user ? session.battle.monsters.get(user, 'formModel') || user : target;
+  const formed =
+    a.get(row, 'category') === 22 && target === user && user
+      ? session.battle.monsters.get(user, 'formModel') || user
+      : target;
   return [
     phase(session, l, keys, [slot('perfUser'), slot('perfUser2')], user, label('perfUser')),
     phase(session, l, keys, [slot('perfTarget'), slot('perfTarget2')], target, label('perfTarget'), formed),
@@ -104,7 +158,9 @@ function oahuSource(session: OahuSession, l: Loaded, keys: string[], uses: Map<n
     rows: l.direct.rows,
     perf: (r) => decodeOahuPerformance(l.direct.row(r), r),
     uses: (r) => (uses.get(r) ?? []).map((u) => useLabel(session, u)),
-    effects: l.effects, models: l.names, sounds: l.sounds,
+    effects: l.effects,
+    models: l.names,
+    sounds: l.sounds,
     anim: (a) => oahuAnimLabel(a, keys),
   };
 }
@@ -123,7 +179,15 @@ const PROGRESSION_INFO = [
 ].join('\n');
 
 /** The performance slots of an action: the directData row of each, its motion, effect, sound effect and added effects. */
-export function OahuPerformanceSlots({ session, row, onEdit }: { session: OahuSession; row: number; onEdit: () => void }): ReactNode {
+export function OahuPerformanceSlots({
+  session,
+  row,
+  onEdit,
+}: {
+  session: OahuSession;
+  row: number;
+  onEdit: () => void;
+}): ReactNode {
   const { battle } = session;
   const loaded = useLoaded(session);
   const keys = useMemo(() => animKeys(session.master), [session]);
@@ -145,53 +209,133 @@ export function OahuPerformanceSlots({ session, row, onEdit }: { session: OahuSe
     }
     onEdit();
   };
-  const slots = OAHU_PERF_SLOTS.filter((s) => all || a.get(row, s.key) || s.key === 'perfUser' || s.key === 'perfTarget');
-  const hidden = OAHU_PERF_SLOTS.length - OAHU_PERF_SLOTS.filter((s) => a.get(row, s.key) || s.key === 'perfUser' || s.key === 'perfTarget').length;
+  const slots = OAHU_PERF_SLOTS.filter(
+    (s) => all || a.get(row, s.key) || s.key === 'perfUser' || s.key === 'perfTarget',
+  );
+  const hidden =
+    OAHU_PERF_SLOTS.length -
+    OAHU_PERF_SLOTS.filter((s) => a.get(row, s.key) || s.key === 'perfUser' || s.key === 'perfTarget').length;
   const motions = [
-    { label: 'モンスター', rows: Array.from({ length: Math.max(0, keys.length - OAHU_MONSTER_ANIMS) }, (_, i) => OAHU_MONSTER_ANIMS + i) },
+    {
+      label: 'モンスター',
+      rows: Array.from({ length: Math.max(0, keys.length - OAHU_MONSTER_ANIMS) }, (_, i) => OAHU_MONSTER_ANIMS + i),
+    },
     { label: '電波人間', rows: Array.from({ length: OAHU_MONSTER_ANIMS - 1 }, (_, i) => i + 1) },
   ];
   return (
     <div className="perf-slots">
       <table className="enc-table perf-table">
         <thead>
-          <tr><th>枠<InfoTip text={SLOT_INFO} /></th><th>演出の行</th><th>モーション</th><th>エフェクト</th><th>SE</th><th>追加のエフェクト</th><th></th></tr>
+          <tr>
+            <th>
+              枠<InfoTip text={SLOT_INFO} />
+            </th>
+            <th>演出の行</th>
+            <th>モーション</th>
+            <th>エフェクト</th>
+            <th>SE</th>
+            <th>追加のエフェクト</th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
           {slots.map((s) => {
             const p = a.get(row, s.key);
             const perf = p > 0 && p < loaded.direct.rows ? decodeOahuPerformance(loaded.direct.row(p), p) : null;
             const editable = edits.canEditSlot(row, s.key);
-            const others = (uses.get(p) ?? []).filter((u) => !(u.action === row && u.key === s.key)).map((u) => useLabel(session, u));
+            const others = (uses.get(p) ?? [])
+              .filter((u) => !(u.action === row && u.key === s.key))
+              .map((u) => useLabel(session, u));
             const set = (field: PerfField, v: number): void => apply(() => edits.setSlotField(row, s.key, field, v));
             return (
               <tr key={s.key}>
-                <td className="with-info">{s.label}<InfoTip text={s.info} /></td>
-                <td>
-                  {perf
-                    ? <span title={others.length ? `ほかに使っている所:\n${others.slice(0, 8).join('\n')}` : 'この枠だけが使う行'}>{`D${p}`}{others.length ? <span className="muted small">{` (共有 ${others.length})`}</span> : null}</span>
-                    : <span className="muted">なし</span>}
+                <td className="with-info">
+                  {s.label}
+                  <InfoTip text={s.info} />
                 </td>
                 <td>
-                  {perf && editable
-                    ? <MotionSelect value={perf.anim} groups={motions} label={src.anim} onChange={(v) => set('anim', v)} />
-                    : <span className="muted">{perf ? src.anim(perf.anim) : ''}</span>}
-                  {perf && perf.counterpart > 0 && perf.anim > 0 && (
-                    <span className="muted small" title={`反対側のユニット (${perf.anim >= OAHU_MONSTER_ANIMS ? '電波人間' : 'モンスター'}) には D${perf.counterpart} のモーションが使われます (+0x00)`}>{` ⇄ D${perf.counterpart}`}</span>
+                  {perf ? (
+                    <span
+                      title={
+                        others.length ? `ほかに使っている所:\n${others.slice(0, 8).join('\n')}` : 'この枠だけが使う行'
+                      }
+                    >
+                      {`D${p}`}
+                      {others.length ? <span className="muted small">{` (共有 ${others.length})`}</span> : null}
+                    </span>
+                  ) : (
+                    <span className="muted">なし</span>
                   )}
                 </td>
-                <td>{perf && <EffectButton src={src} value={perf.effect} disabled={!editable} onChange={(v) => set('effect', v)} />}</td>
-                <td>{perf && loaded.sounds && (editable
-                  ? <SoundButton game={session} sounds={loaded.sounds} value={perf.se} kind="se" title="演出の SE を選ぶ" onChange={(v) => set('se', v)} />
-                  : <span className="muted">{loaded.sounds.label(perf.se)}</span>)}</td>
                 <td>
-                  {perf && (editable
-                    ? <AddEffectSelect src={src} value={perf.addEffect} onChange={(v) => set('addEffect', v)} />
-                    : <span className="muted">{perf.addEffect ? perfEffects(src, { ...perf, effect: 0 }) : ''}</span>)}
+                  {perf && editable ? (
+                    <MotionSelect
+                      value={perf.anim}
+                      groups={motions}
+                      label={src.anim}
+                      onChange={(v) => set('anim', v)}
+                    />
+                  ) : (
+                    <span className="muted">{perf ? src.anim(perf.anim) : ''}</span>
+                  )}
+                  {perf && perf.counterpart > 0 && perf.anim > 0 && (
+                    <span
+                      className="muted small"
+                      title={`反対側のユニット (${perf.anim >= OAHU_MONSTER_ANIMS ? '電波人間' : 'モンスター'}) には D${perf.counterpart} のモーションが使われます (+0x00)`}
+                    >{` ⇄ D${perf.counterpart}`}</span>
+                  )}
+                </td>
+                <td>
+                  {perf && (
+                    <EffectButton
+                      src={src}
+                      value={perf.effect}
+                      disabled={!editable}
+                      onChange={(v) => set('effect', v)}
+                    />
+                  )}
+                </td>
+                <td>
+                  {perf &&
+                    loaded.sounds &&
+                    (editable ? (
+                      <SoundButton
+                        game={session}
+                        sounds={loaded.sounds}
+                        value={perf.se}
+                        kind="se"
+                        title="演出の SE を選ぶ"
+                        onChange={(v) => set('se', v)}
+                      />
+                    ) : (
+                      <span className="muted">{loaded.sounds.label(perf.se)}</span>
+                    ))}
+                </td>
+                <td>
+                  {perf &&
+                    (editable ? (
+                      <AddEffectSelect src={src} value={perf.addEffect} onChange={(v) => set('addEffect', v)} />
+                    ) : (
+                      <span className="muted">{perf.addEffect ? perfEffects(src, { ...perf, effect: 0 }) : ''}</span>
+                    ))}
                 </td>
                 <td className="nowrap">
-                  <button className="small" title="ほかのアクションの演出からこの枠の演出を選びます" onClick={() => setPicking(s.key)}>演出を選ぶ…</button>
-                  {p > 0 && <button className="small" title="この枠を空にします" onClick={() => apply(() => edits.setSlot(row, s.key, 0))}>×</button>}
+                  <button
+                    className="small"
+                    title="ほかのアクションの演出からこの枠の演出を選びます"
+                    onClick={() => setPicking(s.key)}
+                  >
+                    演出を選ぶ…
+                  </button>
+                  {p > 0 && (
+                    <button
+                      className="small"
+                      title="この枠を空にします"
+                      onClick={() => apply(() => edits.setSlot(row, s.key, 0))}
+                    >
+                      ×
+                    </button>
+                  )}
                 </td>
               </tr>
             );
@@ -199,26 +343,64 @@ export function OahuPerformanceSlots({ session, row, onEdit }: { session: OahuSe
         </tbody>
       </table>
       <div className="row small">
-        {hidden > 0 && <label><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />{`空の枠も出す (${hidden})`}</label>}
-        <span className="with-info">{`演出の進行 ${oahuProgressionLabel(oahuProgression(a.get(row, 'category'), a.get(row, 'kind')))}`}<InfoTip text={PROGRESSION_INFO} /></span>
-        <button title="ほかのアクションの演出 (すべての枠) をこのアクションに写します" onClick={() => setCopying(true)}>演出を写す…</button>
+        {hidden > 0 && (
+          <label>
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
+            {`空の枠も出す (${hidden})`}
+          </label>
+        )}
+        <span className="with-info">
+          {`演出の進行 ${oahuProgressionLabel(oahuProgression(a.get(row, 'category'), a.get(row, 'kind')))}`}
+          <InfoTip text={PROGRESSION_INFO} />
+        </span>
+        <button title="ほかのアクションの演出 (すべての枠) をこのアクションに写します" onClick={() => setCopying(true)}>
+          演出を写す…
+        </button>
       </div>
       {picking !== null && (
-        <PerformancePicker src={src} current={a.get(row, picking)} title={`${OAHU_PERF_SLOTS.find((s) => s.key === picking)!.label}の演出を選ぶ`}
-          onClose={() => setPicking(null)} onPick={(p) => { const k = picking; setPicking(null); apply(() => edits.setSlot(row, k, p)); }} />
+        <PerformancePicker
+          src={src}
+          current={a.get(row, picking)}
+          title={`${OAHU_PERF_SLOTS.find((s) => s.key === picking)!.label}の演出を選ぶ`}
+          onClose={() => setPicking(null)}
+          onPick={(p) => {
+            const k = picking;
+            setPicking(null);
+            apply(() => edits.setSlot(row, k, p));
+          }}
+        />
       )}
       {copying && (
-        <OahuActionPicker battle={battle} title="演出を写す元のアクション" current={row} onClose={() => setCopying(false)}
-          onPick={(from) => { setCopying(false); apply(() => edits.copyPerformance(row, from)); }} />
+        <OahuActionPicker
+          battle={battle}
+          title="演出を写す元のアクション"
+          current={row}
+          onClose={() => setCopying(false)}
+          onPick={(from) => {
+            setCopying(false);
+            apply(() => edits.copyPerformance(row, from));
+          }}
+        />
       )}
     </div>
   );
 }
 
 /** The rows the preview plays, each with its phase (the slots played together share one). */
-function previewTracks(session: OahuSession, l: Loaded, row: number, timings: PhaseTiming[], user: number, target: number): TimelineSlot[] {
+function previewTracks(
+  session: OahuSession,
+  l: Loaded,
+  row: number,
+  timings: PhaseTiming[],
+  user: number,
+  target: number,
+): TimelineSlot[] {
   const a = session.battle.actions;
-  const groups: [string[], number][] = [[['perfUser', 'perfUser2'], user], [['perfTarget', 'perfTarget2'], target], [['perfField'], target]];
+  const groups: [string[], number][] = [
+    [['perfUser', 'perfUser2'], user],
+    [['perfTarget', 'perfTarget2'], target],
+    [['perfField'], target],
+  ];
   const out: TimelineSlot[] = [];
   let phase = 0;
   for (const [keys, who] of groups) {
@@ -228,12 +410,19 @@ function previewTracks(session: OahuSession, l: Loaded, row: number, timings: Ph
     for (const [k, r] of rows) {
       const perf = OahuPerformances.forUnit(l.direct, r, who > 0)!;
       out.push({
-        key: k, label: OAHU_PERF_SLOTS.find((s) => s.key === k)!.label, row: r, perf, phase,
+        key: k,
+        label: OAHU_PERF_SLOTS.find((s) => s.key === k)!.label,
+        row: r,
+        perf,
+        phase,
         // Each row runs on its own timeline; the slot played first decides the motion (its length from the viewer).
         timeline: slotTimeline(perf, l.effects, timing?.motionFrames ?? null),
         motionFrames: timing?.motionFrames ?? null,
         editable: true,
-        effects: [perf.effect, ...l.effects.addEffects(perf.addEffect)].filter(Boolean).map((e) => effectLabel(l.effects.effect(e), l.names)).join(' + '),
+        effects: [perf.effect, ...l.effects.addEffects(perf.addEffect)]
+          .filter(Boolean)
+          .map((e) => effectLabel(l.effects.effect(e), l.names))
+          .join(' + '),
         se: l.sounds?.name(perf.se) ?? '',
         hit: false,
       });
@@ -244,7 +433,17 @@ function previewTracks(session: OahuSession, l: Loaded, row: number, timings: Ph
 }
 
 /** The preview on the action page: who uses it and who is hit, picked from the monsters (or a 電波人間). */
-export function OahuActionPreview({ session, row, users, onEdit }: { session: OahuSession; row: number; users: number[]; onEdit: () => void }): ReactNode {
+export function OahuActionPreview({
+  session,
+  row,
+  users,
+  onEdit,
+}: {
+  session: OahuSession;
+  row: number;
+  users: number[];
+  onEdit: () => void;
+}): ReactNode {
   const { battle } = session;
   const loaded = useLoaded(session);
   // Made after the first render: the viewer is DOM (none while rendering on the server, e.g. in the tests).
@@ -260,19 +459,34 @@ export function OahuActionPreview({ session, row, users, onEdit }: { session: Oa
   const edits = useMemo(() => new OahuPerfEdits(battle.actions, session.performances), [battle, session]);
   const self = battle.actions.get(row, 'side') === 1;
   const [user, setUser] = useState(users[0] ?? 0);
-  const [target, setTarget] = useState(self ? users[0] ?? 0 : users.length ? 0 : 1);
+  const [target, setTarget] = useState(self ? (users[0] ?? 0) : users.length ? 0 : 1);
   const [picking, setPicking] = useState<'user' | 'target' | null>(null);
   const a = battle.actions;
   const direct = loaded && loaded !== 'none' ? loaded.direct : null;
   // Reload when the slots or their rows change.
-  const sig = [row, user, target, loaded ? 1 : 0, ...OAHU_PERF_SLOTS.map((s) => a.get(row, s.key)), a.get(row, 'category'), user ? battle.monsters.get(user, 'formModel') : 0,
-    ...OAHU_PERF_SLOTS.map((s) => { const p = a.get(row, s.key); return direct && p > 0 && p < direct.rows ? [...direct.row(p)].join('.') : ''; })].join(',');
-  const phases = useMemo(() => (loaded && loaded !== 'none' ? oahuPreviewPhases(session, loaded, row, user, target) : []), [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phases depend on
+  const sig = [
+    row,
+    user,
+    target,
+    loaded ? 1 : 0,
+    ...OAHU_PERF_SLOTS.map((s) => a.get(row, s.key)),
+    a.get(row, 'category'),
+    user ? battle.monsters.get(user, 'formModel') : 0,
+    ...OAHU_PERF_SLOTS.map((s) => {
+      const p = a.get(row, s.key);
+      return direct && p > 0 && p < direct.rows ? [...direct.row(p)].join('.') : '';
+    }),
+  ].join(',');
+  const phases = useMemo(
+    () => (loaded && loaded !== 'none' ? oahuPreviewPhases(session, loaded, row, user, target) : []),
+    [sig],
+  ); // eslint-disable-line react-hooks/exhaustive-deps -- `sig` holds what the phases depend on
   useEffect(() => {
     setTimings([]);
     void viewer?.show(phases);
   }, [phases, viewer]);
-  if (loaded === 'none') return <div className="muted small">演出の表 (402F0000 の directData) を読めませんでした。</div>;
+  if (loaded === 'none')
+    return <div className="muted small">演出の表 (402F0000 の directData) を読めませんでした。</div>;
   if (!OAHU_PERF_SLOTS.some((s) => a.get(row, s.key))) return null;
   const ally = [{ value: 0, label: '電波人間', sub: '仮の姿' }];
   const who = (m: number, onClick: () => void, label: string): ReactNode => (
@@ -284,22 +498,47 @@ export function OahuActionPreview({ session, row, users, onEdit }: { session: Oa
   return (
     <div className="perf-preview">
       <div className="row small">
-        <span className="with-info">{'プレビュー'}<InfoTip text={PREVIEW_INFO} /></span>
-        <label>{'使う側 '}{who(user, () => setPicking('user'), '使う側')}</label>
-        <label>{'対象 '}{who(target, () => setPicking('target'), '対象')}</label>
+        <span className="with-info">
+          {'プレビュー'}
+          <InfoTip text={PREVIEW_INFO} />
+        </span>
+        <label>
+          {'使う側 '}
+          {who(user, () => setPicking('user'), '使う側')}
+        </label>
+        <label>
+          {'対象 '}
+          {who(target, () => setPicking('target'), '対象')}
+        </label>
       </div>
       {picking && (
-        <OahuMonsterPicker battle={battle} current={picking === 'user' ? user : target} title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
-          choices={ally} groups={picking === 'user' && users.length ? [{ label: 'このワザを持つモンスター', rows: users }] : []}
-          onClose={() => setPicking(null)} onPick={(m) => { if (picking === 'user') setUser(m); else setTarget(m); setPicking(null); }} />
+        <OahuMonsterPicker
+          battle={battle}
+          current={picking === 'user' ? user : target}
+          title={picking === 'user' ? '使う側を選ぶ' : '対象を選ぶ'}
+          choices={ally}
+          groups={picking === 'user' && users.length ? [{ label: 'このワザを持つモンスター', rows: users }] : []}
+          onClose={() => setPicking(null)}
+          onPick={(m) => {
+            if (picking === 'user') setUser(m);
+            else setTarget(m);
+            setPicking(null);
+          }}
+        />
       )}
       {viewer && <Dom node={viewer.el} />}
       {loaded && <div className="muted small">{phases.map((p) => p.title).join(' → ')}</div>}
       {loaded && oahuProgression(a.get(row, 'category'), a.get(row, 'kind')) === 2 && phases.length > 1 && (
-        <div className="muted small">ゲームでは、この進行 (2) の演出は使う側・対象・場を同時に流します。プレビューでは順に流します。</div>
+        <div className="muted small">
+          ゲームでは、この進行 (2) の演出は使う側・対象・場を同時に流します。プレビューでは順に流します。
+        </div>
       )}
       {loaded && (
-        <SlotTimelines slots={previewTracks(session, loaded, row, timings, user, target)} effects={loaded.effects} layout={OAHU_PERF} at={at}
+        <SlotTimelines
+          slots={previewTracks(session, loaded, row, timings, user, target)}
+          effects={loaded.effects}
+          layout={OAHU_PERF}
+          at={at}
           onSeek={(p, f) => viewer?.showAt(p, f)}
           onEdit={(t, field, v) => {
             try {
@@ -309,7 +548,8 @@ export function OahuActionPreview({ session, row, users, onEdit }: { session: Oa
               return;
             }
             onEdit();
-          }} />
+          }}
+        />
       )}
     </div>
   );

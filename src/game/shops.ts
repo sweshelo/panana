@@ -121,7 +121,8 @@ export class ShopStock {
   }
 
   changedShop(shop: number): boolean {
-    const a = this.items(shop), b = this.originalItems(shop);
+    const a = this.items(shop),
+      b = this.originalItems(shop);
     return a.length !== b.length || a.some((id, i) => id !== b[i]);
   }
 
@@ -184,11 +185,13 @@ export async function loadShopTable(game: Game): Promise<GsTable | null> {
 export function buildShops(stock: Map<number, number[]>, table: GsTable | null): Shop[] {
   const ids = new Set(stock.keys());
   if (table) for (let i = 0; i < table.rows; i++) ids.add(i);
-  return [...ids].sort((a, b) => a - b).map((id) => {
-    const raw = table && id < table.rows ? table.row(id) : new Uint8Array(0);
-    const { messages, variant } = raw.length >= 0x35 ? decodeShopRow(raw) : { messages: [], variant: -1 };
-    return { id, items: stock.get(id) ?? [], messages, variant, raw };
-  });
+  return [...ids]
+    .sort((a, b) => a - b)
+    .map((id) => {
+      const raw = table && id < table.rows ? table.row(id) : new Uint8Array(0);
+      const { messages, variant } = raw.length >= 0x35 ? decodeShopRow(raw) : { messages: [], variant: -1 };
+      return { id, items: stock.get(id) ?? [], messages, variant, raw };
+    });
 }
 
 /** What is being dragged onto a shop's list: one of its rows, or an item from the item palette. */

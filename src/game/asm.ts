@@ -2,10 +2,45 @@
 // ("ldr r0, [pc, #0x24]", "bl #0x31aa2c") plus labels, `ldr rX, =value` (literal pool) and `.word`.
 // One instruction at a time: `assembleLine(text, addr, resolve)` -> words. Block assembly is in game/patch.ts.
 
-const COND: Record<string, number> = { eq: 0, ne: 1, cs: 2, hs: 2, cc: 3, lo: 3, mi: 4, pl: 5, vs: 6, vc: 7, hi: 8, ls: 9, ge: 10, lt: 11, gt: 12, le: 13, al: 14 };
+const COND: Record<string, number> = {
+  eq: 0,
+  ne: 1,
+  cs: 2,
+  hs: 2,
+  cc: 3,
+  lo: 3,
+  mi: 4,
+  pl: 5,
+  vs: 6,
+  vc: 7,
+  hi: 8,
+  ls: 9,
+  ge: 10,
+  lt: 11,
+  gt: 12,
+  le: 13,
+  al: 14,
+};
 const REGS: Record<string, number> = { sb: 9, sl: 10, fp: 11, ip: 12, sp: 13, lr: 14, pc: 15 };
 for (let i = 0; i < 16; i++) REGS[`r${i}`] = i;
-const DP: Record<string, number> = { and: 0, eor: 1, sub: 2, rsb: 3, add: 4, adc: 5, sbc: 6, rsc: 7, tst: 8, teq: 9, cmp: 10, cmn: 11, orr: 12, mov: 13, bic: 14, mvn: 15 };
+const DP: Record<string, number> = {
+  and: 0,
+  eor: 1,
+  sub: 2,
+  rsb: 3,
+  add: 4,
+  adc: 5,
+  sbc: 6,
+  rsc: 7,
+  tst: 8,
+  teq: 9,
+  cmp: 10,
+  cmn: 11,
+  orr: 12,
+  mov: 13,
+  bic: 14,
+  mvn: 15,
+};
 const SHIFT: Record<string, number> = { lsl: 0, asl: 0, lsr: 1, asr: 2, ror: 3 };
 
 export class AsmError extends Error {}
@@ -44,7 +79,8 @@ function num(s: string, resolve?: Resolver): number {
 /** Split operands at top-level commas. */
 function operands(s: string): string[] {
   const out: string[] = [];
-  let depth = 0, cur = '';
+  let depth = 0,
+    cur = '';
   for (const c of s) {
     if (c === '[' || c === '{') depth++;
     if (c === ']' || c === '}') depth--;
@@ -113,8 +149,10 @@ const vreg = (s: string): { n: number; dbl: boolean } => {
   return { n: Number(m![2]), dbl: m![1]!.toLowerCase() === 'd' };
 };
 /** Vd / Vn / Vm fields of a VFP register. */
-const vD = (r: { n: number; dbl: boolean }) => (r.dbl ? ((r.n & 15) << 12) | ((r.n >> 4) << 22) : ((r.n >> 1) << 12) | ((r.n & 1) << 22));
-const vN = (r: { n: number; dbl: boolean }) => (r.dbl ? ((r.n & 15) << 16) | ((r.n >> 4) << 7) : ((r.n >> 1) << 16) | ((r.n & 1) << 7));
+const vD = (r: { n: number; dbl: boolean }) =>
+  r.dbl ? ((r.n & 15) << 12) | ((r.n >> 4) << 22) : ((r.n >> 1) << 12) | ((r.n & 1) << 22);
+const vN = (r: { n: number; dbl: boolean }) =>
+  r.dbl ? ((r.n & 15) << 16) | ((r.n >> 4) << 7) : ((r.n >> 1) << 16) | ((r.n & 1) << 7);
 const vM = (r: { n: number; dbl: boolean }) => (r.dbl ? (r.n & 15) | ((r.n >> 4) << 5) : (r.n >> 1) | ((r.n & 1) << 5));
 
 function regList(s: string): number {
@@ -123,7 +161,8 @@ function regList(s: string): number {
   let mask = 0;
   for (const part of t.slice(1, -1).split(',')) {
     const [a, b] = part.split('-').map((x) => x.trim());
-    const from = reg(a), to = b ? reg(b) : from;
+    const from = reg(a),
+      to = b ? reg(b) : from;
     for (let r = from; r <= to; r++) mask |= 1 << r;
   }
   return mask;
@@ -131,7 +170,10 @@ function regList(s: string): number {
 
 /** Assemble one line at `addr`. Throws AsmError. */
 export function assembleLine(line: string, addr: number, resolve?: Resolver): Assembled {
-  const text = line.replace(/;.*$/, '').replace(/\/\/.*$/, '').trim();
+  const text = line
+    .replace(/;.*$/, '')
+    .replace(/\/\/.*$/, '')
+    .trim();
   const sp = text.search(/\s/);
   const mn = (sp < 0 ? text : text.slice(0, sp)).toLowerCase();
   const ops = operands(sp < 0 ? '' : text.slice(sp + 1));
@@ -177,15 +219,29 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
     const m = /^(ldm|stm)(ia|ib|da|db|fd|ed|fa|ea)?([a-z]{2})?$/.exec(mn);
     if (m && (m[3] === undefined || COND[m[3]] !== undefined)) {
       const L = m[1] === 'ldm';
-      const mode = { fd: L ? 'ia' : 'db', ed: L ? 'ib' : 'da', fa: L ? 'da' : 'ib', ea: L ? 'db' : 'ia' }[m[2] ?? ''] ?? m[2] ?? 'ia';
-      const P = mode[1] === 'b' ? 1 : 0, U = mode[0] === 'i' ? 1 : 0;
+      const mode =
+        { fd: L ? 'ia' : 'db', ed: L ? 'ib' : 'da', fa: L ? 'da' : 'ib', ea: L ? 'db' : 'ia' }[m[2] ?? ''] ??
+        m[2] ??
+        'ia';
+      const P = mode[1] === 'b' ? 1 : 0,
+        U = mode[0] === 'i' ? 1 : 0;
       const base = ops[0]!;
       const W = base.endsWith('!') ? 1 : 0;
       const rn = reg(base.replace('!', ''));
       let list = ops.slice(1).join(',');
       const S = list.trim().endsWith('^') ? 1 : 0;
       list = list.replace('^', '');
-      return one(((m[3] ? COND[m[3]]! : 14) << 28) | 0x08000000 | (P << 24) | (U << 23) | (S << 22) | (W << 21) | ((L ? 1 : 0) << 20) | (rn << 16) | regList(list));
+      return one(
+        ((m[3] ? COND[m[3]]! : 14) << 28) |
+          0x08000000 |
+          (P << 24) |
+          (U << 23) |
+          (S << 22) |
+          (W << 21) |
+          ((L ? 1 : 0) << 20) |
+          (rn << 16) |
+          regList(list),
+      );
     }
   }
 
@@ -220,7 +276,17 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
         }
         if (a > 0xff) fail('ラベルが遠すぎます (256 バイトまで)');
         const sh = size === 'h' ? 1 : size === 'sb' ? 2 : 3;
-        return one(cc | 0x01400090 | (U << 23) | ((L ? 1 : 0) << 20) | (15 << 16) | (rd << 12) | ((a & 0xf0) << 4) | (sh << 5) | (a & 15));
+        return one(
+          cc |
+            0x01400090 |
+            (U << 23) |
+            ((L ? 1 : 0) << 20) |
+            (15 << 16) |
+            (rd << 12) |
+            ((a & 0xf0) << 4) |
+            (sh << 5) |
+            (a & 15),
+        );
       }
       const close = mem.indexOf(']');
       const inner = operands(mem.slice(1, close));
@@ -230,7 +296,9 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
       const P = post.length ? 0 : 1;
       const rn = reg(inner[0]);
       const offParts = post.length ? post : inner.slice(1);
-      let U = 1, I = 0, field = 0;
+      let U = 1,
+        I = 0,
+        field = 0;
       if (offParts.length) {
         const o = offParts[0]!;
         if (o.startsWith('#')) {
@@ -248,12 +316,24 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
       if (!size || size === 'b') {
         if (I && field > 0xfff) fail('オフセットが大きすぎます (4095 まで)');
         const Bb = size === 'b' ? 1 : 0;
-        return one(cc | (I ? 0x04000000 : 0x06000000) | (P << 24) | (U << 23) | (Bb << 22) | ((W || tt ? 1 : 0) << 21) | ((L ? 1 : 0) << 20) | (rn << 16) | (rd << 12) | field);
+        return one(
+          cc |
+            (I ? 0x04000000 : 0x06000000) |
+            (P << 24) |
+            (U << 23) |
+            (Bb << 22) |
+            ((W || tt ? 1 : 0) << 21) |
+            ((L ? 1 : 0) << 20) |
+            (rn << 16) |
+            (rd << 12) |
+            field,
+        );
       }
       // halfword / signed / doubleword
       if (!I && field > 15) fail('この命令ではレジスタのシフトはできません');
       if (I && field > 0xff) fail('オフセットが大きすぎます (255 まで)');
-      let sh: number, l = L ? 1 : 0;
+      let sh: number,
+        l = L ? 1 : 0;
       if (size === 'h') sh = 1;
       else if (size === 'sb') sh = 2;
       else if (size === 'sh') sh = 3;
@@ -263,7 +343,19 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
       }
       if (!L && (size === 'sb' || size === 'sh')) fail(`命令が分かりません: ${mn}`);
       const lo = I ? ((field & 0xf0) << 4) | (field & 15) : field;
-      return one(cc | (P << 24) | (U << 23) | (I << 22) | ((W || tt ? 1 : 0) << 21) | (l << 20) | (rn << 16) | (rd << 12) | 0x90 | (sh << 5) | lo);
+      return one(
+        cc |
+          (P << 24) |
+          (U << 23) |
+          (I << 22) |
+          ((W || tt ? 1 : 0) << 21) |
+          (l << 20) |
+          (rn << 16) |
+          (rd << 12) |
+          0x90 |
+          (sh << 5) |
+          lo,
+      );
     }
   }
 
@@ -273,10 +365,14 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
     const S = c.s ? 1 << 20 : 0;
     const r = ops.map(reg);
     switch (c.base) {
-      case 'mul': return one(cc | S | (r[0]! << 16) | (r[2]! << 8) | 0x90 | r[1]!);
-      case 'mla': return one(cc | 0x00200000 | S | (r[0]! << 16) | (r[3]! << 12) | (r[2]! << 8) | 0x90 | r[1]!);
-      case 'mls': return one(cc | 0x00600000 | (r[0]! << 16) | (r[3]! << 12) | (r[2]! << 8) | 0x90 | r[1]!);
-      case 'umaal': return one(cc | 0x00400000 | (r[1]! << 16) | (r[0]! << 12) | (r[3]! << 8) | 0x90 | r[2]!);
+      case 'mul':
+        return one(cc | S | (r[0]! << 16) | (r[2]! << 8) | 0x90 | r[1]!);
+      case 'mla':
+        return one(cc | 0x00200000 | S | (r[0]! << 16) | (r[3]! << 12) | (r[2]! << 8) | 0x90 | r[1]!);
+      case 'mls':
+        return one(cc | 0x00600000 | (r[0]! << 16) | (r[3]! << 12) | (r[2]! << 8) | 0x90 | r[1]!);
+      case 'umaal':
+        return one(cc | 0x00400000 | (r[1]! << 16) | (r[0]! << 12) | (r[3]! << 8) | 0x90 | r[2]!);
       default: {
         const op = { umull: 0, umlal: 1, smull: 2, smlal: 3 }[c.base]!;
         return one(cc | 0x00800000 | (op << 21) | S | (r[1]! << 16) | (r[0]! << 12) | (r[3]! << 8) | 0x90 | r[2]!);
@@ -285,7 +381,24 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
   }
 
   // ---- misc
-  for (const c of splitMnemonic(mn, ['clz', 'uxtab', 'uxtah', 'sxtab', 'sxtah', 'uxtb', 'uxth', 'sxtb', 'sxth', 'ubfx', 'sbfx', 'svc', 'adr', 'rev', 'ssat', 'usat'])) {
+  for (const c of splitMnemonic(mn, [
+    'clz',
+    'uxtab',
+    'uxtah',
+    'sxtab',
+    'sxtah',
+    'uxtb',
+    'uxth',
+    'sxtb',
+    'sxth',
+    'ubfx',
+    'sbfx',
+    'svc',
+    'adr',
+    'rev',
+    'ssat',
+    'usat',
+  ])) {
     if (c.s) continue;
     const cc = c.cond << 28;
     switch (c.base) {
@@ -302,15 +415,33 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
           if (!m || (m[1]!.toLowerCase() === 'lsl' ? n > 31 : n < 1 || n > 32)) fail(`シフトが読めません: ${ops[3]}`);
           sh = m![1]!.toLowerCase() === 'lsl' ? n << 7 : ((n & 31) << 7) | 0x40;
         }
-        return one(cc | (signed ? 0x06a00010 : 0x06e00010) | ((signed ? sat - 1 : sat) << 16) | (reg(ops[0]) << 12) | sh | reg(ops[2]));
+        return one(
+          cc |
+            (signed ? 0x06a00010 : 0x06e00010) |
+            ((signed ? sat - 1 : sat) << 16) |
+            (reg(ops[0]) << 12) |
+            sh |
+            reg(ops[2]),
+        );
       }
-      case 'clz': return one(cc | 0x016f0f10 | (reg(ops[0]) << 12) | reg(ops[1]));
-      case 'rev': return one(cc | 0x06bf0f30 | (reg(ops[0]) << 12) | reg(ops[1]));
-      case 'svc': return one(cc | 0x0f000000 | (num(ops[0]!) & 0xffffff));
+      case 'clz':
+        return one(cc | 0x016f0f10 | (reg(ops[0]) << 12) | reg(ops[1]));
+      case 'rev':
+        return one(cc | 0x06bf0f30 | (reg(ops[0]) << 12) | reg(ops[1]));
+      case 'svc':
+        return one(cc | 0x0f000000 | (num(ops[0]!) & 0xffffff));
       case 'ubfx':
       case 'sbfx': {
-        const lsb = num(ops[2]!), width = num(ops[3]!);
-        return one(cc | (c.base === 'ubfx' ? 0x07e00050 : 0x07a00050) | ((width - 1) << 16) | (reg(ops[0]) << 12) | (lsb << 7) | reg(ops[1]));
+        const lsb = num(ops[2]!),
+          width = num(ops[3]!);
+        return one(
+          cc |
+            (c.base === 'ubfx' ? 0x07e00050 : 0x07a00050) |
+            ((width - 1) << 16) |
+            (reg(ops[0]) << 12) |
+            (lsb << 7) |
+            reg(ops[1]),
+        );
       }
       case 'adr': {
         const off = target(ops[1]!) - (addr + 8);
@@ -347,7 +478,10 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
   }
 
   // ---- data processing
-  for (const c of splitMnemonic(mn, Object.keys(DP).sort((a, b) => b.length - a.length))) {
+  for (const c of splitMnemonic(
+    mn,
+    Object.keys(DP).sort((a, b) => b.length - a.length),
+  )) {
     let opc = DP[c.base]!;
     const cc = c.cond << 28;
     const test = opc >= 8 && opc <= 11;
@@ -361,7 +495,16 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
       let imm = encodeImm(v >>> 0);
       if (imm === null) {
         // the paired instruction with the inverted / negated value
-        const alt: Record<number, [number, number]> = { 13: [15, ~v], 15: [13, ~v], 4: [2, -v], 2: [4, -v], 10: [11, -v], 11: [10, -v], 0: [14, ~v], 14: [0, ~v] };
+        const alt: Record<number, [number, number]> = {
+          13: [15, ~v],
+          15: [13, ~v],
+          4: [2, -v],
+          2: [4, -v],
+          10: [11, -v],
+          11: [10, -v],
+          0: [14, ~v],
+          14: [0, ~v],
+        };
         const a = alt[opc];
         if (a && encodeImm(a[1] >>> 0) !== null) {
           opc = a[0];
@@ -377,18 +520,50 @@ export function assembleLine(line: string, addr: number, resolve?: Resolver): As
   return fail(`命令が分かりません: ${mn}`);
 }
 
-const VFP_BASES = ['vldmia', 'vstmia', 'vldmdb', 'vstmdb', 'vpush', 'vpop', 'vldr', 'vstr', 'vmrs', 'vmov', 'vnmul', 'vmla', 'vmls', 'vadd', 'vsub', 'vmul', 'vdiv', 'vabs', 'vneg', 'vsqrt', 'vcmpe', 'vcmp', 'vcvtr', 'vcvt'];
+const VFP_BASES = [
+  'vldmia',
+  'vstmia',
+  'vldmdb',
+  'vstmdb',
+  'vpush',
+  'vpop',
+  'vldr',
+  'vstr',
+  'vmrs',
+  'vmov',
+  'vnmul',
+  'vmla',
+  'vmls',
+  'vadd',
+  'vsub',
+  'vmul',
+  'vdiv',
+  'vabs',
+  'vneg',
+  'vsqrt',
+  'vcmpe',
+  'vcmp',
+  'vcvtr',
+  'vcvt',
+];
 
 function vfp(mn: string, ops: string[], addr: number, resolve?: Resolver): Assembled {
   const dot = mn.indexOf('.');
   const head = dot < 0 ? mn : mn.slice(0, dot);
   const types = dot < 0 ? [] : mn.slice(dot + 1).split('.');
-  const found = VFP_BASES.map((b) => ({ b, rest: head.startsWith(b) ? head.slice(b.length) : null })).find((x) => x.rest !== null && (x.rest === '' || COND[x.rest] !== undefined));
+  const found = VFP_BASES.map((b) => ({ b, rest: head.startsWith(b) ? head.slice(b.length) : null })).find(
+    (x) => x.rest !== null && (x.rest === '' || COND[x.rest] !== undefined),
+  );
   if (!found) fail(`命令が分かりません: ${mn}`);
-  const base = found!.b, cc = (found!.rest ? COND[found!.rest]! : 14) << 28;
+  const base = found!.b,
+    cc = (found!.rest ? COND[found!.rest]! : 14) << 28;
   const one = (w: number): Assembled => ({ words: [w >>> 0] });
   const list = (s: string) => {
-    const regs = s.trim().slice(1, -1).split(',').map((x) => vreg(x));
+    const regs = s
+      .trim()
+      .slice(1, -1)
+      .split(',')
+      .map((x) => vreg(x));
     return { first: regs[0]!, count: regs.length, dbl: regs[0]!.dbl };
   };
   switch (base) {
@@ -408,7 +583,18 @@ function vfp(mn: string, ops: string[], addr: number, resolve?: Resolver): Assem
       const n = l.dbl ? l.count * 2 : l.count;
       const L = base.startsWith('vld') ? 1 : 0;
       const db = base.endsWith('db');
-      return one(cc | 0x0c000a00 | ((db ? 1 : 0) << 24) | ((db ? 0 : 1) << 23) | (W << 21) | (L << 20) | (rn << 16) | (l.dbl ? 0x100 : 0) | vD(l.first) | n);
+      return one(
+        cc |
+          0x0c000a00 |
+          ((db ? 1 : 0) << 24) |
+          ((db ? 0 : 1) << 23) |
+          (W << 21) |
+          (L << 20) |
+          (rn << 16) |
+          (l.dbl ? 0x100 : 0) |
+          vD(l.first) |
+          n,
+      );
     }
     case 'vldr':
     case 'vstr': {
@@ -429,46 +615,86 @@ function vfp(mn: string, ops: string[], addr: number, resolve?: Resolver): Assem
         off = inner[1] ? num(inner[1]) : 0;
       }
       if (off % 4 || Math.abs(off) > 1020) fail('vldr / vstr のオフセットは 4 の倍数で ±1020 までです');
-      return one(cc | 0x0d000a00 | ((off >= 0 ? 1 : 0) << 23) | (L << 20) | (rn << 16) | (r.dbl ? 0x100 : 0) | vD(r) | (Math.abs(off) >> 2));
+      return one(
+        cc |
+          0x0d000a00 |
+          ((off >= 0 ? 1 : 0) << 23) |
+          (L << 20) |
+          (rn << 16) |
+          (r.dbl ? 0x100 : 0) |
+          vD(r) |
+          (Math.abs(off) >> 2),
+      );
     }
     case 'vmrs':
       if (ops[0]?.toLowerCase() === 'apsr_nzcv') return one(cc | 0x0ef1fa10);
       return one(cc | 0x0ef10a10 | (reg(ops[0]) << 12));
     case 'vmov': {
-      const a = ops[0]!, b = ops[1]!;
+      const a = ops[0]!,
+        b = ops[1]!;
       const isCore = (s: string) => REGS[s.toLowerCase()] !== undefined;
       if (ops.length === 2 && isCore(a) && !isCore(b)) return one(cc | 0x0e100a10 | (reg(a) << 12) | vN(vreg(b)));
       if (ops.length === 2 && !isCore(a) && isCore(b)) return one(cc | 0x0e000a10 | (reg(b) << 12) | vN(vreg(a)));
       if (ops.length === 2) {
-        const d = vreg(a), s = vreg(b);
+        const d = vreg(a),
+          s = vreg(b);
         return one(cc | 0x0eb00a40 | (d.dbl ? 0x100 : 0) | vD(d) | vM(s));
       }
       fail('この形の vmov は使えません');
       break;
     }
-    case 'vadd': case 'vsub': case 'vmul': case 'vdiv': case 'vnmul': case 'vmla': case 'vmls': {
-      const d = vreg(ops[0]!), n = vreg(ops[1]!), mm = vreg(ops[2]!);
-      const op = { vmla: [0x0e000a00, 0], vmls: [0x0e000a40, 0], vmul: [0x0e200a00, 0], vnmul: [0x0e200a40, 0], vadd: [0x0e300a00, 0], vsub: [0x0e300a40, 0], vdiv: [0x0e800a00, 0] }[base]!;
+    case 'vadd':
+    case 'vsub':
+    case 'vmul':
+    case 'vdiv':
+    case 'vnmul':
+    case 'vmla':
+    case 'vmls': {
+      const d = vreg(ops[0]!),
+        n = vreg(ops[1]!),
+        mm = vreg(ops[2]!);
+      const op = {
+        vmla: [0x0e000a00, 0],
+        vmls: [0x0e000a40, 0],
+        vmul: [0x0e200a00, 0],
+        vnmul: [0x0e200a40, 0],
+        vadd: [0x0e300a00, 0],
+        vsub: [0x0e300a40, 0],
+        vdiv: [0x0e800a00, 0],
+      }[base]!;
       return one(cc | op[0]! | (d.dbl ? 0x100 : 0) | vD(d) | vN(n) | vM(mm));
     }
-    case 'vabs': case 'vneg': case 'vsqrt': {
-      const d = vreg(ops[0]!), s = vreg(ops[1]!);
+    case 'vabs':
+    case 'vneg':
+    case 'vsqrt': {
+      const d = vreg(ops[0]!),
+        s = vreg(ops[1]!);
       const op = { vabs: 0x0eb00ac0, vneg: 0x0eb10a40, vsqrt: 0x0eb10ac0 }[base]!;
       return one(cc | op | (d.dbl ? 0x100 : 0) | vD(d) | vM(s));
     }
-    case 'vcmp': case 'vcmpe': {
+    case 'vcmp':
+    case 'vcmpe': {
       const d = vreg(ops[0]!);
       const E = base === 'vcmpe' ? 0x80 : 0;
       if (ops[1]?.trim() === '#0') return one(cc | 0x0eb50a40 | E | (d.dbl ? 0x100 : 0) | vD(d));
       return one(cc | 0x0eb40a40 | E | (d.dbl ? 0x100 : 0) | vD(d) | vM(vreg(ops[1]!)));
     }
-    case 'vcvt': case 'vcvtr': {
+    case 'vcvt':
+    case 'vcvtr': {
       const [to, from] = types as [string, string];
-      const d = vreg(ops[0]!), s = vreg(ops[1]!);
+      const d = vreg(ops[0]!),
+        s = vreg(ops[1]!);
       if ((to === 'f32' || to === 'f64') && (from === 's32' || from === 'u32'))
         return one(cc | 0x0eb80a40 | (from === 's32' ? 0x80 : 0) | (to === 'f64' ? 0x100 : 0) | vD(d) | vM(s));
       if ((to === 's32' || to === 'u32') && (from === 'f32' || from === 'f64'))
-        return one(cc | (to === 's32' ? 0x0ebd0a40 : 0x0ebc0a40) | (base === 'vcvt' ? 0x80 : 0) | (from === 'f64' ? 0x100 : 0) | vD(d) | vM(s));
+        return one(
+          cc |
+            (to === 's32' ? 0x0ebd0a40 : 0x0ebc0a40) |
+            (base === 'vcvt' ? 0x80 : 0) |
+            (from === 'f64' ? 0x100 : 0) |
+            vD(d) |
+            vM(s),
+        );
       if (to === 'f64' && from === 'f32') return one(cc | 0x0eb70ac0 | vD(d) | vM(s));
       if (to === 'f32' && from === 'f64') return one(cc | 0x0eb70bc0 | vD(d) | vM(s));
       fail(`この vcvt は使えません: ${mn}`);

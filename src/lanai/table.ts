@@ -79,8 +79,10 @@ export class LanaiTable {
     this.rowIds = ids ? Array.from({ length: u32(d, 0x1c) >>> 2 }, (_, i) => u32(d, ids + i * 4)) : [];
     const schema = u32(d, 0x20);
     this.fields = schema
-      ? Array.from({ length: u32(d, 0x24) >>> 3 }, (_, i) => ({ name: cstr(d, u32(d, schema + i * 8)), offset: u32(d, schema + i * 8 + 4) }))
-        .sort((a, b) => a.offset - b.offset)
+      ? Array.from({ length: u32(d, 0x24) >>> 3 }, (_, i) => ({
+          name: cstr(d, u32(d, schema + i * 8)),
+          offset: u32(d, schema + i * 8 + 4),
+        })).sort((a, b) => a.offset - b.offset)
       : [];
     const reloc = u32(d, 0x28);
     this.relocs = new Set(Array.from({ length: u32(d, 0x2c) }, (_, i) => u32(d, reloc + i * 4)));
@@ -97,11 +99,17 @@ export class LanaiTable {
   /** Whether `b` has the header of a lanai table (the pool at 0x40, the regions inside the file, a name). */
   static is(b: Uint8Array): boolean {
     if (b.length < HEADER || u32(b, 8) !== HEADER) return false;
-    const rows = u32(b, 0), size = u32(b, 4), data = u32(b, 0x10);
+    const rows = u32(b, 0),
+      size = u32(b, 4),
+      data = u32(b, 0x10);
     if (rows * size !== u32(b, 0x14) || data < HEADER || data + rows * size > b.length) return false;
     const reloc = u32(b, 0x28);
     if (reloc > b.length || reloc + u32(b, 0x2c) * 4 > b.length) return false;
-    for (const [at, len] of [[0x18, 0x1c], [0x20, 0x24]] as const) if (u32(b, at) && u32(b, at) + u32(b, len) > b.length) return false;
+    for (const [at, len] of [
+      [0x18, 0x1c],
+      [0x20, 0x24],
+    ] as const)
+      if (u32(b, at) && u32(b, at) + u32(b, len) > b.length) return false;
     const pool = HEADER + u32(b, 0x0c);
     const name = HEADER + u32(b, 0x34);
     return name < pool && HEADER + u32(b, 0x38) <= pool && b[name] !== 0;
@@ -227,9 +235,14 @@ export class LanaiTable {
   /** Checks that a write of `size` bytes at `offset` stays in a row and does not touch a string field. */
   private place(i: number, offset: number, size: number): number {
     if (i < 0 || i >= this.rows) throw new RangeError(`${this.name}: 行 ${i} は範囲外です (${this.rows} 行)`);
-    if (offset < 0 || offset + size > this.rowSize) throw new RangeError(`${this.name}: +0x${offset.toString(16)} は行 (0x${this.rowSize.toString(16)} バイト) の外です`);
+    if (offset < 0 || offset + size > this.rowSize)
+      throw new RangeError(
+        `${this.name}: +0x${offset.toString(16)} は行 (0x${this.rowSize.toString(16)} バイト) の外です`,
+      );
     const base = this.at(i, 0);
-    for (const r of this.relocs) if (r + 4 > base + offset && r < base + offset + size) throw new Error(`${this.name}: 行 ${i} +0x${(r - base).toString(16)} は文字列の欄なので書き換えられません`);
+    for (const r of this.relocs)
+      if (r + 4 > base + offset && r < base + offset + size)
+        throw new Error(`${this.name}: 行 ${i} +0x${(r - base).toString(16)} は文字列の欄なので書き換えられません`);
     return this.at(i, offset);
   }
 
@@ -318,7 +331,8 @@ export class LanaiTable {
    */
   setString(i: number, offset: number, bytes: Uint8Array): void {
     this.row(i);
-    if (offset < 0 || offset + 4 > this.rowSize || !this.isString(i, offset)) throw new Error(`${this.name}: 行 ${i} +0x${offset.toString(16)} は文字列の欄ではありません`);
+    if (offset < 0 || offset + 4 > this.rowSize || !this.isString(i, offset))
+      throw new Error(`${this.name}: 行 ${i} +0x${offset.toString(16)} は文字列の欄ではありません`);
     if (!bytes.length) throw new Error(`${this.name}: 文字列が空です (終端も入れます)`);
     const key = i * this.rowSize + offset;
     const cur = this.u32(i, offset);
@@ -326,8 +340,13 @@ export class LanaiTable {
     // a string as read: its bytes at the field's offset in the bytes as read (a string read as UTF-16 may run past the
     // pool when it is not UTF-16; the bytes are still the ones the field pointed at)
     const poolEnd = HEADER + this.basePool;
-    const same = [was ? u32(was, offset) : -1, this.written.has(key) ? -1 : cur]
-      .find((p) => p >= HEADER && p < poolEnd && p + bytes.length <= this.original.length && equalBytes(this.original.subarray(p, p + bytes.length), bytes));
+    const same = [was ? u32(was, offset) : -1, this.written.has(key) ? -1 : cur].find(
+      (p) =>
+        p >= HEADER &&
+        p < poolEnd &&
+        p + bytes.length <= this.original.length &&
+        equalBytes(this.original.subarray(p, p + bytes.length), bytes),
+    );
     if (same !== undefined) {
       if (same === cur && !this.written.has(key)) return;
       this.writable();
@@ -356,7 +375,9 @@ export class LanaiTable {
 
   /** The written strings: row, offset in the row, bytes (with the terminator), in the order of the rows. */
   changedStrings(): [row: number, offset: number, bytes: Uint8Array][] {
-    return [...this.written].sort((a, b) => a[0] - b[0]).map(([k, b]) => [Math.floor(k / this.rowSize), k % this.rowSize, b]);
+    return [...this.written]
+      .sort((a, b) => a[0] - b[0])
+      .map(([k, b]) => [Math.floor(k / this.rowSize), k % this.rowSize, b]);
   }
 
   /** Puts the whole table back as it was read (added rows are dropped). */
@@ -377,9 +398,13 @@ export class LanaiTable {
   addRow(from?: number): number {
     const src = from === undefined ? new Uint8Array(this.rowSize) : this.row(from).slice();
     const strings = from === undefined ? [] : this.stringOffsetsOf(from);
-    const ids = this.rowIds.length ? [...this.rowIds, (Math.max(...this.rowIds.map((x) => x & 0x7fffffff)) + 1 | ROW_ID) >>> 0] : [];
+    const ids = this.rowIds.length
+      ? [...this.rowIds, ((Math.max(...this.rowIds.map((x) => x & 0x7fffffff)) + 1) | ROW_ID) >>> 0]
+      : [];
     this.writable();
-    if (from !== undefined) for (const k of this.writtenIn(from)) this.written.set(k - from * this.rowSize + this.rows * this.rowSize, this.written.get(k)!);
+    if (from !== undefined)
+      for (const k of this.writtenIn(from))
+        this.written.set(k - from * this.rowSize + this.rows * this.rowSize, this.written.get(k)!);
     this.rebuild([src], ids, strings);
     return this.rows - 1;
   }
@@ -429,18 +454,32 @@ export class LanaiTable {
     }
     const data = placed.size ? align(poolEnd, REGION_ALIGN) : this.baseData;
     // the files' pool sizes run up to the rows (padding included) when the rows follow the pool
-    const poolSize = !placed.size ? this.basePool : this.baseData === HEADER + this.basePool ? data - HEADER : poolEnd - HEADER;
+    const poolSize = !placed.size
+      ? this.basePool
+      : this.baseData === HEADER + this.basePool
+        ? data - HEADER
+        : poolEnd - HEADER;
     const dataEnd = data + rows * this.rowSize;
-    const regions = ([[0x18, 0x1c], [0x20, 0x24], [0x30, -1]] as const)
+    const regions = (
+      [
+        [0x18, 0x1c],
+        [0x20, 0x24],
+        [0x30, -1],
+      ] as const
+    )
       .filter(([at]) => u32(d, at))
       .map(([at, len]) => {
         const start = u32(d, at);
         // the extra region has no size: it runs up to the next region
-        const end = len >= 0 ? start + u32(d, len) : Math.min(...[relocAt, u32(d, 0x20), u32(d, 0x18), d.length].filter((o) => o > start));
+        const end =
+          len >= 0
+            ? start + u32(d, len)
+            : Math.min(...[relocAt, u32(d, 0x20), u32(d, 0x18), d.length].filter((o) => o > start));
         return { at, len, start, end };
       })
       .sort((a, b) => a.start - b.start);
-    if (regions.some((r) => r.start < oldEnd) || relocAt < oldEnd) throw new Error(`${this.name}: 行の後ろにない領域があるので、組み直せません`);
+    if (regions.some((r) => r.start < oldEnd) || relocAt < oldEnd)
+      throw new Error(`${this.name}: 行の後ろにない領域があるので、組み直せません`);
     const parts: { at: number; bytes: Uint8Array }[] = [];
     let pos = dataEnd;
     const moved = new Map<number, number>(); // old start -> new start

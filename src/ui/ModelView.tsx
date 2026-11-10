@@ -4,7 +4,17 @@ import { ModelViewer, type ModelRef } from '../pages/modelview';
 import { Dom } from './mount';
 
 /** @param inside Look around from the ground of the model (battle backgrounds) instead of turning it. */
-export function ModelView({ model, name, motionHints, inside = false }: { model: ModelRef | null; name: string; motionHints?: Record<string, string>; inside?: boolean }): ReactNode {
+export function ModelView({
+  model,
+  name,
+  motionHints,
+  inside = false,
+}: {
+  model: ModelRef | null;
+  name: string;
+  motionHints?: Record<string, string>;
+  inside?: boolean;
+}): ReactNode {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- one viewer (WebGL context) for the page's lifetime
   const viewer = useMemo(() => new ModelViewer(motionHints, inside), []);
   const key = model?.key ?? '';

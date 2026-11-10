@@ -9,7 +9,17 @@ import { renderToString } from 'react-dom/server';
 import { LanaiMonsterPage } from '../src/lanai/MonsterPage';
 import { lanaiSetSkillSlots, lanaiSkillSlots } from '../src/lanai/monsterBook';
 import { moveTo } from '../src/ui/MonsterSlots';
-import { isTransform, lanaiAction, lanaiActionMonsters, lanaiCopyActionInto, lanaiCopyStats, lanaiRevertMonster, lanaiSetTransformTarget, lanaiStatsOf, lanaiStatsSharers } from '../src/lanai/monsterStats';
+import {
+  isTransform,
+  lanaiAction,
+  lanaiActionMonsters,
+  lanaiCopyActionInto,
+  lanaiCopyStats,
+  lanaiRevertMonster,
+  lanaiSetTransformTarget,
+  lanaiStatsOf,
+  lanaiStatsSharers,
+} from '../src/lanai/monsterStats';
 import { LanaiSession, lanaiTableKey } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
 import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiMessage } from '../src/lanai/message';
@@ -20,14 +30,31 @@ import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 /** A small table: 3 rows of 8 bytes (+0 a string, +4 packed), row IDs, a field-name table, relocations. */
 function smallTable(): Uint8Array {
   const pool = new TextEncoder().encode('Tbl\0name\0abc\0\0\0\0'); // 16 bytes
-  const rows = 3, size = 8;
+  const rows = 3,
+    size = 8;
   const data = 0x40 + pool.length; // 0x50
   const ids = 0x70; // the rows end at 0x68; each region on 16 bytes
   const namesAt = 0x80; // on 16 bytes, up to 0x88
   const relocAt = 0x90;
   const relocs = [data, data + 8, data + 16, namesAt];
   const b = new Uint8Array(relocAt + relocs.length * 4);
-  const h = [rows, size, 0x40, pool.length, data, rows * size, ids, rows * 4, namesAt, 8, relocAt, relocs.length, 0, 0, 4];
+  const h = [
+    rows,
+    size,
+    0x40,
+    pool.length,
+    data,
+    rows * size,
+    ids,
+    rows * 4,
+    namesAt,
+    8,
+    relocAt,
+    relocs.length,
+    0,
+    0,
+    4,
+  ];
   h.forEach((v, i) => w32(b, i * 4, v));
   b.set(pool, 0x40);
   for (let r = 0; r < rows; r++) {
@@ -89,7 +116,8 @@ describe('LanaiTable edits', () => {
 
 describe('LanaiTable strings', () => {
   const enc = (s: string): Uint8Array => new TextEncoder().encode(`${s}\0`);
-  const str = (t: LanaiTable, i: number): string => new TextDecoder().decode(t.data.subarray(t.u32(i, 0), t.data.indexOf(0, t.u32(i, 0))));
+  const str = (t: LanaiTable, i: number): string =>
+    new TextDecoder().decode(t.data.subarray(t.u32(i, 0), t.data.indexOf(0, t.u32(i, 0))));
 
   test('writes a string after the pool as read; the other rows keep their bytes; the regions move', () => {
     const b = smallTable();
@@ -138,7 +166,16 @@ describe('LanaiTable strings', () => {
     // setRow with the row as read undoes the string too
     t.setRow(0, new LanaiTable(b).row(0).slice());
     expect(equalBytes(t.data, b)).toBe(true);
-    expect(() => t.setRow(0, (() => { const r = t.row(0).slice(); w32(r, 0, 0x44); return r; })())).toThrow();
+    expect(() =>
+      t.setRow(
+        0,
+        (() => {
+          const r = t.row(0).slice();
+          w32(r, 0, 0x44);
+          return r;
+        })(),
+      ),
+    ).toThrow();
     expect(() => t.setString(0, 4, enc('no'))).toThrow(); // not a string field
     t.setString(0, 0, enc('zz'));
     t.revert();
@@ -180,7 +217,10 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
   let dump: Dump;
   let s: LanaiSession;
   beforeAll(async () => {
-    dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     s = await LanaiSession.open(dump, { fresh: true });
   });
   // a failed test leaves no edits for the next ones
@@ -202,7 +242,8 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
         const read = t.data.slice();
         const pool = 0x40 + u32(read, 0x0c);
         // every other string field keeps its offset (into the pool as read, which stays as it is)
-        const pointers = (x: LanaiTable): number[] => Array.from({ length: x.rows }, (_, i) => at.map((f) => (x.isString(i, f) ? x.u32(i, f) : -1))).flat();
+        const pointers = (x: LanaiTable): number[] =>
+          Array.from({ length: x.rows }, (_, i) => at.map((f) => (x.isString(i, f) ? x.u32(i, f) : -1))).flat();
         const before = pointers(t);
         const was = lanaiMessageBytes(t.data, t.u32(r, o)).slice();
         s.setText(t, r, o, 'テスト{page}です');
@@ -234,7 +275,8 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
         for (let r = 0; r < t.rows; r++) {
           if (!t.isString(r, o)) continue;
           const b = lanaiMessageBytes(t.data, t.u32(r, o));
-          if (!equalBytes(encodeLanaiMessage(parseLanaiMessage(t.data, t.u32(r, o)).tokens), b)) bad.push(`${t.name} ${r} +${o}`);
+          if (!equalBytes(encodeLanaiMessage(parseLanaiMessage(t.data, t.u32(r, o)).tokens), b))
+            bad.push(`${t.name} ${r} +${o}`);
         }
       }
     }
@@ -334,7 +376,9 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
   test('copying a shared ability row links only that monster', async () => {
     const m = await LanaiSession.open(dump, { fresh: true });
     const p = m.need('MonsterParameter');
-    const shared = Array.from({ length: p.rows }, (_, r) => r).find((r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1)!;
+    const shared = Array.from({ length: p.rows }, (_, r) => r).find(
+      (r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1,
+    )!;
     const ref = lanaiStatsOf(m, shared)!;
     const others = lanaiStatsSharers(m, ref).filter((x) => x !== shared);
     const t = m.need(ref.table);
@@ -384,7 +428,9 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
     const fb = f.get('fallback');
     lanaiSetSkillSlots(f, moveTo(before, 0, before.length));
     const after = lanaiSkillSlots(m, f);
-    expect(after.map((s) => [s.id, s.target, s.lv])).toEqual([...before.slice(1), before[0]!].map((s) => [s.id, s.target, s.lv]));
+    expect(after.map((s) => [s.id, s.target, s.lv])).toEqual(
+      [...before.slice(1), before[0]!].map((s) => [s.id, s.target, s.lv]),
+    );
     expect(after[f.get('fallback')]!.id).toBe(before[fb]!.id);
     lanaiSetSkillSlots(f, after.slice(0, 1));
     expect(lanaiSkillSlots(m, f).length).toBe(1);
@@ -397,10 +443,25 @@ describe.skipIf(!hasLanai)('RPG FREE! edits and MOD export', () => {
     const m = await LanaiSession.open(dump, { fresh: true });
     const html = renderToString(createElement(LanaiMonsterPage, { session: m, arg: '41' }));
     // the sections of RPG2's / RPG3's monster pages, in the same parts
-    for (const t of ['能力 Main', '経験値', 'たいせい', 'ドロップ', 'ワザと行動', 'ほかのアクション', '変身', '箱に隠れてしまった', 'アクションを複製してこの枠に付け替え', 'この形態になる', '出現する場所', 'radar'])
+    for (const t of [
+      '能力 Main',
+      '経験値',
+      'たいせい',
+      'ドロップ',
+      'ワザと行動',
+      'ほかのアクション',
+      '変身',
+      '箱に隠れてしまった',
+      'アクションを複製してこの枠に付け替え',
+      'この形態になる',
+      '出現する場所',
+      'radar',
+    ])
       expect(html).toContain(t);
     const p = m.need('MonsterParameter');
-    const shared = Array.from({ length: p.rows }, (_, r) => r).find((r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1)!;
+    const shared = Array.from({ length: p.rows }, (_, r) => r).find(
+      (r) => lanaiStatsOf(m, r) && lanaiStatsSharers(m, lanaiStatsOf(m, r)!).length > 1,
+    )!;
     const html2 = renderToString(createElement(LanaiMonsterPage, { session: m, arg: String(shared) }));
     expect(html2).toContain('体が共有しています');
     expect(html2).toContain('複製して付け替え');

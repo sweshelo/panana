@@ -3,7 +3,15 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { LanaiEquipEffects } from '../src/lanai/EquipEffects';
-import { isLanaiEquipment, lanaiEffectCondition, lanaiEffects, lanaiEquipRow, lanaiItemEffects, lanaiSetEffect, LANAI_EQUIP_SLOTS } from '../src/lanai/equipment';
+import {
+  isLanaiEquipment,
+  lanaiEffectCondition,
+  lanaiEffects,
+  lanaiEquipRow,
+  lanaiItemEffects,
+  lanaiSetEffect,
+  LANAI_EQUIP_SLOTS,
+} from '../src/lanai/equipment';
 import { lanaiItems } from '../src/lanai/items';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages } from '../src/rom/dump';
@@ -30,7 +38,10 @@ describe('RPG FREE! effect kinds → ConditionData rows (FUN_00165F60)', () => {
 describe.skipIf(!hasLanai)('RPG FREE! equipment effects (ROM)', () => {
   let session: LanaiSession;
   beforeAll(async () => {
-    const dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump, { fresh: true });
   });
   const named = (name: string) => {
@@ -56,11 +67,14 @@ describe.skipIf(!hasLanai)('RPG FREE! equipment effects (ROM)', () => {
     expect(lanaiItemEffects(session, named('ちからのうでわ'))).toContain('こうげきりょく +4');
     expect(lanaiItemEffects(session, named('ハートのブローチ')).join()).toContain('ターン終了時: HP自動回復 +4%');
     expect(lanaiItemEffects(session, named('しんぴのスカーフ'))).toContain('全状態異常たいせい +1');
-    expect(lanaiItemEffects(session, named('プレミアムワンド'))).toEqual(expect.arrayContaining(['とくぎ数 +1', 'ほかく +4倍']));
+    expect(lanaiItemEffects(session, named('プレミアムワンド'))).toEqual(
+      expect.arrayContaining(['とくぎ数 +1', 'ほかく +4倍']),
+    );
     expect(lanaiItemEffects(session, named('ゴーレムのくびわ'))).toContain('こうげき +0.4倍');
     expect(lanaiItemEffects(session, named('アンテナダウンバッジ'))).toContain('アンテナダウン (-1)');
     // every effect of the game has a name
-    for (const it of lanaiItems(session)) for (const t of lanaiItemEffects(session, it)) expect(t).not.toContain('名前なし');
+    for (const it of lanaiItems(session))
+      for (const t of lanaiItemEffects(session, it)) expect(t).not.toContain('名前なし');
   });
 
   test('an edited effect is saved in the row and can be put back', () => {

@@ -62,7 +62,8 @@ export class GsTable {
     if (idx) {
       const used = new Set<number>();
       for (let o = idx; o + 8 <= this.data.length; o += 8) {
-        const h = u32(this.data, o), r = u32(this.data, o + 4);
+        const h = u32(this.data, o),
+          r = u32(this.data, o + 4);
         if (h === 0 && r === 0) continue; // terminator
         used.add(h);
         if (r < n) entries.push([h, r]);
@@ -104,7 +105,8 @@ export class GsTable {
     const entries: [number, number][] = [];
     if (idx) {
       for (let o = idx; o + 8 <= this.data.length; o += 8) {
-        const h = u32(this.data, o), r = u32(this.data, o + 4);
+        const h = u32(this.data, o),
+          r = u32(this.data, o + 4);
         if (h === 0 && r === 0) continue; // terminator
         entries.push([h, r]);
       }
@@ -118,10 +120,11 @@ export class GsTable {
     const out = new Uint8Array(total);
     out.set(this.data.subarray(0, dataEnd));
     out.set(row, dataEnd);
-    if (idx) entries.forEach(([h, r], i) => {
-      w32(out, newIdx + i * 8, h);
-      w32(out, newIdx + i * 8 + 4, r);
-    });
+    if (idx)
+      entries.forEach(([h, r], i) => {
+        w32(out, newIdx + i * 8, h);
+        w32(out, newIdx + i * 8 + 4, r);
+      });
     w32(out, 0, n + 1);
     w32(out, 0x14, (n + 1) * size);
     w32(out, 0x18, total);

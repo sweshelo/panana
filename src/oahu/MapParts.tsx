@@ -36,11 +36,15 @@ export function ModelLine({ view, look }: { view: OahuMapView; look: OahuRecordL
   if (!look) return null;
   const m = look.model;
   const name = view.modelName(m);
-  const text = !m ? 'モデルなし'
-    : m.type === 'object' ? `mapObject #${m.row}${name ? ` ${name}` : ''}`
-    : m.type === 'monster' ? `モンスターのデザイン #${m.design}${name ? ` ${name}` : ''}`
-    : m.type === 'invisible' ? `見えない壁 (mapObject #${m.row}、${m.width} × ${m.depth}。灰色の箱で表示)`
-    : `電波人間: ${denpaSourceLabel(m)}`;
+  const text = !m
+    ? 'モデルなし'
+    : m.type === 'object'
+      ? `mapObject #${m.row}${name ? ` ${name}` : ''}`
+      : m.type === 'monster'
+        ? `モンスターのデザイン #${m.design}${name ? ` ${name}` : ''}`
+        : m.type === 'invisible'
+          ? `見えない壁 (mapObject #${m.row}、${m.width} × ${m.depth}。灰色の箱で表示)`
+          : `電波人間: ${denpaSourceLabel(m)}`;
   return <p className="muted small">{`モデル: ${text}`}</p>;
 }
 
@@ -63,19 +67,43 @@ function chestUsers(session: OahuSession): Map<number, string[]> {
 
 /** "たからばこぞう" for a group of a chest battle (its monsters, the fixed formation first). */
 function groupName(battle: OahuBattle, row: number): string {
-  const names = row > 0 && row < battle.groups.table.rows ? groupMonsters(battle.group(row)).map((m) => battle.monsterName(m)).filter(Boolean) : [];
+  const names =
+    row > 0 && row < battle.groups.table.rows
+      ? groupMonsters(battle.group(row))
+          .map((m) => battle.monsterName(m))
+          .filter(Boolean)
+      : [];
   return names.length ? names.join('・') : `群れ #${row}`;
 }
 
 function treasureSummary(battle: OahuBattle, slots: OahuTreasureSlot[]): string {
   const total = slots.reduce((a, s) => a + s.weight, 0);
   if (!slots.length) return '(空)';
-  return slots.map((s) => `${oahuTreasureLabel(s, (id) => battle.itemName(id), (r) => groupName(battle, r))}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`).join('、');
+  return slots
+    .map(
+      (s) =>
+        `${oahuTreasureLabel(
+          s,
+          (id) => battle.itemName(id),
+          (r) => groupName(battle, r),
+        )}${slots.length > 1 && total ? ` ${Math.round((s.weight / total) * 100)}%` : ''}`,
+    )
+    .join('、');
 }
 
 /** Pick a treasureGroup row for a chest, or make a new one from the current contents (RPG2's dialog). */
-function TreasureRowPicker({ session, current, apply, onPick, onClose }: {
-  session: OahuSession; current: number; apply: (f: () => void) => void; onPick: (row: number) => void; onClose: () => void;
+function TreasureRowPicker({
+  session,
+  current,
+  apply,
+  onPick,
+  onClose,
+}: {
+  session: OahuSession;
+  current: number;
+  apply: (f: () => void) => void;
+  onPick: (row: number) => void;
+  onClose: () => void;
 }): ReactNode {
   const { battle, master } = session;
   const t = oahuTreasureTable(master);
@@ -96,24 +124,49 @@ function TreasureRowPicker({ session, current, apply, onPick, onClose }: {
   return (
     <Dialog title="宝箱の中身を選ぶ" onClose={onClose}>
       <div className="row">
-        <input type="search" placeholder="アイテム名か行番号で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
-        <label className="layer"><input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} /> どの宝箱も使っていない行だけ</label>
-        <button className="primary" onClick={() => {
-          let row = -1;
-          apply(() => (row = master.addRow(OAHU_TREASURE_FILE, t.row(current < t.rows ? current : 0).slice())));
-          onPick(row);
-        }}>今の中身を写して新しい行を作る</button>
+        <input
+          type="search"
+          placeholder="アイテム名か行番号で絞り込み"
+          className="picker-search"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <label className="layer">
+          <input type="checkbox" checked={onlyFree} onChange={(e) => setOnlyFree(e.target.checked)} />{' '}
+          どの宝箱も使っていない行だけ
+        </label>
+        <button
+          className="primary"
+          onClick={() => {
+            let row = -1;
+            apply(() => (row = master.addRow(OAHU_TREASURE_FILE, t.row(current < t.rows ? current : 0).slice())));
+            onPick(row);
+          }}
+        >
+          今の中身を写して新しい行を作る
+        </button>
       </div>
-      <p className="muted small">「使っている宝箱」は、読み込んだダンジョンの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。</p>
+      <p className="muted small">
+        「使っている宝箱」は、読み込んだダンジョンの宝箱のうちこの行を指す数。共有している行の中身を変えると、それらの宝箱も全部変わります。
+      </p>
       <div className="picker-list" ref={list}>
         <table className="picker-table">
-          <thead><tr><th>行</th><th>中身</th><th>使っている宝箱</th></tr></thead>
+          <thead>
+            <tr>
+              <th>行</th>
+              <th>中身</th>
+              <th>使っている宝箱</th>
+            </tr>
+          </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.row} className={'pick' + (r.row === current ? ' current' : '')} onClick={() => onPick(r.row)}>
                 <td className="num">{r.row}</td>
                 <td>{r.text}</td>
-                <td className="muted" title={r.users.join('、')}>{r.users.length ? `${r.users.length} 個` : '—'}</td>
+                <td className="muted" title={r.users.join('、')}>
+                  {r.users.length ? `${r.users.length} 個` : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -127,7 +180,15 @@ function TreasureRowPicker({ session, current, apply, onPick, onClose }: {
  * Contents of a chest: the treasureGroup row of its EventObject row (+0x10) with its entries (item, G or jewels, and
  * the weight). Edits go through `apply` (an undo point of the map page).
  */
-export function TreasureEditor({ session, ev, apply }: { session: OahuSession; ev: Uint8Array; apply: (f: () => void) => void }): ReactNode {
+export function TreasureEditor({
+  session,
+  ev,
+  apply,
+}: {
+  session: OahuSession;
+  ev: Uint8Array;
+  apply: (f: () => void) => void;
+}): ReactNode {
   const { battle, master } = session;
   const t = oahuTreasureTable(master);
   const [picking, setPicking] = useState<{ current?: number; onPick: (id: number) => void } | null>(null);
@@ -139,7 +200,10 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
   const valid = row >= 0 && row < t.rows;
   const slots = valid ? oahuTreasureSlots(t, row) : [];
   const total = slots.reduce((a, s) => a + s.weight, 0);
-  const changed = valid && row < master.originalRows(OAHU_TREASURE_FILE) && master.originalRow(OAHU_TREASURE_FILE, row).some((b, i) => b !== t.row(row)[i]);
+  const changed =
+    valid &&
+    row < master.originalRows(OAHU_TREASURE_FILE) &&
+    master.originalRow(OAHU_TREASURE_FILE, row).some((b, i) => b !== t.row(row)[i]);
   const write = (next: OahuTreasureSlot[]): void => apply(() => oahuWriteTreasure(t, row, next));
   const update = (i: number, next: OahuTreasureSlot | null): void => {
     const copy = slots.map((x) => ({ ...x }));
@@ -153,7 +217,9 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
       <div className="row">
         <span className="grow">
           {`中身の表 #${row}`}
-          {users.length > 1 && <span className="badge" title={users.join('、')}>{`${users.length} 個の宝箱で共有`}</span>}
+          {users.length > 1 && (
+            <span className="badge" title={users.join('、')}>{`${users.length} 個の宝箱で共有`}</span>
+          )}
         </span>
         <button onClick={() => setPickingRow(true)}>変更…</button>
       </div>
@@ -164,34 +230,84 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
             {slots.map((s, i) => (
               <div key={i} className="loot-row">
                 <span className="loot-item">
-                  <select value={s.kind} title="出るものの種類 (+0x06)" onChange={(e) => {
-                    const kind = Number(e.target.value);
-                    const value = kind === 1 ? (battle.items.item(s.value) ? s.value : 1)
-                      : kind === OAHU_TREASURE_BATTLE ? (s.value & OAHU_TREASURE_GROUP_MASK) || 1 : s.value;
-                    update(i, { ...s, kind, value });
-                  }}>
-                    {Object.entries(OAHU_TREASURE_KIND).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  <select
+                    value={s.kind}
+                    title="出るものの種類 (+0x06)"
+                    onChange={(e) => {
+                      const kind = Number(e.target.value);
+                      const value =
+                        kind === 1
+                          ? battle.items.item(s.value)
+                            ? s.value
+                            : 1
+                          : kind === OAHU_TREASURE_BATTLE
+                            ? s.value & OAHU_TREASURE_GROUP_MASK || 1
+                            : s.value;
+                      update(i, { ...s, kind, value });
+                    }}
+                  >
+                    {Object.entries(OAHU_TREASURE_KIND).map(([k, label]) => (
+                      <option key={k} value={k}>
+                        {label}
+                      </option>
+                    ))}
                     {!OAHU_TREASURE_KIND[s.kind] && <option value={s.kind}>{`種類 ${s.kind}`}</option>}
                   </select>
-                  {s.kind === 1
-                    ? <button className="loot-item" title="クリックでアイテムを変える" onClick={() => setPicking({ current: s.value, onPick: (id) => update(i, { ...s, value: id }) })}>
-                        {oahuItemIcon(battle, battle.items.item(s.value))}
-                        <span className="muted">{`${s.value} `}</span>{battle.itemName(s.value) || `アイテム ${s.value}`}
-                      </button>
-                    : s.kind === OAHU_TREASURE_BATTLE
-                    ? <button className="group-pick" title="クリックで群れを変える" onClick={() => setPickingGroup({ current: s.value & OAHU_TREASURE_GROUP_MASK, onPick: (g) => update(i, { ...s, value: g }) })}>
-                        <GroupLine battle={battle} row={s.value & OAHU_TREASURE_GROUP_MASK} />
-                      </button>
-                    : <NumberInput value={s.value} min={1} max={0x7fffffff} title={s.kind === 2 ? 'G' : s.kind === 3 ? 'ジュエルの数' : '値'} onCommit={(v) => update(i, { ...s, value: v })} />}
+                  {s.kind === 1 ? (
+                    <button
+                      className="loot-item"
+                      title="クリックでアイテムを変える"
+                      onClick={() => setPicking({ current: s.value, onPick: (id) => update(i, { ...s, value: id }) })}
+                    >
+                      {oahuItemIcon(battle, battle.items.item(s.value))}
+                      <span className="muted">{`${s.value} `}</span>
+                      {battle.itemName(s.value) || `アイテム ${s.value}`}
+                    </button>
+                  ) : s.kind === OAHU_TREASURE_BATTLE ? (
+                    <button
+                      className="group-pick"
+                      title="クリックで群れを変える"
+                      onClick={() =>
+                        setPickingGroup({
+                          current: s.value & OAHU_TREASURE_GROUP_MASK,
+                          onPick: (g) => update(i, { ...s, value: g }),
+                        })
+                      }
+                    >
+                      <GroupLine battle={battle} row={s.value & OAHU_TREASURE_GROUP_MASK} />
+                    </button>
+                  ) : (
+                    <NumberInput
+                      value={s.value}
+                      min={1}
+                      max={0x7fffffff}
+                      title={s.kind === 2 ? 'G' : s.kind === 3 ? 'ジュエルの数' : '値'}
+                      onCommit={(v) => update(i, { ...s, value: v })}
+                    />
+                  )}
                 </span>
-                <NumberInput value={s.weight} min={1} max={0xffff} className="" title="重み (出やすさ)" onCommit={(v) => update(i, { ...s, weight: v })} />
+                <NumberInput
+                  value={s.weight}
+                  min={1}
+                  max={0xffff}
+                  className=""
+                  title="重み (出やすさ)"
+                  onCommit={(v) => update(i, { ...s, weight: v })}
+                />
                 <span className="loot-pct">{total ? `${Math.round((s.weight / total) * 100)}%` : ''}</span>
-                <button className="danger" title="外す" onClick={() => update(i, null)}>×</button>
+                <button className="danger" title="外す" onClick={() => update(i, null)}>
+                  ×
+                </button>
               </div>
             ))}
             {!slots.length && <div className="muted">空です (開けても何も出ません)。</div>}
             {slots.length < OAHU_TREASURE_SLOTS && (
-              <button className="loot-add" onClick={() => setPicking({ onPick: (id) => write([...slots, { value: id, weight: 1, kind: 1 }]) })}>＋ 追加</button>
+              <button
+                className="loot-add"
+                onClick={() => setPicking({ onPick: (id) => write([...slots, { value: id, weight: 1, kind: 1 }]) })}
+              >
+                ＋ 追加
+              </button>
             )}
           </div>
           <div className="muted small">
@@ -200,16 +316,39 @@ export function TreasureEditor({ session, ev, apply }: { session: OahuSession; e
         </>
       )}
       {picking && (
-        <OahuItemPicker battle={battle} current={picking.current ?? 0} title="宝箱に入れるアイテムを選ぶ"
-          onClose={() => setPicking(null)} onPick={(id) => { setPicking(null); picking.onPick(id); }} />
+        <OahuItemPicker
+          battle={battle}
+          current={picking.current ?? 0}
+          title="宝箱に入れるアイテムを選ぶ"
+          onClose={() => setPicking(null)}
+          onPick={(id) => {
+            setPicking(null);
+            picking.onPick(id);
+          }}
+        />
       )}
       {pickingGroup && (
-        <OahuGroupPicker battle={battle} current={pickingGroup.current} onClose={() => setPickingGroup(null)}
-          onPick={(g) => { setPickingGroup(null); if (g) pickingGroup.onPick(g); }} />
+        <OahuGroupPicker
+          battle={battle}
+          current={pickingGroup.current}
+          onClose={() => setPickingGroup(null)}
+          onPick={(g) => {
+            setPickingGroup(null);
+            if (g) pickingGroup.onPick(g);
+          }}
+        />
       )}
       {pickingRow && (
-        <TreasureRowPicker session={session} current={row} apply={apply} onClose={() => setPickingRow(false)}
-          onPick={(v) => { setPickingRow(false); if (v !== row) apply(() => w32(ev, EO.args, v)); }} />
+        <TreasureRowPicker
+          session={session}
+          current={row}
+          apply={apply}
+          onClose={() => setPickingRow(false)}
+          onPick={(v) => {
+            setPickingRow(false);
+            if (v !== row) apply(() => w32(ev, EO.args, v));
+          }}
+        />
       )}
     </div>
   );
@@ -227,12 +366,24 @@ export function CharaInfo({ session, ev }: { session: OahuSession; ev: Uint8Arra
   const variant = u16(ev, EO.flags);
   const id = variant <= 2 ? u16(c, 8 + variant * 2) : 0;
   const { battle } = session;
-  const monsters = kind === 1 ? battle.monsterList().filter((m) => (battle.monsters.get(m.id, 'design') & 0xff) === id) : [];
+  const monsters =
+    kind === 1 ? battle.monsterList().filter((m) => (battle.monsters.get(m.id, 'design') & 0xff) === id) : [];
   return (
     <p className="muted small">
       {`mapChara の行 ${chara}: ${OAHU_CHARA_KIND[kind] ?? `種類 ${kind}`} (+0x00 = ${hex8(u32(c, 0)).toUpperCase()})・EventObject +0x50 = ${variant} で`}
-      {kind === 0 ? ` mapObject #${id}` : kind === 1 ? ` モンスターのデザイン #${id}` : kind === 2 || kind === 3 ? ` ${denpaSourceLabel({ type: 'denpa', kind, id })}` : ' モデルなし'}
-      {kind === 1 && monsters.length > 0 && ` (${monsters.slice(0, 3).map((m) => m.name).join('、')}${monsters.length > 3 ? ' …' : ''} の見た目)`}
+      {kind === 0
+        ? ` mapObject #${id}`
+        : kind === 1
+          ? ` モンスターのデザイン #${id}`
+          : kind === 2 || kind === 3
+            ? ` ${denpaSourceLabel({ type: 'denpa', kind, id })}`
+            : ' モデルなし'}
+      {kind === 1 &&
+        monsters.length > 0 &&
+        ` (${monsters
+          .slice(0, 3)
+          .map((m) => m.name)
+          .join('、')}${monsters.length > 3 ? ' …' : ''} の見た目)`}
     </p>
   );
 }
@@ -247,7 +398,9 @@ function groupHashes(battle: OahuBattle): { row: Map<number, number>; hash: Map<
   return { row, hash };
 }
 
-const groupMonsters = (g: OahuGroup): number[] => [...new Set([...g.leads, ...g.mates].map((s) => s.monster).concat(g.fixed))];
+const groupMonsters = (g: OahuGroup): number[] => [
+  ...new Set([...g.leads, ...g.mates].map((s) => s.monster).concat(g.fixed)),
+];
 
 function GroupLine({ battle, row }: { battle: OahuBattle; row: number | undefined }): ReactNode {
   if (row === undefined) return <span className="muted">不明な群れ</span>;
@@ -256,21 +409,47 @@ function GroupLine({ battle, row }: { battle: OahuBattle; row: number | undefine
   return (
     <>
       <span className="muted">{`#${row}`}</span>
-      <GroupIconRow icons={groupMonsters(g).map((m, i) => <span key={i}>{oahuMonsterIcon(battle, m)}</span>)} changed={battle.groups.changed(row)} />
+      <GroupIconRow
+        icons={groupMonsters(g).map((m, i) => (
+          <span key={i}>{oahuMonsterIcon(battle, m)}</span>
+        ))}
+        changed={battle.groups.changed(row)}
+      />
     </>
   );
 }
 
-function OahuGroupPicker({ battle, current, onPick, onClose }: { battle: OahuBattle; current: number; onPick: (row: number) => void; onClose: () => void }): ReactNode {
+function OahuGroupPicker({
+  battle,
+  current,
+  onPick,
+  onClose,
+}: {
+  battle: OahuBattle;
+  current: number;
+  onPick: (row: number) => void;
+  onClose: () => void;
+}): ReactNode {
   const groups = useMemo(() => battle.groupList(), [battle]);
   return (
     <Dialog title="群れを選ぶ" onClose={onClose}>
-      <p className="muted small">群れの中身は「群れ」のページで編集できます (共有している群れを変えると、使っているマップ全部に効きます)。</p>
+      <p className="muted small">
+        群れの中身は「群れ」のページで編集できます (共有している群れを変えると、使っているマップ全部に効きます)。
+      </p>
       <div className="group-picker">
-        <GroupListView groups={groups} monsters={groupMonsters} name={(r) => battle.monsterName(r)}
-          icon={(r, i) => <span key={i}>{oahuMonsterIcon(battle, r)}</span>} changed={(g) => battle.groups.changed(g.row)}
-          filters={[['used', 'モンスターのいる群れ', (g) => g.leads.length + g.mates.length > 0], ['all', 'すべて', () => true]]}
-          selected={current} onSelect={(g) => onPick(g.row)}>
+        <GroupListView
+          groups={groups}
+          monsters={groupMonsters}
+          name={(r) => battle.monsterName(r)}
+          icon={(r, i) => <span key={i}>{oahuMonsterIcon(battle, r)}</span>}
+          changed={(g) => battle.groups.changed(g.row)}
+          filters={[
+            ['used', 'モンスターのいる群れ', (g) => g.leads.length + g.mates.length > 0],
+            ['all', 'すべて', () => true],
+          ]}
+          selected={current}
+          onSelect={(g) => onPick(g.row)}
+        >
           <tr className={current === 0 ? 'active' : ''} onClick={() => onPick(0)}>
             <td></td>
             <td className="muted">(なし: 敵が出ない)</td>
@@ -288,7 +467,15 @@ function encounterLevelLabel(v: number): string {
 }
 
 /** The enemies of the open map: the map's group (section 6 header) and the groups of the listed cells. */
-export function EncounterPanel({ session, st, info }: { session: OahuSession; st: OahuEditState; info: OahuMapInfo }): ReactNode {
+export function EncounterPanel({
+  session,
+  st,
+  info,
+}: {
+  session: OahuSession;
+  st: OahuEditState;
+  info: OahuMapInfo;
+}): ReactNode {
   const { battle } = session;
   const [picking, setPicking] = useState(false);
   const doc = st.current!;
@@ -304,26 +491,46 @@ export function EncounterPanel({ session, st, info }: { session: OahuSession; st
       }
       w32(d.sec6Header, 0, row ? hashOf.get(row)! : 0);
     });
-  const levels = [...new Set([...Object.keys(OAHU_ENCOUNTER_LEVELS).map(Number), info.encounterLevel])].sort((a, b) => a - b);
+  const levels = [...new Set([...Object.keys(OAHU_ENCOUNTER_LEVELS).map(Number), info.encounterLevel])].sort(
+    (a, b) => a - b,
+  );
   const cells = new Map<number, [number, number][]>();
   for (const c of doc.cells6) cells.set(c.value, [...(cells.get(c.value) ?? []), [c.x, c.y]]);
   return (
     <div className="enc-box">
       <h3>出現する敵</h3>
       <Field label="マップの群れ (区画 6 のヘッダー)">
-        <button className="group-pick" title="群れを選び直す" onClick={() => setPicking(true)}><GroupLine battle={battle} row={cur} /></button>
+        <button className="group-pick" title="群れを選び直す" onClick={() => setPicking(true)}>
+          <GroupLine battle={battle} row={cur} />
+        </button>
       </Field>
-      {header !== 0 && cur === undefined && <div className="error">{`群れ ${hex8(header).toUpperCase()} が monsterGroup にありません`}</div>}
+      {header !== 0 && cur === undefined && (
+        <div className="error">{`群れ ${hex8(header).toUpperCase()} が monsterGroup にありません`}</div>
+      )}
       {!!cur && (
         <div className="enc-group">
-          <div className="small"><a href={oahuGroupHref(cur)}>{`群れ #${cur} を開く (編集)`}</a></div>
-          <SlotTiles title="先頭 (マップで見える敵)・3 体目" slots={battle.group(cur).leads} monster={monster} count={String} />
+          <div className="small">
+            <a href={oahuGroupHref(cur)}>{`群れ #${cur} を開く (編集)`}</a>
+          </div>
+          <SlotTiles
+            title="先頭 (マップで見える敵)・3 体目"
+            slots={battle.group(cur).leads}
+            monster={monster}
+            count={String}
+          />
           <SlotTiles title="2・4 体目" slots={battle.group(cur).mates} monster={monster} count={String} />
         </div>
       )}
       <Field label="敵の出方 (マップ表 +0x30)">
-        <select value={info.encounterLevel} onChange={(e) => st.editTables(() => session.maps.setEncounterLevel(info, Number(e.target.value)))}>
-          {levels.map((v) => <option key={v} value={v}>{encounterLevelLabel(v)}</option>)}
+        <select
+          value={info.encounterLevel}
+          onChange={(e) => st.editTables(() => session.maps.setEncounterLevel(info, Number(e.target.value)))}
+        >
+          {levels.map((v) => (
+            <option key={v} value={v}>
+              {encounterLevelLabel(v)}
+            </option>
+          ))}
         </select>
       </Field>
       <div className="muted small">
@@ -331,13 +538,23 @@ export function EncounterPanel({ session, st, info }: { session: OahuSession; st
       </div>
       {[...cells].map(([hash, list]) => (
         <details key={hash} className="enc-cells">
-          <summary>{`セル ${list.length} 個: `}<GroupLine battle={battle} row={hash ? rowOf.get(hash) : 0} /></summary>
+          <summary>
+            {`セル ${list.length} 個: `}
+            <GroupLine battle={battle} row={hash ? rowOf.get(hash) : 0} />
+          </summary>
           <div className="muted small">{list.map(([x, y]) => `(${x}, ${y})`).join(' ')}</div>
         </details>
       ))}
       {picking && (
-        <OahuGroupPicker battle={battle} current={cur ?? -1} onClose={() => setPicking(false)}
-          onPick={(row) => { setPicking(false); if (row !== cur) setGroup(row); }} />
+        <OahuGroupPicker
+          battle={battle}
+          current={cur ?? -1}
+          onClose={() => setPicking(false)}
+          onPick={(row) => {
+            setPicking(false);
+            if (row !== cur) setGroup(row);
+          }}
+        />
       )}
     </div>
   );

@@ -11,7 +11,12 @@ import { ToolboxLayout } from './tools';
 import { WorldView, type WorldSelection, type WorldSource, type WorldTool } from './worldview';
 
 /** Builds the view of a source (rebuilt when `deps` change), puts its canvases in the panes and binds the keys. */
-export function useWorldView(make: () => WorldSource, deps: unknown[], route: string, onSelect: (sel: WorldSelection) => void): {
+export function useWorldView(
+  make: () => WorldSource,
+  deps: unknown[],
+  route: string,
+  onSelect: (sel: WorldSelection) => void,
+): {
   view: WorldView | null;
   pane2d: React.RefObject<HTMLDivElement | null>;
   pane3d: React.RefObject<HTMLDivElement | null>;
@@ -46,7 +51,20 @@ export function useWorldView(make: () => WorldSource, deps: unknown[], route: st
 
 const DUMMY = { subscribe: () => () => {}, get: () => 0 } as unknown as WorldView['signal'];
 
-export function WorldFrame({ view, pane2d, pane3d, title, changed, onRevert, top, parts, canEditPart, list, inspector, statusOf }: {
+export function WorldFrame({
+  view,
+  pane2d,
+  pane3d,
+  title,
+  changed,
+  onRevert,
+  top,
+  parts,
+  canEditPart,
+  list,
+  inspector,
+  statusOf,
+}: {
   view: WorldView | null;
   pane2d: React.RefObject<HTMLDivElement | null>;
   pane3d: React.RefObject<HTMLDivElement | null>;
@@ -74,23 +92,40 @@ export function WorldFrame({ view, pane2d, pane3d, title, changed, onRevert, top
   }, [view, mode]);
   return (
     <div className="map-detail">
-      <MapFrame mode={mode} pane2d={pane2d} pane3d={pane3d}
+      <MapFrame
+        mode={mode}
+        pane2d={pane2d}
+        pane3d={pane3d}
         header={
           <>
             {title}
-            {changed && <span className="edited-mark" title="変更した">●</span>}
+            {changed && (
+              <span className="edited-mark" title="変更した">
+                ●
+              </span>
+            )}
             <span className="grow" />
             <span className="seg">
-              {(['2d', 'split', '3d'] as const).map((m) => <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>{m === 'split' ? '両方' : m.toUpperCase()}</button>)}
+              {(['2d', 'split', '3d'] as const).map((m) => (
+                <button key={m} className={m === mode ? 'active' : ''} onClick={() => setMode(m)}>
+                  {m === 'split' ? '両方' : m.toUpperCase()}
+                </button>
+              ))}
             </span>
             {view && (
               <>
                 <span className="seg">
-                  <button title="元に戻す (Ctrl+Z)" disabled={!view.canUndo} onClick={() => view.undo()}>↶ 戻す</button>
-                  <button title="やり直す (Ctrl+Y)" disabled={!view.canRedo} onClick={() => view.redo()}>↷ やり直し</button>
+                  <button title="元に戻す (Ctrl+Z)" disabled={!view.canUndo} onClick={() => view.undo()}>
+                    ↶ 戻す
+                  </button>
+                  <button title="やり直す (Ctrl+Y)" disabled={!view.canRedo} onClick={() => view.redo()}>
+                    ↷ やり直し
+                  </button>
                 </span>
                 <button onClick={() => view.fitWorld()}>全体を表示</button>
-                <button title="選んだものを 2D・3D の真ん中に (F)" onClick={() => view.focus()}>選択へ移動</button>
+                <button title="選んだものを 2D・3D の真ん中に (F)" onClick={() => view.focus()}>
+                  選択へ移動
+                </button>
                 <button onClick={() => view.scene.topView()}>真上から</button>
               </>
             )}
@@ -100,10 +135,12 @@ export function WorldFrame({ view, pane2d, pane3d, title, changed, onRevert, top
         left={
           <>
             {top}
+            {view && <WorldToolbox view={view} parts={parts} canEditPart={!!canEditPart} />}
             {view && (
-              <WorldToolbox view={view} parts={parts} canEditPart={!!canEditPart} />
+              <MapSettings>
+                <WorldLayers view={view} />
+              </MapSettings>
             )}
-            {view && <MapSettings><WorldLayers view={view} /></MapSettings>}
             {list}
           </>
         }
@@ -114,21 +151,47 @@ export function WorldFrame({ view, pane2d, pane3d, title, changed, onRevert, top
   );
 }
 
-const TILE_TOOLS: [WorldTool, string, string][] = [['select', '選択・移動', 'V'], ['paint', '地形を塗る', 'B'], ['erase', '地形を消す', 'E']];
-const PART_TOOLS: [WorldTool, string, string][] = [['select', '選択・移動', 'V'], ['place', 'パーツを置く', '']];
+const TILE_TOOLS: [WorldTool, string, string][] = [
+  ['select', '選択・移動', 'V'],
+  ['paint', '地形を塗る', 'B'],
+  ['erase', '地形を消す', 'E'],
+];
+const PART_TOOLS: [WorldTool, string, string][] = [
+  ['select', '選択・移動', 'V'],
+  ['place', 'パーツを置く', ''],
+];
 
 /** The toolbox of the dungeon map editor (editor/tools.tsx) for a world: "チップ" paints the terrain, "パーツ" puts entrances. */
-function WorldToolbox({ view, parts, canEditPart }: { view: WorldView; parts?: ReactNode; canEditPart: boolean }): ReactNode {
+function WorldToolbox({
+  view,
+  parts,
+  canEditPart,
+}: {
+  view: WorldView;
+  parts?: ReactNode;
+  canEditPart: boolean;
+}): ReactNode {
   const paintable = !!view.src.ground();
   const tiles = view.placementMode === 'tiles';
   return (
-    <ToolboxLayout tiles={tiles} tools={tiles ? TILE_TOOLS : PART_TOOLS} tool={view.tool} onTool={(t) => view.setTool(t)}
-      toolDisabled={(t) => ((t === 'paint' || t === 'erase') && !paintable ? 'このワールドの地形は編集できません' : t === 'place' && !view.stamp ? 'パーツを選ぶと置けます' : null)}
+    <ToolboxLayout
+      tiles={tiles}
+      tools={tiles ? TILE_TOOLS : PART_TOOLS}
+      tool={view.tool}
+      onTool={(t) => view.setTool(t)}
+      toolDisabled={(t) =>
+        (t === 'paint' || t === 'erase') && !paintable
+          ? 'このワールドの地形は編集できません'
+          : t === 'place' && !view.stamp
+            ? 'パーツを選ぶと置けます'
+            : null
+      }
       onMode={(t) => view.setPlacementMode(t ? 'tiles' : 'parts')}
       partsDisabled={parts ? null : 'このワールドにはパーツを置けません'}
       onDelete={view.onDelete ? () => view.onDelete?.() : undefined}
       onDuplicate={view.onDuplicate ? () => view.onDuplicate?.() : undefined}
-      canEditPart={canEditPart}>
+      canEditPart={canEditPart}
+    >
       {tiles ? <TilePalette view={view} /> : parts}
     </ToolboxLayout>
   );
@@ -150,27 +213,53 @@ function TilePalette({ view }: { view: WorldView }): ReactNode {
   return (
     <div className="palette world-palette">
       <div className="brush-info">
-        <span className="brush-label" title={label}>{label}</span>
-        <button aria-label="左に回す" title="左に回す (Shift+R)" onClick={() => view.rotateBrush(-1)}>⟲</button>
-        <span className="rot" title={`${b.rot * 90}°`}>{ROT_ARROW[b.rot]}</span>
-        <button aria-label="右に回す" title="右に回す (R)" onClick={() => view.rotateBrush(1)}>⟳</button>
-        <InfoTip text={'チップを選ぶと「地形を塗る」に切り替わります。ドラッグで連続して置き、Alt+クリックで地図から拾います。消しゴム (E) で海に戻します。\n2×2 や 2 マスの部品は左上 (起点) のセルに置きます。書き出しで部品ごとのプールの数を作り直します。'} />
+        <span className="brush-label" title={label}>
+          {label}
+        </span>
+        <button aria-label="左に回す" title="左に回す (Shift+R)" onClick={() => view.rotateBrush(-1)}>
+          ⟲
+        </button>
+        <span className="rot" title={`${b.rot * 90}°`}>
+          {ROT_ARROW[b.rot]}
+        </span>
+        <button aria-label="右に回す" title="右に回す (R)" onClick={() => view.rotateBrush(1)}>
+          ⟳
+        </button>
+        <InfoTip
+          text={
+            'チップを選ぶと「地形を塗る」に切り替わります。ドラッグで連続して置き、Alt+クリックで地図から拾います。消しゴム (E) で海に戻します。\n2×2 や 2 マスの部品は左上 (起点) のセルに置きます。書き出しで部品ごとのプールの数を作り直します。'
+          }
+        />
       </div>
       <input type="search" placeholder="名前か番号で絞る" value={query} onChange={(e) => setQuery(e.target.value)} />
       <div className="pal-items tile-grid" role="group" aria-label="地形のチップ">
-        {rows.filter((p) => p.row).map((p) => {
-          const url = src.partThumb?.(p.row) ?? null;
-          const active = !erasing && view.tool !== 'place' && p.row === b.part;
-          const sz = size(p.flags);
-          return (
-            <button key={p.row} className={`pal-item${active ? ' active' : ''}`} aria-pressed={active} aria-label={`${p.row} ${p.label}`}
-              title={`${p.row} ${p.label}${sz ? ` (${sz})` : ''}`}
-              onClick={() => { view.setBrush({ part: p.row, rot: b.rot }); view.setTool('paint'); }}>
-              {url ? <img src={url} alt="" /> : <span className="pal-swatch" style={{ background: src.partColor(p.row) }} />}
-              <span className="pal-label">{`${p.row} ${p.label}`}</span>
-            </button>
-          );
-        })}
+        {rows
+          .filter((p) => p.row)
+          .map((p) => {
+            const url = src.partThumb?.(p.row) ?? null;
+            const active = !erasing && view.tool !== 'place' && p.row === b.part;
+            const sz = size(p.flags);
+            return (
+              <button
+                key={p.row}
+                className={`pal-item${active ? ' active' : ''}`}
+                aria-pressed={active}
+                aria-label={`${p.row} ${p.label}`}
+                title={`${p.row} ${p.label}${sz ? ` (${sz})` : ''}`}
+                onClick={() => {
+                  view.setBrush({ part: p.row, rot: b.rot });
+                  view.setTool('paint');
+                }}
+              >
+                {url ? (
+                  <img src={url} alt="" />
+                ) : (
+                  <span className="pal-swatch" style={{ background: src.partColor(p.row) }} />
+                )}
+                <span className="pal-label">{`${p.row} ${p.label}`}</span>
+              </button>
+            );
+          })}
       </div>
     </div>
   );
@@ -181,7 +270,14 @@ function WorldLayers({ view }: { view: WorldView }): ReactNode {
   const pins = src.entrances();
   const box = (key: string, label: string, color?: string): ReactNode => (
     <label key={key} className="layer">
-      <input type="checkbox" checked={!!view.layers[key]} onChange={(e) => { view.layers[key] = e.target.checked; view.refresh(); }} />
+      <input
+        type="checkbox"
+        checked={!!view.layers[key]}
+        onChange={(e) => {
+          view.layers[key] = e.target.checked;
+          view.refresh();
+        }}
+      />
       {color && <span style={{ color }}>● </span>}
       {label}
     </label>
@@ -197,28 +293,47 @@ function WorldLayers({ view }: { view: WorldView }): ReactNode {
       {src.pointSets.map((p) => box(p.key, `${p.label} ${p.list().length}`, p.color))}
       {src.overlays.map((o) => box(o.key, o.label))}
       <label className="layer">
-        <input type="checkbox" checked={view.showModels} onChange={(e) => { view.showModels = e.target.checked; view.refresh(); }} />
+        <input
+          type="checkbox"
+          checked={view.showModels}
+          onChange={(e) => {
+            view.showModels = e.target.checked;
+            view.refresh();
+          }}
+        />
         3D でモデルを描く
       </label>
     </div>
   );
 }
 
-function WorldStatus({ view, statusOf }: { view: WorldView; statusOf?: (x: number, y: number) => string[] }): ReactNode {
+function WorldStatus({
+  view,
+  statusOf,
+}: {
+  view: WorldView;
+  statusOf?: (x: number, y: number) => string[];
+}): ReactNode {
   useSignal(view.hoverSignal);
-  const h = view.hover, N = view.src.size;
+  const h = view.hover,
+    N = view.src.size;
   const parts: string[] = [];
   if (h && h[0] >= 0 && h[1] >= 0 && h[0] < N && h[1] < N) {
     const [x, y] = h;
     parts.push(`セル (${x}, ${y})`);
     const g = view.src.ground();
     if (g) {
-      const i = y * N + x, p = g.parts[i]!;
-      parts.push(p ? `部品 ${p} ${view.src.palette().find((r) => r.row === p)?.label ?? ''} 向き ${g.rots[i]}` : '部品なし');
+      const i = y * N + x,
+        p = g.parts[i]!;
+      parts.push(
+        p ? `部品 ${p} ${view.src.palette().find((r) => r.row === p)?.label ?? ''} 向き ${g.rots[i]}` : '部品なし',
+      );
     }
     parts.push(...(statusOf?.(x, y) ?? []));
   }
-  parts.push(`ツール: ${{ select: '選択・移動', paint: '地形を塗る', erase: '地形を消す', place: `パーツを置く (${view.stamp?.label ?? ''})` }[view.tool]}`);
+  parts.push(
+    `ツール: ${{ select: '選択・移動', paint: '地形を塗る', erase: '地形を消す', place: `パーツを置く (${view.stamp?.label ?? ''})` }[view.tool]}`,
+  );
   parts.push(view.status || '右ドラッグ: 2D は移動、3D は回転 / 中ドラッグ: 3D の移動 / ホイール: 拡大');
   return <>{parts.join('   ')}</>;
 }

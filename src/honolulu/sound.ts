@@ -29,7 +29,10 @@ export function honoluluSoundUses(master: HonoluluMaster): Map<number, HonoluluS
   for (let r = 0; r < mapData.rows; r++) {
     const s = mapData.get(r, 'sound');
     if (!s) continue;
-    out.set(s, [...(out.get(s) ?? []), { what: '階の BGM (mapData +0x07)', where: `mapData 行 ${r}`, dungeons: byMapData.get(r) ?? [], unsure: true }]);
+    out.set(s, [
+      ...(out.get(s) ?? []),
+      { what: '階の BGM (mapData +0x07)', where: `mapData 行 ${r}`, dungeons: byMapData.get(r) ?? [], unsure: true },
+    ]);
   }
   return out;
 }

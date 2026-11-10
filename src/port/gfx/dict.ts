@@ -31,7 +31,9 @@ function traverse(name: string | null, nodes: GfxDictNode[], bit = 0): { index: 
 
 /** Tree nodes (root first) of a dictionary with these names, in order. */
 export function buildDictTree(names: readonly string[]): GfxDictNode[] {
-  const nodes: GfxDictNode[] = [{ referenceBit: names.length ? 0xffffffff : 0, leftNodeIndex: 0, rightNodeIndex: 0, name: null }];
+  const nodes: GfxDictNode[] = [
+    { referenceBit: names.length ? 0xffffffff : 0, leftNodeIndex: 0, rightNodeIndex: 0, name: null },
+  ];
   let maxLength = 0;
   for (const n of names) maxLength = Math.max(maxLength, n.length);
   for (const name of names) {

@@ -24,7 +24,13 @@ export interface TitleDef {
 }
 
 // the shop and item model archives the editor reads (game.ts); the first game has neither
-export const KAHARA: TitleDef = { key: 'kahara', name: '電波人間のRPG2', titleId: '00040000000A7900', master: '56562135', requires: ['49A43B63', '302996EB'] };
+export const KAHARA: TitleDef = {
+  key: 'kahara',
+  name: '電波人間のRPG2',
+  titleId: '00040000000A7900',
+  master: '56562135',
+  requires: ['49A43B63', '302996EB'],
+};
 
 export const OAHU: TitleDef = {
   key: 'oahu',
@@ -57,7 +63,8 @@ export const TITLES: readonly TitleDef[] = [KAHARA, OAHU, LANAI, HONOLULU];
 export const titleById = (id: string): TitleDef | undefined => TITLES.find((t) => t.titleId === id.toUpperCase());
 
 /** The game whose update has this title ID, or undefined. */
-export const titleByUpdateId = (id: string): TitleDef | undefined => TITLES.find((t) => t.updateTitleId === id.toUpperCase());
+export const titleByUpdateId = (id: string): TitleDef | undefined =>
+  TITLES.find((t) => t.updateTitleId === id.toUpperCase());
 
 /** The game of a dump given its title ID; throws a message for the user when it is not one Panana reads. */
 export function identifyTitle(id: string): TitleDef {
@@ -65,7 +72,9 @@ export function identifyTitle(id: string): TitleDef {
   if (t) return t;
   const u = titleByUpdateId(id);
   if (u) throw new Error(`これは『${u.name}』の Update (${id}) です。Base (${u.titleId}) の CIA を選んでください。`);
-  throw new Error(`タイトル ID が ${id} です。${TITLES.map((x) => `『${x.name}』(${x.titleId})`).join('・')} のダンプを使ってください。`);
+  throw new Error(
+    `タイトル ID が ${id} です。${TITLES.map((x) => `『${x.name}』(${x.titleId})`).join('・')} のダンプを使ってください。`,
+  );
 }
 
 /**

@@ -108,7 +108,8 @@ export class EventTable {
    */
   addRow(template: Uint8Array): number {
     const free = this.freeRows();
-    if (!free.length && this.rows >= this.capacity) throw new Error(`このダンジョンのイベント番号は ${this.capacity - 1} までです`);
+    if (!free.length && this.rows >= this.capacity)
+      throw new Error(`このダンジョンのイベント番号は ${this.capacity - 1} までです`);
     const slot = this.freeSlots(free)[0];
     if (slot === undefined) throw new Error('このダンジョンには空いている状態の枠がありません');
     const row = template.slice();

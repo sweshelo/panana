@@ -30,7 +30,11 @@ export function MapEditorUi({ editor }: { editor: MapEditor }): ReactNode {
   );
 }
 
-const MODES: [ViewMode, string][] = [['2d', '2D'], ['3d', '3D'], ['split', '分割']];
+const MODES: [ViewMode, string][] = [
+  ['2d', '2D'],
+  ['3d', '3D'],
+  ['split', '分割'],
+];
 
 function Header({ editor }: { editor: MapEditor }): ReactNode {
   const { st, game } = editor;
@@ -42,33 +46,81 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
   return (
     <header>
       {st.info && (
-        <MapButton game={game} value={st.info.hash} className="map-select" modified={editor.modifiedMaps()} onChange={(h) => void editor.openMap(h)} />
+        <MapButton
+          game={game}
+          value={st.info.hash}
+          className="map-select"
+          modified={editor.modifiedMaps()}
+          onChange={(h) => void editor.openMap(h)}
+        />
       )}
-      <button title="既存のダンジョンに新しいマップ (階) を足す" onClick={() => setAdding(true)}>＋ マップを追加</button>
-      <button title="新しいダンジョンを足す (最初のマップと一緒に)" onClick={() => setAddingDungeon(true)}>＋ ダンジョンを追加</button>
-      {game.code.dungeons.length > 0 && <button title="追加したダンジョンの名前・コードを変える" onClick={() => setEditingDungeon(true)}>ダンジョンの設定…</button>}
+      <button title="既存のダンジョンに新しいマップ (階) を足す" onClick={() => setAdding(true)}>
+        ＋ マップを追加
+      </button>
+      <button title="新しいダンジョンを足す (最初のマップと一緒に)" onClick={() => setAddingDungeon(true)}>
+        ＋ ダンジョンを追加
+      </button>
+      {game.code.dungeons.length > 0 && (
+        <button title="追加したダンジョンの名前・コードを変える" onClick={() => setEditingDungeon(true)}>
+          ダンジョンの設定…
+        </button>
+      )}
       <div className="seg">
-        {MODES.map(([m, label]) => <button key={m} className={editor.mode === m ? 'active' : ''} onClick={() => editor.setMode(m)}>{label}</button>)}
+        {MODES.map(([m, label]) => (
+          <button key={m} className={editor.mode === m ? 'active' : ''} onClick={() => editor.setMode(m)}>
+            {label}
+          </button>
+        ))}
       </div>
       <div className="seg" title="3D の扉・門を閉じた姿 / 開いた姿で表示する (見た目だけ。データは変えない)">
         {([false, true] as const).map((open) => (
-          <button key={String(open)} className={editor.v3.doorsOpen === open ? 'active' : ''} onClick={() => editor.setDoorsOpen(open)}>{open ? '扉: 開' : '扉: 閉'}</button>
+          <button
+            key={String(open)}
+            className={editor.v3.doorsOpen === open ? 'active' : ''}
+            onClick={() => editor.setDoorsOpen(open)}
+          >
+            {open ? '扉: 開' : '扉: 閉'}
+          </button>
         ))}
       </div>
       <div className="seg">
-        <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>↶ 戻す</button>
-        <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>↷ やり直し</button>
+        <button title="元に戻す (Ctrl+Z)" disabled={!st.canUndo()} onClick={() => st.undo()}>
+          ↶ 戻す
+        </button>
+        <button title="やり直す (Ctrl+Y)" disabled={!st.canRedo()} onClick={() => st.redo()}>
+          ↷ やり直し
+        </button>
       </div>
       <span className="grow" />
       {adding && (
-        <NewMapDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setAdding(false)}
-          onCreated={(m) => { setAdding(false); void editor.openMap(m.hash); }} />
+        <NewMapDialog
+          session={editor.session}
+          currentDungeon={st.info?.dungeon ?? null}
+          onClose={() => setAdding(false)}
+          onCreated={(m) => {
+            setAdding(false);
+            void editor.openMap(m.hash);
+          }}
+        />
       )}
       {addingDungeon && (
-        <NewDungeonDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setAddingDungeon(false)}
-          onCreated={(m) => { setAddingDungeon(false); void editor.openMap(m.hash); }} />
+        <NewDungeonDialog
+          session={editor.session}
+          currentDungeon={st.info?.dungeon ?? null}
+          onClose={() => setAddingDungeon(false)}
+          onCreated={(m) => {
+            setAddingDungeon(false);
+            void editor.openMap(m.hash);
+          }}
+        />
       )}
-      {editingDungeon && <EditDungeonDialog session={editor.session} currentDungeon={st.info?.dungeon ?? null} onClose={() => setEditingDungeon(false)} />}
+      {editingDungeon && (
+        <EditDungeonDialog
+          session={editor.session}
+          currentDungeon={st.info?.dungeon ?? null}
+          onClose={() => setEditingDungeon(false)}
+        />
+      )}
     </header>
   );
 }
@@ -76,8 +128,16 @@ function Header({ editor }: { editor: MapEditor }): ReactNode {
 function LeftPane({ editor }: { editor: MapEditor }): ReactNode {
   return (
     <aside className="left">
-      <MapToolbox st={editor.st} tiles={<FactoryPalette editor={editor} />} parts={<AddPanel editor={editor} />} onDelete={() => editor.ctl.deleteSelection()} onDuplicate={()=>editor.ctl.duplicateRec()} />
-      <MapSettings><Layers editor={editor} /></MapSettings>
+      <MapToolbox
+        st={editor.st}
+        tiles={<FactoryPalette editor={editor} />}
+        parts={<AddPanel editor={editor} />}
+        onDelete={() => editor.ctl.deleteSelection()}
+        onDuplicate={() => editor.ctl.duplicateRec()}
+      />
+      <MapSettings>
+        <Layers editor={editor} />
+      </MapSettings>
     </aside>
   );
 }
@@ -86,7 +146,9 @@ function FactoryPalette({ editor }: { editor: MapEditor }): ReactNode {
   useSignal(editor.ui);
   const st = editor.st;
   useEditorState(st);
-  return <Palette st={st} factory={editor.factory} palette={editor.palette()} partModel={(k, l) => editor.partModel(k, l)} />;
+  return (
+    <Palette st={st} factory={editor.factory} palette={editor.palette()} partModel={(k, l) => editor.partModel(k, l)} />
+  );
 }
 
 /** What the views show: layers, the 2D style, the 3D ceiling, clipping and object models. */
@@ -109,18 +171,30 @@ function Layers({ editor }: { editor: MapEditor }): ReactNode {
       <h3>表示</h3>
       {box('タイル', ctl.layers.tiles, (v) => (ctl.layers.tiles = v))}
       {box('敵が出ないセル (区画 6)', ctl.layers.room, (v) => (ctl.layers.room = v), 'rgba(80,200,255,0.6)')}
-      {POINT_SECTIONS.map((k) => box(LAYOUTS[k]!.label, ctl.layers.sections[k]!, (v) => (ctl.layers.sections[k] = v), SECTION_COLORS[k]))}
+      {POINT_SECTIONS.map((k) =>
+        box(LAYOUTS[k]!.label, ctl.layers.sections[k]!, (v) => (ctl.layers.sections[k] = v), SECTION_COLORS[k]),
+      )}
       <h3>2D</h3>
       <div className="seg">
-        <button className={v2.style === 'symbols' ? 'active' : ''} onClick={() => change(() => (v2.style = 'symbols'))}>記号</button>
-        <button className={v2.style === 'minimap' ? 'active' : ''} onClick={() => change(() => (v2.style = 'minimap'))}>ミニマップ風</button>
+        <button className={v2.style === 'symbols' ? 'active' : ''} onClick={() => change(() => (v2.style = 'symbols'))}>
+          記号
+        </button>
+        <button className={v2.style === 'minimap' ? 'active' : ''} onClick={() => change(() => (v2.style = 'minimap'))}>
+          ミニマップ風
+        </button>
         <button onClick={() => v2.fit()}>全体</button>
       </div>
       <h3>3D</h3>
       {box('天井を表示', v3.showCeiling, (v) => v3.setCeilingVisible(v))}
       <label className="field">
         <span>高さで切る (右端 = 切らない)</span>
-        <input type="range" min={20} max={400} value={editor.clipHeight} onChange={(e) => editor.setClipHeight(Number(e.target.value))} />
+        <input
+          type="range"
+          min={20}
+          max={400}
+          value={editor.clipHeight}
+          onChange={(e) => editor.setClipHeight(Number(e.target.value))}
+        />
       </label>
       <div className="seg">
         <button onClick={() => v3.fit()}>全体</button>

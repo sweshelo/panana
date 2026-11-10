@@ -29,7 +29,19 @@ test('demangles the nested names of the imports of a CRO', () => {
 
 test('reads a string with ruby and an insertion tag', () => {
   // 「{大|だい}[ItemData:0x800000C7:name]」 as UTF-16 with tags
-  const units: number[] = [0x1, 0x38, 0, ...'大'.split('').map((c) => c.charCodeAt(0)), 0x1, 0x39, 0, ...[...'だい'].map((c) => c.charCodeAt(0)), 0x1, 0x3a, 0];
+  const units: number[] = [
+    0x1,
+    0x38,
+    0,
+    ...'大'.split('').map((c) => c.charCodeAt(0)),
+    0x1,
+    0x39,
+    0,
+    ...[...'だい'].map((c) => c.charCodeAt(0)),
+    0x1,
+    0x3a,
+    0,
+  ];
   const str = (s: string): number[] => {
     const n = Math.ceil((s.length + 1) / 2);
     const bytes = [...s].map((c) => c.charCodeAt(0));
@@ -50,8 +62,14 @@ test('reads the text form back into tokens', () => {
   const text = 'あ{page}い\n{tag:105}{tag:02,ABC,0x10}{x}{ruby:漢|かん}';
   const tokens = parseLanaiText(text);
   expect(tokens).toEqual([
-    { t: 'text', s: 'あ' }, { t: 'tag', code: 0x22, args: [] }, { t: 'text', s: 'い' }, { t: 'br' },
-    { t: 'tag', code: 0x105, args: [] }, { t: 'tag', code: 2, args: ['ABC', 0x10] }, { t: 'text', s: '{x}' }, { t: 'ruby', base: '漢', reading: 'かん' },
+    { t: 'text', s: 'あ' },
+    { t: 'tag', code: 0x22, args: [] },
+    { t: 'text', s: 'い' },
+    { t: 'br' },
+    { t: 'tag', code: 0x105, args: [] },
+    { t: 'tag', code: 2, args: ['ABC', 0x10] },
+    { t: 'text', s: '{x}' },
+    { t: 'ruby', base: '漢', reading: 'かん' },
   ]);
   expect(lanaiText(tokens)).toBe(text);
   const again = parseLanaiMessage(encodeLanaiMessage(tokens), 0);
@@ -64,7 +82,10 @@ describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {
   let dump: Dump;
   let session: LanaiSession;
   beforeAll(async () => {
-    dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name);
+    dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
     session = await LanaiSession.open(dump);
   });
 
@@ -104,20 +125,41 @@ describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {
       expect(isGsTable(t.table.data)).toBe(false);
       expect(viewsFor(t.table.data, t.file)[0]!.id).toBe('lanai-table');
     }
-    const sizes = Object.fromEntries(['MonsterParameter', 'MonsterDesign', 'ItemData', 'ItemDataCore', 'ActionData', 'Contents', 'MapStageIntegration', 'MessageMapStage'].map((n) => {
-      const t = session.need(n);
-      return [n, [t.rows, t.rowSize]];
-    }));
+    const sizes = Object.fromEntries(
+      [
+        'MonsterParameter',
+        'MonsterDesign',
+        'ItemData',
+        'ItemDataCore',
+        'ActionData',
+        'Contents',
+        'MapStageIntegration',
+        'MessageMapStage',
+      ].map((n) => {
+        const t = session.need(n);
+        return [n, [t.rows, t.rowSize]];
+      }),
+    );
     expect(sizes).toEqual({
-      MonsterParameter: [1231, 0x24], MonsterDesign: [570, 0xa0], ItemData: [3854, 0x10], ItemDataCore: [3232, 0x3c],
-      ActionData: [5017, 0x2c], Contents: [127, 8], MapStageIntegration: [132, 0x4c], MessageMapStage: [135, 0x14],
+      MonsterParameter: [1231, 0x24],
+      MonsterDesign: [570, 0xa0],
+      ItemData: [3854, 0x10],
+      ItemDataCore: [3232, 0x3c],
+      ActionData: [5017, 0x2c],
+      Contents: [127, 8],
+      MapStageIntegration: [132, 0x4c],
+      MessageMapStage: [135, 0x14],
     });
     expect(formatName(session.need('ItemData').data)).toBe('GS テーブル (RPG FREE! の形式)');
   });
 
   test('strings: names, the field-name table, row IDs and the insertion tag', () => {
     const mp = session.need('MonsterParameter');
-    expect(mp.fields.map((f) => [f.name, f.offset])).toEqual([['name', 4], ['voice', 8], ['group_name', 12]]);
+    expect(mp.fields.map((f) => [f.name, f.offset])).toEqual([
+      ['name', 4],
+      ['voice', 8],
+      ['group_name', 12],
+    ]);
     expect(session.plain(mp, 1, 'name')).toBe('いちごおばけ');
     expect(session.plain(mp, 1, 'group_name')).toBe('いちごおばけたち');
     expect(session.plain(mp, 600, 'name')).toBe('だいまおう');
@@ -149,7 +191,8 @@ describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {
     expect(c38.cro?.info.imports).toContain('ScriptMenu::StartMessage');
     expect(c38.tables.map((t) => t.table.name)).toContain('MapStage');
     // every content has its CRO named after its number
-    for (const c of [cs[0]!, cs[75]!, cs[126]!]) expect((await readContent(session, c)).cro?.name).toBe(`contents${String(c.index).padStart(4, '0')}.cro`);
+    for (const c of [cs[0]!, cs[75]!, cs[126]!])
+      expect((await readContent(session, c)).cro?.name).toBe(`contents${String(c.index).padStart(4, '0')}.cro`);
   });
 
   test('a CRO is named by the RomFS viewer', async () => {
@@ -163,10 +206,11 @@ describe.skipIf(!hasLanai)('RPG FREE! Base + Update', () => {
   test('every table of the master parses, with its strings inside the file', () => {
     for (const { table: t } of session.tables) {
       expect(new LanaiTable(t.data).rows).toBe(t.rows);
-      for (const o of t.stringOffsets()) for (let r = 0; r < Math.min(t.rows, 20); r++) {
-        const at = t.stringOffset(r, o);
-        if (at >= 0) expect(at).toBeLessThan(t.data.length);
-      }
+      for (const o of t.stringOffsets())
+        for (let r = 0; r < Math.min(t.rows, 20); r++) {
+          const at = t.stringOffset(r, o);
+          if (at >= 0) expect(at).toBeLessThan(t.data.length);
+        }
     }
   });
 

@@ -34,7 +34,12 @@ export const CAVE_START = 0x4bf020;
 export const CAVE_END = HOOK_ADDR;
 
 /** RPG2 (v1.1.0). */
-export const KAHARA_LAYOUT: CodeLayout = { caveStart: CAVE_START, caveEnd: CAVE_END, reservedEnd: 0x4c0000, writableEnd: 0x511000 };
+export const KAHARA_LAYOUT: CodeLayout = {
+  caveStart: CAVE_START,
+  caveEnd: CAVE_END,
+  reservedEnd: 0x4c0000,
+  writableEnd: 0x511000,
+};
 
 export interface CodePatch {
   id: string;
@@ -89,12 +94,17 @@ function parse(source: string, errors: PatchError[]): RawBlock[] {
   let pendingLabel: string | undefined;
   source.split(/\r?\n/).forEach((raw, i) => {
     const line = i + 1;
-    let text = raw.replace(/;.*$/, '').replace(/\/\/.*$/, '').trim();
+    let text = raw
+      .replace(/;.*$/, '')
+      .replace(/\/\/.*$/, '')
+      .trim();
     if (!text) return;
     const at = /^@\s*(0x[0-9a-f]+)$/i.exec(text);
     const cave = /^@\s*cave(?:\s+([A-Za-z_]\w*))?$/i.exec(text);
     if (at || cave) {
-      cur = at ? { kind: 'at', addr: Number(at[1]), line, items: [] } : { kind: 'cave', addr: 0, label: cave![1], line, items: [] };
+      cur = at
+        ? { kind: 'at', addr: Number(at[1]), line, items: [] }
+        : { kind: 'cave', addr: 0, label: cave![1], line, items: [] };
       blocks.push(cur);
       return;
     }
@@ -132,7 +142,11 @@ export function caveFreeStart(code: Uint8Array, layout: CodeLayout = KAHARA_LAYO
  * Assemble patches in order against `code` (with the base MOD applied). Cave blocks are placed from the top of the
  * cave down, so they stay clear of the base MOD's routines.
  */
-export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: CodeLayout = KAHARA_LAYOUT): Map<string, BuiltPatch> {
+export function buildPatches(
+  code: Uint8Array,
+  patches: CodePatch[],
+  layout: CodeLayout = KAHARA_LAYOUT,
+): Map<string, BuiltPatch> {
   const out = new Map<string, BuiltPatch>();
   let top = layout.caveEnd;
   const floor = caveFreeStart(code, layout);
@@ -144,14 +158,20 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
     // pass 1: sizes and addresses
     const caveBlocks = raws.filter((b) => b.kind === 'cave');
     const sizeOf = (b: RawBlock): number => {
-      const lits = new Set(b.items.filter((it) => it.text && isLiteral(it.text)).map((it) => it.text.split('=')[1]!.trim()));
+      const lits = new Set(
+        b.items.filter((it) => it.text && isLiteral(it.text)).map((it) => it.text.split('=')[1]!.trim()),
+      );
       return (b.items.filter((it) => it.text).length + lits.size) * 4;
     };
     const caveSize = caveBlocks.reduce((n, b) => n + sizeOf(b), 0);
     let caveRange: [number, number] | null = null;
     if (caveSize) {
       const start = (top - caveSize) & ~3;
-      if (start < floor) errors.push({ line: caveBlocks[0]!.line, message: `code cave が足りません (${caveSize} バイト要り、空きは ${Math.max(0, top - floor)} バイト)` });
+      if (start < floor)
+        errors.push({
+          line: caveBlocks[0]!.line,
+          message: `code cave が足りません (${caveSize} バイト要り、空きは ${Math.max(0, top - floor)} バイト)`,
+        });
       caveRange = [start, top];
       let a = start;
       for (const b of caveBlocks) {
@@ -179,8 +199,10 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
       const block: PatchBlock = { kind: b.kind, addr: b.addr, label: b.label, lines: [] };
       if (b.kind === 'at') {
         if (b.addr & 3) errors.push({ line: b.line, message: 'アドレスは 4 の倍数にしてください' });
-        if (b.addr < BASE || b.addr >= layout.writableEnd) errors.push({ line: b.line, message: '.text / .rodata の外です' });
-        if (b.addr >= layout.caveStart && b.addr < layout.reservedEnd) errors.push({ line: b.line, message: 'code cave には @cave で書いてください' });
+        if (b.addr < BASE || b.addr >= layout.writableEnd)
+          errors.push({ line: b.line, message: '.text / .rodata の外です' });
+        if (b.addr >= layout.caveStart && b.addr < layout.reservedEnd)
+          errors.push({ line: b.line, message: 'code cave には @cave で書いてください' });
       }
       const pool: { value: string; float: boolean; fix: PatchLine[] }[] = [];
       let a = b.addr;
@@ -205,7 +227,8 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
           errors.push({ line: it.line, message: e instanceof Error ? e.message : String(e) });
         }
         const other = written.get(a);
-        if (other && other !== p.id) errors.push({ line: it.line, message: `0x${a.toString(16).toUpperCase()} はほかのパッチも書き換えています` });
+        if (other && other !== p.id)
+          errors.push({ line: it.line, message: `0x${a.toString(16).toUpperCase()} はほかのパッチも書き換えています` });
         written.set(a, p.id);
         const pl: PatchLine = { line: it.line, addr: a, text, word, before };
         if (isLiteral(text)) pool.find((x) => x.value === text.split('=')[1]!.trim())?.fix.push(pl);
@@ -227,7 +250,13 @@ export function buildPatches(code: Uint8Array, patches: CodePatch[], layout: Cod
           f.word = e.float ? (f.word & ~0xff) | (off >> 2) | (1 << 23) : (f.word & ~0xfff) | off | (1 << 23);
           f.word >>>= 0;
         }
-        block.lines.push({ line: e.fix[0]?.line ?? b.line, addr: at, text: `.word ${e.value}`, word: value, before: 0 });
+        block.lines.push({
+          line: e.fix[0]?.line ?? b.line,
+          addr: at,
+          text: `.word ${e.value}`,
+          word: value,
+          before: 0,
+        });
         a += 4;
       }
       blocks.push(block);
@@ -265,7 +294,10 @@ export function blockDiff(block: PatchBlock): { addr: number; before: string; af
   return block.lines.map((l) => ({
     addr: l.addr,
     before: block.kind === 'at' ? disassemble(l.before, l.addr).text : '',
-    after: l.text.startsWith('.word') || l.text.startsWith('.float') ? `${l.text}  (0x${l.word.toString(16).toUpperCase()})` : disassemble(l.word, l.addr).text,
+    after:
+      l.text.startsWith('.word') || l.text.startsWith('.float')
+        ? `${l.text}  (0x${l.word.toString(16).toUpperCase()})`
+        : disassemble(l.word, l.addr).text,
   }));
 }
 

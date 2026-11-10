@@ -4,7 +4,6 @@ import type { ReactNode } from 'react';
 import type { MessageStore } from '../game/gmsg';
 import { fieldRange } from '../game/tabledef';
 import { FieldChoice, FieldNumber as SharedNumber, type FieldAccess } from '../ui/FieldEdit';
-import { InfoTip } from '../ui/InfoTip';
 import { MessageEditor } from '../ui/message';
 import type { OahuRows } from './rows';
 
@@ -44,7 +43,14 @@ export function enumOptions(values: Record<number, string>, numbered = false): [
 }
 
 /** The message fields of a row as text boxes (the editors' text form); messages the store cannot change are shown. */
-export function MessageFields({ rows, row, fields, texts, message, onEdit }: {
+export function MessageFields({
+  rows,
+  row,
+  fields,
+  texts,
+  message,
+  onEdit,
+}: {
   rows: OahuRows;
   row: number;
   fields: [string, string][];
@@ -63,9 +69,19 @@ export function MessageFields({ rows, row, fields, texts, message, onEdit }: {
             <tr key={key}>
               <th title={`${rows.def.file} +0x${f.offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
               <td className="book-desc">
-                {texts.editable(id) || texts.isAdded(id)
-                  ? <MessageEditor texts={texts} id={id} compact apply={(f) => { f(); onEdit(); }} />
-                  : <span>{message(id)}</span>}
+                {texts.editable(id) || texts.isAdded(id) ? (
+                  <MessageEditor
+                    texts={texts}
+                    id={id}
+                    compact
+                    apply={(f) => {
+                      f();
+                      onEdit();
+                    }}
+                  />
+                ) : (
+                  <span>{message(id)}</span>
+                )}
               </td>
             </tr>
           );

@@ -7,7 +7,15 @@
 // Everything is written into the zero padding at the end of .rodata (0x510490-0x511000), behind the header "PNMP";
 // dungeon arrays that do not fit go into copies of the mapData key array that nothing reads (SPILL).
 import { u32, w32 } from '../util/bytes';
-import { BASE, MAP_DATA_KEYS, MAP_DATA_NONE, MAP_ROWS, MAP_SECTIONS_ROWS, MAP_TABLE, MAP_TABLE_ROWS } from './codeconst';
+import {
+  BASE,
+  MAP_DATA_KEYS,
+  MAP_DATA_NONE,
+  MAP_ROWS,
+  MAP_SECTIONS_ROWS,
+  MAP_TABLE,
+  MAP_TABLE_ROWS,
+} from './codeconst';
 
 export const EXT_HEADER = 0x510490;
 export const EXT_END = 0x511000;
@@ -51,8 +59,9 @@ const HOOK_CODE = [
  * the key array when unused. docs/new-map.md §2.3.
  */
 export const SPILL = [
-  0x4c4d38, 0x4c506c, 0x4c571c, 0x4c68a4, 0x4c83bc, 0x4c8b2c, 0x4c8e60, 0x4c9194, 0x4c9850, 0x4c9b84, 0x4c9eb8, 0x4ca1ec,
-  0x4ca520, 0x4ca854, 0x4cbea8, 0x4cc574, 0x4cc8a8, 0x4cd5a0, 0x4cdc6c, 0x4cf490, 0x4cf7c4, 0x4cfaf8, 0x4d0164, 0x4d0b08,
+  0x4c4d38, 0x4c506c, 0x4c571c, 0x4c68a4, 0x4c83bc, 0x4c8b2c, 0x4c8e60, 0x4c9194, 0x4c9850, 0x4c9b84, 0x4c9eb8,
+  0x4ca1ec, 0x4ca520, 0x4ca854, 0x4cbea8, 0x4cc574, 0x4cc8a8, 0x4cd5a0, 0x4cdc6c, 0x4cf490, 0x4cf7c4, 0x4cfaf8,
+  0x4d0164, 0x4d0b08,
 ];
 const SPILL_SIZE = MAP_SECTIONS_ROWS * 4;
 
@@ -102,20 +111,30 @@ export function readExtension(code: Uint8Array): Extension | null {
   const h = EXT_HEADER - BASE;
   if (code.length < EXT_END - BASE || u32(code, h) !== EXT_MAGIC) return null;
   const inCode = (a: number, size: number): boolean => a >= BASE && a + size <= BASE + code.length;
-  const n = u32(code, h + 8), sp = u32(code, h + 0xc);
-  const m = u32(code, h + 0x10), rp = u32(code, h + 0x14);
+  const n = u32(code, h + 8),
+    sp = u32(code, h + 0xc);
+  const m = u32(code, h + 0x10),
+    rp = u32(code, h + 0x14);
   const version = u32(code, h + 4);
-  const d = version >= 2 ? u32(code, h + 0x18) : 0, dp = version >= 2 ? u32(code, h + 0x1c) : 0;
+  const d = version >= 2 ? u32(code, h + 0x18) : 0,
+    dp = version >= 2 ? u32(code, h + 0x1c) : 0;
   if (!inCode(sp, n * 40) || !inCode(rp, m * 4) || (d && !inCode(dp, d * RECORD_SIZE)) || d > MAP_TABLE_ROWS)
     throw new Error('code.bin の新しいマップの表 (PNMP) が壊れています');
-  const sections = Array.from({ length: n }, (_, i) => Array.from({ length: 10 }, (_, k) => u32(code, sp - BASE + i * 40 + k * 4)));
+  const sections = Array.from({ length: n }, (_, i) =>
+    Array.from({ length: 10 }, (_, k) => u32(code, sp - BASE + i * 40 + k * 4)),
+  );
   const rows = Array.from({ length: m }, (_, i) => u32(code, rp - BASE + i * 4));
   const dungeons = Array.from({ length: d }, (_, i): DungeonRecord => {
     const o = dp - BASE + i * RECORD_SIZE;
     return {
       tableRow: u32(code, o),
       dungeon: u32(code, o + 4),
-      original: { dungeon: u32(code, o + 8), name: u32(code, o + 0xc), count: u32(code, o + 0x10), array: u32(code, o + 0x14) },
+      original: {
+        dungeon: u32(code, o + 8),
+        name: u32(code, o + 0xc),
+        count: u32(code, o + 0x10),
+        array: u32(code, o + 0x14),
+      },
     };
   });
   return { sections, rows, dungeons };
@@ -217,7 +236,8 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[], dungeons: Adde
   maps.forEach((m, i) => m.sections.forEach((h, k) => w32(sectBytes, i * 40 + k * 4, h)));
   const sectTable = maps.length ? alloc.put(sectBytes, true) : 0;
   const rowPtrs = maps.length ? alloc.put(new Uint8Array(maps.length * 4), true) : 0;
-  const nRecords = new Set(dungeons.filter((d) => maps.some((m) => m.dungeon === d.dungeon)).map((d) => d.dungeon)).size;
+  const nRecords = new Set(dungeons.filter((d) => maps.some((m) => m.dungeon === d.dungeon)).map((d) => d.dungeon))
+    .size;
   const recordTable = nRecords ? alloc.put(new Uint8Array(nRecords * RECORD_SIZE), true) : 0;
 
   const names = new Map<string, number>();
@@ -240,11 +260,13 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[], dungeons: Adde
   const dungeonRecords: DungeonRecord[] = [];
   for (const nd of dungeons) {
     if (!maps.some((m) => m.dungeon === nd.dungeon)) continue;
-    if (!/^[A-Z][0-9]{2}$/.test(nd.code)) throw new Error(`ダンジョンのコード ${nd.code} は英大文字 1 つと数字 2 つにしてください`);
+    if (!/^[A-Z][0-9]{2}$/.test(nd.code))
+      throw new Error(`ダンジョンのコード ${nd.code} は英大文字 1 つと数字 2 つにしてください`);
     const native = table.find((d) => !prev.has(d.index) && d.dungeon === nd.dungeon && d.count > 0);
     if (native) throw new Error(`ダンジョン ${nd.dungeon} はもう表にあります`);
     const again = free.find((i) => !given.has(i) && prev.get(i)?.dungeon === nd.dungeon);
-    const row = again ?? free.find((i) => !given.has(i) && !dungeons.some((x) => x !== nd && prev.get(i)?.dungeon === x.dungeon));
+    const row =
+      again ?? free.find((i) => !given.has(i) && !dungeons.some((x) => x !== nd && prev.get(i)?.dungeon === x.dungeon));
     if (row === undefined) throw new Error('ダンジョンの表に空いている行がありません');
     given.set(row, nd);
   }
@@ -269,7 +291,10 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[], dungeons: Adde
       mine.forEach((m, j) => rowAddr.set(m.hash, a + j * ROW_SIZE));
       const original = p?.original ?? { dungeon: d.dungeon, name: d.name, count: d.count, array: d.array };
       dungeonRecords.push({ tableRow: d.index, dungeon: nd.dungeon, original });
-      fullEdits.push([d.index, { index: d.index, dungeon: nd.dungeon, name: nameAddr(nd.code), count: mine.length, array: a }]);
+      fullEdits.push([
+        d.index,
+        { index: d.index, dungeon: nd.dungeon, name: nameAddr(nd.code), count: mine.length, array: a },
+      ]);
       continue;
     }
     if (p) {
@@ -322,7 +347,9 @@ export function buildMapPatch(code: Uint8Array, maps: AddedMap[], dungeons: Adde
     put32(header + 0x1c, recordTable);
     dungeonRecords.forEach((r, i) => {
       const o = recordTable + i * RECORD_SIZE;
-      [r.tableRow, r.dungeon, r.original.dungeon, r.original.name, r.original.count, r.original.array].forEach((v, k) => put32(o + k * 4, v));
+      [r.tableRow, r.dungeon, r.original.dungeon, r.original.name, r.original.count, r.original.array].forEach((v, k) =>
+        put32(o + k * 4, v),
+      );
     });
   }
 

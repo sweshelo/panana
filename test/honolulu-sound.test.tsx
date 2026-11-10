@@ -27,7 +27,14 @@ describe.skipIf(!hasHonolulu)('初代の BGM・効果音 (ROM)', () => {
       kinds[sounds.kind(r)]++;
     }
     // the layout for naauao#55: the rows of each kind and the first names
-    console.log('honolulu soundData kinds', kinds, 'unnamed', unnamed, 'first', Array.from({ length: 12 }, (_, i) => sounds.label(i + 1)));
+    console.log(
+      'honolulu soundData kinds',
+      kinds,
+      'unnamed',
+      unnamed,
+      'first',
+      Array.from({ length: 12 }, (_, i) => sounds.label(i + 1)),
+    );
     expect(unnamed).toEqual([]);
     expect(kinds.bgm).toBeGreaterThan(0);
     expect(kinds.se).toBeGreaterThan(0);
@@ -46,7 +53,9 @@ describe.skipIf(!hasHonolulu)('初代の BGM・効果音 (ROM)', () => {
 
   test('the sequenced BGMs (all but 2) play at their timebase (96) to their loop', async () => {
     const r = await s.soundRenderer();
-    expect(r.archive.sounds.filter((x) => x.name.startsWith('BGM_') && x.type === 'stream').map((x) => x.name)).toEqual(['BGM_SYS_MAIN', 'BGM_SYS_ENDING']);
+    expect(r.archive.sounds.filter((x) => x.name.startsWith('BGM_') && x.type === 'stream').map((x) => x.name)).toEqual(
+      ['BGM_SYS_MAIN', 'BGM_SYS_ENDING'],
+    );
     const cave = r.archive.sounds.findIndex((x) => x.name === 'BGM_FLD_CAVE');
     const pcm = await r.render(cave, 300, true);
     // the loop as rendered at timebase 96 (at 48 it would be twice as long): 11.7 s to 140.1 s
@@ -58,7 +67,10 @@ describe.skipIf(!hasHonolulu)('初代の BGM・効果音 (ROM)', () => {
   test('mapData +0x07 points at soundData rows (a guess)', () => {
     const md = s.master.rows('mapData.bin');
     const values = Array.from({ length: md.rows }, (_, r) => md.get(r, 'sound'));
-    console.log('honolulu mapData +0x07', values.map((v) => (v ? sounds.label(v) : 0)));
+    console.log(
+      'honolulu mapData +0x07',
+      values.map((v) => (v ? sounds.label(v) : 0)),
+    );
     for (const v of values) expect(v).toBeLessThan(sounds.rows);
     const uses = honoluluSoundUses(s.master);
     expect([...uses.values()].flat().length).toBe(values.filter(Boolean).length);

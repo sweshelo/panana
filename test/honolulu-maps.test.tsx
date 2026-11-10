@@ -6,7 +6,19 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
 import { HonoluluMapPage } from '../src/honolulu/MapPage';
 import { findEntry, parseArchive } from '../src/archive/gsarc';
-import { HONOLULU_CHEST_SECTION, HONOLULU_DESIGNED_ROOMS, HONOLULU_EXIT_SECTION, HONOLULU_OBJECT_SECTION, HONOLULU_ROT_CODEC, mapCode, parseFloors, parsePartNames, partOfName, RANDOM_POS, type HonoluluMaps } from '../src/honolulu/maps';
+import {
+  HONOLULU_CHEST_SECTION,
+  HONOLULU_DESIGNED_ROOMS,
+  HONOLULU_EXIT_SECTION,
+  HONOLULU_OBJECT_SECTION,
+  HONOLULU_ROT_CODEC,
+  mapCode,
+  parseFloors,
+  parsePartNames,
+  partOfName,
+  RANDOM_POS,
+  type HonoluluMaps,
+} from '../src/honolulu/maps';
 import { HonoluluMapState, partTurn, PROP_ANGLES } from '../src/honolulu/mapview';
 import { buildObjects, buildTileset } from '../src/cgfx/tileset';
 import { hex8 } from '../src/util/bytes';
@@ -37,14 +49,23 @@ describe('初代の map page (no ROM)', () => {
       v.setUint32(o, counts[i]!, true);
       o += 4;
       for (let k = 0; k < counts[i]!; k++) {
-        if (i === 3) { v.setInt16(o + 8, k + 3, true); v.setInt16(o + 10, 4, true); }
-        if (i === 7) { v.setInt16(o + 8, RANDOM_POS, true); v.setInt16(o + 10, RANDOM_POS, true); }
+        if (i === 3) {
+          v.setInt16(o + 8, k + 3, true);
+          v.setInt16(o + 10, 4, true);
+        }
+        if (i === 7) {
+          v.setInt16(o + 8, RANDOM_POS, true);
+          v.setInt16(o + 10, RANDOM_POS, true);
+        }
         o += s;
       }
     });
     const [f] = parseFloors(b, 1);
     expect(f).toMatchObject({ id: 0x1234, map: 0xabcd, floor: -2, dungeon: 1 });
-    expect(f!.chests.map((c) => [c.x, c.y])).toEqual([[3, 4], [4, 4]]);
+    expect(f!.chests.map((c) => [c.x, c.y])).toEqual([
+      [3, 4],
+      [4, 4],
+    ]);
     expect(f!.monsters[0]!.x).toBe(RANDOM_POS);
     expect(() => parseFloors(b.subarray(0, len - 1), 1)).toThrow('途中で終わっています');
   });
@@ -58,8 +79,14 @@ describe('初代の map page (no ROM)', () => {
     expect(partOfName('house')).toBeNull();
     const b = new Uint8Array(4 + 24);
     b[0] = 2;
-    b.set([...'path_00'].map((c) => c.charCodeAt(0)), 4);
-    b.set([...'room28a'].map((c) => c.charCodeAt(0)), 16);
+    b.set(
+      [...'path_00'].map((c) => c.charCodeAt(0)),
+      4,
+    );
+    b.set(
+      [...'room28a'].map((c) => c.charCodeAt(0)),
+      16,
+    );
     expect(parsePartNames(b)).toEqual(['path_00', 'room28a']);
     // the game's turns: props N / E / S / W, parts in degrees
     expect(PROP_ANGLES).toEqual([Math.PI, Math.PI / 2, 0, -Math.PI / 2]);
@@ -68,7 +95,17 @@ describe('初代の map page (no ROM)', () => {
 
   test('the view-only state ignores edits', () => {
     const st = new HonoluluMapState();
-    st.show({ hash: 1, name: '', dungeon: 0, floor: 0, tiles: [{ kind: 5, x: 1, y: 1, rot: 0, rotHi: 0, letter: 0, pad: 0 }], recs: {}, sec6Header: new Uint8Array(0), cells6: [], raw: {} });
+    st.show({
+      hash: 1,
+      name: '',
+      dungeon: 0,
+      floor: 0,
+      tiles: [{ kind: 5, x: 1, y: 1, rot: 0, rotHi: 0, letter: 0, pad: 0 }],
+      recs: {},
+      sec6Header: new Uint8Array(0),
+      cells6: [],
+      raw: {},
+    });
     st.edit((d) => (d.tiles = []));
     st.touch((d) => (d.tiles = []));
     st.checkpoint();
@@ -120,7 +157,13 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
     for (const f of floors) if (f.monsterGroup) expect(maps.monsterGroupRow(f.monsterGroup)).toBeDefined();
     for (const f of floors) if (f.itemGroup) expect(maps.itemGroupRow(f.itemGroup)).toBeDefined();
     const chests = floors.flatMap((f) => [...f.chests, ...f.chests2]);
-    expect(chests.filter((c) => new DataView(c.raw.buffer, c.raw.byteOffset).getUint32(0, true) && maps.itemGroupRow(new DataView(c.raw.buffer, c.raw.byteOffset).getUint32(0, true)) === undefined)).toHaveLength(0);
+    expect(
+      chests.filter(
+        (c) =>
+          new DataView(c.raw.buffer, c.raw.byteOffset).getUint32(0, true) &&
+          maps.itemGroupRow(new DataView(c.raw.buffer, c.raw.byteOffset).getUint32(0, true)) === undefined,
+      ),
+    ).toHaveLength(0);
     expect(maps.chestItems(0)).toEqual([{ item: maps.chestItems(0)[0]!.item, count: 1 }]);
     expect(session.master.context().rowName!('itemData.bin', maps.chestItems(0)[0]!.item)).toBe('キズぐすり');
     // B2F of デンパ島のどうくつ: its chests and exits on the map, without the ones at a random place
@@ -139,7 +182,7 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
     expect(maps.doc(maps.map(b2.map)!).recs[HONOLULU_CHEST_SECTION] ?? []).toHaveLength(0);
   });
 
-  test('the tiles\' parts: kind = index of the part file; 3 × 3 rooms are room_00 in the middle, walls on the sides', () => {
+  test("the tiles' parts: kind = index of the part file; 3 × 3 rooms are room_00 in the middle, walls on the sides", () => {
     expect(maps.parts).toHaveLength(121);
     expect(maps.part(89)).toEqual({ name: 'room_00', row: 16, variant: 0 });
     expect([91, 92, 93, 94].map((k) => maps.part(k)!.name)).toEqual(['room_02', 'room_03', 'room_04', 'room_05']);
@@ -153,7 +196,7 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
     expect(maps.partAngle(94)).toBe(90);
   });
 
-  test('every tile of every floor has a model in its tileset\'s archive; the designed rooms and props too', async () => {
+  test("every tile of every floor has a model in its tileset's archive; the designed rooms and props too", async () => {
     const archives = new Map<string, ReturnType<typeof parseArchive>>();
     const archive = async (name: string) => {
       if (!archives.has(name)) archives.set(name, parseArchive(await session.dump.readRomfs(name)));
@@ -178,10 +221,22 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
           // a room's materials name its own textures and its tileset's (the view fills those in)
           const key = `${hex8(src.designedModel)}/${src.textureEntry}`;
           if (!roomTextures.has(key)) {
-            const room = buildObjects(await session.dump.readRomfs(HONOLULU_DESIGNED_ROOMS), [src.designedModel]).get(src.designedModel)!;
-            const tex = buildTileset(await session.dump.readRomfs(src.modelArchive), await session.dump.readRomfs('469B3DC6'), src.textureEntry).textures;
-            const names = room.models.get(src.designedModel)!.materials.flatMap((mt) => mt.textures).filter((t): t is string => !!t);
-            roomTextures.set(key, names.filter((n) => !room.textures.has(n) && !tex.has(n)));
+            const room = buildObjects(await session.dump.readRomfs(HONOLULU_DESIGNED_ROOMS), [src.designedModel]).get(
+              src.designedModel,
+            )!;
+            const tex = buildTileset(
+              await session.dump.readRomfs(src.modelArchive),
+              await session.dump.readRomfs('469B3DC6'),
+              src.textureEntry,
+            ).textures;
+            const names = room.models
+              .get(src.designedModel)!
+              .materials.flatMap((mt) => mt.textures)
+              .filter((t): t is string => !!t);
+            roomTextures.set(
+              key,
+              names.filter((n) => !room.textures.has(n) && !tex.has(n)),
+            );
           }
           expect(roomTextures.get(key)).toEqual([]);
         }
@@ -196,9 +251,19 @@ describe.skipIf(!hasHonolulu)('初代の map page (ROM)', () => {
     expect(designed.size).toBe(20);
     // デンパ島のどうくつ: mapData 1 (dungeonData +0x16), tileset 0 in 46910AB6 (caveA); its first floor is a designed room
     const d1 = maps.dungeon(1)!.records;
-    expect(maps.tileSource(d1[1]!)).toMatchObject({ mapData: 1, tileset: 0, resource: 1, modelArchive: '46910AB6', designed: 0 });
+    expect(maps.tileSource(d1[1]!)).toMatchObject({
+      mapData: 1,
+      tileset: 0,
+      resource: 1,
+      modelArchive: '46910AB6',
+      designed: 0,
+    });
     // 風の森: mapData 4 → tileset 3 in EAE2C0F2
-    expect(maps.tileSource(maps.dungeon(2)!.records[1]!)).toMatchObject({ mapData: 4, tileset: 3, modelArchive: 'EAE2C0F2' });
+    expect(maps.tileSource(maps.dungeon(2)!.records[1]!)).toMatchObject({
+      mapData: 4,
+      tileset: 3,
+      modelArchive: 'EAE2C0F2',
+    });
     expect(maps.tileSource(d1[0]!).designed).toBe(1);
     // a map no floor uses is shown with mapData row 1 (row 0 is empty)
     expect(maps.tileSource(null)).toMatchObject({ mapData: -1, tileset: 0, modelArchive: '46910AB6' });

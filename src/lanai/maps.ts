@@ -2,9 +2,16 @@
 // (entry C9F79000) and a map table (131C5000, 0x4C bytes a row) of its own, the sections of a map as RPG2's editing
 // model (game/sections.ts MapDoc, with RPG FREE!'s record layouts and 1 / 2 / 4 / 8 facings), and the tile models:
 // MapData -> MapPartsType (tileset) -> MapParts<name> -> a GSC of the root archive that the pair names.
-import { findEntry, unpackEntry, type Archive } from '../archive/gsarc';
+import type { Archive } from '../archive/gsarc';
 import type { MapDb } from '../game/mapdb';
-import { LANAI_ROT_CODEC, loadDoc, sectionBytes, type MapDoc, type MapFormat, type RecordLayout } from '../game/sections';
+import {
+  LANAI_ROT_CODEC,
+  loadDoc,
+  sectionBytes,
+  type MapDoc,
+  type MapFormat,
+  type RecordLayout,
+} from '../game/sections';
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
 import type { LanaiMapDb, LanaiSession } from './session';
@@ -35,7 +42,10 @@ export const LANAI_LAYOUTS: Record<number, RecordLayout> = {
 };
 
 /** Tiles are 20 bytes with the facing at +0x10 as a 1 / 2 / 4 / 8 mask (§3.1). */
-export const LANAI_MAP_FORMAT: MapFormat = { tile: { size: 20, rot: 0x10, letter: 0x11, pad: 0x12, rotCodec: LANAI_ROT_CODEC }, layouts: LANAI_LAYOUTS };
+export const LANAI_MAP_FORMAT: MapFormat = {
+  tile: { size: 20, rot: 0x10, letter: 0x11, pad: 0x12, rotCodec: LANAI_ROT_CODEC },
+  layouts: LANAI_LAYOUTS,
+};
 
 /** Sections that have positioned records, drawn last first. */
 /**
@@ -58,7 +68,12 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
-export const LANAI_EXIT_KIND: Record<number, string> = { 3: 'クリアのワープ', 5: '上り階段', 6: '下り階段', 100: '壁の扉' };
+export const LANAI_EXIT_KIND: Record<number, string> = {
+  3: 'クリアのワープ',
+  5: '上り階段',
+  6: '下り階段',
+  100: '壁の扉',
+};
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
@@ -182,11 +197,14 @@ export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise
   let p = m.get(content.index);
   if (!p) {
     p = LanaiMaps.load(session, content);
-    p.then((maps) => {
-      const r = ready.get(session) ?? new Map<number, LanaiMaps>();
-      ready.set(session, r);
-      r.set(content.index, maps);
-    }, () => m.delete(content.index));
+    p.then(
+      (maps) => {
+        const r = ready.get(session) ?? new Map<number, LanaiMaps>();
+        ready.set(session, r);
+        r.set(content.index, maps);
+      },
+      () => m.delete(content.index),
+    );
     m.set(content.index, p);
   }
   return p;
@@ -197,7 +215,8 @@ export function loadedLanaiMaps(session: LanaiSession, content: number): LanaiMa
   return ready.get(session)?.get(content);
 }
 
-const tableNamed =(tables: { table: LanaiTable }[], name: string): LanaiTable | undefined => tables.find((t) => t.table.name === name)?.table;
+const tableNamed = (tables: { table: LanaiTable }[], name: string): LanaiTable | undefined =>
+  tables.find((t) => t.table.name === name)?.table;
 
 export class LanaiMaps {
   readonly maps: LanaiMapInfo[] = [];
@@ -232,7 +251,8 @@ export class LanaiMaps {
       if (a !== content.archive.toUpperCase()) return;
       this.docs.clear();
       // the tables the session took out (added ones, reverted) leave the content's tables
-      for (let i = this.tables.length - 1; i >= 0; i--) if (!session.refOf(this.tables[i]!.table)) this.tables.splice(i, 1);
+      for (let i = this.tables.length - 1; i >= 0; i--)
+        if (!session.refOf(this.tables[i]!.table)) this.tables.splice(i, 1);
       this.read();
       this.changed();
     });
@@ -291,7 +311,18 @@ export class LanaiMaps {
     const mapGroup = this.mapGroup;
     this.groups.length = 0;
     for (let r = 0; mapGroup && r < mapGroup.rows; r++)
-      this.groups.push({ row: r, nameId: mapGroup.u32(r, 0), mapData: mapGroup.u32(r, 8), mapDataIndoor: mapGroup.u32(r, 0x0c), firstMap: mapGroup.u32(r, 0x14), firstPoint: mapGroup.u32(r, 0x18), eventEntry: mapGroup.u32(r, 0x1c), talkEntry: mapGroup.u32(r, 0x24), stateFirst: mapGroup.u16(r, 0x28), stateCount: mapGroup.u8(r, 0x2a) });
+      this.groups.push({
+        row: r,
+        nameId: mapGroup.u32(r, 0),
+        mapData: mapGroup.u32(r, 8),
+        mapDataIndoor: mapGroup.u32(r, 0x0c),
+        firstMap: mapGroup.u32(r, 0x14),
+        firstPoint: mapGroup.u32(r, 0x18),
+        eventEntry: mapGroup.u32(r, 0x1c),
+        talkEntry: mapGroup.u32(r, 0x24),
+        stateFirst: mapGroup.u16(r, 0x28),
+        stateCount: mapGroup.u8(r, 0x2a),
+      });
   }
 
   /** The content's tables (the EventObject tables of the groups and the tables added to the archive among them). */
@@ -317,8 +348,21 @@ export class LanaiMaps {
     if (!mapDb) throw new Error(`コンテンツ ${content.index} (${content.archive}) にマップ DB がありません`);
     const tables = await session.tablesIn(content.archive);
     // MapParts<name>: the type 11 tables of the content, by entry
-    const parts = tables.filter((t) => t.table.name.startsWith('MapParts') && t.table.name !== 'MapPartsType').map((t) => ({ entry: t.entry, table: t.table }));
-    return new LanaiMaps(session, content, archive, mapDb, tableNamed(tables, 'MapData'), tableNamed(tables, 'MapGroup'), tableNamed(tables, 'MapPartsType'), tableNamed(tables, 'MapResource'), parts, tables.map((t) => ({ entry: t.entry, table: t.table })));
+    const parts = tables
+      .filter((t) => t.table.name.startsWith('MapParts') && t.table.name !== 'MapPartsType')
+      .map((t) => ({ entry: t.entry, table: t.table }));
+    return new LanaiMaps(
+      session,
+      content,
+      archive,
+      mapDb,
+      tableNamed(tables, 'MapData'),
+      tableNamed(tables, 'MapGroup'),
+      tableNamed(tables, 'MapPartsType'),
+      tableNamed(tables, 'MapResource'),
+      parts,
+      tables.map((t) => ({ entry: t.entry, table: t.table })),
+    );
   }
 
   // ---- change notices (the map page redraws on them)
@@ -400,10 +444,11 @@ export class LanaiMaps {
 
   /** Put a map back as it is in the ROM (the sections the ROM did not have are taken out). */
   revert(info: LanaiMapInfo): void {
-    for (const h of info.sections) if (h && this.db.has(h)) {
-      if (this.db.isAdded(h)) this.db.remove(h);
-      else this.db.revert(h);
-    }
+    for (const h of info.sections)
+      if (h && this.db.has(h)) {
+        if (this.db.isAdded(h)) this.db.remove(h);
+        else this.db.revert(h);
+      }
     this.docs.delete(info.hash);
     this.changed();
   }
@@ -564,7 +609,14 @@ export class LanaiMaps {
   }
 
   tileSource(info: LanaiMapInfo, doc: MapDoc): LanaiTileSource {
-    const none: LanaiTileSource = { mapData: -1, tileset: 0, partsName: '', resource: 0, textureArchive: 0, textureEntry: 0 };
+    const none: LanaiTileSource = {
+      mapData: -1,
+      tileset: 0,
+      partsName: '',
+      resource: 0,
+      textureArchive: 0,
+      textureEntry: 0,
+    };
     const md = this.mapData;
     const row = this.mapDataRow(info, doc);
     if (!md || row < 0) return none;
@@ -593,7 +645,8 @@ export class LanaiMaps {
     const parts = this.partsTable(src.tileset);
     const r = kind + 1;
     if (!parts || r >= parts.rows || letter < 0 || letter > 7) return null;
-    const archive = parts.u32(r, letter * 8), entry = parts.u32(r, letter * 8 + 4);
+    const archive = parts.u32(r, letter * 8),
+      entry = parts.u32(r, letter * 8 + 4);
     return archive && entry ? { archive, entry } : null;
   }
 

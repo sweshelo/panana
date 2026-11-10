@@ -65,7 +65,9 @@ export const LANAI_UP_STAIRS = 5;
 export const LANAI_DOWN_STAIRS = 6;
 export const LANAI_WALL_DOOR = 100;
 /** Stairs and the default wall door (RPG3's mapObject 1 / 2 / 5). */
-const STAIRS_UP_ID = 1, STAIRS_DOWN_ID = 2, WALL_DOOR_ID = 5;
+const STAIRS_UP_ID = 1,
+  STAIRS_DOWN_ID = 2,
+  WALL_DOOR_ID = 5;
 
 /** MapObject rows (row numbers) section 5 places for a kind when EventObject +0x5A is 0: 3 → 0x3F gimk_04_heal_1, 9 → 0x72, 10 → 0x75. */
 const SECTION5_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
@@ -76,7 +78,15 @@ const QUARTER = [Math.PI, HALF, 0, -HALF];
 /** Exits: c = direction + 1 → 1: 0°, 2: −90°, 3: 180°, 4: +90° (RPG3's FUN_00225B64). */
 const exitAngle = (dir: number): number => [0, -HALF, Math.PI, HALF][dir] ?? 0;
 /** The way an exit faces (x, z): 0 north, 1 east, 2 south, 3 west (RPG3's FUN_00225C98). */
-const exitStep = (dir: number): [number, number] => ([[0, -1], [1, 0], [0, 1], [-1, 0]] as [number, number][])[dir] ?? [0, -1];
+const exitStep = (dir: number): [number, number] =>
+  (
+    [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ] as [number, number][]
+  )[dir] ?? [0, -1];
 
 /** The direction (0..3) of a facing byte; bytes that are none of the masks take 0, as RPG3's directions past 3. */
 const dirOf = (byte: number): number => Math.max(0, LANAI_ROT_CODEC.decode(byte));
@@ -84,7 +94,8 @@ const dirOf = (byte: number): number => Math.max(0, LANAI_ROT_CODEC.decode(byte)
 /** MapObject row -> the model's archive and entry (MapObject +0x00 / +0x04); null when it has none. */
 export function lanaiObjectRef(mapObject: LanaiTable | undefined, row: number): LanaiPartRef | null {
   if (!mapObject || row <= 0 || row >= mapObject.rows) return null;
-  const archive = mapObject.u32(row, 0), entry = mapObject.u32(row, 4);
+  const archive = mapObject.u32(row, 0),
+    entry = mapObject.u32(row, 4);
   return archive && entry ? { archive, entry } : null;
 }
 
@@ -132,7 +143,10 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
   const valid = (row: number): number => (lanaiObjectRef(mo, row) ? row : 0);
   /** The row of a MapObject row ID (RPG3's mapObject number), 0 when there is none. */
   const byId = (id: number): number => valid(mo?.find((ROW_ID | id) >>> 0) ?? -1);
-  const object = (row: number, angle: number): LanaiRecordLook => ({ model: row ? { type: 'object', row } : null, angle });
+  const object = (row: number, angle: number): LanaiRecordLook => ({
+    model: row ? { type: 'object', row } : null,
+    angle,
+  });
   const evRow = section === 3 || section === 4 || section === 5 ? u32(raw, 4) : 0;
   const ev = evRow && ctx.events && evRow < ctx.events.rows ? ctx.events.row(evRow) : null;
   const evModel = ev ? u16(ev, LANAI_EO_MODEL) : 0;
@@ -147,12 +161,21 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       if (kind === LANAI_CLEAR_WARP) return { model: { type: 'effect', row: LANAI_EFFECT_CLEAR_WARP }, angle: 0 };
       const dir = dirOf(raw[0x14]!);
       const stairs = kind === LANAI_UP_STAIRS ? 1 : kind === LANAI_DOWN_STAIRS ? 2 : 0;
-      const row = valid(evModel) || (stairs === 1 ? byId(STAIRS_UP_ID) : stairs === 2 ? byId(STAIRS_DOWN_ID) : kind === LANAI_WALL_DOOR ? byId(WALL_DOOR_ID) : 0);
+      const row =
+        valid(evModel) ||
+        (stairs === 1
+          ? byId(STAIRS_UP_ID)
+          : stairs === 2
+            ? byId(STAIRS_DOWN_ID)
+            : kind === LANAI_WALL_DOOR
+              ? byId(WALL_DOOR_ID)
+              : 0);
       if (!row) return null;
       if (kind === LANAI_WALL_DOOR) return object(row, exitAngle(dir));
       // stairs (FUN_00365294 of RPG3): inside ±90° from the direction and 50 towards it, outside by a table
       if (stairs) {
-        if (!ctx.indoor) return object(row, (stairs === 1 ? [HALF, 0, 3 * HALF, Math.PI] : [3 * HALF, Math.PI, HALF, 0])[dir]!);
+        if (!ctx.indoor)
+          return object(row, (stairs === 1 ? [HALF, 0, 3 * HALF, Math.PI] : [3 * HALF, Math.PI, HALF, 0])[dir]!);
         const [x, z] = exitStep(dir);
         return { ...object(row, exitAngle(dir) + (stairs === 1 ? -HALF : HALF)), offset: [x * 50, z * 50] };
       }
@@ -171,12 +194,14 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       if (kind <= 2) {
         if (!ev) return null;
         const design = lanaiCharaObject(ctx.mapChara, evModel);
-        if (lanaiCharaKind(ctx.mapChara, evModel) === LANAI_CHARA_MONSTER) return { model: design ? { type: 'monster', design } : null, angle, chara: evModel };
+        if (lanaiCharaKind(ctx.mapChara, evModel) === LANAI_CHARA_MONSTER)
+          return { model: design ? { type: 'monster', design } : null, angle, chara: evModel };
         return { ...object(valid(design), angle), chara: evModel };
       }
       // the recovery points (FUN_0021C844): an effect; only the field takes EventObject +0x5A when it has one
       if (kind === LANAI_REPAIR_POINT) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_POINT }, angle };
-      if (kind === LANAI_REPAIR_FIELD && !valid(evModel)) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_FIELD }, angle };
+      if (kind === LANAI_REPAIR_FIELD && !valid(evModel))
+        return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_FIELD }, angle };
       // EventObject +0x5A, else the kind's default (kind 3 gimk_04_heal_1; FUN_0021C844)
       const row = valid(evModel) || valid(SECTION5_DEFAULT_ROWS[kind] ?? 0);
       return row ? object(row, angle) : null;

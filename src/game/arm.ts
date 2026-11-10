@@ -17,7 +17,10 @@ export class ArmStop extends Error {}
 
 /** False for words with condition 0xF that are not BLX #imm, PLD or a barrier (data, or code of another mode). */
 const decodable = (w: number): boolean =>
-  w >>> 28 !== 0xf || (w & 0x0e000000) === 0x0a000000 || (w & 0xfd70f000) >>> 0 === 0xf550f000 || (w & 0xffffff00) >>> 0 === 0xf57ff000;
+  w >>> 28 !== 0xf ||
+  (w & 0x0e000000) === 0x0a000000 ||
+  (w & 0xfd70f000) >>> 0 === 0xf550f000 ||
+  (w & 0xffffff00) >>> 0 === 0xf57ff000;
 
 export interface ArmCall {
   depth: number;
@@ -100,21 +103,36 @@ export class ArmMachine {
   private cond(cc: number): boolean {
     const { n, z, c, v } = this;
     switch (cc) {
-      case 0: return z;
-      case 1: return !z;
-      case 2: return c;
-      case 3: return !c;
-      case 4: return n;
-      case 5: return !n;
-      case 6: return v;
-      case 7: return !v;
-      case 8: return c && !z;
-      case 9: return !c || z;
-      case 10: return n === v;
-      case 11: return n !== v;
-      case 12: return !z && n === v;
-      case 13: return z || n !== v;
-      default: return true;
+      case 0:
+        return z;
+      case 1:
+        return !z;
+      case 2:
+        return c;
+      case 3:
+        return !c;
+      case 4:
+        return n;
+      case 5:
+        return !n;
+      case 6:
+        return v;
+      case 7:
+        return !v;
+      case 8:
+        return c && !z;
+      case 9:
+        return !c || z;
+      case 10:
+        return n === v;
+      case 11:
+        return n !== v;
+      case 12:
+        return !z && n === v;
+      case 13:
+        return z || n !== v;
+      default:
+        return true;
     }
   }
   private nz(v: number): void {
@@ -147,7 +165,9 @@ export class ArmMachine {
       case 1:
         return amt < 32 ? [rm >>> amt, ((rm >>> (amt - 1)) & 1) !== 0] : [0, amt === 32 && (rm & 0x80000000) !== 0];
       case 2:
-        return amt < 32 ? [(rm >> amt) >>> 0, ((rm >> (amt - 1)) & 1) !== 0] : [rm & 0x80000000 ? 0xffffffff : 0, (rm & 0x80000000) !== 0];
+        return amt < 32
+          ? [(rm >> amt) >>> 0, ((rm >> (amt - 1)) & 1) !== 0]
+          : [rm & 0x80000000 ? 0xffffffff : 0, (rm & 0x80000000) !== 0];
       default: {
         const v = ror(rm, amt);
         return [v, (v & 0x80000000) !== 0];
@@ -245,7 +265,11 @@ export class ArmMachine {
     if (op === 2 || op === 3) {
       if (op === 3 && w & 0x10) return this.media(w, pc);
       // LDR / STR / LDRB / STRB
-      const P = (w >>> 24) & 1, U = (w >>> 23) & 1, B = (w >>> 22) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+      const P = (w >>> 24) & 1,
+        U = (w >>> 23) & 1,
+        B = (w >>> 22) & 1,
+        W = (w >>> 21) & 1,
+        L = (w >>> 20) & 1;
       const off = op === 2 ? w & 0xfff : this.shifted(w, pc, false)[0];
       const base = this.reg(rn, pc);
       const moved = (U ? base + off : base - off) >>> 0;
@@ -301,33 +325,66 @@ export class ArmMachine {
     const a = this.reg(rn, pc);
     let res: number;
     let logical = true;
-    let carry = sc, over = this.v;
+    let carry = sc,
+      over = this.v;
     const add = (x: number, y: number, cin: number): number => {
       const s = x + y + cin;
       carry = s > 0xffffffff;
       const v = s >>> 0;
-      over = ((~(x ^ y) & (x ^ v)) & 0x80000000) !== 0;
+      over = (~(x ^ y) & (x ^ v) & 0x80000000) !== 0;
       logical = false;
       return v;
     };
     const sub = (x: number, y: number, cin: number): number => add(x, ~y >>> 0, cin);
     switch (opc) {
-      case 0: res = (a & b) >>> 0; break;
-      case 1: res = (a ^ b) >>> 0; break;
-      case 2: res = sub(a, b, 1); break;
-      case 3: res = sub(b, a, 1); break;
-      case 4: res = add(a, b, 0); break;
-      case 5: res = add(a, b, this.c ? 1 : 0); break;
-      case 6: res = sub(a, b, this.c ? 1 : 0); break;
-      case 7: res = sub(b, a, this.c ? 1 : 0); break;
-      case 8: res = (a & b) >>> 0; break;
-      case 9: res = (a ^ b) >>> 0; break;
-      case 10: res = sub(a, b, 1); break;
-      case 11: res = add(a, b, 0); break;
-      case 12: res = (a | b) >>> 0; break;
-      case 13: res = b; break;
-      case 14: res = (a & ~b) >>> 0; break;
-      default: res = ~b >>> 0; break;
+      case 0:
+        res = (a & b) >>> 0;
+        break;
+      case 1:
+        res = (a ^ b) >>> 0;
+        break;
+      case 2:
+        res = sub(a, b, 1);
+        break;
+      case 3:
+        res = sub(b, a, 1);
+        break;
+      case 4:
+        res = add(a, b, 0);
+        break;
+      case 5:
+        res = add(a, b, this.c ? 1 : 0);
+        break;
+      case 6:
+        res = sub(a, b, this.c ? 1 : 0);
+        break;
+      case 7:
+        res = sub(b, a, this.c ? 1 : 0);
+        break;
+      case 8:
+        res = (a & b) >>> 0;
+        break;
+      case 9:
+        res = (a ^ b) >>> 0;
+        break;
+      case 10:
+        res = sub(a, b, 1);
+        break;
+      case 11:
+        res = add(a, b, 0);
+        break;
+      case 12:
+        res = (a | b) >>> 0;
+        break;
+      case 13:
+        res = b;
+        break;
+      case 14:
+        res = (a & ~b) >>> 0;
+        break;
+      default:
+        res = ~b >>> 0;
+        break;
     }
     if (S && rd !== 15) {
       this.nz(res);
@@ -342,8 +399,10 @@ export class ArmMachine {
 
   private multiply(w: number, pc: number): number | null {
     const r = this.r;
-    const rdHi = (w >>> 16) & 15, rdLo = (w >>> 12) & 15;
-    const rs = this.reg((w >>> 8) & 15, pc), rm = this.reg(w & 15, pc);
+    const rdHi = (w >>> 16) & 15,
+      rdLo = (w >>> 12) & 15;
+    const rs = this.reg((w >>> 8) & 15, pc),
+      rm = this.reg(w & 15, pc);
     const S = (w >>> 20) & 1;
     if ((w & 0x0f800000) === 0x00800000) {
       // UMULL / UMLAL / SMULL / SMLAL
@@ -370,8 +429,13 @@ export class ArmMachine {
 
   private extraLoadStore(w: number, pc: number): number | null {
     const r = this.r;
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, I = (w >>> 22) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
-    const rn = (w >>> 16) & 15, rd = (w >>> 12) & 15;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      I = (w >>> 22) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
+    const rn = (w >>> 16) & 15,
+      rd = (w >>> 12) & 15;
     const sh = (w >>> 5) & 3;
     const off = I ? ((w >>> 4) & 0xf0) | (w & 15) : this.reg(w & 15, pc);
     const base = this.reg(rn, pc);
@@ -397,7 +461,10 @@ export class ArmMachine {
 
   private blockTransfer(w: number, pc: number): number | null {
     const r = this.r;
-    const P = (w >>> 24) & 1, U = (w >>> 23) & 1, W = (w >>> 21) & 1, L = (w >>> 20) & 1;
+    const P = (w >>> 24) & 1,
+      U = (w >>> 23) & 1,
+      W = (w >>> 21) & 1,
+      L = (w >>> 20) & 1;
     const rn = (w >>> 16) & 15;
     const list: number[] = [];
     for (let k = 0; k < 16; k++) if (w & (1 << k)) list.push(k);
@@ -455,22 +522,34 @@ export class ArmMachine {
   /** Media instructions: the extends (UXTB / UXTH / SXTB / SXTH and the add forms), UBFX / SBFX. */
   private media(w: number, pc: number): number | null {
     const r = this.r;
-    const rd = (w >>> 12) & 15, rn = (w >>> 16) & 15;
+    const rd = (w >>> 12) & 15,
+      rn = (w >>> 16) & 15;
     if ((w & 0x0f8000f0) === 0x06800070) {
       const v = ror(this.reg(w & 15, pc), ((w >>> 10) & 3) * 8);
       let x: number;
       switch ((w >>> 20) & 7) {
-        case 2: x = (v << 24) >> 24; break; // SXTB
-        case 3: x = (v << 16) >> 16; break; // SXTH
-        case 6: x = v & 0xff; break; // UXTB
-        case 7: x = v & 0xffff; break; // UXTH
-        default: x = v; break;
+        case 2:
+          x = (v << 24) >> 24;
+          break; // SXTB
+        case 3:
+          x = (v << 16) >> 16;
+          break; // SXTH
+        case 6:
+          x = v & 0xff;
+          break; // UXTB
+        case 7:
+          x = v & 0xffff;
+          break; // UXTH
+        default:
+          x = v;
+          break;
       }
       r[rd] = (rn === 15 ? x : this.reg(rn, pc) + x) >>> 0;
       return null;
     }
     if ((w & 0x0fa00070) === 0x07a00050) {
-      const lsb = (w >>> 7) & 31, width = ((w >>> 16) & 31) + 1;
+      const lsb = (w >>> 7) & 31,
+        width = ((w >>> 16) & 31) + 1;
       const v = this.reg(w & 15, pc) >>> lsb;
       const mask = width >= 32 ? 0xffffffff : (1 << width) - 1;
       let x = v & mask;

@@ -4,12 +4,28 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { MapDb } from '../src/game/mapdb';
 import { recCellPos, sectionBytes } from '../src/game/sections';
-import { OAHU_ENCOUNTER_LEVELS, OAHU_LAYOUTS, OAHU_MAP_ARCHIVE, OAHU_MAP_FORMAT, OAHU_MAP_TABLE_ENTRY, OAHU_MAPDB_ENTRY, oahuExitKind, oahuRecEventRow, type OahuMaps } from '../src/oahu/maps';
+import {
+  OAHU_ENCOUNTER_LEVELS,
+  OAHU_LAYOUTS,
+  OAHU_MAP_ARCHIVE,
+  OAHU_MAP_FORMAT,
+  OAHU_MAP_TABLE_ENTRY,
+  OAHU_MAPDB_ENTRY,
+  oahuExitKind,
+  oahuRecEventRow,
+  type OahuMaps,
+} from '../src/oahu/maps';
 import { oahuEventEntries } from '../src/oahu/events';
 import { OahuEditState, oahuValidate } from '../src/oahu/mapedit';
 import { oahuObjectModels } from '../src/oahu/mapModels';
 import { oahuExitDefaultModel, oahuObjectLift, oahuRecordLook } from '../src/oahu/mapObjects';
-import { OAHU_TREASURE_BATTLE, oahuChestTreasureRow, oahuTreasureSlots, oahuTreasureTable, oahuWriteTreasure } from '../src/oahu/treasure';
+import {
+  OAHU_TREASURE_BATTLE,
+  oahuChestTreasureRow,
+  oahuTreasureSlots,
+  oahuTreasureTable,
+  oahuWriteTreasure,
+} from '../src/oahu/treasure';
 import { isIndoor } from '../src/game/objects';
 import { Controller } from '../src/editor/controller';
 import { tileAt } from '../src/editor/state';
@@ -61,7 +77,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
   test('records sit inside their map; exits name EventObject rows of their dungeon', async () => {
     const d10 = maps.mapByName('D10B01001')!;
     const doc = maps.doc(d10);
-    const xs = doc.tiles.map((t) => t.x), ys = doc.tiles.map((t) => t.y);
+    const xs = doc.tiles.map((t) => t.x),
+      ys = doc.tiles.map((t) => t.y);
     for (const k of [3, 4, 5, 8]) {
       for (const r of doc.recs[k] ?? []) {
         const [cx, cy] = recCellPos(r, OAHU_LAYOUTS[k]!);
@@ -83,7 +100,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
   });
 
   test('tile models: every tile of the dungeons has a model in its tileset archive', async () => {
-    let missing = 0, total = 0;
+    let missing = 0,
+      total = 0;
     const archives = new Map<string, Set<number>>();
     for (const m of maps.maps) {
       if (m.world || !m.name.startsWith('D')) continue;
@@ -134,7 +152,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(scripts.filter((e) => e.scripts.length).length).toBeGreaterThan(500);
     const withMessages = scripts.filter((e) => e.scripts.some((s) => s.cls.messages.length));
     expect(withMessages.length).toBeGreaterThan(100);
-    for (const e of withMessages.slice(0, 20)) for (const s of e.scripts) for (const id of s.cls.messages) expect(session.messages.texts.preview(id, true)).toBeTruthy();
+    for (const e of withMessages.slice(0, 20))
+      for (const s of e.scripts)
+        for (const id of s.cls.messages) expect(session.messages.texts.preview(id, true)).toBeTruthy();
   });
 
   test('an edited EventObject row is exported in its dungeon archive', async () => {
@@ -241,7 +261,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect(oahuRecEventRow(3, r.raw)).toBe(rows);
     st.undo();
     expect(table.rows).toBe(rows);
-    const changed = [0, 1, 2, 3, 4, 5, 6, 8, 9].filter((k) => !equalBytes(maps.db.get(m.sections[k]!), maps.db.original(m.sections[k]!)));
+    const changed = [0, 1, 2, 3, 4, 5, 6, 8, 9].filter(
+      (k) => !equalBytes(maps.db.get(m.sections[k]!), maps.db.original(m.sections[k]!)),
+    );
     expect(changed).toEqual([]);
     expect(maps.isChanged(m)).toBe(false);
   });
@@ -259,13 +281,22 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
       const wallDoor = maps.tileSource(m, doc).wallDoor;
       for (const k of [2, 3, 4, 5, 8]) {
         for (const r of doc.recs[k] ?? []) {
-          const look = oahuRecordLook(k, r.raw, { events, mapChara, mapObject, indoor: isIndoor(doc), map: m.hash, wallDoor });
+          const look = oahuRecordLook(k, r.raw, {
+            events,
+            mapChara,
+            mapObject,
+            indoor: isIndoor(doc),
+            map: m.hash,
+            wallDoor,
+          });
           const key = `${k}/${look?.model?.type ?? 'none'}`;
           kinds.set(key, (kinds.get(key) ?? 0) + 1);
           if (look?.model?.type === 'object') rows.add(look.model.row);
-          if (look?.model?.type === 'invisible') expect([look.model.width, look.model.depth]).toEqual([[240, 340, 540][look.model.row - 0x1e6]!, 140]);
+          if (look?.model?.type === 'invisible')
+            expect([look.model.width, look.model.depth]).toEqual([[240, 340, 540][look.model.row - 0x1e6]!, 140]);
           // section 5: the healing spring (kind 3) and the kind 9 objects use their default model
-          if (k === 5 && (u32(r.raw, 0) === 3 || u32(r.raw, 0) === 9)) expect(look?.model).toEqual({ type: 'object', row: u32(r.raw, 0) === 3 ? 0x33 : 0x67 });
+          if (k === 5 && (u32(r.raw, 0) === 3 || u32(r.raw, 0) === 9))
+            expect(look?.model).toEqual({ type: 'object', row: u32(r.raw, 0) === 3 ? 0x33 : 0x67 });
           if (k === 4) expect(look!.model).toEqual(expect.objectContaining({ type: 'object' }));
         }
       }
@@ -293,7 +324,9 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
       const ref = maps.objectModel(row)!;
       const set = await oahuObjectModels(dump, ref);
       expect(set.errors).toEqual([]);
-      expect(set.models.get(ref.entry)?.name).toBe(row === 482 ? 'npc_22' : row === 0x34 ? 'gimk_05_trebox_1' : 'gimk_05_trebox_04');
+      expect(set.models.get(ref.entry)?.name).toBe(
+        row === 482 ? 'npc_22' : row === 0x34 ? 'gimk_05_trebox_1' : 'gimk_05_trebox_04',
+      );
     }
   });
 
@@ -316,10 +349,16 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     expect([...kinds].sort()).toEqual([1, 2, 3, 4]);
     // kind 4: a battle with a monsterGroup row of a fixed formation (row 1 = たからばこぞう)
     for (let r = 0; r < t.rows; r++)
-      for (const s of oahuTreasureSlots(t, r)) if (s.kind === OAHU_TREASURE_BATTLE) expect(session.battle.group(s.value & 0xff).fixed.length).toBeGreaterThan(0);
+      for (const s of oahuTreasureSlots(t, r))
+        if (s.kind === OAHU_TREASURE_BATTLE)
+          expect(session.battle.group(s.value & 0xff).fixed.length).toBeGreaterThan(0);
     expect(session.battle.monsterName(session.battle.group(1).fixed[0]!)).toBe('たからばこぞう');
     // row 135: 100 G / 300 G / 1000 G by weights 5 / 3 / 1
-    expect(oahuTreasureSlots(t, 135)).toEqual([{ value: 100, weight: 5, kind: 2 }, { value: 300, weight: 3, kind: 2 }, { value: 1000, weight: 1, kind: 2 }]);
+    expect(oahuTreasureSlots(t, 135)).toEqual([
+      { value: 100, weight: 5, kind: 2 },
+      { value: 300, weight: 3, kind: 2 },
+      { value: 1000, weight: 1, kind: 2 },
+    ]);
     // writing the same entries back leaves the row as it is
     const before = t.row(136).slice();
     oahuWriteTreasure(t, 136, oahuTreasureSlots(t, 136));
@@ -328,7 +367,8 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
 
   test('section 6: the map groups and the cell groups are monsterGroup hashes', () => {
     const index = session.master.table('monsterGroup.bin').hashIndex();
-    let groups = 0, cells = 0;
+    let groups = 0,
+      cells = 0;
     for (const m of maps.maps) {
       if (m.world) continue;
       const doc = maps.doc(m);
@@ -360,7 +400,10 @@ describe.skipIf(!hasOahuBase || !hasOahuUpdate)('RPG3 maps', () => {
     const table = unpackEntry(out, findEntry(out, OAHU_MAP_TABLE_ENTRY)!).body;
     expect(u32(table, m.index * 0x44 + 0x30)).toBe(1);
     // the other maps keep their rows
-    const original = unpackEntry(parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)), findEntry(parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)), OAHU_MAP_TABLE_ENTRY)!).body;
+    const original = unpackEntry(
+      parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)),
+      findEntry(parseArchive(await dump.readRomfs(OAHU_MAP_ARCHIVE)), OAHU_MAP_TABLE_ENTRY)!,
+    ).body;
     table[m.index * 0x44 + 0x30] = before;
     expect(equalBytes(table, original)).toBe(true);
     const saved = maps.saved();

@@ -18,11 +18,16 @@ import { equalBytes } from '../util/bytes';
 export type DbEntries = [number, Uint8Array][];
 
 /** Rebuild the map database with the sections of the given documents (and the given entries). */
-export function buildMapDb(game: Game, docs: Iterable<MapDoc>, entries: DbEntries = []): { db: Uint8Array; changed: number } {
+export function buildMapDb(
+  game: Game,
+  docs: Iterable<MapDoc>,
+  entries: DbEntries = [],
+): { db: Uint8Array; changed: number } {
   const db = new MapDb(game.dbBytes);
   const all = [...docs];
   // New maps that were never opened are written empty (sections with their initial content).
-  for (const m of game.code.addedMaps()) if (!game.db.has(m.hash) && !all.some((d) => d.hash === m.hash)) all.push(game.doc(m));
+  for (const m of game.code.addedMaps())
+    if (!game.db.has(m.hash) && !all.some((d) => d.hash === m.hash)) all.push(game.doc(m));
   docs = all;
   let changed = 0;
   for (const [h, bytes] of entries) {
@@ -55,7 +60,11 @@ export function buildMapDb(game: Game, docs: Iterable<MapDoc>, entries: DbEntrie
 }
 
 /** The new A90C8038 archive (only the map DB entry is re-packed). */
-export function buildArchive(game: Game, docs: Iterable<MapDoc>, entries: DbEntries = []): { archive: Uint8Array; changed: number } {
+export function buildArchive(
+  game: Game,
+  docs: Iterable<MapDoc>,
+  entries: DbEntries = [],
+): { archive: Uint8Array; changed: number } {
   const { db, changed } = buildMapDb(game, docs, entries);
   const archive = rebuildArchive(game.dbArchive, new Map([[game.dbEntry.index, db]]));
   return { archive, changed };
@@ -68,7 +77,13 @@ export const MOD_PATH = `${MOD_ROOT}/${MAPDB_ARCHIVE}`;
  * RomFS files of the MOD: A90C8038 when maps (or world map entries) changed, the event archives of edited dungeons, and the
  * master archive (56562135, built on game.masterBytes) when its tables or messages changed.
  */
-export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], treasure: boolean, entries: DbEntries = []): Map<string, Uint8Array> {
+export function buildModFiles(
+  game: Game,
+  docs: MapDoc[],
+  events: EventTable[],
+  treasure: boolean,
+  entries: DbEntries = [],
+): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();
   if (docs.length || entries.length || game.code.addedMaps().some((m) => !game.db.has(m.hash)))
     out.set(MAPDB_ARCHIVE, buildArchive(game, docs, entries).archive);
@@ -82,7 +97,11 @@ export function buildModFiles(game: Game, docs: MapDoc[], events: EventTable[], 
  * Everything to install: the base MOD's RomFS files (unless rebuilt here) + the rebuilt ones, and its
  * code.ips. Keys are paths below the title folder ("romfs/A90C8038", "exefs/code.ips").
  */
-export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: CodePatch[] = []): Map<string, Uint8Array> {
+export function modPackage(
+  game: Game,
+  files: Map<string, Uint8Array>,
+  extra: CodePatch[] = [],
+): Map<string, Uint8Array> {
   return packageOn(game.baseMod, files, codeIps(game, extra));
 }
 
@@ -94,7 +113,12 @@ export function modPackage(game: Game, files: Map<string, Uint8Array>, extra: Co
 export function codeIps(game: Game, extra: CodePatch[] = []): Uint8Array | null {
   let ips = game.baseMod?.ips ?? null;
   const added = game.code.addedMaps();
-  if (added.length || readExtension(game.dump.code)) ips = appendIps(ips, buildMapPatch(game.dump.code, added.map(addedMap), game.code.dungeons).records, game.dump.code);
+  if (added.length || readExtension(game.dump.code))
+    ips = appendIps(
+      ips,
+      buildMapPatch(game.dump.code, added.map(addedMap), game.code.dungeons).records,
+      game.dump.code,
+    );
   // code patches (the event page); ones with errors are left out
   const records = patchRecords(buildPatches(game.dump.code, exportedPatches(game, extra)).values());
   if (records.length) ips = appendIps(ips, records, game.dump.code);
@@ -102,7 +126,10 @@ export function codeIps(game: Game, extra: CodePatch[] = []): Uint8Array | null 
 }
 
 /** The code patches written to code.ips: the enabled ones of the patch list, then `extra`. */
-export const exportedPatches = (game: Game, extra: CodePatch[] = []): CodePatch[] => [...game.codePatches.filter((p) => p.enabled), ...extra];
+export const exportedPatches = (game: Game, extra: CodePatch[] = []): CodePatch[] => [
+  ...game.codePatches.filter((p) => p.enabled),
+  ...extra,
+];
 
 const addedMap = (m: MapInfo): AddedMap => ({
   hash: m.hash,

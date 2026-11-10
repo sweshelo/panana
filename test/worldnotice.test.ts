@@ -7,7 +7,20 @@ import { disassemble } from '../src/game/disasm';
 import { Game } from '../src/game/game';
 import { applyRecords, buildPatches, patchRecords, type BuiltPatch } from '../src/game/patch';
 import { entranceRowUsers, newEntranceRow, setRowCondition, worldEventPlaces } from '../src/game/worldconditions';
-import { KIND_ENTRANCE, NOTICE_DUNGEON, NOTICE_STATE, NOTICE_PATCH_ID, NOTICE_TEMPLATE, noticePatch, noticePatchSource, notices, repairNotices, setNoticeMessage, setNoticeSound, type Notice } from '../src/game/worldnotice';
+import {
+  KIND_ENTRANCE,
+  NOTICE_DUNGEON,
+  NOTICE_STATE,
+  NOTICE_PATCH_ID,
+  NOTICE_TEMPLATE,
+  noticePatch,
+  noticePatchSource,
+  notices,
+  repairNotices,
+  setNoticeMessage,
+  setNoticeSound,
+  type Notice,
+} from '../src/game/worldnotice';
 import { ENT, ENTRANCE_SIZE, freeEntranceId, newEntrance, parseEntrances, setEntranceU32 } from '../src/game/worldmap';
 import { openImage } from '../src/rom/dump';
 import { readConditionTypes } from '../src/game/conditions';
@@ -54,7 +67,16 @@ describe('entrance conditions', () => {
     const id = freeEntranceId([t], () => seq.shift()!);
     expect(id).toBe(9); // 5 is taken, 0 is never an ID
     const r = newEntrance(t, id, 120, 299);
-    expect([ENT.part(r), ENT.id(r), ENT.destMap(r), ENT.event(r), ENT.point(r), ENT.model(r), ENT.x(r), ENT.y(r)]).toEqual([77, 9, 0xd71400a3, 0, 0, 0xf0, 120, 299]);
+    expect([
+      ENT.part(r),
+      ENT.id(r),
+      ENT.destMap(r),
+      ENT.event(r),
+      ENT.point(r),
+      ENT.model(r),
+      ENT.x(r),
+      ENT.y(r),
+    ]).toEqual([77, 9, 0xd71400a3, 0, 0, 0xf0, 120, 299]);
     expect(ENT.part(newEntrance(undefined, 1, 0, 0))).toBe(76);
   });
 
@@ -71,13 +93,47 @@ describe('entrance conditions', () => {
 // a blank code.bin: the patch only needs the cave and the hook's address
 const BLANK = new Uint8Array(0x420000);
 const F = {
-  w01: 0x17e08c, alloc: 0x33d690, base: 0x31b170, state: 0x31bff4, cond: 0x30b8a4, narrate: 0x30cc48, setState: 0x3048f8,
-  vehicle: 0x303c70, leader: 0x319a6c, toEuler: 0x3063bc, warp: 0x308d44, scene: 0x3014f0, switch: 0x308bac, move: 0x30150c, turn: 0x331ca8,
-  hide: 0x31c580, sound: 0x317524, fadeOut: 0x300dbc, fadeIn: 0x31745c,
+  w01: 0x17e08c,
+  alloc: 0x33d690,
+  base: 0x31b170,
+  state: 0x31bff4,
+  cond: 0x30b8a4,
+  narrate: 0x30cc48,
+  setState: 0x3048f8,
+  vehicle: 0x303c70,
+  leader: 0x319a6c,
+  toEuler: 0x3063bc,
+  warp: 0x308d44,
+  scene: 0x3014f0,
+  switch: 0x308bac,
+  move: 0x30150c,
+  turn: 0x331ca8,
+  hide: 0x31c580,
+  sound: 0x317524,
+  fadeOut: 0x300dbc,
+  fadeIn: 0x31745c,
 };
 /** The other functions of the notice (stubbed: they only matter by their order). */
-const OTHERS = [0x31ba8c, 0x31c4bc, 0x301500, 0x31b67c, 0x3174e8, 0x3174c8, 0x3086e4, 0x31747c, 0x300854, 0x3007c0,
-  F.hide, F.toEuler, F.sound, F.fadeOut, F.fadeIn, F.warp, F.scene, F.switch];
+const OTHERS = [
+  0x31ba8c,
+  0x31c4bc,
+  0x301500,
+  0x31b67c,
+  0x3174e8,
+  0x3174c8,
+  0x3086e4,
+  0x31747c,
+  0x300854,
+  0x3007c0,
+  F.hide,
+  F.toEuler,
+  F.sound,
+  F.fadeOut,
+  F.fadeIn,
+  F.warp,
+  F.scene,
+  F.switch,
+];
 const SAVE = 0x6000000;
 const PLACE = [0x44fa0000, 0xc2c80000, 0x45610000]; // where the party's leader stands, as float bits
 const ANGLE = 0x3fc90fdb; // π/2
@@ -100,9 +156,20 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
   }
   const calls = m.calls.slice();
   const vars = (VARS.get(m) ?? []).splice(0);
-  const names = new Map([[F.fadeOut, 'out'], [F.warp, 'warp'], [F.hide, 'hide'], [F.fadeIn, 'in'], [F.sound, 'sound'], [F.narrate, 'message'], [F.setState, 'done'], [F.move, 'place']]);
+  const names = new Map([
+    [F.fadeOut, 'out'],
+    [F.warp, 'warp'],
+    [F.hide, 'hide'],
+    [F.fadeIn, 'in'],
+    [F.sound, 'sound'],
+    [F.narrate, 'message'],
+    [F.setState, 'done'],
+    [F.move, 'place'],
+  ]);
   return {
-    action, made, hook,
+    action,
+    made,
+    hook,
     first: hook.filter((c) => c.target === F.w01).map((c) => c.args.slice(0, 2)),
     order: calls.filter((c) => names.has(c.target)).map((c) => names.get(c.target)!),
     warps: calls.filter((c) => c.target === F.warp).map((c) => [c.args[0]!, c.args[1]! >>> 0, c.args[2]! >>> 0]),
@@ -116,22 +183,42 @@ function load(m: ArmMachine, built: BuiltPatch, o: { game?: number; vehicle?: bo
   };
 }
 
-function machine(code: Uint8Array, o: { game?: number; state: (row: number) => number; holds: (row: number, type: number, value: number) => boolean; vehicle?: boolean; noLeader?: boolean; quaternion?: boolean }) {
+function machine(
+  code: Uint8Array,
+  o: {
+    game?: number;
+    state: (row: number) => number;
+    holds: (row: number, type: number, value: number) => boolean;
+    vehicle?: boolean;
+    noLeader?: boolean;
+    quaternion?: boolean;
+  },
+) {
   const stubs = new Map<number, (m: ArmMachine) => number>([
     ...OTHERS.map((a) => [a, () => 0] as [number, (m: ArmMachine) => number]),
     [F.vehicle, () => (o.vehicle ? 0x7000000 : 0)],
-    [F.move, (m) => (VARS.get(m)!.push([F.move, m.r[1]!, m.r[2]!, m.r[3]!, ...[0, 4, 8].map((i) => m.read(m.r[0]! + i, 4) >>> 0)]), 0)],
+    [
+      F.move,
+      (m) => (
+        VARS.get(m)!.push([F.move, m.r[1]!, m.r[2]!, m.r[3]!, ...[0, 4, 8].map((i) => m.read(m.r[0]! + i, 4) >>> 0)]),
+        0
+      ),
+    ],
     [F.turn, (m) => (VARS.get(m)!.push([F.turn, m.r[0]!, ...[0, 4, 8].map((i) => m.read(m.r[1]! + i, 4) >>> 0)]), 0)],
-    [F.leader, (m) => {
-      if (o.noLeader) return 0;
-      // the party's leader: its transform T at +0x10, position T+0x14, angle T+0x30, T+0x10 bit 3 = quaternion
-      const obj = m.alloc(0x20), t = m.alloc(0x60);
-      m.write(obj + 0x10, t, 4);
-      m.write(t + 0x10, o.quaternion ? 8 : 0, 4);
-      PLACE.forEach((v, i) => m.write(t + 0x14 + i * 4, v, 4));
-      m.write(t + 0x30, ANGLE, 4);
-      return obj;
-    }],
+    [
+      F.leader,
+      (m) => {
+        if (o.noLeader) return 0;
+        // the party's leader: its transform T at +0x10, position T+0x14, angle T+0x30, T+0x10 bit 3 = quaternion
+        const obj = m.alloc(0x20),
+          t = m.alloc(0x60);
+        m.write(obj + 0x10, t, 4);
+        m.write(t + 0x10, o.quaternion ? 8 : 0, 4);
+        PLACE.forEach((v, i) => m.write(t + 0x14 + i * 4, v, 4));
+        m.write(t + 0x30, ANGLE, 4);
+        return obj;
+      },
+    ],
     [F.w01, () => o.game ?? 0],
     [F.alloc, (m) => m.alloc(0x10)],
     [F.base, (m) => m.r[0]!],
@@ -155,7 +242,9 @@ describe('notice patch (blank code.bin)', () => {
   let built: BuiltPatch;
   let code: Uint8Array;
   beforeAll(() => {
-    built = buildPatches(BLANK, [{ id: NOTICE_PATCH_ID, title: '', source: noticePatchSource(list), enabled: true }]).get(NOTICE_PATCH_ID)!;
+    built = buildPatches(BLANK, [
+      { id: NOTICE_PATCH_ID, title: '', source: noticePatchSource(list), enabled: true },
+    ]).get(NOTICE_PATCH_ID)!;
     code = applyRecords(BLANK, patchRecords([built]));
   });
 
@@ -240,10 +329,17 @@ describe('notices of the W01 table', () => {
     rows[29]![0x4b] = 0x18;
     w32(rows[29]!, 0, 2);
     setNoticeMessage(rows[29]!, 0x2c05);
-    const events = { dungeon: NOTICE_DUNGEON, rows: rows.length, capacity: 39, table: { row: (i: number) => rows[i]! } } as unknown as Parameters<typeof notices>[0];
+    const events = {
+      dungeon: NOTICE_DUNGEON,
+      rows: rows.length,
+      capacity: 39,
+      table: { row: (i: number) => rows[i]! },
+    } as unknown as Parameters<typeof notices>[0];
     const ent = setEntranceU32(new Uint8Array(ENTRANCE_SIZE), 0x10, 29);
     w32(ent, 0x04, 0xabcd);
-    expect(notices(events, [ent])).toEqual([{ row: 29, message: 0x2c05, sound: 0, show: [0x18, 2], hide: [0, 0], entrance: 0xabcd }]);
+    expect(notices(events, [ent])).toEqual([
+      { row: 29, message: 0x2c05, sound: 0, show: [0x18, 2], hide: [0, 0], entrance: 0xabcd },
+    ]);
     expect(notices(events, [])).toEqual([]);
     expect(noticePatch(events, [ent])?.source).toContain('.word 0x2C05');
     expect(notices({ ...events!, dungeon: 5 } as typeof events, [ent])).toEqual([]);
@@ -256,9 +352,17 @@ describe('the sound and the state slot', () => {
   const table = (rows: Uint8Array[], original: number) => {
     const slot = (i: number) => (u16(rows[i]!, 0x44) === 0xffff ? i : u16(rows[i]!, 0x44));
     return {
-      dungeon: NOTICE_DUNGEON, rows: rows.length, capacity: 39, table: { row: (i: number) => rows[i]! }, slot,
+      dungeon: NOTICE_DUNGEON,
+      rows: rows.length,
+      capacity: 39,
+      table: { row: (i: number) => rows[i]! },
+      slot,
       originalRow: (i: number) => (i < original ? rows[i] : undefined),
-      freeSlot: () => { const used = new Set(rows.map((_, i) => slot(i))); for (let s = 0; s < 39; s++) if (!used.has(s)) return s; return -1; },
+      freeSlot: () => {
+        const used = new Set(rows.map((_, i) => slot(i)));
+        for (let s = 0; s < 39; s++) if (!used.has(s)) return s;
+        return -1;
+      },
     } as unknown as Parameters<typeof repairNotices>[0];
   };
 
@@ -271,7 +375,11 @@ describe('the sound and the state slot', () => {
   });
 
   test('rows whose slot the old sound overwrote get a free slot and the sound at +0x3C', () => {
-    const rows = Array.from({ length: 30 }, (_, i) => { const r = new Uint8Array(0x50); w16(r, 0x44, i); return r; });
+    const rows = Array.from({ length: 30 }, (_, i) => {
+      const r = new Uint8Array(0x50);
+      w16(r, 0x44, i);
+      return r;
+    });
     setNoticeMessage(rows[29]!, 0x2c00);
     w32(rows[29]!, 0x44, 0x2f); // the old setNoticeSound: slot 47 is past the table
     rows.push(new Uint8Array(0x50));
@@ -300,8 +408,12 @@ describe.skipIf(!hasCia)('notice patch on code.bin', () => {
     const before = disassemble(u32(code, 0x19aba0 - 0x100000), 0x19aba0);
     expect(before.target).toBe(F.w01);
     expect(before.call).toBeFalsy();
-    const list: Notice[] = [{ row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0], entrance: 0xd3e36ef0 }];
-    const built = buildPatches(code, [{ id: NOTICE_PATCH_ID, title: '', source: noticePatchSource(list), enabled: true }]).get(NOTICE_PATCH_ID)!;
+    const list: Notice[] = [
+      { row: 29, message: 0x2c00, sound: 0x2f, show: [0x18, 3], hide: [0, 0], entrance: 0xd3e36ef0 },
+    ];
+    const built = buildPatches(code, [
+      { id: NOTICE_PATCH_ID, title: '', source: noticePatchSource(list), enabled: true },
+    ]).get(NOTICE_PATCH_ID)!;
     expect(built.errors).toEqual([]);
     const patched = applyRecords(code, patchRecords([built]));
     const m = machine(patched, { state: () => 0, holds: () => true });

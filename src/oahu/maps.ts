@@ -31,7 +31,10 @@ export const OAHU_LAYOUTS: Record<number, RecordLayout> = {
 };
 
 /** Tiles are 20 bytes: RPG2's fields with 8 more bytes at +0x08 (§3.1). */
-export const OAHU_MAP_FORMAT: MapFormat = { tile: { size: 20, rot: 0x10, letter: 0x11, pad: 0x12 }, layouts: OAHU_LAYOUTS };
+export const OAHU_MAP_FORMAT: MapFormat = {
+  tile: { size: 20, rot: 0x10, letter: 0x11, pad: 0x12 },
+  layouts: OAHU_LAYOUTS,
+};
 
 /** Sections whose records refer to an EventObject row, and where (§3). */
 export const OAHU_EVENT_SECTIONS = [3, 4, 5, 8] as const;
@@ -43,7 +46,8 @@ export function oahuRecEventRow(section: number, raw: Uint8Array): number {
 /** Section 3's kinds (+0x15; §3.4). */
 export const OAHU_EXIT_KIND: Record<number, string> = { 4: '上り階段', 5: '下り階段', 0x64: '壁の扉' };
 export const oahuExitKind = (raw: Uint8Array): number => u8(raw, 0x15);
-export const oahuExitLabel = (k: number): string => OAHU_EXIT_KIND[k] ?? (k >= 0x14 && k <= 0x42 ? `建物 ${k}` : `種類 ${k}`);
+export const oahuExitLabel = (k: number): string =>
+  OAHU_EXIT_KIND[k] ?? (k >= 0x14 && k <= 0x42 ? `建物 ${k}` : `種類 ${k}`);
 
 /** Section 5's kinds (+0x00; §3.6). */
 export const oahuCharaKind = (raw: Uint8Array): number => u32(raw, 0);
@@ -273,7 +277,10 @@ export class OahuMaps {
 
   /** Whether a map's sections differ from the ROM's. */
   isChanged(info: OahuMapInfo): boolean {
-    return info.encounterLevel !== this.originalEncounterLevel(info) || info.sections.some((h) => h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)));
+    return (
+      info.encounterLevel !== this.originalEncounterLevel(info) ||
+      info.sections.some((h) => h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)))
+    );
   }
 
   /** Put a map back as it is in the ROM. */
@@ -464,15 +471,20 @@ export class OahuMaps {
   saved(): OahuMapSaved {
     const sections: [number, Uint8Array][] = [];
     for (const info of this.maps)
-      for (const h of info.sections) if (h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h))) sections.push([h, this.db.get(h).slice()]);
+      for (const h of info.sections)
+        if (h && this.db.has(h) && !equalBytes(this.db.get(h), this.db.original(h)))
+          sections.push([h, this.db.get(h).slice()]);
     const events: SavedEvent[] = [];
     for (const [name, t] of this.events) {
       const o = new GsTable(t.original);
-      for (let r = 0; r < o.rows; r++) if (!equalBytes(o.row(r), t.table.row(r))) events.push([name, r, o.row(r).slice(), t.table.row(r).slice()]);
+      for (let r = 0; r < o.rows; r++)
+        if (!equalBytes(o.row(r), t.table.row(r))) events.push([name, r, o.row(r).slice(), t.table.row(r).slice()]);
       // added rows: no bytes before
       for (let r = o.rows; r < t.table.rows; r++) events.push([name, r, new Uint8Array(0), t.table.row(r).slice()]);
     }
-    const encounter: [number, number][] = this.maps.filter((m) => m.encounterLevel !== this.originalEncounterLevel(m)).map((m) => [m.index, m.encounterLevel]);
+    const encounter: [number, number][] = this.maps
+      .filter((m) => m.encounterLevel !== this.originalEncounterLevel(m))
+      .map((m) => [m.index, m.encounterLevel]);
     return { sections, events, ...(encounter.length ? { encounter } : {}) };
   }
 
@@ -511,7 +523,9 @@ export class OahuMaps {
     if (!equalBytes(dbBytes, unpackEntry(this.archive, dbEntry).body)) replaced.set(dbEntry.index, dbBytes);
     if (!equalBytes(this.table, this.tableOriginal)) replaced.set(tableEntry.index, this.table.slice());
     if (replaced.size) out.set(OAHU_MAP_ARCHIVE, rebuildArchive(this.archive, replaced));
-    for (const [name, t] of this.events) if (!equalBytes(t.table.data, t.original)) out.set(name, rebuildArchive(t.archive, new Map([[t.entryIndex, t.table.data]])));
+    for (const [name, t] of this.events)
+      if (!equalBytes(t.table.data, t.original))
+        out.set(name, rebuildArchive(t.archive, new Map([[t.entryIndex, t.table.data]])));
     return out;
   }
 }

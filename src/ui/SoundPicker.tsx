@@ -13,7 +13,17 @@ type KindFilter = SoundKind | '';
 const BGM_SECONDS = 300;
 
 /** ▶ plays the sound of a soundData row (■ stops it); the reason shows in the tooltip when it cannot play. */
-export function PlayButton({ game, sounds, row, className = '' }: { game: SoundSource; sounds: SoundNames; row: number; className?: string }): ReactNode {
+export function PlayButton({
+  game,
+  sounds,
+  row,
+  className = '',
+}: {
+  game: SoundSource;
+  sounds: SoundNames;
+  row: number;
+  className?: string;
+}): ReactNode {
   const st = usePlayer();
   const index = sounds.index(row);
   if (index === null) return null;
@@ -33,7 +43,11 @@ export function PlayButton({ game, sounds, row, className = '' }: { game: SoundS
         // Sound effects are rendered again each time (their sequences may be random); the BGMs and MEs are kept for a
         // while, and sequenced ones (the first game's) play to their loop and loop like the streams.
         const se = sounds.kind(row) === 'se';
-        void soundPlayer.toggle(key, async () => (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se), !se);
+        void soundPlayer.toggle(
+          key,
+          async () => (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se),
+          !se,
+        );
       }}
     >
       {on ? (st.loading ? '…' : '■') : '▶'}
@@ -46,7 +60,18 @@ export function PlayButton({ game, sounds, row, className = '' }: { game: SoundS
  * `usage` gives a short note per row (e.g. the maps that use it). With `field` (RPG2's BGM fields), `current` and
  * the picked value are the field's values, and only the rows it can hold are shown.
  */
-export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, field, usage, title = '音を選ぶ', onPick, onClose }: {
+export function SoundPicker({
+  game,
+  sounds,
+  current,
+  kind = '',
+  max = Infinity,
+  field,
+  usage,
+  title = '音を選ぶ',
+  onPick,
+  onClose,
+}: {
   game: SoundSource;
   sounds: SoundNames;
   current: number;
@@ -67,7 +92,9 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
   const [tab, setTab] = useState<'own' | 'port'>('own');
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
-  useEffect(() => { grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' }); }, [filter]);
+  useEffect(() => {
+    grid.current?.querySelector('.current')?.scrollIntoView({ block: 'center' });
+  }, [filter]);
   // The preview stops with the dialog.
   useEffect(() => () => soundPlayer.stop(), []);
   const q = query.trim().toUpperCase();
@@ -100,7 +127,11 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
         {r ? <PlayButton game={game} sounds={sounds} row={r} /> : <span className="play-button placeholder">—</span>}
         <span className="sound-cell-text">
           <span className="mono sound-name">{r ? sounds.name(r) || `サウンド ${r}` : '(なし)'}</span>
-          <span className="muted small">{r ? `#${r}${v !== null && v !== r ? ` (欄の値 0x${v.toString(16).toUpperCase()})` : ''}・${SOUND_KIND[sounds.kind(r)]}` : '音を鳴らさない'}</span>
+          <span className="muted small">
+            {r
+              ? `#${r}${v !== null && v !== r ? ` (欄の値 0x${v.toString(16).toUpperCase()})` : ''}・${SOUND_KIND[sounds.kind(r)]}`
+              : '音を鳴らさない'}
+          </span>
           {usage?.(r) && <span className="muted small">{usage(r)}</span>}
         </span>
       </div>
@@ -110,41 +141,71 @@ export function SoundPicker({ game, sounds, current, kind = '', max = Infinity, 
     <Dialog title={title} onClose={onClose}>
       {portable && (
         <div className="seg">
-          <button type="button" className={tab === 'own' ? 'active' : ''} onClick={() => setTab('own')}>この作品の音</button>
-          <button type="button" className={tab === 'port' ? 'active' : ''} onClick={() => setTab('port')}>ほかの作品から移植</button>
+          <button type="button" className={tab === 'own' ? 'active' : ''} onClick={() => setTab('own')}>
+            この作品の音
+          </button>
+          <button type="button" className={tab === 'port' ? 'active' : ''} onClick={() => setTab('port')}>
+            ほかの作品から移植
+          </button>
         </div>
       )}
       <div className="row">
-        <input type="search" placeholder="名前 (BGM_CAVE など) か行番号で絞り込み" className="picker-search" autoFocus value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input
+          type="search"
+          placeholder="名前 (BGM_CAVE など) か行番号で絞り込み"
+          className="picker-search"
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         {tab === 'own' && (
           <select value={filter} onChange={(e) => setFilter(e.target.value as KindFilter)}>
             <option value="">すべて</option>
-            {Object.entries(SOUND_KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {Object.entries(SOUND_KIND).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
           </select>
         )}
       </div>
-      {!sounds.named && <p className="muted small">sound/sound.bcsar が読めなかったので、音の名前はわかりません (行番号だけ)。</p>}
+      {!sounds.named && (
+        <p className="muted small">sound/sound.bcsar が読めなかったので、音の名前はわかりません (行番号だけ)。</p>
+      )}
       {player.error && <p className="error small">{`再生できません: ${player.error.message}`}</p>}
       {tab === 'port' && portable ? (
         <div className="picker-list">
-          <BgmPortTab opened={ws.opened} session={kahara} query={query} onPicked={(r) => {
-            const v = field.value(r);
-            if (v !== null) onPick(v);
-          }} />
+          <BgmPortTab
+            opened={ws.opened}
+            session={kahara}
+            query={query}
+            onPicked={(r) => {
+              const v = field.value(r);
+              if (v !== null) onPick(v);
+            }}
+          />
         </div>
-      ) : <div className="picker-list">
-        <div className="sound-grid" ref={grid}>
-          {!q && cell(0)}
-          {rows.map(cell)}
-          {!rows.length && <div className="muted">見つかりません</div>}
+      ) : (
+        <div className="picker-list">
+          <div className="sound-grid" ref={grid}>
+            {!q && cell(0)}
+            {rows.map(cell)}
+            {!rows.length && <div className="muted">見つかりません</div>}
+          </div>
         </div>
-      </div>}
+      )}
     </Dialog>
   );
 }
 
 /** A button naming the sound (clicking it opens the picker), with a play button. */
-export function SoundButton({ game, sounds, value, onChange, ...opts }: {
+export function SoundButton({
+  game,
+  sounds,
+  value,
+  onChange,
+  ...opts
+}: {
   game: SoundSource;
   sounds: SoundNames;
   /** The field's value (a soundData row, or as `field` reads it). */
@@ -166,8 +227,17 @@ export function SoundButton({ game, sounds, value, onChange, ...opts }: {
         <span className="muted"> ▾</span>
       </button>
       {open && (
-        <SoundPicker game={game} sounds={sounds} current={value} {...opts} onClose={() => setOpen(false)}
-          onPick={(r) => { setOpen(false); if (r !== value) onChange(r); }} />
+        <SoundPicker
+          game={game}
+          sounds={sounds}
+          current={value}
+          {...opts}
+          onClose={() => setOpen(false)}
+          onPick={(r) => {
+            setOpen(false);
+            if (r !== value) onChange(r);
+          }}
+        />
       )}
     </span>
   );

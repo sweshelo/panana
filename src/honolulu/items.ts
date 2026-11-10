@@ -17,7 +17,11 @@ export const EQUIP_CATEGORY = 3;
 export const CLOTH_CATEGORY = 4;
 
 /** The texts of an item: the field and its label. */
-export const HONOLULU_ITEM_TEXTS = [['name', '名前'], ['desc', '説明'], ['shopDesc', '店員の説明']] as const;
+export const HONOLULU_ITEM_TEXTS = [
+  ['name', '名前'],
+  ['desc', '説明'],
+  ['shopDesc', '店員の説明'],
+] as const;
 export type HonoluluItemText = (typeof HONOLULU_ITEM_TEXTS)[number][0];
 
 export interface HonoluluItem {
@@ -39,7 +43,13 @@ export function honoluluItems(session: HonoluluSession): HonoluluItem[] {
   const out: HonoluluItem[] = [];
   for (let row = 0; row < t.rows; row++) {
     if (!t.get(row, 'used')) continue;
-    out.push({ row, name: texts.preview(t.get(row, 'name'), true) ?? '', category: t.get(row, 'category'), price: t.get(row, 'price'), sell: t.get(row, 'sell') });
+    out.push({
+      row,
+      name: texts.preview(t.get(row, 'name'), true) ?? '',
+      category: t.get(row, 'category'),
+      price: t.get(row, 'price'),
+      sell: t.get(row, 'sell'),
+    });
   }
   return out;
 }
@@ -55,7 +65,10 @@ export function itemSubRow(session: HonoluluSession, row: number): { rows: Table
 }
 
 /** The message IDs of an item's texts, and the fields that share one (clothes: the name is the description). */
-export function itemTextIds(session: HonoluluSession, row: number): { key: HonoluluItemText; label: string; id: number; same?: string }[] {
+export function itemTextIds(
+  session: HonoluluSession,
+  row: number,
+): { key: HonoluluItemText; label: string; id: number; same?: string }[] {
   const t = honoluluItemRows(session);
   const seen = new Map<number, string>();
   return HONOLULU_ITEM_TEXTS.map(([key, label]) => {
@@ -101,7 +114,7 @@ export function itemStages(session: HonoluluSession): Map<number, ItemStage[]> {
     const first = groups.get(g, 'first');
     const last = Math.min(groups.get(g, 'last'), stock.rows - 1);
     const dungeon = groups.get(g, 'dungeon');
-    const name = dungeon ? context.rowName?.('dungeonData.bin', dungeon) ?? `ダンジョン ${dungeon}` : '最初';
+    const name = dungeon ? (context.rowName?.('dungeonData.bin', dungeon) ?? `ダンジョン ${dungeon}`) : '最初';
     for (let r = first; r <= last; r++) {
       const item = stock.get(r, 'item');
       const list = out.get(item) ?? out.set(item, []).get(item)!;
@@ -128,7 +141,7 @@ export class HonoluluClothTextures {
       this.archive ??= this.dump.readRomfs(HONOLULU_CLOTH_ARCHIVE).then(parseArchive);
       p = this.archive.then((arc) => {
         const e = findEntry(arc, hash);
-        return e ? parseCgfx(unpackEntry(arc, e).body).textures[0] ?? null : null;
+        return e ? (parseCgfx(unpackEntry(arc, e).body).textures[0] ?? null) : null;
       });
       this.cache.set(hash, p);
     }

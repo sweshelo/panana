@@ -14,7 +14,8 @@ export interface NcchInfo {
 export async function parseNcch(src: ByteSource): Promise<NcchInfo> {
   const h = await src.read(0, 0x200);
   if (ascii(h, 0x100, 4) !== 'NCCH') {
-    if (ascii(h, 0x100, 4) === 'NCSD') throw new Error('.3ds (NCSD) は、パーティション 0 を取り出すか CIA を使ってください');
+    if (ascii(h, 0x100, 4) === 'NCSD')
+      throw new Error('.3ds (NCSD) は、パーティション 0 を取り出すか CIA を使ってください');
     throw new Error('NCCH ではありません');
   }
   const flags7 = h[0x18f]!;

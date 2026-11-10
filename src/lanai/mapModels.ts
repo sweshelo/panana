@@ -8,7 +8,11 @@ import type { LanaiPartRef, LanaiTileSource } from './maps';
 import type { LanaiSession } from './session';
 
 /** The models `refs` name (keyed by the entry's hash) with the textures of the tile source. */
-export async function lanaiTileModels(session: LanaiSession, src: LanaiTileSource, refs: Iterable<LanaiPartRef>): Promise<TilesetModels> {
+export async function lanaiTileModels(
+  session: LanaiSession,
+  src: LanaiTileSource,
+  refs: Iterable<LanaiPartRef>,
+): Promise<TilesetModels> {
   const set: TilesetModels = { models: new Map(), paths: new Map(), textures: new Map(), errors: [] };
   if (src.textureArchive && src.textureEntry) {
     try {
@@ -47,5 +51,9 @@ export async function lanaiTileModels(session: LanaiSession, src: LanaiTileSourc
 
 /** The model of a map object (a GSC or BCH entry of a root archive; MapObject +0x00 / +0x04), keyed by the entry's hash. */
 export function lanaiObjectModels(session: LanaiSession, ref: LanaiPartRef): Promise<TilesetModels> {
-  return lanaiTileModels(session, { mapData: -1, tileset: 0, partsName: '', resource: 0, textureArchive: 0, textureEntry: 0 }, [ref]);
+  return lanaiTileModels(
+    session,
+    { mapData: -1, tileset: 0, partsName: '', resource: 0, textureArchive: 0, textureEntry: 0 },
+    [ref],
+  );
 }

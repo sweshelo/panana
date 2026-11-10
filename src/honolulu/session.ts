@@ -91,7 +91,12 @@ export class HonoluluSession {
   /** The soundData rows with the names of sound/sound.bcsar (the BGM page). */
   sounds(): Promise<SoundNames> {
     const t = this.master.rows('soundData.bin');
-    return (this.soundNames ??= loadSoundNames(this.dump, 'honolulu/sound/names/v1', Array.from({ length: t.rows }, (_, r) => t.get(r, 'item')), Array.from({ length: t.rows }, (_, r) => t.get(r, 'volume'))));
+    return (this.soundNames ??= loadSoundNames(
+      this.dump,
+      'honolulu/sound/names/v1',
+      Array.from({ length: t.rows }, (_, r) => t.get(r, 'item')),
+      Array.from({ length: t.rows }, (_, r) => t.get(r, 'volume')),
+    ));
   }
 
   private renderer: Promise<SoundRenderer> | undefined;
@@ -118,7 +123,14 @@ export class HonoluluSession {
   }
 
   private saved(): Saved {
-    return { messages: this.messages.texts.saved(), rows: this.master.saved(), counts: this.master.savedRowCounts(), shops: this.shop.saved(), design: this.design.saved(), pier: this.worldmap.pier.saved() };
+    return {
+      messages: this.messages.texts.saved(),
+      rows: this.master.saved(),
+      counts: this.master.savedRowCounts(),
+      shops: this.shop.saved(),
+      design: this.design.saved(),
+      pier: this.worldmap.pier.saved(),
+    };
   }
 
   private restore(saved: Saved): void {
@@ -153,7 +165,10 @@ export class HonoluluSession {
   /** RomFS files of the MOD (root name -> bytes): the archives with edited tables or messages. */
   modFiles(): Map<string, Uint8Array> {
     const tables = this.tables();
-    return this.messages.changedArchives(new Map(tables.map((t) => [t.name, t.changedEntries()])), new Map(tables.map((t) => [t.name, t.archive])));
+    return this.messages.changedArchives(
+      new Map(tables.map((t) => [t.name, t.changedEntries()])),
+      new Map(tables.map((t) => [t.name, t.archive])),
+    );
   }
 
   /** The files of the MOD below the title folder: romfs/… (with the base MOD's files) and the base MOD's exefs/code.ips. */

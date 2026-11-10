@@ -28,14 +28,67 @@ export interface LanaiItem {
 
 /** ItemDataCore +0x32 (naauao lanai/items.md §6). */
 export const LANAI_ITEM_KINDS: Record<number, string> = {
-  0x01: 'まとめ売り', 0x02: 'ふくぶくろ', 0x11: '回復', 0x12: 'えんまく', 0x13: 'テレポーター', 0x14: 'ヒロビーロ', 0x15: 'ランプ', 0x16: 'かぎ', 0x17: 'ペイント',
-  0x21: 'ジュエル', 0x22: '宝石のかけら', 0x23: 'つりばチェッカー', 0x24: 'けんり・おたから', 0x25: 'おたから', 0x26: '〜のモト', 0x27: 'あかし', 0x28: 'ふくびきけん',
-  0x31: 'みずいらず', 0x32: 'しんめ', 0x33: '色のくすり', 0x34: '花のたね', 0x35: '木のたね', 0x36: '花', 0x37: 'フルーツ', 0x38: 'おかし', 0x39: '実', 0x3a: 'タケノコなど',
-  0x41: 'つりざお', 0x42: 'エサ', 0x43: '魚',
-  0x51: '庭: いえ', 0x52: '庭: き', 0x53: '庭: おきもの', 0x54: '庭: ランプ', 0x55: '庭: テーブル', 0x56: '庭: いす', 0x57: '庭: もん', 0x58: '庭: かべ', 0x59: '庭: タイル',
-  0x61: '家具: しょくぶつ・おきもの', 0x62: '家具: テーブル', 0x63: '家具: いす', 0x64: '家具: ランプ', 0x65: '家具: ベッド', 0x66: '家具: トレーニング', 0x67: '家の床', 0x68: '家の壁',
-  0x81: '頭', 0x82: 'めがね', 0x91: '首', 0xa1: 'グラブ', 0xa2: 'うでわ', 0xb1: '足',
-  0xc1: 'マント', 0xc2: 'はね', 0xc3: 'ぶき・まきもの', 0xc4: 'だいこ', 0xc5: 'うきわ・スカート', 0xc6: 'しっぽ', 0xd1: 'ふく (よろい)', 0xd2: 'ふく (もよう)',
+  0x01: 'まとめ売り',
+  0x02: 'ふくぶくろ',
+  0x11: '回復',
+  0x12: 'えんまく',
+  0x13: 'テレポーター',
+  0x14: 'ヒロビーロ',
+  0x15: 'ランプ',
+  0x16: 'かぎ',
+  0x17: 'ペイント',
+  0x21: 'ジュエル',
+  0x22: '宝石のかけら',
+  0x23: 'つりばチェッカー',
+  0x24: 'けんり・おたから',
+  0x25: 'おたから',
+  0x26: '〜のモト',
+  0x27: 'あかし',
+  0x28: 'ふくびきけん',
+  0x31: 'みずいらず',
+  0x32: 'しんめ',
+  0x33: '色のくすり',
+  0x34: '花のたね',
+  0x35: '木のたね',
+  0x36: '花',
+  0x37: 'フルーツ',
+  0x38: 'おかし',
+  0x39: '実',
+  0x3a: 'タケノコなど',
+  0x41: 'つりざお',
+  0x42: 'エサ',
+  0x43: '魚',
+  0x51: '庭: いえ',
+  0x52: '庭: き',
+  0x53: '庭: おきもの',
+  0x54: '庭: ランプ',
+  0x55: '庭: テーブル',
+  0x56: '庭: いす',
+  0x57: '庭: もん',
+  0x58: '庭: かべ',
+  0x59: '庭: タイル',
+  0x61: '家具: しょくぶつ・おきもの',
+  0x62: '家具: テーブル',
+  0x63: '家具: いす',
+  0x64: '家具: ランプ',
+  0x65: '家具: ベッド',
+  0x66: '家具: トレーニング',
+  0x67: '家の床',
+  0x68: '家の壁',
+  0x81: '頭',
+  0x82: 'めがね',
+  0x91: '首',
+  0xa1: 'グラブ',
+  0xa2: 'うでわ',
+  0xb1: '足',
+  0xc1: 'マント',
+  0xc2: 'はね',
+  0xc3: 'ぶき・まきもの',
+  0xc4: 'だいこ',
+  0xc5: 'うきわ・スカート',
+  0xc6: 'しっぽ',
+  0xd1: 'ふく (よろい)',
+  0xd2: 'ふく (もよう)',
 };
 
 /** Kinds whose BCH is a texture only (clothes, the house's floors and walls). */
@@ -54,9 +107,16 @@ export function lanaiItems(session: LanaiSession): LanaiItem[] {
     const c = data.u16(row, 0x0c);
     if (!c || c >= core.rows) continue;
     items.push({
-      row, id: data.rowId(row), name: session.plain(data, row, 'name'), core: c,
-      kind: core.u8(c, 0x32), rarity: core.u8(c, 0x33) & 15, buy: core.u32(c, 0x04), sell: core.u32(c, 0x08),
-      archive: core.u32(c, 0x18), model: core.u32(c, 0x1c),
+      row,
+      id: data.rowId(row),
+      name: session.plain(data, row, 'name'),
+      core: c,
+      kind: core.u8(c, 0x32),
+      rarity: core.u8(c, 0x33) & 15,
+      buy: core.u32(c, 0x04),
+      sell: core.u32(c, 0x08),
+      archive: core.u32(c, 0x18),
+      model: core.u32(c, 0x1c),
     });
   }
   lists.set(session, { revision: session.revision, items });
@@ -78,7 +138,10 @@ export function lanaiItemDescription(session: LanaiSession, it: LanaiItem): stri
 }
 
 /** The entry body of an item's model, or null. */
-export async function lanaiItemBody(session: LanaiSession, it: Pick<LanaiItem, 'archive' | 'model'>): Promise<Uint8Array | null> {
+export async function lanaiItemBody(
+  session: LanaiSession,
+  it: Pick<LanaiItem, 'archive' | 'model'>,
+): Promise<Uint8Array | null> {
   if (!it.archive || !it.model) return null;
   const arc = await session.archive(hex8(it.archive)).catch(() => null);
   const e = arc && findEntry(arc, it.model);
@@ -88,12 +151,21 @@ export async function lanaiItemBody(session: LanaiSession, it: Pick<LanaiItem, '
 export type LanaiItemModel = { kind: 'model'; ref: ModelRef } | { kind: 'texture'; texture: CgfxTexture } | null;
 
 /** An item's model for the viewer, or its texture (clothes, floors, walls). */
-export async function lanaiItemModel(session: LanaiSession, it: Pick<LanaiItem, 'archive' | 'model'>): Promise<LanaiItemModel> {
+export async function lanaiItemModel(
+  session: LanaiSession,
+  it: Pick<LanaiItem, 'archive' | 'model'>,
+): Promise<LanaiItemModel> {
   const body = await lanaiItemBody(session, it);
   if (!body) return null;
   const f = parseBch(body);
   if (!f.models.length) return f.textures[0] ? { kind: 'texture', texture: f.textures[0] } : null;
-  return { kind: 'model', ref: { key: `lanai-item/${hex8(it.archive)}/${hex8(it.model)}`, load: async () => ({ set: bchModelSet(body), hash: 0 }) } };
+  return {
+    kind: 'model',
+    ref: {
+      key: `lanai-item/${hex8(it.archive)}/${hex8(it.model)}`,
+      load: async () => ({ set: bchModelSet(body), hash: 0 }),
+    },
+  };
 }
 
 /** Gives an item another model (an entry of the root archive `archive`). */

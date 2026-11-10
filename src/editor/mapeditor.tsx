@@ -56,7 +56,12 @@ export class MapEditor {
     this.ctl = new Controller(this.st);
     this.v2 = new View2D(this.st, this.ctl, () => eventLinks(this.st));
     this.v3 = new View3D(this.st, this.ctl, this.view3dSource());
-    this.views = h('div', { class: 'views' }, h('div', { class: 'pane pane2d' }, this.v2.canvas), h('div', { class: 'pane pane3d' }, this.v3.canvas));
+    this.views = h(
+      'div',
+      { class: 'views' },
+      h('div', { class: 'pane pane2d' }, this.v2.canvas),
+      h('div', { class: 'pane pane3d' }, this.v3.canvas),
+    );
   }
 
   /** RPG2's tables as the 3D view sees them (tile and object models, placements, bosses, switch lines). */
@@ -148,7 +153,10 @@ export class MapEditor {
     window.addEventListener('keydown', this.onKey);
     this.setMode(this.mode);
     const wanted = location.hash.match(/^#\/map\/(.+)$/)?.[1];
-    const first = (wanted && game.code.byName(decodeURIComponent(wanted))) || game.code.byName('D01B02001') || game.editableMaps()[0]!;
+    const first =
+      (wanted && game.code.byName(decodeURIComponent(wanted))) ||
+      game.code.byName('D01B02001') ||
+      game.editableMaps()[0]!;
     await this.openMap(first.hash);
   }
 
@@ -191,7 +199,8 @@ export class MapEditor {
   modifiedMaps(): Set<number> {
     const st = this.st;
     const modified = new Set(st.modifiedDocs().map((d) => d.hash));
-    for (const [d, t] of st.events) if (t.changed()) for (const m of st.game.editableMaps()) if (m.dungeon === d) modified.add(m.hash);
+    for (const [d, t] of st.events)
+      if (t.changed()) for (const m of st.game.editableMaps()) if (m.dungeon === d) modified.add(m.hash);
     return modified;
   }
 

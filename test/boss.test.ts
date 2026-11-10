@@ -2,7 +2,28 @@
 // the ROM's code.bin with the executor (game/arm.ts).
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { ArmMachine } from '../src/game/arm';
-import { addBossChara, bossCharaRows, charaMonsterDesign, clearState, COND_ROW_STATE, fixGroup, monsterDesign, setFixGroup, syncBossCharas, BOSS_PATCH, BOSS_PATCH_ID, KIND_BOSS, decodeFix, encodeFix, newBossRecord, newBossRow, readStages, usesBoss, writeStages, type BossStage } from '../src/game/boss';
+import {
+  addBossChara,
+  bossCharaRows,
+  charaMonsterDesign,
+  clearState,
+  COND_ROW_STATE,
+  fixGroup,
+  monsterDesign,
+  setFixGroup,
+  syncBossCharas,
+  BOSS_PATCH,
+  BOSS_PATCH_ID,
+  KIND_BOSS,
+  decodeFix,
+  encodeFix,
+  newBossRecord,
+  newBossRow,
+  readStages,
+  usesBoss,
+  writeStages,
+  type BossStage,
+} from '../src/game/boss';
 import { codeIps } from '../src/export/pack';
 import { applyIps } from '../src/rom/ips';
 import { Game } from '../src/game/game';
@@ -35,9 +56,18 @@ describe('boss rows', () => {
 
   test('monsterFixGroup rows', () => {
     // row 19 of v1.1.0: 3 monsters
-    const r = Uint8Array.from([0x41, 3, 0, 0, 0x9e, 0, 0, 0xd0, 0xa1, 0, 0, 0xd0, 0x9e, 0, 0, 0xd0, 0, 0, 0, 0xd0, 0, 0, 0, 0xd0]);
+    const r = Uint8Array.from([
+      0x41, 3, 0, 0, 0x9e, 0, 0, 0xd0, 0xa1, 0, 0, 0xd0, 0x9e, 0, 0, 0xd0, 0, 0, 0, 0xd0, 0, 0, 0, 0xd0,
+    ]);
     const g = decodeFix(r);
-    expect(g).toEqual({ flags: 0x341, slots: [{ monster: 0x9e, count: 0 }, { monster: 0xa1, count: 0 }, { monster: 0x9e, count: 0 }] });
+    expect(g).toEqual({
+      flags: 0x341,
+      slots: [
+        { monster: 0x9e, count: 0 },
+        { monster: 0xa1, count: 0 },
+        { monster: 0x9e, count: 0 },
+      ],
+    });
     const out = new Uint8Array(24);
     encodeFix(out, g);
     expect(out).toEqual(r);
@@ -61,7 +91,13 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
     expect(built.errors).toEqual([]);
     // the hooks replace the instructions they were written for
     const before = new Map(built.blocks.filter((b) => b.kind === 'at').map((b) => [b.addr, b.lines[0]!.before]));
-    expect(before).toEqual(new Map([[0x1f41dc, 0xe351000b], [0x1ce320, 0xe20140ff], [0x1ce358, 0xe3540000]]));
+    expect(before).toEqual(
+      new Map([
+        [0x1f41dc, 0xe351000b],
+        [0x1ce320, 0xe20140ff],
+        [0x1ce358, 0xe3540000],
+      ]),
+    );
   });
 
   test('exported in code.ips only when asked (a boss row exists)', async () => {
@@ -82,8 +118,14 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
     expect(buildAction(code, 0x1f41c8, 5, 23, ev)).toBeNull();
     const script = new Uint8Array(0x50);
     script[0x4d] = 0x24;
-    for (const [d, row] of [[5, 23], [5, 22], [1, 36]] as const)
-      expect(buildAction(patched, 0x1f41c8, d, row, script)?.vtable).toBe(buildAction(code, 0x1f41c8, d, row, script)!.vtable);
+    for (const [d, row] of [
+      [5, 23],
+      [5, 22],
+      [1, 36],
+    ] as const)
+      expect(buildAction(patched, 0x1f41c8, d, row, script)?.vtable).toBe(
+        buildAction(code, 0x1f41c8, d, row, script)!.vtable,
+      );
   });
 
   /** Run boss_run for a row in state `state`, its action being stage `stage`. */
@@ -94,7 +136,9 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
       [0x2fc790, () => 0], // fixed battle
     ]);
     const m = new ArmMachine(patched, { stubs });
-    const globals = m.alloc(0x1000), obj = m.alloc(0x18), a = m.alloc(0x14);
+    const globals = m.alloc(0x1000),
+      obj = m.alloc(0x18),
+      a = m.alloc(0x14);
     m.write(G, globals, 4);
     m.write(obj + 4, 70, 4);
     m.write(obj + 0x10, a, 4);
@@ -107,7 +151,13 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
       end: m.read(globals + 0xa44, 2),
     };
   };
-  const args = (fix: number, bgm: number, flags: number, msgs: number[]): number[] => [fix, bgm, flags, 0, ...msgs.flatMap((v) => [v & 0xff, (v >> 8) & 0xff, 0, 0])];
+  const args = (fix: number, bgm: number, flags: number, msgs: number[]): number[] => [
+    fix,
+    bgm,
+    flags,
+    0,
+    ...msgs.flatMap((v) => [v & 0xff, (v >> 8) & 0xff, 0, 0]),
+  ];
 
   test('entering: messages, then the battle; a win will set the state to stage + 1', () => {
     const r = enter(1, 1, args(9, 0, 0, [0x1f49, 0, 0x1f4b]));
@@ -135,7 +185,10 @@ describe.skipIf(!hasCia)('boss patch on code.bin', () => {
     expect(idx(0x8000 | (1 << 13) | 70)).toBe(0);
 
     const win = (v: number) => {
-      const stubs = new Map([[0x30b788, () => 5], [0x3048f8, () => 0]]);
+      const stubs = new Map([
+        [0x30b788, () => 5],
+        [0x3048f8, () => 0],
+      ]);
       const m = new ArmMachine(patched, { stubs });
       const globals = m.alloc(0x1000);
       m.write(0, globals, 4); // r8 = 0 -> [r8] = the globals
@@ -159,14 +212,19 @@ describe.skipIf(!hasCia)('the boss on the map (a monster character)', () => {
     const rows: number[] = [];
     for (let i = 1; i < m.mapChara.rows; i++) if (charaMonsterDesign(m, i) !== null) rows.push(i);
     // shown in the CI log: the rows Panana copies the flags / animation from
-    console.log('monster mapChara rows', rows.map((i) => `${i}: ${[...m.mapChara.row(i)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`));
+    console.log(
+      'monster mapChara rows',
+      rows.map((i) => `${i}: ${[...m.mapChara.row(i)].map((b) => b.toString(16).padStart(2, '0')).join(' ')}`),
+    );
     for (const i of rows) expect(charaMonsterDesign(m, i)!).toBeLessThan(0x100);
   });
 
-  test('the character shares the boss row\'s state, disappears after the last win and follows stage 1', async () => {
+  test("the character shares the boss row's state, disappears after the last win and follows stage 1", async () => {
     const m = game.master;
     const ev = (await game.eventTable(5))!;
-    const saved = ev.data.slice(), chara = m.mapChara.data.slice(), fix = m.table('monsterFixGroup.bin').data.slice();
+    const saved = ev.data.slice(),
+      chara = m.mapChara.data.slice(),
+      fix = m.table('monsterFixGroup.bin').data.slice();
     try {
       const boss = ev.addRow(newBossRow(ev.table.rowSize, 9));
       const monster = fixGroup(m, 9)!.slots[0]!.monster;

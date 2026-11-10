@@ -15,7 +15,20 @@ export interface MonsterListRow {
   changed?: boolean;
 }
 
-export function MonsterList<F extends string>({ query, setQuery, filter, setFilter, options, rows, total, selected, href, countHead, listRef, top }: {
+export function MonsterList<F extends string>({
+  query,
+  setQuery,
+  filter,
+  setFilter,
+  options,
+  rows,
+  total,
+  selected,
+  href,
+  countHead,
+  listRef,
+  top,
+}: {
   query: string;
   setQuery: (q: string) => void;
   filter: F;
@@ -34,17 +47,40 @@ export function MonsterList<F extends string>({ query, setQuery, filter, setFilt
   return (
     <div className="book-side">
       {top}
-      <ListFilter query={query} setQuery={setQuery} placeholder="名前・ワザ・ドロップで検索" filter={filter} setFilter={setFilter} options={options} />
+      <ListFilter
+        query={query}
+        setQuery={setQuery}
+        placeholder="名前・ワザ・ドロップで検索"
+        filter={filter}
+        setFilter={setFilter}
+        options={options}
+      />
       <div className="book-list" ref={listRef}>
         <Count shown={rows.length} total={total} />
         <table className="book-table">
-          <thead><tr><th></th><th>#</th><th>名前</th><th>Lv</th><th>HP</th>{countHead && <th>{countHead}</th>}</tr></thead>
+          <thead>
+            <tr>
+              <th></th>
+              <th>#</th>
+              <th>名前</th>
+              <th>Lv</th>
+              <th>HP</th>
+              {countHead && <th>{countHead}</th>}
+            </tr>
+          </thead>
           <tbody>
             {rows.map((m) => (
-              <tr key={m.row} className={m.row === selected ? 'active' : ''} onClick={() => (location.hash = href(m.row))}>
+              <tr
+                key={m.row}
+                className={m.row === selected ? 'active' : ''}
+                onClick={() => (location.hash = href(m.row))}
+              >
                 <td className="photo-cell">{m.icon}</td>
                 <td className="num muted">{m.row}</td>
-                <td>{m.name || <span className="muted">(名前なし)</span>}{m.changed && <EditedMark text=" ●" />}</td>
+                <td>
+                  {m.name || <span className="muted">(名前なし)</span>}
+                  {m.changed && <EditedMark text=" ●" />}
+                </td>
                 <td className="num">{m.level ?? ''}</td>
                 <td className="num">{m.hp ?? ''}</td>
                 {countHead && <td className="num muted">{m.count || ''}</td>}

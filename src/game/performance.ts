@@ -23,14 +23,49 @@ export interface ActionSlot {
 }
 
 export const ACTION_SLOTS: ActionSlot[] = [
-  { offset: 0x1e, label: '使用者', info: 'ワザを使う側の演出 (+0x1E)。使う側のモデルでモーションを再生し、エフェクトと SE を出します。', main: true },
-  { offset: 0x20, label: '対象', info: '対象ごとの演出 (+0x20)。被弾のモーションと着弾のエフェクト。モーションは対象の側 (モンスターなら 0x49 など、電波人間なら 0x0C など) の番号です。', main: true },
+  {
+    offset: 0x1e,
+    label: '使用者',
+    info: 'ワザを使う側の演出 (+0x1E)。使う側のモデルでモーションを再生し、エフェクトと SE を出します。',
+    main: true,
+  },
+  {
+    offset: 0x20,
+    label: '対象',
+    info: '対象ごとの演出 (+0x20)。被弾のモーションと着弾のエフェクト。モーションは対象の側 (モンスターなら 0x49 など、電波人間なら 0x0C など) の番号です。',
+    main: true,
+  },
   { offset: 0x22, label: '追加', info: '追加の演出 (+0x22)。全体攻撃で場に 1 回出す着弾など。', main: true },
-  { offset: 0x24, label: 'その他 1', info: '+0x24。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。', main: false },
-  { offset: 0x26, label: 'その他 2', info: '+0x26。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。', main: false },
-  { offset: 0x28, label: 'その他 3', info: '+0x28。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です (+0x20 と同じ行のことが多い)。', main: false },
-  { offset: 0x2a, label: 'その他 4', info: '+0x2A。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。', main: false },
-  { offset: 0x2c, label: '使用者 (別の組)', info: '+0x2C。電波人間のワザ・アイテムにだけある別の組 (対象が電波人間の側のときと推定)。戦闘の前には読み込まれません。', main: false },
+  {
+    offset: 0x24,
+    label: 'その他 1',
+    info: '+0x24。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。',
+    main: false,
+  },
+  {
+    offset: 0x26,
+    label: 'その他 2',
+    info: '+0x26。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。',
+    main: false,
+  },
+  {
+    offset: 0x28,
+    label: 'その他 3',
+    info: '+0x28。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です (+0x20 と同じ行のことが多い)。',
+    main: false,
+  },
+  {
+    offset: 0x2a,
+    label: 'その他 4',
+    info: '+0x2A。戦闘の前に読み込まれるが、どの場面で再生するかは未確認です。',
+    main: false,
+  },
+  {
+    offset: 0x2c,
+    label: '使用者 (別の組)',
+    info: '+0x2C。電波人間のワザ・アイテムにだけある別の組 (対象が電波人間の側のときと推定)。戦闘の前には読み込まれません。',
+    main: false,
+  },
   { offset: 0x2e, label: '対象 (別の組)', info: '+0x2E。+0x2C と組になる対象の演出。', main: false },
 ];
 
@@ -67,11 +102,34 @@ export const MONSTER_DIRECTIONS: string[] = [
 
 /** +0x1C when the user is a 電波人間 (values past the table become 0). */
 export const ALLY_DIRECTIONS: string[] = [
-  '0: 段取りなし', '1: 総攻撃 (みんなで前に出る)', '2: 防御・動けない', '3: アイテム・単体の回復', '4: アイテム・全体の回復',
-  '5: 単体の補助', '6: 全体の補助', '7: 段取りなし', '8: 段取りなし', '9: 単体の状態異常', '10: 全体の状態異常',
-  '11: 単体の攻撃', '12: 全体の攻撃', '13: ふっかつ', '14: みんなふっかつ', '15: おたからチャンス', '16: ゴールドチャンス',
-  '17: アイテムを使った 1', '18: アイテムを使った 2', '19: アイテムを使った 3', '20: アイテムを使った 4', '21: アイテムを使った 5',
-  '22: アイテムを使った 6', '23: アイテムを使った 7', '24: 段取りなし', '25: にげる', '26: 段取りなし', '27: (未使用)',
+  '0: 段取りなし',
+  '1: 総攻撃 (みんなで前に出る)',
+  '2: 防御・動けない',
+  '3: アイテム・単体の回復',
+  '4: アイテム・全体の回復',
+  '5: 単体の補助',
+  '6: 全体の補助',
+  '7: 段取りなし',
+  '8: 段取りなし',
+  '9: 単体の状態異常',
+  '10: 全体の状態異常',
+  '11: 単体の攻撃',
+  '12: 全体の攻撃',
+  '13: ふっかつ',
+  '14: みんなふっかつ',
+  '15: おたからチャンス',
+  '16: ゴールドチャンス',
+  '17: アイテムを使った 1',
+  '18: アイテムを使った 2',
+  '19: アイテムを使った 3',
+  '20: アイテムを使った 4',
+  '21: アイテムを使った 5',
+  '22: アイテムを使った 6',
+  '23: アイテムを使った 7',
+  '24: 段取りなし',
+  '25: にげる',
+  '26: 段取りなし',
+  '27: (未使用)',
 ];
 
 /** "4: 近接・単体 …" for a side; a value past the table is read as 0 by the game. */
@@ -81,7 +139,11 @@ export function directionLabel(v: number, monster: boolean): string {
 }
 
 /** Byte ranges of an actionData row that are its effect ("アビリティ"), i.e. everything but the name and the performance. */
-export const ABILITY_RANGES: [number, number][] = [[0x00, 0x04], [0x08, 0x1c], [0x30, 0x3c]];
+export const ABILITY_RANGES: [number, number][] = [
+  [0x00, 0x04],
+  [0x08, 0x1c],
+  [0x30, 0x3c],
+];
 
 /**
  * Names of the animation numbers (animData.bin of the master, +0 = the name as a file offset): "001_" .. The game
@@ -129,15 +191,40 @@ export interface Performance {
 }
 
 /** Offsets of the fields of a performance that the editor changes. */
-export const PERF = { length: 0x02, effect: 0x04, se: 0x06, anim: 0x0a, motionStart: 0x0d, addEffect: 0x0e, shakeDelay: 0x12, seDelay: 0x13 } as const;
+export const PERF = {
+  length: 0x02,
+  effect: 0x04,
+  se: 0x06,
+  anim: 0x0a,
+  motionStart: 0x0d,
+  addEffect: 0x0e,
+  shakeDelay: 0x12,
+  seDelay: 0x13,
+} as const;
 export type PerfField = keyof typeof PERF;
 /** Where the fields of a directData row are (RPG2's {@link PERF}, RPG3's OAHU_PERF). */
 export type PerfLayout = Record<PerfField, number>;
 /** Fields held in one byte (the others are u16); s8 ones are written as their low byte. */
-const PERF_BYTE: Record<PerfField, boolean> = { length: false, effect: false, se: false, anim: true, motionStart: true, addEffect: true, shakeDelay: true, seDelay: true };
+const PERF_BYTE: Record<PerfField, boolean> = {
+  length: false,
+  effect: false,
+  se: false,
+  anim: true,
+  motionStart: true,
+  addEffect: true,
+  shakeDelay: true,
+  seDelay: true,
+};
 /** Range of each field. */
 export const PERF_RANGE: Record<PerfField, [number, number]> = {
-  length: [-32768, 32767], effect: [0, 0xffff], se: [0, 0xffff], anim: [0, 255], motionStart: [0, 255], addEffect: [0, 255], shakeDelay: [-128, 127], seDelay: [-128, 127],
+  length: [-32768, 32767],
+  effect: [0, 0xffff],
+  se: [0, 0xffff],
+  anim: [0, 255],
+  motionStart: [0, 255],
+  addEffect: [0, 255],
+  shakeDelay: [-128, 127],
+  seDelay: [-128, 127],
 };
 
 export function decodePerformance(r: Uint8Array, row: number): Performance {
@@ -255,7 +342,7 @@ export class EffectTable {
 
   /** The effectData rows of a directDataAddEffect row. */
   addEffects(row: number): number[] {
-    return row > 0 ? this.adds[row] ?? [] : [];
+    return row > 0 ? (this.adds[row] ?? []) : [];
   }
 }
 
@@ -284,9 +371,14 @@ export interface SlotTimeline {
  * The timeline of a performance row. `motionFrames`: length of the motion on the user's model (null = not known);
  * `skillLead`: MonsterDesign +0x6A〜+0x6D of the user (added to the hit of the skill motions 0x45〜0x48).
  */
-export function slotTimeline(p: Performance, effects: EffectTable, motionFrames: number | null, skillLead: number[] = []): SlotTimeline {
+export function slotTimeline(
+  p: Performance,
+  effects: EffectTable,
+  motionFrames: number | null,
+  skillLead: number[] = [],
+): SlotTimeline {
   const main = effects.effect(p.effect);
-  const mf = p.anim ? motionFrames ?? 0 : 0;
+  const mf = p.anim ? (motionFrames ?? 0) : 0;
   let e = main?.delay ?? 0;
   if (main?.afterMotion) e += mf;
   let m = p.motionStart;
@@ -314,7 +406,7 @@ export function slotTimeline(p: Performance, effects: EffectTable, motionFrames:
     se += 3;
     shake += 3;
   }
-  const skill = p.anim >= 0x45 && p.anim <= 0x48 ? skillLead[p.anim - 0x45] ?? 0 : 0;
+  const skill = p.anim >= 0x45 && p.anim <= 0x48 ? (skillLead[p.anim - 0x45] ?? 0) : 0;
   // Length (@0x2F4B7C): +0x02 when not 0 (unless it is added), else the motion's end (or 60), plus +0x02 when added.
   // (the game reads 0 for a motion it cannot find; while the motion's length is not known, 60 stands for it)
   const found = p.anim && motionFrames === null ? Math.max(60, m) : mf + m || 60;
@@ -349,7 +441,10 @@ const effectModels = new WeakMap<Game, Promise<Map<number, EffectModel>>>();
 export function loadEffectModels(game: Game): Promise<Map<number, EffectModel>> {
   let p = effectModels.get(game);
   if (!p) {
-    p = game.dump.readRomfs(EFFECT_ARCHIVE).then((bytes) => effectModelNames(bytes)).catch(() => new Map());
+    p = game.dump
+      .readRomfs(EFFECT_ARCHIVE)
+      .then((bytes) => effectModelNames(bytes))
+      .catch(() => new Map());
     effectModels.set(game, p);
   }
   return p;
@@ -390,8 +485,10 @@ export function performanceUses(master: Master): Map<number, PerformanceUse[]> {
     l.push(u);
   };
   const acts = master.table('actionData.bin');
-  for (let a = 0; a < acts.rows; a++) for (const [slot, row] of actionSlots(acts.row(a))) add(row, { kind: 'action', action: a, slot });
+  for (let a = 0; a < acts.rows; a++)
+    for (const [slot, row] of actionSlots(acts.row(a))) add(row, { kind: 'action', action: a, slot });
   const mp = master.table('monsterParameter.bin');
-  for (let m = 1; m < mp.rows; m++) if (mp.rowSize >= 0x38) add(u16(mp.row(m), 0x36), { kind: 'transform', monster: m });
+  for (let m = 1; m < mp.rows; m++)
+    if (mp.rowSize >= 0x38) add(u16(mp.row(m), 0x36), { kind: 'transform', monster: m });
   return out;
 }

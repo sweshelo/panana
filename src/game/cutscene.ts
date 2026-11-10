@@ -63,7 +63,8 @@ const SIGNED_PQ = new Set<number>([OP.WALK, OP.CAMERA, OP.PLACE]);
 
 export function decodeCommand(b: Uint8Array, at: number): Command {
   const op = b[at]!;
-  const p = u16(b, at + 4), q = u16(b, at + 6);
+  const p = u16(b, at + 4),
+    q = u16(b, at + 6);
   const s = SIGNED_PQ.has(op);
   return { op, arg: b[at + 1]!, actor: u16(b, at + 2), p: s ? (p << 16) >> 16 : p, q: s ? (q << 16) >> 16 : q };
 }
@@ -132,7 +133,8 @@ export function dataRoomLeft(ev: EventTable): number {
 
 /** Append `n` data rows; returns the first. Throws when the dungeon has no room. */
 export function addDataRows(ev: EventTable, n: number, slot: number): number {
-  if (dataRoomLeft(ev) < n) throw new Error(`このダンジョンのイベントの行は ${ev.capacity} 行までです (演出に ${n} 行要ります)`);
+  if (dataRoomLeft(ev) < n)
+    throw new Error(`このダンジョンのイベントの行は ${ev.capacity} 行までです (演出に ${n} 行要ります)`);
   const first = ev.rows;
   for (let k = 0; k < n; k++) ev.table.append(dataRow(ev.table.rowSize, slot));
   return first;
@@ -157,7 +159,11 @@ export interface RangeInfo {
 }
 
 export function rangeInfo(raw: Uint8Array): RangeInfo {
-  return { size: RANGE_SIZES[raw[RANGE_SIZE_AT]!] ?? 0, square: raw[RANGE_SHAPE_AT] !== 0, step: raw[RANGE_MODE_AT] === 1 };
+  return {
+    size: RANGE_SIZES[raw[RANGE_SIZE_AT]!] ?? 0,
+    square: raw[RANGE_SHAPE_AT] !== 0,
+    step: raw[RANGE_MODE_AT] === 1,
+  };
 }
 
 /** Fine coordinate (sections 4 / 5 / 8) -> world. */

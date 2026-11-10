@@ -39,11 +39,53 @@ interface DesignLayout {
 }
 
 export const DESIGN_LAYOUT: Record<PortTitle, DesignLayout> = {
-  kahara: { model: 0x10, texture: 0x14, motion: null, distances: 0x18, distanceCount: 4, scales: [0x28, 0x2c, 0x30, 0x34], heights: 0x3c, attach: 0x40, radius: 0x66, clear: [[0x68, 1], [0x69, 1]] },
-  oahu: { model: 0x0c, texture: 0x10, motion: 0x14, distances: 0x18, distanceCount: 5, scales: [0x2c, 0x30, 0x34, 0x38], heights: 0x40, attach: 0x48, radius: 0x6e, clear: [[0x70, 1], [0x71, 1]] },
+  kahara: {
+    model: 0x10,
+    texture: 0x14,
+    motion: null,
+    distances: 0x18,
+    distanceCount: 4,
+    scales: [0x28, 0x2c, 0x30, 0x34],
+    heights: 0x3c,
+    attach: 0x40,
+    radius: 0x66,
+    clear: [
+      [0x68, 1],
+      [0x69, 1],
+    ],
+  },
+  oahu: {
+    model: 0x0c,
+    texture: 0x10,
+    motion: 0x14,
+    distances: 0x18,
+    distanceCount: 5,
+    scales: [0x2c, 0x30, 0x34, 0x38],
+    heights: 0x40,
+    attach: 0x48,
+    radius: 0x6e,
+    clear: [
+      [0x70, 1],
+      [0x71, 1],
+    ],
+  },
   // +0x4C〜 effects. The string fields (+0x18 a procedural texture, +0x34 the waist bone's name) are not cleared but
   // avoided: the template is a row without them (lanaiTemplate)
-  lanai: { model: 0x08, texture: 0x0c, motion: 0x10, distances: 0x20, distanceCount: 5, scales: [0x38, 0x3c, 0x40, 0x44], heights: 0x58, attach: 0x60, radius: 0x94, clear: [[0x4c, 6], [0x96, 1]] },
+  lanai: {
+    model: 0x08,
+    texture: 0x0c,
+    motion: 0x10,
+    distances: 0x20,
+    distanceCount: 5,
+    scales: [0x38, 0x3c, 0x40, 0x44],
+    heights: 0x58,
+    attach: 0x60,
+    radius: 0x94,
+    clear: [
+      [0x4c, 6],
+      [0x96, 1],
+    ],
+  },
 };
 
 /** RPG FREE!: MonsterDesign +0x04 bits 20 / 21 / 22 = the model / texture / motion is in 719F0000 (else 28480000). */
@@ -76,7 +118,8 @@ function writeLookParams(title: PortTitle, r: Uint8Array, p: LookParams): void {
   const l = DESIGN_LAYOUT[title];
   const dv = new DataView(r.buffer, r.byteOffset, r.byteLength);
   // a distance the source has no value for keeps the template's
-  for (let i = 0; i < Math.min(l.distanceCount, p.distances.length); i++) dv.setFloat32(l.distances + i * 4, p.distances[i]!, true);
+  for (let i = 0; i < Math.min(l.distanceCount, p.distances.length); i++)
+    dv.setFloat32(l.distances + i * 4, p.distances[i]!, true);
   l.scales.forEach((o, i) => dv.setFloat32(o, p.scales[i]!, true));
   dv.setUint16(l.heights, p.heights[0], true);
   dv.setUint16(l.heights + 2, p.heights[1], true);
@@ -98,7 +141,11 @@ export interface MonsterLook {
   row: Uint8Array;
 }
 
-const body = async (read: (name: string) => Promise<Uint8Array>, archive: string, hash: number): Promise<Uint8Array | null> => {
+const body = async (
+  read: (name: string) => Promise<Uint8Array>,
+  archive: string,
+  hash: number,
+): Promise<Uint8Array | null> => {
   if (!hash) return null;
   const arc = parseArchive(await read(archive));
   const e = findEntry(arc, hash);
@@ -115,12 +162,21 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
     const read = (n: string): Promise<Uint8Array> => s.game.dump.readRomfs(n);
     for (let d = 0; d < book.designRows; d++) {
       const row = book.designBytes(d);
-      const model = u32(row, 0x10), texture = u32(row, 0x14);
+      const model = u32(row, 0x10),
+        texture = u32(row, 0x14);
       const users = book.monsters.filter((m) => m.design === d);
       if (!model || !users.length) continue;
       out.push({
-        title, design: d, row, names: [...new Set(users.map((m) => m.name))], model: monsterRef(s.game, book, users[0]!),
-        files: async () => ({ model: (await body(read, MONSTER_MODEL_ARCHIVE, model))!, texture: await body(read, MONSTER_MODEL_ARCHIVE, texture), motion: null }),
+        title,
+        design: d,
+        row,
+        names: [...new Set(users.map((m) => m.name))],
+        model: monsterRef(s.game, book, users[0]!),
+        files: async () => ({
+          model: (await body(read, MONSTER_MODEL_ARCHIVE, model))!,
+          texture: await body(read, MONSTER_MODEL_ARCHIVE, texture),
+          motion: null,
+        }),
       });
     }
   } else if (title === 'oahu') {
@@ -140,7 +196,11 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
       const [model, texture, motion] = [0x0c, 0x10, 0x14].map((x) => u32(row, x)) as [number, number, number];
       if (!model || !names.has(d)) continue;
       out.push({
-        title, design: d, row, names: [...new Set(names.get(d))], model: models.ref(d),
+        title,
+        design: d,
+        row,
+        names: [...new Set(names.get(d))],
+        model: models.ref(d),
         files: async () => {
           const i = await models.modelIndex();
           return { model: i.body(model)!, texture: i.body(texture), motion: i.body(motion) };
@@ -152,13 +212,18 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
     if (!s) return [];
     const designs = s.need('MonsterDesign');
     const names = new Map<number, string[]>();
-    for (const m of lanaiMonsters(s)) if (m.designRow >= 0 && m.name) names.set(m.designRow, [...(names.get(m.designRow) ?? []), m.name]);
+    for (const m of lanaiMonsters(s))
+      if (m.designRow >= 0 && m.name) names.set(m.designRow, [...(names.get(m.designRow) ?? []), m.name]);
     const index = await lanaiModelIndex(s);
     for (let d = 0; d < designs.rows; d++) {
       const x = lanaiMonsterDesign(s, d);
       if (!x?.model || !names.has(d) || !index.get(x.model) || index.name(x.model)?.startsWith('dummy')) continue;
       out.push({
-        title, design: d, row: designs.row(d).slice(), names: [...new Set(names.get(d))], model: lanaiMonsterModel(s, x, false),
+        title,
+        design: d,
+        row: designs.row(d).slice(),
+        names: [...new Set(names.get(d))],
+        model: lanaiMonsterModel(s, x, false),
         files: async () => {
           const i = await lanaiModelIndex(s);
           return { model: i.body(x.model)!, texture: i.body(x.texture), motion: i.body(x.motion) };
@@ -173,10 +238,16 @@ export async function monsterLooks(o: Opened, title: PortTitle): Promise<Monster
 export const portName = (look: Pick<MonsterLook, 'title' | 'design'>): string => `enemy_${look.title[0]}${look.design}`;
 
 /** The converted files of a look for another game, and the entries they become in that game's model archive. */
-export async function portedEntries(look: MonsterLook, target: PortTitle, template: Uint8Array, taken: (archive: string, hash: number) => boolean): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number }; altIdle: boolean }> {
+export async function portedEntries(
+  look: MonsterLook,
+  target: PortTitle,
+  template: Uint8Array,
+  taken: (archive: string, hash: number) => boolean,
+): Promise<{ entries: PortedEntry[]; hashes: { model: number; texture: number; motion: number }; altIdle: boolean }> {
   const files = convertMonster(await look.files(), look.title, target, { name: portName(look) });
   const l = DESIGN_LAYOUT[target];
-  const archive = target === 'kahara' ? MONSTER_MODEL_ARCHIVE : target === 'oahu' ? OAHU_MONSTER_MODEL_ARCHIVE : LANAI_PORT_ARCHIVE;
+  const archive =
+    target === 'kahara' ? MONSTER_MODEL_ARCHIVE : target === 'oahu' ? OAHU_MONSTER_MODEL_ARCHIVE : LANAI_PORT_ARCHIVE;
   const name = portName(look);
   const ext = target === 'kahara' ? 'bcres' : 'bch';
   const entries: PortedEntry[] = [];
@@ -193,7 +264,12 @@ export async function portedEntries(look: MonsterLook, target: PortTitle, templa
 }
 
 /** A new design row for `target`: the template row (the monster's current look) with the ported files and the look's sizes. */
-export function portedDesign(look: MonsterLook, target: PortTitle, template: Uint8Array, hashes: { model: number; texture: number; motion: number }): Uint8Array {
+export function portedDesign(
+  look: MonsterLook,
+  target: PortTitle,
+  template: Uint8Array,
+  hashes: { model: number; texture: number; motion: number },
+): Uint8Array {
   const r = template.slice();
   const l = DESIGN_LAYOUT[target];
   // A look whose colour has no textures of its own: RPG3 / FREE! name their empty texture file (dummy_tex.bch, in
@@ -212,13 +288,24 @@ export function portedDesign(look: MonsterLook, target: PortTitle, template: Uin
 }
 
 /** Whether an archive of the target already has an entry (the game's own, or one a port added). */
-export async function takenIn(target: PortTitle, read: (name: string) => Promise<Uint8Array>): Promise<(archive: string, hash: number) => boolean> {
+export async function takenIn(
+  target: PortTitle,
+  read: (name: string) => Promise<Uint8Array>,
+): Promise<(archive: string, hash: number) => boolean> {
   const store = await PortStore.of(target);
-  const archives = target === 'kahara' ? [MONSTER_MODEL_ARCHIVE] : target === 'oahu' ? [OAHU_MONSTER_MODEL_ARCHIVE] : [...LANAI_MONSTER_MODEL_ARCHIVES];
+  const archives =
+    target === 'kahara'
+      ? [MONSTER_MODEL_ARCHIVE]
+      : target === 'oahu'
+        ? [OAHU_MONSTER_MODEL_ARCHIVE]
+        : [...LANAI_MONSTER_MODEL_ARCHIVES];
   const have = new Set<string>();
   for (const a of archives) for (const e of parseArchive(await read(a)).entries) have.add(`${a}/${hex8(e.hash)}`);
   // RPG FREE! names an entry by hash in either archive (the row's bits say which): keep the hashes apart from both
-  return (archive, hash) => store.has(archive, hash) || have.has(`${archive}/${hex8(hash)}`) || (target === 'lanai' && archives.some((a) => have.has(`${a}/${hex8(hash)}`)));
+  return (archive, hash) =>
+    store.has(archive, hash) ||
+    have.has(`${archive}/${hex8(hash)}`) ||
+    (target === 'lanai' && archives.some((a) => have.has(`${a}/${hex8(hash)}`)));
 }
 
 /**
@@ -242,6 +329,7 @@ export function lanaiTemplate(row: (i: number) => Uint8Array, rows: number, curr
 export function hasAltIdle(files: MonsterFiles, title: PortTitle): boolean {
   const names: string[] = [];
   if (title === 'kahara') names.push(...readGfx(files.model).skeletalAnimations.map((a) => a.name));
-  else for (const b of [files.model, files.motion]) if (b) names.push(...readH3D(b).skeletalAnimations.map((a) => a.name));
+  else
+    for (const b of [files.model, files.motion]) if (b) names.push(...readH3D(b).skeletalAnimations.map((a) => a.name));
   return names.some((n) => n.startsWith('002_'));
 }

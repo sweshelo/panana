@@ -9,8 +9,18 @@ import { buildComposite, lowerPriorityFirst } from '../src/cgfx/tileset';
 import { readField, writeField } from '../src/game/tabledef';
 import { HonoluluMonsterPage } from '../src/honolulu/MonsterPage';
 import {
-  attackName, battleRows, designRows, HONOLULU_MONSTER_ARCHIVE, HONOLULU_MONSTER_MODELS, honoluluMonsterModel, honoluluMonsters, monsterChanged,
-  monsterGroups, monsterRowName, previousForms, revertMonster,
+  attackName,
+  battleRows,
+  designRows,
+  HONOLULU_MONSTER_ARCHIVE,
+  HONOLULU_MONSTER_MODELS,
+  honoluluMonsterModel,
+  honoluluMonsters,
+  monsterChanged,
+  monsterGroups,
+  monsterRowName,
+  previousForms,
+  revertMonster,
 } from '../src/honolulu/monsters';
 import { HonoluluSession } from '../src/honolulu/session';
 import { openImage } from '../src/rom/dump';
@@ -31,14 +41,23 @@ describe.skipIf(!hasHonolulu)('初代の monster book (ROM)', () => {
     expect(ms[0]).toMatchObject({ row: 1, name: 'ぶたばなウサギ', level: 1, hp: { min: 12, max: 15 } });
     const t = battleRows(session);
     // the rows of naauao monsters.md §2's example
-    expect([t.get(4, 'level'), t.get(4, 'hpMin'), t.get(4, 'hpMax'), t.get(4, 'atk1'), t.get(4, 'def1'), t.get(4, 'spd1'), t.get(4, 'exp'), t.get(4, 'gold')])
-      .toEqual([5, 119, 140, 35, 10, 16, 63, 150]);
+    expect([
+      t.get(4, 'level'),
+      t.get(4, 'hpMin'),
+      t.get(4, 'hpMax'),
+      t.get(4, 'atk1'),
+      t.get(4, 'def1'),
+      t.get(4, 'spd1'),
+      t.get(4, 'exp'),
+      t.get(4, 'gold'),
+    ]).toEqual([5, 119, 140, 35, 10, 16, 63, 150]);
     expect(monsterRowName(session, 'itemData.bin', 1)).toBeUndefined();
     expect(session.master.context().rowName!('itemData.bin', t.get(1, 'drop1'))).toBe('キズぐすり');
     expect([t.get(1, 'drop1Rate'), t.get(1, 'drop2Rate')]).toEqual([4, 0]);
     expect(session.master.context().rowName!('itemData.bin', t.get(1, 'drop2'))).toBe('トランプクラブ');
     // the stats other than HP have two equal values
-    for (const m of ms) for (const k of ['atk', 'def', 'spd']) expect(t.get(m.row, `${k}1`)).toBe(t.get(m.row, `${k}2`));
+    for (const m of ms)
+      for (const k of ['atk', 'def', 'spd']) expect(t.get(m.row, `${k}1`)).toBe(t.get(m.row, `${k}2`));
   });
 
   test('forms: まおう 22 → 23, しんまおう 106 → 107; the first form has no exp, gold or drops', () => {
@@ -69,7 +88,8 @@ describe.skipIf(!hasHonolulu)('初代の monster book (ROM)', () => {
     // ぶたばなウサギ: body priority 0, eyes 3
     const set = lowerPriorityFirst(buildComposite(arc, d.get(4, 'model'), d.get(4, 'texture')));
     const model = [...set.models.values()][0]!;
-    const order = (re: RegExp): number => model.meshes.find((m) => re.test(model.materials[m.material]!.name))!.drawOrder;
+    const order = (re: RegExp): number =>
+      model.meshes.find((m) => re.test(model.materials[m.material]!.name))!.drawOrder;
     expect(order(/_eye$/)).toBeGreaterThan(order(/_body$/));
   });
 
@@ -125,7 +145,9 @@ describe.skipIf(!hasHonolulu)('初代の monster book (ROM)', () => {
     const files = session.modFiles();
     expect(files.has(HONOLULU.master)).toBe(true);
     expect(files.has(HONOLULU_MONSTER_ARCHIVE)).toBe(true);
-    const master = new GsTable(findByName(parseArchive(files.get(HONOLULU.master)!), 'monsterBattleParameter.bin')!.body);
+    const master = new GsTable(
+      findByName(parseArchive(files.get(HONOLULU.master)!), 'monsterBattleParameter.bin')!.body,
+    );
     expect(master.row(1)).toEqual(t.row(1));
     const design = new GsTable(findByName(parseArchive(files.get(HONOLULU_MONSTER_ARCHIVE)!), 'monsterData.bin')!.body);
     expect(design.row(t.get(1, 'design'))).toEqual(d.row(t.get(1, 'design')));

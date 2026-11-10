@@ -34,9 +34,12 @@ export const LEVEL_STEALTH_MAX = 99;
 export const levelStealthNote = (diff: number): string =>
   `パーティーの平均 Lv がフィールドのモンスターの Lv より ${diff} 以上高いと、そのモンスターはパーティーに気づかず、追ってきません (RPG3 と同じ)。ぶつかれば戦闘になります。`;
 
-const clampDiff = (diff: number): number => Math.min(LEVEL_STEALTH_MAX, Math.max(LEVEL_STEALTH_MIN, Math.round(diff) || LEVEL_STEALTH_DEFAULT));
+const clampDiff = (diff: number): number =>
+  Math.min(LEVEL_STEALTH_MAX, Math.max(LEVEL_STEALTH_MIN, Math.round(diff) || LEVEL_STEALTH_DEFAULT));
 
-const source = (diff: number): string => `; ${LEVEL_STEALTH_TITLE} (RPG2): フィールドのモンスターがパーティーに気づく判定 (FUN_001eeaf0) で、
+const source = (
+  diff: number,
+): string => `; ${LEVEL_STEALTH_TITLE} (RPG2): フィールドのモンスターがパーティーに気づく判定 (FUN_001eeaf0) で、
 ; ステルス (状態 0x5D) のほかに「メンバーの平均 Lv ≧ モンスターの Lv + ${diff}」でも気づかない
 @0x1EEB30
   bl level_stealth ; bl FUN_00435380 (パーティーがステルスか)
@@ -104,8 +107,15 @@ const EXPECT: [number, number][] = [[0x1eeb30, 0xeb091a12]];
 /** Why the patch cannot go on `code` (another version, or a base MOD that rewrote the same code), or null. */
 export function levelStealthProblem(code: Uint8Array): string | null {
   const bad = EXPECT.filter(([a, w]) => a - BASE + 4 > code.length || u32(code, a - BASE) !== w);
-  return bad.length ? `code.bin の 0x${bad.map(([a]) => a.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${LEVEL_STEALTH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)` : null;
+  return bad.length
+    ? `code.bin の 0x${bad.map(([a]) => a.toString(16).toUpperCase()).join('・0x')} が元のゲームと違うので、「${LEVEL_STEALTH_TITLE}」を入れられません (別の版か、土台の MOD が同じ場所を書き換えています)`
+    : null;
 }
 
 /** The patch with a Lv difference (always enabled: it is only built when the option is on). */
-export const levelStealthPatch = (diff: number = LEVEL_STEALTH_DEFAULT): CodePatch => ({ id: LEVEL_STEALTH_ID, title: LEVEL_STEALTH_TITLE, source: source(clampDiff(diff)), enabled: true });
+export const levelStealthPatch = (diff: number = LEVEL_STEALTH_DEFAULT): CodePatch => ({
+  id: LEVEL_STEALTH_ID,
+  title: LEVEL_STEALTH_TITLE,
+  source: source(clampDiff(diff)),
+  enabled: true,
+});

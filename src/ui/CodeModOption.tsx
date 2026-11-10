@@ -2,7 +2,12 @@
 import type { ReactNode } from 'react';
 import { DROP_CAP_NOTE, DROP_CAP_TITLE, type DropCapTitle } from '../game/dropcap';
 
-export function CodeModOption({ title, on, problem, onChange }: {
+export function CodeModOption({
+  title,
+  on,
+  problem,
+  onChange,
+}: {
   title: DropCapTitle;
   on: boolean;
   /** Why it cannot be written to this dump (shown instead of the switch when it is off), or null. */

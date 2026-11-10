@@ -42,8 +42,17 @@ export function formatName(b: Uint8Array): string | null {
  */
 export function isGsTable(b: Uint8Array): boolean {
   if (b.length < 0x40 || LanaiTable.is(b)) return false;
-  const rows = u32(b, 0), size = u32(b, 4), off = u32(b, 0x10);
-  return size > 0 && off >= 0x30 && off <= b.length && u32(b, 0x14) === rows * size && off + rows * size <= b.length && u32(b, 0x18) <= b.length;
+  const rows = u32(b, 0),
+    size = u32(b, 4),
+    off = u32(b, 0x10);
+  return (
+    size > 0 &&
+    off >= 0x30 &&
+    off <= b.length &&
+    u32(b, 0x14) === rows * size &&
+    off + rows * size <= b.length &&
+    u32(b, 0x18) <= b.length
+  );
 }
 
 /** A root archive of the GS engine (+0x04 = its own name) with any known version; null otherwise. */

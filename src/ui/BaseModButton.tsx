@@ -17,7 +17,19 @@ export function pickBaseMod(title: TitleDef): Promise<BaseMod | null> {
       if (!files.length) return resolve(null);
       try {
         const label = files[0]!.webkitRelativePath.split('/')[0] || 'MOD';
-        resolve(baseModFor(title, label, await Promise.all(files.map(async (f) => ({ name: f.name, path: f.webkitRelativePath, bytes: new Uint8Array(await f.arrayBuffer()) })))));
+        resolve(
+          baseModFor(
+            title,
+            label,
+            await Promise.all(
+              files.map(async (f) => ({
+                name: f.name,
+                path: f.webkitRelativePath,
+                bytes: new Uint8Array(await f.arrayBuffer()),
+              })),
+            ),
+          ),
+        );
       } catch (err) {
         reject(err);
       }
@@ -27,9 +39,14 @@ export function pickBaseMod(title: TitleDef): Promise<BaseMod | null> {
 }
 
 /** Takes the base MOD off (when there is one and that is confirmed) or picks another; `onChange` reopens the dump with it. */
-export async function changeBaseMod(title: TitleDef, current: BaseMod | null, onChange: (mod: BaseMod | null) => Promise<void>): Promise<void> {
+export async function changeBaseMod(
+  title: TitleDef,
+  current: BaseMod | null,
+  onChange: (mod: BaseMod | null) => Promise<void>,
+): Promise<void> {
   try {
-    if (current && confirm(`今の土台: ${current.label}\n外しますか? (「キャンセル」で別のフォルダを選ぶ)`)) return await onChange(null);
+    if (current && confirm(`今の土台: ${current.label}\n外しますか? (「キャンセル」で別のフォルダを選ぶ)`))
+      return await onChange(null);
     const mod = await pickBaseMod(title);
     if (mod) await onChange(mod);
   } catch (err) {
@@ -39,10 +56,17 @@ export async function changeBaseMod(title: TitleDef, current: BaseMod | null, on
 
 /** The export dialogs' note that the base MOD's files go into the MOD too. */
 export function BaseModNote({ mod }: { mod: BaseMod | null }): ReactNode {
-  return mod ? <p className="muted small">{`土台の MOD「${mod.label}」の全ファイル${mod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</p> : null;
+  return mod ? (
+    <p className="muted small">{`土台の MOD「${mod.label}」の全ファイル${mod.ips ? ' (code.ips を含む)' : ''}も入ります。`}</p>
+  ) : null;
 }
 
-export function BaseModButton({ title, mod, onChange, children }: {
+export function BaseModButton({
+  title,
+  mod,
+  onChange,
+  children,
+}: {
   title: TitleDef;
   mod: BaseMod | null;
   onChange: (mod: BaseMod | null) => Promise<void>;
@@ -50,7 +74,11 @@ export function BaseModButton({ title, mod, onChange, children }: {
   children?: ReactNode;
 }): ReactNode {
   return (
-    <button className="base-btn" title="既存の MOD (romfs のファイルと code.ips のフォルダ) を土台にして、その上から編集します。書き出しにはその MOD の全ファイルが入ります" onClick={() => changeBaseMod(title, mod, onChange)}>
+    <button
+      className="base-btn"
+      title="既存の MOD (romfs のファイルと code.ips のフォルダ) を土台にして、その上から編集します。書き出しにはその MOD の全ファイルが入ります"
+      onClick={() => changeBaseMod(title, mod, onChange)}
+    >
       {children ?? `土台の MOD: ${mod?.label ?? 'なし'}`}
     </button>
   );

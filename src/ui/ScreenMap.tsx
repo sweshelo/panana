@@ -60,7 +60,18 @@ export function imageUrl(im: ScreenImage): string | undefined {
   return u;
 }
 
-export function ScreenMap({ width, height, scale = 2, under = [], over = [], circles = [], markers, selected, onSelect, onMove }: {
+export function ScreenMap({
+  width,
+  height,
+  scale = 2,
+  under = [],
+  over = [],
+  circles = [],
+  markers,
+  selected,
+  onSelect,
+  onMove,
+}: {
   width: number;
   height: number;
   scale?: number;
@@ -84,7 +95,19 @@ export function ScreenMap({ width, height, scale = 2, under = [], over = [], cir
   const clamp = (v: number, max: number): number => Math.max(0, Math.min(max, Math.round(v)));
   const layer = (l: ScreenLayer): ReactNode => {
     const href = l.image && imageUrl(l.image);
-    return href ? <image key={l.key} href={href} x={l.x ?? 0} y={l.y ?? 0} width={l.image!.width} height={l.image!.height} opacity={l.opacity} pointerEvents="none" style={{ imageRendering: 'pixelated' }} /> : null;
+    return href ? (
+      <image
+        key={l.key}
+        href={href}
+        x={l.x ?? 0}
+        y={l.y ?? 0}
+        width={l.image!.width}
+        height={l.image!.height}
+        opacity={l.opacity}
+        pointerEvents="none"
+        style={{ imageRendering: 'pixelated' }}
+      />
+    ) : null;
   };
   const key = (e: KeyboardEvent): void => {
     if (!onMove || selected === undefined) return;
@@ -96,23 +119,35 @@ export function ScreenMap({ width, height, scale = 2, under = [], over = [], cir
     onMove(m.id, clamp(m.x + d[0]! * step, width), clamp(m.y + d[1]! * step, height));
   };
   return (
-    <svg ref={svg} className="screen-map" viewBox={`0 0 ${width} ${height}`} width={width * scale} height={height * scale} tabIndex={0} onKeyDown={key}
+    <svg
+      ref={svg}
+      className="screen-map"
+      viewBox={`0 0 ${width} ${height}`}
+      width={width * scale}
+      height={height * scale}
+      tabIndex={0}
+      onKeyDown={key}
       onPointerMove={(e) => {
         if (!drag || !onMove) return;
         const [x, y] = point(e);
         onMove(drag.id, clamp(x - drag.dx, width), clamp(y - drag.dy, height));
       }}
       onPointerUp={() => setDrag(undefined)}
-      onPointerCancel={() => setDrag(undefined)}>
+      onPointerCancel={() => setDrag(undefined)}
+    >
       <rect className="screen-map-bg" width={width} height={height} />
       {under.map(layer)}
-      {circles.map((c, i) => <circle key={i} className={c.className ?? 'screen-map-circle'} cx={c.x} cy={c.y} r={c.r} />)}
+      {circles.map((c, i) => (
+        <circle key={i} className={c.className ?? 'screen-map-circle'} cx={c.x} cy={c.y} r={c.r} />
+      ))}
       {markers.map((m) => {
         const href = m.image && imageUrl(m.image);
         const x = m.x - m.width / 2;
         const y = m.y - m.height / 2;
         return (
-          <g key={m.id} className={`screen-map-marker${m.id === selected ? ' active' : ''}${m.dim ? ' dim' : ''}${m.warn ? ' warn' : ''}${onMove ? ' movable' : ''}`}
+          <g
+            key={m.id}
+            className={`screen-map-marker${m.id === selected ? ' active' : ''}${m.dim ? ' dim' : ''}${m.warn ? ' warn' : ''}${onMove ? ' movable' : ''}`}
             onPointerDown={(e) => {
               e.stopPropagation();
               onSelect(m.id);
@@ -120,12 +155,25 @@ export function ScreenMap({ width, height, scale = 2, under = [], over = [], cir
               const [px, py] = point(e);
               svg.current?.setPointerCapture(e.pointerId);
               setDrag({ id: m.id, dx: px - m.x, dy: py - m.y });
-            }}>
+            }}
+          >
             <title>{m.title ?? m.label}</title>
-            {href ? <image href={href} x={x} y={y} width={m.width} height={m.height} style={{ imageRendering: 'pixelated' }} />
-              : <rect className="screen-map-box" x={x} y={y} width={m.width} height={m.height} rx={4} />}
+            {href ? (
+              <image
+                href={href}
+                x={x}
+                y={y}
+                width={m.width}
+                height={m.height}
+                style={{ imageRendering: 'pixelated' }}
+              />
+            ) : (
+              <rect className="screen-map-box" x={x} y={y} width={m.width} height={m.height} rx={4} />
+            )}
             <rect className="screen-map-outline" x={x - 1} y={y - 1} width={m.width + 2} height={m.height + 2} rx={3} />
-            <text x={m.x} y={y + m.height + 7} className="screen-map-label">{m.label}</text>
+            <text x={m.x} y={y + m.height + 7} className="screen-map-label">
+              {m.label}
+            </text>
           </g>
         );
       })}

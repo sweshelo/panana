@@ -5,11 +5,19 @@
 ```bash
 git submodule update --init docs   # 解析資料 (naauao)
 bun install
+bun run check      # Lefthook: 全ファイルの lint・format・型チェック・テスト
+bun run format     # Oxfmt で整形。ファイルのパスを付ければ対象を限定できる
 bun run dev        # http://localhost:5173/
 bun run build      # tsc --noEmit と vite build。dist/ に静的ファイルを出す
 bun run typecheck
 bun run deploy     # build のあと wrangler deploy
 ```
+
+`bun install` の prepare で Lefthook の Git hook をインストールします。必要なら `bun run hooks:install` で再設定できます。
+`git commit` の前に、ステージしたファイルの Oxlint・Oxfmt チェックと、全体の型チェック・`bun test` を並列に実行します。
+整形は自動でステージせず、不一致があればコミットを止めます。`bun run format <path>` で整形して差分を確認し、再度 `git add` してください。
+成功したチェックのログは非表示です。失敗時は `scripts/quiet-check.ts` が標準出力・標準エラーの診断と失敗コードを保持します。
+Windows では Git for Windows と Bun が PATH から実行できるようにしてください。MSYS2 Git も入っている場合は `scripts/lefthook.ts` が Git for Windows を優先します。ユーザーの PATH 設定自体は変更しません。
 
 - `docs/` は [naauao](https://github.com/sweshelo/naauao) の submodule です。ゲームの解析資料 (`docs/lanai/`、`docs/item-effects.md`、`docs/action-performance.md` など) はそこにあります。
 - マップ・イベントの設計資料は elpulse リポジトリにあります (`../elpulse/docs/map-editor-design.md`、`map.md`、`encounters.md`、`events.md`、`battle.md`)。
@@ -29,14 +37,14 @@ bun test
 
 ROM のテストは、リポジトリ直下の `roms/` (git には入れない) にあるファイルを読みます (`test/env.ts`)。ないファイルを使うテストはスキップします。
 
-| ファイル | 中身 |
-|---|---|
-| `roms/00040000000A7900.cia` | RPG2 の復号済み CIA |
-| `roms/golden.json` | 参照実装の照合データ (`export_golden.py` で作る) |
-| `roms/mod/out/` | 土台の MOD (elpulse の mod/out。任意) |
-| `roms/oahu-base.cia` / `roms/oahu-update.cia` | RPG3 の Base / Update (復号済み) |
-| `roms/lanai-base.cia` / `roms/lanai-update.cia` | RPG FREE! の Base / Update (復号済み) |
-| `roms/honolulu-base.cia` | 初代 (電波人間のRPG) の Base (復号済み。Update は知られていない) |
+| ファイル                                        | 中身                                                             |
+| ----------------------------------------------- | ---------------------------------------------------------------- |
+| `roms/00040000000A7900.cia`                     | RPG2 の復号済み CIA                                              |
+| `roms/golden.json`                              | 参照実装の照合データ (`export_golden.py` で作る)                 |
+| `roms/mod/out/`                                 | 土台の MOD (elpulse の mod/out。任意)                            |
+| `roms/oahu-base.cia` / `roms/oahu-update.cia`   | RPG3 の Base / Update (復号済み)                                 |
+| `roms/lanai-base.cia` / `roms/lanai-update.cia` | RPG FREE! の Base / Update (復号済み)                            |
+| `roms/honolulu-base.cia`                        | 初代 (電波人間のRPG) の Base (復号済み。Update は知られていない) |
 
 ROM のテストで確かめていること:
 

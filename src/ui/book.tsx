@@ -50,7 +50,17 @@ const BOOK_PAGE = 300;
  * A book's list: the count, a row per entry (a click opens it), the first rows shown and a button for more. `photo`
  * adds a photo column before the row number; a game whose entries have no model (初代's items) gives none.
  */
-export function BookList<T>({ rows, total, id, selected, href, columns, photo, changed, listRef }: {
+export function BookList<T>({
+  rows,
+  total,
+  id,
+  selected,
+  href,
+  columns,
+  photo,
+  changed,
+  listRef,
+}: {
   rows: T[];
   total: number;
   /** The entry's number (the row, the ID): the first column and the key. */
@@ -70,18 +80,39 @@ export function BookList<T>({ rows, total, id, selected, href, columns, photo, c
     <div className="book-list" ref={listRef}>
       <Count shown={rows.length} total={total} />
       <table className="book-table">
-        <thead><tr>{photo && <th></th>}<th>行</th>{columns.map((c) => <th key={c.head}>{c.head}</th>)}</tr></thead>
+        <thead>
+          <tr>
+            {photo && <th></th>}
+            <th>行</th>
+            {columns.map((c) => (
+              <th key={c.head}>{c.head}</th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
           {rows.slice(0, limit).map((x) => (
-            <tr key={id(x)} className={id(x) === selected ? 'active' : ''} onClick={() => (location.hash = href(id(x)))}>
+            <tr
+              key={id(x)}
+              className={id(x) === selected ? 'active' : ''}
+              onClick={() => (location.hash = href(id(x)))}
+            >
               {photo && <td className="photo-cell">{photo(x)}</td>}
               <td className="num muted">{id(x)}</td>
-              {columns.map((c, i) => <td key={c.head} className={c.className}>{c.cell(x)}{i === 0 && changed?.(x) && <EditedMark text=" ●" />}</td>)}
+              {columns.map((c, i) => (
+                <td key={c.head} className={c.className}>
+                  {c.cell(x)}
+                  {i === 0 && changed?.(x) && <EditedMark text=" ●" />}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
       </table>
-      {rows.length > limit && <div className="row"><button onClick={() => setLimit(limit + BOOK_PAGE * 5)}>{`続きを表示 (${rows.length - limit} 件)`}</button></div>}
+      {rows.length > limit && (
+        <div className="row">
+          <button onClick={() => setLimit(limit + BOOK_PAGE * 5)}>{`続きを表示 (${rows.length - limit} 件)`}</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -91,7 +122,14 @@ export function Count({ shown, total, unit = '件' }: { shown: number; total: nu
 }
 
 /** Search box and filter of a list. */
-export function ListFilter<F extends string>({ query, setQuery, placeholder, filter, setFilter, options }: {
+export function ListFilter<F extends string>({
+  query,
+  setQuery,
+  placeholder,
+  filter,
+  setFilter,
+  options,
+}: {
   query: string;
   setQuery: (q: string) => void;
   placeholder: string;
@@ -103,22 +141,40 @@ export function ListFilter<F extends string>({ query, setQuery, placeholder, fil
     <div className="row">
       <input type="search" placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} />
       <select value={filter} onChange={(e) => setFilter(e.target.value as F)}>
-        {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+        {options.map(([v, label]) => (
+          <option key={v} value={v}>
+            {label}
+          </option>
+        ))}
       </select>
     </div>
   );
 }
 
 export const EditedMark = ({ title = '変更した', text = '●' }: { title?: string; text?: string }): ReactNode => (
-  <span className="edited-mark" title={title}>{text}</span>
+  <span className="edited-mark" title={title}>
+    {text}
+  </span>
 );
 
 /**
  * A number box that applies a typed value when it is left or Enter is pressed (like the DOM's change event), and a
  * step of its spinner / arrow keys at once; a value outside min..max goes back to the current one.
  */
-export function NumberInput({ value, min, max, className = 'num-input', title, onCommit }: {
-  value: number; min: number; max: number; className?: string; title?: string; onCommit: (v: number) => void;
+export function NumberInput({
+  value,
+  min,
+  max,
+  className = 'num-input',
+  title,
+  onCommit,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  className?: string;
+  title?: string;
+  onCommit: (v: number) => void;
 }): ReactNode {
   const ref = useRef<HTMLInputElement>(null);
   // the value last applied: the box may tell the same change twice (change, then blur) before the new value comes back
@@ -166,14 +222,33 @@ export function NumberInput({ value, min, max, className = 'num-input', title, o
 }
 
 /** A text box applied when left (or on Enter for one line). */
-export function TextBox({ value, multi, edited, onCommit }: { value: string; multi: boolean; edited: boolean; onCommit: (v: string) => void }): ReactNode {
+export function TextBox({
+  value,
+  multi,
+  edited,
+  onCommit,
+}: {
+  value: string;
+  multi: boolean;
+  edited: boolean;
+  onCommit: (v: string) => void;
+}): ReactNode {
   const [text, setText] = useState(value);
   useEffect(() => setText(value), [value]);
   const commit = (): void => {
     if (text !== value) onCommit(text);
   };
   const cls = `name-input${edited ? ' edited' : ''}`;
-  return multi
-    ? <textarea className={cls} rows={2} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
-    : <input type="text" className={cls} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} onKeyDown={(e) => e.key === 'Enter' && commit()} />;
+  return multi ? (
+    <textarea className={cls} rows={2} value={text} onChange={(e) => setText(e.target.value)} onBlur={commit} />
+  ) : (
+    <input
+      type="text"
+      className={cls}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => e.key === 'Enter' && commit()}
+    />
+  );
 }

@@ -105,7 +105,8 @@ export function readCommands(words: ArrayLike<number>): PICACommand[] {
     const consecutive = header >>> 31 === 1;
     out.push({ register: id, value: words[i]! >>> 0, mask, word: i });
     i += 2;
-    for (let j = 1; j <= extra && i < words.length; j++, i++) out.push({ register: consecutive ? id + j : id, value: words[i]! >>> 0, mask, word: i });
+    for (let j = 1; j <= extra && i < words.length; j++, i++)
+      out.push({ register: consecutive ? id + j : id, value: words[i]! >>> 0, mask, word: i });
     if (i & 1) i++;
   }
   return out;
@@ -144,7 +145,12 @@ export function getWord24(value: number): number {
 
 /** The three words of a float24 vector -> x, y, z, w. */
 export function vectorFromWords(w0: number, w1: number, w2: number): Vector4 {
-  return [getFloat24(w2 & 0xffffff), getFloat24((w2 >>> 24) | ((w1 & 0xffff) << 8)), getFloat24((w1 >>> 16) | ((w0 & 0xff) << 16)), getFloat24(w0 >>> 8)];
+  return [
+    getFloat24(w2 & 0xffffff),
+    getFloat24((w2 >>> 24) | ((w1 & 0xffff) << 8)),
+    getFloat24((w1 >>> 16) | ((w0 & 0xff) << 16)),
+    getFloat24(w0 >>> 8),
+  ];
 }
 
 /** x, y, z, w -> the three words of a float24 vector. */
@@ -164,8 +170,14 @@ export interface PICAState {
 export function commandState(words: ArrayLike<number>): PICAState {
   const regs = new Map<number, number>();
   const fixed = new Map<number, [number, number, number]>();
-  const uniforms = (): { map: Map<number, Vector4>; index: number; is32: boolean; f24: number[] } => ({ map: new Map(), index: 0, is32: false, f24: [] });
-  const vsh = uniforms(), gsh = uniforms();
+  const uniforms = (): { map: Map<number, Vector4>; index: number; is32: boolean; f24: number[] } => ({
+    map: new Map(),
+    index: 0,
+    is32: false,
+    f24: [],
+  });
+  const vsh = uniforms(),
+    gsh = uniforms();
   let fixedIndex = 0;
   const fixedWords = [0, 0, 0];
   const setUniform = (u: ReturnType<typeof uniforms>, v: number): void => {
@@ -190,15 +202,18 @@ export function commandState(words: ArrayLike<number>): PICAState {
     if (c.register === Reg.GPUREG_VSH_FLOATUNIFORM_INDEX) {
       vsh.index = (c.value & 0xff) << 2;
       vsh.is32 = c.value >>> 31 === 1;
-    } else if (c.register >= Reg.GPUREG_VSH_FLOATUNIFORM_DATA0 && c.register <= Reg.GPUREG_VSH_FLOATUNIFORM_DATA7) setUniform(vsh, c.value);
+    } else if (c.register >= Reg.GPUREG_VSH_FLOATUNIFORM_DATA0 && c.register <= Reg.GPUREG_VSH_FLOATUNIFORM_DATA7)
+      setUniform(vsh, c.value);
     else if (c.register === Reg.GPUREG_GSH_FLOATUNIFORM_INDEX) {
       gsh.index = (c.value & 0xff) << 2;
       gsh.is32 = c.value >>> 31 === 1;
-    } else if (c.register >= Reg.GPUREG_GSH_FLOATUNIFORM_DATA0 && c.register <= Reg.GPUREG_GSH_FLOATUNIFORM_DATA7) setUniform(gsh, c.value);
+    } else if (c.register >= Reg.GPUREG_GSH_FLOATUNIFORM_DATA0 && c.register <= Reg.GPUREG_GSH_FLOATUNIFORM_DATA7)
+      setUniform(gsh, c.value);
     else if (c.register === Reg.GPUREG_FIXEDATTRIB_INDEX) fixedIndex = c.value & 0xf;
     else if (c.register >= Reg.GPUREG_FIXEDATTRIB_DATA0 && c.register <= Reg.GPUREG_FIXEDATTRIB_DATA2) {
       fixedWords[c.register - Reg.GPUREG_FIXEDATTRIB_DATA0] = c.value;
-      if (c.register === Reg.GPUREG_FIXEDATTRIB_DATA2) fixed.set(fixedIndex, [fixedWords[0]!, fixedWords[1]!, fixedWords[2]!]);
+      if (c.register === Reg.GPUREG_FIXEDATTRIB_DATA2)
+        fixed.set(fixedIndex, [fixedWords[0]!, fixedWords[1]!, fixedWords[2]!]);
     }
   }
   return { regs, vtxUniforms: vsh.map, geoUniforms: gsh.map, fixed };
@@ -218,7 +233,10 @@ export class PICACommandWriter {
 
   /** Several parameters: consecutive registers, or the same register repeatedly. */
   setCommands(register: number, consecutive: boolean, mask: number, params: number[]): void {
-    this.words.push(params[0]! >>> 0, (register | (mask << 16) | (((params.length - 1) & 0x7ff) << 20) | (consecutive ? 0x80000000 : 0)) >>> 0);
+    this.words.push(
+      params[0]! >>> 0,
+      (register | (mask << 16) | (((params.length - 1) & 0x7ff) << 20) | (consecutive ? 0x80000000 : 0)) >>> 0,
+    );
     for (let i = 1; i < params.length; i++) this.words.push(params[i]! >>> 0);
     if (this.words.length & 1) this.words.push(0);
   }

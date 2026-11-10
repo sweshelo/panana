@@ -12,7 +12,7 @@ import { TRANSFORM_PATCH, TRANSFORM_PATCH_ID, lookChanges, needsTransformPatch }
 import { CIA, hasCia } from './env';
 
 describe.skipIf(!hasCia)('RPG2: transformations that change the model', () => {
-  test('the game\'s own transformations keep the design; one into another design needs the patch', async () => {
+  test("the game's own transformations keep the design; one into another design needs the patch", async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
     expect(lookChanges(game.master)).toEqual([]);
     expect(needsTransformPatch(game.master)).toBe(false);
@@ -32,7 +32,14 @@ describe.skipIf(!hasCia)('RPG2: transformations that change the model', () => {
 
   test('the patch: the instructions it replaces, and it builds with the other patches of the export', async () => {
     const game = await Game.load(await openImage(Bun.file(CIA), 'cia'));
-    const built = buildPatches(game.dump.code, [BOSS_PATCH, MONSTER_ROWS_PATCH, ITEM_ACTION_PATCH, BGM_EXT_PATCH, levelStealthPatch(), TRANSFORM_PATCH]);
+    const built = buildPatches(game.dump.code, [
+      BOSS_PATCH,
+      MONSTER_ROWS_PATCH,
+      ITEM_ACTION_PATCH,
+      BGM_EXT_PATCH,
+      levelStealthPatch(),
+      TRANSFORM_PATCH,
+    ]);
     for (const b of built.values()) expect(b.errors).toEqual([]);
     const at = built.get(TRANSFORM_PATCH_ID)!.blocks.filter((b) => b.kind === 'at');
     // cmp r8, #0 in FUN_00289524; the mov after getting the transformed unit's display in the 7 performances; beq in FUN_0022e498

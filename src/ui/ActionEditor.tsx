@@ -1,7 +1,16 @@
 // Editing an action (actionData row): its name, element, infliction level, amount and motion, copying it as a new
 // action, and putting it back. Used by the action page and, in a dialog, by the skill slots of the monster editor.
 import { useEffect, useState, type ReactNode } from 'react';
-import { ACTION_KIND, ACTION_SIDE, ActionEdits, actionRangeLabel, actionTypeLabel, ELEMENT, type ActionBook, type ActionFields } from '../game/actions';
+import {
+  ACTION_KIND,
+  ACTION_SIDE,
+  ActionEdits,
+  actionRangeLabel,
+  actionTypeLabel,
+  ELEMENT,
+  type ActionBook,
+  type ActionFields,
+} from '../game/actions';
 import { KAHARA_ACTION_DATA } from '../game/kaharatables';
 import { fieldRange } from '../game/tabledef';
 import { ACTION_DIRECTION } from '../game/performance';
@@ -38,7 +47,7 @@ const LEVEL_INFO = [
 
 /** "2 (50%)": the base rate of an infliction level (BattleParameter [0x60 + level] / 32). */
 function levelLabel(book: MonsterBook | null, level: number): string {
-  const v = level < 7 ? book?.battle.baseRate[level] ?? 0 : 200;
+  const v = level < 7 ? (book?.battle.baseRate[level] ?? 0) : 200;
   return `${level} (${Math.round((v * 100) / 32)}%${level === 7 ? '、表の外' : ''})`;
 }
 
@@ -68,23 +77,33 @@ function targetWarning(actions: ActionBook, a: { row: number; side: number; rang
   if (a.range === 7 || a.range > 8) return 'この範囲ではだれにも当たりません';
   if (!actions.refsOf(a.row).monsters.length || a.raw.length < ACTION_DIRECTION + 2) return '';
   const d = u16(a.raw, ACTION_DIRECTION);
-  if ((d === 4 || d === 8) && a.range === 6) return '全体の範囲ですが、演出の進行は単体 (4 / 8) のままです (カメラと動きは単体向け)';
+  if ((d === 4 || d === 8) && a.range === 6)
+    return '全体の範囲ですが、演出の進行は単体 (4 / 8) のままです (カメラと動きは単体向け)';
   if ((d === 5 || d === 9) && a.range >= 2 && a.range <= 5) return '単体の範囲ですが、演出の進行は全体 (5 / 9) です';
   return '';
 }
 
 /** "80%": the power scale of a physical attack by its range (only when +0x33 = 10), or ''. */
-function rangePower(book: MonsterBook | null, a: { kind: number; type: number; range: number; raw: Uint8Array }): string {
+function rangePower(
+  book: MonsterBook | null,
+  a: { kind: number; type: number; range: number; raw: Uint8Array },
+): string {
   if (a.kind !== 1 || a.type > 1 || a.raw.length <= 0x33 || a.raw[0x33] !== 10) return '';
   const v = book?.battle.rangePower[a.range];
   return v === undefined ? '' : `威力 ${v}% (範囲の補正)`;
 }
 
 /** Why the kind and type may not work as they are, or ''. */
-function kindWarning(actions: ActionBook, a: { row: number; kind: number; type: number; amount: [number, number] }): string {
-  if (a.kind !== 2 && actions.refsOf(a.row).items.length) return 'このアクションを使うアイテムがあります。アイテムの効果はカテゴリ 2 のときだけです';
-  if (a.kind === 1 && a.type >= 4) return 'カテゴリ 1 の種別 4 以上は元のデータにありません (計算が呼ばれないおそれがあります)';
-  if (a.kind === 1 && a.type >= 2 && !a.amount[0] && !a.amount[1]) return '固定の威力で量が 0 なので、ダメージは 0 (ミス) になります';
+function kindWarning(
+  actions: ActionBook,
+  a: { row: number; kind: number; type: number; amount: [number, number] },
+): string {
+  if (a.kind !== 2 && actions.refsOf(a.row).items.length)
+    return 'このアクションを使うアイテムがあります。アイテムの効果はカテゴリ 2 のときだけです';
+  if (a.kind === 1 && a.type >= 4)
+    return 'カテゴリ 1 の種別 4 以上は元のデータにありません (計算が呼ばれないおそれがあります)';
+  if (a.kind === 1 && a.type >= 2 && !a.amount[0] && !a.amount[1])
+    return '固定の威力で量が 0 なので、ダメージは 0 (ミス) になります';
   return '';
 }
 
@@ -126,17 +145,19 @@ export function useMotionKeys(game: Game, book: MonsterBook, monsters: Monster[]
   const key = monsters.map((m) => m.row).join(',');
   useEffect(() => {
     let live = true;
-    Promise.all(monsters.map(async (m): Promise<[number, Set<string>] | null> => {
-      const ref = book.modelOf(m);
-      if (!ref) return null;
-      try {
-        const set = await loadComposite(game, MONSTER_MODEL_ARCHIVE, ref.model, ref.texture);
-        const model = set.models.get(ref.model);
-        return model ? [m.row, new Set(model.animations.map((a) => animationKey(a.name)))] : null;
-      } catch {
-        return null;
-      }
-    })).then((list) => live && setOut(new Map(list.filter((x): x is [number, Set<string>] => !!x))));
+    Promise.all(
+      monsters.map(async (m): Promise<[number, Set<string>] | null> => {
+        const ref = book.modelOf(m);
+        if (!ref) return null;
+        try {
+          const set = await loadComposite(game, MONSTER_MODEL_ARCHIVE, ref.model, ref.texture);
+          const model = set.models.get(ref.model);
+          return model ? [m.row, new Set(model.animations.map((a) => animationKey(a.name)))] : null;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((list) => live && setOut(new Map(list.filter((x): x is [number, Set<string>] => !!x))));
     return () => {
       live = false;
     };
@@ -161,27 +182,44 @@ function actionAccess(actions: ActionBook, edits: ActionEdits, row: number): Fie
   const o = actions.original(row);
   const get = (f: ActionFields, k: string): number => {
     switch (k) {
-      case 'strengthMin': return f.strength[0];
-      case 'strengthMax': return f.strength[1];
-      case 'min': return f.amount[0];
-      case 'max': return f.amount[1];
-      default: return (f as unknown as Record<string, number>)[k] ?? 0;
+      case 'strengthMin':
+        return f.strength[0];
+      case 'strengthMax':
+        return f.strength[1];
+      case 'min':
+        return f.amount[0];
+      case 'max':
+        return f.amount[1];
+      default:
+        return (f as unknown as Record<string, number>)[k] ?? 0;
     }
   };
   const set = (k: string, v: number): void => {
     switch (k) {
-      case 'kind': return edits.setKind(row, v, a.type);
-      case 'type': return edits.setKind(row, a.kind, v);
-      case 'side': return edits.setTarget(row, v, a.range);
-      case 'range': return edits.setTarget(row, a.side, v);
-      case 'element': return edits.setElement(row, v);
-      case 'level': return edits.setLevel(row, v);
-      case 'state': return edits.setState(row, v);
-      case 'strengthMin': return edits.setStrength(row, v, a.strength[1]);
-      case 'strengthMax': return edits.setStrength(row, a.strength[0], v);
-      case 'turns': return edits.setTurns(row, v);
-      case 'min': return edits.setAmount(row, v, a.amount[1]);
-      case 'max': return edits.setAmount(row, a.amount[0], v);
+      case 'kind':
+        return edits.setKind(row, v, a.type);
+      case 'type':
+        return edits.setKind(row, a.kind, v);
+      case 'side':
+        return edits.setTarget(row, v, a.range);
+      case 'range':
+        return edits.setTarget(row, a.side, v);
+      case 'element':
+        return edits.setElement(row, v);
+      case 'level':
+        return edits.setLevel(row, v);
+      case 'state':
+        return edits.setState(row, v);
+      case 'strengthMin':
+        return edits.setStrength(row, v, a.strength[1]);
+      case 'strengthMax':
+        return edits.setStrength(row, a.strength[0], v);
+      case 'turns':
+        return edits.setTurns(row, v);
+      case 'min':
+        return edits.setAmount(row, v, a.amount[1]);
+      case 'max':
+        return edits.setAmount(row, a.amount[0], v);
     }
   };
   return {
@@ -204,7 +242,13 @@ function actionAccess(actions: ActionBook, edits: ActionEdits, row: number): Fie
  * `monsters` = whose models to check the motion against (the users of the action, or the monster being edited).
  * The same layout as RPG3's (oahu/ActionPage): the message boxes, then a grid of the fields.
  */
-export function ActionEditor({ session, actions, row, monsters, onChange }: {
+export function ActionEditor({
+  session,
+  actions,
+  row,
+  monsters,
+  onChange,
+}: {
   session: Session;
   actions: ActionBook;
   row: number;
@@ -236,49 +280,136 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
   const p = { f, edited };
   const anim = actions.motion(row);
   const canMotion = edits.canSetMotion(row);
-  const missing = anim && SKILL_MOTION[anim] ? monsters.filter((m) => motions.get(m.row) && !motions.get(m.row)!.has(SKILL_MOTION[anim]![1])) : [];
-  const warnings = [kindWarning(actions, a), targetWarning(actions, a), a.strength[0] > a.strength[1] ? '状態の強さの最小が最大より大きい' : '', a.amount[0] > a.amount[1] ? '量の最小が最大より大きい' : ''].filter(Boolean);
+  const missing =
+    anim && SKILL_MOTION[anim]
+      ? monsters.filter((m) => motions.get(m.row) && !motions.get(m.row)!.has(SKILL_MOTION[anim]![1]))
+      : [];
+  const warnings = [
+    kindWarning(actions, a),
+    targetWarning(actions, a),
+    a.strength[0] > a.strength[1] ? '状態の強さの最小が最大より大きい' : '',
+    a.amount[0] > a.amount[1] ? '量の最小が最大より大きい' : '',
+  ].filter(Boolean);
   return (
     <>
-      <ActionTexts texts={texts} message={(id) => texts.text(id)?.text ?? ''} onEdit={edited} href={(r) => `#/actions/${r}`} fields={[{
-        key: 'name', label: '名前', id: a.nameId, place: 'actionData +0x04',
-        shared: a.nameId ? actions.actions.filter((x) => x.row !== row && x.nameId === a.nameId).map((x) => x.row) : [],
-        own: edits.canOwnName(row) ? () => { edits.ownName(row); } : undefined,
-        extra: <>
-          <button className="small" title="名前に使うメッセージを選び直します" onClick={() => setPickName(true)}>別のメッセージにする</button>
-          <InfoTip text={NAME_INFO} />
-        </>,
-      }]} />
+      <ActionTexts
+        texts={texts}
+        message={(id) => texts.text(id)?.text ?? ''}
+        onEdit={edited}
+        href={(r) => `#/actions/${r}`}
+        fields={[
+          {
+            key: 'name',
+            label: '名前',
+            id: a.nameId,
+            place: 'actionData +0x04',
+            shared: a.nameId
+              ? actions.actions.filter((x) => x.row !== row && x.nameId === a.nameId).map((x) => x.row)
+              : [],
+            own: edits.canOwnName(row)
+              ? () => {
+                  edits.ownName(row);
+                }
+              : undefined,
+            extra: (
+              <>
+                <button className="small" title="名前に使うメッセージを選び直します" onClick={() => setPickName(true)}>
+                  別のメッセージにする
+                </button>
+                <InfoTip text={NAME_INFO} />
+              </>
+            ),
+          },
+        ]}
+      />
       {pickName && (
-        <NamePicker session={session} actions={actions} current={a.nameId} onClose={() => setPickName(false)}
-          onPick={(id) => { setPickName(false); apply(() => edits.setName(row, id)); }} />
+        <NamePicker
+          session={session}
+          actions={actions}
+          current={a.nameId}
+          onClose={() => setPickName(false)}
+          onPick={(id) => {
+            setPickName(false);
+            apply(() => edits.setName(row, id));
+          }}
+        />
       )}
       <div className="stats stat-edit action-stats">
-        <Stat label="カテゴリ" info={KIND_INFO}><FieldChoice {...p} k="kind" options={KIND_OPTIONS} /></Stat>
-        <Stat label="種別" info={KIND_INFO} wide><FieldChoice {...p} k="type" labels={(t) => actionTypeLabel(a.kind, t)} /></Stat>
-        <Stat label="陣営" info={TARGET_INFO}><FieldChoice {...p} k="side" options={[0, 1, 2, 3].filter((v) => v <= 1 || v === a.side).map((v) => [v, `${v}: ${ACTION_SIDE[v] ?? '?'}`])} /></Stat>
+        <Stat label="カテゴリ" info={KIND_INFO}>
+          <FieldChoice {...p} k="kind" options={KIND_OPTIONS} />
+        </Stat>
+        <Stat label="種別" info={KIND_INFO} wide>
+          <FieldChoice {...p} k="type" labels={(t) => actionTypeLabel(a.kind, t)} />
+        </Stat>
+        <Stat label="陣営" info={TARGET_INFO}>
+          <FieldChoice
+            {...p}
+            k="side"
+            options={[0, 1, 2, 3]
+              .filter((v) => v <= 1 || v === a.side)
+              .map((v) => [v, `${v}: ${ACTION_SIDE[v] ?? '?'}`])}
+          />
+        </Stat>
         <Stat label="範囲" info={TARGET_INFO}>
-          <FieldChoice {...p} k="range" options={Array.from({ length: 16 }, (_, v) => v).filter((v) => v <= 8 || v === a.range).map((v) => [v, actionRangeLabel(v)])} />
+          <FieldChoice
+            {...p}
+            k="range"
+            options={Array.from({ length: 16 }, (_, v) => v)
+              .filter((v) => v <= 8 || v === a.range)
+              .map((v) => [v, actionRangeLabel(v)])}
+          />
           {rangePower(book, a) && <span className="muted small">{rangePower(book, a)}</span>}
         </Stat>
-        <Stat label="属性"><FieldChoice {...p} k="element" options={ELEMENT_OPTIONS} /></Stat>
-        <Stat label="量" info="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです"><FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" /></Stat>
+        <Stat label="属性">
+          <FieldChoice {...p} k="element" options={ELEMENT_OPTIONS} />
+        </Stat>
+        <Stat label="量" info="+0x18 / +0x1A (最小〜最大)。回復量やブレスのダメージなど。ふつうの攻撃は 0 のままです">
+          <FieldNumber {...p} k="min" />〜<FieldNumber {...p} k="max" />
+        </Stat>
         {a.raw.length > 0x32 && (
           <Stat label="付ける状態" info={STATE_INFO}>
-            <FieldChoice {...p} k="state" options={[[0, 'なし'], ...stateOptions(book, a.state).map(([id, name]): [number, string] => [id, `${id}: ${name}`])]} />
+            <FieldChoice
+              {...p}
+              k="state"
+              options={[
+                [0, 'なし'],
+                ...stateOptions(book, a.state).map(([id, name]): [number, string] => [id, `${id}: ${name}`]),
+              ]}
+            />
           </Stat>
         )}
         <Stat label="付与の段階" info={LEVEL_INFO}>
-          <FieldChoice {...p} k="level" disabled={!a.state} title="付ける状態がないので使われません" labels={(l) => levelLabel(book, l)} />
+          <FieldChoice
+            {...p}
+            k="level"
+            disabled={!a.state}
+            title="付ける状態がないので使われません"
+            labels={(l) => levelLabel(book, l)}
+          />
         </Stat>
-        <Stat label="状態の強さ" info={STRENGTH_INFO}><FieldNumber {...p} k="strengthMin" />〜<FieldNumber {...p} k="strengthMax" /></Stat>
-        {!(a.kind === 3 && a.type === 5) && <Stat label="状態のターン" info="+0x16 (s16)。付けた状態が続くターン数です。"><FieldNumber {...p} k="turns" /></Stat>}
+        <Stat label="状態の強さ" info={STRENGTH_INFO}>
+          <FieldNumber {...p} k="strengthMin" />〜<FieldNumber {...p} k="strengthMax" />
+        </Stat>
+        {!(a.kind === 3 && a.type === 5) && (
+          <Stat label="状態のターン" info="+0x16 (s16)。付けた状態が続くターン数です。">
+            <FieldNumber {...p} k="turns" />
+          </Stat>
+        )}
       </div>
-      {warnings.map((w) => <div key={w} className="issue warn">{`⚠ ${w}`}</div>)}
-      <h3 className="with-info">{'演出'}<InfoTip text={MOTION_INFO} /></h3>
+      {warnings.map((w) => (
+        <div key={w} className="issue warn">{`⚠ ${w}`}</div>
+      ))}
+      <h3 className="with-info">
+        {'演出'}
+        <InfoTip text={MOTION_INFO} />
+      </h3>
       <PerformanceSlots session={session} actions={actions} edits={edits} row={row} onChange={onChange} />
-      {!canMotion && actions.slot(row, 0x1e) === 0 && <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>}
-      {missing.length > 0 && <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>}
+      {!canMotion && actions.slot(row, 0x1e) === 0 && (
+        <div className="muted small">使用者の演出がありません。「演出を選ぶ」でほかのワザの演出を入れられます。</div>
+      )}
+      {missing.length > 0 && (
+        <div className="issue warn">{`⚠ ${missing.map((m) => m.name).join('・')} のモデルには使用者のモーション (${SKILL_MOTION[anim]![1]}) がありません。`}</div>
+      )}
     </>
   );
 }
@@ -287,7 +418,13 @@ export function ActionEditor({ session, actions, row, monsters, onChange }: {
  * Picking the name message of an action among the messages of the same file (MessageBattle for the skills) and the
  * added ones; the list starts with the ones no action uses.
  */
-function NamePicker({ session, actions, current, onPick, onClose }: {
+function NamePicker({
+  session,
+  actions,
+  current,
+  onPick,
+  onClose,
+}: {
   session: Session;
   actions: ActionBook;
   current: number;
@@ -297,8 +434,15 @@ function NamePicker({ session, actions, current, onPick, onClose }: {
   const users = new Map<number, string[]>();
   for (const x of actions.actions) if (x.nameId) users.set(x.nameId, [...(users.get(x.nameId) ?? []), `#${x.row}`]);
   return (
-    <BattleMessagePicker texts={session.game.master.texts} title="名前のメッセージを選ぶ" current={current} users={users} freeLabel="アクションが使っていないものだけ"
+    <BattleMessagePicker
+      texts={session.game.master.texts}
+      title="名前のメッセージを選ぶ"
+      current={current}
+      users={users}
+      freeLabel="アクションが使っていないものだけ"
       info="アクション以外 (戦闘の文章など) が使っているものもあるので、選んだあと本文を書き換えるときは、元の本文が何に使われていそうか確かめてください。"
-      onPick={onPick} onClose={onClose} />
+      onPick={onPick}
+      onClose={onClose}
+    />
   );
 }

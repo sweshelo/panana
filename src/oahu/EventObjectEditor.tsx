@@ -32,7 +32,19 @@ function pickBy(kind: number): { kind: ValueKind; by: 'global' | 'here' | 'dunge
 }
 
 /** The names of what a condition reads, and a select of the named values to point it at another one. */
-function ConditionLine({ row, c, story, edit, onEdit }: { row: Uint8Array; c: OahuEventCondition; story: ConditionNames; edit: (f: () => void) => void; onEdit: () => void }): ReactNode {
+function ConditionLine({
+  row,
+  c,
+  story,
+  edit,
+  onEdit,
+}: {
+  row: Uint8Array;
+  c: OahuEventCondition;
+  story: ConditionNames;
+  edit: (f: () => void) => void;
+  onEdit: () => void;
+}): ReactNode {
   const reads = conditionReads(story.code, story.ranges, c.kind, c.v1, c.v2, story.here);
   const named = reads.map((t) => story.names[valueNameKey(t.kind, t.index)]).filter(Boolean);
   const how = pickBy(c.kind);
@@ -45,7 +57,8 @@ function ConditionLine({ row, c, story, edit, onEdit }: { row: Uint8Array; c: Oa
         const g = oahuRangeOf(story.ranges, kind, index);
         if (how.by === 'global') return [{ index, name, v1: index, v2: c.v2 }];
         if (!g?.dungeon) return [];
-        if (how.by === 'here') return g.dungeon === story.here ? [{ index, name, v1: index - g[kind][0], v2: c.v2 }] : [];
+        if (how.by === 'here')
+          return g.dungeon === story.here ? [{ index, name, v1: index - g[kind][0], v2: c.v2 }] : [];
         return [{ index, name, v1: g.dungeon, v2: index - g[kind][0] }];
       })
     : [];
@@ -53,9 +66,23 @@ function ConditionLine({ row, c, story, edit, onEdit }: { row: Uint8Array; c: Oa
   return (
     <p className="small muted">
       {`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}
-      {reads.length > 0 && <> ・ {reads.map((t, i) => <a key={i} href={`#/flags/${t.kind}.${t.index}`}>{`${i ? ' ' : ''}${valueLabel(t.kind, t.index)}${story.names[valueNameKey(t.kind, t.index)] ? ` ${story.names[valueNameKey(t.kind, t.index)]}` : ''}`}</a>)}</>}
+      {reads.length > 0 && (
+        <>
+          {' '}
+          ・{' '}
+          {reads.map((t, i) => (
+            <a
+              key={i}
+              href={`#/flags/${t.kind}.${t.index}`}
+            >{`${i ? ' ' : ''}${valueLabel(t.kind, t.index)}${story.names[valueNameKey(t.kind, t.index)] ? ` ${story.names[valueNameKey(t.kind, t.index)]}` : ''}`}</a>
+          ))}
+        </>
+      )}
       {options.length > 0 && (
-        <select className="small" value={current ? valueNameKey(current.kind, current.index) : ''} title={named.length ? undefined : '名前の付いた値から選ぶ'}
+        <select
+          className="small"
+          value={current ? valueNameKey(current.kind, current.index) : ''}
+          title={named.length ? undefined : '名前の付いた値から選ぶ'}
           onChange={(e) => {
             const opt = options.find((x) => valueNameKey(how!.kind, x.index) === e.target.value);
             if (!opt) return;
@@ -64,9 +91,15 @@ function ConditionLine({ row, c, story, edit, onEdit }: { row: Uint8Array; c: Oa
               w32(row, o + 4, opt.v2);
             });
             onEdit();
-          }}>
+          }}
+        >
           <option value="">名前で選ぶ…</option>
-          {options.map((x) => <option key={x.index} value={valueNameKey(how!.kind, x.index)}>{`${valueLabel(how!.kind, x.index)} ${x.name}`}</option>)}
+          {options.map((x) => (
+            <option
+              key={x.index}
+              value={valueNameKey(how!.kind, x.index)}
+            >{`${valueLabel(how!.kind, x.index)} ${x.name}`}</option>
+          ))}
         </select>
       )}
     </p>
@@ -84,7 +117,14 @@ export function pointLabel(maps: OahuMaps, map: OahuMapInfo, id: number): string
   return i >= 0 ? `の出入口 #${i}` : `の地点 ${hex8(id).toUpperCase()}`;
 }
 
-export function EventObjectEditor({ maps, row, original, story, edit = (f) => f(), onEdit }: {
+export function EventObjectEditor({
+  maps,
+  row,
+  original,
+  story,
+  edit = (f) => f(),
+  onEdit,
+}: {
   maps: OahuMaps;
   /** Names of the save values the conditions read (#87). */
   story?: ConditionNames;
@@ -101,11 +141,21 @@ export function EventObjectEditor({ maps, row, original, story, edit = (f) => f(
     <>
       <p className="small">
         {oahuKindName(row[0x55]!)}
-        {dest && <> ・ 行き先 <a href={`#/maps/${encodeURIComponent(dest.name)}`}>{dest.name}</a>{` ${pointLabel(maps, dest, u32(row, 0x14))}`}</>}
+        {dest && (
+          <>
+            {' '}
+            ・ 行き先 <a href={`#/maps/${encodeURIComponent(dest.name)}`}>{dest.name}</a>
+            {` ${pointLabel(maps, dest, u32(row, 0x14))}`}
+          </>
+        )}
       </p>
-      {conds.map((c) => story
-        ? <ConditionLine key={c.field} row={row} c={c} story={story} edit={edit} onEdit={onEdit} />
-        : <p key={c.field} className="small muted">{`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}</p>)}
+      {conds.map((c) =>
+        story ? (
+          <ConditionLine key={c.field} row={row} c={c} story={story} edit={edit} onEdit={onEdit} />
+        ) : (
+          <p key={c.field} className="small muted">{`${c.field === 0x53 ? '出る' : '消える'}: ${c.text}`}</p>
+        ),
+      )}
       <table className="enc-table row-fields">
         <tbody>
           {OAHU_EVENT_OBJECT.fields.map((f) => {
@@ -114,13 +164,27 @@ export function EventObjectEditor({ maps, row, original, story, edit = (f) => f(
             const [lo, hi] = fieldRange(f);
             return (
               <tr key={f.key} className={f.unsure ? 'muted' : ''}>
-                <td>{f.label}{f.note && <InfoTip text={f.note} />}</td>
+                <td>
+                  {f.label}
+                  {f.note && <InfoTip text={f.note} />}
+                </td>
                 <td className="mono muted">{fieldPlace(f)}</td>
                 <td>
-                  <NumberInput value={v} min={lo} max={hi} className={`num-input${o !== v ? ' edited' : ''}`} title={o !== v ? `元の値 ${o}` : `${lo}〜${hi}`}
-                    onCommit={(x) => { edit(() => writeField(row, f, x)); onEdit(); }} />
+                  <NumberInput
+                    value={v}
+                    min={lo}
+                    max={hi}
+                    className={`num-input${o !== v ? ' edited' : ''}`}
+                    title={o !== v ? `元の値 ${o}` : `${lo}〜${hi}`}
+                    onCommit={(x) => {
+                      edit(() => writeField(row, f, x));
+                      onEdit();
+                    }}
+                  />
                 </td>
-                <td className="mono muted small">{f.hex ? (f.type === 'u32' ? hex8(v).toUpperCase() : `0x${v.toString(16).toUpperCase()}`) : ''}</td>
+                <td className="mono muted small">
+                  {f.hex ? (f.type === 'u32' ? hex8(v).toUpperCase() : `0x${v.toString(16).toUpperCase()}`) : ''}
+                </td>
               </tr>
             );
           })}

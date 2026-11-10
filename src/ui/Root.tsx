@@ -43,10 +43,7 @@ interface Ready {
   ids: Record<TitleKey, number>;
 }
 
-type State =
-  | { kind: 'start'; error?: string }
-  | { kind: 'loading' }
-  | { kind: 'ready'; ready: Ready };
+type State = { kind: 'start'; error?: string } | { kind: 'loading' } | { kind: 'ready'; ready: Ready };
 
 /** The session and the map editor of a game (the edits saved last time are restored). */
 async function openPages(game: Game, autoRestore: boolean): Promise<{ session: Session; editor: MapEditor }> {
@@ -77,8 +74,10 @@ export function Root(): ReactNode {
 
   /** Opens one dump as the pages of its game (RPG2's session is restored without asking when it replaces one). */
   const openOne = async (dump: Dump, opened: Opened): Promise<Opened> => {
-    if (dump.title.key === 'oahu') return { ...opened, oahu: await withSavedMod('oahu', (mod) => OahuSession.open(dump, mod)) };
-    if (dump.title.key === 'honolulu') return { ...opened, honolulu: await withSavedMod('honolulu', (mod) => HonoluluSession.open(dump, mod)) };
+    if (dump.title.key === 'oahu')
+      return { ...opened, oahu: await withSavedMod('oahu', (mod) => OahuSession.open(dump, mod)) };
+    if (dump.title.key === 'honolulu')
+      return { ...opened, honolulu: await withSavedMod('honolulu', (mod) => HonoluluSession.open(dump, mod)) };
     if (dump.title.key === 'lanai') {
       opened.lanai?.saveNow();
       return { ...opened, lanai: await withSavedMod('lanai', (baseMod) => LanaiSession.open(dump, { baseMod })) };
@@ -89,7 +88,8 @@ export function Root(): ReactNode {
     before?.session.saveNow();
     rawDump.current = dump;
     const pages = await withSavedMod('kahara', async (mod) => openPages(await Game.load(dump, mod), !!before));
-    if (!dump.label.endsWith('(キャッシュ)')) saveDumpCache(dump, (await Game.load(dump)).neededFiles()).catch(() => {});
+    if (!dump.label.endsWith('(キャッシュ)'))
+      saveDumpCache(dump, (await Game.load(dump)).neededFiles()).catch(() => {});
     return { ...opened, kahara: pages };
   };
 
@@ -104,7 +104,8 @@ export function Root(): ReactNode {
     const active = dumps[0]!.title.key;
     if (prev) {
       hashes.current.set(prev.active, location.hash);
-      if (active !== prev.active || dumps.some((d) => d.title.key === prev.active)) history.replaceState(null, '', location.pathname + location.search + (hashes.current.get(active) ?? ''));
+      if (active !== prev.active || dumps.some((d) => d.title.key === prev.active))
+        history.replaceState(null, '', location.pathname + location.search + (hashes.current.get(active) ?? ''));
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } else if (location.hash) {
       // a hash left from before names another game's page: every game opens on its first page (the maps)
@@ -180,7 +181,9 @@ export function Root(): ReactNode {
   };
 
   const toStart = (): void => {
-    if (ready) for (const k of openedKeys(ready.opened)) k === 'kahara' ? ready.opened.kahara!.session.saveNow() : ready.opened[k]!.saveNow();
+    if (ready)
+      for (const k of openedKeys(ready.opened))
+        k === 'kahara' ? ready.opened.kahara!.session.saveNow() : ready.opened[k]!.saveNow();
     hashes.current.clear();
     setRoms(false);
     setChoice(null);
@@ -194,7 +197,10 @@ export function Root(): ReactNode {
     const pages = await openPages(await Game.load(rawDump.current!, mod), true);
     await saveBaseMod('kahara', mod);
     pages.editor.setStatus(mod ? `土台の MOD: ${mod.label}` : '土台の MOD を外しました');
-    setState({ kind: 'ready', ready: { ...ready, opened: { ...ready.opened, kahara: pages }, ids: { ...ready.ids, kahara: ++ids.current } } });
+    setState({
+      kind: 'ready',
+      ready: { ...ready, opened: { ...ready.opened, kahara: pages }, ids: { ...ready.ids, kahara: ++ids.current } },
+    });
   };
 
   /** Reopens RPG3, FREE! or the first game on another base MOD, keeping the edits (they are saved first). */
@@ -213,33 +219,102 @@ export function Root(): ReactNode {
       next = { honolulu: await HonoluluSession.open(o.honolulu!.raw, mod) };
     }
     await saveBaseMod(key, mod);
-    setState({ kind: 'ready', ready: { ...ready, opened: { ...o, ...next }, ids: { ...ready.ids, [key]: ++ids.current } } });
+    setState({
+      kind: 'ready',
+      ready: { ...ready, opened: { ...o, ...next }, ids: { ...ready.ids, [key]: ++ids.current } },
+    });
   };
 
-  const workspace = useMemo((): Workspace | null => ready && { opened: ready.opened, active: ready.active, showRoms: () => { setRomError(null); setRoms(true); } }, [ready]);
+  const workspace = useMemo(
+    (): Workspace | null =>
+      ready && {
+        opened: ready.opened,
+        active: ready.active,
+        showRoms: () => {
+          setRomError(null);
+          setRoms(true);
+        },
+      },
+    [ready],
+  );
   setShownWorkspace(workspace);
 
-  if (state.kind === 'loading') return <div className="start"><p>読み込み中…</p></div>;
-  if (state.kind === 'start' || !ready || !workspace) return <StartScreen error={state.kind === 'start' ? state.error : undefined} onOpen={load} />;
+  if (state.kind === 'loading')
+    return (
+      <div className="start">
+        <p>読み込み中…</p>
+      </div>
+    );
+  if (state.kind === 'start' || !ready || !workspace)
+    return <StartScreen error={state.kind === 'start' ? state.error : undefined} onOpen={load} />;
   const { opened, active } = ready;
-  const replace = (o: Partial<Opened>): void => setState({ kind: 'ready', ready: { ...ready, opened: { ...ready.opened, ...o }, ids: { ...ready.ids, [active]: ++ids.current } } });
+  const replace = (o: Partial<Opened>): void =>
+    setState({
+      kind: 'ready',
+      ready: { ...ready, opened: { ...ready.opened, ...o }, ids: { ...ready.ids, [active]: ++ids.current } },
+    });
   let shell: ReactNode;
   if (active === 'oahu' && opened.oahu)
-    shell = <OahuShell key={ready.ids.oahu} session={opened.oahu} onSession={(session) => replace({ oahu: session })} onBaseMod={(mod) => reopenWith('oahu', mod)} />;
+    shell = (
+      <OahuShell
+        key={ready.ids.oahu}
+        session={opened.oahu}
+        onSession={(session) => replace({ oahu: session })}
+        onBaseMod={(mod) => reopenWith('oahu', mod)}
+      />
+    );
   else if (active === 'lanai' && opened.lanai)
-    shell = <LanaiShell key={ready.ids.lanai} session={opened.lanai} onSession={(session) => replace({ lanai: session })} onBaseMod={(mod) => reopenWith('lanai', mod)} />;
+    shell = (
+      <LanaiShell
+        key={ready.ids.lanai}
+        session={opened.lanai}
+        onSession={(session) => replace({ lanai: session })}
+        onBaseMod={(mod) => reopenWith('lanai', mod)}
+      />
+    );
   else if (active === 'honolulu' && opened.honolulu)
-    shell = <HonoluluShell key={ready.ids.honolulu} session={opened.honolulu} onBaseMod={(mod) => reopenWith('honolulu', mod)} />;
+    shell = (
+      <HonoluluShell
+        key={ready.ids.honolulu}
+        session={opened.honolulu}
+        onBaseMod={(mod) => reopenWith('honolulu', mod)}
+      />
+    );
   else if (opened.kahara)
-    shell = <Shell key={ready.ids.kahara} session={opened.kahara.session} editor={opened.kahara.editor} onBaseMod={(mod) => reloadWith(opened.kahara!.session, mod)} />;
+    shell = (
+      <Shell
+        key={ready.ids.kahara}
+        session={opened.kahara.session}
+        editor={opened.kahara.editor}
+        onBaseMod={(mod) => reloadWith(opened.kahara!.session, mod)}
+      />
+    );
   return (
     <WorkspaceContext.Provider value={workspace}>
       {shell}
       {roms && (
-        <RomDialog opened={opened} active={active} busy={busy} error={romError} onShow={show} onClose={() => { if (!busy) setRoms(false); }}
-          onUnload={unload} onAdd={add} onStart={toStart} />
+        <RomDialog
+          opened={opened}
+          active={active}
+          busy={busy}
+          error={romError}
+          onShow={show}
+          onClose={() => {
+            if (!busy) setRoms(false);
+          }}
+          onUnload={unload}
+          onAdd={add}
+          onStart={toStart}
+        />
       )}
-      {choice && !roms && <TitleChoiceDialog opened={opened} keys={choice.filter((k) => opened[k])} onPick={show} onClose={() => setChoice(null)} />}
+      {choice && !roms && (
+        <TitleChoiceDialog
+          opened={opened}
+          keys={choice.filter((k) => opened[k])}
+          onPick={show}
+          onClose={() => setChoice(null)}
+        />
+      )}
     </WorkspaceContext.Provider>
   );
 }

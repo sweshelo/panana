@@ -25,7 +25,10 @@ function gsTable(name: string, rows: number, size: number): Uint8Array {
   w32(b, 0x10, off);
   w32(b, 0x14, rows * size);
   w32(b, 0x18, b.length);
-  b.set([...name].map((c) => c.charCodeAt(0)), 0x30);
+  b.set(
+    [...name].map((c) => c.charCodeAt(0)),
+    0x30,
+  );
   for (let r = 0; r < rows; r++) for (let i = 0; i < size; i++) b[off + r * size + i] = (r + i) & 0xff;
   return b;
 }
@@ -33,7 +36,8 @@ function gsTable(name: string, rows: number, size: number): Uint8Array {
 /** A text GMSG with messages from `first` (type code 1, then the text). */
 function gmsg(first: number, texts: string[]): Uint8Array {
   const bodies = texts.map((t) => Uint16Array.from([1, ...[...t].map((c) => c.charCodeAt(0)), 0]));
-  const tbl = 0x20, base = tbl + texts.length * 4;
+  const tbl = 0x20,
+    base = tbl + texts.length * 4;
   const size = base + bodies.reduce((a, u) => a + u.length * 2, 0);
   const b = new Uint8Array(size);
   b.set([0x47, 0x4d, 0x53, 0x47]);
@@ -71,7 +75,10 @@ describe('RomFS viewer', () => {
   test('route: path and entry round trip, folders kept in one segment', () => {
     expect(romfsHref('sound/sound.bcsar')).toBe('#/romfs/sound%2Fsound.bcsar');
     expect(parseRomfsArg(romfsHref('sound/sound.bcsar').split('/')[2])).toEqual({ path: 'sound/sound.bcsar' });
-    expect(parseRomfsArg(romfsHref('21350000', 0x4b2a1c00).split('/')[2])).toEqual({ path: '21350000', entry: 0x4b2a1c00 });
+    expect(parseRomfsArg(romfsHref('21350000', 0x4b2a1c00).split('/')[2])).toEqual({
+      path: '21350000',
+      entry: 0x4b2a1c00,
+    });
     expect(parseRomfsArg('%E0%A4%A')).toBeUndefined();
   });
 
@@ -122,13 +129,23 @@ describe('RomFS viewer', () => {
     expect(mh).toContain('キズぐすり');
 
     expect(hexDump(Uint8Array.from([0x41, 0x42, 0, 0xff]))).toBe('00000000  41 42 00 ff' + ' '.repeat(36) + '  AB..');
-    expect(renderToString(<FormatBody body={new Uint8Array(4)} name={null} profile={kaharaRomfsProfile} />)).toContain('形式は不明');
+    expect(renderToString(<FormatBody body={new Uint8Array(4)} name={null} profile={kaharaRomfsProfile} />)).toContain(
+      '形式は不明',
+    );
   });
 
   test('page: every file with what is known of it; the master is shown first', () => {
-    const files = [{ path: '21350000', size: 2 << 20 }, { path: 'sound/sound.bcsar', size: 2048 }, { path: '80790000', size: 100 }];
+    const files = [
+      { path: '21350000', size: 2 << 20 },
+      { path: 'sound/sound.bcsar', size: 2048 },
+      { path: '80790000', size: 100 },
+    ];
     const dump: Dump = {
-      label: 'test', title: OAHU, code: new Uint8Array(), names: () => ['21350000', '80790000'], files: () => files,
+      label: 'test',
+      title: OAHU,
+      code: new Uint8Array(),
+      names: () => ['21350000', '80790000'],
+      files: () => files,
       readRomfs: () => new Promise(() => {}),
     };
     const html = renderToString(<RomfsPage dump={dump} profile={oahuRomfsProfile} arg={undefined} />);
