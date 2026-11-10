@@ -138,6 +138,25 @@ function mergeStrings(t: LanaiTable, r: number, bytes: Uint8Array): Uint8Array {
   return out;
 }
 
+/**
+ * The row an added row is put back as a copy of, so that its string fields are string fields again (a row of zeros has
+ * none, and the saved strings could not be written into it): the ROM's row whose string fields hold what the saved row
+ * holds (the row it was copied from, for the strings that were not written), else the first row with string fields.
+ */
+function addedRowSource(t: LanaiTable, after: Uint8Array): number | undefined {
+  const cols = t.stringOffsets();
+  if (!cols.length || !t.rows) return t.rows ? 0 : undefined;
+  const rows = Math.min(t.rows, t.originalRows);
+  let first: number | undefined;
+  for (let r = 0; r < rows; r++) {
+    const strings = cols.filter((o) => t.isString(r, o));
+    if (!strings.length) continue;
+    first ??= r;
+    if (strings.every((o) => t.u32(r, o) === u32(after, o))) return r;
+  }
+  return first ?? 0;
+}
+
 /** "archive/entry hash": names a table across loads. */
 export const lanaiTableKey = (t: Pick<LanaiTableRef, 'archive' | 'entry'>): string => `${t.archive}/${hex8(t.entry)}`;
 
@@ -406,7 +425,7 @@ export class LanaiSession {
       if (!t || after.length !== t.rowSize) continue;
       try {
         if (!before) {
-          while (t.rows <= r) t.addRow();
+          while (t.rows <= r) t.addRow(addedRowSource(t, after));
           t.setRow(r, mergeStrings(t, r, after));
           continue;
         }
