@@ -34,11 +34,14 @@ export function DestinationFields({
   map,
   point,
   onChange,
+  labels = ['行き先のマップ', '行き先の地点 ID'],
 }: {
   maps: LanaiMaps;
   map: number;
   point: number;
   onChange: (map: number, point: number) => void;
+  /** The labels of the map and the point fields. */
+  labels?: [map: string, point: string];
 }): ReactNode {
   const dest = maps.map(map);
   const groups: MapPickerGroups = maps.groups.flatMap((g) => {
@@ -55,7 +58,7 @@ export function DestinationFields({
   return (
     <>
       <label className="field">
-        <span>行き先のマップ</span>
+        <span>{labels[0]}</span>
         <MapPickerButton
           groups={groups}
           value={map}
@@ -68,7 +71,7 @@ export function DestinationFields({
         />
       </label>
       <label className="field">
-        <span>行き先の地点 ID</span>
+        <span>{labels[1]}</span>
         <PlacedPickButton
           title={`行き先の地点を選ぶ (${dest?.name ?? hex8(map)})`}
           value={point}

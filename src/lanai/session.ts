@@ -30,6 +30,7 @@ import type { SoundNames } from '../game/sound';
 import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
+import { conditionScriptPatch, parseConditionScript } from './conditionScript';
 import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY } from './maps';
 import {
   encodeLanaiMessage,
@@ -117,6 +118,8 @@ export type LanaiSavedMapTable = [archive: string, bytes: Uint8Array];
 export type LanaiSavedEntry = [archive: string, hash: number, file: string, like: number, bytes: Uint8Array];
 
 export interface LanaiSaved {
+  createdFiles?: [string, Uint8Array][];
+  conditionScripts?: [number, string][];
   rows: LanaiSavedRow[];
   /** Written strings (absent in edits saved before strings could be written, and when none were). */
   strings?: LanaiSavedString[];
@@ -178,6 +181,22 @@ function addedRowSource(t: LanaiTable, after: Uint8Array): number | undefined {
 export const lanaiTableKey = (t: Pick<LanaiTableRef, 'archive' | 'entry'>): string => `${t.archive}/${hex8(t.entry)}`;
 
 export class LanaiSession {
+  /** New archive/CRR files; the initial archive bytes are the baseline for subsequent table/map edits. */
+  readonly createdFiles = new Map<string, Uint8Array>();
+  readonly conditionScripts = new Map<number, string>();
+
+  addFile(name: string, bytes: Uint8Array): void {
+    if (this.createdFiles.has(name) || this.dump.files?.().some((f) => f.path.toUpperCase() === name.toUpperCase()))
+      throw new Error(`ファイル ${name} は既にあります`);
+    this.createdFiles.set(name, bytes.slice());
+  }
+
+  setConditionScript(id: number, source: string): void {
+    if (!Number.isInteger(id) || id < 1 || id > 0xffff) throw new Error('スクリプト番号は 1〜65535 です');
+    parseConditionScript(source);
+    this.conditionScripts.set(id, source);
+  }
+
   private readonly archives = new Map<string, Promise<Archive>>();
   private readonly tablesOf = new Map<string, Promise<LanaiTableRef[]>>();
   /** The lists tablesIn resolved to (the added tables go into them). */
@@ -360,6 +379,8 @@ export class LanaiSession {
   /** Whether anything differs from the ROM (tables or maps). */
   get changed(): boolean {
     return (
+      this.createdFiles.size > 0 ||
+      this.conditionScripts.size > 0 ||
       this.changedTables().length > 0 ||
       this.changedMapDbs().length > 0 ||
       this.changedMapTables().length > 0 ||
@@ -378,6 +399,20 @@ export class LanaiSession {
       if (r.table) r.table.data = r.table.original;
       this.mapsReset(r.archive);
     }
+    for (const key of this.createdFiles.keys()) {
+      for (const t of this.others.filter((t) => t.archive === key)) {
+        this.refs.delete(t.table);
+        this.others.splice(this.others.indexOf(t), 1);
+      }
+      this.otherSources.delete(key);
+      this.archives.delete(key);
+      this.tablesOf.delete(key);
+      this.tablesRead.delete(key);
+      this.mapDbs.delete(key);
+      this.mapDbsRead.delete(key);
+    }
+    this.createdFiles.clear();
+    this.conditionScripts.clear();
     this.dropCap = false;
     this.edited();
   }
@@ -404,6 +439,8 @@ export class LanaiSession {
     ]);
     return {
       rows,
+      ...(this.createdFiles.size ? { createdFiles: [...this.createdFiles] } : {}),
+      ...(this.conditionScripts.size ? { conditionScripts: [...this.conditionScripts] } : {}),
       ...(strings.length ? { strings } : {}),
       ...(maps.length ? { maps } : {}),
       ...(mapTables.length ? { mapTables } : {}),
@@ -420,6 +457,8 @@ export class LanaiSession {
    * archives and the map sections, whose archives are read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
+    for (const [name, bytes] of saved.createdFiles ?? []) this.addFile(name, bytes);
+    for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
     this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);
     const known = new Set([...this.sources.keys(), ...this.otherSources.keys()]);
@@ -546,7 +585,18 @@ export class LanaiSession {
         like: findEntry(arc, t.added!.like)!,
       });
     }
-    return new Map([...repl].map(([name, { arc, m, added }]) => [name, rebuildArchive(arc, m, added)]));
+    const files = new Map(this.createdFiles);
+    for (const [name, { arc, m, added }] of repl) files.set(name, rebuildArchive(arc, m, added));
+    const roots = [...this.createdFiles.keys()].filter((n) => /^[0-9A-F]{8}$/.test(n));
+    if (roots.length) {
+      const hashes = [...new Set([...this.dump.update!.patched, ...roots])];
+      const list = new Uint8Array(4 + hashes.length * 4);
+      const view = new DataView(list.buffer);
+      view.setUint32(0, hashes.length, true);
+      hashes.forEach((h, i) => view.setUint32(4 + i * 4, parseInt(h, 16), true));
+      files.set('patchList.bin', list);
+    }
+    return files;
   }
 
   /** The RomFS files of the MOD with the archives holding ported models (#100). */
@@ -571,11 +621,18 @@ export class LanaiSession {
    */
   codeIps(): Uint8Array | null {
     const base = this.baseMod?.ips ?? null;
-    if (!this.dropCap) return base;
-    const problem = this.dropCapProblem();
+    const script = conditionScriptPatch(this);
+    if (!this.dropCap && !script) return base;
+    const problem = this.dropCap ? this.dropCapProblem() : null;
     if (problem) throw new Error(problem);
     const code = lanaiCode(this.dump);
-    const built = [...buildPatches(code, [dropCapPatch('lanai')], LANAI_LAYOUT).values()];
+    const built = [
+      ...buildPatches(
+        code,
+        [...(this.dropCap ? [dropCapPatch('lanai')] : []), ...(script ? [script] : [])],
+        LANAI_LAYOUT,
+      ).values(),
+    ];
     const err = built.find((b) => b.errors.length)?.errors[0];
     if (err) throw new Error(`パッチの ${err.line} 行目: ${err.message}`);
     return appendIps(base, patchRecords(built), code);
@@ -645,7 +702,9 @@ export class LanaiSession {
     const key = name.toUpperCase();
     let p = this.archives.get(key);
     if (!p) {
-      p = this.dump.readRomfs(key).then(parseArchive);
+      p = (this.createdFiles.has(key) ? Promise.resolve(this.createdFiles.get(key)!) : this.dump.readRomfs(key)).then(
+        parseArchive,
+      );
       p.catch(() => this.archives.delete(key));
       this.archives.set(key, p);
     }

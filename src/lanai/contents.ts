@@ -5,6 +5,7 @@ import { entryBlob, unpackEntry, type Archive } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { ascii, hex8, u32 } from '../util/bytes';
 import type { LanaiSession, LanaiTableRef } from './session';
+import type { LanaiCondition } from './conditions';
 
 /** A stage: a row of MapStageIntegration (MapStage +0x00..+0x33, then the content, its archive, its TableResource). */
 export interface LanaiStage {
@@ -17,8 +18,10 @@ export interface LanaiStage {
   name: string;
   mission: string;
   note: string;
-  /** +0x24 (3 = story, 0x16 = events …, 推定). */
-  category: number;
+  /** +0x1C / +0x20 / +0x24: display/unlock predicate. */
+  visible: LanaiCondition;
+  /** +0x28 / +0x2C / +0x30: hide predicate, which takes precedence. */
+  hidden: LanaiCondition;
   /** +0x49 (MapStage +0x3D): stamina to enter the stage. */
   stamina: number;
 }
@@ -31,8 +34,6 @@ export interface LanaiContent {
   tableResource: number;
   stages: LanaiStage[];
 }
-
-export const CATEGORY_NOTE: Record<number, string> = { 3: '本編 (推定)', 0x16: 'イベント系 (推定)' };
 
 export function lanaiContents(s: LanaiSession): LanaiContent[] {
   const contents = s.need('Contents');
@@ -56,7 +57,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
       name: m < 0 ? '' : s.plain(msg, m, 'stage_name').trim(),
       mission: m < 0 ? '' : s.plain(msg, m, 'stage_mission').trim(),
       note: m < 0 ? '' : s.plain(msg, m, 'stage_exp'),
-      category: row[0x24]!,
+      visible: { kind: row[0x24]!, v1: u32(row, 0x1c), v2: u32(row, 0x20) },
+      hidden: { kind: row[0x30]!, v1: u32(row, 0x28), v2: u32(row, 0x2c) },
       stamina: row[0x49]!,
     };
     out[stage.content]?.stages.push(stage);
@@ -75,6 +77,38 @@ export interface CroInfo {
   classes: string[];
   /** Imported functions, as "ScriptChara::MoveTo". */
   imports: string[];
+  /**
+   * The indexed exports that do something (not `mov r0, #0; bx lr` or `bx lr`). Every content's CRO has the same 41
+   * exports, which the main program calls by index (FUN_002E7E4C → nn::ro; contents.md §4.3). Empty when the CRO
+   * cannot be read.
+   */
+  hooks: number[];
+}
+
+/** The hooks every content's CRO has (common to all 127, contents.md §4.3). */
+export const CRO_COMMON_HOOKS = [13, 14, 15, 16, 17, 18, 19, 33, 37, 39] as const;
+/** The hook the field calls when it starts (FUN_00182324): the CRO returns the opening event or null. */
+export const CRO_HOOK_START_EVENT = 3;
+
+/** The indexed exports of a CRO that do something (see CroInfo.hooks). */
+export function croHooks(b: Uint8Array): number[] {
+  if (b.length < 0x138 || ascii(b, 0x80, 4) !== 'CRO0') return [];
+  const segTable = u32(b, 0xc8),
+    segs = u32(b, 0xcc),
+    table = u32(b, 0xd8),
+    n = u32(b, 0xdc);
+  if (segTable + segs * 12 > b.length || table + n * 4 > b.length) return [];
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const v = u32(b, table + i * 4);
+    const seg = v & 0xf;
+    if (seg >= segs) continue;
+    const at = u32(b, segTable + seg * 12) + (v >>> 4);
+    if (at + 8 > b.length) continue;
+    const empty = u32(b, at) === 0xe12fff1e || (u32(b, at) === 0xe3a00000 && u32(b, at + 4) === 0xe12fff1e);
+    if (!empty) out.push(i);
+  }
+  return out;
 }
 
 /** "_ZN11ScriptChara6MoveToE…" -> "ScriptChara::MoveTo" (the nested name only; other names are kept as they are). */
@@ -110,7 +144,7 @@ export function croInfo(b: Uint8Array): CroInfo {
     if (m && Number(m[1]) === m[2]!.length) classes.push(m[2]!);
   }
   const imports = [...new Set(strings.filter((s) => s.startsWith('_ZN')).map(demangleName))].sort();
-  return { module, classes: [...new Set(classes)].sort(), imports };
+  return { module, classes: [...new Set(classes)].sort(), imports, hooks: croHooks(b) };
 }
 
 /** A content's archive read: its tables, its CRO, the other entries. */

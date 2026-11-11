@@ -4,6 +4,7 @@ import { LANAI_CONDITIONS, lanaiConditionLabel } from './conditions';
 import { ContentSelect } from './MapParts';
 import type { LanaiEditState } from './mapedit';
 import { LanaiEventSelect } from './EventSelect';
+import { LanaiConditionEditor } from './ConditionEditor';
 
 export function EventConditionFields({
   st,
@@ -61,7 +62,22 @@ export function EventConditionFields({
           />
         </label>
       )}
-      {kind !== 0 && !spec && <p className="muted small">意味が未確定の条件です。現在の種類と値を保持します。</p>}
+      {kind !== 0 && kind !== 0x72 && !spec && (
+        <p className="muted small">意味が未確定の条件です。現在の種類と値を保持します。</p>
+      )}
+      <LanaiConditionEditor
+        key={`${st.info!.dungeon}:${event}:${field}`}
+        session={st.maps.session}
+        value={{ kind, v1: first, v2: second }}
+        scriptOnly
+        onChange={(c) =>
+          st.setEventField(event, (t) => {
+            t.setU8(event, field, c.kind);
+            t.setU32(event, offset, c.v1);
+            t.setU32(event, offset + 4, c.v2);
+          })
+        }
+      />
     </div>
   );
 }

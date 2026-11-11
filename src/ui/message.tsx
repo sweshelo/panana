@@ -125,6 +125,8 @@ export interface MessageSource {
   };
   /** The line for an ID that is not there. */
   missing?(id: number): string;
+  /** Optional insertion picker; inserts into the current selection of the draft. */
+  tools?(insert: (text: string) => void): ReactNode;
 }
 
 const gmsgSources = new WeakMap<MessageStore, MessageSource>();
@@ -325,6 +327,9 @@ function MessageText({
 }): ReactNode {
   const stored = src.text(id)!;
   const [draft, setDraft] = useState(stored);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const selection = useRef<[number, number]>([stored.length, stored.length]);
+  const usingTools = useRef(false);
   let preview: ReactNode;
   let error = '';
   try {
@@ -340,13 +345,47 @@ function MessageText({
   return (
     <>
       <textarea
+        ref={textarea}
+        onFocus={() => {
+          usingTools.current = false;
+        }}
+        onSelect={(e) => {
+          selection.current = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
+        }}
         className="msg-text"
         autoFocus={focus}
         rows={Math.min(8, stored.split('\n').length + 1)}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => {
+          if (!usingTools.current) commit();
+        }}
       />
+      {src.tools && (
+        <div
+          onPointerDownCapture={() => {
+            usingTools.current = true;
+            const el = textarea.current;
+            if (el && document.activeElement === el) selection.current = [el.selectionStart, el.selectionEnd];
+          }}
+          onFocusCapture={() => {
+            usingTools.current = true;
+          }}
+        >
+          {src.tools((text) => {
+            const [start, end] = selection.current;
+            setDraft(draft.slice(0, start) + text + draft.slice(end));
+            selection.current = [start + text.length, start + text.length];
+            requestAnimationFrame(() => {
+              textarea.current?.focus();
+              textarea.current?.setSelectionRange(...selection.current);
+            });
+          })}
+          <button onMouseDown={(e) => e.preventDefault()} onClick={commit} disabled={!!error || draft === stored}>
+            反映
+          </button>
+        </div>
+      )}
       {error && <div className="error small">{error}</div>}
       <div className="msg-preview">{preview}</div>
     </>

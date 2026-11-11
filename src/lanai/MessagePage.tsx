@@ -97,7 +97,7 @@ export function LanaiMessagePage({ session, arg }: { session: LanaiSession; arg:
             out.push({ ref, row: r, key: `${tableKey(ref)}:${r}` });
         return out;
       }),
-    [tables],
+    [tables, revision],
   );
   const byKey = useMemo(() => new Map(all.map((e) => [e.key, e])), [all]);
   const m = /^([0-9A-F]{8}:[0-9A-F]{8})(?::(\d+))?$/i.exec(arg ?? '');

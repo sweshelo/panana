@@ -16,6 +16,8 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   const [, redraw] = useState(0);
   const changed = session.changedTables();
   const maps = session.changedMapDbs();
+  const created = [...session.createdFiles.keys()];
+  const scripts = session.conditionScripts.size;
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
   const archives = [
@@ -26,7 +28,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
       ...(session.baseMod?.romfs.keys() ?? []),
     ]),
   ];
-  const ips = session.dropCap || !!session.baseMod?.ips;
+  const ips = scripts > 0 || session.dropCap || !!session.baseMod?.ips;
   return (
     <Dialog title="MOD の書き出し (RPG FREE!)" onClose={onClose}>
       {!session.canExport ? (
@@ -47,11 +49,15 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
               redraw((x) => x + 1);
             }}
           />
-          {!changed.length && !maps.length && !ported.length && !session.dropCap ? (
+          {!changed.length && !maps.length && !ported.length && !created.length && !scripts && !session.dropCap ? (
             <p className="muted">まだ何も変更していません。</p>
           ) : (
             <>
               <ul>
+                {created.map((n) => (
+                  <li key={n}>{`${n}: 新しいファイル`}</li>
+                ))}
+                {scripts > 0 && <li>{`条件スクリプト ${scripts} 件 (exefs/code.ips)`}</li>}
                 {changed.map((t) => {
                   const rows = t.table.changedRows();
                   const added = t.table.rows - t.table.originalRows;

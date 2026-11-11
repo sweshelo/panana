@@ -33,4 +33,21 @@ export const LANAI_CONDITIONS: Record<number, LanaiConditionType> = {
 };
 
 export const lanaiConditionLabel = (kind: number): string =>
-  LANAI_CONDITIONS[kind]?.label ?? `未解析の条件 0x${kind.toString(16).toUpperCase()}`;
+  (kind === 0x72 ? '条件スクリプト' : LANAI_CONDITIONS[kind]?.label) ??
+  `未解析の条件 0x${kind.toString(16).toUpperCase()}`;
+
+export interface LanaiCondition {
+  kind: number;
+  v1: number;
+  v2: number;
+}
+
+export const LANAI_CONDITION_OPTIONS: [number, string][] = [
+  [0, '条件なし'],
+  ...Object.entries(LANAI_CONDITIONS).map(([kind, spec]): [number, string] => [Number(kind), spec.label]),
+];
+
+export function conditionText(c: LanaiCondition): string {
+  if (c.kind === 0x72) return `条件スクリプト #${c.v1}`;
+  return `${c.kind === 0 ? '条件なし' : lanaiConditionLabel(c.kind)} (${c.v1}, ${c.v2})`;
+}
