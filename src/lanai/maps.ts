@@ -210,6 +210,13 @@ export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise
   const m = loaded.get(session) ?? new Map<number, Promise<LanaiMaps>>();
   loaded.set(session, m);
   let p = m.get(content.index);
+  // A content added and taken out again (revertAll) and added anew keeps its number, but the session reads its archive
+  // and map database again: maps read for the old one would edit a store the session no longer exports.
+  const read = ready.get(session)?.get(content.index);
+  if (p && read && (read.content.archive !== content.archive || read.store !== session.readMapDb(content.archive))) {
+    ready.get(session)!.delete(content.index);
+    p = undefined;
+  }
   if (!p) {
     p = LanaiMaps.load(session, content);
     p.then(

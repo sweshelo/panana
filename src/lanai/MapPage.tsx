@@ -37,6 +37,7 @@ import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
+import { useLanaiContents } from './useContents';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiValidate, type LanaiEditState } from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
@@ -104,7 +105,7 @@ function useMaps(maps: LanaiMaps | null): number {
 }
 
 export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const m = arg ? /^(\d+)(?:\.([^@]*))?(?:@(\d+)\.(\d+))?$/.exec(arg) : null;
   const content = useSticky<number>(
     m ? Number(m[1]) : undefined,

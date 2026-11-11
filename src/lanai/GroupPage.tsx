@@ -11,7 +11,8 @@ import { Dialog } from '../ui/Dialog';
 import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
-import { contentTitle, lanaiContents, type LanaiContent } from './contents';
+import { contentTitle, type LanaiContent } from './contents';
+import { useLanaiContents } from './useContents';
 import { lanaiMapHref } from './MapPage';
 import { DEFAULT_GROUP_LABEL, groupMonsterRows, lanaiGroupHref } from './MapParts';
 import { lanaiMaps, type LanaiMaps, type LanaiMonsterGroupRow } from './maps';
@@ -39,7 +40,7 @@ import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
 export function LanaiGroupPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
-  const contents = useMemo(() => lanaiContents(session), [session]);
+  const contents = useLanaiContents(session);
   const m = arg ? /^(\d+)(?:\.(\d+))?$/.exec(arg) : null;
   const content = useSticky<number>(
     m ? Number(m[1]) : undefined,

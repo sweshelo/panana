@@ -1,8 +1,9 @@
-import { findEntry, parseArchive, unpackEntry } from '../archive/gsarc';
+import { findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive } from '../archive/gsarc';
 import { sha256 } from './codes';
 import { encodeLanaiMessage, parseLanaiText } from './message';
 import { hex8, w32, equalBytes } from '../util/bytes';
-import { type LanaiContent, type LanaiStage } from './contents';
+import { CRO_COMMON_HOOKS, croHooks, lanaiContents, type LanaiContent, type LanaiStage } from './contents';
+import { lanaiMaps } from './maps';
 import type { LanaiSession } from './session';
 import type { LanaiCondition } from './conditions';
 
@@ -62,17 +63,61 @@ export async function editLanaiStage(
   }
   s.edited();
 }
+/**
+ * The content whose CRO has no event of its own (only the hooks every CRO has, contents.md §4.3): 「あみだクジ（仮）」, an
+ * unused stage. Its CRO and Update CRR are used as they are for a content made without the source's events.
+ */
+export const LANAI_EMPTY_SCRIPT_CONTENT = 99;
+
+const crrName = (n: number): string => `.crr/contents${String(n).padStart(4, '0')}.crr`;
+
+/** The CRO of a content's archive (ContentsDef row 2) and the Update CRR registering it. */
+async function contentScript(
+  s: LanaiSession,
+  c: LanaiContent,
+  arc: Archive,
+): Promise<{ entry: number; body: Uint8Array; crr: Uint8Array }> {
+  const def = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'ContentsDef')?.table;
+  if (!def || def.rows < 3) throw new Error(`コンテンツ ${c.index} に ContentsDef がありません`);
+  const e = findEntry(arc, def.u32(2, 0));
+  if (!e) throw new Error(`コンテンツ ${c.index} の ContentsDef の CRO がありません`);
+  const crr =
+    s.createdFiles.get(crrName(c.index)) ??
+    (await (s.dump.readUpdateRomfs?.(crrName(c.index)) ?? s.dump.readRomfs(crrName(c.index))));
+  return { entry: e.index, body: unpackEntry(arc, e).body, crr };
+}
+
+/** Whether the CRR holds the SHA-256 of the CRO's first 0x80 bytes (what nn::ro checks before the signature). */
+function crrRegisters(crr: Uint8Array, cro: Uint8Array): boolean {
+  const digest = sha256(cro.subarray(0, 0x80));
+  for (let offset = 0; offset + digest.length <= crr.length; offset++)
+    if (equalBytes(crr.subarray(offset, offset + digest.length), digest)) return true;
+  return false;
+}
+
+export interface LanaiCloneOptions {
+  /**
+   * 'copy' keeps the source's CRO (its opening event, NPCs, doors … and the flags they read and set, shared with the
+   * source). 'empty' puts content 99's CRO, which has no events: maps, treasure, exits and the clear actions of the
+   * tables still work, the events written in the CRO do not.
+   */
+  script?: 'copy' | 'empty';
+}
+
 /** A content starts as an editable copy of the source, including its original native CRO. No script decompilation. */
-export async function cloneLanaiContent(s: LanaiSession, source: LanaiContent, title: string): Promise<number> {
+export async function cloneLanaiContent(
+  s: LanaiSession,
+  source: LanaiContent,
+  title: string,
+  options: LanaiCloneOptions = {},
+): Promise<number> {
   if (!s.canExport) throw new Error('新しいコンテンツの追加には Update が必要です');
   if (!title.trim()) throw new Error('ステージ名を入力してください');
   const encodedTitle = encodeLanaiMessage(parseLanaiText(title.trim()));
   if (source.index === 0 || source.stages.length !== 1)
     throw new Error('ステージの行が 1 つあるコンテンツを選んでください');
-  const ts = await s.tablesIn(source.archive);
+  await s.tablesIn(source.archive);
   const local = await localStage(s, source, source.stages[0]!);
-  const def = ts.find((t) => t.table.name === 'ContentsDef')?.table;
-  if (!def || def.rows < 3) throw new Error('ContentsDef がありません');
   const contents = s.need('Contents'),
     integration = s.need('MapStageIntegration'),
     messages = s.need('MessageMapStage');
@@ -91,28 +136,28 @@ export async function cloneLanaiContent(s: LanaiSession, source: LanaiContent, t
   let hash = 0xf0000000;
   while (used.has(hex8(hash))) hash += 0x10000;
   const archive = hex8(hash);
-  const crrName = (n: number) => `.crr/contents${String(n).padStart(4, '0')}.crr`;
   if (
     s.createdFiles.has(crrName(index)) ||
     s.dump.files?.().some((f) => f.path.toUpperCase() === crrName(index).toUpperCase())
   )
     throw new Error('追加先の CRR が既にあります');
-  // The CRO stays byte-for-byte identical, so reuse its registration hash under the new content's CRR path.
-  const crr =
-    s.createdFiles.get(crrName(source.index)) ??
-    (await (s.dump.readUpdateRomfs?.(crrName(source.index)) ?? s.dump.readRomfs(crrName(source.index))));
-  const arc = parseArchive(bytes),
-    cro = findEntry(arc, def.u32(2, 0));
-  if (!cro) throw new Error('ContentsDef の CRO がありません');
-  const digest = sha256(unpackEntry(arc, cro).body.subarray(0, 0x80));
-  let registered = false;
-  for (let offset = 0; offset + digest.length <= crr.length; offset++)
-    if (equalBytes(crr.subarray(offset, offset + digest.length), digest)) {
-      registered = true;
-      break;
-    }
-  if (!registered) throw new Error('CRO と CRR の登録ハッシュが一致しません');
-  const newArchive = bytes.slice();
+  const arc = parseArchive(bytes);
+  const own = await contentScript(s, source, arc);
+  let cro = own.body,
+    crr = own.crr,
+    newArchive: Uint8Array = bytes.slice();
+  if (options.script === 'empty') {
+    const template = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT];
+    if (!template) throw new Error(`空のスクリプトのひな形 (コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT}) がありません`);
+    const empty = await contentScript(s, template, await s.archive(template.archive));
+    const extra = croHooks(empty.body).filter((h) => !(CRO_COMMON_HOOKS as readonly number[]).includes(h));
+    if (extra.length)
+      throw new Error(`コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT} の CRO にイベントがあります (${extra.join(', ')})`);
+    ({ body: cro, crr } = empty);
+    newArchive = rebuildArchive(arc, new Map([[own.entry, cro]]));
+  }
+  // The CRO stays byte-for-byte identical to a ROM one, so its registration hash is reused under the new CRR path.
+  if (!crrRegisters(crr, cro)) throw new Error('CRO と CRR の登録ハッシュが一致しません');
   w32(newArchive, 4, hash);
   s.addFile(archive, newArchive);
   s.addFile(crrName(index), crr);
@@ -151,4 +196,48 @@ export async function cloneLanaiContent(s: LanaiSession, source: LanaiContent, t
   contents.setU32(cr, 0, hash);
   s.edited();
   return index;
+}
+
+/**
+ * Where a stage starts (contents.md §3.3): the MapGroup MapStage +0x3A names (MapStageIntegration +0x46; the stage
+ * select puts it in the save's current group 0x29, FUN_002E7814) and that group's first map and arrival point (MapGroup
+ * +0x14 / +0x18, a section 3 record's point ID). All 126 stages of the ROM start at a map of their own map table.
+ */
+export interface LanaiStageStart {
+  group: number;
+  map: number;
+  point: number;
+}
+
+export async function lanaiStageStart(s: LanaiSession, c: LanaiContent, stage: LanaiStage): Promise<LanaiStageStart> {
+  const maps = await lanaiMaps(s, c);
+  const group = s.need('MapStageIntegration').u16(stage.row, 0x46);
+  const g = maps.mapGroup;
+  if (!g || group < 1 || group >= g.rows) return { group, map: 0, point: 0 };
+  return { group, map: g.u32(group, 0x14), point: g.u32(group, 0x18) };
+}
+
+/** Starts the stage at a map of its content and an arrival point of that map (the map's MapGroup becomes the start). */
+export async function setLanaiStageStart(
+  s: LanaiSession,
+  c: LanaiContent,
+  stage: LanaiStage,
+  map: number,
+  point: number,
+): Promise<void> {
+  const maps = await lanaiMaps(s, c);
+  const info = maps.map(map);
+  if (!info) throw new Error(`マップ ${hex8(map)} はこのステージのマップ表にありません`);
+  const g = maps.mapGroup;
+  const group = info.dungeon;
+  if (!g || group < 1 || group >= g.rows) throw new Error(`マップ ${info.name} の MapGroup ${group} がありません`);
+  if (group > 0xffff) throw new Error('MapGroup の番号が u16 を超えます');
+  const { t, r } = await localStage(s, c, stage);
+  s.need('MapStageIntegration').setBits(stage.row, 0x44, 16, 16, group);
+  t.setBits(r, 0x38, 16, 16, group);
+  g.setU32(group, 0x14, map);
+  g.setU32(group, 0x18, point);
+  maps.readGroups();
+  maps.changed();
+  s.edited();
 }
