@@ -136,9 +136,9 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
     const records = eventRecords(maps, e.group);
     // the characters the body names: a row no character's record has gives the game nothing to act on
     for (const r of new Set(charaRows(e.body)))
-      if (!records.get(r)?.some((x) => x.section === 5))
+      if (!records.get(r)?.length)
         notes.push(
-          `${what}: chara(${r}) のイベント ${r} を使うキャラ・物 (区画 5) が MapGroup ${e.group} のマップにありません`,
+          `${what}: chara(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
         );
     if (!triggerHasRow(e.trigger)) continue;
     const recs = records.get(e.row) ?? [];
