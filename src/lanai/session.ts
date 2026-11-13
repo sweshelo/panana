@@ -31,7 +31,7 @@ import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { conditionScriptPatch, parseConditionScript } from './conditionScript';
-import { parseStageScript } from './eventScript';
+import { scriptDocFromSource, scriptDocIsEmpty, scriptDocSource, scriptOfDoc, type ScriptDoc } from './eventScript';
 import { buildStageScripts, LANAI_STAGE_MANIFEST, stageScriptManifest } from './stageScript';
 import { CRO_HOOK_START_EVENT, croHooks } from './contents';
 import { fieldStartPatch, hasMarkedLanaiFloors, markAddedLanaiFloors } from './fieldStart';
@@ -124,8 +124,11 @@ export type LanaiSavedEntry = [archive: string, hash: number, file: string, like
 export interface LanaiSaved {
   createdFiles?: [string, Uint8Array][];
   conditionScripts?: [number, string][];
-  /** The event scripts of the added stages, by archive: [archive, stage key, source] (stageScript.ts). */
-  stageScripts?: [string, string, string][];
+  /**
+   * The event scripts of the added stages, by archive: [archive, stage key, the editor's document] (stageScript.ts).
+   * Sessions saved before the document have the script's text in its place.
+   */
+  stageScripts?: [string, string, string | ScriptDoc][];
   /** Replaced layout entries (archive, entry hash, unpacked body). */
   layouts?: [string, number, Uint8Array][];
   rows: LanaiSavedRow[];
@@ -200,7 +203,7 @@ export class LanaiSession {
    * The event scripts of the added stages by archive (eventScript.ts): built into the archive's CRO when the MOD is
    * written. The key names the stage on the 3DS (the file of its flags) and stays the same while the stage is edited.
    */
-  readonly stageScripts = new Map<string, { key: string; source: string }>();
+  readonly stageScripts = new Map<string, { key: string; doc: ScriptDoc; source: string }>();
   private readonly layouts = new Map<string, { archive: string; arc: Archive; entry: ArcEntry; body: Uint8Array }>();
 
   /** A layout's current body, including a thumbnail replacement. */
@@ -237,16 +240,31 @@ export class LanaiSession {
     this.conditionScripts.set(id, source);
   }
 
-  /** Sets (or with an empty source removes) the event script of an added stage; throws a ScriptError when it does not read. */
+  /**
+   * Sets (or with an empty source removes) the event script of an added stage from its text; throws a ScriptError when
+   * it does not read. The text becomes the editor's document (an event written in place becomes a function).
+   */
   setStageScript(archive: string, source: string, key?: string): void {
+    this.setStageScriptDoc(archive, source.trim() ? scriptDocFromSource(source) : null, key);
+  }
+
+  /**
+   * Sets (or with null / an empty document removes) the event script of an added stage: its variables, functions and
+   * what the functions are given to. Throws a ScriptDocError when it does not read.
+   */
+  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string): void {
     const name = archive.toUpperCase();
-    if (!source.trim()) {
+    if (!doc || scriptDocIsEmpty(doc)) {
       this.stageScripts.delete(name);
       return;
     }
     if (!this.createdFiles.has(name)) throw new Error('イベントのスクリプトは追加したステージにだけ書けます');
-    parseStageScript(source);
-    this.stageScripts.set(name, { key: key ?? this.stageScripts.get(name)?.key ?? crypto.randomUUID(), source });
+    scriptOfDoc(doc);
+    this.stageScripts.set(name, {
+      key: key ?? this.stageScripts.get(name)?.key ?? crypto.randomUUID(),
+      doc: structuredClone(doc),
+      source: scriptDocSource(doc).text,
+    });
   }
 
   private readonly archives = new Map<string, Promise<Archive>>();
@@ -530,7 +548,7 @@ export class LanaiSession {
       ...(this.createdFiles.size ? { createdFiles: [...this.createdFiles] } : {}),
       ...(this.conditionScripts.size ? { conditionScripts: [...this.conditionScripts] } : {}),
       ...(this.stageScripts.size
-        ? { stageScripts: [...this.stageScripts].map(([a, x]) => [a, x.key, x.source] as [string, string, string]) }
+        ? { stageScripts: [...this.stageScripts].map(([a, x]) => [a, x.key, x.doc] as [string, string, ScriptDoc]) }
         : {}),
       ...(this.layouts.size
         ? {
@@ -557,7 +575,10 @@ export class LanaiSession {
   async restore(saved: LanaiSaved): Promise<void> {
     for (const [name, bytes] of saved.createdFiles ?? []) this.addFile(name, bytes);
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
-    for (const [archive, key, source] of saved.stageScripts ?? []) this.setStageScript(archive, source, key);
+    for (const [archive, key, script] of saved.stageScripts ?? []) {
+      if (typeof script === 'string') this.setStageScript(archive, script, key);
+      else this.setStageScriptDoc(archive, script, key);
+    }
     for (const [archive, hash, body] of saved.layouts ?? []) await this.setLayout(archive, hash, body);
     this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);

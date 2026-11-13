@@ -10,6 +10,8 @@ import { croHooks, lanaiContents } from '../src/lanai/contents';
 import { parseCro } from '../src/lanai/cro';
 import {
   parseStageScript,
+  scriptDocFromSource,
+  scriptDocSource,
   SCRIPT_API,
   ScriptError,
   SLOT_AREA,
@@ -23,7 +25,7 @@ import { lanaiMaps } from '../src/lanai/maps';
 import { crsExports } from '../src/lanai/scriptApi';
 import { LanaiSession } from '../src/lanai/session';
 import { cloneLanaiContent, lanaiCrrName } from '../src/lanai/stageEdit';
-import { checkStageScript, LANAI_STAGE_MANIFEST } from '../src/lanai/stageScript';
+import { checkStageScript, eventRecords, LANAI_STAGE_MANIFEST, recordTrigger } from '../src/lanai/stageScript';
 import { LanaiStageScriptEditor, STAGE_SCRIPT_EXAMPLE } from '../src/lanai/StageScriptEditor';
 import { openImages } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -178,7 +180,12 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     // saved and restored: the same script, the same key, the same CRO
     const restored = await open();
     await restored.restore(s.saved());
-    expect(restored.stageScripts.get(c.archive)).toEqual({ key, source: SCRIPT });
+    const doc = scriptDocFromSource(SCRIPT);
+    expect(restored.stageScripts.get(c.archive)).toEqual({ key, doc, source: scriptDocSource(doc).text });
+    // a session saved before the document (the script's text in its place) reads as the same document
+    const old = await open();
+    await old.restore({ ...s.saved(), stageScripts: [[c.archive, key, SCRIPT]] });
+    expect(old.stageScripts.get(c.archive)).toEqual(restored.stageScripts.get(c.archive));
     const again = unzipSync(await restored.modZip());
     expect(
       Buffer.from(again[`${root}/romfs/${c.archive}`]!).equals(Buffer.from(zip[`${root}/romfs/${c.archive}`]!)),
@@ -212,6 +219,14 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(noted.problems).toEqual([]);
     expect(noted.notes.join()).toContain('2 回目からは');
     eo.setU32(5, 0x28, LANAI_ACTION_NONE);
+    // what a function is given to is held against the row's record: row 5 is a character, not a button or a range
+    expect(noted.notes.join()).not.toContain('の種類ではありません');
+    const records = eventRecords(maps, 1);
+    expect(records.get(5)!.map(recordTrigger)).toContain('talk');
+    const wrong = await checkStageScript(s, c, 'function f() { show(chara(5)); hide(chara(9999)) }\non button(1, 5) f');
+    expect(wrong.notes.join('\n')).toContain('「ボタンを踏んだとき」の種類ではありません');
+    expect(wrong.notes.join('\n')).toContain('chara(9999)');
+    expect(wrong.notes.join('\n')).not.toContain('chara(5) の');
     // scripts are for added stages
     expect(() => s.setStageScript(lanaiContents(s)[28]!.archive, 'on talk(1, 5) {}')).toThrow('追加したステージ');
   });

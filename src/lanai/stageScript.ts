@@ -12,11 +12,18 @@ import {
   parseStageScript,
   STAGE_BIT_FLAGS,
   STAGE_BYTE_FLAGS,
+  SCRIPT_TRIGGER_LABEL,
   stageScriptCrr,
+  triggerHasRow,
   type LeaveReset,
+  type ScriptNode,
+  type ScriptTrigger,
+  type ScriptValue,
+  type ScriptWho,
   type StageScript,
 } from './eventScript';
-import { LANAI_EVENT_ACTIONS, lanaiMaps } from './maps';
+import { lanaiRecEventRow } from './mapedit';
+import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, lanaiMaps, type LanaiMaps } from './maps';
 import type { LanaiSession } from './session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT, lanaiCrrName } from './stageEdit';
 
@@ -45,6 +52,72 @@ export interface StageScriptCheck {
 
 const inRange = (v: number, r: { first: number; count: number }): boolean => v >= r.first && v < r.first + r.count;
 
+/** What a map's record is to the game's events: its section and (section 5) its kind. */
+export interface EventRecord {
+  section: number;
+  kind: number;
+}
+/** The gimmick kinds of section 5 whose event is a GimmickEvent (event-actions.md §3); 4〜6 are the buttons. */
+const GIMMICK_KINDS = [4, 5, 6, 11, 14, 15];
+const BUTTON_KINDS = [4, 5, 6];
+/** Section 5 kinds that have no event (the character alone). */
+const NO_EVENT_KINDS = [7, 10];
+const u32at = (b: Uint8Array, o: number): number =>
+  (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0;
+
+/** The records of a group's maps by the EventObject row they name. */
+export function eventRecords(maps: LanaiMaps, group: number): Map<number, EventRecord[]> {
+  const out = new Map<number, EventRecord[]>();
+  for (const m of maps.maps) {
+    if (m.dungeon !== group || m.world) continue;
+    for (const section of LANAI_EVENT_SECTIONS)
+      for (const r of maps.doc(m).recs[section] ?? []) {
+        const kind = u32at(r.raw, 0);
+        if (section === 8 && kind >= 100) continue;
+        const row = lanaiRecEventRow(section, r.raw);
+        out.set(row, [...(out.get(row) ?? []), { section, kind: section === 5 ? kind : 0 }]);
+      }
+  }
+  return out;
+}
+
+/** What starts the event of a record (the game makes the event's object by section and kind), or null: none here. */
+export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
+  if (rec.section === 8) return 'area';
+  if (rec.section !== 5 || NO_EVENT_KINDS.includes(rec.kind)) return null;
+  if (BUTTON_KINDS.includes(rec.kind)) return 'button';
+  return GIMMICK_KINDS.includes(rec.kind) ? null : 'talk';
+}
+/** Whether a function can be given to a record under a trigger: "all monsters beaten" is kept by a range too. */
+export const triggerFitsRecord = (t: ScriptTrigger, rec: EventRecord): boolean =>
+  recordTrigger(rec) === (t === 'defeat' ? 'area' : t);
+
+/** The rows of the characters a body names with chara(row). */
+function charaRows(body: ScriptNode[]): number[] {
+  const out: number[] = [];
+  const who = (w: ScriptWho | null | undefined): void => void (w?.kind === 'chara' && out.push(w.row));
+  const value = (v: ScriptValue): void => {
+    if (v.kind !== 'call') return;
+    who(v.call.self);
+    for (const a of v.call.args) if (a.k === 'c' || a.k === 'p') who(a.who);
+  };
+  for (const n of body) {
+    if (n.op === 'if') {
+      value(n.cond.value);
+      out.push(...charaRows(n.then), ...charaRows(n.else));
+    } else if (n.op === 'switch') {
+      value(n.value);
+      for (const c of n.cases) out.push(...charaRows(c.body));
+      out.push(...charaRows(n.default ?? []));
+    } else if (n.op === 'call') value({ kind: 'call', call: n.call });
+    else if (n.op === 'face') {
+      who(n.who);
+      who(n.to);
+    } else if ('who' in n) who(n.who);
+  }
+  return out;
+}
+
 /** The script read and held against the content's maps. Throws a ScriptError when the script does not read. */
 export async function checkStageScript(s: LanaiSession, c: LanaiContent, source: string): Promise<StageScriptCheck> {
   const script = parseStageScript(source);
@@ -52,10 +125,30 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
   const problems: string[] = [],
     notes: string[] = [];
   for (const e of script.events) {
-    const what = `${e.line} 行目 on ${e.trigger}(${e.group}, ${e.row})`;
+    const what = e.fn
+      ? `関数「${e.fn}」(MapGroup ${e.group}${triggerHasRow(e.trigger) ? ` のイベント ${e.row}` : ''}、${SCRIPT_TRIGGER_LABEL[e.trigger]})`
+      : `${e.line} 行目 on ${e.trigger}(${e.group}, ${e.row})`;
     const t = maps.eventTable(e.group);
-    if (!maps.groups[e.group] || !t) problems.push(`${what}: MapGroup ${e.group} がこのステージにありません`);
-    else if (e.row >= t.rows) problems.push(`${what}: イベント ${e.row} がありません (${t.name} は ${t.rows} 行)`);
+    if (!maps.groups[e.group] || !t) {
+      problems.push(`${what}: MapGroup ${e.group} がこのステージにありません`);
+      continue;
+    }
+    const records = eventRecords(maps, e.group);
+    // the characters the body names: a row no character's record has gives the game nothing to act on
+    for (const r of new Set(charaRows(e.body)))
+      if (!records.get(r)?.some((x) => x.section === 5))
+        notes.push(
+          `${what}: chara(${r}) のイベント ${r} を使うキャラ・物 (区画 5) が MapGroup ${e.group} のマップにありません`,
+        );
+    if (!triggerHasRow(e.trigger)) continue;
+    const recs = records.get(e.row) ?? [];
+    if (e.row < t.rows && !recs.length)
+      notes.push(`${what}: イベント ${e.row} を使うレコードがマップにありません (置かれていないイベントは起きません)`);
+    else if (e.row < t.rows && !recs.some((x) => triggerFitsRecord(e.trigger, x)))
+      notes.push(
+        `${what}: イベント ${e.row} のレコードは「${SCRIPT_TRIGGER_LABEL[e.trigger]}」の種類ではありません (ゲームはレコードの区画と種類でイベントの種類を決めるので、このままでは呼ばれません)`,
+      );
+    if (e.row >= t.rows) problems.push(`${what}: イベント ${e.row} がありません (${t.name} は ${t.rows} 行)`);
     else if (t.u32(e.row, LANAI_EVENT_ACTIONS[0]) !== LANAI_ACTION_SCRIPT)
       problems.push(
         `${what}: イベント ${e.row} の動作 1 が「スクリプト (CRO)」ではありません。マップのページでそのレコードの動作 1 の型を 2D にしてください`,
