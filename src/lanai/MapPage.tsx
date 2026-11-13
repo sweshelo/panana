@@ -61,8 +61,11 @@ import {
   LANAI_ACTION_GOAL_CHEST,
   LANAI_ACTION_NONE,
   LANAI_ACTION_SCRIPT,
+  LANAI_ACTION_RUNS,
   LANAI_ACTION_TYPES,
   LANAI_ACTIONS,
+  LANAI_DESTINATION_ACTIONS,
+  lanaiActionTypesFor,
   lanaiActionName,
   talkMessageOffset,
 } from './actions';
@@ -939,8 +942,6 @@ function BattlePanel({ st }: { st: LanaiEditState }): ReactNode {
   );
 }
 
-const ACTION_STATES = ['状態 0', '状態 1', '状態 2〜3'];
-
 /** "13: むふふふ、むふふふ！笑いが止…" for a row of a talk table. */
 function talkRowLabel(session: LanaiSession, t: LanaiTable, offset: number, row: number): string {
   const text = t.isString(row, offset) ? session.plainAt(t, t.u32(row, offset)).replace(/\s+/g, ' ').trim() : '';
@@ -957,11 +958,14 @@ function ActionFields({
   row,
   offset,
   index,
+  allowed,
 }: {
   st: LanaiEditState;
   row: number;
   offset: number;
   index: number;
+  /** The types the record's event takes (actions.ts lanaiActionTypesFor), when known. */
+  allowed?: number[];
 }): ReactNode {
   const info = st.info!;
   const session = st.maps.session;
@@ -979,7 +983,9 @@ function ActionFields({
     f();
     session.edited();
   };
-  const types = LANAI_ACTION_TYPES.includes(type) ? LANAI_ACTION_TYPES : [type, ...LANAI_ACTION_TYPES];
+  const offered = allowed ?? LANAI_ACTION_TYPES;
+  const types = offered.includes(type) ? offered : [type, ...offered];
+  const ignored = !!allowed && type !== 0 && !allowed.includes(type);
   const talkArgs = action?.talk ?? [];
   const lines = talkArgs.map((a, k): ReactNode => {
     const v = arg(a);
@@ -1010,11 +1016,11 @@ function ActionFields({
       </div>
     );
   });
-  const destination = [0x80000011, 0x80000013, 0x80000039].includes(type);
+  const destination = LANAI_DESTINATION_ACTIONS.includes(type);
   const known = Object.entries(action?.args ?? {}).filter(([a]) => !destination || Number(a) > 1);
   return (
     <details open={index === 0 || (type !== 0 && type !== LANAI_ACTION_NONE)}>
-      <summary className="small">{`動作 ${index + 1} (${ACTION_STATES[index]}): ${lanaiActionName(type)}`}</summary>
+      <summary className="small">{`動作 ${index + 1} (${LANAI_ACTION_RUNS[index]}): ${lanaiActionName(type)}`}</summary>
       <label className="field">
         <span>動作の型</span>
         <select
@@ -1026,11 +1032,17 @@ function ActionFields({
           ))}
         </select>
       </label>
+      {ignored && (
+        <p className="muted small">
+          この型は、このレコードの区画・種類では働きません
+          (ゲームはレコードの区画と種類でイベントの種類を決め、合わない型は何もしない)。
+        </p>
+      )}
       {action?.note && <p className="muted small">{action.note}</p>}
       {type === LANAI_ACTION_SCRIPT && talk && (
         <p className="muted small">
           {
-            '台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'
+            '台詞を変えるには: 型を「一言」などに変えて、台詞を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'
           }
         </p>
       )}
@@ -1117,6 +1129,8 @@ function EventFields({
   const group = st.maps.group(info);
   const users = eventUsers(st.maps, info, row);
   const slot = lanaiEventSlot(t, row);
+  const raw = st.current?.recs[section]?.[index]?.raw;
+  const allowed = raw ? lanaiActionTypesFor(section, section === 5 ? u32(raw, 0) : undefined) : undefined;
   const u8f = (o: number, label: string): ReactNode => (
     <label key={o} className="field">
       <span>{label}</span>
@@ -1155,8 +1169,12 @@ function EventFields({
         が条件を上書きする場合があります。
       </p>
       {LANAI_EVENT_ACTIONS.map((o, i) => (
-        <ActionFields key={o} st={st} row={row} offset={o} index={i} />
+        <ActionFields key={o} st={st} row={row} offset={o} index={i} allowed={allowed} />
       ))}
+      <p className="muted small">
+        動作は「何回目の実行か」で切り替わります: 1 回目は動作 1、2 回目は動作 2、3 回目以降は動作 3
+        (無ければ前の動作)。条件で選ばれるのでも、1 回で順に実行されるのでもありません。
+      </p>
       {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = イベント番号)`)}
       <p className="muted small">
         {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
