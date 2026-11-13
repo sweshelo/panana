@@ -37,6 +37,9 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
       };
     }).filter((chest) => chest.stages.length);
   });
+  const isGoal = (chest: (typeof chests)[number]): boolean =>
+    chest.table.u32(chest.event, chest.stages[0]!.field - 4) === LANAI_ACTION_GOAL_CHEST;
+  const orderedChests = [...chests.filter((chest) => !isGoal(chest)), ...chests.filter(isGoal)];
   return (
     <div className="stage-overview">
       <section className="stage-overview-panel" aria-label="モンスターの群れ一覧">
@@ -68,9 +71,6 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
       </section>
       <section className="stage-overview-panel" aria-label="宝箱イベント一覧">
         <h3>宝箱イベント一覧</h3>
-        <p className="small muted">
-          中身は重みに応じて1つ選ばれます。ゴールの宝箱は初回と2回目以降を分けて表示します。
-        </p>
         {!chests.length ? (
           <p className="muted">宝箱イベントはありません。</p>
         ) : (
@@ -83,10 +83,9 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
               </tr>
             </thead>
             <tbody>
-              {chests.map((chest) => {
+              {orderedChests.map((chest) => {
                 const first = chest.stages[0]!;
-                const goal = chest.table.u32(chest.event, first.field - 4) === LANAI_ACTION_GOAL_CHEST;
-                const clears = goal ? chest.table.u32(chest.event, first.field + 4) : 0;
+                const goal = isGoal(chest);
                 const locations = maps.maps
                   .filter((map) => !map.world && map.dungeon === chest.dungeon)
                   .flatMap((map) =>
@@ -118,9 +117,6 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
                           <span>#{chest.event}</span>
                         </span>
                       </a>
-                      {goal && (
-                        <div className="small">{clears ? `コンテンツ ${clears} をクリア` : 'クリア判定なし'}</div>
-                      )}
                     </td>
                     <td>
                       {locations.length ? (
@@ -136,33 +132,33 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
                       )}
                     </td>
                     <td>
-                      {chest.stages.map((stage, index) => {
-                        const row = chest.table.u32(chest.event, stage.field);
-                        const treasure = maps.treasureGroup;
-                        const valid = treasure && row < treasure.rows;
-                        const slots = valid ? lanaiTreasureSlots(treasure, row) : [];
-                        return (
-                          <div key={stage.field}>
-                            {index > 0 && <hr />}
-                            {goal && (
-                              <strong>
-                                {['1度目（状態0）', '2回目以降（状態1）', '2回目以降（状態2〜3）'][stage.stage]}
-                              </strong>
-                            )}
-                            {!valid ? (
-                              <div className="error">{`TreasureGroup #${row} がありません`}</div>
-                            ) : !slots.length ? (
-                              <EmptyGroupIcon label="中身なし" />
-                            ) : (
-                              <span className="group-photos">
-                                {slots.map((slot, i) => (
-                                  <TreasureIcon key={i} maps={maps} slot={slot} />
-                                ))}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
+                      <div className="stage-chest-rewards">
+                        {chest.stages.map((stage, index) => {
+                          const row = chest.table.u32(chest.event, stage.field);
+                          const treasure = maps.treasureGroup;
+                          const valid = treasure && row < treasure.rows;
+                          const slots = valid ? lanaiTreasureSlots(treasure, row) : [];
+                          return (
+                            <div
+                              key={stage.field}
+                              className={`stage-chest-reward${goal && index === 0 ? ' stage-chest-reward-first' : ''}`}
+                            >
+                              {goal && <span className="small muted">{`${index + 1}回目`}</span>}
+                              {!valid ? (
+                                <div className="error">{`TreasureGroup #${row} がありません`}</div>
+                              ) : !slots.length ? (
+                                <EmptyGroupIcon label="中身なし" />
+                              ) : (
+                                <span className="group-photos">
+                                  {slots.map((slot, i) => (
+                                    <TreasureIcon key={i} maps={maps} slot={slot} />
+                                  ))}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </td>
                   </tr>
                 );

@@ -3204,3 +3204,23 @@ dialog.stage-editor > .picker-head h2 {
   min-width: 0;
   overflow-x: auto;
 }
+
+.stage-chest-rewards {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 4px;
+}
+.stage-chest-reward {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.stage-chest-reward + .stage-chest-reward {
+  border-left: 1px solid var(--border);
+  padding-left: 12px;
+}
+.stage-chest-reward-first .photo {
+  box-shadow: 0 0 6px 1px gold;
+}

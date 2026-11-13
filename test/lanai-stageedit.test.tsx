@@ -73,9 +73,16 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(html).toContain('#/groups/1.');
     expect(html).toContain('#/maps/1.');
     expect(html).toContain('stage-chest-kind');
-    expect(html).toContain('1度目（状態0）');
-    expect(html).toContain('2回目以降（状態1）');
-    expect(html).toContain('<hr');
+    expect(html).toContain('1回目');
+    expect(html).toContain('2回目');
+    expect(html).toContain('stage-chest-reward-first');
+    const chestRows = [...html.matchAll(/<tr>[\s\S]*?<\/tr>/g)]
+      .map((match) => match[0])
+      .filter((row) => row.includes('stage-chest-kind'));
+    const firstGoal = chestRows.findIndex((row) => row.includes('stage-chest-reward-first'));
+    expect(firstGoal).toBeGreaterThan(0);
+    expect(chestRows.slice(firstGoal).every((row) => row.includes('stage-chest-reward-first'))).toBe(true);
+    expect(html).not.toContain('<hr');
     expect(html).not.toContain('<th>出現マップ</th>');
     expect(html).not.toContain('%');
     expect(html).not.toContain('small muted">MapGroup');
