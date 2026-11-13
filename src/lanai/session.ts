@@ -31,7 +31,9 @@ import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { conditionScriptPatch, parseConditionScript } from './conditionScript';
-import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY } from './maps';
+import { CRO_HOOK_START_EVENT, croHooks } from './contents';
+import { fieldStartPatch, hasMarkedLanaiFloors, markAddedLanaiFloors } from './fieldStart';
+import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY, restoreMissingLanaiSections } from './maps';
 import {
   encodeLanaiMessage,
   lanaiPlain,
@@ -120,6 +122,8 @@ export type LanaiSavedEntry = [archive: string, hash: number, file: string, like
 export interface LanaiSaved {
   createdFiles?: [string, Uint8Array][];
   conditionScripts?: [number, string][];
+  /** Replaced layout entries (archive, entry hash, unpacked body). */
+  layouts?: [string, number, Uint8Array][];
   rows: LanaiSavedRow[];
   /** Written strings (absent in edits saved before strings could be written, and when none were). */
   strings?: LanaiSavedString[];
@@ -141,12 +145,16 @@ export interface LanaiMapDb {
   db: MapDb;
   /** The content's map table (entry 131C5000, n × 0x4C; maps.ts), null when the archive has none. */
   table: LanaiMapTable | null;
+  /** The content's CRO implements indexed export 3 (a field-start event). */
+  hasStartEvent: boolean;
 }
 
 /** A content's map table: the bytes as read and as edited (maps appended, names written; maps.ts LanaiMaps). */
 export interface LanaiMapTable {
   entry: ArcEntry;
   original: Uint8Array;
+  /** Source ROM rows for marking legacy maps in imported or cloned archives. */
+  sourceRows?: Uint8Array;
   data: Uint8Array;
 }
 
@@ -184,6 +192,29 @@ export class LanaiSession {
   /** New archive/CRR files; the initial archive bytes are the baseline for subsequent table/map edits. */
   readonly createdFiles = new Map<string, Uint8Array>();
   readonly conditionScripts = new Map<number, string>();
+  private readonly layouts = new Map<string, { archive: string; arc: Archive; entry: ArcEntry; body: Uint8Array }>();
+
+  /** A layout's current body, including a thumbnail replacement. */
+  async readLayout(archive: string, hash: number): Promise<Uint8Array> {
+    const key = archive.toUpperCase();
+    const edited = this.layouts.get(`${key}/${hex8(hash)}`);
+    if (edited) return edited.body;
+    const arc = await this.archive(key);
+    const entry = findEntry(arc, hash);
+    if (!entry || entry.type !== 6) throw new Error('ステージ画像のレイアウトがありません');
+    return unpackEntry(arc, entry).body;
+  }
+
+  /** Replaces a layout without invalidating the archive's editable tables/maps. Call edited() after the whole edit. */
+  async setLayout(archive: string, hash: number, body: Uint8Array): Promise<void> {
+    const name = archive.toUpperCase();
+    const arc = await this.archive(name);
+    const entry = findEntry(arc, hash);
+    if (!entry || entry.type !== 6) throw new Error('ステージ画像のレイアウトがありません');
+    const key = `${name}/${hex8(hash)}`;
+    if (equalBytes(body, unpackEntry(arc, entry).body)) this.layouts.delete(key);
+    else this.layouts.set(key, { archive: name, arc, entry, body: body.slice() });
+  }
 
   addFile(name: string, bytes: Uint8Array): void {
     if (this.createdFiles.has(name) || this.dump.files?.().some((f) => f.path.toUpperCase() === name.toUpperCase()))
@@ -273,13 +304,41 @@ export class LanaiSession {
     const key = name.toUpperCase();
     let p = this.mapDbs.get(key);
     if (!p) {
-      p = this.archive(key).then((arc) => {
+      p = this.archive(key).then(async (arc) => {
         const entry = findEntry(arc, LANAI_MAPDB_ENTRY);
         if (!entry) return null;
         const te = findEntry(arc, LANAI_MAP_TABLE_ENTRY);
         const tb = te ? unpackEntry(arc, te).body : null;
-        const table = te && tb ? { entry: te, original: tb, data: tb } : null;
-        const r: LanaiMapDb = { archive: key, arc, entry, db: new MapDb(unpackEntry(arc, entry).body), table };
+        const table: LanaiMapTable | null = te && tb ? { entry: te, original: tb, data: tb } : null;
+        const cro = arc.entries.find((e) => e.comp === 1 && zipEntryName(entryBlob(arc, e))?.endsWith('.cro'));
+        const script = cro && unpackEntry(arc, cro);
+        const hasStartEvent = !!script && croHooks(script.body).includes(CRO_HOOK_START_EVENT);
+        if (hasStartEvent && table && script && (this.baseMod?.romfs.has(key) || this.createdFiles.has(key))) {
+          // Cloning retains the original CRO entry name even when Contents gets a new row.
+          // For old, unmarked exports, verify that the CRO still matches the source ROM before
+          // protecting appended rows. A base MOD can supply its own scripts for its own maps.
+          const source = /^contents(\d+)\.cro$/i.exec(script.name ?? '');
+          const contents = this.need('Contents');
+          const original = source && contents.originalRow(Number(source[1]));
+          const archive = original && hex8(u32(original, 0));
+          if (archive && this.raw.names().includes(archive)) {
+            const sourceArc = parseArchive(await this.raw.readRomfs(archive));
+            const sourceCro = findEntry(sourceArc, cro!.hash);
+            const sourceMap = findEntry(sourceArc, LANAI_MAP_TABLE_ENTRY);
+            if (sourceCro && sourceMap && equalBytes(unpackEntry(sourceArc, sourceCro).body, script.body)) {
+              table.sourceRows = unpackEntry(sourceArc, sourceMap).body;
+              table.data = markAddedLanaiFloors(table.original, table.sourceRows);
+            }
+          }
+        }
+        const r: LanaiMapDb = {
+          archive: key,
+          arc,
+          entry,
+          db: new MapDb(unpackEntry(arc, entry).body),
+          table,
+          hasStartEvent,
+        };
         this.mapDbsRead.set(key, r);
         return r;
       });
@@ -376,11 +435,16 @@ export class LanaiSession {
     return [...this.tables, ...this.others].filter((t) => !t.added && t.table.changed);
   }
 
+  changedLayouts(): { archive: string; hash: number }[] {
+    return [...this.layouts.values()].map(({ archive, entry }) => ({ archive, hash: entry.hash }));
+  }
+
   /** Whether anything differs from the ROM (tables or maps). */
   get changed(): boolean {
     return (
       this.createdFiles.size > 0 ||
       this.conditionScripts.size > 0 ||
+      this.layouts.size > 0 ||
       this.changedTables().length > 0 ||
       this.changedMapDbs().length > 0 ||
       this.changedMapTables().length > 0 ||
@@ -413,6 +477,7 @@ export class LanaiSession {
     }
     this.createdFiles.clear();
     this.conditionScripts.clear();
+    this.layouts.clear();
     this.dropCap = false;
     this.edited();
   }
@@ -441,6 +506,13 @@ export class LanaiSession {
       rows,
       ...(this.createdFiles.size ? { createdFiles: [...this.createdFiles] } : {}),
       ...(this.conditionScripts.size ? { conditionScripts: [...this.conditionScripts] } : {}),
+      ...(this.layouts.size
+        ? {
+            layouts: [...this.layouts.values()].map(
+              ({ archive, entry, body }) => [archive, entry.hash, body.slice()] as [string, number, Uint8Array],
+            ),
+          }
+        : {}),
       ...(strings.length ? { strings } : {}),
       ...(maps.length ? { maps } : {}),
       ...(mapTables.length ? { mapTables } : {}),
@@ -459,6 +531,7 @@ export class LanaiSession {
   async restore(saved: LanaiSaved): Promise<void> {
     for (const [name, bytes] of saved.createdFiles ?? []) this.addFile(name, bytes);
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
+    for (const [archive, hash, body] of saved.layouts ?? []) await this.setLayout(archive, hash, body);
     this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);
     const known = new Set([...this.sources.keys(), ...this.otherSources.keys()]);
@@ -489,7 +562,8 @@ export class LanaiSession {
     for (const [archive, bytes] of saved.mapTables ?? []) {
       const r = await this.mapDb(archive).catch(() => null);
       if (!r?.table || bytes.length % 0x4c) continue;
-      r.table.data = equalBytes(bytes, r.table.original) ? r.table.original : bytes.slice();
+      const marked = markAddedLanaiFloors(bytes, r.table.sourceRows ?? r.table.original);
+      r.table.data = equalBytes(marked, r.table.original) ? r.table.original : marked.slice();
       touched.add(r.archive);
     }
     for (const [archive, h, bytes] of saved.maps ?? []) {
@@ -500,7 +574,11 @@ export class LanaiSession {
       else r.db.set(h, bytes.slice());
       touched.add(r.archive);
     }
-    for (const a of touched) this.mapsReset(a);
+    for (const a of touched) {
+      const r = this.mapDbsRead.get(a)!;
+      if (r.table) restoreMissingLanaiSections(r.db, r.table.data);
+      this.mapsReset(a);
+    }
     if (touched.size) this.revision++;
   }
 
@@ -571,6 +649,7 @@ export class LanaiSession {
       void at(name, arc).m.set(index, bytes);
     const sourceOf = (archive: string): Archive => (this.sources.get(archive) ?? this.otherSources.get(archive))!;
     for (const t of this.changedTables()) put(t.archive, sourceOf(t.archive), t.index, t.table.data);
+    for (const { archive, arc, entry, body } of this.layouts.values()) put(archive, arc, entry.index, body);
     for (const r of this.mapDbsRead.values()) {
       if (r.db.changedHashes().length || r.db.addedHashes().length) put(r.archive, r.arc, r.entry.index, r.db.build());
       if (r.table && !equalBytes(r.table.data, r.table.original))
@@ -601,6 +680,18 @@ export class LanaiSession {
 
   /** The RomFS files of the MOD with the archives holding ported models (#100). */
   async allModFiles(): Promise<Map<string, Uint8Array>> {
+    // An imported MOD or a saved clone can already contain maps exported by an older Panana,
+    // even when the user has never opened their map page in this session.
+    const contents = this.need('Contents');
+    for (let row = 0; row < contents.rows; row++) {
+      const archive = hex8(contents.u32(row, 0));
+      if (!this.createdFiles.has(archive) && !this.baseMod?.romfs.has(archive)) continue;
+      const r = await this.mapDb(archive);
+      if (r?.table) {
+        if (r.table.sourceRows) r.table.data = markAddedLanaiFloors(r.table.data, r.table.sourceRows);
+        restoreMissingLanaiSections(r.db, r.table.data);
+      }
+    }
     const files = this.modFiles();
     for (const [name, b] of await (await PortStore.of('lanai')).archives()) if (!files.has(name)) files.set(name, b);
     return files;
@@ -615,6 +706,10 @@ export class LanaiSession {
     }
   }
 
+  get needsFieldStartGuard(): boolean {
+    return [...this.mapDbsRead.values()].some((r) => r.hasStartEvent && r.table && hasMarkedLanaiFloors(r.table.data));
+  }
+
   /**
    * exefs/code.ips: the base MOD's, then Panana's code MODs that are on; null when there is none (throws when one cannot
    * be built).
@@ -622,14 +717,15 @@ export class LanaiSession {
   codeIps(): Uint8Array | null {
     const base = this.baseMod?.ips ?? null;
     const script = conditionScriptPatch(this);
-    if (!this.dropCap && !script) return base;
+    const guard = this.needsFieldStartGuard ? fieldStartPatch(lanaiCode(this.dump)) : null;
+    if (!this.dropCap && !script && !guard) return base;
     const problem = this.dropCap ? this.dropCapProblem() : null;
     if (problem) throw new Error(problem);
     const code = lanaiCode(this.dump);
     const built = [
       ...buildPatches(
         code,
-        [...(this.dropCap ? [dropCapPatch('lanai')] : []), ...(script ? [script] : [])],
+        [...(this.dropCap ? [dropCapPatch('lanai')] : []), ...(script ? [script] : []), ...(guard ? [guard] : [])],
         LANAI_LAYOUT,
       ).values(),
     ];

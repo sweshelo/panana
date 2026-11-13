@@ -30,6 +30,24 @@ export const LANAI_MAP_NAME_MAX = 11;
 /** Slot of the map table row that holds section k (section k = slot k; section 7 has no data, 8 / 9 moved up). */
 export const LANAI_SECTION_SLOT = [0, 1, 2, 3, 4, 5, 6, -1, 7, 8] as const;
 
+/** Older Panana maps omitted empty sections. Update 0x2B164C reads slots 0–8 with lower_bound
+ * and uses the next entry's offset and size without checking its hash. All 553 normal ROM maps
+ * index each of these slots, with size zero for an empty section. World maps have a different layout. */
+export function restoreMissingLanaiSections(db: MapDb, table: Uint8Array): number {
+  let restored = 0;
+  for (let row = 0; row + MAP_ROW <= table.length; row += MAP_ROW) {
+    if (table[row + NAME_OFFSET] === 0x57) continue; // W01 / W02
+    for (const slot of LANAI_SECTION_SLOT) {
+      if (slot < 0) continue;
+      const hash = u32(table, row + slot * 4);
+      if (db.has(hash)) continue;
+      db.add(hash, new Uint8Array());
+      restored++;
+    }
+  }
+  return restored;
+}
+
 /**
  * Record layouts of the sections (§3): oahu's, with the treasure and character positions in 100 units. Every offset
  * is added × 100 (checked in the Update's code.bin: sections 2 / 4 / 5 / 8 / 3).

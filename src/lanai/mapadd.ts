@@ -3,7 +3,7 @@
 //
 // - A map is a row of the content's map table (0x4C bytes: 10 section hashes, MapData row ID, MapGroup row, floor,
 //   name) and its sections in the content's map database. A new map gets new random hashes (the ROM's are not a hash
-//   of the name that Panana knows: map.md §13), like RPG2's; the sections that have bytes are added to the database.
+//   of the name that Panana knows: map.md §13), like RPG2's. Slots 0–8 need an index entry even when empty.
 // - A dungeon is a MapGroup row: its name (a MessageMapName row of the master), MapData, first map, EventObject table
 //   (an entry of the content's archive) and the range of state slots (+0x28 first, +0x2A count; the groups' ranges
 //   follow each other). A new group gets a copy of its template's row, its own EventObject table (a new entry, packed
@@ -12,13 +12,14 @@
 // - Copying a dungeon copies all its maps and its EventObject table: the copies' rows keep their numbers, so the
 //   records name the same rows, and the actions' arguments that name a map of the group (stairs, exits) are turned to
 //   the copies, so the copy is a dungeon of its own.
-// - The CRO of the content (contentsNNNN.cro) names its event classes after the maps (D01001B01Npc0201): a map with
-//   another name is not expected to find them, so the rows with a script action do nothing there (not checked in the
-//   game). renameMap and the copies say so (scriptRows).
+// - The CRO of the content (contentsNNNN.cro) has events tied to the original maps and actors (D01001B01Npc0201).
+//   Copying/renaming maps does not port those events. Its opening hook may also run in a new map of the same group
+//   and dereference an actor that only exists in an original map (contents0001 D01BossWin, see stage-authoring notes).
 import { newHash } from '../game/mappatch';
 import { loadDoc, type MapDoc } from '../game/sections';
 import { cstr, hex8, u32, w32 } from '../util/bytes';
 import { LANAI_ACTION_SCRIPT } from './actions';
+import { LANAI_NO_FIELD_START } from './fieldStart';
 import {
   LANAI_EVENT_ACTIONS,
   LANAI_EVENT_ARGS,
@@ -143,7 +144,8 @@ function writeName(row: Uint8Array, name: string): void {
 /** A map table row from `from`'s with new section hashes (by slot), group, floor and name. */
 function newRow(from: Uint8Array, slots: number[], group: number, floor: number, name: string): Uint8Array {
   const row = from.slice();
-  for (let s = 0; s < 10; s++) w32(row, s * 4, slots[s]!);
+  for (let s = 0; s < 9; s++) w32(row, s * 4, slots[s]!);
+  w32(row, 9 * 4, LANAI_NO_FIELD_START);
   w32(row, ROW_GROUP, group);
   w32(row, ROW_FLOOR, floor >>> 0);
   writeName(row, name);
@@ -153,13 +155,12 @@ function newRow(from: Uint8Array, slots: number[], group: number, floor: number,
 /** The sections (by section number) of a map table row's slots (map.md §3: section k = slot k, 8 / 9 -> 7 / 8). */
 const sectionsOf = (slots: number[]): number[] => LANAI_SECTION_SLOT.map((s) => (s < 0 ? 0 : slots[s]!));
 
-/** Puts a document's sections in the database (those with bytes), for a new map. */
+/** Index every normal-map section, including those with zero records (see restoreMissingLanaiSections). */
 function addSections(maps: LanaiMaps, sections: number[], doc: MapDoc): void {
   for (let k = 0; k < 10; k++) {
     const h = sections[k]!;
     if (k === 7 || !h) continue;
-    const b = maps.sectionBytes(doc, k);
-    if (b.length) maps.db.add(h, b);
+    maps.db.add(h, maps.sectionBytes(doc, k));
   }
 }
 
@@ -172,7 +173,7 @@ function appendRows(maps: LanaiMaps, rows: Uint8Array[]): void {
   maps.setTableBytes(out);
 }
 
-/** EventObject rows of a group's table with a script action (the CRO's classes are found by the map's name). */
+/** EventObject rows with a script action; the CRO's opening hook is separate and is not counted here. */
 export function scriptRows(maps: LanaiMaps, group: number): number {
   const t = maps.eventTable(group);
   let n = 0;
@@ -207,7 +208,7 @@ export function addLanaiMap(maps: LanaiMaps, spec: LanaiNewMapSpec, rand: () => 
   if (problem) throw new Error(problem);
   if (t.world) throw new Error('ワールドマップは写せません');
   if (!Number.isInteger(spec.floor) || Math.abs(spec.floor) > 99) throw new Error('階は -99〜99 にしてください');
-  const slots = newHashes(maps, 10, rand);
+  const slots = newHashes(maps, 9, rand);
   const sections = sectionsOf(slots);
   const src = maps.doc(t);
   const doc = loadDoc(
@@ -407,7 +408,7 @@ export function addLanaiGroup(
   const made: number[] = [];
   const reserved = new Set<number>();
   for (const p of plan) {
-    const slots = newHashes(maps, 10, rand, reserved);
+    const slots = newHashes(maps, 9, rand, reserved);
     const sections = sectionsOf(slots);
     const src = maps.doc(p.from);
     const doc = loadDoc(

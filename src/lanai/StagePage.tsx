@@ -19,6 +19,7 @@ import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
+import { LanaiStageThumbnail } from './StageThumbnail';
 
 type Filter = 'all' | 'stages' | 'none';
 
@@ -141,6 +142,8 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
             <tr>
               <th>行</th>
               <th>ステージ名</th>
+              <th>サムネイル</th>
+              <th>推奨レベル</th>
               <th>ミッション</th>
               <th title="+0x49 (MapStage +0x3D)。クイズの正解と照合して確定">スタミナ</th>
               <th title="+0x1C〜+0x30">解放・非表示条件</th>
@@ -160,6 +163,10 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
                     {s.name || <span className="muted">(なし)</span>}
                     <div className="muted small mono">{`MessageMapStage ${hex8(s.messageId)}`}</div>
                   </td>
+                  <td>
+                    <LanaiStageThumbnail session={session} archive={c.archive} hash={s.thumbnail} name={s.name} />
+                  </td>
+                  <td className="num">{s.recommendedLevel || '—'}</td>
                   <td>
                     {s.mission}
                     {exp && (

@@ -66,7 +66,7 @@ export class MapDb {
 
   /** Hashes whose bytes differ from the original ones (added entries included). */
   changedHashes(): number[] {
-    return [...this.changes].filter(([h, b]) => !equalBytes(b, this.original(h))).map(([h]) => h);
+    return [...this.changes].filter(([h, b]) => this.isAdded(h) || !equalBytes(b, this.original(h))).map(([h]) => h);
   }
 
   /** Add an entry (a section of a new map). The game finds it once the index is sorted again by {@link build}. */

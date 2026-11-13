@@ -3,13 +3,20 @@ import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { LanaiConditionEditor } from './ConditionEditor';
-import { CRO_HOOK_START_EVENT, type ContentArchive, type LanaiContent, type LanaiStage } from './contents';
+import {
+  CRO_HOOK_START_EVENT,
+  lanaiContents,
+  type ContentArchive,
+  type LanaiContent,
+  type LanaiStage,
+} from './contents';
 import { DestinationFields } from './DestinationFields';
 import { lanaiMapHref } from './MapPage';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiSession } from './session';
 import type { LanaiCondition } from './conditions';
+import { LanaiStageThumbnail } from './StageThumbnail';
 import {
   cloneLanaiContent,
   editLanaiStage,
@@ -79,7 +86,7 @@ export function LanaiStageStartEditor({
         {!archive.cro
           ? '最初のイベント: CRO がありません。'
           : opening
-            ? `最初のイベント: あり (CRO ${archive.cro.info.module} の関数 ${CRO_HOOK_START_EVENT})。マップに入ると CRO が MapGroup やフラグを見て開始の演出 (${archive.cro.info.classes.filter((c) => /Intro$/.test(c)).join('、') || 'Intro'} など) を返します。CRO は書き換えられないので、止めるには「イベントなしで追加」でステージを作り直します。`
+            ? `最初のイベント: あり (CRO ${archive.cro.info.module} の関数 ${CRO_HOOK_START_EVENT})。マップに入ると CRO が MapGroup やフラグを見て開始の演出 (${archive.cro.info.classes.filter((c) => /Intro$/.test(c)).join('、') || 'Intro'} など) を返します。追加したマップでは、元の開始イベントを呼び出さない保護を MOD に含めます。元のマップの演出も止める場合は「イベントなしで追加」でステージを作り直します。`
             : `最初のイベント: なし (CRO ${archive.cro.info.module} に開始の演出がありません)。`}
       </p>
     </div>
@@ -97,7 +104,17 @@ export function LanaiStageEditor({
   onClose: () => void;
 }): ReactNode {
   const [order, setOrder] = useState(stage.order),
-    [stamina, setStamina] = useState(stage.stamina);
+    [stamina, setStamina] = useState(stage.stamina),
+    [recommendedLevel, setRecommendedLevel] = useState(stage.recommendedLevel),
+    [thumbnail, setThumbnail] = useState('');
+  const thumbnails = lanaiContents(session).flatMap((c) =>
+    c.stages.map((st) => ({
+      key: String(st.row),
+      archive: c.archive,
+      stage: st,
+    })),
+  );
+  const selectedThumbnail = thumbnails.find((t) => t.key === thumbnail);
   const [visible, setVisible] = useState(stage.visible);
   const [hidden, setHidden] = useState(stage.hidden);
   const pendingScripts = useRef(new Map<number, string>());
@@ -124,6 +141,35 @@ export function LanaiStageEditor({
         <span>必要なスタミナ</span>
         <input type="number" min={0} max={255} value={stamina} onChange={(e) => setStamina(Number(e.target.value))} />
       </label>
+      <label className="field">
+        <span>推奨レベル (0 で表示なし)</span>
+        <input
+          type="number"
+          min={0}
+          max={65535}
+          step={1}
+          value={recommendedLevel}
+          onChange={(e) => setRecommendedLevel(Number(e.target.value))}
+        />
+      </label>
+      <label className="field">
+        <span>サムネイル</span>
+        <select value={thumbnail} onChange={(e) => setThumbnail(e.target.value)}>
+          <option value="">現在の画像</option>
+          {thumbnails.map((t) => (
+            <option key={t.key} value={t.key}>{`${t.stage.content}: ${t.stage.name || '名前なし'}`}</option>
+          ))}
+        </select>
+      </label>
+      <p className="small muted">
+        ゲーム内のステージ画像を選んで差し替えます。このコンテンツ内で同じ画像を使うステージにも反映されます。
+      </p>
+      <LanaiStageThumbnail
+        session={session}
+        archive={selectedThumbnail?.archive ?? content.archive}
+        hash={selectedThumbnail?.stage.thumbnail ?? stage.thumbnail}
+        name={selectedThumbnail?.stage.name ?? stage.name}
+      />
       <h3>表示・解放条件</h3>
       <p className="small muted">条件が成立すると表示されます。条件なし (0) はいつも表示します。</p>
       <LanaiConditionEditor
@@ -157,7 +203,16 @@ export function LanaiStageEditor({
               if (c.kind === 0x72 && pendingScripts.current.has(c.v1))
                 session.setConditionScript(c.v1, pendingScripts.current.get(c.v1)!);
             session.codeIps(); // validate version, conflicts and available code space before committing table edits
-            await editLanaiStage(session, content, stage, { order, stamina, visible, hidden });
+            await editLanaiStage(session, content, stage, {
+              order,
+              stamina,
+              recommendedLevel,
+              visible,
+              hidden,
+              ...(selectedThumbnail
+                ? { thumbnail: { archive: selectedThumbnail.archive, hash: selectedThumbnail.stage.thumbnail } }
+                : {}),
+            });
             onClose();
           } catch (e) {
             for (const id of pendingScripts.current.keys()) session.conditionScripts.delete(id);

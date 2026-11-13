@@ -19,9 +19,19 @@ export async function editLanaiStage(
   s: LanaiSession,
   c: LanaiContent,
   stage: LanaiStage,
-  values: { order: number; stamina: number; visible: LanaiCondition; hidden: LanaiCondition },
+  values: {
+    order: number;
+    stamina: number;
+    recommendedLevel?: number;
+    thumbnail?: { archive: string; hash: number };
+    visible: LanaiCondition;
+    hidden: LanaiCondition;
+  },
 ): Promise<void> {
   const { order, stamina, visible, hidden } = values;
+  const recommendedLevel = values.recommendedLevel ?? stage.recommendedLevel;
+  if (!Number.isInteger(recommendedLevel) || recommendedLevel < 0 || recommendedLevel > 0xffff)
+    throw new Error('推奨レベルは 0〜65535 で指定してください');
   if (
     !Number.isInteger(order) ||
     order < 0 ||
@@ -46,11 +56,17 @@ export async function editLanaiStage(
     throw new Error('条件の値が範囲外です');
   const { t, r } = await localStage(s, c, stage);
   const m = s.need('MapStageIntegration');
+  if (values.thumbnail) {
+    const body = await s.readLayout(values.thumbnail.archive, values.thumbnail.hash);
+    // Keep the destination's entry hash and layout name; its tables/maps remain independent of the source.
+    await s.setLayout(c.archive, stage.thumbnail, body);
+  }
   for (const [table, row, staminaOffset] of [
     [m, stage.row, 0x49],
     [t, r, 0x3d],
   ] as const) {
     table.setU32(row, 0, order);
+    table.setBits(row, staminaOffset === 0x49 ? 0x40 : 0x34, 16, 16, recommendedLevel);
     table.setBits(row, staminaOffset & ~3, (staminaOffset & 3) * 8, 8, stamina);
     for (const [c, offset] of [
       [visible, 0x1c],

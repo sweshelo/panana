@@ -16,19 +16,24 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   const [, redraw] = useState(0);
   const changed = session.changedTables();
   const maps = session.changedMapDbs();
+  const mapTables = session.changedMapTables();
+  const layouts = session.changedLayouts();
   const created = [...session.createdFiles.keys()];
   const scripts = session.conditionScripts.size;
+  const fieldStartGuard = session.needsFieldStartGuard;
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
   const archives = [
     ...new Set([
       ...changed.map((t) => t.archive),
       ...maps.map((m) => m.archive),
+      ...mapTables.map((m) => m.archive),
+      ...layouts.map((l) => l.archive),
       ...ported.map((p) => p.split(':')[0]!),
       ...(session.baseMod?.romfs.keys() ?? []),
     ]),
   ];
-  const ips = scripts > 0 || session.dropCap || !!session.baseMod?.ips;
+  const ips = scripts > 0 || session.dropCap || fieldStartGuard || !!session.baseMod?.ips;
   return (
     <Dialog title="MOD の書き出し (RPG FREE!)" onClose={onClose}>
       {!session.canExport ? (
@@ -49,7 +54,15 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
               redraw((x) => x + 1);
             }}
           />
-          {!changed.length && !maps.length && !ported.length && !created.length && !scripts && !session.dropCap ? (
+          {!changed.length &&
+          !maps.length &&
+          !mapTables.length &&
+          !layouts.length &&
+          !ported.length &&
+          !created.length &&
+          !scripts &&
+          !fieldStartGuard &&
+          !session.dropCap ? (
             <p className="muted">まだ何も変更していません。</p>
           ) : (
             <>
@@ -58,6 +71,10 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                   <li key={n}>{`${n}: 新しいファイル`}</li>
                 ))}
                 {scripts > 0 && <li>{`条件スクリプト ${scripts} 件 (exefs/code.ips)`}</li>}
+                {fieldStartGuard && <li>追加マップの開始イベント保護 (exefs/code.ips)</li>}
+                {layouts.map((l) => (
+                  <li key={`layout/${l.archive}/${l.hash}`}>{`${l.archive} のステージ画像`}</li>
+                ))}
                 {changed.map((t) => {
                   const rows = t.table.changedRows();
                   const added = t.table.rows - t.table.originalRows;
@@ -73,6 +90,9 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                 })}
                 {maps.map((m) => (
                   <li key={`map/${m.archive}`}>{`${m.archive} のマップ DB (C9F79000): ${m.sections} 区画`}</li>
+                ))}
+                {mapTables.map((m) => (
+                  <li key={`map-table/${m.archive}`}>{`${m.archive} のマップ表`}</li>
                 ))}
                 {ported.map((p) => (
                   <li key={`port/${p}`}>{p}</li>

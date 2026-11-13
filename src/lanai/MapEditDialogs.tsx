@@ -162,9 +162,10 @@ export function LanaiNewMapDialog({
         copy === 'all'
           ? '複製では、宝箱・扉・キャラなどのイベント (EventObject) も写して、状態の枠を別にします (宝箱を開けたかどうかは写しと元で別々)。宝箱の中身 (TreasureGroup) と行き先は同じものを指します。'
           : '置物・宝箱・出入口はあとから足してください。',
+        '元の CRO の開始イベントは、元のマップのキャラや敵がいる前提で作られています。追加したマップへの固有イベントの移植は未対応です。',
         ...(scripts
           ? [
-              `このダンジョンにはスクリプト (CRO) の動作が ${scripts} 件あります。CRO はイベントのクラスをマップ名で持つ (D01001B01Npc0201) ので、写しのマップではそれらは動かない見込みです (ゲームでは未確認)。`,
+              `このダンジョンにはスクリプト (CRO) の動作が ${scripts} 件あります。マップ名・キャラ・敵に依存する固有イベントは、複製先に合わせて変換されません。`,
             ]
           : []),
         '作ったあと、ほかのマップの出入口の行き先をこのマップにし、このマップにも出入口を置いてください。書き出すと、このステージのアーカイブのマップ表とマップ DB に入ります。',
@@ -207,7 +208,7 @@ export function LanaiNewGroupDialog({
   const g = maps.groups[template];
   if (!g || !list.length || !maps.mapGroup)
     return (
-      <Dialog title="ダンジョンを追加・複製" wide={false} onClose={onClose}>
+      <Dialog title="このステージにダンジョンを追加・複製" wide={false} onClose={onClose}>
         <div className="error">写す元にできるダンジョンがこのステージにありません。</div>
       </Dialog>
     );
@@ -238,7 +239,7 @@ export function LanaiNewGroupDialog({
     }
   };
   return (
-    <Dialog title="ダンジョンを追加・複製" wide={false} onClose={onClose}>
+    <Dialog title="このステージにダンジョンを追加・複製" wide={false} onClose={onClose}>
       <Field label="写す元のダンジョン">
         <select
           value={template}
@@ -337,14 +338,16 @@ export function LanaiNewGroupDialog({
       )}
       {nameProblem && <div className="error">{nameProblem}</div>}
       {help([
+        '新しいダンジョンとマップは、今開いているステージ内に追加されます。別のステージにあるマップを付け替えたり共有したりする操作ではありません。',
         `ダンジョンの番号は MapGroup ${maps.mapGroup.rows} (表の末尾に追加) です。見た目 (MapData)・BGM・会話の表は写す元と同じにし、名前の項目 (MessageMapName) は新しく足します。`,
         copyMaps
           ? 'イベントの表 (EventObject) は写す元のものを丸ごと写した新しいエントリにします。写したマップどうしをつなぐ階段・出入口の行き先は写しのマップに付け替えるので、写しの中を行き来できます。ダンジョンの外へ出る出口はそのままです。'
           : 'イベントの表 (EventObject) はイベントなし (番号 0) だけの新しいエントリにします。宝箱や出入口はあとから足してください。',
         `状態の枠 (宝箱を開けたか、など): ${slot}〜${slot + g.stateCount - 1} (${g.stateCount} 個) を使います。このステージの ROM の枠は ${end} 個目までで、その先の枠をセーブがいくつ持つかはまだ確かめていません。`,
+        '元の CRO の開始イベントは、元のマップのキャラや敵がいる前提で作られています。新しいダンジョンへの固有イベントの移植は未対応です。',
         ...(scripts
           ? [
-              `写す元にはスクリプト (CRO) の動作が ${scripts} 件あります。CRO はイベントのクラスをマップ名で持つ (D01001B01Npc0201) ので、名前の違う写しではそれらは動かない見込みです (ゲームでは未確認)。`,
+              `写す元にはスクリプト (CRO) の動作が ${scripts} 件あります。マップ名・キャラ・敵に依存する固有イベントは、複製先に合わせて変換されません。`,
             ]
           : []),
         '作ったあと、ほかのマップの出入口の行き先を、このダンジョンのマップにしてください。',
@@ -513,7 +516,7 @@ export function LanaiNamesDialog({
           : '名前の項目 (MessageMapName) は同じダンジョンを使うほかのステージと共有なので、名前を変えると、このダンジョン用の項目を新しく足して付け替えます (ほかのステージの名前は変わりません)。',
         ...(scripts && !current.added
           ? [
-              `このダンジョンにはスクリプト (CRO) の動作が ${scripts} 件あります。CRO はイベントのクラスをマップ名で持つ (D01001B01Npc0201) ので、ROM のマップのコードを変えると、それらのイベントが動かなくなる見込みです (ゲームでは未確認)。`,
+              `このダンジョンにはスクリプト (CRO) の動作が ${scripts} 件あります。元のマップの名前・キャラ・敵に依存する固有イベントは、マップのコードを変えても更新されません。`,
             ]
           : []),
       ])}

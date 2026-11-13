@@ -4,8 +4,10 @@
 // EventObject table, the names, the saved edits put back in a new session, and taking it all out again.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
+import { ArmMachine } from '../src/game/arm';
 import { MapDb } from '../src/game/mapdb';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
+import { fieldStartPatch, LANAI_NO_FIELD_START } from '../src/lanai/fieldStart';
 import {
   addLanaiGroup,
   addLanaiMap,
@@ -34,6 +36,7 @@ import {
 import { LanaiSession } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
 import { openImages, type Dump } from '../src/rom/dump';
+import { applyIps } from '../src/rom/ips';
 import { equalBytes, u32, w32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
@@ -148,6 +151,137 @@ describe.skipIf(!hasLanai)('RPG FREE! maps and dungeons added (ROM)', () => {
     s = await LanaiSession.open(dump, { fresh: true });
     content = lanaiContents(s)[38]!;
     maps = await lanaiMaps(s, content);
+  }, 300000);
+
+  test('the Update resolves all nine slots of an added floor, including empty slots restored from older edits and MODs', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const c = lanaiContents(local)[1]!;
+    const floors = await lanaiMaps(local, c);
+    const template = floors.mapByName('D01001B02')!;
+    let hash = 0x11000;
+    const floor = addLanaiMap(
+      floors,
+      { template, floor: -3, name: 'D01001B03', copy: 'tiles' },
+      () => hash++ / 0x100000000,
+    );
+    const saved = local.saved();
+    const empty = floor.slots.slice(0, 9).filter((h) => floors.db.get(h).length === 0);
+    expect(empty).toHaveLength(7);
+    expect(saved.maps!.filter(([, h]) => empty.includes(h))).toHaveLength(7);
+
+    // Execute the game's slot reader against the actual map table and DB, stubbing only archive access.
+    const sizesOnGame = (file: Uint8Array): number[] => {
+      const archive = parseArchive(file);
+      const table = unpackEntry(archive, findEntry(archive, LANAI_MAP_TABLE_ENTRY)!).body;
+      const db = unpackEntry(archive, findEntry(archive, LANAI_MAPDB_ENTRY)!).body;
+      const m = new ArmMachine(dump.code, { stubs: new Map([[0x2bd2e4, () => dbAt]]) });
+      const load = (bytes: Uint8Array): number => {
+        const address = m.alloc(bytes.length);
+        bytes.forEach((v, i) => m.wb(address + i, v));
+        return address;
+      };
+      const dbAt = load(db);
+      const tableAt = load(table);
+      m.write(0x4eb098, tableAt, 4);
+      m.write(0x4eb09c, tableAt + table.length, 4);
+      const result = m.alloc(8);
+      return floor.slots.slice(0, 9).map((_, slot) => {
+        m.run(0x2b164c, [result, floor.hash, slot]);
+        return m.read(result + 4, 4);
+      });
+    };
+    const expected = [floors.db.get(template.hash).length, 0, 0, 0, 0, 0, 8, 0, 0];
+    expect(sizesOnGame(local.modFiles().get(c.archive)!)).toEqual(expected);
+
+    // Earlier versions wrote only nonempty sections into both the autosave and the exported archive.
+    saved.maps = saved.maps!.filter(([, h]) => !empty.includes(h));
+    const legacyTable = saved.mapTables![0]![1];
+    w32(legacyTable, floor.index * LANAI_MAP_ROW + 0x24, 0x12345678);
+    const reopened = await LanaiSession.open(dump, { fresh: true });
+    await reopened.restore(saved);
+    expect(sizesOnGame(reopened.modFiles().get(c.archive)!)).toEqual(expected);
+    expect(reopened.needsFieldStartGuard).toBe(true);
+    for (const h of empty) floors.db.remove(h);
+    floors.setTableBytes(legacyTable);
+    const legacy = local.modFiles();
+    expect(sizesOnGame(legacy.get(c.archive)!)[4]).toBe(8); // lower_bound returns slot 6's header for chests
+    const imported = await LanaiSession.open(dump, {
+      fresh: true,
+      baseMod: { label: 'legacy', romfs: legacy, ips: null },
+    });
+    await imported.restore({ rows: [], mapTables: [[c.archive, legacyTable]] });
+    expect(sizesOnGame((await imported.allModFiles()).get(c.archive)!)).toEqual(expected);
+    expect(imported.needsFieldStartGuard).toBe(true);
+  }, 300000);
+
+  test('the field constructor calls CRO export 3 on the original floors and skips it on an added floor in the same group', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const floors = await lanaiMaps(local, lanaiContents(local)[1]!);
+    const b2 = floors.mapByName('D01001B02')!;
+    expect(local.codeIps()).toBeNull();
+    const b3 = addLanaiMap(floors, { template: b2, floor: -3, name: 'D01001B03', copy: 'tiles' });
+    expect(b3.slots[9]).toBe(LANAI_NO_FIELD_START);
+    const ips = local.codeIps()!;
+    const code = applyIps(dump.code, ips);
+    expect(fieldStartPatch(code)).toBeNull(); // reusing the guard from an imported MOD
+    let current = b2.hash;
+    let calls = 0;
+    const manager = 0x30008000;
+    const m = new ArmMachine(code, {
+      textEnd: 0x49a000,
+      maxDepth: 12,
+      stubs: new Map([
+        [0x2e7c60, (cpu) => cpu.r[0]!], // base constructor
+        [
+          0x314550,
+          (cpu) => {
+            expect(cpu.r[1]).toBe(0x2a);
+            return current;
+          },
+        ], // current map save key
+        [
+          0x2e7e4c,
+          (cpu) => {
+            expect(cpu.r[0]).toBe(manager);
+            expect(cpu.r[1]).toBe(3);
+            return 0x77068c;
+          },
+        ],
+        [
+          0x77068c,
+          () => {
+            calls++;
+            return 0x770abc;
+          },
+        ],
+      ]),
+    });
+    const table = floors.tableBytes;
+    const tableAt = m.alloc(table.length);
+    table.forEach((v, i) => m.wb(tableAt + i, v));
+    m.write(0x4eb098, tableAt, 4);
+    m.write(0x4eb09c, tableAt + table.length, 4);
+    const field = m.alloc(16);
+    const mode = m.alloc(16);
+    m.write(0x4eb760, mode, 4);
+    m.write(mode + 8, 3, 4);
+    m.write(0x4eb5ec, manager, 4);
+    const start = (hash: number): number => {
+      current = hash;
+      m.run(0x182324, [field]);
+      return m.read(field + 12, 4);
+    };
+    expect(start(b2.hash)).toBe(0x770abc);
+    expect(start(b3.hash)).toBe(0);
+    expect(calls).toBe(1);
+    expect(start(floors.mapByName('D01001B01')!.hash)).toBe(0x770abc);
+    expect(start(0)).toBe(0x770abc);
+    // Slot 9 is terrain on world maps, including a third-party terrain hash equal to the marker.
+    m.wb(tableAt + b3.index * LANAI_MAP_ROW + 0x40, 'W'.charCodeAt(0));
+    expect(start(b3.hash)).toBe(0x770abc);
+    expect(calls).toBe(4);
+    removeLanaiMap(floors, b3);
+    expect(local.codeIps()).toBeNull();
   }, 300000);
 
   test('a map copied in its dungeon: own sections and EventObject rows; exported, saved and put back; taken out', async () => {
