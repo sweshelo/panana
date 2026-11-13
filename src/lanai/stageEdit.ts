@@ -88,10 +88,10 @@ export async function editLanaiStage(
  */
 export const LANAI_EMPTY_SCRIPT_CONTENT = 99;
 
-const crrName = (n: number): string => `.crr/contents${String(n).padStart(4, '0')}.crr`;
+export const lanaiCrrName = (n: number): string => `.crr/contents${String(n).padStart(4, '0')}.crr`;
 
 /** The CRO of a content's archive (ContentsDef row 2) and the Update CRR registering it. */
-async function contentScript(
+export async function contentScript(
   s: LanaiSession,
   c: LanaiContent,
   arc: Archive,
@@ -101,8 +101,8 @@ async function contentScript(
   const e = findEntry(arc, def.u32(2, 0));
   if (!e) throw new Error(`コンテンツ ${c.index} の ContentsDef の CRO がありません`);
   const crr =
-    s.createdFiles.get(crrName(c.index)) ??
-    (await (s.dump.readUpdateRomfs?.(crrName(c.index)) ?? s.dump.readRomfs(crrName(c.index))));
+    s.createdFiles.get(lanaiCrrName(c.index)) ??
+    (await (s.dump.readUpdateRomfs?.(lanaiCrrName(c.index)) ?? s.dump.readRomfs(lanaiCrrName(c.index))));
   return { entry: e.index, body: unpackEntry(arc, e).body, crr };
 }
 
@@ -156,8 +156,8 @@ export async function cloneLanaiContent(
   while (used.has(hex8(hash))) hash += 0x10000;
   const archive = hex8(hash);
   if (
-    s.createdFiles.has(crrName(index)) ||
-    s.dump.files?.().some((f) => f.path.toUpperCase() === crrName(index).toUpperCase())
+    s.createdFiles.has(lanaiCrrName(index)) ||
+    s.dump.files?.().some((f) => f.path.toUpperCase() === lanaiCrrName(index).toUpperCase())
   )
     throw new Error('追加先の CRR が既にあります');
   const arc = parseArchive(bytes);
@@ -179,7 +179,7 @@ export async function cloneLanaiContent(
   if (!crrRegisters(crr, cro)) throw new Error('CRO と CRR の登録ハッシュが一致しません');
   w32(newArchive, 4, hash);
   s.addFile(archive, newArchive);
-  s.addFile(crrName(index), crr);
+  s.addFile(lanaiCrrName(index), crr);
   const copied = await s.tablesIn(archive);
   const copiedDef = copied.find((t) => t.table.name === 'ContentsDef')!.table;
   copiedDef.setU32(0, 0, index);

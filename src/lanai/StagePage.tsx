@@ -14,6 +14,7 @@ import { textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
 import { conditionText } from './conditions';
 import { LanaiContentCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
+import { LanaiStageScriptEditor } from './StageScriptEditor';
 import { ScriptApiBrowser } from './ScriptApiBrowser';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
@@ -212,6 +213,9 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
               <LanaiStageStartEditor session={session} content={c} stage={st} archive={read} />
             </div>
           ))}
+          {session.createdFiles.has(c.archive.toUpperCase()) && (
+            <LanaiStageScriptEditor session={session} content={c} />
+          )}
           <ContentArchiveView session={session} c={c} a={read} />
         </>
       )}
