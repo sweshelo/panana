@@ -25,6 +25,7 @@
 // after the statement (script-abi.md §7).
 import { assembleLine, encodeImm } from '../game/asm';
 import { RELOC, croRegistrationHash, type Cro, type CroPatch, type CroReloc, type SegTag } from './cro';
+import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
 
 // ------------------------------------------------------------------------------------------------ the script
 /** A character an action is done to: the party's first, the event's own (talk / button), or the one of a row. */
@@ -34,7 +35,30 @@ export type ScriptValue =
   | { kind: 'ask'; msg: number }
   | { kind: 'item'; item: number }
   | { kind: 'state'; row: number }
-  | { kind: 'monsters' };
+  | { kind: 'monsters' }
+  | { kind: 'call'; call: ScriptCall };
+/** An argument of a Script API call, as the function's parameter takes it (scriptApiTable.ts). */
+export type ScriptArg =
+  | { k: 'i'; v: number }
+  | { k: 'f'; v: number }
+  | { k: 'v'; x: number; y: number; z: number }
+  /** const ScriptMessageParam&: {0, 0}, not written in the script. */
+  | { k: 'm' }
+  /** A character: as its script object (c) or as its ChrObject* (p). */
+  | { k: 'c'; who: ScriptWho }
+  | { k: 'p'; who: ScriptWho };
+/** A Script API function called by its name: `ScriptSound.Play(0x84, 0)`, `hero.SetVisible(0)`. */
+export interface ScriptCall {
+  /** "Class::Name" as told in messages, and the symbol of lanai.crs. */
+  name: string;
+  sym: string;
+  /** The character whose member function it is (null: a static function); `player`: of ScriptPlayer. */
+  self: ScriptWho | null;
+  player: boolean;
+  args: ScriptArg[];
+  /** The result is one byte (the bits above it are not defined). */
+  byte: boolean;
+}
 export type ScriptCmp = '==' | '!=' | '<' | '<=' | '>' | '>=';
 export interface ScriptCond {
   value: ScriptValue;
@@ -69,6 +93,7 @@ export type ScriptNode =
   | { op: 'remove'; row: number }
   | { op: 'battle'; group: number }
   | { op: 'stageName' }
+  | { op: 'call'; call: ScriptCall }
   | { op: 'break' }
   | { op: 'return' };
 
@@ -148,7 +173,7 @@ function tokens(src: string): Token[] {
   const out: Token[] = [];
   let line = 1;
   const re =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?))|([A-Za-z_]\w*)|(==|!=|<=|>=|[(){},:;=<>!])|(.)/gu;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?))|([A-Za-z_]\w*)|(==|!=|<=|>=|[(){},:;=<>!.])|(.)/gu;
   for (const m of src.matchAll(re)) {
     const pos = m.index;
     if (m[1]) line += m[1].split('\n').length - 1;
@@ -194,13 +219,20 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
     w && w.kind === 'self' && !own
       ? `self (イベントの持ち主) は「${SCRIPT_TRIGGER_LABEL.talk}」「${SCRIPT_TRIGGER_LABEL.button}」のイベントでだけ使えます。chara(イベント番号) で指してください`
       : null;
+  const called = (c: ScriptCall): string | null =>
+    c.args.reduce<string | null>((p, a) => p ?? (a.k === 'c' || a.k === 'p' ? who(a.who) : null), who(c.self));
+  const valued = (v: ScriptValue): string | null => (v.kind === 'call' ? called(v.call) : null);
   for (const n of body) {
     let p: string | null = null;
     switch (n.op) {
       case 'if':
-        p = eventProblem(trigger, n.then) ?? eventProblem(trigger, n.else);
+        p = valued(n.cond.value) ?? eventProblem(trigger, n.then) ?? eventProblem(trigger, n.else);
+        break;
+      case 'call':
+        p = called(n.call);
         break;
       case 'switch':
+        p = valued(n.value);
         for (const c of n.cases) p ??= eventProblem(trigger, c.body);
         p ??= n.default ? eventProblem(trigger, n.default) : null;
         break;
@@ -225,6 +257,16 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
     if (p) return p;
   }
   return null;
+}
+
+/** The Script API functions by "Class.Name" (several when overloaded), and the classes whose functions are static. */
+const API_INDEX = new Map<string, ScriptApiRow[]>();
+const MEMBER_CLASSES = new Set(['ScriptChara', 'ScriptPlayer']);
+const API_CLASSES = new Set<string>();
+for (const r of SCRIPT_API_ROWS) {
+  const key = `${r[0]}.${r[1]}`;
+  API_INDEX.set(key, [...(API_INDEX.get(key) ?? []), r]);
+  if (!MEMBER_CLASSES.has(r[0])) API_CLASSES.add(r[0]);
 }
 
 /** Reads a script; throws a ScriptError naming the line. */
@@ -294,9 +336,97 @@ export function parseStageScript(src: string): StageScript {
     return out as T;
   };
 
+  const WHO_WORDS = ['hero', 'self', 'chara'];
+  /**
+   * A Script API function called by name, the token before the dot read: `Class.Name(args)` or `who.Name(args)`.
+   * The arguments are numbers, vec(x, y, z) and characters; the function is the one of that name they fit.
+   */
+  const apiCall = (cls: string | null, self: ScriptWho | null, at: Token): ScriptCall => {
+    need('.');
+    const fn = next();
+    if (fn.t !== 'id') fail('関数の名前が要ります', fn);
+    const classes = cls ? [cls] : self!.kind === 'hero' ? ['ScriptPlayer', 'ScriptChara'] : ['ScriptChara'];
+    const rows = classes.flatMap((c) => API_INDEX.get(`${c}.${fn.s}`) ?? []);
+    const shown = `${cls ?? classes[classes.length - 1]}::${fn.s}`;
+    if (!rows.length) fail(`${shown} という Script API はありません (またはスクリプトから呼べない引数を持ちます)`, fn);
+    type Raw =
+      | { kind: 'num'; v: number; whole: boolean }
+      | { kind: 'vec'; x: number; y: number; z: number }
+      | { kind: 'who'; who: ScriptWho };
+    const raw: Raw[] = [];
+    need('(');
+    while (!eat(')')) {
+      if (raw.length) need(',');
+      const t = peek();
+      if (t.t === 'id' && t.s === 'vec') {
+        next();
+        const pos = (): number => num('vec の値', -1e9, 1e9);
+        const [x, y, z] = call('vec', pos, pos, pos);
+        raw.push({ kind: 'vec', x, y, z });
+      } else if (t.t === 'id' && WHO_WORDS.includes(t.s)) raw.push({ kind: 'who', who: who() });
+      else if (t.t === 'id' && (t.s === 'true' || t.s === 'false'))
+        raw.push({ kind: 'num', v: Number(next().s === 'true'), whole: true });
+      else if (t.t === 'num') raw.push({ kind: 'num', v: next().n, whole: !t.s.includes('.') });
+      else fail(`${shown} の引数は、数・vec(x, y, z)・キャラ (hero / self / chara(イベント番号)) で書きます`, t);
+    }
+    /** How well the arguments fit a function's parameters (0: they do not). */
+    const fit = (r: ScriptApiRow): number => {
+      const params = [...r[3]].filter((k) => k !== 'm');
+      if (params.length !== raw.length) return 0;
+      let score = 1;
+      for (let k = 0; k < raw.length; k++) {
+        const a = raw[k]!,
+          want = params[k]!;
+        if (a.kind === 'num' && want === 'i' && a.whole) score += 2;
+        else if (a.kind === 'num' && want === 'f') score += a.whole ? 1 : 2;
+        else if (a.kind === 'vec' && want === 'v') score += 2;
+        else if (a.kind === 'who' && want === 'p') score += 2;
+        else if (a.kind === 'who' && want === 'c') score += 1;
+        else return 0;
+      }
+      return score;
+    };
+    const fits = rows.map((r) => ({ r, score: fit(r) })).filter((x) => x.score > 0);
+    const forms = rows.map((r) => `${r[0]}::${r[1]}(${r[4]})`).join(' / ');
+    if (!fits.length) fail(`${shown} の引数が合いません: ${forms} (ScriptMessageParam は書きません)`, at);
+    const best = Math.max(...fits.map((x) => x.score));
+    const chosen = fits.filter((x) => x.score === best);
+    if (chosen.length > 1) fail(`${shown} のどれを呼ぶのか決まりません: ${forms}`, at);
+    const r = chosen[0]!.r;
+    let k = 0;
+    const args: ScriptArg[] = [...r[3]].map((want): ScriptArg => {
+      if (want === 'm') return { k: 'm' };
+      const a = raw[k++]!;
+      if (a.kind === 'vec') return { k: 'v', x: a.x, y: a.y, z: a.z };
+      if (a.kind === 'who') return { k: want as 'c' | 'p', who: a.who };
+      if (want === 'i' && (a.v < -0x80000000 || a.v > 0xffffffff))
+        fail(`${shown} の整数の引数は 32 ビットに収まる値です`, at);
+      return { k: want as 'i' | 'f', v: a.v };
+    });
+    const count = (w: string): number => args.filter((a) => a.k === w).length;
+    const words = (self ? 1 : 0) + args.filter((a) => a.k !== 'f').length;
+    if (count('v') > 2 || count('m') > 2 || count('c') > 1 || count('p') > 2 || words > 8 || count('f') > 8)
+      fail(`${shown} は引数が多く、スクリプトからは呼べません`, at);
+    return { name: `${r[0]}::${r[1]}`, sym: r[2], self, player: r[0] === 'ScriptPlayer', args, byte: r[5] === '8' };
+  };
+  /** A call that begins at the token just read (a class's name or a character), or null. */
+  const apiCallAt = (t: Token): ScriptCall | null => {
+    if (t.t !== 'id') return null;
+    if (API_CLASSES.has(t.s) && is('.')) return apiCall(t.s, null, t);
+    if (WHO_WORDS.includes(t.s)) {
+      i--;
+      const w = who();
+      if (is('.')) return apiCall(null, w, t);
+      return fail('キャラの後には .関数(…) が要ります (例: hero.SetVisible(0))', t);
+    }
+    return null;
+  };
+
   const value = (): ScriptValue => {
     const t = next();
     if (t.t !== 'id') fail('変数か ask(…) / item(…) / state(…) / monsters() が要ります', t);
+    const api = apiCallAt(t);
+    if (api) return { kind: 'call', call: api };
     if (is('(')) {
       if (t.s === 'ask') return { kind: 'ask', msg: call('ask', () => u32('台詞の行 ID'))[0] };
       if (t.s === 'item') return { kind: 'item', item: call('item', () => u32('アイテム ID'))[0] };
@@ -341,6 +471,8 @@ export function parseStageScript(src: string): StageScript {
     if (eat(';')) return null;
     const t = next();
     if (t.t !== 'id') fail(`文が要ります (「${t.s}」がありました)`, t);
+    const api = apiCallAt(t);
+    if (api) return { op: 'call', call: api };
     switch (t.s) {
       case 'if': {
         need('(');
@@ -939,13 +1071,14 @@ function assembleAll(lines: string[], base: number): { words: number[]; labels: 
 }
 
 /**
- * The frame of Execute: push {r4-r8, lr} (24) + vpush {d8, d9} (16) + sub sp, #0x98, 8-aligned.
+ * The frame of Execute: push {r4-r8, lr} (24) + vpush {d8, d9} (16) + sub sp, #0xB0, 8-aligned.
  *   [sp+0x00..0x0F] stack arguments    [sp+0x10] / [sp+0x18] two ScriptMessageParam {0, 0}
  *   [sp+0x20..0x6F] a ScriptPlayer (0x50) or ScriptChara (0x18) of the character a statement acts on
  *   [sp+0x70..0x87] a second ScriptChara (the one face() turns to)    [sp+0x88..0x97] a GSvec
+ *   [sp+0x98..0xA7] a second GSvec and [sp+0xA8..0xAF] two ChrObject* of a Script API call's arguments
  * r4 = this, r5 = 0, r6 = 0x80000079, r7 = 0x80000075, r8 = the camera is held; s16 = 0.0, s17 = 1.0, s18 = 0.2.
  */
-const FRAME = { size: 0x98, smpA: 0x10, smpB: 0x18, obj: 0x20, obj2: 0x70, vec: 0x88 } as const;
+const FRAME = { size: 0xb0, smpA: 0x10, smpB: 0x18, obj: 0x20, obj2: 0x70, vec: 0x88, vec2: 0x98, tmp: 0xa8 } as const;
 
 const BRANCH_IF_NOT: Record<ScriptCmp, string> = {
   '==': 'bne',
@@ -1046,7 +1179,82 @@ function compileValue(c: Ctx, v: ScriptValue): void {
     case 'monsters':
       fn.call(A.monsters);
       break;
+    case 'call':
+      compileCall(c, v.call);
+      if (v.call.byte) fn.op('and r0, r0, #0xff');
+      break;
   }
+}
+
+/**
+ * A Script API function called with its arguments laid as AAPCS-VFP has them: `this` and the integers and pointers
+ * in r0-r3 then on the stack, the floats in s0 on; r0 = what it returns.
+ */
+function compileCall(c: Ctx, call: ScriptCall): void {
+  const { fn } = c;
+  const other = call.args.find((a) => a.k === 'c');
+  const emit = (self: (() => void) | null, chara: (() => void) | null): void => {
+    // the characters passed as ChrObject* first: finding them calls the game
+    const chrAt = new Map<ScriptArg, number>();
+    for (const a of call.args)
+      if (a.k === 'p') {
+        chrOf(c, a.who);
+        chrAt.set(a, FRAME.tmp + 4 * chrAt.size);
+        fn.op(`str r0, [sp, #${hx(chrAt.get(a)!)}]`);
+      }
+    // what the references point at
+    const refAt = new Map<ScriptArg, number>();
+    let vecs = 0,
+      smps = 0;
+    for (const a of call.args) {
+      if (a.k === 'v') {
+        const at = vecs++ ? FRAME.vec2 : FRAME.vec;
+        refAt.set(a, at);
+        [a.x, a.y, a.z].forEach((v, k) => {
+          fn.load('r0', fbits(v));
+          fn.op(`str r0, [sp, #${hx(at + 4 * k)}]`);
+        });
+        fn.op(`str r5, [sp, #${hx(at + 12)}]`);
+      } else if (a.k === 'm') {
+        const at = smps++ ? FRAME.smpB : FRAME.smpA;
+        refAt.set(a, at);
+        fn.op(`str r5, [sp, #${hx(at)}]`, `str r5, [sp, #${hx(at + 4)}]`);
+      }
+    }
+    /** rd = the word of an argument. */
+    const word = (rd: string, a: ScriptArg): void => {
+      if (a.k === 'i') fn.load(rd, a.v);
+      else if (a.k === 'v' || a.k === 'm') fn.op(`add ${rd}, sp, #${hx(refAt.get(a)!)}`);
+      else if (a.k === 'p') fn.op(`ldr ${rd}, [sp, #${hx(chrAt.get(a)!)}]`);
+      else if (a.k === 'c') {
+        chara!();
+        if (rd !== 'r0') fn.op(`mov ${rd}, r0`);
+      }
+    };
+    const words: (ScriptArg | null)[] = [...(self ? [null] : []), ...call.args.filter((a) => a.k !== 'f')];
+    // the words beyond r3 on the stack, then the floats (through r3), then the registers: the character's object
+    // first (it is found through r0), r0 last
+    words.slice(4).forEach((a, k) => {
+      word('r0', a!);
+      fn.op(`str r0, [sp, #${hx(4 * k)}]`);
+    });
+    call.args.filter((a) => a.k === 'f').forEach((a, k) => fmov(fn, `s${k}`, (a as { v: number }).v));
+    const regs = words.slice(0, 4);
+    const isChara = (k: number): number => Number(regs[k]?.k === 'c');
+    const order = regs.map((_, k) => k).sort((x, y) => isChara(y) - isChara(x) || y - x);
+    for (const k of order) {
+      const a = regs[k];
+      if (!a) self!();
+      else word(`r${k}`, a);
+    }
+    fn.call(call.sym);
+  };
+  const withSelf = (chara: (() => void) | null): void => {
+    if (call.self) withChara(c, call.self, FRAME.obj, call.player, (ref) => emit(ref, chara));
+    else emit(null, chara);
+  };
+  if (other && other.k === 'c') withChara(c, other.who, FRAME.obj2, false, (ref) => withSelf(ref));
+  else withSelf(null);
 }
 
 const usesCamera = (nodes: ScriptNode[]): boolean =>
@@ -1312,6 +1520,9 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         break;
       case 'stageName':
         fn.call(A.stageName);
+        break;
+      case 'call':
+        compileCall(c, n.call);
         break;
       case 'break':
         fn.op(`b ${c.breakTo}`);
