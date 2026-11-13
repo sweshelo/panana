@@ -38,6 +38,7 @@ import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
+import { EventScriptBinding } from './EventScriptBinding';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiValidate, type LanaiEditState } from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
@@ -1168,6 +1169,7 @@ function EventFields({
         出る条件が成り立ち、消える条件が成り立たないときに出現します。スクリプト (CRO)
         が条件を上書きする場合があります。
       </p>
+      <EventScriptBinding st={st} section={section} index={index} row={row} />
       {LANAI_EVENT_ACTIONS.map((o, i) => (
         <ActionFields key={o} st={st} row={row} offset={o} index={i} allowed={allowed} />
       ))}
