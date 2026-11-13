@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NumberInput } from '../ui/book';
 import { Dialog } from '../ui/Dialog';
-import { GroupIconRow, GroupListView } from '../ui/GroupDetail';
+import { EmptyGroupIcon, GroupIconRow, GroupListView } from '../ui/GroupDetail';
 import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
 import { LANAI_ACTION_GOAL_CHEST } from './actions';
@@ -62,14 +62,22 @@ const groupChanged = (maps: LanaiMaps, row: number): boolean =>
   !!maps.monsterGroup && row < maps.monsterGroup.originalRows && maps.monsterGroup.rowChanged(row);
 
 /** A group at a glance: its row and the photos of its monsters ("既定" for row 0, a warning for a value not in the table). */
-export function MonsterGroupLine({ maps, value }: { maps: LanaiMaps; value: number }): ReactNode {
+export function MonsterGroupLine({
+  maps,
+  value,
+  showRow = true,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  showRow?: boolean;
+}): ReactNode {
   const row = maps.monsterGroupRow(value);
-  if (row < 0) return <span className="muted">{`${hex8(value).toUpperCase()} (表にない: 番号 0 になる)`}</span>;
-  if (row === 0) return <span className="muted">{DEFAULT_GROUP_LABEL}</span>;
+  if (row < 0) return <EmptyGroupIcon label={`${hex8(value).toUpperCase()} (表にない: 番号 0 になる)`} />;
+  if (row === 0) return <EmptyGroupIcon label={DEFAULT_GROUP_LABEL} />;
   const g = maps.monsterGroups()[row]!;
   return (
     <>
-      <span className="muted">{`#${row}`}</span>
+      {showRow && <span className="muted">{`#${row}`}</span>}
       <GroupIconRow
         icons={groupMonsterRows(maps, g).map((r, i) => (
           <span key={i}>{lanaiMonsterIcon(maps.session, r)}</span>
@@ -134,7 +142,9 @@ function LanaiGroupPicker({
         >
           <tr className={row === 0 ? 'active' : ''} onClick={() => onPick(maps.monsterGroups()[0]?.id ?? 0x80000000)}>
             <td className="num muted">0</td>
-            <td className="muted">{DEFAULT_GROUP_LABEL}</td>
+            <td>
+              <EmptyGroupIcon label={DEFAULT_GROUP_LABEL} />
+            </td>
             <td className="num muted">
               {defaultUses.length ? <span title={defaultUses.map(useLabel).join('、')}>{defaultUses.length}</span> : ''}
             </td>

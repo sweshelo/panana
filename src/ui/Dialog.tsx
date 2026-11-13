@@ -5,11 +5,13 @@ import { InfoTipScope } from './InfoTip';
 export function Dialog({
   title,
   wide = true,
+  className = '',
   onClose,
   children,
 }: {
   title: string;
   wide?: boolean;
+  className?: string;
   onClose: () => void;
   children: ReactNode;
 }): ReactNode {
@@ -22,7 +24,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className={'picker' + (wide ? ' wide' : '')}
+      className={'picker' + (wide ? ' wide' : '') + (className ? ' ' + className : '')}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose() /* backdrop */}
     >

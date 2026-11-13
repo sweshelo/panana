@@ -200,7 +200,17 @@ const HELP =
   'ルビは {ruby:親字|よみ}、改ページは {page}、ほかの表の文字列の差し込みは {ins:表:行 ID:欄}、ほかのタグは {tag:XX,引数…} で表しています。書き換えた文字列は表の文字列領域の後ろに足され、MOD の書き出しに入ります。';
 
 /** The strings of a row, each in the message box (the RPG2 / RPG3 message page's detail). */
-function RowStrings({ session, e, label }: { session: LanaiSession; e: Entry; label: string }): ReactNode {
+export function RowStrings({
+  session,
+  e,
+  label,
+  showHeader = true,
+}: {
+  session: LanaiSession;
+  e: Entry;
+  label: string;
+  showHeader?: boolean;
+}): ReactNode {
   useLanaiRevision(session);
   const t = e.ref.table;
   const id = t.rowId(e.row);
@@ -210,15 +220,17 @@ function RowStrings({ session, e, label }: { session: LanaiSession; e: Entry; la
   };
   return (
     <>
-      <div className="book-head">
-        <h2>{`メッセージ ${hex8(id)}`}</h2>
-        <span className="muted">{`${label} の行 ${e.row} · `}</span>
-        <a
-          className="muted mono"
-          href={romfsHref(e.ref.archive, e.ref.entry)}
-          title="RomFS ビューで表のすべての欄を見る"
-        >{`${e.ref.archive} / ${hex8(e.ref.entry)}${e.ref.file ? ` ${e.ref.file}` : ''}`}</a>
-      </div>
+      {showHeader && (
+        <div className="book-head">
+          <h2>{`メッセージ ${hex8(id)}`}</h2>
+          <span className="muted">{`${label} の行 ${e.row} · `}</span>
+          <a
+            className="muted mono"
+            href={romfsHref(e.ref.archive, e.ref.entry)}
+            title="RomFS ビューで表のすべての欄を見る"
+          >{`${e.ref.archive} / ${hex8(e.ref.entry)}${e.ref.file ? ` ${e.ref.file}` : ''}`}</a>
+        </div>
+      )}
       {textColumns(e.ref).map((c) => {
         return (
           <div key={c.offset} className="msg-slot">

@@ -1,6 +1,7 @@
 // 3DS BFLIM: the CLIM pixel formats, but format/swizzle follow a u16 alignment in imag.
 // Swizzle 8 transposes, 4 rotates 90° (ObsidianX/3dstools bflim.py).
 import { decodeTexture, textureDataSize } from '../cgfx/texture';
+import { encodeTexture } from '../cgfx/encode';
 import { ascii, u16, u32 } from '../util/bytes';
 import type { Bclim } from './bclim';
 
@@ -40,4 +41,25 @@ export function readBflim(b: Uint8Array): Bclim {
       rgba.set(full.subarray(at, at + 4), (y * outWidth + x) * 4);
     }
   return { width: outWidth, height: outHeight, rgba };
+}
+
+export function replaceBflimImage(template: Uint8Array, rgba: Uint8Array): Uint8Array {
+  const image = readBflim(template);
+  if (rgba.length !== image.width * image.height * 4) throw new Error('画像サイズが一致しません');
+  const imag = template.length - 0x14;
+  const width = u16(template, imag + 10),
+    height = u16(template, imag + 8);
+  const tw = pow2(width),
+    th = pow2(height),
+    swizzle = template[imag + 15]!;
+  const full = new Uint8Array(tw * th * 4);
+  for (let y = 0; y < image.height; y++)
+    for (let x = 0; x < image.width; x++) {
+      const sx = swizzle === 8 ? y : swizzle === 4 ? width - 1 - y : x;
+      const sy = swizzle ? x : y;
+      full.set(rgba.subarray((y * image.width + x) * 4, (y * image.width + x + 1) * 4), (sy * tw + sx) * 4);
+    }
+  const out = template.slice();
+  out.set(encodeTexture(full, tw, th, PICA[template[imag + 14]!]!));
+  return out;
 }

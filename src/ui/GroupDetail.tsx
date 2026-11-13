@@ -61,11 +61,19 @@ export function MonsterPhoto({
 }
 
 /** A group at a glance: the pictures of its monsters (leads first), marked when it was edited. */
+export function EmptyGroupIcon({ label = '敵なし' }: { label?: string }): ReactNode {
+  return (
+    <span className="photo empty-group-icon" role="img" aria-label={label} title={label}>
+      ∅
+    </span>
+  );
+}
+
 export function GroupIconRow({ icons, changed }: { icons: ReactNode[]; changed: boolean }): ReactNode {
   return (
     <span className="group-photos">
       {icons}
-      {!icons.length && <span className="muted">(敵なし)</span>}
+      {!icons.length && <EmptyGroupIcon />}
       {changed && <EditedMark />}
     </span>
   );
@@ -125,7 +133,7 @@ export function SlotTiles({
             </a>
           );
         })}
-        {!slots.length && <span className="muted small">なし</span>}
+        {!slots.length && <EmptyGroupIcon />}
       </div>
     </div>
   );

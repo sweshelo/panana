@@ -3118,3 +3118,89 @@ label.edited-label {
 .placed-button .photo.stamp-badge {
   font-size: 16px;
 }
+
+dialog.picker > div:not(.picker-head) {
+  padding-bottom: 16px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.stage-thumbnail-choice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100px;
+}
+.stage-thumbnail-choice img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+dialog.stage-editor > .picker-head h2 {
+  font-size: 22px;
+}
+.stage-thumbnail-trigger {
+  display: inline-flex;
+  padding: 8px;
+  cursor: pointer;
+}
+.stage-thumbnail-trigger img {
+  max-width: 100%;
+  height: auto;
+}
+.stage-thumbnail-add {
+  font-size: 36px;
+}
+
+.stage-edit-row {
+  cursor: pointer;
+}
+.stage-edit-row:hover,
+.stage-edit-row:focus-visible {
+  background: var(--panel2);
+}
+.stage-edit-row:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.empty-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  font-size: 24px;
+  flex-shrink: 0;
+}
+.stage-chest-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.treasure-value-icon {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--warn);
+}
+.treasure-value-icon small {
+  font-size: 9px;
+}
+.chest-kind-icon {
+  flex-shrink: 0;
+}
+
+.stage-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.stage-overview-panel {
+  min-width: 0;
+  overflow-x: auto;
+}

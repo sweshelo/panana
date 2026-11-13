@@ -10,7 +10,7 @@ import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
 import { lanaiMapHref } from './MapPage';
-import { messagesHref, textColumns } from './MessagePage';
+import { textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
 import { conditionText } from './conditions';
 import { LanaiContentCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
@@ -20,6 +20,7 @@ import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
 import { LanaiStageThumbnail } from './StageThumbnail';
+import { LanaiStageContents } from './StageContents';
 
 type Filter = 'all' | 'stages' | 'none';
 
@@ -129,10 +130,6 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
           ＋ コンテンツを複製して追加
         </button>
       </div>
-      {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
-      {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
-      <h3>マップ</h3>
-      <ContentMaps session={session} c={c} />
       <h3>ステージ (MapStageIntegration)</h3>
       {!c.stages.length ? (
         <p className="muted">このコンテンツを指す行はありません。</p>
@@ -148,7 +145,6 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
               <th title="+0x49 (MapStage +0x3D)。クイズの正解と照合して確定">スタミナ</th>
               <th title="+0x1C〜+0x30">解放・非表示条件</th>
               <th title="+0x00。0x64 刻み (並び順と推定)">順</th>
-              <th>編集</th>
             </tr>
           </thead>
           <tbody>
@@ -157,7 +153,19 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
               const exp =
                 m < 0 ? undefined : session.field(msg, m, msg.fields.find((f) => f.name === 'stage_exp')?.offset ?? -1);
               return (
-                <tr key={s.row}>
+                <tr
+                  key={s.row}
+                  className="stage-edit-row"
+                  tabIndex={0}
+                  aria-label={`${s.name || `ステージの行 ${s.row}`} を編集`}
+                  onClick={() => setEditing(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setEditing(s);
+                    }
+                  }}
+                >
                   <td className="num muted">{s.row}</td>
                   <td>
                     {s.name || <span className="muted">(なし)</span>}
@@ -181,16 +189,16 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
                     <div>非表示: {conditionText(s.hidden)}</div>
                   </td>
                   <td className="num muted">{s.order}</td>
-                  <td>
-                    <button onClick={() => setEditing(s)}>編集</button>
-                    {m >= 0 && <a href={messagesHref(session.refOf(msg)!, m)}>名前・ミッション・説明を編集</a>}
-                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       )}
+      {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
+      {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
+      <h3>マップ</h3>
+      <ContentMaps session={session} c={c} />
       {!read ? (
         <p className="muted">アーカイブを読み込み中…</p>
       ) : read instanceof Error ? (
@@ -293,16 +301,19 @@ function ContentMaps({ session, c }: { session: LanaiSession; c: LanaiContent })
   if (!maps) return <div className="muted">マップ表を読み込み中…</div>;
   if (maps instanceof Error) return <div className="muted">マップ表がありません</div>;
   return (
-    <ul>
-      {maps.maps.map((m) => (
-        <li key={m.index}>
-          <a className="mono" href={lanaiMapHref(c.index, m.name)}>
-            {m.name}
-          </a>
-          <span className="muted">{` ${lanaiFloorLabel(m.floor) || '地上'}・${maps.groupName(m.dungeon) || 'MapGroup'} (MapGroup ${m.dungeon})・${m.world ? 'ワールドマップ (W01)' : `${maps.doc(m).tiles.length} マス`}・マップ表の行 ${m.index}`}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul>
+        {maps.maps.map((m) => (
+          <li key={m.index}>
+            <a className="mono" href={lanaiMapHref(c.index, m.name)}>
+              {m.name}
+            </a>
+            <span className="muted">{` ${lanaiFloorLabel(m.floor) || '地上'}・${maps.groupName(m.dungeon) || 'MapGroup'} (MapGroup ${m.dungeon})・${m.world ? 'ワールドマップ (W01)' : `${maps.doc(m).tiles.length} マス`}・マップ表の行 ${m.index}`}</span>
+          </li>
+        ))}
+      </ul>
+      <LanaiStageContents maps={maps} />
+    </>
   );
 }
 

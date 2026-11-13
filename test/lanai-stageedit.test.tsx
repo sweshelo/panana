@@ -24,6 +24,8 @@ import { findEntry } from '../src/archive/gsarc';
 import { u32 } from '../src/util/bytes';
 import { LanaiTable } from '../src/lanai/table';
 import { LanaiStagePage } from '../src/lanai/StagePage';
+import { LanaiStageContents } from '../src/lanai/StageContents';
+import { GroupIconRow } from '../src/ui/GroupDetail';
 import { LanaiStageEditor } from '../src/lanai/StageEditor';
 import { lanaiStageThumbnail } from '../src/lanai/StageThumbnail';
 import { LanaiExportDialog } from '../src/lanai/ExportDialog';
@@ -61,6 +63,26 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as File).name);
   });
   const fresh = () => LanaiSession.open(dump, { fresh: true });
+
+  test('stage overview shows linked group and chest icons with separate first and repeat rewards', async () => {
+    const session = await fresh();
+    const maps = await lanaiMaps(session, lanaiContents(session)[1]!);
+    const html = renderToString(createElement(LanaiStageContents, { maps }));
+    expect(html).toContain('class="stage-overview"');
+    expect(html.match(/class="stage-overview-panel"/g)?.length).toBe(2);
+    expect(html).toContain('#/groups/1.');
+    expect(html).toContain('#/maps/1.');
+    expect(html).toContain('stage-chest-kind');
+    expect(html).toContain('1度目（状態0）');
+    expect(html).toContain('2回目以降（状態1）');
+    expect(html).toContain('<hr');
+    expect(html).not.toContain('<th>出現マップ</th>');
+    expect(html).not.toContain('%');
+    expect(html).not.toContain('small muted">MapGroup');
+    const empty = renderToString(createElement(GroupIconRow, { icons: [], changed: false }));
+    expect(empty).toContain('empty-group-icon');
+    expect(empty).toContain('aria-label="敵なし"');
+  });
 
   test('CRS uses the Update exports and preserves overloads and argument types', async () => {
     const exports = crsExports(await dump.readUpdateRomfs!('app/lanai.crs'));
@@ -223,8 +245,8 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(local.u32(0, 0x20)).toBe(3);
     expect([...table.row(stage.row).slice(0x25, 0x28)]).toEqual([...before.slice(0x25, 0x28)]);
     const html = renderToString(createElement(LanaiStagePage, { session: s, arg: '2' }));
-    expect(html).toContain('名前・ミッション・説明を編集');
-    expect(html).toContain('#/messages/');
+    expect(html).toContain('class="stage-edit-row" tabindex="0"');
+    expect(html).not.toContain('名前・ミッション・説明を編集');
     const restored = await fresh();
     await restored.restore(s.saved());
     expect(restored.need('MapStageIntegration').u8(stage.row, 0x49)).toBe(7);
@@ -232,6 +254,11 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     const editor = renderToString(createElement(LanaiStageEditor, { session: s, content: c, stage, onClose() {} }));
     expect(editor).toContain('推奨レベル');
     expect(editor).toContain('サムネイル');
+    expect(editor).toContain('aria-label="サムネイルを選ぶ"');
+    expect(editor).not.toContain('ゲーム内の画像から選ぶ');
+    expect(editor).not.toContain('メッセージ ' + stage.messageId.toString(16).toUpperCase().padStart(8, '0'));
+    expect(editor).toContain('名前・ミッション・説明');
+    expect(editor).toContain('stage_name');
   });
 
   test('stage thumbnails are decoded, copied independently, saved, exported with table edits and reverted', async () => {

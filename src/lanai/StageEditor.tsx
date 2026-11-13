@@ -1,4 +1,9 @@
 import { useRef, useState, type ReactNode } from 'react';
+import { GridPicker } from '../ui/GridPicker';
+import { RowStrings, tableKey } from './MessagePage';
+import { imageUrl } from '../ui/ScreenMap';
+import { readSarc } from '../layout/sarc';
+import { readBflim } from '../layout/bflim';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
@@ -16,7 +21,7 @@ import { lanaiFloorLabel, lanaiMaps } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiSession } from './session';
 import type { LanaiCondition } from './conditions';
-import { LanaiStageThumbnail } from './StageThumbnail';
+import { LanaiStageThumbnail, uploadedStageThumbnail } from './StageThumbnail';
 import {
   cloneLanaiContent,
   editLanaiStage,
@@ -114,6 +119,13 @@ export function LanaiStageEditor({
       stage: st,
     })),
   );
+  const [pickingThumbnail, setPickingThumbnail] = useState(false);
+  const [upload, setUpload] = useState<Uint8Array>();
+  const [uploadPreview, setUploadPreview] = useState('');
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const [uploads, setUploads] = useState<{ body: Uint8Array; preview: string; name: string }[]>([]);
+  const messageRef = session.refOf(session.need('MessageMapStage'))!;
+  const messageRow = messageRef.table.find(stage.messageId);
   const selectedThumbnail = thumbnails.find((t) => t.key === thumbnail);
   const [visible, setVisible] = useState(stage.visible);
   const [hidden, setHidden] = useState(stage.hidden);
@@ -126,7 +138,7 @@ export function LanaiStageEditor({
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
-    <Dialog title="ステージを編集" onClose={onClose}>
+    <Dialog title="ステージを編集" className="stage-editor" onClose={onClose}>
       <label className="field">
         <span>並び順</span>
         <input
@@ -152,24 +164,162 @@ export function LanaiStageEditor({
           onChange={(e) => setRecommendedLevel(Number(e.target.value))}
         />
       </label>
-      <label className="field">
-        <span>サムネイル</span>
-        <select value={thumbnail} onChange={(e) => setThumbnail(e.target.value)}>
-          <option value="">現在の画像</option>
-          {thumbnails.map((t) => (
-            <option key={t.key} value={t.key}>{`${t.stage.content}: ${t.stage.name || '名前なし'}`}</option>
-          ))}
-        </select>
-      </label>
-      <p className="small muted">
-        ゲーム内のステージ画像を選んで差し替えます。このコンテンツ内で同じ画像を使うステージにも反映されます。
-      </p>
-      <LanaiStageThumbnail
-        session={session}
-        archive={selectedThumbnail?.archive ?? content.archive}
-        hash={selectedThumbnail?.stage.thumbnail ?? stage.thumbnail}
-        name={selectedThumbnail?.stage.name ?? stage.name}
-      />
+      <h3>サムネイル</h3>
+      <button
+        className="stage-thumbnail-trigger"
+        aria-label="サムネイルを選ぶ"
+        disabled={busy}
+        onClick={() => setPickingThumbnail(true)}
+      >
+        {upload ? (
+          <img src={uploadPreview} alt="アップロードしたステージ画像" />
+        ) : (
+          <LanaiStageThumbnail
+            session={session}
+            archive={selectedThumbnail?.archive ?? content.archive}
+            hash={selectedThumbnail?.stage.thumbnail ?? stage.thumbnail}
+            name={selectedThumbnail?.stage.name ?? stage.name}
+          />
+        )}
+      </button>
+      {pickingThumbnail && (
+        <GridPicker
+          title="ステージ画像を選ぶ"
+          wide
+          groupByCategory
+          categories={{ 1: '規定', 2: 'アップロード', 3: 'ステージ画像' }}
+          controls={
+            <>
+              <input
+                ref={uploadInput}
+                type="file"
+                accept="image/*"
+                hidden
+                disabled={busy}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  setBusy(true);
+                  setError('');
+                  try {
+                    const body = await uploadedStageThumbnail(session, content.archive, stage.thumbnail, file);
+                    const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))![1];
+                    const preview = imageUrl(readBflim(texture));
+                    if (!preview) throw new Error('画像をプレビューできません');
+                    setUploads((previous) => [...previous, { body, preview, name: file.name }]);
+                    setUploadPreview(preview);
+                    setUpload(body);
+                    setThumbnail('');
+                    setPickingThumbnail(false);
+                  } catch (e) {
+                    setError((e as Error).message);
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+
+              <p className="small muted">
+                アップロードした画像は元のサイズに合わせて変換されます。同じコンテンツ内で画像を共有するステージにも反映されます。保存するまで画像は変更されません。
+              </p>
+              {busy && <p role="status">画像を変換中…</p>}
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+            </>
+          }
+          entries={[
+            {
+              id: -1,
+              name: '現在の画像',
+              category: 1,
+              icon: (
+                <span className="stage-thumbnail-choice">
+                  <LanaiStageThumbnail
+                    session={session}
+                    archive={content.archive}
+                    hash={stage.thumbnail}
+                    name={stage.name}
+                  />
+                </span>
+              ),
+            },
+            {
+              id: -2,
+              name: '画像をアップロード',
+              category: 2,
+              icon: (
+                <span className="stage-thumbnail-choice stage-thumbnail-add" aria-hidden="true">
+                  ＋
+                </span>
+              ),
+            },
+            ...uploads.map((item, index) => ({
+              id: -3 - index,
+              name: item.name,
+              category: 2,
+              icon: (
+                <span className="stage-thumbnail-choice">
+                  <img src={item.preview} alt={item.name} />
+                </span>
+              ),
+            })),
+            ...thumbnails.map((t) => ({
+              id: t.stage.row,
+              name: t.stage.name || '名前なし',
+              sub: 'コンテンツ ' + t.stage.content,
+              category: 3,
+              icon: (
+                <span className="stage-thumbnail-choice">
+                  <LanaiStageThumbnail
+                    session={session}
+                    archive={t.archive}
+                    hash={t.stage.thumbnail}
+                    name={t.stage.name}
+                  />
+                </span>
+              ),
+            })),
+          ].map((entry) => ({ ...entry, unavailable: busy ? '画像を変換中です' : null }))}
+          current={
+            upload ? -3 - uploads.findIndex((item) => item.body === upload) : (selectedThumbnail?.stage.row ?? -1)
+          }
+          onPick={(id) => {
+            if (id === -2) {
+              uploadInput.current?.click();
+              return;
+            }
+            if (id <= -3) {
+              const item = uploads[-3 - id]!;
+              setUpload(item.body);
+              setUploadPreview(item.preview);
+              setThumbnail('');
+            } else {
+              setUpload(undefined);
+              setThumbnail(id === -1 ? '' : String(id));
+            }
+            setPickingThumbnail(false);
+          }}
+          onClose={() => {
+            setPickingThumbnail(false);
+          }}
+        />
+      )}
+      {messageRow >= 0 && (
+        <section>
+          <h3>名前・ミッション・説明</h3>
+          <p className="small muted">メッセージは各欄の編集操作で反映されます。</p>
+          <RowStrings
+            session={session}
+            e={{ ref: messageRef, row: messageRow, key: tableKey(messageRef) + ':' + messageRow }}
+            label="MessageMapStage"
+            showHeader={false}
+          />
+        </section>
+      )}
       <h3>表示・解放条件</h3>
       <p className="small muted">条件が成立すると表示されます。条件なし (0) はいつも表示します。</p>
       <LanaiConditionEditor
@@ -209,9 +359,11 @@ export function LanaiStageEditor({
               recommendedLevel,
               visible,
               hidden,
-              ...(selectedThumbnail
-                ? { thumbnail: { archive: selectedThumbnail.archive, hash: selectedThumbnail.stage.thumbnail } }
-                : {}),
+              ...(upload
+                ? { thumbnail: upload }
+                : selectedThumbnail
+                  ? { thumbnail: { archive: selectedThumbnail.archive, hash: selectedThumbnail.stage.thumbnail } }
+                  : {}),
             });
             onClose();
           } catch (e) {

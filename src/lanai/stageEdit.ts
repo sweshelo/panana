@@ -23,7 +23,7 @@ export async function editLanaiStage(
     order: number;
     stamina: number;
     recommendedLevel?: number;
-    thumbnail?: { archive: string; hash: number };
+    thumbnail?: { archive: string; hash: number } | Uint8Array;
     visible: LanaiCondition;
     hidden: LanaiCondition;
   },
@@ -57,7 +57,10 @@ export async function editLanaiStage(
   const { t, r } = await localStage(s, c, stage);
   const m = s.need('MapStageIntegration');
   if (values.thumbnail) {
-    const body = await s.readLayout(values.thumbnail.archive, values.thumbnail.hash);
+    const body =
+      values.thumbnail instanceof Uint8Array
+        ? values.thumbnail
+        : await s.readLayout(values.thumbnail.archive, values.thumbnail.hash);
     // Keep the destination's entry hash and layout name; its tables/maps remain independent of the source.
     await s.setLayout(c.archive, stage.thumbnail, body);
   }
