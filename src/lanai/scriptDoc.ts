@@ -193,3 +193,14 @@ function after_battle() {
 `,
   },
 ];
+
+/** The line IDs a function's text names (talk / say / ask), each once, in the order they are written. */
+export function scriptLineRefs(body: string): number[] {
+  const out: number[] = [];
+  const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, '');
+  for (const m of code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)/gu)) {
+    const id = Number(m[1]);
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}

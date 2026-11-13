@@ -13,6 +13,7 @@ import {
   docUnbound,
   rowBinding,
   SCRIPT_SAMPLES,
+  scriptLineRefs,
   SCRIPT_WORDS,
   STAGE_SCRIPT_EXAMPLE,
   startBinding,
@@ -75,6 +76,13 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     // popup(self, …) of the boss sample needs an event that has an owner
     expect(() => scriptOfDoc(docBound(boss!, { trigger: 'area', group: 1, row: 9, fn: 'boss_talk' }))).toThrow('self');
     expect(parseStageScript(STAGE_SCRIPT_EXAMPLE).events.length).toBe(1);
+  });
+
+  test('the lines a text names: talk / say / ask, each once, comments left out', () => {
+    expect(
+      scriptLineRefs('talk(0x60)\nif (ask( 99 )) { say(0x60); talk(0X1a) } // talk(5)\n/* say(6) */ stalk(7)'),
+    ).toEqual([0x60, 99, 0x1a]);
+    expect(scriptLineRefs('wait(1)')).toEqual([]);
   });
 
   test('the words of the help: each statement word is one the reader knows', () => {

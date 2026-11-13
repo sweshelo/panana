@@ -19,7 +19,15 @@ import {
 import { lanaiMaps, type LanaiMaps } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
-import { docBound, docUnbound, SCRIPT_SAMPLES, SCRIPT_WORDS, startBinding, type ScriptSample } from './scriptDoc';
+import {
+  docBound,
+  docUnbound,
+  SCRIPT_SAMPLES,
+  SCRIPT_WORDS,
+  scriptLineRefs,
+  startBinding,
+  type ScriptSample,
+} from './scriptDoc';
 import type { LanaiSession } from './session';
 import { checkStageScript, type StageScriptCheck } from './stageScript';
 
@@ -65,14 +73,70 @@ const freshName = (stem: string, taken: string[]): string => {
 const bindingLabel = (b: ScriptBinding): string =>
   `MapGroup ${b.group}${triggerHasRow(b.trigger) ? ` のイベント ${b.row}` : ''} (${SCRIPT_TRIGGER_LABEL[b.trigger]})`;
 
-/** The lines of a group's talk table with the IDs the script names them by. */
-function TalkLines({ session, maps, group }: { session: LanaiSession; maps: LanaiMaps; group: number }): ReactNode {
+const lineIdText = (id: number): string => `0x${id.toString(16).toUpperCase()}`;
+
+/** The lines of a group's talk table: the ID the script names each by (the row ID without its high bit) and its text. */
+export function talkLines(
+  session: LanaiSession,
+  maps: LanaiMaps,
+  group: number,
+): { id: number; text: string }[] | undefined {
   const t = maps.talkTable(group);
   const message = t ? talkMessageOffset(t) : undefined;
-  if (!t || message === undefined) return <p className="muted small">{`MapGroup ${group}: 台詞の表がありません。`}</p>;
+  if (!t || message === undefined) return undefined;
+  return Array.from({ length: t.rows }, (_, r) => ({
+    id: t.rowId(r) & 0x7fffffff,
+    text: t.isString(r, message) ? session.plainAt(t, t.u32(r, message)).replace(/\s+/g, ' ').trim() : '',
+  }));
+}
+
+/** What the lines a function's text names say: the text beside each ID, so the author need not look them up. */
+function BodyLines({
+  session,
+  maps,
+  group,
+  body,
+}: {
+  session: LanaiSession;
+  maps: LanaiMaps;
+  group: number;
+  body: string;
+}): ReactNode {
+  const lines = useMemo(() => talkLines(session, maps, group), [session, maps, group]);
+  const ids = scriptLineRefs(body);
+  if (!ids.length || !lines) return null;
+  return (
+    <ul className="muted small">
+      {ids.map((id) => {
+        const line = lines.find((l) => l.id === id);
+        return (
+          <li key={id}>
+            <span className="mono">{lineIdText(id)}</span>
+            {line ? ` ${line.text}` : ` (MapGroup ${group} の台詞の表にこの行 ID はありません)`}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** The lines of a group's talk table with the IDs the script names them by. */
+function TalkLines({ session, maps, group }: { session: LanaiSession; maps: LanaiMaps; group: number }): ReactNode {
+  const [filter, setFilter] = useState('');
+  const lines = useMemo(() => talkLines(session, maps, group), [session, maps, group]);
+  const t = maps.talkTable(group);
+  if (!t || !lines) return <p className="muted small">{`MapGroup ${group}: 台詞の表がありません。`}</p>;
+  const q = filter.trim();
+  const shown = q ? lines.filter((l) => l.text.includes(q)) : lines;
   return (
     <details>
-      <summary className="small">{`MapGroup ${group} の台詞 (${t.name}、${t.rows} 行)`}</summary>
+      <summary className="small">{`MapGroup ${group} の台詞 (${t.name}、${t.rows} 行): 本文から行 ID を探す`}</summary>
+      <input
+        aria-label={`MapGroup ${group} の台詞を本文で探す`}
+        placeholder="台詞の一部"
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+      />
       <table className="book-table">
         <thead>
           <tr>
@@ -81,12 +145,10 @@ function TalkLines({ session, maps, group }: { session: LanaiSession; maps: Lana
           </tr>
         </thead>
         <tbody>
-          {Array.from({ length: t.rows }, (_, r) => (
-            <tr key={r}>
-              <td className="mono">{`0x${(t.rowId(r) & 0x7fffffff).toString(16).toUpperCase()}`}</td>
-              <td className="small">
-                {t.isString(r, message) ? session.plainAt(t, t.u32(r, message)).replace(/\s+/g, ' ').trim() : ''}
-              </td>
+          {shown.map((l) => (
+            <tr key={l.id}>
+              <td className="mono">{lineIdText(l.id)}</td>
+              <td className="small">{l.text}</td>
             </tr>
           ))}
         </tbody>
@@ -319,6 +381,9 @@ export function LanaiStageScriptEditor({
               onChange={(e) => setFn(f.id, { body: e.target.value })}
             />
             {error?.fn === f.name && <div className="error">{error.message}</div>}
+            {maps && groups.length > 0 && (
+              <BodyLines session={session} maps={maps} group={given[0]?.group ?? groups[0]!} body={f.body} />
+            )}
             <p className="muted small">
               {given.length
                 ? `割り当て: ${given.map(bindingLabel).join('、')}`
