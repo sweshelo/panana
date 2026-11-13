@@ -17,6 +17,9 @@ export function lanaiMonsterStats(session: LanaiSession, monster: number): { lev
 
 /** Whether a monster's MonsterParameter row or its ability row was changed. */
 export function lanaiMonsterChanged(session: LanaiSession, row: number): boolean {
+  const flavor = session.table('MessageFlavor');
+  const description = flavor?.find(session.need('MonsterParameter').u32(row, 0x10)) ?? -1;
+  if (flavor && description >= 0 && flavor.rowChanged(description)) return true;
   if (session.need('MonsterParameter').rowChanged(row)) return true;
   const s = lanaiStatsOf(session, row);
   return !!s && session.need(s.table).rowChanged(s.row);

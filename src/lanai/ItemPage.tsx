@@ -11,7 +11,7 @@ import { LanaiItemPicker } from './pickers';
 import { hex8 } from '../util/bytes';
 import {
   LANAI_ITEM_KINDS,
-  lanaiItemDescription,
+  lanaiItemDescriptionRef,
   lanaiItemRef,
   lanaiItems,
   textureOnlyKind,
@@ -19,6 +19,8 @@ import {
 } from './items';
 import { lanaiEquipRow, lanaiItemEffects } from './equipment';
 import { LanaiEquipEffects } from './EquipEffects';
+import { LanaiDescription } from './Description';
+import { LanaiItemFields } from './ItemEditor';
 import { useLanaiRevision } from './MonsterEditor';
 import {
   lanaiDropIndex,
@@ -40,7 +42,7 @@ import type { LanaiSession } from './session';
 
 export { lanaiItemHref } from './hrefs';
 import { lanaiActionHref, lanaiItemHref } from './hrefs';
-import { lanaiBattleActions, lanaiItemUseAction } from './battleActions';
+import { lanaiBattleActions, lanaiItemUseAction, usesItemInfo } from './battleActions';
 const PAGE = 300;
 const kindName = (k: number): string => LANAI_ITEM_KINDS[k] ?? `種類 0x${k.toString(16).toUpperCase()}`;
 
@@ -102,6 +104,11 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   );
   const data = session.need('ItemData');
   const changed = (x: LanaiItem): boolean => {
+    const description = lanaiItemDescriptionRef(session, x);
+    if (description?.table.rowChanged(description.row)) return true;
+    const use = session.table('UseItemInfo');
+    const row = use && usesItemInfo(x.kind) ? use.find(core.u32(x.core, 0)) : -1;
+    if (use && row > 0 && use.rowChanged(row)) return true;
     if (core.rowChanged(x.core) || data.rowChanged(x.row)) return true;
     const e = lanaiEquipRow(session, x);
     return !!e && e.table.rowChanged(e.row);
@@ -136,6 +143,7 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
   const scanned = !!sources.index;
   const it = byRow.get(selected);
   const equip = it ? lanaiEquipRow(session, it) : null;
+  const description = it ? lanaiItemDescriptionRef(session, it) : null;
   const useAction = it && !equip ? lanaiItemUseAction(session, it) : 0;
   return (
     <div className="book">
@@ -237,50 +245,56 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
               <span className="muted">{`ItemData 行 ${it.row}  ID ${hex8(it.id)}  ItemDataCore 行 ${it.core}`}</span>
             </div>
             <div className="book-top">
-              <table className="book-stats">
-                <tbody>
-                  <tr>
-                    <th title="ItemData +0x00">名前</th>
-                    <td>
-                      <ItemName session={session} row={it.row} />
-                    </td>
-                  </tr>
-                  <tr>
-                    <th>種類</th>
-                    <td>{`${kindName(it.kind)} (0x${it.kind.toString(16).toUpperCase()})`}</td>
-                  </tr>
-                  <tr>
-                    <th>☆</th>
-                    <td>{it.rarity}</td>
-                  </tr>
-                  <tr>
-                    <th title="ItemDataCore +0x04 / +0x08 (推定)">買値 / 売値</th>
-                    <td>{`${it.buy} / ${it.sell}`}</td>
-                  </tr>
-                  <tr>
-                    <th>説明</th>
-                    <td className="book-desc">{lanaiItemDescription(session, it)}</td>
-                  </tr>
-                  {useAction > 0 && (
+              <div>
+                <table className="enc-table desc-table">
+                  <tbody>
                     <tr>
-                      <th title="UseItemInfo +0x04: 使ったときの ActionData の行">使うと</th>
+                      <th title="ItemData +0x00">名前</th>
                       <td>
-                        <a href={lanaiActionHref(useAction)}>{`#${useAction}`}</a>
-                        {` ${lanaiBattleActions(session)[useAction]?.name ?? ''}`}
+                        <ItemName session={session} row={it.row} />
                       </td>
                     </tr>
-                  )}
-                  <tr>
-                    <th title="ItemDataCore +0x18 / +0x1C">モデル</th>
-                    <td className="muted">{it.model ? `${hex8(it.archive)} / ${hex8(it.model)}` : 'なし'}</td>
-                  </tr>
-                </tbody>
-              </table>
+                    <tr>
+                      <th>種類</th>
+                      <td>{`${kindName(it.kind)} (0x${it.kind.toString(16).toUpperCase()})`}</td>
+                    </tr>
+                    <tr>
+                      <th>説明</th>
+                      <td className="book-desc">
+                        {description ? (
+                          <LanaiDescription
+                            key={it.row}
+                            session={session}
+                            {...description}
+                            onEdit={() => session.edited()}
+                          />
+                        ) : (
+                          <span className="muted">説明の参照がありません</span>
+                        )}
+                      </td>
+                    </tr>
+                    {useAction > 0 && (
+                      <tr>
+                        <th title="UseItemInfo +0x04: 使ったときの ActionData の行">使うと</th>
+                        <td>
+                          <a href={lanaiActionHref(useAction)}>{`#${useAction}`}</a>
+                          {` ${lanaiBattleActions(session)[useAction]?.name ?? ''}`}
+                        </td>
+                      </tr>
+                    )}
+                    <tr>
+                      <th title="ItemDataCore +0x18 / +0x1C">モデル</th>
+                      <td className="muted">{it.model ? `${hex8(it.archive)} / ${hex8(it.model)}` : 'なし'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <LanaiItemFields key={it.row} session={session} item={it} />
+                {equip && (
+                  <LanaiEquipEffects session={session} equip={equip} kind={it.kind} onEdit={() => session.edited()} />
+                )}
+              </div>
               <ModelView model={lanaiItemRef(session, it)} name={it.name} />
             </div>
-            {equip && (
-              <LanaiEquipEffects session={session} equip={equip} kind={it.kind} onEdit={() => session.edited()} />
-            )}
             <div className="row">
               <CopyRemoveButtons
                 copy={lanaiItemCopy(session, byRow)}
@@ -305,6 +319,10 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
               {changed(it) && !lanaiItemAdded(session, it.row) && (
                 <button
                   onClick={() => {
+                    if (description?.table.originalRow(description.row)) description.table.revertRow(description.row);
+                    const use = session.table('UseItemInfo');
+                    const row = use && usesItemInfo(it.kind) ? use.find(core.u32(it.core, 0)) : -1;
+                    if (use && row > 0 && use.originalRow(row)) use.revertRow(row);
                     data.revertRow(it.row);
                     if (core.rowChanged(it.core)) core.setRow(it.core, core.originalRow(it.core)!);
                     if (equip?.table.rowChanged(equip.row))

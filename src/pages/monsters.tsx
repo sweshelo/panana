@@ -18,6 +18,7 @@ import type { ModelRef } from './modelview';
 import { loadComposite } from '../cgfx/loader';
 import { MONSTER_MODEL_ARCHIVE, MONSTER_MOTIONS } from '../game/monsters';
 import { hex8 } from '../util/bytes';
+import { MessageEditor } from '../ui/message';
 import { mapTitle } from '../game/names';
 import type { MapDoc } from '../game/sections';
 import type { Session } from '../session';
@@ -201,7 +202,23 @@ function MonsterDetail({
       <div className="book-top">
         <div>
           <NameEditor session={session} {...p} />
-          {m.description && <p className="book-desc">{m.description}</p>}
+          {book.descriptionId(m.row) > 0 && (
+            <div className="book-desc">
+              <span className="muted">説明</span>
+              <MessageEditor
+                key={m.row}
+                texts={game.master.texts}
+                id={book.descriptionId(m.row)}
+                compact
+                apply={(fn) => {
+                  fn();
+                  book.reload();
+                  edited();
+                }}
+              />
+              <div className="muted small">同じ説明を参照するモンスターにも反映されます。</div>
+            </div>
+          )}
           <StatEditor {...p} />
         </div>
         <div>

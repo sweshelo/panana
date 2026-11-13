@@ -1476,6 +1476,9 @@ details.fold[open] > summary {
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
 }
+.item-fields .stats {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
 .item-fields .stat > span:last-child {
   display: flex;
   align-items: center;
@@ -1483,9 +1486,10 @@ details.fold[open] > summary {
   min-width: 0;
 }
 .item-fields .stat .num-input {
-  flex: 1;
-  width: 0;
-  min-width: 0;
+  flex: 1 0 12ch;
+  width: 12ch;
+  min-width: 12ch;
+  box-sizing: border-box;
 }
 .equip-effect {
   display: flex;
