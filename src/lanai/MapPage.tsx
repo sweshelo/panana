@@ -31,7 +31,7 @@ import { readField, writeField, type FieldDef } from '../game/tabledef';
 import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';
 import { NumberInput, useSticky } from '../ui/book';
-import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
+import { LanaiMapPicker } from './MapPicker';
 import { MessageEditor } from '../ui/message';
 import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
@@ -54,7 +54,6 @@ import {
   lanaiEventSlot,
   lanaiFloorLabel,
   lanaiMaps,
-  loadedLanaiMaps,
   type LanaiMapInfo,
   type LanaiMaps,
 } from './maps';
@@ -121,12 +120,12 @@ export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: str
           マップを読み込み中…
         </p>
       ) : loaded instanceof Error ? (
-        <NoMaps session={session} contents={contents} content={c} error={loaded.message} />
+        <NoMaps session={session} content={c} error={loaded.message} />
       ) : (
         <MapDetail
           key={c.index}
           session={session}
-          contents={contents}
+
           content={c}
           maps={loaded}
           name={m?.[2] ? decodeURIComponent(m[2]) : undefined}
@@ -137,106 +136,54 @@ export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: str
   );
 }
 
-/** Rows of the map picker are a content and a map table row (map hashes are only unique within a content). */
-const pickId = (content: number, row: number): number => content * 0x1000 + row;
-/** The row of a content whose maps are not read yet: picking it opens the content's first map. */
-const CONTENT_ROW = 0xfff;
-
-/** "甘口のどうくつ" (the MapGroup's name) or "MapGroup 3". */
-const groupLabel = (maps: LanaiMaps, g: number): string => maps.groupName(g) || `MapGroup ${g}`;
-
-/**
- * The maps of every stage for the map picker (the same dialog as RPG2's and RPG3's): the maps of the contents read so
- * far by stage and MapGroup, and a row for each other content that opens it.
- */
-function useMapGroups(session: LanaiSession, contents: LanaiContent[], current: LanaiMaps | null): MapPickerGroups {
-  const revision = useMaps(current);
-  return useMemo(
-    () =>
-      contents.flatMap((c): MapPickerGroups => {
-        const head = `${c.index}: ${contentTitle(c)}`;
-        const maps = current?.content.index === c.index ? current : loadedLanaiMaps(session, c.index);
-        if (!maps)
-          return [
-            [head, [{ hash: pickId(c.index, CONTENT_ROW), title: 'このステージのマップを開く', code: c.archive }]],
-          ];
-        const byGroup = new Map<number, MapPickerRow[]>();
-        for (const m of maps.maps) {
-          const title = m.world
-            ? 'ワールドマップ (表示のみ)'
-            : `${lanaiFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
-          byGroup.set(m.dungeon, [
-            ...(byGroup.get(m.dungeon) ?? []),
-            { hash: pickId(c.index, m.index), title, code: m.name },
-          ]);
-        }
-        return [...byGroup]
-          .sort(([a], [b]) => a - b)
-          .map(([g, rows]): [string, MapPickerRow[]] => [`${head} — ${groupLabel(maps, g)}  (MapGroup ${g})`, rows]);
-      }),
-    [session, contents, current, revision],
-  );
-}
-
-/** The maps with edits, as picker rows. */
-function modifiedIds(session: LanaiSession, contents: LanaiContent[]): Set<number> {
-  const out = new Set<number>();
-  for (const c of contents) {
-    const maps = loadedLanaiMaps(session, c.index);
-    for (const m of maps?.maps ?? []) if (m.added || maps!.isChanged(m)) out.add(pickId(c.index, m.index));
-  }
-  return out;
-}
+/** The MapGroup name shown alongside the current map. */
+const groupLabel = (maps: LanaiMaps, group: number): string => maps.groupName(group) || 'MapGroup ' + group;
 
 /** The header's map picker. */
 function Picker({
   session,
-  contents,
   maps,
   content,
   info,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   maps: LanaiMaps | null;
   content: LanaiContent;
   info: LanaiMapInfo | null;
 }): ReactNode {
-  const groups = useMapGroups(session, contents, maps);
+  const [picking, setPicking] = useState(false);
   const label =
     maps && info
       ? `${contentTitle(content)} — ${groupLabel(maps, info.dungeon)}・${lanaiFloorLabel(info.floor) || '地上'}  ${info.name}`
       : `${content.index}: ${contentTitle(content)} (マップなし)`;
   return (
-    <MapPickerButton
-      groups={groups}
-      value={pickId(content.index, info ? info.index : CONTENT_ROW)}
-      className="map-select"
-      modified={modifiedIds(session, contents)}
-      label={label}
-      onChange={(id) => {
-        const c = contents[Math.floor(id / 0x1000)];
-        if (!c) return;
-        const row = id % 0x1000;
-        const m =
-          row === CONTENT_ROW
-            ? undefined
-            : (c.index === content.index ? maps : loadedLanaiMaps(session, c.index))?.maps[row];
-        location.hash = lanaiMapHref(c.index, m?.name);
-      }}
-    />
+    <>
+      <button className="map-select" onClick={() => setPicking(true)}>
+        {label}
+      </button>
+      {picking && (
+        <LanaiMapPicker
+          session={session}
+          currentContent={content.index}
+          currentMap={info?.name}
+          onPick={(index, name) => {
+            location.hash = lanaiMapHref(index, name);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
   );
 }
 
 /** Shown while a content has no maps (or they did not load): another map can still be picked. */
 function NoMaps({
   session,
-  contents,
   content,
   error,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   content: LanaiContent;
   error: string;
 }): ReactNode {
@@ -249,7 +196,7 @@ function NoMaps({
       left={null}
       right={null}
       status={null}
-      header={<Picker session={session} contents={contents} maps={null} content={content} info={null} />}
+      header={<Picker session={session} maps={null} content={content} info={null} />}
       placeholder={
         <div style={{ padding: 16 }}>
           <div className="error">{error}</div>
@@ -262,14 +209,12 @@ function NoMaps({
 
 function MapDetail({
   session,
-  contents,
   content,
   maps,
   name,
   rec,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   content: LanaiContent;
   maps: LanaiMaps;
   name: string | undefined;
@@ -336,7 +281,7 @@ function MapDetail({
       pane3d={pane3d}
       header={
         <>
-          <Picker session={session} contents={contents} maps={maps} content={content} info={info} />
+          <Picker session={session} maps={maps} content={content} info={info} />
           <span className="muted small">{`マップ番号 ${info.index}・${hex8(info.hash).toUpperCase()}${info.added ? '・追加したマップ' : ''}`}</span>
           <button
             title="このステージのダンジョンに新しいマップ (階) を足す、またはマップを複製する"

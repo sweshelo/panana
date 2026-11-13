@@ -62,6 +62,7 @@ export function MapPickerDialog({
   withNone = false,
   modified,
   title = 'マップを選ぶ',
+  controls,
   onPick,
   onClose,
 }: {
@@ -70,6 +71,7 @@ export function MapPickerDialog({
   withNone?: boolean;
   modified?: Set<number>;
   title?: string;
+  controls?: ReactNode;
   onPick: (hash: number) => void;
   onClose: () => void;
 }): ReactNode {
@@ -106,6 +108,7 @@ export function MapPickerDialog({
   const known = !current || groups.some(([, rows]) => rows.some((r) => r.hash === current));
   return (
     <Dialog title={title} onClose={onClose}>
+      {controls}
       <div className="row">
         <input
           type="search"
