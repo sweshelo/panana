@@ -104,11 +104,11 @@ describe('RPG FREE! stage script: reading', () => {
       }
       return '';
     };
-    expect(err('var A: byte\non talk(1, 5) {\n  X = 1\n}')).toBe('3 行目: 変数「X」は宣言されていません (var X: byte)');
-    expect(err('on talk(1, 5) { disable() }')).toContain('on area の中でだけ');
+    expect(err('var A: byte\non talk(1, 5) {\n  X = 1\n}')).toBe('3 行目: 変数「X」はありません');
+    expect(err('on talk(1, 5) { disable() }')).toContain('範囲のイベントの中でだけ');
     expect(err('on talk(1, 5) { break }')).toContain('switch の中でだけ');
     expect(err('var A: bit\non area(1, 1) { A = 2 }')).toContain('0〜1');
-    expect(err('on talk(1, 5) {}\non area(1, 5) {}')).toContain('2 回書かれています');
+    expect(err('on talk(1, 5) {}\non area(1, 5) {}')).toContain('もうイベントが割り当てられています');
     expect(err('on talk(1, 5) { talk(1)')).toContain('「}」が足りません');
     expect(err('on talk(1, 5) { fight(1) }')).toContain('「fight」という文はありません');
     expect(err('on talk(1, 5) { talk(1) } @')).toContain('使えない文字');
