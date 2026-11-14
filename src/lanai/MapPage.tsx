@@ -556,7 +556,7 @@ function Facts({ maps, info, view }: { maps: LanaiMaps; info: LanaiMapInfo; view
 
 const FACING_LABELS = ['↓ 南 (4)', '← 西 (2)', '↑ 北 (1)', '→ 東 (8)'];
 
-type ChestReward = { kind: 'gold' | 'item'; value: number };
+type ChestReward = { kind: 'gold' | 'item'; value: number; weight: number };
 
 /** The reward is chosen before a chest becomes a stamp; each placement gets independent TreasureGroup rows. */
 function ChestPlacement({
@@ -571,45 +571,77 @@ function ChestPlacement({
   onClose: () => void;
 }): ReactNode {
   const goal = template.event?.chest === 'goal';
-  const [first, setFirst] = useState<ChestReward>({ kind: 'gold', value: 0 });
-  const [retry, setRetry] = useState<ChestReward>({ kind: 'gold', value: 0 });
+  const [first, setFirst] = useState<ChestReward[]>([{ kind: 'gold', value: 0, weight: 1 }]);
+  const [retry, setRetry] = useState<ChestReward[]>([{ kind: 'gold', value: 0, weight: 1 }]);
   const [clears, setClears] = useState(st.maps.content.index);
-  const [pick, setPick] = useState<'first' | 'retry' | null>(null);
+  const [pick, setPick] = useState<{ which: 'first' | 'retry'; index: number } | null>(null);
   const reward = (
     label: string,
-    value: ChestReward,
-    set: (v: ChestReward) => void,
+    values: ChestReward[],
+    set: (v: ChestReward[]) => void,
     which: 'first' | 'retry',
-  ): ReactNode => (
-    <div className="treasure">
-      <h3>{label}</h3>
-      <label className="field">
-        <span>報酬</span>
-        <select value={value.kind} onChange={(e) => set({ kind: e.target.value as ChestReward['kind'], value: 0 })}>
-          <option value="gold">G</option>
-          <option value="item">アイテム</option>
-        </select>
-      </label>
-      {value.kind === 'gold' ? (
-        <label className="field">
-          <span>金額</span>
-          <NumberInput value={value.value} min={0} max={0x7fffffff} onCommit={(n) => set({ ...value, value: n })} />
-        </label>
-      ) : (
-        <button onClick={() => setPick(which)}>
-          {value.value ? lanaiItemName(st.maps.session, value.value) : 'アイテムを選ぶ…'}
-        </button>
-      )}
-    </div>
-  );
-  const slot = (value: ChestReward): LanaiTreasureSlot[] => [
-    { kind: value.kind === 'gold' ? LANAI_TREASURE_GOLD : LANAI_TREASURE_ITEM, value: value.value, weight: 1 },
-  ];
+  ): ReactNode => {
+    const change = (index: number, next: ChestReward): void =>
+      set(values.map((value, i) => (i === index ? next : value)));
+    return (
+      <div className="treasure">
+        <h3>{label}</h3>
+        {values.map((value, index) => (
+          <div className="row" key={index}>
+            <select
+              aria-label={`${label}の候補 ${index + 1}`}
+              value={value.kind}
+              onChange={(e) => change(index, { ...value, kind: e.target.value as ChestReward['kind'], value: 0 })}
+            >
+              <option value="gold">G</option>
+              <option value="item">アイテム</option>
+            </select>
+            {value.kind === 'gold' ? (
+              <NumberInput
+                value={value.value}
+                min={0}
+                max={0x7fffffff}
+                title="金額"
+                onCommit={(n) => change(index, { ...value, value: n })}
+              />
+            ) : (
+              <button onClick={() => setPick({ which, index })}>
+                {value.value ? lanaiItemName(st.maps.session, value.value) : 'アイテムを選ぶ…'}
+              </button>
+            )}
+            {values.length > 1 && (
+              <NumberInput
+                value={value.weight}
+                min={1}
+                max={0xffff}
+                title="抽選の重み"
+                onCommit={(n) => change(index, { ...value, weight: n })}
+              />
+            )}
+            {values.length > 1 && (
+              <button className="danger" title="候補を外す" onClick={() => set(values.filter((_, i) => i !== index))}>
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {values.length < 10 && (
+          <button onClick={() => set([...values, { kind: 'gold', value: 0, weight: 1 }])}>＋ 抽選候補を追加</button>
+        )}
+        {values.length > 1 && <p className="muted small">重みに比例して 1 つ選ばれます。</p>}
+      </div>
+    );
+  };
+  const slots = (values: ChestReward[]): LanaiTreasureSlot[] =>
+    values.map((value) => ({
+      kind: value.kind === 'gold' ? LANAI_TREASURE_GOLD : LANAI_TREASURE_ITEM,
+      value: value.value,
+      weight: value.weight,
+    }));
+  const valid = (values: ChestReward[]): boolean => values.every((value) => value.value > 0 && value.weight > 0);
   return (
     <Dialog title={goal ? 'クリア宝箱を置く' : '通常の宝箱を置く'} onClose={onClose}>
-      <p className="muted small">
-        報酬を決めてからマップ上に置きます。複数の候補から抽選する設定は、配置後の「宝箱の中身」で追加できます。
-      </p>
+      <p className="muted small">報酬を決めてからマップ上に置きます。候補を増やすと抽選になります。</p>
       {reward('開けたとき', first, setFirst, 'first')}
       {goal && (
         <>
@@ -624,14 +656,14 @@ function ChestPlacement({
         <button onClick={onClose}>キャンセル</button>
         <button
           className="primary"
-          disabled={!first.value || (goal && (!retry.value || !clears))}
+          disabled={!valid(first) || (goal && (!valid(retry) || !clears))}
           onClick={() =>
             onReady({
               ...template,
-              label: `${template.label} · ${first.kind === 'gold' ? `${first.value}G` : lanaiItemName(st.maps.session, first.value)}`,
+              label: `${template.label} · ${first.length > 1 ? `${first.length} 候補から抽選` : first[0]!.kind === 'gold' ? `${first[0]!.value}G` : lanaiItemName(st.maps.session, first[0]!.value)}`,
               event: {
                 ...template.event!,
-                rewards: goal ? [slot(first), slot(retry), slot(retry)] : [slot(first)],
+                rewards: goal ? [slots(first), slots(retry), slots(retry)] : [slots(first)],
                 clears,
               },
             })
@@ -647,7 +679,10 @@ function ChestPlacement({
           onClose={() => setPick(null)}
           onPick={(row) => {
             const value = st.maps.session.need('ItemData').rowId(row);
-            (pick === 'first' ? setFirst : setRetry)({ kind: 'item', value });
+            const values = pick.which === 'first' ? first : retry;
+            (pick.which === 'first' ? setFirst : setRetry)(
+              values.map((reward, i) => (i === pick.index ? { ...reward, kind: 'item', value } : reward)),
+            );
             setPick(null);
           }}
         />
@@ -1092,9 +1127,11 @@ function RecFields({
       : [];
   return (
     <>
-      <h3>{`${L.label} #${index}`}</h3>
-      <p className="muted small">{lanaiRecLabel(section, rec.raw)}</p>
+      <h3>{lanaiRecLabel(section, rec.raw)}</h3>
+      <h4>見た目</h4>
       <ModelLine view={view} look={view.look(section, index)} />
+      {ev > 0 && events && ev < events.rows && <LookField st={st} view={view} section={section} rec={rec} row={ev} />}
+      {(section === 3 || (section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)))) && <h4>接続</h4>}
       {section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)) && (
         <p className="small">
           {linkedDoor === null ? '操作対象の扉: 未設定' : `このボタンで開く: 扉のイベント #${linkedDoor}`}
@@ -1110,11 +1147,11 @@ function RecFields({
           ))}
         </div>
       )}
+      <h4>配置</h4>
       <RecPositionFields st={st} rec={rec} L={L} />
-      {section === 3 && <p className="small">{`地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}`}</p>}
       {facing !== undefined && st.canRotate(section) && (
         <label className="field">
-          <span>{`向き (+0x${facing.toString(16).toUpperCase()}、R で回す)`}</span>
+          <span>向き (R で回す)</span>
           <select
             value={LANAI_ROT_CODEC.decode(rec.raw[facing]!)}
             onChange={(e) =>
@@ -1132,41 +1169,51 @@ function RecFields({
           </select>
         </label>
       )}
-      {(REC_FIELDS[section] ?? [])
-        .filter((f) => f.key !== 'ev' || hasEvent)
-        .map((f) =>
-          f.key === 'ev' ? (
-            <div key={f.key} className="field">
-              <span>イベント</span>
-              {events ? (
-                <LanaiEventSelect
-                  st={st}
-                  value={ev}
-                  allowNone={section === 3 || section === 8}
-                  onChange={(v) => st.edit(() => w32(rec.raw, 4, v))}
+      <details>
+        <summary className="small">区画・行番号などの詳細</summary>
+        <p className="muted small">{`${L.label} #${index}${section === 3 ? `・地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}` : ''}`}</p>
+        {(REC_FIELDS[section] ?? [])
+          .filter((f) => f.key !== 'ev' || hasEvent)
+          .map((f) =>
+            f.key === 'ev' ? (
+              <div key={f.key} className="field">
+                <span>イベント</span>
+                {events ? (
+                  <LanaiEventSelect
+                    st={st}
+                    value={ev}
+                    allowNone={section === 3 || section === 8}
+                    onChange={(v) => st.edit(() => w32(rec.raw, 4, v))}
+                  />
+                ) : (
+                  <span className="muted small">イベントの表がありません</span>
+                )}
+              </div>
+            ) : (
+              <label key={f.key} className="field">
+                <span>{f.label}</span>
+                <NumberInput
+                  value={readField(rec.raw, f)}
+                  min={0}
+                  max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
+                  onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
                 />
-              ) : (
-                <span className="muted small">イベントの表がありません</span>
-              )}
-            </div>
-          ) : (
-            <label key={f.key} className="field">
-              <span>{f.label}</span>
-              <NumberInput
-                value={readField(rec.raw, f)}
-                min={0}
-                max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
-                onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
-              />
-            </label>
-          ),
-        )}
+              </label>
+            ),
+          )}
+        <details>
+          <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
+          <code className="small mono" style={{ wordBreak: 'break-all' }}>
+            {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
+          </code>
+        </details>
+      </details>
       {section === 8 && u32(rec.raw, 0) < LANAI_RANGE_PROP_KIND && <RangeFields st={st} rec={rec} events={events} />}
+      {ev > 0 && events && ev < events.rows && <h4>動作・報酬</h4>}
       {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
       {ev > 0 &&
         (events && ev < events.rows ? (
           <>
-            <LookField st={st} view={view} section={section} rec={rec} row={ev} />
             <EventFields st={st} section={section} index={index} row={ev} />
           </>
         ) : (
@@ -1174,12 +1221,6 @@ function RecFields({
             {events ? `イベント番号 ${ev} は表 (${events.rows} 件) の外です` : `イベント番号 ${ev} (表なし)`}
           </p>
         ))}
-      <details>
-        <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
-        <code className="small mono" style={{ wordBreak: 'break-all' }}>
-          {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
-        </code>
-      </details>
     </>
   );
 }
@@ -1566,13 +1607,13 @@ function EventFields({
   );
   return (
     <>
-      <h4>{`イベント #${row} (${t.name})${row >= t.originalRows ? ' (追加したイベント)' : ''}`}</h4>
       {users > 1 && (
         <div className="row">
           <span className="muted small">{`このイベントは ${users} 個のレコードが使っています (状態と動作を共有)。`}</span>
           <button onClick={() => st.separateEventRow(section, index)}>このレコード専用のイベントにする</button>
         </div>
       )}
+      <h4>条件</h4>
       <EventConditionFields st={st} event={row} field={LANAI_EVENT_APPEAR} />
       <EventConditionFields st={st} event={row} field={LANAI_EVENT_DISAPPEAR} />
       <p className="muted small">
@@ -1587,16 +1628,20 @@ function EventFields({
         動作は「何回目の実行か」で切り替わります: 1 回目は動作 1、2 回目は動作 2、3 回目以降は動作 3
         (無ければ前の動作)。条件で選ばれるのでも、1 回で順に実行されるのでもありません。
       </p>
-      {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = イベント番号)`)}
-      <p className="muted small">
-        {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
-        {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
-      </p>
-      {u16f(0x5c, '+0x5C (未解析)')}
-      {u8f(0x5e, '+0x5E (未解析)')}
       <details>
-        <summary className="small">{`イベントのバイト (${t.rowSize})`}</summary>
-        <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />
+        <summary className="small">イベント番号・状態の枠などの詳細</summary>
+        <p className="muted small">{`イベント #${row} (${t.name})${row >= t.originalRows ? ' (追加したイベント)' : ''}`}</p>
+        {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = イベント番号)`)}
+        <p className="muted small">
+          {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
+          {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
+        </p>
+        {u16f(0x5c, '+0x5C (未解析)')}
+        {u8f(0x5e, '+0x5E (未解析)')}
+        <details>
+          <summary className="small">{`イベントのバイト (${t.rowSize})`}</summary>
+          <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />
+        </details>
       </details>
     </>
   );

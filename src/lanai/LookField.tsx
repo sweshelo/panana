@@ -127,7 +127,7 @@ export function LookField({
   if (kind === 'object')
     return (
       <div className="field">
-        <span>見た目 (イベントの +0x5A = MapObject の行)</span>
+        <span>見た目のモデル</span>
         <div className="row">
           {photo(view, look ? { type: 'object', row: look } : null)}
           <span className="small">{look ? `MapObject #${look}` : '0 (種類の既定のモデル)'}</span>
@@ -155,7 +155,7 @@ export function LookField({
     });
   return (
     <div className="field">
-      <span>見た目 (イベントの +0x5A = MapChara の行)</span>
+      <span>キャラの見た目</span>
       <div className="row">
         {photo(view, charaModel(mc, look))}
         <select aria-label="キャラの見た目" value={look} onChange={(e) => setLook(Number(e.target.value))}>
