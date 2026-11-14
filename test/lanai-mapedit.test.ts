@@ -7,6 +7,7 @@ import { Controller } from '../src/editor/controller';
 import { MapDb } from '../src/game/mapdb';
 import { buildTiles, LANAI_ROT_CODEC, type Rec } from '../src/game/sections';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
+import { LANAI_ACTION_GOAL_CHEST } from '../src/lanai/actions';
 import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
 import {
   LANAI_EVENT_SLOT,
@@ -290,6 +291,53 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     }
     expect(done).toBe(true);
   }, 300000);
+
+  test('new normal and goal chests create private rewards and undo together with placement', () => {
+    const info = maps.mapByName('D01001B01')!;
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const events = maps.eventTable(info.dungeon)!;
+    const treasure = maps.treasureGroup!;
+    const eventRows = events.rows;
+    const rewardRows = treasure.rows;
+    const chestRows = st.current!.recs[4]?.length ?? 0;
+    const tile = st.current!.tiles[0]!;
+    for (const [source, count] of [
+      ['新規宝箱', 1],
+      ['新規クリア宝箱', 3],
+    ] as const) {
+      const template = st.templates().find((t) => t.source === source)!;
+      expect(template).toBeDefined();
+      const rewards = Array.from({ length: count }, (_, i) => [{ value: 100 + i, kind: 2, weight: 1 }]);
+      st.edit((doc) =>
+        st.placeStamp(
+          doc,
+          { type: 'template', t: { ...template, event: { ...template.event!, rewards } } },
+          tile.x + 0.5,
+          tile.y + 0.5,
+        ),
+      );
+      const raw = st.current!.recs[4]!.at(-1)!.raw;
+      const row = u32(raw, 4);
+      expect(row).toBe(events.rows - 1);
+      expect(events.u32(row, 0x10)).toBe(count === 3 ? LANAI_ACTION_GOAL_CHEST : 0x8000000e);
+      if (count === 3) expect(events.u32(row, 0x18)).toBe(content.index);
+      for (let i = 0; i < count; i++) {
+        const field = [0x14, 0x2c, 0x44][i]!;
+        expect(events.u32(row, field)).toBe(rewardRows + i + (source === '新規クリア宝箱' ? 1 : 0));
+        expect(lanaiTreasureSlots(treasure, events.u32(row, field))).toEqual(rewards[i]!);
+      }
+    }
+    expect(events.rows).toBe(eventRows + 2);
+    expect(treasure.rows).toBe(rewardRows + 4);
+    expect(lanaiValidate(maps, info, st.current!).filter((i) => i.key.startsWith('reward/'))).toHaveLength(0);
+    st.undo();
+    st.undo();
+    expect(st.current!.recs[4]?.length ?? 0).toBe(chestRows);
+    expect(events.rows).toBe(eventRows);
+    expect(treasure.rows).toBe(rewardRows);
+    expect(s.modFiles().size).toBe(0);
+  });
 
   test('chest contents: TreasureGroup entries edited, a row of its own, undo, export and saving', async () => {
     let done = false;

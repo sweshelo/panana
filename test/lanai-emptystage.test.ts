@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive } from '../src/archive/gsarc';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
-import { lanaiEditState, lanaiValidateAll } from '../src/lanai/mapedit';
+import { lanaiButtonDoor, lanaiEditState, lanaiValidateAll } from '../src/lanai/mapedit';
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { buildStageScripts, checkStageScript } from '../src/lanai/stageScript';
@@ -58,6 +58,67 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const files = new Map<string, Uint8Array>();
     await buildStageScripts(s, files);
     expect([...files.keys()].sort()).toEqual([`.crr/contents${String(c.index).padStart(4, '0')}.crr`, c.archive]);
+  });
+
+  test('a persistent switch binds to its door and undo restores the stage script', async () => {
+    const { info } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const template = st.templates().find((t) => t.source === '新規ボタン')!;
+    const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
+    const count = st.current!.recs[5]?.length ?? 0;
+    st.edit((doc) =>
+      st.placeStamp(
+        doc,
+        { type: 'template', t: { ...template, event: { ...template.event!, buttonDoor: 1 } } },
+        5.5,
+        5.5,
+      ),
+    );
+    const row = u32(st.current!.recs[5]!.at(-1)!.raw, 4);
+    expect(lanaiButtonDoor(maps, info.dungeon, row)).toBe(1);
+    const stored = s.stageScripts.get(c.archive.toUpperCase())!;
+    expect(stored.doc.bindings).toContainEqual({ trigger: 'switch', group: info.dungeon, row, fn: `openDoor${row}` });
+    expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
+    const files = new Map<string, Uint8Array>();
+    await buildStageScripts(s, files);
+    expect(files.has(c.archive)).toBe(true);
+    st.undo();
+    expect(st.current!.recs[5]?.length ?? 0).toBe(count);
+    expect(s.stageScripts.get(c.archive.toUpperCase())!.doc).toEqual(before);
+    st.redo();
+    expect(lanaiButtonDoor(maps, info.dungeon, row)).toBe(1);
+    st.undo();
+  });
+
+  test('a new stair keeps its selected destination in the event row and undoes with the record', () => {
+    const { info, g } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const template = st.templates().find((t) => t.source === '新規上り階段')!;
+    const events = maps.eventTable(info.dungeon)!;
+    const before = events.rows;
+    const count = st.current!.recs[3]!.length;
+    st.edit((doc) =>
+      st.placeStamp(
+        doc,
+        {
+          type: 'template',
+          t: { ...template, event: { ...template.event!, destination: { map: info.hash, point: g.firstPoint } } },
+        },
+        5.5,
+        5.5,
+      ),
+    );
+    const stair = st.current!.recs[3]!.at(-1)!;
+    const row = u32(stair.raw, 4);
+    expect(stair.raw[0x15]).toBe(5);
+    expect(events.u32(row, 0x10)).toBe(0x80000013);
+    expect([events.u32(row, 0x14), events.u32(row, 0x18)]).toEqual([info.hash, g.firstPoint]);
+    expect(lanaiValidateAll(maps, info, st.current!).filter((i) => i.key.startsWith('destination/'))).toEqual([]);
+    st.undo();
+    expect(st.current!.recs[3]!.length).toBe(count);
+    expect(events.rows).toBe(before);
   });
 
   test('another tileset: its table is copied in, with a MapPartsType and a MapResource row; saved and restored', async () => {

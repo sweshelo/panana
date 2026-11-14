@@ -17,7 +17,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { tileAt } from '../../src/editor/model';
 import { lanaiContents } from '../../src/lanai/contents';
-import { LANAI_NEW_EVENT_CATEGORY } from '../../src/lanai/eventParts';
 import { lanaiEditState, lanaiRecEventRow, type LanaiTemplate } from '../../src/lanai/mapedit';
 import { lanaiMaps } from '../../src/lanai/maps';
 import { LanaiSession } from '../../src/lanai/session';
@@ -43,7 +42,7 @@ const info = maps.mapByName(MAP)!;
 st.open(info);
 const events = maps.eventTable(info.dungeon)!;
 
-const fresh = st.templates().filter((t) => t.category === LANAI_NEW_EVENT_CATEGORY);
+const fresh = st.templates().filter((t) => t.event);
 const part = (f: (t: LanaiTemplate) => boolean): LanaiTemplate => fresh.find(f)!;
 const report: string[] = [];
 const place = (t: LanaiTemplate, x: number, y: number, what: string): number => {
@@ -67,7 +66,7 @@ const keep = place(
   'ボタン (on switch: 押したまま、見た目 #75) → 扉 A・B を順に開ける',
 );
 events.setU16(keep, 0x5a, 75);
-const door = part((t) => t.section === 3);
+const door = part((t) => t.source === '新規扉');
 const doorA = place(door, 7, 12, '扉 A (見た目 0)');
 const doorB = place(door, 7, 9, '扉 B (見た目 MapObject #53)');
 events.setU16(doorB, 0x5a, 53);

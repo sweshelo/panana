@@ -39,7 +39,13 @@ export function PartPhoto<T>({
   }, [source, partKey]);
   return (
     <span ref={ref} className="photo photo-lg object-photo">
-      {url ? <img src={url} alt="" /> : <span aria-hidden="true">◇</span>}
+      {url ? (
+        <img src={url} alt="" />
+      ) : part === null ? (
+        <span className="small">見た目未設定</span>
+      ) : (
+        <span aria-hidden="true">◇</span>
+      )}
     </span>
   );
 }

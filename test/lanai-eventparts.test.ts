@@ -13,7 +13,6 @@ import { recordTriggers } from '../src/lanai/EventScriptBinding';
 import {
   LANAI_ACTION_EXTERNAL_DOOR,
   LANAI_DOOR_KIND,
-  LANAI_NEW_EVENT_CATEGORY,
   lanaiEventParts,
   lanaiLookKind,
   lanaiRangeRecord,
@@ -113,21 +112,25 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     expect(u32(lanaiCharaRowBytes(1, 5, donor), 4)).toBe(0x8000005c);
   });
 
-  test('the parts are kinds, not looks: two buttons, an NPC, a monster, a door, two ranges', () => {
+  test('new parts cover a switch, characters, doors, stairs, chests and ranges', () => {
     const parts = lanaiEventParts(undefined, undefined, { npcModel: 0x1a2, monsterDesign: 7 });
     expect(parts.map((p) => [p.section, p.section === 3 ? p.raw[0x15] : u32(p.raw, 0)])).toEqual([
       [5, 4],
-      [5, 6],
       [5, 0],
       [5, 1],
       [3, LANAI_DOOR_KIND],
+      [3, LANAI_DOOR_KIND],
+      [3, 5],
+      [3, 6],
+      [4, 0],
+      [4, 3],
       [8, 1],
       [8, 0],
     ]);
     // no MapChara row of the kind: one is made when placed
-    expect(parts[2]!.event.chara).toEqual({ kind: 0, model: 0x1a2 });
-    expect(parts[3]!.event.chara).toEqual({ kind: 1, model: 7 });
-    expect(parts[4]!.event.action).toBe(LANAI_ACTION_EXTERNAL_DOOR);
+    expect(parts[1]!.event.chara).toEqual({ kind: 0, model: 0x1a2 });
+    expect(parts[2]!.event.chara).toEqual({ kind: 1, model: 7 });
+    expect(parts[3]!.event.action).toBe(LANAI_ACTION_EXTERNAL_DOOR);
   });
 
   test('what the look is a row of', () => {
@@ -164,7 +167,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
   test('the add panel offers a button, characters and ranges made from nothing', () => {
     const st = lanaiEditState(maps);
     st.open(maps.mapByName('D01001B01')!);
-    const fresh = st.templates().filter((t) => t.category === LANAI_NEW_EVENT_CATEGORY);
+    const fresh = st.templates().filter((t) => t.event);
     expect(fresh.some((t) => t.section === 5 && u32(t.raw, 0) === 4)).toBe(true);
     expect(fresh.some((t) => t.section === 5 && u32(t.raw, 0) <= 2)).toBe(true);
     expect(fresh.filter((t) => t.section === 8).length).toBe(2);
@@ -177,7 +180,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     const info = maps.mapByName('D01001B01')!;
     st.open(info);
     const t = maps.eventTable(info.dungeon)!;
-    const fresh = st.templates().filter((x) => x.category === LANAI_NEW_EVENT_CATEGORY);
+    const fresh = st.templates().filter((x) => x.event);
     const button = fresh.find((x) => x.section === 5 && u32(x.raw, 0) === 4)!;
     const range = fresh.find((x) => x.section === 8)!;
     const rows = t.rows;
@@ -214,8 +217,8 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     st.open(info);
     const t = maps.eventTable(info.dungeon)!;
     const mc = maps.contentTable('MapChara')!;
-    const fresh = st.templates().filter((x) => x.category === LANAI_NEW_EVENT_CATEGORY);
-    const door = fresh.find((x) => x.section === 3)!;
+    const fresh = st.templates().filter((x) => x.event);
+    const door = fresh.find((x) => x.source === '新規扉')!;
     const others = new Set((st.current!.recs[3] ?? []).map((r) => u32(r.raw, 0)));
     let placed: [number, number] = [0, 0];
     st.edit((d) => {
@@ -251,9 +254,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     const st = lanaiEditState(maps);
     const info = maps.mapByName('D01001B01')!;
     st.open(info);
-    const button = st
-      .templates()
-      .find((x) => x.category === LANAI_NEW_EVENT_CATEGORY && x.section === 5 && u32(x.raw, 0) === 4)!;
+    const button = st.templates().find((x) => x.source === '新規ボタン')!;
     const rows: number[] = [];
     for (const x of [2, 3])
       st.edit((d) => {

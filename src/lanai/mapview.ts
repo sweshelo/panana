@@ -19,7 +19,8 @@ import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
-import { LANAI_EMPTY_KIND, sourceChanged, type LanaiEditState } from './mapedit';
+import { u32 } from '../util/bytes';
+import { LANAI_EMPTY_KIND, lanaiButtonDoor, sourceChanged, type LanaiEditState } from './mapedit';
 import {
   LANAI_LAYOUTS,
   LANAI_POINT_SECTIONS,
@@ -209,6 +210,29 @@ export class LanaiMapView {
     if (layers.tiles) drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
     if (layers.room) drawRoomCells(g, s, doc);
     const events = this.maps.eventTable(this.info.dungeon);
+    if (layers.sections[3] && layers.sections[5] && events) {
+      const doors = new Map((doc.recs[3] ?? []).map((r) => [u32(r.raw, 4), r]));
+      g.save();
+      g.strokeStyle = '#48cdd3';
+      g.fillStyle = '#14575d';
+      g.lineWidth = 2;
+      g.setLineDash([5, 4]);
+      g.font = '11px sans-serif';
+      for (const button of doc.recs[5] ?? []) {
+        if (![4, 5, 6].includes(u32(button.raw, 0))) continue;
+        const target = lanaiButtonDoor(this.maps, this.info.dungeon, u32(button.raw, 4));
+        const door = target === null ? null : doors.get(target);
+        if (!door) continue;
+        const [bx, by] = recCellPos(button, LANAI_LAYOUTS[5]!);
+        const [dx, dy] = recCellPos(door, LANAI_LAYOUTS[3]!);
+        g.beginPath();
+        g.moveTo(bx * s, by * s);
+        g.lineTo(dx * s, dy * s);
+        g.stroke();
+        g.fillText('このボタンで開く', ((bx + dx) / 2) * s + 4, ((by + dy) / 2) * s - 4);
+      }
+      g.restore();
+    }
     for (const k of [...LANAI_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {

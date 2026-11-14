@@ -12,10 +12,12 @@ import type { AutoProfile } from '../editor/autotile';
 import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { hex8, u32, w32 } from '../util/bytes';
+import { LANAI_ACTION_GOAL_CHEST, LANAI_DESTINATION_ACTIONS } from './actions';
 import {
   LANAI_EVENT_SECTIONS,
   LANAI_FACING_OFFSET,
   LANAI_LAYOUTS,
+  LANAI_EVENT_ACTIONS,
   LANAI_POINT_SECTIONS,
   lanaiEventSlot,
   lanaiExitKind,
@@ -40,9 +42,11 @@ import {
   LANAI_REPAIR_FIELD,
   LANAI_REPAIR_POINT,
   lanaiObjectRef,
+  lanaiRecordLook,
   type LanaiRecordModel,
 } from './mapObjects';
-import { lanaiChestFields } from './treasure';
+import { lanaiChestFields, lanaiTreasureSlots, lanaiWriteTreasure } from './treasure';
+import { emptyScriptDoc, type ScriptDoc } from './eventScript';
 
 /** The kind of the tiles the game leaves empty (map.md §6.3): no model, and not a problem. */
 export const LANAI_EMPTY_KIND = 33;
@@ -77,6 +81,15 @@ export function lanaiStampLabel(s: LanaiStamp): string {
 /** EventObject row of a record (sections 3 / 4 / 5 / 8), 0 for the others. */
 export const lanaiRecEventRow = (section: number, raw: Uint8Array): number =>
   (LANAI_EVENT_SECTIONS as readonly number[]).includes(section) ? u32(raw, EVENT_FIELD) : 0;
+
+/** The first door named by an authored button's bound function. */
+export function lanaiButtonDoor(maps: LanaiMaps, group: number, row: number): number | null {
+  const script = maps.session.stageScripts.get(maps.content.archive.toUpperCase())?.doc;
+  const binding = script?.bindings.find((b) => b.group === group && b.row === row && b.trigger === 'switch');
+  const body = script?.functions.find((f) => f.name === binding?.fn)?.body;
+  const match = body?.match(/\bopenDoor\((\d+)\)/u);
+  return match ? Number(match[1]) : null;
+}
 
 /** What a section's record is, for the add panel and the checks. */
 export function lanaiRecLabel(section: number, raw: Uint8Array): string {
@@ -126,6 +139,7 @@ type LanaiTables = {
   rows: Uint8Array[] | null;
   treasure: Uint8Array[] | null;
   content: [name: string, rows: Uint8Array[]][];
+  script: { key: string; doc: ScriptDoc } | null;
 };
 
 export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
@@ -203,6 +217,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
 
   protected saveTables(): LanaiTables {
     const group = this.info?.dungeon ?? null;
+    const archive = this.maps.content?.archive?.toUpperCase();
     const content = UNDO_CONTENT_TABLES.flatMap((n): [string, Uint8Array[]][] => {
       const t = this.maps.contentTable(n);
       return t ? [[n, tableRows(t)]] : [];
@@ -212,6 +227,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       rows: group === null ? null : this.maps.eventRows(group),
       treasure: this.maps.treasureRows(),
       content,
+      script: archive ? (this.maps.session?.stageScripts?.get(archive) ?? null) : null,
     };
   }
   protected restoreTables(t: LanaiTables): void {
@@ -221,6 +237,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       const table = this.maps.contentTable(n);
       if (table) restoreTableRows(table, rows);
     }
+    const archive = this.maps.content?.archive?.toUpperCase();
+    if (archive && this.maps.session?.createdFiles?.has(archive))
+      this.maps.session.setStageScriptDoc(archive, t.script?.doc ?? null, t.script?.key);
   }
   protected override docReplaced(doc: MapDoc): void {
     const info = this.maps.map(doc.hash);
@@ -269,7 +288,37 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         if (!this.info || !this.maps.eventTable(this.info.dungeon))
           throw new Error('この MapGroup には EventObject の表がないので、イベントを持つものは置けません');
         const look = ev.chara ? this.maps.addCharaRow(ev.chara.kind, ev.chara.model) : ev.look;
-        w32(raw, EVENT_FIELD, this.maps.addNewEventRow(this.info.dungeon, ev.action, look));
+        const row = this.maps.addNewEventRow(this.info.dungeon, ev.action, look);
+        w32(raw, EVENT_FIELD, row);
+        if (ev.destination) {
+          const events = this.maps.eventTable(this.info.dungeon)!;
+          events.setU32(row, LANAI_EVENT_ACTIONS[0] + 4, ev.destination.map);
+          events.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.destination.point);
+        }
+        if (ev.buttonDoor !== undefined) {
+          const session = this.maps.session;
+          const archive = this.maps.content.archive.toUpperCase();
+          if (!session.createdFiles.has(archive)) throw new Error('ボタンと扉の連動は追加ステージで使えます');
+          const stored = session.stageScripts.get(archive);
+          const script = structuredClone(stored?.doc ?? emptyScriptDoc());
+          const name = `openDoor${row}`;
+          script.functions.push({ name, body: `openDoor(${ev.buttonDoor})` });
+          script.bindings.push({ trigger: 'switch', group: this.info.dungeon, row, fn: name });
+          session.setStageScriptDoc(archive, script, stored?.key);
+        }
+        if (ev.chest) {
+          const events = this.maps.eventTable(this.info.dungeon)!;
+          const treasure = this.maps.treasureGroup;
+          if (!treasure) throw new Error('このコンテンツには TreasureGroup の表がありません');
+          for (const [stage, offset] of LANAI_EVENT_ACTIONS.entries()) {
+            if (stage && ev.chest === 'normal') break;
+            const reward = treasure.addRow();
+            lanaiWriteTreasure(treasure, reward, ev.rewards?.[stage] ?? []);
+            events.setU32(row, offset, ev.chest === 'goal' ? LANAI_ACTION_GOAL_CHEST : ev.action);
+            events.setU32(row, offset + 4, reward);
+          }
+          if (ev.chest === 'goal') events.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.clears ?? this.maps.content.index);
+        }
       } else this.copyEventRow(section, raw);
     }
     const rec: Rec = { raw, x: 0, y: 0 };
@@ -341,8 +390,36 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           const kind = k === 3 ? lanaiExitKind(r.raw) : k === 1 ? r.raw[0x0d]! : u32(r.raw, 0);
           const key = `${k}/${kind}/${action}`;
           if (out.has(key)) continue;
-          const label = lanaiRecLabel(k, r.raw) + (action >= 0 ? ` ・ 動作 ${hex8(action).toUpperCase()}` : '');
-          out.set(key, { section: k, raw: r.raw.slice(), label, source: m.name });
+          const goal = k === 4 && kind === LANAI_GOAL_CHEST;
+          const category =
+            k === 3
+              ? '扉・移動'
+              : k === 4
+                ? '宝箱・ゴール'
+                : k === 5 && [4, 5, 6].includes(kind)
+                  ? 'スイッチ'
+                  : k === 5 && kind <= 2
+                    ? '人物・敵'
+                    : k === 5
+                      ? 'ギミック'
+                      : k === 8 && kind < 100
+                        ? '範囲イベント'
+                        : k === 1
+                          ? '床のギミック'
+                          : k === 9
+                            ? '地点'
+                            : '装飾';
+          const label =
+            k === 3 && kind === LANAI_DOOR_KIND
+              ? action === 0x80000017
+                ? '通路をふさぐ扉'
+                : '移動する扉'
+              : k === 4
+                ? goal
+                  ? 'クリア宝箱'
+                  : '通常の宝箱'
+                : lanaiRecLabel(k, r.raw);
+          out.set(key, { section: k, raw: r.raw.slice(), label, source: m.name, category });
         }
     // records made from nothing (a button, a character, a range), each with an EventObject row of its own
     const fresh = table
@@ -522,7 +599,73 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
               target: rec(k, i),
               key: `treasure/${k}/${row}`,
             });
+          else if (k === 4 && !lanaiTreasureSlots(treasure, row).length)
+            out.push({
+              level: 'warn',
+              msg: `宝箱 #${i}: ${field === LANAI_EVENT_ACTIONS[0] + 4 ? '初回の' : '再挑戦時の'}報酬がありません`,
+              target: rec(k, i),
+              key: `reward/${k}/${i}/${field}`,
+            });
         }
+        if (
+          k === 4 &&
+          ev &&
+          ev < table.rows &&
+          table.u32(ev, LANAI_EVENT_ACTIONS[0]) === LANAI_ACTION_GOAL_CHEST &&
+          !table.u32(ev, LANAI_EVENT_ACTIONS[0] + 8)
+        )
+          out.push({
+            level: 'error',
+            msg: `クリア宝箱 #${i}: クリア対象がありません`,
+            target: rec(k, i),
+            key: `clear/${i}`,
+          });
+      });
+  if (table)
+    for (const k of [3, 5] as const)
+      (doc.recs[k] ?? []).forEach((r, i) => {
+        const ev = lanaiRecEventRow(k, r.raw);
+        if (!ev || ev >= table.rows) return;
+        const action = table.u32(ev, LANAI_EVENT_ACTIONS[0]);
+        if (k === 3 && LANAI_DESTINATION_ACTIONS.includes(action)) {
+          const hash = table.u32(ev, LANAI_EVENT_ACTIONS[0] + 4);
+          const point = table.u32(ev, LANAI_EVENT_ACTIONS[0] + 8);
+          const destination = maps.map(hash);
+          if (
+            !destination ||
+            (!destination.world && !(maps.doc(destination).recs[3] ?? []).some((p) => u32(p.raw, 0) === point))
+          )
+            out.push({
+              level: 'error',
+              msg: `出入口 #${i}: 行き先の地点がありません`,
+              target: rec(k, i),
+              key: `destination/${i}/${hash}/${point}`,
+            });
+        }
+        if (
+          k === 5 &&
+          [4, 5, 6].includes(u32(r.raw, 0)) &&
+          !lanaiRecordLook(k, r.raw, {
+            mapObject: maps.session.table('MapObject'),
+            mapChara: maps.contentTable('MapChara'),
+            events: table,
+            indoor: false,
+          })?.model
+        )
+          out.push({ level: 'warn', msg: `ボタン #${i}: 見た目未設定です`, target: rec(k, i), key: `buttonlook/${i}` });
+        if (
+          k === 5 &&
+          [4, 5, 6].includes(u32(r.raw, 0)) &&
+          maps.session.createdFiles.has(maps.content.archive.toUpperCase()) &&
+          action === 0x8000002d &&
+          lanaiButtonDoor(maps, info.dungeon, ev) === null
+        )
+          out.push({
+            level: 'warn',
+            msg: `ボタン #${i}: 操作対象の扉がありません`,
+            target: rec(k, i),
+            key: `buttontarget/${i}`,
+          });
       });
   for (const [row, n] of users)
     if (n > 1)

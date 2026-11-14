@@ -37,6 +37,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   validRow,
   help,
   status,
+  prepareTemplate,
 }: {
   st: MapEditState<RecordPartStamp<T>>;
   source: PartThumbnailSource<M | null>;
@@ -50,6 +51,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   validRow: (row: number) => boolean;
   help: string;
   status?: string;
+  prepareTemplate?: (template: T, choose: (ready: T) => void) => void;
 }): ReactNode {
   useEditorState(st);
   const [open, setOpen] = useState(false);
@@ -82,10 +84,15 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       stamps.set(key, { type: 'prop', row: prop, dir });
       choices.push({
         key,
-        name: `置物 #${prop}`,
-        category: 'ギミック',
-        sub: used.has(prop) ? '使用中' : undefined,
-        icon: photo(modelForProp(prop)),
+        name: `装飾・動作なし #${prop}`,
+        category: '装飾',
+        sub: used.has(prop) ? '装飾・動作なし / 使用中' : '装飾・動作なし',
+        icon: (
+          <span className="part-decorative-photo">
+            {photo(modelForProp(prop))}
+            <span>装飾・動作なし</span>
+          </span>
+        ),
       });
     }
     for (const template of templates) {
@@ -95,14 +102,31 @@ export function RecordPartPanel<T extends PartTemplate, M>({
         key,
         name: template.label,
         category: template.category ?? templateCategory(template.section),
-        sub: template.category ? undefined : template.source,
+        sub: `${template.source}${modelForTemplate(template) ? '' : ' / 見た目未設定'}`,
         title: template.category ? template.label : `${template.source} の設定を引き継ぎます`,
         icon: photo(modelForTemplate(template)),
       });
     }
-    const order = ['宝箱', '床のギミック', '出入口・扉', 'ギミック', '地点', 'その他'];
+    const order = [
+      '扉・移動',
+      'スイッチ',
+      '宝箱・ゴール',
+      '人物・敵',
+      '範囲イベント',
+      '装飾',
+      '宝箱',
+      '床のギミック',
+      '出入口・扉',
+      'ギミック',
+      '地点',
+      'その他',
+    ];
     // a category not in the list (an adapter's own) goes first
-    choices.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+    choices.sort(
+      (a, b) =>
+        (order.indexOf(a.category) < 0 ? order.length : order.indexOf(a.category)) -
+        (order.indexOf(b.category) < 0 ? order.length : order.indexOf(b.category)),
+    );
     if (status) choices.push({ key: 'status', name: status, category: '読み込み状況', unavailable: status });
   }
   return (
@@ -110,7 +134,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       <PartSelection
         label={
           selected?.type === 'prop'
-            ? `置物 #${selected.row}`
+            ? `装飾・動作なし #${selected.row}`
             : selected?.type === 'template'
               ? selected.t.label
               : 'パーツを選ぶ…'
@@ -131,7 +155,10 @@ export function RecordPartPanel<T extends PartTemplate, M>({
           onClose={() => setOpen(false)}
           onPick={(key) => {
             const stamp = stamps.get(key);
-            if (stamp) choose(stamp);
+            if (stamp?.type === 'template' && prepareTemplate) {
+              setOpen(false);
+              prepareTemplate(stamp.t, (ready) => choose({ type: 'template', t: ready }));
+            } else if (stamp) choose(stamp);
           }}
           controls={
             <details className="part-number-picker">

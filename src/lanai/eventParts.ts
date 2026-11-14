@@ -23,7 +23,7 @@
 //   table's row 0 (the empty row: no action, the padding) with the first action and the look.
 import { LANAI_ROT_CODEC } from '../game/sections';
 import { u32, w32, wf32 } from '../util/bytes';
-import { LANAI_ACTION_SCRIPT } from './actions';
+import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_SCRIPT } from './actions';
 import { LANAI_FACING_OFFSET, LANAI_LAYOUTS } from './maps';
 import {
   LANAI_CHARA_MONSTER,
@@ -37,11 +37,10 @@ import {
   type LanaiRecordModel,
 } from './mapObjects';
 import type { LanaiTable } from './table';
+import type { LanaiTreasureSlot } from './treasure';
 
 /** EventObject +0x5A: the look (a MapObject row, a MapChara row, the radius of a circle range). */
 export const EO_LOOK = 0x5a;
-/** The category of the add panel these go under. */
-export const LANAI_NEW_EVENT_CATEGORY = 'イベント (新しく置く)';
 /** Action 17: a door opened from outside (by openDoor() / ScriptMap::SetDoorOpenFlag). */
 export const LANAI_ACTION_EXTERNAL_DOOR = 0x80000017;
 /** Section 3 kind (+0x15) of the doors of action 17. */
@@ -65,6 +64,14 @@ export interface NewChara {
 export interface NewEventRow {
   action: number;
   look: number;
+  /** Create private TreasureGroup rows for every opening state when placed. */
+  chest?: 'normal' | 'goal';
+  /** First opening, then the two retry states of a goal chest. */
+  rewards?: LanaiTreasureSlot[][];
+  clears?: number;
+  /** A verified persistent switch opens this door's EventObject row through on switch. */
+  buttonDoor?: number;
+  destination?: { map: number; point: number };
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */
   chara?: NewChara;
 }
@@ -144,29 +151,27 @@ export interface LanaiEventPartDefaults {
   monsterDesign: number;
 }
 
-/** The buttons' looks before one is picked (the most used of the data). */
-const BUTTON_LOOK: Record<number, number> = { 4: 74, 6: 699 };
+/** The blue switch model #75 was checked in Azahar; the other commonly used rows have not been checked as buttons. */
+const VERIFIED_SWITCH_LOOK = 75;
 
-/** The new parts: a button of each kind, an NPC, a monster, a door and the two ranges. */
+/** Purpose-based parts that can be made without copying a record. */
 export function lanaiEventParts(
   mapObject: LanaiTable | undefined,
   mapChara: LanaiTable | undefined,
   defaults: LanaiEventPartDefaults,
 ): LanaiEventPart[] {
   const out: LanaiEventPart[] = [];
-  const part = (p: Omit<LanaiEventPart, 'category'>): void =>
-    void out.push({ ...p, category: LANAI_NEW_EVENT_CATEGORY });
-  for (const kind of [4, 6]) {
-    const look = lanaiObjectRef(mapObject, BUTTON_LOOK[kind]!) ? BUTTON_LOOK[kind]! : 0;
-    part({
-      section: 5,
-      raw: record(5, kind),
-      label: `ボタン (踏むとスクリプト、区画 5 の種類 ${kind}。見た目は置いてから選ぶ)`,
-      source: `新規ボタン ${kind}`,
-      event: { action: LANAI_ACTION_SCRIPT, look },
-      model: look ? { type: 'object', row: look } : null,
-    });
-  }
+  const part = (p: LanaiEventPart): void => void out.push(p);
+  const switchLook = lanaiObjectRef(mapObject, VERIFIED_SWITCH_LOOK) ? VERIFIED_SWITCH_LOOK : 0;
+  part({
+    section: 5,
+    raw: record(5, 4),
+    label: '踏むボタン（保持式はスクリプトの「押したまま」を選ぶ）',
+    source: '新規ボタン',
+    category: 'スイッチ',
+    event: { action: LANAI_ACTION_SCRIPT, look: switchLook },
+    model: switchLook ? { type: 'object', row: switchLook } : null,
+  });
   for (const kind of [LANAI_CHARA_NPC, LANAI_CHARA_MONSTER]) {
     const monster = kind === LANAI_CHARA_MONSTER;
     const row = lanaiCharaOfKind(mapChara, mapObject, kind);
@@ -177,6 +182,7 @@ export function lanaiEventParts(
       raw: record(5, kind),
       label: `${monster ? 'モンスター' : 'NPC'} (話しかけるとスクリプト。見た目は置いてから選ぶ)`,
       source: `新規キャラ ${kind}`,
+      category: '人物・敵',
       event: { action: LANAI_ACTION_SCRIPT, look: row, chara: row ? undefined : { kind, model } },
       model: monster ? { type: 'monster', design: model } : { type: 'object', row: model },
     });
@@ -184,16 +190,49 @@ export function lanaiEventParts(
   part({
     section: 3,
     raw: record(3, LANAI_DOOR_KIND),
-    label: '扉 (外から開ける: openDoor() で開く。見た目は置いてから選ぶ)',
+    label: '通路をふさぐ扉（スクリプトから開く）',
     source: '新規扉',
-    event: { action: LANAI_ACTION_EXTERNAL_DOOR, look: 0 },
-    model: null,
+    category: '扉・移動',
+    event: { action: LANAI_ACTION_EXTERNAL_DOOR, look: lanaiObjectRef(mapObject, 53) ? 53 : 0 },
+    model: lanaiObjectRef(mapObject, 53) ? { type: 'object', row: 53 } : null,
   });
+  for (const [kind, label, action, source] of [
+    [LANAI_DOOR_KIND, '場所を移動する扉', 0x80000016, '新規移動扉'],
+    [5, '上り階段', 0x80000013, '新規上り階段'],
+    [6, '下り階段', 0x80000013, '新規下り階段'],
+  ] as const) {
+    part({
+      section: 3,
+      raw: record(3, kind),
+      label,
+      source,
+      category: '扉・移動',
+      event: {
+        action,
+        look: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
+        destination: { map: 0, point: 0 },
+      },
+      model: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? { type: 'object', row: 53 } : null,
+    });
+  }
+  for (const goal of [false, true]) {
+    const raw = record(4, goal ? 3 : 0);
+    part({
+      section: 4,
+      raw,
+      label: goal ? 'クリア宝箱（初回・再挑戦の報酬を設定）' : '通常の宝箱（報酬を設定）',
+      source: goal ? '新規クリア宝箱' : '新規宝箱',
+      category: '宝箱・ゴール',
+      event: { action: goal ? LANAI_ACTION_GOAL_CHEST : 0x8000000e, look: 0, chest: goal ? 'goal' : 'normal' },
+      model: null,
+    });
+  }
   part({
     section: 8,
     raw: lanaiRangeRecord('rect'),
     label: 'イベントの範囲 (矩形、入るとスクリプト)',
     source: '新規範囲 矩形',
+    category: '範囲イベント',
     event: { action: LANAI_ACTION_SCRIPT, look: 0 },
     model: null,
   });
@@ -202,6 +241,7 @@ export function lanaiEventParts(
     raw: lanaiRangeRecord('circle'),
     label: 'イベントの範囲 (円、入るとスクリプト)',
     source: '新規範囲 円',
+    category: '範囲イベント',
     event: { action: LANAI_ACTION_SCRIPT, look: 1 },
     model: null,
   });
