@@ -156,6 +156,8 @@ export interface LanaiEventPartDefaults {
 
 /** The blue switch model #75 was checked in Azahar; the other commonly used rows have not been checked as buttons. */
 const VERIFIED_SWITCH_LOOK = 75;
+/** The warp hole model identified in the game by the user. */
+const VERIFIED_WARP_LOOK = 104;
 
 /** Purpose-based parts that can be made without copying a record. */
 export function lanaiEventParts(
@@ -166,6 +168,7 @@ export function lanaiEventParts(
   const out: LanaiEventPart[] = [];
   const part = (p: LanaiEventPart): void => void out.push(p);
   const switchLook = lanaiObjectRef(mapObject, VERIFIED_SWITCH_LOOK) ? VERIFIED_SWITCH_LOOK : 0;
+  const warpLook = lanaiObjectRef(mapObject, VERIFIED_WARP_LOOK) ? VERIFIED_WARP_LOOK : 0;
   for (const [trigger, label, source] of [
     ['switch', '保持スイッチ（一度踏むと押したまま）', '新規保持スイッチ'],
     ['button', 'プッシュスイッチ（離れると戻る）', '新規プッシュスイッチ'],
@@ -217,11 +220,16 @@ export function lanaiEventParts(
       category: '扉・移動',
       event: {
         action,
-        look: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
+        look: kind === 4 ? warpLook : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
         destination: { map: 0, point: 0 },
       },
-      model: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? { type: 'object', row: 53 } : null,
-      iconLabel: kind === 4 ? '◉' : undefined,
+      model:
+        kind === 4 && warpLook
+          ? { type: 'object', row: warpLook }
+          : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53)
+            ? { type: 'object', row: 53 }
+            : null,
+      iconLabel: kind === 4 && !warpLook ? '◉' : undefined,
     });
   }
   for (const goal of [false, true]) {

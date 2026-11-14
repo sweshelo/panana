@@ -430,11 +430,13 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
                         : '扉（既存の動作を複製）'
               : k === 3 && kind === 4 && action === 0x80000012
                 ? 'ワープホール（場所を移動）'
-                : k === 4
-                  ? goal
-                    ? 'クリア宝箱'
-                    : '通常の宝箱'
-                  : lanaiRecLabel(k, r.raw);
+                : k === 5 && [4, 5, 6].includes(kind)
+                  ? '既存のスイッチ（元マップの動作を複製）'
+                  : k === 4
+                    ? goal
+                      ? 'クリア宝箱'
+                      : '通常の宝箱'
+                    : lanaiRecLabel(k, r.raw);
           out.set(key, {
             section: k,
             raw: r.raw.slice(),
@@ -660,7 +662,10 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
           )
             out.push({
               level: 'error',
-              msg: `出入口 #${i}: 行き先の地点がありません`,
+              msg:
+                hash === 0 && point === 0
+                  ? `出入口 #${i}: 行き先が未設定です。相手を置いた後、インスペクタの「接続」で指定してください`
+                  : `出入口 #${i}: 行き先の地点がありません`,
               target: rec(k, i),
               key: `destination/${i}/${hash}/${point}`,
             });

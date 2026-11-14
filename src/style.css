@@ -3044,6 +3044,36 @@ label.edited-label {
   height: 40px;
   flex: none;
 }
+.lanai-id-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 0 12px;
+  padding: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel2);
+}
+.lanai-id-value {
+  font-size: 22px;
+  color: var(--text);
+}
+.lanai-event-index {
+  margin: 8px 0 14px;
+}
+.lanai-event-index > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.lanai-event-index-list {
+  display: grid;
+  gap: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.lanai-event-index-list button {
+  text-align: left;
+}
 .photo.object-photo,
 .photo.stamp-badge {
   display: inline-flex;

@@ -704,7 +704,6 @@ function SwitchPlacement({
   onClose: () => void;
 }): ReactNode {
   const persistent = template.event?.switchTrigger === 'switch';
-  const [mode, setMode] = useState<'door' | 'script'>(persistent ? 'door' : 'script');
   const [door, setDoor] = useState(0);
   const doc = st.current;
   const table = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
@@ -734,43 +733,32 @@ function SwitchPlacement({
       <p className="small">{persistent ? '一度踏むと押したままになります。' : '踏むと押され、離れると戻ります。'}</p>
       {persistent && (
         <label className="field">
-          <span>踏んだときの動作</span>
-          <select value={mode} onChange={(e) => setMode(e.target.value as 'door' | 'script')}>
-            <option value="door">扉を開くスクリプトを作る</option>
-            <option value="script">自由なスクリプトを作る</option>
-          </select>
+          <span>自動で開く扉（任意）</span>
+          <PlacedPickButton
+            title="扉を選ぶ（選ばなくても配置できます）"
+            value={door}
+            choices={choices}
+            extra={[{ value: 0, label: '指定しない', sub: '配置後にスクリプトを編集できます' }]}
+            onChange={setDoor}
+          />
         </label>
       )}
-      {mode === 'door' ? (
-        <>
-          <label className="field">
-            <span>このスイッチで開く扉</span>
-            <PlacedPickButton
-              title="マップ上の扉を選ぶ"
-              value={door}
-              choices={choices}
-              missing={() => '扉を選ぶ…'}
-              onChange={setDoor}
-            />
-          </label>
-          {!choices.length && <p className="muted small">先に「通路をふさぐ扉」をこのマップに置いてください。</p>}
-        </>
-      ) : (
-        <p className="muted small">
-          空の関数とスイッチへの割当を作ります。配置後にステージのスクリプトでフラグ、変数、複数の扉などの処理を書けます。
-        </p>
-      )}
+      <p className="muted small">
+        {door
+          ? '選んだ扉を開く関数とスイッチへの割当を作ります。'
+          : '空の関数とスイッチへの割当を作ります。扉の配置前でも置けます。配置後にステージのスクリプトを編集してください。'}
+      </p>
       {!enabled && <p className="error">スイッチのスクリプトは新しく追加したステージで使えます。</p>}
       <div className="row">
         <button onClick={onClose}>キャンセル</button>
         <button
           className="primary"
-          disabled={!enabled || (mode === 'door' && (!door || !choices.some((c) => c.value === door)))}
+          disabled={!enabled}
           onClick={() =>
             onReady({
               ...template,
-              label: mode === 'door' ? `${template.label} → 扉 #${door}` : template.label,
-              event: { ...template.event!, buttonDoor: mode === 'door' ? door : undefined },
+              label: door ? `${template.label} → 扉 #${door}` : template.label,
+              event: { ...template.event!, buttonDoor: door || undefined },
             })
           }
         >
@@ -781,7 +769,7 @@ function SwitchPlacement({
   );
 }
 
-/** An exit is not offered as a stamp until it points at an existing place in this stage. */
+/** A destination can be connected now or after both ends have been placed. */
 function ExitPlacement({
   st,
   template,
@@ -793,22 +781,33 @@ function ExitPlacement({
   onReady: (t: typeof template) => void;
   onClose: () => void;
 }): ReactNode {
+  const [connectNow, setConnectNow] = useState(false);
   const [map, setMap] = useState(0);
   const [point, setPoint] = useState(0);
   const [direction, setDirection] = useState(0);
   const valid = !!st.maps.map(map) && lanaiDestinationPoints(st.maps, map).some((p) => p.value === point);
   return (
     <Dialog title={`${template.label}を置く`} onClose={onClose}>
-      <p className="muted small">行き先のマップと地点を選びます。行き先には、先に出入口または階段を置いてください。</p>
-      <DestinationFields
-        maps={st.maps}
-        map={map}
-        point={point}
-        onChange={(nextMap, nextPoint) => {
-          setMap(nextMap);
-          setPoint(nextPoint);
-        }}
-      />
+      <label className="field">
+        <span>行き先</span>
+        <select value={connectNow ? 'now' : 'later'} onChange={(e) => setConnectNow(e.target.value === 'now')}>
+          <option value="later">後で設定する</option>
+          <option value="now">今選ぶ</option>
+        </select>
+      </label>
+      {connectNow ? (
+        <DestinationFields
+          maps={st.maps}
+          map={map}
+          point={point}
+          onChange={(nextMap, nextPoint) => {
+            setMap(nextMap);
+            setPoint(nextPoint);
+          }}
+        />
+      ) : (
+        <p className="muted small">先に配置して、相手の出入口を置いた後でインスペクタの「行き先」を設定できます。</p>
+      )}
       <label className="field">
         <span>向き</span>
         <select value={direction} onChange={(e) => setDirection(Number(e.target.value))}>
@@ -823,7 +822,7 @@ function ExitPlacement({
         <button onClick={onClose}>キャンセル</button>
         <button
           className="primary"
-          disabled={!valid}
+          disabled={connectNow && !valid}
           onClick={() => {
             const raw = template.raw.slice();
             raw[0x14] = LANAI_ROT_CODEC.encode(direction);
@@ -831,7 +830,7 @@ function ExitPlacement({
               ...template,
               label: `${template.label} → ${st.maps.map(map)?.name ?? ''}`,
               raw,
-              event: { ...template.event!, destination: { map, point } },
+              event: { ...template.event!, destination: connectNow ? { map, point } : { map: 0, point: 0 } },
             });
           }}
         >
@@ -981,10 +980,37 @@ function Inspector({
   return (
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
+      {st.info && <PlacedEventIndex st={st} />}
       {st.info && <Facts maps={st.maps} info={st.info} view={view} />}
       {st.info && <LanaiTilesetField maps={st.maps} info={st.info} />}
       <Stages content={content} />
     </>
+  );
+}
+
+/** IDs in scripts are EventObject row numbers, shared by all maps of this MapGroup. */
+function PlacedEventIndex({ st }: { st: LanaiEditState }): ReactNode {
+  const doc = st.current;
+  if (!doc) return null;
+  const entries = LANAI_EVENT_SECTIONS.flatMap((section) =>
+    (doc.recs[section] ?? []).flatMap((rec, index) => {
+      if (section === 8 && u32(rec.raw, 0) >= LANAI_RANGE_PROP_KIND) return [];
+      const event = lanaiRecEventRow(section, rec.raw);
+      return event ? [{ section, index, event, label: lanaiRecLabel(section, rec.raw) }] : [];
+    }),
+  );
+  return (
+    <details className="lanai-event-index">
+      <summary>{`配置物のイベントID一覧（${entries.length}件）`}</summary>
+      <p className="muted small">/stages の関数では、対象のイベント ID を十進数で指定します。</p>
+      <div className="lanai-event-index-list">
+        {entries.map(({ section, index, event, label }) => (
+          <button key={`${section}/${index}`} type="button" onClick={() => st.select({ type: 'rec', section, index })}>
+            <strong className="mono">{event}</strong> {label} #{index}
+          </button>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -1134,7 +1160,10 @@ function RecFields({
   const hasEvent =
     LANAI_EVENT_SECTIONS.includes(section as 3 | 4 | 5 | 8) && !(section === 8 && u32(rec.raw, 0) >= 100);
   const ev = hasEvent ? lanaiRecEventRow(section, rec.raw) : 0;
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const eventKey = `${st.info?.dungeon ?? 0}/${ev}`;
   const events = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
+  const primaryAction = ev > 0 && events && ev < events.rows ? events.u32(ev, LANAI_EVENT_ACTIONS[0]) : 0;
   const switchBinding =
     section === 5 && st.info
       ? st.maps.session.stageScripts
@@ -1160,10 +1189,51 @@ function RecFields({
             ? 'プッシュスイッチ'
             : lanaiRecLabel(section, rec.raw)}
       </h3>
+      <div className="lanai-id-summary">
+        {ev > 0 ? (
+          <>
+            <span>スクリプトで使うイベント ID</span>
+            <div className="row">
+              <strong className="mono lanai-id-value">{ev}</strong>
+              <button
+                type="button"
+                onClick={() =>
+                  void navigator.clipboard.writeText(String(ev)).then(
+                    () => setCopiedKey(eventKey),
+                    () => setCopiedKey(null),
+                  )
+                }
+              >
+                {copiedKey === eventKey ? 'コピー済み' : 'IDをコピー'}
+              </button>
+            </div>
+            <span className="muted small">{`MapGroup ${st.info?.dungeon ?? '?'} の EventObject 行。openDoor(${ev}) などで使います。`}</span>
+          </>
+        ) : (
+          <span className="muted small">この配置物にスクリプト用のイベント ID はありません。</span>
+        )}
+        {section === 3 && rec.raw[0x15] !== 100 && (
+          <span className="small">{`到着地点 ID: ${hex8(u32(rec.raw, 0)).toUpperCase()}（イベント ID とは別）`}</span>
+        )}
+        {section === 2 && <span className="small">{`見た目のモデル ID: ${u32(rec.raw, 0)}`}</span>}
+      </div>
       <h4>見た目</h4>
       <ModelLine view={view} look={view.look(section, index)} />
       {ev > 0 && events && ev < events.rows && <LookField st={st} view={view} section={section} rec={rec} row={ev} />}
       {(section === 3 || (section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)))) && <h4>接続</h4>}
+      {section === 3 && ev > 0 && events && LANAI_DESTINATION_ACTIONS.includes(primaryAction) && (
+        <DestinationFields
+          maps={st.maps}
+          map={events.u32(ev, LANAI_EVENT_ACTIONS[0] + 4)}
+          point={events.u32(ev, LANAI_EVENT_ACTIONS[0] + 8)}
+          onChange={(map, point) =>
+            st.setEventField(ev, (table) => {
+              table.setU32(ev, LANAI_EVENT_ACTIONS[0] + 4, map);
+              table.setU32(ev, LANAI_EVENT_ACTIONS[0] + 8, point);
+            })
+          }
+        />
+      )}
       {section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)) && (
         <p className="small">
           {linkedDoor === null
@@ -1445,6 +1515,7 @@ function ActionFields({
   offset,
   index,
   allowed,
+  destinationInConnection,
 }: {
   st: LanaiEditState;
   row: number;
@@ -1452,6 +1523,7 @@ function ActionFields({
   index: number;
   /** The types the record's event takes (actions.ts lanaiActionTypesFor), when known. */
   allowed?: number[];
+  destinationInConnection?: boolean;
 }): ReactNode {
   const info = st.info!;
   const session = st.maps.session;
@@ -1536,7 +1608,7 @@ function ActionFields({
         <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 件、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ番号を使うほかの NPC の台詞も変わる。`}</p>
       )}
       {lines}
-      {destination && (
+      {destination && !destinationInConnection && (
         <DestinationFields
           maps={st.maps}
           map={arg(0)}
@@ -1656,7 +1728,15 @@ function EventFields({
       </p>
       <EventScriptBinding st={st} section={section} index={index} row={row} />
       {LANAI_EVENT_ACTIONS.map((o, i) => (
-        <ActionFields key={o} st={st} row={row} offset={o} index={i} allowed={allowed} />
+        <ActionFields
+          key={o}
+          st={st}
+          row={row}
+          offset={o}
+          index={i}
+          allowed={allowed}
+          destinationInConnection={section === 3 && i === 0}
+        />
       ))}
       <p className="muted small">
         動作は「何回目の実行か」で切り替わります: 1 回目は動作 1、2 回目は動作 2、3 回目以降は動作 3

@@ -62,7 +62,10 @@ export function DestinationFields({
         <MapPickerButton
           groups={groups}
           value={map}
-          label={dest?.name ?? `${hex8(map).toUpperCase()} (このステージにない)`}
+          label={
+            dest?.name ??
+            (map === 0 ? '未設定（行き先のマップを選ぶ）' : `${hex8(map).toUpperCase()} (このステージにない)`)
+          }
           title="行き先のマップを選ぶ"
           onChange={(hash) => {
             const next = lanaiDestinationPoints(maps, hash);
@@ -76,7 +79,9 @@ export function DestinationFields({
           title={`行き先の地点を選ぶ (${dest?.name ?? hex8(map)})`}
           value={point}
           choices={points}
-          missing={(v) => `${hex8(v).toUpperCase()} (行き先にない)`}
+          missing={(v) =>
+            map === 0 && v === 0 ? '未設定（マップを先に選ぶ）' : `${hex8(v).toUpperCase()} (行き先にない)`
+          }
           onChange={(v) => onChange(map, v)}
         />
       </label>

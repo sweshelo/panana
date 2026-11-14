@@ -155,7 +155,8 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const st = lanaiEditState(maps);
     st.open(info);
     const template = st.templates().find((t) => t.source === '新規ワープホール')!;
-    expect(template.iconLabel).toBe('◉');
+    expect(template.model).toEqual({ type: 'object', row: 104 });
+    expect(template.event?.look).toBe(104);
     st.edit((doc) =>
       st.placeStamp(
         doc,
@@ -177,6 +178,11 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
       g.firstPoint,
     ]);
     expect(lanaiValidateAll(maps, info, st.current!).filter((i) => i.key.startsWith('destination/'))).toEqual([]);
+    st.undo();
+    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: template }, 5.5, 5.5));
+    const pending = u32(st.current!.recs[3]!.at(-1)!.raw, 4);
+    expect([events.u32(pending, 0x14), events.u32(pending, 0x18)]).toEqual([0, 0]);
+    expect(lanaiValidateAll(maps, info, st.current!).some((i) => i.key.startsWith('destination/'))).toBe(true);
     st.undo();
   });
 
