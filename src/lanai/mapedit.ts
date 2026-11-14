@@ -113,6 +113,14 @@ const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 // MapChara: a new character can add a row (LanaiMaps.addCharaRow)
 const UNDO_CONTENT_TABLES = ['MapData', 'MapResource', 'MapChara'];
 
+/** Whether a map's tile source changed so that its models must be read again (MapData row, tileset, its table, texture). */
+export const sourceChanged = (a: LanaiTileSource, b: LanaiTileSource): boolean =>
+  a.mapData !== b.mapData ||
+  a.tileset !== b.tileset ||
+  a.partsName !== b.partsName ||
+  a.textureArchive !== b.textureArchive ||
+  a.textureEntry !== b.textureEntry;
+
 type LanaiTables = {
   group: number | null;
   rows: Uint8Array[] | null;
@@ -140,6 +148,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     this.maps.on(() => {
       if (this.info && this.current && !this.info.world && this.maps.doc(this.info) !== this.current) {
         this.reopen();
+        this.emit('map');
+      } else if (this.info && this.current && this.readSource()) {
+        // the content's tables changed the map's looks (another tileset: tilesets.ts): the views read the models again
         this.emit('map');
       }
     });
@@ -184,7 +195,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   readSource(): boolean {
     if (!this.info || !this.current) return false;
     const src = this.maps.tileSource(this.info, this.current);
-    const changed = !this.source || src.mapData !== this.source.mapData || src.tileset !== this.source.tileset;
+    const changed = !this.source || sourceChanged(this.source, src);
     this.source = src;
     this.tileset = src.tileset;
     return changed;

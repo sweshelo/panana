@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive } from '../src/archive/gsarc';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
-import { lanaiValidateAll } from '../src/lanai/mapedit';
+import { lanaiEditState, lanaiValidateAll } from '../src/lanai/mapedit';
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { buildStageScripts, checkStageScript } from '../src/lanai/stageScript';
@@ -88,6 +88,20 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const m2 = await lanaiMaps(s2, c2);
     const i2 = m2.map(info.hash)!;
     expect(m2.tileSource(i2, m2.doc(i2)).partsName).toBe('MapPartsRelic');
+  });
+
+  test('the open map hears of another tileset: its source is read again and the views are told', async () => {
+    const { info } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const heard: string[] = [];
+    st.on((what) => heard.push(what));
+    const all = await lanaiTilesets(s);
+    const row = maps.mapDataRow(info, maps.doc(info));
+    const next = all.find((t) => t.entry !== mapDataTileset(maps, row) && t.name === 'IceA')!;
+    await setLanaiTileset(s, maps, row, next);
+    expect(st.source!.partsName).toBe('MapPartsIceA');
+    expect(heard).toContain('map');
   });
 
   test('ROM stages keep their tileset', async () => {

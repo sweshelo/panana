@@ -19,7 +19,7 @@ import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
-import { LANAI_EMPTY_KIND, type LanaiEditState } from './mapedit';
+import { LANAI_EMPTY_KIND, sourceChanged, type LanaiEditState } from './mapedit';
 import {
   LANAI_LAYOUTS,
   LANAI_POINT_SECTIONS,
@@ -183,8 +183,7 @@ export class LanaiMapView {
     if (this.st.current?.hash !== this.info.hash || this.disposed) return;
     // an edit that switched the MapData (indoor tiles) needs the other tileset's models
     const src = this.source;
-    if (this.loadedFor && (src.mapData !== this.loadedFor.mapData || src.tileset !== this.loadedFor.tileset))
-      void this.loadTiles();
+    if (this.loadedFor && sourceChanged(this.loadedFor, src)) void this.loadTiles();
     if (what === 'doc' || what === 'selection' || what === 'map') this.sync3d();
     this.grid.draw();
     if (this.st.error) {
