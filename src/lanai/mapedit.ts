@@ -11,7 +11,7 @@ import { MapEditState, GRID, tileAt, type Issue, type Selection } from '../edito
 import type { AutoProfile } from '../editor/autotile';
 import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
-import { hex8, u32, w32 } from '../util/bytes';
+import { f32, hex8, u32, w32, wf32 } from '../util/bytes';
 import { LANAI_ACTION_GOAL_CHEST, LANAI_DESTINATION_ACTIONS } from './actions';
 import {
   LANAI_EVENT_SECTIONS,
@@ -41,6 +41,7 @@ import {
   LANAI_GOAL_CHEST,
   LANAI_REPAIR_FIELD,
   LANAI_REPAIR_POINT,
+  lanaiDoorOffset,
   lanaiObjectRef,
   lanaiRecordLook,
   type LanaiRecordModel,
@@ -258,7 +259,21 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
   override rotateRecord(rec: Rec, section: number, dir: 1 | -1): void {
     const o = LANAI_FACING_OFFSET[section];
     if (o === undefined) return;
-    rec.raw[o] = LANAI_ROT_CODEC.encode((turnOf(rec.raw[o]!) + dir + 4) & 3);
+    const was = rec.raw[o]!;
+    rec.raw[o] = LANAI_ROT_CODEC.encode((turnOf(was) + dir + 4) & 3);
+    // an exit whose offset points the way it faces (the doors and gates on the edge of their cell, mapObjects.ts
+    // lanaiDoorOffset) keeps it there: the offset turns with the record
+    if (section === 3) {
+      const L = LANAI_LAYOUTS[3]!;
+      const [ox, oy] = [f32(rec.raw, L.fxo!), f32(rec.raw, L.fyo!)];
+      const [ux, uy] = lanaiDoorOffset(was, 0);
+      const along = ox * ux + oy * uy;
+      if (along > 0 && Math.abs(ox * uy - oy * ux) < 1e-6) {
+        const [nx, ny] = lanaiDoorOffset(rec.raw[o]!, 0);
+        wf32(rec.raw, L.fxo!, nx * along);
+        wf32(rec.raw, L.fyo!, ny * along);
+      }
+    }
   }
 
   /** A point ID (section 3 +0x00) no map of the content uses. */
@@ -288,6 +303,15 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       const tile = tileAt(doc, cx, cy);
       if (section === 3 && lanaiExitKind(raw) === LANAI_DOOR_KIND && tile?.kind === LANAI_DOORWAY_TILE)
         raw[0x14] = LANAI_DOOR_FACING[tile.rot & 3]!;
+      // a new door stands on the edge of its cell as the data's doors do (the record's offset; the game adds none)
+      if (section === 3 && lanaiExitKind(raw) === LANAI_DOOR_KIND) {
+        const L = LANAI_LAYOUTS[3]!;
+        if (!f32(raw, L.fxo!) && !f32(raw, L.fyo!)) {
+          const [ox, oy] = lanaiDoorOffset(raw[0x14]!, stamp.t.event?.look ?? 0);
+          wf32(raw, L.fxo!, ox);
+          wf32(raw, L.fyo!, oy);
+        }
+      }
       const ev = stamp.t.event;
       if (ev) {
         if (!this.info || !this.maps.eventTable(this.info.dungeon))

@@ -13,14 +13,16 @@ import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
 import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from '../editor/draw2d';
 import { GridCanvas } from '../editor/gridcanvas';
+import { partOf, type AutoProfile } from '../editor/autotile';
+import { drawTerrainMinimap } from '../editor/minimap';
 import { kindColor, SECTION_COLORS } from '../editor/legend';
 import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
 import { CELL, letterIndex, recCellPos, type MapDoc } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
-import { u32 } from '../util/bytes';
-import { LANAI_EMPTY_KIND, lanaiButtonDoor, sourceChanged, type LanaiEditState } from './mapedit';
+import { LANAI_EMPTY_KIND, sourceChanged, type LanaiEditState } from './mapedit';
+import { lanaiMapLinks, type LanaiMapLink } from './mapLinks';
 import {
   LANAI_LAYOUTS,
   LANAI_POINT_SECTIONS,
@@ -75,6 +77,10 @@ export class LanaiMapView {
   status = '';
   /** Draw the models of props and the other records (else markers only). */
   showModels = true;
+  /** Draw the connections of the records in 2D (mapLinks.ts: a button and its door, a warp and where it leads). */
+  showLinks = true;
+  /** How the 2D view draws the tiles: the editor's symbols, or as the game's minimap does (floor, walls, entrances). */
+  style2d: 'symbols' | 'minimap' = 'symbols';
   /** The last edit's error, shown in the status bar until the mouse moves. */
   errorMsg = '';
   /** Tile models of the map's tileset (the palette's thumbnails too). */
@@ -207,32 +213,15 @@ export class LanaiMapView {
     const st = this.st,
       layers = this.ctl.layers,
       sel = st.selection;
-    if (layers.tiles) drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
+    if (layers.tiles) {
+      if (this.style2d === 'minimap') drawLanaiMinimap(g, s, doc, st.mapTopology);
+      else drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
+    }
     if (layers.room) drawRoomCells(g, s, doc);
     const events = this.maps.eventTable(this.info.dungeon);
-    if (layers.sections[3] && layers.sections[5] && events) {
-      const doors = new Map((doc.recs[3] ?? []).map((r) => [u32(r.raw, 4), r]));
-      g.save();
-      g.strokeStyle = '#48cdd3';
-      g.fillStyle = '#14575d';
-      g.lineWidth = 2;
-      g.setLineDash([5, 4]);
-      g.font = '11px sans-serif';
-      for (const button of doc.recs[5] ?? []) {
-        if (![4, 5, 6].includes(u32(button.raw, 0))) continue;
-        const target = lanaiButtonDoor(this.maps, this.info.dungeon, u32(button.raw, 4));
-        const door = target === null ? null : doors.get(target);
-        if (!door) continue;
-        const [bx, by] = recCellPos(button, LANAI_LAYOUTS[5]!);
-        const [dx, dy] = recCellPos(door, LANAI_LAYOUTS[3]!);
-        g.beginPath();
-        g.moveTo(bx * s, by * s);
-        g.lineTo(dx * s, dy * s);
-        g.stroke();
-        g.fillText('このボタンで開く', ((bx + dx) / 2) * s + 4, ((by + dy) / 2) * s - 4);
-      }
-      g.restore();
-    }
+    if (this.showLinks)
+      for (const link of lanaiMapLinks(this.maps, this.info, doc))
+        if (layers.sections[link.from[0]] && layers.sections[link.to[0]]) drawLink(g, s, link);
     for (const k of [...LANAI_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
@@ -445,6 +434,90 @@ export class LanaiMapView {
     this.overlay.sync(doc, sel, layers.room);
     this.scene.draw();
   }
+}
+
+/**
+ * The tiles as the game's minimap shows them (kahara's "ミニマップ風", editor/minimap.ts): rooms, corridors, walls and
+ * entrances from the openings of the tiles (the automatic brush's profile). Maps the profile does not cover (indoor
+ * tiles) are drawn as one floor with walls where no tile is next to it.
+ */
+function drawLanaiMinimap(g: CanvasRenderingContext2D, s: number, doc: MapDoc, profile: AutoProfile | undefined): void {
+  if (profile) {
+    // tiles the profile has no part for are still floor: drawn plain, under the rest
+    g.fillStyle = '#345f9e';
+    for (const t of doc.tiles)
+      if (t.kind !== LANAI_EMPTY_KIND && !partOf(t, profile)) g.fillRect(t.x * s, t.y * s, s, s);
+    drawTerrainMinimap(g, s, doc.tiles, profile);
+    return;
+  }
+  const floor = doc.tiles.filter((t) => t.kind !== LANAI_EMPTY_KIND);
+  const has = new Set(floor.map((t) => `${t.x},${t.y}`));
+  g.fillStyle = '#3f7fd9';
+  for (const t of floor) g.fillRect(t.x * s, t.y * s, s, s);
+  g.strokeStyle = '#cfe3ff';
+  g.lineWidth = Math.max(1, Math.min(2, s * 0.06));
+  g.beginPath();
+  for (const t of floor)
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      if (has.has(`${t.x + dx},${t.y + dy}`)) continue;
+      const x0 = (t.x + (dx > 0 ? 1 : 0)) * s,
+        y0 = (t.y + (dy > 0 ? 1 : 0)) * s;
+      g.moveTo(x0, y0);
+      g.lineTo(x0 + (dy ? s : 0), y0 + (dx ? s : 0));
+    }
+  g.stroke();
+}
+
+const LINK_STYLE = {
+  button: { stroke: '#48cdd3', text: '#bdf3f6', dash: [5, 4], label: 'このボタンで開く' },
+  warp: { stroke: '#e58cff', text: '#f3d2ff', dash: [], label: '' },
+} as const;
+
+/**
+ * A connection of two records (mapLinks.ts): a dashed line from a button to its door, a line between two warps that
+ * lead to each other, an arrow from a warp to a destination that does not lead back.
+ */
+function drawLink(g: CanvasRenderingContext2D, s: number, link: LanaiMapLink): void {
+  const style = LINK_STYLE[link.type];
+  const [ax, ay] = [link.a[0] * s, link.a[1] * s],
+    [bx, by] = [link.b[0] * s, link.b[1] * s];
+  const len = Math.hypot(bx - ax, by - ay);
+  if (len < 1) return;
+  const [ux, uy] = [(bx - ax) / len, (by - ay) / len];
+  g.save();
+  g.strokeStyle = style.stroke;
+  g.fillStyle = style.stroke;
+  g.lineWidth = 2;
+  g.setLineDash(style.dash);
+  // an arrow stops at the edge of the destination's mark
+  const arrow = link.type === 'warp' && link.oneWay;
+  const head = Math.max(7, Math.min(14, s * 0.3)),
+    gap = arrow ? Math.min(len / 2, Math.max(3, s * 0.26)) : 0;
+  const [ex, ey] = [bx - ux * gap, by - uy * gap];
+  g.beginPath();
+  g.moveTo(ax, ay);
+  g.lineTo(arrow ? ex - ux * head * 0.8 : ex, arrow ? ey - uy * head * 0.8 : ey);
+  g.stroke();
+  if (arrow) {
+    g.setLineDash([]);
+    g.beginPath();
+    g.moveTo(ex, ey);
+    g.lineTo(ex - ux * head - uy * head * 0.5, ey - uy * head + ux * head * 0.5);
+    g.lineTo(ex - ux * head + uy * head * 0.5, ey - uy * head - ux * head * 0.5);
+    g.closePath();
+    g.fill();
+  }
+  if (style.label) {
+    g.font = '11px sans-serif';
+    g.fillStyle = style.text;
+    g.fillText(style.label, (ax + bx) / 2 + 4, (ay + by) / 2 - 4);
+  }
+  g.restore();
 }
 
 /** A range's hit shape (rangeShape.ts): filled lightly, dashed when walking does not hit it, brighter when selected. */

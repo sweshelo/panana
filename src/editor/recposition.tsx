@@ -3,7 +3,7 @@
 // offset shown below; the others by their integer units.
 import type { ReactNode } from 'react';
 import { recCellPos, type Rec, type RecordLayout } from '../game/sections';
-import { f32 } from '../util/bytes';
+import { f32, wf32 } from '../util/bytes';
 import { NumberInput } from '../ui/book';
 import type { MapEditState } from './model';
 import { freeIn, placeRec } from './snap';
@@ -43,13 +43,35 @@ export function RecPositionFields({ st, rec, L }: { st: MapEditState; rec: Rec; 
       </label>
     </div>
   );
-  if (!freeIn(L))
+  if (!freeIn(L)) {
+    // whole cells with f32 offsets (RPG FREE!'s exits): the offsets are edited as they are, from the cell's centre
+    const offsets = L.fxo !== undefined && L.fyo !== undefined && L.fxo + 4 <= L.size && L.fyo + 4 <= L.size;
+    const offset = (label: string, o: number): ReactNode => (
+      <label className="field">
+        <span>{label}</span>
+        <NumberInput
+          value={Number(f32(rec.raw, o).toFixed(3))}
+          min={-30}
+          max={30}
+          step={0.01}
+          title="マスの中心からのずれ (1 = 1/5 マス)。扉は向いている辺へ 1 (モデルによって 1.46) ずらすと、マスの端に立ちます"
+          onCommit={(v) => st.edit(() => wf32(rec.raw, o, v))}
+        />
+      </label>
+    );
     return (
       <>
         {ints}
+        {offsets && (
+          <div className="row">
+            {offset('x のずれ (1/5 マス)', L.fxo!)}
+            {offset('y のずれ', L.fyo!)}
+          </div>
+        )}
         <p className="muted small">{`セル (${cx.toFixed(2)}, ${cy.toFixed(2)})`}</p>
       </>
     );
+  }
   const dx = f32(rec.raw, L.fxo!),
     dy = f32(rec.raw, L.fyo!);
   const off = (d: number): string => (d ? ` ${d > 0 ? '+' : '−'} ずれ ${Math.abs(d).toFixed(2)}` : '');

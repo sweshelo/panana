@@ -398,6 +398,34 @@ function MapDetail({
                   checked={view.showModels}
                   set={(v) => (view.showModels = v)}
                 />
+                <LayerBox
+                  view={view}
+                  label="つながり (ボタンと扉・ワープの行き先)"
+                  checked={view.showLinks}
+                  set={(v) => (view.showLinks = v)}
+                  color="#e58cff"
+                />
+                <h3>2D</h3>
+                <div className="seg">
+                  {(
+                    [
+                      ['symbols', '記号'],
+                      ['minimap', 'ミニマップ風'],
+                    ] as const
+                  ).map(([style, label]) => (
+                    <button
+                      key={style}
+                      type="button"
+                      className={view.style2d === style ? 'active' : ''}
+                      onClick={() => {
+                        view.style2d = style;
+                        view.refresh();
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </MapLayers>
             </MapSettings>
           </>
