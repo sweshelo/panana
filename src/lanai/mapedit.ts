@@ -429,14 +429,16 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
                         ? 'スクリプト付きの扉'
                         : '扉（既存の動作を複製）'
               : k === 3 && kind === 4 && action === 0x80000012
-                ? 'ワープホール（場所を移動）'
-                : k === 5 && [4, 5, 6].includes(kind)
-                  ? '既存のスイッチ（元マップの動作を複製）'
-                  : k === 4
-                    ? goal
-                      ? 'クリア宝箱'
-                      : '通常の宝箱'
-                    : lanaiRecLabel(k, r.raw);
+                ? 'ワープゲート'
+                : k === 3 && kind === 2 && action === 0x80000014
+                  ? 'ワープホール'
+                  : k === 5 && [4, 5, 6].includes(kind)
+                    ? '既存のスイッチ（元マップの動作を複製）'
+                    : k === 4
+                      ? goal
+                        ? 'クリア宝箱'
+                        : '通常の宝箱'
+                      : lanaiRecLabel(k, r.raw);
           out.set(key, {
             section: k,
             raw: r.raw.slice(),

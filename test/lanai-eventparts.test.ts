@@ -122,6 +122,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
       [3, LANAI_DOOR_KIND],
       [3, LANAI_DOOR_KIND],
       [3, 4],
+      [3, 2],
       [3, 5],
       [3, 6],
       [4, 0],
@@ -136,6 +137,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     expect(parts[3]!.event.chara).toEqual({ kind: 1, model: 7 });
     expect(parts[4]!.event.action).toBe(LANAI_ACTION_EXTERNAL_DOOR);
     expect(parts[6]!.event.action).toBe(0x80000012);
+    expect(parts[7]!.event.action).toBe(0x80000014);
   });
 
   test('what the look is a row of', () => {

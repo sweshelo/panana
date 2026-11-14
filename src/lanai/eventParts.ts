@@ -208,7 +208,8 @@ export function lanaiEventParts(
   });
   for (const [kind, label, action, source] of [
     [LANAI_DOOR_KIND, '場所を移動する扉', 0x80000016, '新規移動扉'],
-    [4, 'ワープホール（場所を移動）', 0x80000012, '新規ワープホール'],
+    [4, 'ワープゲート', 0x80000012, '新規ワープゲート'],
+    [2, 'ワープホール', 0x80000014, '新規ワープホール'],
     [5, '上り階段', 0x80000013, '新規上り階段'],
     [6, '下り階段', 0x80000013, '新規下り階段'],
   ] as const) {
@@ -220,16 +221,16 @@ export function lanaiEventParts(
       category: '扉・移動',
       event: {
         action,
-        look: kind === 4 ? warpLook : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
+        look: kind === 4 || kind === 2 ? warpLook : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
         destination: { map: 0, point: 0 },
       },
       model:
-        kind === 4 && warpLook
+        (kind === 4 || kind === 2) && warpLook
           ? { type: 'object', row: warpLook }
           : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53)
             ? { type: 'object', row: 53 }
             : null,
-      iconLabel: kind === 4 && !warpLook ? '◉' : undefined,
+      iconLabel: (kind === 4 || kind === 2) && !warpLook ? '◉' : undefined,
     });
   }
   for (const goal of [false, true]) {

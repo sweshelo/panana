@@ -101,9 +101,9 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
 export const LANAI_EXIT_KIND: Record<number, string> = {
-  2: 'ワープ',
+  2: 'ワープホール',
   3: 'クリアのワープ',
-  4: 'ワープホール',
+  4: 'ワープゲート',
   5: '上り階段',
   6: '下り階段',
   12: '扉',

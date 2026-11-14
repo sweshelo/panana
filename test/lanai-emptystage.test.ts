@@ -150,7 +150,7 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect(events.rows).toBe(before);
   });
 
-  test('a warp hole uses the ROM warp gate kind and stores its destination', () => {
+  test('a warp hole uses WarpCommon and stores its destination', () => {
     const { info, g } = start();
     const st = lanaiEditState(maps);
     st.open(info);
@@ -171,9 +171,9 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const hole = st.current!.recs[3]!.at(-1)!;
     const row = u32(hole.raw, 4);
     const events = maps.eventTable(info.dungeon)!;
-    expect(hole.raw[0x15]).toBe(4);
+    expect(hole.raw[0x15]).toBe(2);
     expect([events.u32(row, 0x10), events.u32(row, 0x14), events.u32(row, 0x18)]).toEqual([
-      0x80000012,
+      0x80000014,
       info.hash,
       g.firstPoint,
     ]);
@@ -183,6 +183,20 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const pending = u32(st.current!.recs[3]!.at(-1)!.raw, 4);
     expect([events.u32(pending, 0x14), events.u32(pending, 0x18)]).toEqual([0, 0]);
     expect(lanaiValidateAll(maps, info, st.current!).some((i) => i.key.startsWith('destination/'))).toBe(true);
+    st.undo();
+  });
+
+  test('a warp gate keeps the walking transfer action', () => {
+    const { info } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const template = st.templates().find((t) => t.source === '新規ワープゲート')!;
+    expect(template.model).toEqual({ type: 'object', row: 104 });
+    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: template }, 5.5, 5.5));
+    const gate = st.current!.recs[3]!.at(-1)!;
+    const row = u32(gate.raw, 4);
+    expect(gate.raw[0x15]).toBe(4);
+    expect(maps.eventTable(info.dungeon)!.u32(row, 0x10)).toBe(0x80000012);
     st.undo();
   });
 

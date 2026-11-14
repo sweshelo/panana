@@ -248,13 +248,17 @@ export class LanaiMapView {
         g.beginPath();
         if (k === 3) {
           const kind = lanaiExitKind(r.raw);
-          if (kind === 2 || kind === 4) {
+          if (kind === 2) {
             g.fillStyle = '#15465a';
             g.strokeStyle = selected ? '#fff' : '#48cdd3';
             g.lineWidth = Math.max(2, rad * 0.3);
             g.arc(x, y, rad, 0, Math.PI * 2);
           } else if (kind === 100) g.rect(x - rad, y - rad * 0.4, rad * 2, rad * 0.8);
           else {
+            if (kind === 4) {
+              g.fillStyle = '#15465a';
+              g.strokeStyle = selected ? '#fff' : '#48cdd3';
+            }
             g.moveTo(x, y - rad);
             g.lineTo(x + rad, y);
             g.lineTo(x, y + rad);
