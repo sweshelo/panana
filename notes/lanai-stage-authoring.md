@@ -101,7 +101,8 @@ named exports は +0xD0 / +0xD4、segment table は +0xC8 / +0xCC。名前のオ
 - 書ける文は `scriptDoc.ts` の `SCRIPT_WORDS`。ゲームの Script API は `ScriptSound.Play(0x84, 0)` や `hero.SetVisible(0)` の形で名前で呼べる (`scriptApiTable.ts`。lanai-custom-stages の `3ds/research/script-api-table.ts` が書く生成物なので手で編集しない)。
 - 例は `SCRIPT_SAMPLES` (ボタンを押したら扉が開く / モンスターと会話し、戦闘に移る)。
 - 戦闘は `battle(群れの行番号)` でイベントが終わり、勝つとマップの始まりからやり直しになる。続きは「マップが始まるとき」の関数に書く。
-- 未対応: 扉・宝箱のきっかけ、1 体ごとの撃破、リッチエディタ (ハイライト・補完・折りたたみ)。
+- 関数の本文のエディタは CodeMirror 6 (`ScriptCodeEditor.tsx` が `scriptCodeMirror.ts` を動的に読む。読めるまでとテストでは textarea)。色・補完・エラーの場所・台詞の本文・折りたたみの元は `scriptAssist.ts` で、コンパイラと同じ表 (`SCRIPT_RESERVED`・`SCRIPT_WORDS`・`scriptApiTable.ts`) を読む。語を足すときは `SCRIPT_WORDS` に足せばエディタにも出る。補完: 文の名前、`クラス.` の後の関数、変数、`talk(` の中で台詞 (本文で探すと行 ID が入る)、`chara(` などの中でレコード。
+- 未対応: 扉・宝箱のきっかけ、1 体ごとの撃破。
 
 ### イベントを持つものの配置・範囲の当たり判定・battle() (2026-11-14)
 

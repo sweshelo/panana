@@ -20,6 +20,8 @@ import { lanaiMaps, type LanaiMaps } from './maps';
 import { lanaiMonsterName } from './monsterBook';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
+import { lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
+import { ScriptCodeEditor } from './ScriptCodeEditor';
 import {
   docBound,
   docUnbound,
@@ -30,7 +32,7 @@ import {
   type ScriptSample,
 } from './scriptDoc';
 import type { LanaiSession } from './session';
-import { checkStageScript, type StageScriptCheck } from './stageScript';
+import { checkStageScript, eventRecords, recordTrigger, type StageScriptCheck } from './stageScript';
 
 export { STAGE_SCRIPT_EXAMPLE } from './scriptDoc';
 
@@ -74,8 +76,6 @@ const freshName = (stem: string, taken: string[]): string => {
 const bindingLabel = (b: ScriptBinding): string =>
   `MapGroup ${b.group}${triggerHasRow(b.trigger) ? ` のイベント ${b.row}` : ''} (${SCRIPT_TRIGGER_LABEL[b.trigger]})`;
 
-const lineIdText = (id: number): string => `0x${id.toString(16).toUpperCase()}`;
-
 /** The lines of a group's talk table: the ID the script names each by (the row ID without its high bit) and its text. */
 export function talkLines(
   session: LanaiSession,
@@ -118,6 +118,84 @@ function BodyLines({
         );
       })}
     </ul>
+  );
+}
+
+const SECTION_LABEL: Record<number, string> = { 3: '扉', 5: 'キャラ・物', 8: '範囲' };
+/** The events of a group's records, as the editor offers them where a statement names an event's row. */
+function recordChoices(maps: LanaiMaps, group: number): ScriptAssist['records'] {
+  return [...eventRecords(maps, group)]
+    .sort(([a], [b]) => a - b)
+    .map(([row, recs]) => ({
+      row,
+      label: [
+        ...new Set(
+          recs.map((r) => {
+            const t = recordTrigger(r);
+            return `${SECTION_LABEL[r.section] ?? `区画 ${r.section}`}${r.section === 5 ? ` 種類 ${r.kind}` : ''}${t ? ` (${SCRIPT_TRIGGER_LABEL[t]})` : ''}`;
+          }),
+        ),
+      ].join('、'),
+    }));
+}
+
+/** A function's text in the editor, with what the editor is told of the stage and where the text is wrong. */
+function FunctionText({
+  session,
+  maps,
+  group,
+  revision,
+  vars,
+  name,
+  body,
+  applyError,
+  onChange,
+}: {
+  session: LanaiSession;
+  maps: LanaiMaps | null;
+  /** The MapGroup whose lines and records are offered: the one the function is given to, or the first. */
+  group: number | undefined;
+  revision: number;
+  vars: ScriptDoc['vars'];
+  name: string;
+  body: string;
+  /** What applying the script said of this function, shown while the text itself is not found wrong. */
+  applyError: string | null;
+  onChange: (body: string) => void;
+}): ReactNode {
+  const lines = useMemo(
+    () => (maps && group !== undefined ? (talkLines(session, maps, group) ?? []) : []),
+    // the lines are read again when something of the session changes
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [session, maps, group, revision],
+  );
+  const records = useMemo(
+    () => (maps && group !== undefined ? recordChoices(maps, group) : []),
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+    [maps, group, revision],
+  );
+  const varNames = vars.map((v) => v.name).join(' ');
+  const assist = useMemo<ScriptAssist>(
+    () => ({ vars: varNames ? varNames.split(' ') : [], lines, records }),
+    [varNames, lines, records],
+  );
+  const problem = useMemo(() => scriptFunctionProblem(vars, body), [vars, body]);
+  const problems = useMemo(() => (problem ? [{ ...problem, severity: 'error' as const }] : []), [problem]);
+  return (
+    <>
+      <ScriptCodeEditor
+        label={`関数 ${name} の本文`}
+        value={body}
+        onChange={onChange}
+        assist={assist}
+        problems={problems}
+      />
+      {problem ? (
+        <div className="error small">{`${problem.line} 行目: ${problem.message}`}</div>
+      ) : (
+        applyError && <div className="error">{applyError}</div>
+      )}
+    </>
   );
 }
 
@@ -411,16 +489,17 @@ export function LanaiStageScriptEditor({
               </button>
               {!isScriptName(f.name) && <span className="error small">名前にできません</span>}
             </div>
-            <textarea
-              aria-label={`関数 ${f.name} の本文`}
-              className="mono"
-              rows={Math.min(30, Math.max(4, f.body.split('\n').length + 1))}
-              style={{ width: '100%' }}
-              spellCheck={false}
-              value={f.body}
-              onChange={(e) => setFn(f.id, { body: e.target.value })}
+            <FunctionText
+              session={session}
+              maps={maps}
+              group={given[0]?.group ?? groups[0]}
+              revision={revision}
+              vars={draft.vars}
+              name={f.name}
+              body={f.body}
+              applyError={error?.fn === f.name ? error.message : null}
+              onChange={(body) => setFn(f.id, { body })}
             />
-            {error?.fn === f.name && <div className="error">{error.message}</div>}
             {maps && groups.length > 0 && (
               <BodyLines session={session} maps={maps} group={given[0]?.group ?? groups[0]!} body={f.body} />
             )}
