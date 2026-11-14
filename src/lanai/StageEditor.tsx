@@ -460,7 +460,7 @@ export function LanaiEmptyStageCreator({
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
-    <Dialog title="空のステージを追加" onClose={onClose}>
+    <Dialog title="新しいステージ" onClose={onClose}>
       <p>
         {`何もないステージを新しいコンテンツ番号で追加します。コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT} (未使用の「あみだクジ（仮）」) の 3×3 の部屋に、ゲームと同じ形の門 (開始地点) と、門から歩いて入る入場の演出を付けます。`}
       </p>

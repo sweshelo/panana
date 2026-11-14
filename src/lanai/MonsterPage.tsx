@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
 import { ModelTextures } from '../ui/ModelTextures';
+import { replaceLanaiMonsterTexture } from './textures';
 import { ModelView } from '../ui/ModelView';
 import { PortLookButton } from '../ui/PortLook';
 import { MonsterList } from '../ui/MonsterList';
@@ -461,7 +462,11 @@ function MonsterModel({
   return (
     <div>
       <ModelView model={model} name={m.name || 'monster'} />
-      <ModelTextures model={model} />
+      <ModelTextures
+        model={model}
+        replace={(name, image) => replaceLanaiMonsterTexture(session, m.row, name, image)}
+        replaceInfo="画像を読み込み、このモンスター専用のテクスチャにします"
+      />
       <div className="row">
         <PortLookButton target="lanai" row={m.row} onDone={edited} />
       </div>

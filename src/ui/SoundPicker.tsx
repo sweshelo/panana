@@ -88,7 +88,14 @@ export function SoundPicker({
   // RPG2's BGMs can also come from another opened game (ui/BgmPort.tsx)
   const ws = useWorkspace();
   const kahara = ws?.opened.kahara?.session;
-  const portable = !!ws && !!kahara && !!field && game === kahara.game && openedKeys(ws.opened).length > 1;
+  const lanai = ws?.opened.lanai;
+  const portTarget = lanai && game === lanai ? 'lanai' : 'kahara';
+  const portSession = portTarget === 'lanai' ? lanai : kahara;
+  const portable =
+    !!ws &&
+    !!portSession &&
+    (portTarget === 'lanai' || (!!field && game === kahara?.game)) &&
+    openedKeys(ws.opened).length > 1;
   const [tab, setTab] = useState<'own' | 'port'>('own');
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
@@ -177,10 +184,12 @@ export function SoundPicker({
         <div className="picker-list">
           <BgmPortTab
             opened={ws.opened}
-            session={kahara}
+            session={portSession}
+            target={portTarget}
+            max={max}
             query={query}
             onPicked={(r) => {
-              const v = field.value(r);
+              const v = field ? field.value(r) : r <= max ? r : null;
               if (v !== null) onPick(v);
             }}
           />

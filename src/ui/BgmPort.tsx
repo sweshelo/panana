@@ -8,6 +8,8 @@ import type { Session } from '../session';
 import { soundPlayer, usePlayer } from '../sound/player';
 import { useAsync } from './useAsync';
 import type { Opened } from './workspace';
+import type { LanaiSession } from '../lanai/session';
+import { portLanaiBgm } from '../lanai/bgm';
 
 const BGM_SECONDS = 300;
 
@@ -40,17 +42,24 @@ export function BgmPortTab({
   session,
   query,
   onPicked,
+  target = 'kahara',
+  max = 0xffffffff,
 }: {
   opened: Opened;
   /** RPG2's session. */
-  session: Session;
+  session: Session | LanaiSession;
+  target?: 'kahara' | 'lanai';
+  max?: number;
   /** The picker's filter (name). */
   query: string;
   /** The soundData row that plays the ported BGM. */
   onPicked: (row: number) => void;
 }): ReactNode {
-  const list = useAsync(() => bgmCandidates(opened), [opened]);
-  const ported = useAsync(() => portedRows(session), [session]);
+  const list = useAsync(() => bgmCandidates(opened, target), [opened, target]);
+  const ported = useAsync(
+    () => (target === 'kahara' ? portedRows(session as Session) : Promise.resolve(new Map<string, number>())),
+    [session, target],
+  );
   const [busy, setBusy] = useState<BgmCandidate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,8 +79,11 @@ export function BgmPortTab({
     setBusy(c);
     setError(null);
     try {
-      const row = await portBgm(opened, session, c);
-      session.scheduleSave();
+      const row =
+        target === 'lanai'
+          ? await portLanaiBgm(opened, session as LanaiSession, c, max)
+          : await portBgm(opened, session as Session, c);
+      if (target === 'kahara') (session as Session).scheduleSave();
       onPicked(row);
     } catch (err) {
       setError((err as Error).message);
@@ -85,7 +97,9 @@ export function BgmPortTab({
   return (
     <>
       <p className="muted small">
-        {`開いているほかの作品の BGM・ME (ストリームの曲) です。選ぶと 電波人間のRPG2 の sound.bcsar に入れて soundData に行を足し、この欄に選びます。足した行は BGM の欄で 0x80〜 の値になり、書き出しにコードのパッチ「BGM の追加枠」が入ります (${BGM_EXT_SLOTS} 曲まで)。`}
+        {target === 'lanai'
+          ? '開いているほかの作品の曲を試聴できます。選ぶとこの作品へ追加し、この欄に設定します。移植した曲は変更の保存と MOD 書き出しに含まれます。'
+          : `開いているほかの作品の BGM・ME (ストリームの曲) です。選ぶと 電波人間のRPG2 の sound.bcsar に入れて soundData に行を足し、この欄に選びます。足した行は BGM の欄で 0x80〜 の値になり、書き出しにコードのパッチ「BGM の追加枠」が入ります (${BGM_EXT_SLOTS} 曲まで)。`}
       </p>
       {busy && <p className="muted small">{`${busy.name} を移植しています…`}</p>}
       {error && <p className="error small">{`移植できませんでした: ${error}`}</p>}

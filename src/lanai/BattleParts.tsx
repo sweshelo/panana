@@ -27,11 +27,13 @@ import type { LanaiMaps } from './maps';
 import { LANAI_MG_FIELD, LANAI_MG_FLAGS } from './monsterGroup';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
+import { useLanaiRevision } from './MonsterEditor';
 
 const MAX_SOUND = 0xffff;
 
 function useSounds(session: LanaiSession): SoundNames | null {
-  const s = useAsync(() => session.sounds(), [session]);
+  const revision = useLanaiRevision(session);
+  const s = useAsync(() => session.sounds(), [session, revision]);
   return s instanceof Error || !s ? null : s;
 }
 

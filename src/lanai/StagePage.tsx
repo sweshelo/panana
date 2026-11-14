@@ -38,6 +38,7 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
   );
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [creatingEmpty, setCreatingEmpty] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   useActiveRow(list, index);
@@ -57,6 +58,11 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
   return (
     <div className="book">
       <div className="book-side">
+        <div className="row new-record">
+          <button className="primary" disabled={!session.canExport} onClick={() => setCreatingEmpty(true)}>
+            ＋ 新しいステージ
+          </button>
+        </div>
         <ListFilter
           query={query}
           setQuery={setQuery}
@@ -102,6 +108,7 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
       <div className="book-detail" ref={detail}>
         {c && <ContentDetail key={c.index} session={session} c={c} />}
       </div>
+      {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
     </div>
   );
 }
@@ -143,7 +150,6 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
   const [creating, setCreating] = useState(false);
-  const [creatingEmpty, setCreatingEmpty] = useState(false);
   const read = useAsync(() => readContent(session, c), [session, c]);
   return (
     <>
@@ -164,13 +170,6 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
           onClick={() => setCreating(true)}
         >
           ＋ コンテンツを複製して追加
-        </button>
-        <button
-          disabled={!session.canExport}
-          onClick={() => setCreatingEmpty(true)}
-          title="何もない部屋に門と入場の演出だけがあるステージを追加します"
-        >
-          ＋ 空のステージを追加
         </button>
         {session.createdFiles.has(c.archive) && <RemoveContentButton session={session} c={c} />}
       </div>
@@ -240,7 +239,6 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
         </table>
       )}
       {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
-      {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
       {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
       <h3>マップ</h3>
       <ContentMaps session={session} c={c} />

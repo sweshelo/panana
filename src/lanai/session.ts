@@ -26,7 +26,7 @@ import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
-import type { SoundNames } from '../game/sound';
+import { SoundNames, bcsarSoundNames } from '../game/sound';
 import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
@@ -122,6 +122,7 @@ export type LanaiSavedMapTable = [archive: string, bytes: Uint8Array];
 export type LanaiSavedEntry = [archive: string, hash: number, file: string, like: number, bytes: Uint8Array];
 
 export interface LanaiSaved {
+  soundFiles?: [string, Uint8Array][];
   createdFiles?: [string, Uint8Array][];
   conditionScripts?: [number, string][];
   /**
@@ -196,6 +197,7 @@ function addedRowSource(t: LanaiTable, after: Uint8Array): number | undefined {
 export const lanaiTableKey = (t: Pick<LanaiTableRef, 'archive' | 'entry'>): string => `${t.archive}/${hex8(t.entry)}`;
 
 export class LanaiSession {
+  readonly soundFiles = new Map<string, Uint8Array>();
   /** New archive/CRR files; the initial archive bytes are the baseline for subsequent table/map edits. */
   readonly createdFiles = new Map<string, Uint8Array>();
   readonly conditionScripts = new Map<number, string>();
@@ -507,6 +509,7 @@ export class LanaiSession {
   get changed(): boolean {
     return (
       this.createdFiles.size > 0 ||
+      this.soundFiles.size > 0 ||
       this.conditionScripts.size > 0 ||
       this.stageScripts.size > 0 ||
       this.layouts.size > 0 ||
@@ -530,6 +533,8 @@ export class LanaiSession {
     }
     for (const key of this.createdFiles.keys()) this.dropArchive(key);
     this.createdFiles.clear();
+    this.soundFiles.clear();
+    this.soundsChanged();
     this.conditionScripts.clear();
     this.stageScripts.clear();
     this.layouts.clear();
@@ -559,6 +564,7 @@ export class LanaiSession {
     ]);
     return {
       rows,
+      ...(this.soundFiles.size ? { soundFiles: [...this.soundFiles] } : {}),
       ...(this.createdFiles.size ? { createdFiles: [...this.createdFiles] } : {}),
       ...(this.conditionScripts.size ? { conditionScripts: [...this.conditionScripts] } : {}),
       ...(this.stageScripts.size
@@ -587,6 +593,8 @@ export class LanaiSession {
    * archives and the map sections, whose archives are read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
+    for (const [name, bytes] of saved.soundFiles ?? []) this.soundFiles.set(name, bytes);
+    this.soundsChanged();
     for (const [name, bytes] of saved.createdFiles ?? []) this.addFile(name, bytes);
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
     for (const [archive, key, script] of saved.stageScripts ?? []) {
@@ -727,6 +735,7 @@ export class LanaiSession {
       });
     }
     const files = new Map(this.createdFiles);
+    for (const [name, bytes] of this.soundFiles) files.set(name, bytes);
     for (const [name, { arc, m, added }] of repl) files.set(name, rebuildArchive(arc, m, added));
     const roots = [...this.createdFiles.keys()].filter((n) => /^[0-9A-F]{8}$/.test(n));
     if (roots.length) {
@@ -808,11 +817,28 @@ export class LanaiSession {
 
   private soundNames: Promise<SoundNames> | null = null;
 
+  soundsChanged(): void {
+    this.soundNames = null;
+    this.renderer = null;
+  }
+
+  private soundDump(): Dump {
+    return { ...this.dump, readRomfs: async (name) => this.soundFiles.get(name) ?? this.dump.readRomfs(name) };
+  }
+
   /** Names of the SoundData rows (+0x00 = sound.bcsar item ID, battle-field.md §5), from the Base's sound/sound.bcsar. */
   sounds(): Promise<SoundNames> {
     const t = this.need('SoundData');
+    const edited = this.soundFiles.get('sound/sound.bcsar');
+    if (edited)
+      return (this.soundNames ??= Promise.resolve(
+        new SoundNames(
+          Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
+          bcsarSoundNames(edited),
+        ),
+      ));
     return (this.soundNames ??= loadSoundNames(
-      this.dump,
+      this.soundDump(),
       'lanai/sound/names/v1',
       Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
     ));
@@ -822,7 +848,7 @@ export class LanaiSession {
 
   /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+    this.renderer ??= openSoundRenderer(this.soundDump()).catch((err: Error) => {
       this.renderer = null;
       throw err;
     });

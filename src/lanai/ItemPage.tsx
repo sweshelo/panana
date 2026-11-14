@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Count, EditedMark, ListFilter, TextBox, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
+import { ModelTextures } from '../ui/ModelTextures';
+import { replaceLanaiItemTexture } from './textures';
 import { Photo } from '../ui/Photo';
 import { PortItemButton } from '../ui/PortLook';
 import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
@@ -294,6 +296,11 @@ export function LanaiItemPage({ session, arg }: { session: LanaiSession; arg: st
                 )}
               </div>
               <ModelView model={lanaiItemRef(session, it)} name={it.name} />
+              <ModelTextures
+                model={lanaiItemRef(session, it)}
+                replace={(name, image) => replaceLanaiItemTexture(session, it.row, name, image)}
+                replaceInfo="画像を読み込み、このアイテム専用のテクスチャにします"
+              />
             </div>
             <div className="row">
               <CopyRemoveButtons
