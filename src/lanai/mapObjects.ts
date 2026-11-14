@@ -207,10 +207,12 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
               : 0);
       if (!row) return null;
       if (kind === LANAI_WALL_DOOR) return object(row, exitAngle(dir));
-      // stairs (FUN_00365294 of RPG3): inside ±90° from the direction and 50 towards it, outside by a table
+      // stairs (FUN_00365294 of RPG3): inside ±90° from the direction and 50 towards it, outside by a table. RPG FREE!
+      // turns the outside ones 90° counterclockwise from RPG3's table (seen in the game by the user, 2026-11-14: the
+      // preview had them 90° clockwise)
       if (stairs) {
         if (!ctx.indoor)
-          return object(row, (stairs === 1 ? [HALF, 0, 3 * HALF, Math.PI] : [3 * HALF, Math.PI, HALF, 0])[dir]!);
+          return object(row, (stairs === 1 ? [HALF, 0, 3 * HALF, Math.PI] : [3 * HALF, Math.PI, HALF, 0])[dir]! + HALF);
         const [x, z] = exitStep(dir);
         return { ...object(row, exitAngle(dir) + (stairs === 1 ? -HALF : HALF)), offset: [x * 50, z * 50] };
       }
