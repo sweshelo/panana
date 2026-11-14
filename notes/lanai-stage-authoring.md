@@ -104,6 +104,15 @@ named exports は +0xD0 / +0xD4、segment table は +0xC8 / +0xCC。名前のオ
 - 関数の本文のエディタは CodeMirror 6 (`ScriptCodeEditor.tsx` が `scriptCodeMirror.ts` を動的に読む。読めるまでとテストでは textarea)。色・補完・エラーの場所・台詞の本文・折りたたみの元は `scriptAssist.ts` で、コンパイラと同じ表 (`SCRIPT_RESERVED`・`SCRIPT_WORDS`・`scriptApiTable.ts`) を読む。語を足すときは `SCRIPT_WORDS` に足せばエディタにも出る。補完: 文の名前、`クラス.` の後の関数、変数、`talk(` の中で台詞 (本文で探すと行 ID が入る)、`chara(` などの中でレコード。
 - 未対応: 扉・宝箱のきっかけ、1 体ごとの撃破。
 
+### 入場の演出 `on intro(グループ)` (2026-11-14)
+
+コンテンツ 99 の空の CRO では、入場時のステージ名と「門の外から歩いて入り、門が閉まる」演出が欠ける。ROM の 106 クラス (`IntroCommon` 派生、CRO 28 `D01Intro` など) の定型をそのまま生成する。根拠は lanai-custom-stages の `3ds/research/stage-intro.md`。**ゲーム内では未確認** (ARM 実行器と実データの照合まで)。
+
+- `on intro(1) {}` (演出だけ) / `on intro(1) 関数` (演出のあと、仲間が隊列に戻る前に関数)。ステージのページの「ステージに入ったとき (入場の演出)」で MapGroup ごとに選ぶ。「コンテンツを複製して追加」で「イベントなし」を選ぶと、既定で開始の MapGroup に `on intro(…) {}` を付ける (チェックで外せる)。
+- 演出の形はデータから決まる (`groupOpening`、`stageScript.ts`): MapGroup の最初のマップ (+0x14) で `IntroCommon` を作り、開始地点 (+0x18) の出入口 (区画 3) のマスと向きで歩き込む (ROM の 91 / 91 件で、`GetActionBeforePos` のマスが開始地点の出入口と一致。向きは出入口の向きの逆: 1↔4、2↔8)。出入口が門 (種類 12) なら、そのイベント行の扉を読込時に開け (0x8000006E)、歩き込んだ後に閉める (音 0x7A、0x80000074)。開始地点が出入口でなければ、明るくしてステージ名だけ。
+- 1 回の訪問で 1 回: ステージの bit 変数の後ろに 1 つ bit を取り、CtrlFlag で立て、ステージを離れるとき (枠 27) に戻す (CRO 28 の bit 0xB1 と同じ)。マップを出入りしただけでは出ない。演出が出た回は同じグループの `start` は作られない (枠 3 は 1 つしか返せない。次のマップ開始から `start`)。
+- 試す: lanai-custom-stages の `bun web/tools/script-zip.ts --sample intro` (`stage-intro-28.zip`)。
+
 ### イベントを持つものの配置・範囲の当たり判定・battle() (2026-11-14)
 
 - **配置**: マップのページの「パーツを選ぶ」に「イベント (新しく置く)」を足した (`eventParts.ts`)。ボタン (区画 5 種類 4 / 6、EO +0x5A = MapObject 74〜76・83 / 699・71)、キャラ (区画 5 種類 0 / 1、EO +0x5A = コンテンツの MapChara の行)、範囲 (区画 8 の矩形・円) を、新しい EventObject 行 (行 0 の写し + 動作 1 = 2D + 見た目 + 自分の状態の枠) 付きで置く。これまでは同じ MapGroup のレコードの写ししか置けず、ボタンや範囲のないステージには置く手段がなかった。置物 (区画 2) はイベントを持たない。

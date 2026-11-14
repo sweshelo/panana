@@ -9,12 +9,14 @@ import { lanaiContents, type LanaiContent } from './contents';
 import { buildCro, parseCro } from './cro';
 import {
   compileStageScript,
+  INTRO_DIR,
   parseStageScript,
   STAGE_BIT_FLAGS,
   STAGE_BYTE_FLAGS,
   SCRIPT_TRIGGER_LABEL,
   stageScriptCrr,
   triggerHasRow,
+  type IntroSpec,
   type LeaveReset,
   type ScriptNode,
   type ScriptTrigger,
@@ -49,9 +51,58 @@ export interface StageScriptCheck {
   /** The flags set back to 0 when the stage is left besides the script's `reset` variables: the bosses of the data. */
   resets: LeaveReset[];
   owned: OwnedRange[];
+  /** The opening of each group with an intro event (read off the maps). */
+  intros: Record<number, IntroSpec>;
 }
 
 const inRange = (v: number, r: { first: number; count: number }): boolean => v >= r.first && v < r.first + r.count;
+
+/** The kind of a section 3 record (+0x15) that is a gate: its door opens and closes in the shipped openings. */
+const GATE_KIND = 12;
+
+/** Where a group's opening happens (stage-intro.md): its first map, and the gate of its start point if any. */
+export interface GroupOpening {
+  map: number;
+  mapName: string;
+  /** The start point's record of section 3 (null: the point is not one; the opening is the fade and the name). */
+  gate: IntroSpec['gate'];
+  /** What a person should know (the point has no record, the gate has no door …). */
+  note: string | null;
+}
+
+/**
+ * A group's opening as the shipped stages have it: IntroCommon is made with the group's first map, and its walk-in
+ * uses the tile and facing of the start point, a record of section 3 in that map (91 of 91 shipped intros); the door
+ * that closes is the record's EventObject row when the record is a gate (kind 12). null when the group has no first map.
+ */
+export function groupOpening(maps: LanaiMaps, group: number): GroupOpening | null {
+  const g = maps.groups[group];
+  const info = g && maps.map(g.firstMap);
+  if (!g || !info) return null;
+  const rec = (maps.doc(info).recs[3] ?? []).find((r) => u32at(r.raw, 0) === g.firstPoint);
+  if (!rec)
+    return {
+      map: info.hash,
+      mapName: info.name,
+      gate: null,
+      note: `開始地点が ${info.name} の出入口 (区画 3) ではないので、門から歩いて入る演出はなく、ステージ名だけ出します`,
+    };
+  const dir = INTRO_DIR[rec.raw[0x14] ?? 0];
+  if (!dir)
+    return {
+      map: info.hash,
+      mapName: info.name,
+      gate: null,
+      note: `開始地点の出入口の向き (${rec.raw[0x14]}) が分からないので、ステージ名だけ出します`,
+    };
+  const door = rec.raw[0x15] === GATE_KIND ? lanaiRecEventRow(3, rec.raw) : 0;
+  return {
+    map: info.hash,
+    mapName: info.name,
+    gate: { x: rec.x, z: rec.y, dir, door },
+    note: door ? null : '開始地点の出入口が門 (種類 12) ではないので、歩いて入りますが扉は閉まりません',
+  };
+}
 
 /** What a map's record is to the game's events: its section and (section 5) its kind. */
 export interface EventRecord {
@@ -154,6 +205,8 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
   const maps = await lanaiMaps(s, c);
   const problems: string[] = [],
     notes: string[] = [];
+  const intros: Record<number, IntroSpec> = {};
+  let introCount = 0;
   for (const e of script.events) {
     const what = e.fn
       ? `関数「${e.fn}」(MapGroup ${e.group}${triggerHasRow(e.trigger) ? ` のイベント ${e.row}` : ''}、${SCRIPT_TRIGGER_LABEL[e.trigger]})`
@@ -178,6 +231,18 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
         );
       else if (g === 0 || battleRow(mg, g) === 0)
         notes.push(`${what}: battle(${g}) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
+    }
+    if (e.trigger === 'intro') {
+      // one bit flag per intro after the script's bit variables: "played in this visit"
+      const opening = groupOpening(maps, e.group);
+      const flag = STAGE_BIT_FLAGS.first + script.vars.filter((v) => v.kind === 'bit').length + introCount++;
+      if (!opening) problems.push(`${what}: MapGroup ${e.group} の最初のマップがありません`);
+      else if (!inRange(flag, STAGE_BIT_FLAGS))
+        problems.push(`${what}: bit の変数が多すぎて入場の演出のフラグがとれません`);
+      else {
+        intros[e.group] = { map: opening.map, flag, gate: opening.gate };
+        if (opening.note) notes.push(`${what}: ${opening.note}`);
+      }
     }
     if (!triggerHasRow(e.trigger)) continue;
     const recs = records.get(e.row) ?? [];
@@ -216,7 +281,9 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
   const count = (kind: 'byte' | 'bit'): number => script.vars.filter((v) => v.kind === kind).length;
   const bytes = Math.max(count('byte'), ...resets.map((r) => r.flag - STAGE_BYTE_FLAGS.first + 1));
   if (bytes > 0) owned.push({ field: 'byte', first: STAGE_BYTE_FLAGS.first, count: bytes });
-  if (count('bit')) owned.push({ field: 'bit', first: STAGE_BIT_FLAGS.first, count: count('bit') });
+  // the intros' bits follow the bit variables
+  const bits = count('bit') + introCount;
+  if (bits) owned.push({ field: 'bit', first: STAGE_BIT_FLAGS.first, count: bits });
   const states = maps.groups
     .filter((g) => g && g.stateCount > 0)
     .map((g) => ({ first: g.stateFirst, count: g.stateCount }))
@@ -236,7 +303,7 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
     merged = [{ first, count: end - first }];
   }
   for (const r of merged) owned.push({ field: 'state', ...r });
-  return { script, problems, notes, resets, owned };
+  return { script, problems, notes, resets, owned, intros };
 }
 
 /** The contents that have a script, with it. */
@@ -264,7 +331,7 @@ export async function buildStageScripts(s: LanaiSession, files: Map<string, Uint
     const name = c.stages[0]?.name || `コンテンツ ${c.index}`;
     const check = await checkStageScript(s, c, source);
     if (check.problems.length) throw new Error(`「${name}」のイベントのスクリプト: ${check.problems[0]}`);
-    const cro = buildCro(compileStageScript(base, check.script, check.resets).cro);
+    const cro = buildCro(compileStageScript(base, check.script, check.resets, check.intros).cro);
     const bytes = files.get(c.archive) ?? s.createdFiles.get(c.archive);
     if (!bytes) throw new Error(`「${name}」のアーカイブ ${c.archive} が MOD にありません`);
     const arc = parseArchive(bytes);

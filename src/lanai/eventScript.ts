@@ -17,7 +17,9 @@
 //   on area(1, 1) { say(0x66); disable() }   // the event written in place: entering the range of row 1
 //
 // What starts an event (`on`): talk (a character), area (a range), button (a button stepped on), start (the map of a
-// group begins), defeat (the map's monsters are all beaten; the event is kept by a range's row). The editor keeps the
+// group begins), intro (the stage is entered: the game's opening — the party walks in through the start's gate, the
+// stage's name, the gate closes — then the body; once a visit), defeat (the map's monsters are all beaten; the event
+// is kept by a range's row). The editor keeps the
 // variables, the functions and what they are given to apart (ScriptDoc) and writes this text from them.
 //
 // The rows named by `on` must have the action type 0x8000002D (a script) in the data. Lines are row IDs of the group's
@@ -100,7 +102,7 @@ export type ScriptNode =
   | { op: 'break' }
   | { op: 'return' };
 
-export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'defeat'] as const;
+export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
 export const SCRIPT_TRIGGER_LABEL: Record<ScriptTrigger, string> = {
   talk: '話しかけたとき',
@@ -108,10 +110,11 @@ export const SCRIPT_TRIGGER_LABEL: Record<ScriptTrigger, string> = {
   button: 'ボタンを踏んだとき (降りると戻る)',
   switch: 'ボタンを踏んだとき (押したままになる)',
   start: 'マップが始まるとき',
+  intro: 'ステージに入ったとき (入場の演出)',
   defeat: 'モンスターを倒しきったとき',
 };
-/** Whether the trigger is of a row of the EventObject table (start is of the map group alone). */
-export const triggerHasRow = (t: ScriptTrigger): boolean => t !== 'start';
+/** Whether the trigger is of a row of the EventObject table (start and intro are of the map group alone). */
+export const triggerHasRow = (t: ScriptTrigger): boolean => t !== 'start' && t !== 'intro';
 
 export interface ScriptFunction {
   name: string;
@@ -669,7 +672,9 @@ export function parseStageScript(src: string): StageScript {
       if (triggerHasRow(trigger) && events.some((e) => triggerHasRow(e.trigger) && e.group === group && e.row === r))
         fail(`MapGroup ${group} のイベント ${r} には、もうイベントが割り当てられています`, trig);
       if (
-        events.some((e) => e.trigger === trigger && e.group === group && (trigger === 'start' || trigger === 'defeat'))
+        events.some(
+          (e) => e.trigger === trigger && e.group === group && (!triggerHasRow(trigger) || trigger === 'defeat'),
+        )
       )
         fail(`MapGroup ${group} の「${SCRIPT_TRIGGER_LABEL[trigger]}」は 1 つだけです`, trig);
       const event: ScriptEvent = { trigger, group, row: r, body: [], line: t.line, fn: null, from: 0, to: 0 };
@@ -706,15 +711,16 @@ export interface ScriptDoc {
 export interface ScriptBinding {
   trigger: ScriptTrigger;
   group: number;
-  /** The EventObject row (0 for start). */
+  /** The EventObject row (0 for start and intro). */
   row: number;
+  /** The function; '' for nothing after the game's part (intro alone: the opening without statements of its own). */
   fn: string;
 }
 export const emptyScriptDoc = (): ScriptDoc => ({ vars: [], functions: [], bindings: [] });
 export const scriptDocIsEmpty = (d: ScriptDoc): boolean => !d.vars.length && !d.functions.length && !d.bindings.length;
 
 const bindingText = (b: ScriptBinding): string =>
-  `on ${b.trigger}(${triggerHasRow(b.trigger) ? `${b.group}, ${b.row}` : b.group}) ${b.fn}`;
+  `on ${b.trigger}(${triggerHasRow(b.trigger) ? `${b.group}, ${b.row}` : b.group}) ${b.fn || '{}'}`;
 
 /** The script's text of a document, and the line each function's body begins at. */
 export function scriptDocSource(doc: ScriptDoc): {
@@ -801,7 +807,9 @@ export function scriptDocFromSource(src: string): ScriptDoc {
   const names = new Set([...s.vars.map((v) => v.name), ...s.functions.map((f) => f.name)]);
   for (const e of s.events) {
     let fn = e.fn;
-    if (!fn) {
+    // an intro with nothing of its own stays without a function (the game's opening alone)
+    if (!fn && e.trigger === 'intro' && !e.body.length && !src.slice(e.from, e.to).trim()) fn = '';
+    else if (!fn) {
       const stem = triggerHasRow(e.trigger) ? `${e.trigger}_${e.group}_${e.row}` : `${e.trigger}_${e.group}`;
       fn = stem;
       for (let k = 2; names.has(fn); k++) fn = `${stem}_${k}`;
@@ -844,6 +852,29 @@ export const SCRIPT_API = {
   tiEs: '_ZTI11EventScript',
   turnNpc: '_ZN13NpcCommonTurn7TurnNpcEv',
   turnHero: '_ZN9NpcCommon8TurnHeroEv',
+  // the stage's opening (CRO 28 D01Intro and its kin; lanai-custom-stages 3ds/research/stage-intro.md): IntroCommon's Execute calls vt+0x18 when
+  // the map is the one it was made with (+0x74), else fades in
+  introCtor: '_ZN11IntroCommonC2Ej',
+  introExec: '_ZN11IntroCommon7ExecuteEv',
+  introPos: '_ZN11IntroCommon18GetActionBeforePosEP5GSvecS1_iihffh',
+  tiIntro: '_ZTI11IntroCommon',
+  heroMsgD1: '_ZN13CommonHeroMsgD1Ev',
+  partyCollision: '_ZN9ScriptMap20EnablePartyCollisionEb',
+  removePop: '_ZN9ScriptMap19RemovePopMonsterAllEv',
+  partyPos: '_ZN9ScriptMap16SetPartyPositionERK5GSvechbf',
+  playerNum: '_ZN9ScriptMap12GetPlayerNumEv',
+  player: '_ZN9ScriptMap9GetPlayerEi',
+  denpaInvisible: '_ZN9ScriptMap17SetDenpaInvisibleEib',
+  vecCtor: '__aeabi_vec_ctor_nocookie_nodtor',
+  vecDtor: '__aeabi_vec_dtor',
+  playerNew: '_ZN12ScriptPlayerC1Ev',
+  playerSet: '_ZN12ScriptPlayer8SetCharaEP9ChrObject',
+  isFloat: '_ZN12ScriptPlayer7IsFloatEv',
+  autoAnim: '_ZN11ScriptChara16SetAutoAnimationEj',
+  viewActive: '_ZN11ScriptChara13SetViewActiveEb',
+  getPos: '_ZNK11ScriptChara6GetPosEv',
+  setPos: '_ZN11ScriptChara6SetPosERK5GSvec',
+  fadeInNow: '_ZN12ScriptSystem6FadeInEf9GSDisplay',
   anim: '_ZN11ScriptChara14StartAnimationEj10GSAnimTypeff',
   msg: '_ZN10ScriptMenu12StartMessageEjRK18ScriptMessageParamS2_13AppDialogTypebf',
   msgAuto: '_ZN10ScriptMenu16StartMessageAutoEjRK18ScriptMessageParamS2_13AppDialogTypebf',
@@ -921,8 +952,9 @@ const A = SCRIPT_API;
  *   button  GimmickPushButtonCommon (0x68, its ScriptChara at +0xC) and a byte at +0x68: "pressed in this run";
  *           switch: GimmickKeepPushButtonCommon (the same object; it is not lifted when stepped off)
  *   area / defeat / start   EventScript (0xC); start has the ID 0x1000000, the event of a floor's start
+ *   intro   IntroCommon (0x78: CommonHeroMsg with the ID 0x1000000, +0x74 the map it plays in); vt+0x18 is the event
  */
-type Shape = 'npc' | 'button' | 'plain';
+type Shape = 'npc' | 'button' | 'plain' | 'intro';
 const SHAPE: Record<ScriptTrigger, Shape> = {
   talk: 'npc',
   button: 'button',
@@ -930,10 +962,39 @@ const SHAPE: Record<ScriptTrigger, Shape> = {
   area: 'plain',
   defeat: 'plain',
   start: 'plain',
+  intro: 'intro',
 };
-const NEW_SIZE: Record<Shape, number> = { npc: 0x74, button: 0x6c, plain: 0xc };
+const NEW_SIZE: Record<Shape, number> = { npc: 0x74, button: 0x6c, plain: 0xc, intro: 0x78 };
 const BUTTON_PRESSED = 0x68;
 const START_EVENT_ID = 0x1000000;
+
+/**
+ * The opening of a map group (stage-intro.md): the map IntroCommon is made with (the group's first map: elsewhere it
+ * only fades in), the bit flag that keeps it to once a visit (set by CtrlFlag, cleared when the stage is left), and
+ * the gate of the group's start point (a record of section 3) when there is one: its tile, the way the party walks
+ * in (GetActionBeforePos: 1 = +z, 2 = +x, 4 = −z, 8 = −x; the opposite of the record's facing) and the EventObject
+ * row of the gate's door (0: no door to close). No gate: the screen fades in and the stage's name is shown.
+ */
+export interface IntroSpec {
+  map: number;
+  flag: number;
+  gate: { x: number; z: number; dir: 1 | 2 | 4 | 8; door: number } | null;
+}
+/** The party's animations of the walk in: standing, walking, floating (ScriptPlayer::IsFloat). */
+const INTRO_FLOAT = 0x80000026;
+/** The gate's door: open (when the opening's object is made), closing (after the party is in); its sound. */
+const DOOR_OPEN = 0x8000006e,
+  DOOR_CLOSE = 0x80000074,
+  DOOR_SOUND = 0x7a;
+/** IntroCommon::GetActionBeforePos's direction from a section 3 record's facing (+0x14) (91 of 91 shipped intros). */
+export const INTRO_DIR: Record<number, 1 | 2 | 4 | 8> = { 1: 4, 4: 1, 2: 8, 8: 2 };
+/**
+ * Execute's frame of an intro: FRAME, then the party (ScriptPlayer[8], 0x50 each, alive through the event as in
+ * D01Intro) and the two points GetActionBeforePos gives (where the party is put, where it walks to).
+ */
+const INTRO_FRAME = { players: 0xb0, from: 0x330, to: 0x33c, size: 0x348 } as const;
+const PLAYER_SIZE = 0x50,
+  PLAYERS = 8;
 /** The animations of a character that talks: its mouth moves while the line is shown (script-abi.md §1). */
 const ANIM_TALK = 0x80000079,
   ANIM_WAIT = 0x80000075;
@@ -1634,19 +1695,187 @@ export interface StageScriptBuild {
   resets: LeaveReset[];
 }
 
+/** r7 = &players[r6] (ScriptPlayer, 0x50 each, from INTRO_FRAME.players). */
+const introPlayerAt = (x: Fn): void =>
+  x.op('add r7, r6, r6, lsl #2', 'add r7, sp, r7, lsl #4', `add r7, r7, #${hx(INTRO_FRAME.players)}`);
+
+/**
+ * The game's part of an intro before the body (stage-intro.md; CRO 28 D01Intro vt+0x18 `E98`, CRO 1 `2034`): with a
+ * gate, the party is put outside it, the followers hidden, the screen fades in, the stage's name is shown, the leader
+ * walks in and the door closes behind; without, the fade and the name (S01Intro). The party's ScriptPlayer[8] stays
+ * alive to introAfter. Uses r6 / r7 (free outside talk events).
+ */
+function introBefore(x: Fn, g: Gen, cls: string, intro: IntroSpec): void {
+  const F = INTRO_FRAME;
+  const gate = intro.gate;
+  if (!gate) {
+    fmov(x, 's0', 0.3);
+    x.load('r0', FADE_DISPLAY);
+    x.call(A.fadeIn);
+    fmov(x, 's0', 0.7);
+    x.call(A.waitTime);
+    x.call(A.stageName);
+    fmov(x, 's0', 0.5);
+    x.call(A.waitTime);
+    return;
+  }
+  // GetActionBeforePos(this, &from, &to, x, z, [sp] z, [sp+4] dir, s0 0, s1 0, [sp+8] 0)
+  x.load('r1', gate.z);
+  x.op('str r1, [sp]');
+  x.load('r1', gate.dir);
+  x.op('str r1, [sp, #4]', 'str r5, [sp, #8]', 'mov r0, r4', `add r1, sp, #${hx(F.from)}`, `add r2, sp, #${hx(F.to)}`);
+  x.load('r3', gate.x);
+  x.op('vmov.f32 s0, s16', 'vmov.f32 s1, s16');
+  x.call(A.introPos);
+  x.op('mov r0, #0');
+  x.call(A.formation);
+  x.op('mov r0, #0');
+  x.call(A.partyCollision);
+  x.call(A.removePop);
+  // SetPartyPosition(from, 4, true, 100.0)
+  fmov(x, 's0', 100);
+  x.op(`add r0, sp, #${hx(F.from)}`, 'mov r1, #4', 'mov r2, #1');
+  x.call(A.partyPos);
+  x.op(`add r0, sp, #${hx(F.players)}`, `ldr r1, ${x.lit({ kind: 'imp', name: A.playerNew, addend: 0 })}`);
+  x.load('r2', PLAYER_SIZE);
+  x.load('r3', PLAYERS);
+  x.call(A.vecCtor);
+  // every member stands; the followers are hidden until the leader is in
+  const each = g.uniq(`${cls}_party`),
+    lead = g.uniq(`${cls}_lead`),
+    shown = g.uniq(`${cls}_shown`);
+  x.op('mov r6, #0');
+  x.at(each);
+  x.call(A.playerNum);
+  x.op('cmp r0, r6', `bls ${shown}`, 'mov r0, r6');
+  x.call(A.player);
+  x.op('mov r1, r0');
+  introPlayerAt(x);
+  x.op('mov r0, r7');
+  x.call(A.playerSet);
+  x.load('r1', PLAYER_WAIT);
+  x.op('mov r0, r7', 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
+  x.call(A.playerAnim);
+  x.load('r1', PLAYER_WAIT);
+  x.op('mov r0, r7');
+  x.call(A.autoAnim);
+  x.op('cmp r6, #0', `beq ${lead}`, 'mov r0, r7', 'mov r1, #0');
+  x.call(A.setVisible);
+  x.op('mov r0, r7', 'mov r1, #0');
+  x.call(A.viewActive);
+  x.op('mov r0, r6', 'mov r1, #1');
+  x.call(A.denpaInvisible);
+  x.at(lead);
+  x.op('add r6, r6, #1', `b ${each}`);
+  x.flush(false);
+  x.at(shown);
+  // FadeIn(0.3, 2); WaitTime(0.7); ShowStageName(); WaitTime(0.5)
+  fmov(x, 's0', 0.3);
+  x.load('r0', FADE_DISPLAY);
+  x.call(A.fadeInNow);
+  fmov(x, 's0', 0.7);
+  x.call(A.waitTime);
+  x.call(A.stageName);
+  fmov(x, 's0', 0.5);
+  x.call(A.waitTime);
+  // the leader walks (floats) in: StartAnimation(IsFloat() ? 0x80000026 : 0x80000003); MoveTo(to, 0, 0, 0, 0, 0)
+  const walk = g.uniq(`${cls}_walk`);
+  x.op(`add r0, sp, #${hx(F.players)}`);
+  x.call(A.isFloat);
+  x.op('cmp r0, #0');
+  x.load('r1', PLAYER_WALK);
+  x.op(`beq ${walk}`);
+  x.load('r1', INTRO_FLOAT);
+  x.at(walk);
+  x.op(`add r0, sp, #${hx(F.players)}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
+  x.call(A.playerAnim);
+  x.op(
+    'str r5, [sp]',
+    `add r0, sp, #${hx(F.players)}`,
+    `add r1, sp, #${hx(F.to)}`,
+    'mov r2, #0',
+    'mov r3, #0',
+    'vmov.f32 s0, s16',
+    'vmov.f32 s1, s16',
+  );
+  x.call(A.moveTo);
+  if (gate.door) {
+    // WaitTime(1.3); Play(0x7A); the door closes (0x80000074)
+    fmov(x, 's0', 1.3);
+    x.call(A.waitTime);
+    x.op('vmov.f32 s0, s16');
+    x.load('r0', DOOR_SOUND);
+    x.call(A.play);
+    x.load('r0', gate.door);
+    x.call(A.mapChara);
+    x.op('mov r1, r0', `add r0, sp, #${hx(FRAME.obj)}`);
+    x.call(A.charaCtor);
+    x.load('r1', DOOR_CLOSE);
+    x.op(`add r0, sp, #${hx(FRAME.obj)}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
+    x.call(A.anim);
+    x.op(`add r0, sp, #${hx(FRAME.obj)}`);
+    x.call(A.charaDtor);
+  }
+  x.op(`add r0, sp, #${hx(F.players)}`);
+  x.call(A.waitNode);
+  x.load('r1', PLAYER_WAIT);
+  x.op(`add r0, sp, #${hx(F.players)}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
+  x.call(A.playerAnim);
+}
+
+/** The game's part of an intro after the body: the followers to the leader, the formation and collision back on. */
+function introAfter(x: Fn, g: Gen, cls: string): void {
+  const F = INTRO_FRAME;
+  const each = g.uniq(`${cls}_follow`),
+    done = g.uniq(`${cls}_followed`);
+  x.op('mov r6, #1');
+  x.at(each);
+  x.call(A.playerNum);
+  x.op('cmp r0, r6', `bls ${done}`, `add r0, sp, #${hx(F.players)}`);
+  x.call(A.getPos);
+  x.op('mov r1, r0');
+  introPlayerAt(x);
+  x.op('mov r0, r7');
+  x.call(A.setPos);
+  x.op('add r6, r6, #1', `b ${each}`);
+  x.flush(false);
+  x.at(done);
+  x.op('mov r0, #1');
+  x.call(A.formation);
+  x.op('mov r0, #1');
+  x.call(A.partyCollision);
+  x.op(`add r0, sp, #${hx(F.players)}`, `ldr r1, ${x.lit({ kind: 'imp', name: A.playerDtor, addend: 0 })}`);
+  x.load('r2', PLAYER_SIZE);
+  x.load('r3', PLAYERS);
+  x.call(A.vecDtor);
+}
+
 /**
  * The script's events laid into a CRO that has none (content 99's): text = the CRO's + stubs + functions, rodata = the
  * CRO's + type infos + vtables + names; the exports 0 / 3 / 4 / 8 make the event of a row (3: of the map group), 24
  * starts the event of "all monsters beaten", 27 sets the flags to reset back to 0.
  * `resets`: flags to set back besides the script's `reset` variables (the boss flags of the data).
+ * `intros`: the opening of each map group that has an intro event (by group; stageScript.ts reads it off the maps).
  */
-export function compileStageScript(base: Cro, script: StageScript, resets: LeaveReset[] = []): StageScriptBuild {
+export function compileStageScript(
+  base: Cro,
+  script: StageScript,
+  resets: LeaveReset[] = [],
+  intros: Record<number, IntroSpec> = {},
+): StageScriptBuild {
   const g = new Gen();
   const vars = new Map(script.vars.map((v) => [v.name, v]));
-  const events = script.events.map((e, k) => ({ ...e, cls: `PnEvent${k}`, shape: SHAPE[e.trigger] }));
+  const events = script.events.map((e, k) => ({
+    ...e,
+    cls: `PnEvent${k}`,
+    shape: SHAPE[e.trigger],
+    intro: e.trigger === 'intro' ? intros[e.group] : undefined,
+  }));
   for (const e of events) {
     const p = eventProblem(e.trigger, e.body);
     if (p) throw new ScriptError(p, e.line);
+    if (e.trigger === 'intro' && (!e.intro || !e.intro.map))
+      throw new ScriptError(`MapGroup ${e.group} の入場の演出: 最初のマップが分かりません`, e.line);
   }
   // ---- rodata first: its offsets go into the code as relocations
   const ro0 = base.segments[CRO_RODATA]!.bytes ?? new Uint8Array(0);
@@ -1661,7 +1890,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
   };
   ro.zero = put({ kind: 'value', value: 0 });
   // type info: {__si_class_type_info's vtable + 8, name, the base's type info}
-  const TI_BASE: Record<Shape, string> = { npc: A.tiNpcTurn, button: A.tiButton, plain: A.tiEs };
+  const TI_BASE: Record<Shape, string> = { npc: A.tiNpcTurn, button: A.tiButton, plain: A.tiEs, intro: A.tiIntro };
   const nameAt: number[] = [];
   for (const e of events) {
     ro[`${e.cls}_ti`] = put({ kind: 'imp', name: A.siVt, addend: 8 });
@@ -1676,10 +1905,14 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     put({ kind: 'text', label: `${e.cls}_d1` });
     put({ kind: 'text', label: `${e.cls}_d0` });
     put({ kind: 'text', label: 'pn_prepare' });
-    put({ kind: 'text', label: `${e.cls}_exec` });
+    // an intro keeps IntroCommon's Execute (the map check) and has the event at +0x18 (D01Intro)
+    if (e.shape === 'intro') put({ kind: 'imp', name: A.introExec, addend: 0 });
+    else put({ kind: 'text', label: `${e.cls}_exec` });
     // after Execute: the game's (the row's state goes on), the button's, "done" for the event of the beaten monsters
-    // (it must not start again), nothing for the map's start (it has no row; S01Intro of content 4 has its own too)
-    if (e.trigger === 'start') put({ kind: 'text', label: 'pn_prepare' });
+    // (it must not start again), nothing for the map's start (it has no row; S01Intro of content 4 has its own too),
+    // "played in this visit" for the intro (D01Intro's CtrlFlag: SetScriptBitFlag(0xB1, 1))
+    if (e.shape === 'intro') put({ kind: 'text', label: `${e.cls}_ctrl` });
+    else if (e.trigger === 'start') put({ kind: 'text', label: 'pn_prepare' });
     else if (e.trigger === 'defeat') put({ kind: 'text', label: 'pn_done' });
     else put({ kind: 'imp', name: e.shape === 'button' ? A.buttonCtrl : A.ctrl, addend: 0 });
     if (e.trigger === 'switch') put({ kind: 'imp', name: A.keepMenu, addend: 0 });
@@ -1688,6 +1921,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
       put({ kind: 'imp', name: A.waitAnim, addend: 0 });
       put({ kind: 'imp', name: A.walkAnim, addend: 0 });
     }
+    if (e.shape === 'intro') put({ kind: 'text', label: `${e.cls}_exec` });
   }
   const nameBytes: number[] = [];
   events.forEach((e, k) => {
@@ -1723,6 +1957,8 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
   const allResets: LeaveReset[] = [
     ...script.vars.filter((v) => v.reset).map((v) => ({ kind: v.kind, flag: v.flag })),
     ...resets,
+    // the intro plays again on the next visit (export 27 of CRO 28 clears D01Intro's bit 0xB1)
+    ...events.flatMap((e) => (e.intro ? [{ kind: 'bit' as const, flag: e.intro.flag }] : [])),
   ].filter((r, k, a) => a.findIndex((x) => x.kind === r.kind && x.flag === r.flag) === k);
   if (allResets.length) {
     const f = new Fn(g, `slot_${SLOT_LEAVE}`);
@@ -1739,9 +1975,13 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
 
   // one function per export: it finds the event of (map group, row) and makes its object, or returns 0
   const makers = (slot: number, triggers: ScriptTrigger[]): void => {
-    const own = events.filter((e) => triggers.includes(e.trigger));
+    // a group's intro comes before its start: the first match is made (CRO 28's export 3: the intro while its bit is
+    // clear, then the other events of the map's start)
+    const own = events
+      .filter((e) => triggers.includes(e.trigger))
+      .sort((a, b) => Number(b.shape === 'intro') - Number(a.shape === 'intro'));
     if (!own.length) return;
-    const shape = own[0]!.shape;
+    const shape = own[0]!.shape === 'intro' ? 'plain' : own[0]!.shape;
     const byGroup = triggers.includes('start');
     const f = new Fn(g, `slot_${slot}`);
     const ret = g.uniq(`slot_${slot}_ret`);
@@ -1764,6 +2004,23 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     for (const e of own) {
       f.flush(false);
       f.at(`${e.cls}_make`);
+      if (e.intro) {
+        // played in this visit: the group's start (if it has one) or nothing
+        const after = own.find((x) => x.trigger === 'start' && x.group === e.group);
+        f.load('r0', e.intro.flag);
+        f.call(A.getBit);
+        f.op('tst r0, #0xff', 'movne r0, #0', `bne ${after ? `${after.cls}_make` : ret}`);
+        f.load('r0', NEW_SIZE.intro);
+        f.call(A.new);
+        f.op('cmp r0, #0', `beq ${ret}`);
+        f.load('r1', e.intro.map);
+        f.call(A.introCtor);
+        f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]');
+        // the gate's door stands open until the party is in (D01Intro's factory: StartAnimation(0x8000006E))
+        if (e.intro.gate?.door) f.op('mov r4, r0', `bl ${e.cls}_open`, 'mov r0, r4');
+        f.op(`b ${ret}`);
+        continue;
+      }
       f.load('r0', NEW_SIZE[shape]);
       f.call(A.new);
       f.op('cmp r0, #0', `beq ${ret}`);
@@ -1796,7 +2053,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     fns.push(f);
   };
   makers(SLOT_AREA, ['area', 'defeat']);
-  makers(SLOT_START, ['start']);
+  makers(SLOT_START, ['start', 'intro']);
   makers(SLOT_BUTTON, ['button', 'switch']);
   makers(SLOT_TALK, ['talk']);
 
@@ -1834,10 +2091,11 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     const x = new Fn(g, `${e.cls}_exec`);
     const exit = g.uniq(`${e.cls}_exit`);
     const camera = usesCamera(e.body);
+    const frame = e.intro ? INTRO_FRAME.size : FRAME.size;
     x.op(
       'push {r4, r5, r6, r7, r8, lr}',
       'vpush {d8, d9}',
-      `sub sp, sp, #${hx(FRAME.size)}`,
+      `sub sp, sp, #${hx(frame)}`,
       'mov r4, r0',
       'mov r5, #0',
       'mov r8, #0',
@@ -1875,7 +2133,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
       fmov(x, 's0', 0.3);
       x.load('r0', FADE_DISPLAY);
       x.call(A.fadeIn);
-    }
+    } else if (e.intro) introBefore(x, g, e.cls, e.intro);
     compileNodes({ fn: x, g, trigger: e.trigger, vars, exit, breakTo: null }, e.body);
     x.at(exit);
     if (camera) {
@@ -1886,12 +2144,42 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
       x.call(A.camResume);
       x.at(free);
     }
-    x.op(`add sp, sp, #${hx(FRAME.size)}`, 'vpop {d8, d9}', 'pop {r4, r5, r6, r7, r8, pc}');
+    if (e.intro?.gate) introAfter(x, g, e.cls);
+    x.op(`add sp, sp, #${hx(frame)}`, 'vpop {d8, d9}', 'pop {r4, r5, r6, r7, r8, pc}');
     fns.push(x);
 
     const d1 = new Fn(g, `${e.cls}_d1`),
       d0 = new Fn(g, `${e.cls}_d0`);
-    if (e.shape !== 'plain') {
+    if (e.intro) {
+      // IntroCommon's own: CommonHeroMsg's destructor (it puts its vtable back), then delete (0x1A0648 / 0x1A0658)
+      d1.tail(A.heroMsgD1);
+      d0.op('push {r4, lr}');
+      d0.call(A.heroMsgD1);
+      d0.op('pop {r4, lr}');
+      d0.tail(A.del);
+      // CtrlFlag: played in this visit
+      const ctrl = new Fn(g, `${e.cls}_ctrl`);
+      ctrl.load('r0', e.intro.flag);
+      ctrl.op('mov r1, #1');
+      ctrl.tail(A.setBit);
+      fns.push(ctrl);
+      if (e.intro.gate?.door) {
+        // the door stands open: ScriptChara(GetMapChara(door)).StartAnimation(0x8000006E, 0, 1.0, 0.0)
+        const open = new Fn(g, `${e.cls}_open`);
+        open.op('push {r4, lr}', `sub sp, sp, #${hx(PLAYER_SIZE)}`);
+        open.load('r0', e.intro.gate.door);
+        open.call(A.mapChara);
+        open.op('mov r1, r0', 'mov r0, sp');
+        open.call(A.charaCtor);
+        open.load('r1', DOOR_OPEN);
+        open.op('mov r0, sp', 'mov r2, #0', `vldr s0, ${open.flit(F1)}`, `vldr s1, ${open.flit(F0)}`);
+        open.call(A.anim);
+        open.op('mov r0, sp');
+        open.call(A.charaDtor);
+        open.op(`add sp, sp, #${hx(PLAYER_SIZE)}`, 'pop {r4, pc}');
+        fns.push(open);
+      }
+    } else if (e.shape !== 'plain') {
       // vtable = the base's, ~ScriptChara(this + 0xC), (delete): as the shipped classes of NpcCommonTurn and of
       // GimmickPushButtonCommon (CRO 18)
       const ztv = { kind: 'imp' as const, name: e.shape === 'npc' ? A.npcCommonVt : A.buttonVt, addend: 8 };

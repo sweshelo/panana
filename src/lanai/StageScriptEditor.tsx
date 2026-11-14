@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { talkMessageOffset } from './actions';
 import type { LanaiContent } from './contents';
 import {
+  emptyScriptDoc,
   isScriptName,
   scriptDocFromSource,
   ScriptDocError,
@@ -28,11 +29,12 @@ import {
   SCRIPT_SAMPLES,
   SCRIPT_WORDS,
   scriptLineRefs,
+  introBinding,
   startBinding,
   type ScriptSample,
 } from './scriptDoc';
 import type { LanaiSession } from './session';
-import { checkStageScript, eventRecords, recordTrigger, type StageScriptCheck } from './stageScript';
+import { checkStageScript, eventRecords, groupOpening, recordTrigger, type StageScriptCheck } from './stageScript';
 
 export { STAGE_SCRIPT_EXAMPLE } from './scriptDoc';
 
@@ -573,6 +575,58 @@ export function LanaiStageScriptEditor({
       {error && error.fn === null && <div className="error">{error.message}</div>}
       {error && error.fn !== null && !draft.functions.some((f) => f.name === error.fn) && (
         <div className="error">{error.message}</div>
+      )}
+
+      {maps && groups.length > 0 && (
+        <>
+          <h4>ステージに入ったとき (入場の演出)</h4>
+          {groups.map((g) => {
+            const doc = stored?.doc ?? emptyScriptDoc();
+            const cur = introBinding(doc, g);
+            const opening = groupOpening(maps, g);
+            const off = { trigger: 'intro' as const, group: g, row: 0 };
+            return (
+              <div key={g}>
+                <label className="field">
+                  <span>{`MapGroup ${g}`}</span>
+                  <select
+                    aria-label={`MapGroup ${g} の入場の演出`}
+                    value={cur ? `fn:${cur.fn}` : 'none'}
+                    disabled={!opening}
+                    onChange={(e) =>
+                      setDoc(
+                        e.target.value === 'none'
+                          ? docUnbound(doc, off)
+                          : docBound(doc, { ...off, fn: e.target.value.slice(3) }),
+                      )
+                    }
+                  >
+                    <option value="none">なし (演出なし。画面は明るくなるだけ)</option>
+                    <option value="fn:">ゲームと同じ演出だけ</option>
+                    {appliedFns.map((f) => (
+                      <option key={f.name} value={`fn:${f.name}`}>
+                        {`演出のあとに ${f.name}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="muted small">
+                  {!opening
+                    ? 'このグループには最初のマップがありません'
+                    : opening.gate
+                      ? `${opening.mapName} の開始地点 (${opening.gate.x}, ${opening.gate.z}) の外から歩いて入り、ステージ名を出し${opening.gate.door ? `、門 (イベント ${opening.gate.door}) が閉まります` : 'ます'}。`
+                      : `${opening.mapName} で画面を明るくしてステージ名を出します。`}
+                  {opening?.note ? ` ${opening.note}` : ''}
+                </p>
+              </div>
+            );
+          })}
+          <p className="muted small">
+            ステージに入って最初のマップが読まれたとき、1 回の訪問で 1 回だけ実行されます (ゲームの D01Intro
+            と同じ)。関数は演出のあと、仲間が隊列に戻る前に実行されます
+            (主人公のひとりごとなど)。演出が出た回は下の「マップが始まるとき」は実行されません。
+          </p>
+        </>
       )}
 
       {stored && groups.length > 0 && (

@@ -389,6 +389,7 @@ export function LanaiContentCreator({
 }): ReactNode {
   const [title, setTitle] = useState('新しいステージ'),
     [script, setScript] = useState<NonNullable<LanaiCloneOptions['script']>>('copy'),
+    [intro, setIntro] = useState(true),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
@@ -408,6 +409,13 @@ export function LanaiContentCreator({
           <input type="radio" checked={script === 'empty'} onChange={() => setScript('empty')} />
           {`イベントなし (コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT} の空の CRO を使います。マップ・宝箱・出入口・クリアは表のデータで動きます。CRO に書かれた会話やギミックは動きません)`}
         </label>
+        {script === 'empty' && (
+          <label>
+            <input type="checkbox" checked={intro} onChange={(e) => setIntro(e.target.checked)} />
+            入場の演出を付ける
+            (ゲームと同じく、開始地点の門の外から歩いて入り、ステージ名を出して門が閉まります。門が無ければステージ名だけ。あとでスクリプトの画面で外せます)
+          </label>
+        )}
       </fieldset>
       <p className="muted small">
         実験機能です。元の CRO
@@ -424,7 +432,7 @@ export function LanaiContentCreator({
         onClick={async () => {
           setBusy(true);
           try {
-            const index = await cloneLanaiContent(session, content, title, { script });
+            const index = await cloneLanaiContent(session, content, title, { script, intro });
             location.hash = `#/stages/${index}`;
             onClose();
           } catch (e) {

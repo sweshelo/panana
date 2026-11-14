@@ -121,6 +121,11 @@ export interface LanaiCloneOptions {
    * tables still work, the events written in the CRO do not.
    */
   script?: 'copy' | 'empty';
+  /**
+   * With 'empty': give the start group the game's opening (an `intro` event: the party walks in through the start's
+   * gate, the stage's name, the gate closes; stage-intro.md). On unless false.
+   */
+  intro?: boolean;
 }
 
 /** A content starts as an editable copy of the source, including its original native CRO. No script decompilation. */
@@ -213,6 +218,10 @@ export async function cloneLanaiContent(
     }
   const cr = contents.addRow(source.index);
   contents.setU32(cr, 0, hash);
+  // the game's opening on the start group (an event script with `on intro(group) {}`), as the shipped stages have
+  const group = integration.u16(row, 0x46);
+  if (options.script === 'empty' && options.intro !== false && group > 0)
+    s.setStageScriptDoc(archive, { vars: [], functions: [], bindings: [{ trigger: 'intro', group, row: 0, fn: '' }] });
   s.edited();
   return index;
 }

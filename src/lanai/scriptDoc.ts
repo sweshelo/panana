@@ -19,6 +19,9 @@ export const rowBinding = (doc: ScriptDoc, group: number, row: number): ScriptBi
 /** The function given to a group's start, if any. */
 export const startBinding = (doc: ScriptDoc, group: number): ScriptBinding | undefined =>
   doc.bindings.find((b) => b.trigger === 'start' && b.group === group);
+/** A group's opening (intro), if it has one: its function, or '' for the game's part alone. */
+export const introBinding = (doc: ScriptDoc, group: number): ScriptBinding | undefined =>
+  doc.bindings.find((b) => b.trigger === 'intro' && b.group === group);
 
 /** The document with a function given to a target (in place of what the target had). */
 export function docBound(doc: ScriptDoc, b: ScriptBinding): ScriptDoc {
