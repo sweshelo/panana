@@ -17,6 +17,7 @@ import {
   type ScriptDoc,
 } from './eventScript';
 import { lanaiMaps, type LanaiMaps } from './maps';
+import { lanaiMonsterName } from './monsterBook';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
 import {
@@ -156,6 +157,45 @@ function TalkLines({ session, maps, group }: { session: LanaiSession; maps: Lana
     </details>
   );
 }
+
+/** The content's MonsterGroup by row number: what battle() takes (not the row ID). */
+function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMaps }): ReactNode {
+  const groups = useMemo(() => maps.monsterGroups(), [maps]);
+  const mp = session.table('MonsterParameter');
+  if (!groups.length) return <p className="muted small">MonsterGroup の表がありません (battle() は使えません)。</p>;
+  const name = (id: number): string => {
+    const r = mp?.find(id) ?? -1;
+    return r < 0 ? hexId(id) : lanaiMonsterName(session, r);
+  };
+  return (
+    <details>
+      <summary className="small">{`モンスターの群れ (MonsterGroup、${groups.length} 行): battle() に書く行番号`}</summary>
+      <table className="book-table">
+        <thead>
+          <tr>
+            <th>battle(行番号)</th>
+            <th>行 ID</th>
+            <th>モンスター</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((g) => (
+            <tr key={g.row}>
+              <td className="mono">{`battle(${g.row})`}</td>
+              <td className="mono small">{hexId(g.id)}</td>
+              <td className="small">{[...new Set(g.monsters)].map(name).join('、') || '(空)'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">
+        行 ID (マップのページ・群れのページで出る 0x800000NN) は行番号と同じとは限りません。battle()
+        には左の行番号を書きます。
+      </p>
+    </details>
+  );
+}
+const hexId = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
 
 /** The Script API functions a script can call by name, searched by a part of the name. */
 function ScriptApiList(): ReactNode {
@@ -388,9 +428,37 @@ export function LanaiStageScriptEditor({
               {given.length
                 ? `割り当て: ${given.map(bindingLabel).join('、')}`
                 : f.was
-                  ? '割り当てなし (マップのページで、レコードの「スクリプトの関数」から選びます)'
+                  ? '割り当てなし (キャラ・範囲・ボタンにはマップのページでレコードの「スクリプトの関数」から、マップが始まるときには下のチェックで割り当てます)'
                   : '未反映 (反映すると割り当てられます)'}
             </p>
+            {stored && f.was && f.was === f.name && groups.length > 0 && (
+              <div className="row">
+                {groups.map((g) => {
+                  const cur = startBinding(stored.doc, g);
+                  return (
+                    <label
+                      key={g}
+                      className="layer"
+                      title="戦闘から戻ったときにも実行されます (battle() の続きはここに書きます)"
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`関数 ${f.name} を MapGroup ${g} が始まるときに実行する`}
+                        checked={cur?.fn === f.was}
+                        onChange={(e) =>
+                          setDoc(
+                            e.target.checked
+                              ? docBound(stored.doc, { trigger: 'start', group: g, row: 0, fn: f.was! })
+                              : docUnbound(stored.doc, { trigger: 'start', group: g, row: 0 }),
+                          )
+                        }
+                      />
+                      {`MapGroup ${g} が始まるとき (戦闘のあとも)${cur && cur.fn !== f.was ? ` ※いまは ${cur.fn}` : ''}`}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}
@@ -430,7 +498,7 @@ export function LanaiStageScriptEditor({
 
       {stored && groups.length > 0 && (
         <>
-          <h4>マップが始まるとき</h4>
+          <h4>マップが始まるとき (戦闘のあとも)</h4>
           {groups.map((g) => (
             <label key={g} className="field">
               <span>{`MapGroup ${g}`}</span>
@@ -508,6 +576,7 @@ export function LanaiStageScriptEditor({
         </p>
       </details>
       <ScriptApiList />
+      {maps && <BattleGroups session={session} maps={maps} />}
       {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} />)}
     </>
   );

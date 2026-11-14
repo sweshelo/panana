@@ -87,7 +87,12 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'addItem(ID, 個数)', 'アイテムを増やす (負の数で減らす)'),
   w('statement', 'getItem(ID, 個数)', 'アイテムを増やし、「手に入れた」の文を出す'),
   w('statement', 'addGold(金額)', 'お金を増やす (負の数で減らす)'),
-  w('statement', 'openDoor(イベント)', '「外から開ける扉」(動作の型 17) を開ける'),
+  w(
+    'statement',
+    'openDoor(イベント)',
+    '「外から開ける扉」(動作の型 17) を、本家と同じ演出で開ける: カメラを扉へ → 解錠の音 → 開く音と扉のアニメ。続けて書いた扉は順に開け、最後にギミックの音を鳴らしてカメラを戻す',
+  ),
+  w('statement', 'openDoorNow(イベント)', '扉を演出なしで開ける (当たり判定と状態だけ。見た目は開かない)'),
   w('statement', 'closeDoor(イベント)', '扉を閉める'),
   w('statement', 'disable()', '範囲のイベントで: この範囲をもう働かなくする'),
   w('statement', 'collision(イベント, 0 / 1)', '範囲を働かなくする / 働くようにする'),
@@ -95,7 +100,7 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'statement',
     'battle(群れ)',
-    'モンスターの群れ (MonsterGroup の行) と戦う。イベントはここで終わり、勝つとマップの始まりからやり直しになる',
+    'モンスターの群れと戦う。群れは MonsterGroup の行番号 (行 ID ではない。編集画面下の「モンスターの群れ」の一覧)。イベントはここで終わり、勝つとマップの始まりからやり直しになる',
   ),
   w('statement', 'stageName()', 'ステージの名前を出す (マップが始まるときのイベント用)'),
   w('value', 'item(ID)', 'アイテムの個数'),
@@ -148,16 +153,12 @@ export const SCRIPT_SAMPLES: ScriptSample[] = [
   {
     name: 'ボタンを押したら扉が開く',
     about:
-      'ボタン (区画 5 の種類 4〜6) を踏むと、扉までカメラを向けて開けます。扉は「外から開ける扉」(動作の型 17) にして、イベント番号を 3 のところに書きます。',
-    give: ['open_door → ボタンのレコード (ボタンを踏んだとき)'],
+      'ボタン (区画 5 の種類 4〜6) を踏むと、扉を開けます (カメラ・解錠の音・扉のアニメは openDoor がする)。扉は「外から開ける扉」(動作の型 17) にして、イベント番号を 3 のところに書きます。2 つ以上の扉は openDoor を続けて書くと順に開きます。',
+    give: ['open_door → ボタンのレコード (ボタンを踏んだとき (押したままになる))'],
     source: `function open_door() {
   // 3 = 扉のイベント番号
   follow(0)
-  camera(chara(3), 1.3)
-  se(0x8D)
   openDoor(3)
-  wait(1)
-  cameraBack(1.1)
   follow(1)
 }
 `,
@@ -177,7 +178,7 @@ function boss_talk() {
   if (ask(0x11)) {
     popup(self, 11); se(0x84)
     BOSS = 2          // 2 = 戦いを始めた (勝てばそのまま、負ければ reset で 0)
-    battle(5)         // 5 = モンスターの群れ。ここでイベントは終わる
+    battle(5)         // 5 = MonsterGroup の行番号 (行 ID ではない)。ここでイベントは終わる
   } else {
     talk(0x12)
   }

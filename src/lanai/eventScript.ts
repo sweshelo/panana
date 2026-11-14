@@ -87,7 +87,10 @@ export type ScriptNode =
   | { op: 'se'; id: number }
   | { op: 'addItem'; item: number; count: number; show: boolean }
   | { op: 'addGold'; amount: number }
-  | { op: 'door'; row: number; open: boolean }
+  /** A door opened or closed; `show`: opened as the game shows it (expandDoors). */
+  | { op: 'door'; row: number; open: boolean; show?: boolean }
+  /** The BGM paused (fading out) or played again. */
+  | { op: 'bgm'; pause: boolean; seconds: number }
   | { op: 'wait'; seconds: number }
   | { op: 'collision'; row: number | null; on: boolean }
   | { op: 'remove'; row: number }
@@ -97,12 +100,13 @@ export type ScriptNode =
   | { op: 'break' }
   | { op: 'return' };
 
-export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'start', 'defeat'] as const;
+export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
 export const SCRIPT_TRIGGER_LABEL: Record<ScriptTrigger, string> = {
   talk: '話しかけたとき',
   area: '範囲に入ったとき',
-  button: 'ボタンを踏んだとき',
+  button: 'ボタンを踏んだとき (降りると戻る)',
+  switch: 'ボタンを踏んだとき (押したままになる)',
   start: 'マップが始まるとき',
   defeat: 'モンスターを倒しきったとき',
 };
@@ -214,10 +218,10 @@ export const isScriptName = (s: string): boolean => /^[A-Za-z_]\w*$/u.test(s) &&
 
 /** What a body cannot do under a trigger (the object the game makes for it has no such thing), or null. */
 export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string | null {
-  const own = trigger === 'talk' || trigger === 'button';
+  const own = trigger === 'talk' || trigger === 'button' || trigger === 'switch';
   const who = (w: ScriptWho | null): string | null =>
     w && w.kind === 'self' && !own
-      ? `self (イベントの持ち主) は「${SCRIPT_TRIGGER_LABEL.talk}」「${SCRIPT_TRIGGER_LABEL.button}」のイベントでだけ使えます。chara(イベント番号) で指してください`
+      ? `self (イベントの持ち主) は「${SCRIPT_TRIGGER_LABEL.talk}」・ボタンのイベントでだけ使えます。chara(イベント番号) で指してください`
       : null;
   const called = (c: ScriptCall): string | null =>
     c.args.reduce<string | null>((p, a) => p ?? (a.k === 'c' || a.k === 'p' ? who(a.who) : null), who(c.self));
@@ -588,8 +592,14 @@ export function parseStageScript(src: string): StageScript {
       case 'addGold':
         return { op: 'addGold', amount: call(t.s, () => int('お金', -99999999, 99999999))[0] };
       case 'openDoor':
+      case 'openDoorNow':
       case 'closeDoor':
-        return { op: 'door', row: call(t.s, () => row('扉のイベント番号'))[0], open: t.s === 'openDoor' };
+        return {
+          op: 'door',
+          row: call(t.s, () => row('扉のイベント番号'))[0],
+          open: t.s !== 'closeDoor',
+          ...(t.s === 'openDoor' ? { show: true } : {}),
+        };
       case 'wait':
         return { op: 'wait', seconds: call(t.s, () => seconds('wait ', true))[0] };
       case 'disable':
@@ -870,6 +880,8 @@ export const SCRIPT_API = {
   setVisible: '_ZN11ScriptChara10SetVisibleEb',
   gsvecZero: 'GSVEC_ZERO',
   play: '_ZN11ScriptSound4PlayEtf',
+  pauseBgm: '_ZN11ScriptSound8PauseBGMEf',
+  replayBgm: '_ZN11ScriptSound9ReplayBGMEf',
   collision: '_ZN9ScriptMap20EnableEventCollisionEjb',
   deleteObject: '_ZN9ScriptMap17DeleteEventObjectEj',
   formation: '_ZN9ScriptMap18SetUpdateFormationEb',
@@ -893,19 +905,28 @@ export const SCRIPT_API = {
   buttonIsPush: '_ZN23GimmickPushButtonCommon6IsPushEv',
   buttonDown: '_ZN23GimmickPushButtonCommon10MoveGroundEv',
   buttonUp: '_ZN23GimmickPushButtonCommon13RestoreGroundEv',
+  // the button that stays down (CRO 108 D01GimmickCommon): its Execute has the push half of GimmickPushButtonCommon's
+  // (0x33E0A8; the other's also lifts it when nothing stands on it, 0x32F284)
+  keepCtor: '_ZN27GimmickKeepPushButtonCommonC1EjP10ChrGimmick',
+  keepExec: '_ZN27GimmickKeepPushButtonCommon7ExecuteEv',
+  // vt+0x14: 0 once pressed (0x33E098), so stepping on it again starts no event (does not hide the menu)
+  keepMenu: '_ZN27GimmickKeepPushButtonCommon11GetMenuMaskEv',
+  tiKeep: '_ZTI27GimmickKeepPushButtonCommon',
 } as const;
 const A = SCRIPT_API;
 
 /**
  * What the game's object of an event is built on, by what starts it (script-abi.md §2.2):
  *   talk    NpcCommonTurn (0x74), its ScriptChara at +0xC
- *   button  GimmickPushButtonCommon (0x68, its ScriptChara at +0xC) and a byte at +0x68: "pressed in this run"
+ *   button  GimmickPushButtonCommon (0x68, its ScriptChara at +0xC) and a byte at +0x68: "pressed in this run";
+ *           switch: GimmickKeepPushButtonCommon (the same object; it is not lifted when stepped off)
  *   area / defeat / start   EventScript (0xC); start has the ID 0x1000000, the event of a floor's start
  */
 type Shape = 'npc' | 'button' | 'plain';
 const SHAPE: Record<ScriptTrigger, Shape> = {
   talk: 'npc',
   button: 'button',
+  switch: 'button',
   area: 'plain',
   defeat: 'plain',
   start: 'plain',
@@ -1257,10 +1278,62 @@ function compileCall(c: Ctx, call: ScriptCall): void {
   else withSelf(null);
 }
 
+/**
+ * A door opened as the game shows it, by the event that opens the door after the boss of content 1 (CRO 117
+ * D01BossWin, code 0xF34〜0x1048, then SetDoorOpenFlag in its CtrlFlag): the camera to the door, 0.5 s, the unlocking
+ * sound 0x79, 1.5 s, the opening sound 0x7A with the door's motion 0x80000073, its end; then, after the last door of a
+ * run, the BGM paused (0.3 s) for the gimmick's jingle 0x41, 1 s, the BGM again, 0.3 s, and the camera back.
+ */
+export const DOOR_SHOW = {
+  camera: 1,
+  beforeUnlock: 0.5,
+  unlock: 0x79,
+  beforeOpen: 1.5,
+  open: 0x7a,
+  motion: 0x73,
+  bgmFade: 0.3,
+  jingle: 0x41,
+  jingleWait: 1,
+  after: 0.3,
+} as const;
+const isShownDoor = (n: ScriptNode): boolean => n.op === 'door' && n.open && !!n.show;
+
+/** The nodes with each run of openDoor() written out as the game shows doors opening (DOOR_SHOW). */
+export function expandDoors(nodes: ScriptNode[]): ScriptNode[] {
+  const out: ScriptNode[] = [];
+  nodes.forEach((n, i) => {
+    if (n.op !== 'door' || !isShownDoor(n)) return void out.push(n);
+    const door: ScriptWho = { kind: 'chara', row: n.row };
+    const d = DOOR_SHOW;
+    out.push(
+      { op: 'camera', who: door, seconds: d.camera },
+      { op: 'wait', seconds: d.beforeUnlock },
+      { op: 'se', id: d.unlock },
+      { op: 'wait', seconds: d.beforeOpen },
+      { op: 'se', id: d.open },
+      { op: 'anim', who: door, id: d.motion, type: 0 },
+      { op: 'waitAnim', who: door },
+      { op: 'door', row: n.row, open: true },
+    );
+    const next = nodes[i + 1];
+    if (next && isShownDoor(next)) return;
+    out.push(
+      { op: 'bgm', pause: true, seconds: d.bgmFade },
+      { op: 'se', id: d.jingle },
+      { op: 'wait', seconds: d.jingleWait },
+      { op: 'bgm', pause: false, seconds: d.bgmFade },
+      { op: 'wait', seconds: d.after },
+      { op: 'camera', who: null, seconds: d.camera },
+    );
+  });
+  return out;
+}
+
 const usesCamera = (nodes: ScriptNode[]): boolean =>
   nodes.some(
     (n) =>
       n.op === 'camera' ||
+      isShownDoor(n) ||
       (n.op === 'if' && (usesCamera(n.then) || usesCamera(n.else))) ||
       (n.op === 'switch' && (n.cases.some((k) => usesCamera(k.body)) || usesCamera(n.default ?? []))),
   );
@@ -1272,8 +1345,9 @@ const fadesIn = (nodes: ScriptNode[]): boolean =>
       (n.op === 'switch' && (n.cases.some((k) => fadesIn(k.body)) || fadesIn(n.default ?? []))),
   );
 
-function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
+function compileNodes(c: Ctx, written: ScriptNode[]): void {
   const { fn, g } = c;
+  const nodes = expandDoors(written);
   const mouth = (reg: string): void => {
     fn.op('add r0, r4, #0xc', `mov r1, ${reg}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
     fn.call(A.anim);
@@ -1498,6 +1572,10 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.load('r0', n.row);
         fn.call(n.open ? A.doorOpen : A.doorClose);
         break;
+      case 'bgm':
+        fmov(fn, 's0', n.seconds, 'r0');
+        fn.call(n.pause ? A.pauseBgm : A.replayBgm);
+        break;
       case 'wait':
         waitSeconds(n.seconds);
         break;
@@ -1512,8 +1590,11 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.call(A.deleteObject);
         break;
       case 'battle':
-        // EncountBoss asks for the battle and returns; the event ends here (script-abi.md §7)
-        fn.load('r0', rowId(n.group));
+        // EncountBoss asks for the battle and returns; the event ends here (script-abi.md §7). The group is looked up
+        // in the content's MonsterGroup (master +0x1068, an _ENCOUNT table) by FUN_0031C038: a value below 0x80000000
+        // is a row number (what the boss range 0C passes: 0x2E281C ldrh), else a row ID. The row IDs are not the row
+        // numbers (content 1: 0x80000000, 0x80000010, 0x80000011 …), and a value not there gives row 0, the empty group.
+        fn.load('r0', n.group);
         fn.op('mov r1, #0');
         fn.call(A.encount);
         fn.op(`b ${c.exit}`);
@@ -1585,7 +1666,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
   for (const e of events) {
     ro[`${e.cls}_ti`] = put({ kind: 'imp', name: A.siVt, addend: 8 });
     nameAt.push(put({ kind: 'value', value: 0 }));
-    put({ kind: 'imp', name: TI_BASE[e.shape], addend: 0 });
+    put({ kind: 'imp', name: e.trigger === 'switch' ? A.tiKeep : TI_BASE[e.shape], addend: 0 });
   }
   // vtable: [offset to top 0][type info] then where the object points: [D1][D0][+8][+C Execute][+10 CtrlFlag][+14] …
   for (const e of events) {
@@ -1601,7 +1682,8 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     if (e.trigger === 'start') put({ kind: 'text', label: 'pn_prepare' });
     else if (e.trigger === 'defeat') put({ kind: 'text', label: 'pn_done' });
     else put({ kind: 'imp', name: e.shape === 'button' ? A.buttonCtrl : A.ctrl, addend: 0 });
-    put({ kind: 'text', label: e.shape === 'button' ? 'pn_button_menu' : 'pn_hides_menu' });
+    if (e.trigger === 'switch') put({ kind: 'imp', name: A.keepMenu, addend: 0 });
+    else put({ kind: 'text', label: e.shape === 'button' ? 'pn_button_menu' : 'pn_hides_menu' });
     if (e.shape === 'npc') {
       put({ kind: 'imp', name: A.waitAnim, addend: 0 });
       put({ kind: 'imp', name: A.walkAnim, addend: 0 });
@@ -1629,7 +1711,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
     done.tail(A.setState);
     fns.push(done);
   }
-  if (events.some((e) => e.shape === 'button')) {
+  if (events.some((e) => e.trigger === 'button')) {
     // vt+0x14 of a button (CRO 18 D01WaterGateCommon): GetStepOntoButtonNum() != 0
     const menu = new Fn(g, 'pn_button_menu');
     menu.op('push {r4, lr}');
@@ -1702,7 +1784,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
         // GimmickPushButtonCommon(obj, row, chr)
         f.load('r1', e.row);
         f.op('mov r2, r4');
-        f.call(A.buttonCtor);
+        f.call(e.trigger === 'switch' ? A.keepCtor : A.buttonCtor);
         f.op('mov r1, #0', `strb r1, [r0, #${hx(BUTTON_PRESSED)}]`);
       } else {
         if (byGroup) f.load('r1', START_EVENT_ID);
@@ -1715,7 +1797,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
   };
   makers(SLOT_AREA, ['area', 'defeat']);
   makers(SLOT_START, ['start']);
-  makers(SLOT_BUTTON, ['button']);
+  makers(SLOT_BUTTON, ['button', 'switch']);
   makers(SLOT_TALK, ['talk']);
 
   // every frame of the field, (EventScriptCtrl*): the map's monsters are all beaten and the event has not run → start
@@ -1770,7 +1852,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
       x.call(A.turnNpc);
       x.op('mov r0, r4');
       x.call(A.turnHero);
-    } else if (e.trigger === 'button') {
+    } else if (e.shape === 'button') {
       // as CRO 18's button: pressed = stepped on and not pushed yet; the base's Execute; then the button goes down
       const stepped = g.uniq(`${e.cls}_stepped`);
       x.op(`strb r5, [r4, #${hx(BUTTON_PRESSED)}]`, 'mov r0, r4');
@@ -1780,7 +1862,7 @@ export function compileStageScript(base: Cro, script: StageScript, resets: Leave
       x.op('cmp r0, #0', 'moveq r0, #1', `strbeq r0, [r4, #${hx(BUTTON_PRESSED)}]`);
       x.at(stepped);
       x.op('mov r0, r4');
-      x.call(A.buttonExec);
+      x.call(e.trigger === 'switch' ? A.keepExec : A.buttonExec);
       x.op(`ldrb r0, [r4, #${hx(BUTTON_PRESSED)}]`, 'cmp r0, #0', `beq ${exit}`, 'mov r0, r4');
       x.call(A.buttonDown);
       x.op('add r0, r4, #0xc');

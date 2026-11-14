@@ -6,6 +6,7 @@
 // bosses' figures), a mark for the effects the game puts instead of a model (the clear warp, the recovery points) and
 // markers for the others.
 import * as THREE from 'three';
+import { lanaiRange, type LanaiRange, type LanaiRangeShape } from './rangeShape';
 import { AnimatedModel, animationKey } from '../cgfx/player';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
@@ -96,6 +97,10 @@ export class LanaiMapView {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  /** The walls of the ranges (section 8): their hit shape standing on the ground, translucent (rangeShape.ts). */
+  private readonly rangeMats = rangeMaterials();
+  /** Geometries made for the ranges of the last sync (disposed at the next). */
+  private rangeGeos: THREE.BufferGeometry[] = [];
   private readonly unsubscribe: () => void;
   private disposed = false;
 
@@ -154,6 +159,11 @@ export class LanaiMapView {
     for (const f of this.objects.values()) f?.factory.dispose();
     this.effectGeo.dispose();
     this.effectMat.dispose();
+    for (const g of this.rangeGeos) g.dispose();
+    for (const m of Object.values(this.rangeMats)) {
+      m.fill.dispose();
+      m.line.dispose();
+    }
     this.scene.dispose();
   }
 
@@ -199,6 +209,7 @@ export class LanaiMapView {
       sel = st.selection;
     if (layers.tiles) drawTiles(g, s, doc.tiles, LANAI_ROT_DIR);
     if (layers.room) drawRoomCells(g, s, doc);
+    const events = this.maps.eventTable(this.info.dungeon);
     for (const k of [...LANAI_POINT_SECTIONS].reverse()) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
@@ -206,6 +217,7 @@ export class LanaiMapView {
         const x = px * s,
           y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        if (k === 8) drawRange(g, s, lanaiRange(r.raw, events), selected);
         g.fillStyle = SECTION_COLORS[k]!;
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
         g.lineWidth = selected ? 2.5 : 1;
@@ -360,11 +372,25 @@ export class LanaiMapView {
       })),
     );
     this.markers.clear();
+    for (const g of this.rangeGeos) g.dispose();
+    this.rangeGeos = [];
+    const events = this.maps.eventTable(this.info.dungeon);
     for (const k of LANAI_POINT_SECTIONS) {
       if (!layers.sections[k]) continue;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, LANAI_LAYOUTS[k]!);
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
+        // a range: its walls in place of the marker
+        if (k === 8) {
+          const wall = rangeWalls(lanaiRange(r.raw, events).shape);
+          if (wall) {
+            const edges = new THREE.EdgesGeometry(wall, 30);
+            this.rangeGeos.push(wall, edges);
+            const m = selected ? this.rangeMats.selected : this.rangeMats.normal;
+            this.markers.add(new THREE.Mesh(wall, m.fill), new THREE.LineSegments(edges, m.line));
+            return;
+          }
+        }
         const look = this.showModels ? this.look(k, i) : null;
         const model = look?.model ? this.recordModel(look.model) : null;
         if (model) {
@@ -386,4 +412,102 @@ export class LanaiMapView {
     this.overlay.sync(doc, sel, layers.room);
     this.scene.draw();
   }
+}
+
+/** A range's hit shape (rangeShape.ts): filled lightly, dashed when walking does not hit it, brighter when selected. */
+function drawRange(g: CanvasRenderingContext2D, s: number, range: LanaiRange, selected: boolean): void {
+  const shape = range.shape;
+  if (!shape) return;
+  g.save();
+  g.strokeStyle = SECTION_COLORS[8]!;
+  g.fillStyle = SECTION_COLORS[8]!;
+  g.lineWidth = selected ? 2 : 1.25;
+  g.setLineDash(range.otherChannel ? [4, 3] : []);
+  g.beginPath();
+  if (shape.type === 'circle') {
+    if (shape.r <= 0) {
+      g.restore();
+      return;
+    }
+    g.arc(shape.cx * s, shape.cy * s, shape.r * s, 0, Math.PI * 2);
+  } else g.rect(shape.x * s, shape.y * s, Math.max(1, shape.w * s), Math.max(1, shape.h * s));
+  g.globalAlpha = selected ? 0.28 : 0.14;
+  g.fill();
+  g.globalAlpha = selected ? 1 : 0.7;
+  g.stroke();
+  g.restore();
+}
+
+/** How tall the walls of a range stand (world units; a cell is 500, the party about 200). */
+const RANGE_WALL_HEIGHT = 300;
+
+function rangeMaterials(): Record<'normal' | 'selected', { fill: THREE.Material; line: THREE.LineBasicMaterial }> {
+  const color = new THREE.Color(SECTION_COLORS[8]!);
+  const make = (opacity: number, lineOpacity: number) => ({
+    fill: new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+    line: new THREE.LineBasicMaterial({ color, transparent: true, opacity: lineOpacity }),
+  });
+  return { normal: make(0.18, 0.7), selected: make(0.38, 1) };
+}
+
+/**
+ * The walls of a range's hit shape (rangeShape.ts, in cells): an open cylinder for a circle, four walls for a
+ * rectangle, standing from the ground. Null when the shape hits nothing to show (no shape, a radius of 0).
+ */
+export function rangeWalls(shape: LanaiRangeShape | null): THREE.BufferGeometry | null {
+  if (!shape) return null;
+  let loop: [number, number][];
+  if (shape.type === 'circle') {
+    if (shape.r <= 0) return null;
+    const n = 48;
+    loop = Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2;
+      return [(shape.cx + Math.cos(a) * shape.r) * CELL, (shape.cy + Math.sin(a) * shape.r) * CELL];
+    });
+  } else {
+    // a rectangle of width or depth 0 is a line (the game tests it with the edges inside): drawn a little thick
+    const w = Math.max(shape.w, 0.01),
+      h = Math.max(shape.h, 0.01);
+    const [x0, z0, x1, z1] = [shape.x * CELL, shape.y * CELL, (shape.x + w) * CELL, (shape.y + h) * CELL];
+    loop = [
+      [x0, z0],
+      [x1, z0],
+      [x1, z1],
+      [x0, z1],
+    ];
+  }
+  const pos: number[] = [];
+  for (let i = 0; i < loop.length; i++) {
+    const [ax, az] = loop[i]!,
+      [bx, bz] = loop[(i + 1) % loop.length]!;
+    pos.push(
+      ax,
+      0,
+      az,
+      bx,
+      0,
+      bz,
+      bx,
+      RANGE_WALL_HEIGHT,
+      bz,
+      ax,
+      0,
+      az,
+      bx,
+      RANGE_WALL_HEIGHT,
+      bz,
+      ax,
+      RANGE_WALL_HEIGHT,
+      az,
+    );
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  return g;
 }

@@ -14,6 +14,7 @@ import {
 } from '../game/sections';
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
+import { lanaiCharaRowBytes } from './mapObjects';
 import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -525,7 +526,41 @@ export class LanaiMaps {
     const t = this.eventTable(group);
     if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
     if (from <= 0 || from >= t.rows) throw new RangeError(`イベント番号 ${from} は写せません (表は ${t.rows} 件)`);
-    const row = t.addRow(from);
+    return this.giveSlot(group, t, t.addRow(from));
+  }
+
+  /**
+   * Append a new EventObject row to a group's table: a copy of row 0 (the empty row: no action, the end's padding)
+   * with the first action `action` and the look (+0x5A) `look`, with a state slot of its own. Returns the new row.
+   */
+  addNewEventRow(group: number, action: number, look: number): number {
+    const t = this.eventTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
+    if (!t.rows) throw new Error(`${t.name} に行 0 がありません`);
+    const row = t.addRow(0);
+    t.setU32(row, LANAI_EVENT_ACTIONS[0], action);
+    t.setU16(row, 0x5a, look);
+    return this.giveSlot(group, t, row);
+  }
+
+  /**
+   * Append a MapChara row to the content (the looks of its characters: EventObject +0x5A of section 5 kinds 0〜2): an
+   * NPC (kind 0) of a MapObject row or a monster (kind 1) of a MonsterDesign row. The motions are taken from a row of
+   * the same kind when the content has one (mapObjects.ts lanaiCharaRowBytes). Returns the new row.
+   */
+  addCharaRow(kind: number, model: number): number {
+    const t = this.contentTable('MapChara');
+    if (!t) throw new Error('このコンテンツには MapChara の表がありません');
+    if (t.rowSize !== 0x30) throw new Error(`MapChara の行の大きさが ${t.rowSize} です (0x30 のはず)`);
+    let donor: Uint8Array | undefined;
+    for (let r = 1; r < t.rows && !donor; r++) if ((t.u32(r, 0) & 7) === kind) donor = t.row(r);
+    const row = t.addRow();
+    t.setRow(row, lanaiCharaRowBytes(kind, model, donor));
+    return row;
+  }
+
+  /** Give a row added to a group's table the first state slot no other row uses (or 0xFFFF: the row number). */
+  private giveSlot(group: number, t: LanaiTable, row: number): number {
     const used = new Set(Array.from({ length: row }, (_, r) => lanaiEventSlot(t, r)));
     const count = this.groups[group]?.stateCount ?? 0;
     let slot = 0;

@@ -14,7 +14,7 @@ test('RPG FREE! stage script: the triggers of a record by its section and kind',
   // section 5: characters talk, kinds 4〜6 are buttons, the other gimmicks and the event-less kinds take no function
   expect(recordTriggers(5, rec(0))).toEqual(['talk']);
   expect(recordTriggers(5, rec(1))).toEqual(['talk']);
-  for (const k of [4, 5, 6]) expect(recordTriggers(5, rec(k))).toEqual(['button']);
+  for (const k of [4, 5, 6]) expect(recordTriggers(5, rec(k))).toEqual(['button', 'switch']);
   for (const k of [7, 10, 11, 14, 15]) expect(recordTriggers(5, rec(k))).toEqual([]);
   // doors and chests: not yet
   expect(recordTriggers(3, rec(0))).toEqual([]);

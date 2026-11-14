@@ -3,6 +3,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   emptyScriptDoc,
+  expandDoors,
+  type ScriptNode,
   parseStageScript,
   scriptDocFromSource,
   scriptOfDoc,
@@ -112,6 +114,7 @@ describe('RPG FREE! stage script: the document of the editor', () => {
       getItem: 'getItem(1, 1)',
       addGold: 'addGold(-5)',
       openDoor: 'openDoor(1)',
+      openDoorNow: 'openDoorNow(1)',
       closeDoor: 'closeDoor(1)',
       collision: 'collision(1, 0)',
       remove: 'remove(1)',
@@ -131,5 +134,39 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     expect(words.filter((x) => x !== 'disable' && !(x in example))).toEqual([]);
     for (const x of Object.values(example)) expect(() => body(x)).not.toThrow();
     expect(() => parseStageScript('on area(1, 1) { disable() }')).not.toThrow();
+  });
+});
+
+describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
+  const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
+  test('each door: the camera, the unlocking sound, the opening sound and motion; after the run: the jingle and the camera back', () => {
+    const ops = expandDoors(body('openDoor(3)\nopenDoor(4)\nse(1)')).map((n) =>
+      n.op === 'se'
+        ? `se ${n.id}`
+        : n.op === 'door'
+          ? `door ${n.row}`
+          : n.op === 'camera'
+            ? `camera ${n.who ? 'door' : 'back'}`
+            : n.op,
+    );
+    const door = (r: number): string[] => [
+      'camera door',
+      'wait',
+      `se ${0x79}`,
+      'wait',
+      `se ${0x7a}`,
+      'anim',
+      'waitAnim',
+      `door ${r}`,
+    ];
+    expect(ops).toEqual([...door(3), ...door(4), 'bgm', `se ${0x41}`, 'wait', 'bgm', 'wait', 'camera back', 'se 1']);
+  });
+  test('openDoorNow and closeDoor stay as they are', () => {
+    const nodes = body('openDoorNow(3)\ncloseDoor(3)');
+    expect(expandDoors(nodes)).toEqual(nodes);
+    expect(nodes.map((n) => n.op === 'door' && [n.open, !!n.show])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
   });
 });

@@ -24,6 +24,7 @@ import {
 } from './eventScript';
 import { lanaiRecEventRow } from './mapedit';
 import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, lanaiMaps, type LanaiMaps } from './maps';
+import type { LanaiTable } from './table';
 import type { LanaiSession } from './session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT, lanaiCrrName } from './stageEdit';
 
@@ -90,7 +91,7 @@ export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
 }
 /** Whether a function can be given to a record under a trigger: "all monsters beaten" is kept by a range too. */
 export const triggerFitsRecord = (t: ScriptTrigger, rec: EventRecord): boolean =>
-  recordTrigger(rec) === (t === 'defeat' ? 'area' : t);
+  recordTrigger(rec) === (t === 'defeat' ? 'area' : t === 'switch' ? 'button' : t);
 
 /** The rows of the characters a body names with chara(row). */
 function charaRows(body: ScriptNode[]): number[] {
@@ -118,6 +119,35 @@ function charaRows(body: ScriptNode[]): number[] {
   return out;
 }
 
+/** The MonsterGroup values battle() names in a body, each once. */
+export function battleGroups(body: ScriptNode[]): number[] {
+  const out: number[] = [];
+  const walk = (list: ScriptNode[]): void => {
+    for (const n of list) {
+      if (n.op === 'battle' && !out.includes(n.group)) out.push(n.group);
+      else if (n.op === 'if') {
+        walk(n.then);
+        walk(n.else);
+      } else if (n.op === 'switch') {
+        for (const c of n.cases) walk(c.body);
+        walk(n.default ?? []);
+      }
+    }
+  };
+  walk(body);
+  return out;
+}
+
+/**
+ * The row of the content's MonsterGroup a battle() value names as the game looks it up (FUN_0031C038): a value below
+ * 0x80000000 is a row number, else a row ID. -1 when there is no such row (the game would fight row 0, the empty one).
+ */
+export function battleRow(t: LanaiTable | undefined, value: number): number {
+  if (!t) return -1;
+  if (value < 0x80000000) return value < t.rows ? value : -1;
+  return t.find(value >>> 0);
+}
+
 /** The script read and held against the content's maps. Throws a ScriptError when the script does not read. */
 export async function checkStageScript(s: LanaiSession, c: LanaiContent, source: string): Promise<StageScriptCheck> {
   const script = parseStageScript(source);
@@ -140,6 +170,15 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
         notes.push(
           `${what}: chara(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
         );
+    for (const g of battleGroups(e.body)) {
+      const mg = maps.monsterGroup;
+      if (battleRow(mg, g) < 0)
+        problems.push(
+          `${what}: battle(${g}) の群れがありません。引数は MonsterGroup の行番号 (0〜${(mg?.rows ?? 1) - 1}) です (行 ID ではありません。ないと空の群れ (行 0) と戦います)`,
+        );
+      else if (g === 0 || battleRow(mg, g) === 0)
+        notes.push(`${what}: battle(${g}) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
+    }
     if (!triggerHasRow(e.trigger)) continue;
     const recs = records.get(e.row) ?? [];
     if (e.row < t.rows && !recs.length)

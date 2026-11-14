@@ -39,6 +39,8 @@ import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
 import { EventScriptBinding } from './EventScriptBinding';
+import { LookField } from './LookField';
+import { LANAI_RANGE_PROP_KIND, lanaiRange } from './rangeShape';
 import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiValidate, type LanaiEditState } from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
@@ -561,8 +563,8 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
       validRow={(row) => !!lanaiObjectRef(objects, row)}
       directions={FACING_LABELS}
       modelForProp={(row) => ({ type: 'object' as const, row })}
-      modelForTemplate={(t) => view.partLook(t.section, t.raw)?.model ?? null}
-      help="マップをクリックして配置、Esc で選択に戻ります。レコードの写しには独立したイベントと状態を付けます。出入口には新しい地点 ID を付けます。"
+      modelForTemplate={(t) => (t.event ? (t.model ?? null) : (view.partLook(t.section, t.raw)?.model ?? null))}
+      help="マップをクリックして配置、Esc で選択に戻ります。「イベント (新しく置く)」は起きかた (踏む・話しかける・範囲に入る・扉) で選び、新しいイベント付きで置きます。見た目は置いてからインスペクタで全モデル・任意の NPC・モンスターから選べます。レコードの写しには独立したイベントと状態を付けます。出入口には新しい地点 ID を付けます。"
     />
   );
 }
@@ -584,9 +586,8 @@ const REC_FIELDS: Record<number, FieldDef[]> = {
     { key: 'ev', offset: 4, type: 'u32', label: 'イベント番号' },
   ],
   8: [
-    { key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' },
+    { key: 'type', offset: 0, type: 'u32', label: '種類 (0 円・1 / 2 矩形、100 以上 = 置物)' },
     { key: 'ev', offset: 4, type: 'u32', label: 'イベント番号' },
-    { key: 'shape', offset: 0x1d, type: 'u8', label: '形 (0 円 / 1 矩形)' },
   ],
   9: [
     { key: 'type', offset: 0, type: 'u32', label: '種類' },
@@ -836,10 +837,14 @@ function RecFields({
             </label>
           ),
         )}
+      {section === 8 && u32(rec.raw, 0) < LANAI_RANGE_PROP_KIND && <RangeFields st={st} rec={rec} events={events} />}
       {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
       {ev > 0 &&
         (events && ev < events.rows ? (
-          <EventFields st={st} section={section} index={index} row={ev} />
+          <>
+            <LookField st={st} view={view} section={section} rec={rec} row={ev} />
+            <EventFields st={st} section={section} index={index} row={ev} />
+          </>
         ) : (
           <p className="muted small">
             {events ? `イベント番号 ${ev} は表 (${events.rows} 件) の外です` : `イベント番号 ${ev} (表なし)`}
@@ -851,6 +856,87 @@ function RecFields({
           {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
         </code>
       </details>
+    </>
+  );
+}
+
+/**
+ * A range's hit shape as the game makes it (rangeShape.ts): the shape (+0x1D: 0 a circle, else a rectangle), the
+ * rectangle's full width and depth (+0x14 / +0x18, 1 = 100 world units = 1/5 of a cell) or the circle's radius (the
+ * event's +0x5A, same unit). The map draws the shape.
+ */
+function RangeFields({
+  st,
+  rec,
+  events,
+}: {
+  st: LanaiEditState;
+  rec: Rec;
+  events: ReturnType<LanaiEditState['maps']['eventTable']>;
+}): ReactNode {
+  const range = lanaiRange(rec.raw, events);
+  const circle = rec.raw[0x1d] === 0;
+  const ev = u32(rec.raw, 4);
+  const hasRow = !!events && ev > 0 && ev < events.rows;
+  const f = (o: number): number => {
+    const v = new DataView(rec.raw.buffer, rec.raw.byteOffset).getFloat32(o, true);
+    return Number.isFinite(v) ? v : 0;
+  };
+  const setF = (o: number, v: number): void =>
+    st.edit(() => new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(o, v, true));
+  return (
+    <>
+      <label className="field">
+        <span>当たり判定の形 (+0x1D)</span>
+        <select
+          aria-label="範囲の形"
+          value={circle ? 0 : 1}
+          onChange={(e) =>
+            st.edit(() => {
+              const c = e.target.value === '0';
+              rec.raw[0x1d] = c ? 0 : 1;
+              // the data keeps the kind equal to the shape (kind 0 = circle, 1 = rectangle)
+              if (u32(rec.raw, 0) <= 2) w32(rec.raw, 0, c ? 0 : 1);
+              if (!c && f(0x14) <= 0 && f(0x18) <= 0) {
+                new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(0x14, 3, true);
+                new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(0x18, 1, true);
+              }
+            })
+          }
+        >
+          <option value={0}>円 (中心と半径)</option>
+          <option value={1}>矩形 (北西の角と幅・奥行き)</option>
+        </select>
+      </label>
+      {circle ? (
+        <label className="field">
+          <span>半径 (イベントの +0x5A、1 = 1/5 マス)</span>
+          {hasRow ? (
+            <NumberInput
+              value={events!.u16(ev, 0x5a)}
+              min={0}
+              max={0xffff}
+              onCommit={(v) => st.setEventField(ev, (t) => t.setU16(ev, 0x5a, v))}
+            />
+          ) : (
+            <span className="muted small">イベントがないので決まりません</span>
+          )}
+        </label>
+      ) : (
+        <>
+          <label className="field">
+            <span>幅 (東西、+0x14、1 = 1/5 マス)</span>
+            <NumberInput value={f(0x14)} min={0} max={10000} step={0.1} onCommit={(v) => setF(0x14, v)} />
+          </label>
+          <label className="field">
+            <span>奥行き (南北、+0x18、1 = 1/5 マス)</span>
+            <NumberInput value={f(0x18)} min={0} max={10000} step={0.1} onCommit={(v) => setF(0x18, v)} />
+          </label>
+        </>
+      )}
+      <p className="muted small">
+        {`${range.note} 判定はパーティの位置 1 点が形の中にあるかどうかで、判定そのものには「入った・出た」の区別がありません (続けて起きるかはイベントの状態と disable() で決まります)。`}
+      </p>
     </>
   );
 }
@@ -1182,7 +1268,6 @@ function EventFields({
         {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
         {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
       </p>
-      {u16f(0x5a, '+0x5A (範囲の半径・モデルと推定)')}
       {u16f(0x5c, '+0x5C (未解析)')}
       {u8f(0x5e, '+0x5E (未解析)')}
       <details>

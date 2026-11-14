@@ -45,6 +45,41 @@ export const LANAI_CHARA_OBJECT = 0x2c;
 export const LANAI_CHARA_KIND: Record<number, string> = { 0: 'NPC', 1: 'モンスター', 2: '電波人間', 3: '電波人間' };
 /** The MapChara kind of a monster: +0x2C is a MonsterDesign row. */
 export const LANAI_CHARA_MONSTER = 1;
+/** The MapChara kind of an NPC: +0x2C is a MapObject row. */
+export const LANAI_CHARA_NPC = 0;
+
+/**
+ * A new MapChara row (0x30 bytes) of a kind and model, as the rows of the 127 contents are (counted 2026-11-14): +0x00
+ * u32 = 0x0D00 | flags | kind (NPCs 0x0D08, monsters 0x0D01), +0x04 / +0x08 the motions (row IDs; NPCs 0x80000075 /
+ * 0x80000077 (also 79 / 7F), monsters 0x8000005C / 0x8000005E), +0x0C u32 0x00034000 (the low byte 0 on most rows,
+ * 0x96 / 0xFA on some), +0x10〜+0x2B a second and third look that 821 of 840 rows leave empty (0, 0x80000000 ×2,
+ * 0x00034000, 0x80000000 ×2, 0x00034000), +0x2C u16 the model, +0x2E u16 0. What the motions and +0x0C are is not
+ * known: a new row takes them from `donor` (a row of the same kind of the content) when there is one.
+ */
+export function lanaiCharaRowBytes(kind: number, model: number, donor?: Uint8Array): Uint8Array {
+  const b = new Uint8Array(0x30);
+  const v = new DataView(b.buffer);
+  const monster = kind === LANAI_CHARA_MONSTER;
+  if (donor && donor.length >= 0x30 && (donor[0]! & 7) === kind) b.set(donor.subarray(0, 0x10));
+  else {
+    v.setUint32(0x00, 0x0d00 | (monster ? 0 : 8) | kind, true);
+    v.setUint32(0x04, monster ? 0x8000005c : 0x80000075, true);
+    v.setUint32(0x08, monster ? 0x8000005e : 0x80000077, true);
+    v.setUint32(0x0c, 0x00034000, true);
+  }
+  for (const [o, x] of [
+    [0x10, 0],
+    [0x14, 0x80000000],
+    [0x18, 0x80000000],
+    [0x1c, 0x00034000],
+    [0x20, 0x80000000],
+    [0x24, 0x80000000],
+    [0x28, 0x00034000],
+  ] as const)
+    v.setUint32(o, x, true);
+  v.setUint16(LANAI_CHARA_OBJECT, model, true);
+  return b;
+}
 
 /** Chest models (RPG3's mapObject numbers = MapObject row IDs) by the record's look (+0x00) outside / inside; look 3 is the goal chest. */
 const CHEST_IDS = [0x34, 0x35, 0x36, 0x274] as const;

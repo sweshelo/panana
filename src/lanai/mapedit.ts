@@ -27,7 +27,21 @@ import {
   tableRows,
 } from './maps';
 import type { LanaiTable } from './table';
-import { LANAI_GOAL_CHEST, LANAI_REPAIR_FIELD, LANAI_REPAIR_POINT } from './mapObjects';
+import {
+  LANAI_DOOR_FACING,
+  LANAI_DOOR_KIND,
+  LANAI_DOORWAY_TILE,
+  lanaiEventParts,
+  type NewEventRow,
+} from './eventParts';
+import { lanaiMonsters } from './monsters';
+import {
+  LANAI_GOAL_CHEST,
+  LANAI_REPAIR_FIELD,
+  LANAI_REPAIR_POINT,
+  lanaiObjectRef,
+  type LanaiRecordModel,
+} from './mapObjects';
 import { lanaiChestFields } from './treasure';
 
 /** The kind of the tiles the game leaves empty (map.md §6.3): no model, and not a problem. */
@@ -44,6 +58,12 @@ export interface LanaiTemplate {
   label: string;
   /** Map it is copied from. */
   source: string;
+  /** A new record (eventParts.ts): the EventObject row it gets instead of a copy of the row its raw names. */
+  event?: NewEventRow;
+  /** Its look, when the raw's row is not what the look is read from (a new record). */
+  model?: LanaiRecordModel | null;
+  /** The add panel's category in place of the section's. */
+  category?: string;
 }
 
 export type LanaiStamp =
@@ -90,7 +110,8 @@ const turnOf = (b: number): number => Math.max(0, LANAI_ROT_CODEC.decode(b));
 
 /** An undo point's tables: the rows of the open map's group's EventObject table and of the content's TreasureGroup. */
 /** Content tables an undo point copies whole: the map's sounds and battle field (BattleParts.tsx). */
-const UNDO_CONTENT_TABLES = ['MapData', 'MapResource'];
+// MapChara: a new character can add a row (LanaiMaps.addCharaRow)
+const UNDO_CONTENT_TABLES = ['MapData', 'MapResource', 'MapChara'];
 
 type LanaiTables = {
   group: number | null;
@@ -228,7 +249,17 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       section = stamp.t.section;
       raw = stamp.t.raw.slice();
       if (section === 3 && lanaiExitKind(raw) !== WALL_DOOR) w32(raw, 0, this.newPointId());
-      this.copyEventRow(section, raw);
+      // a door faces the opening of the doorway tile it is put on, as the data's doors do
+      const tile = tileAt(doc, cx, cy);
+      if (section === 3 && lanaiExitKind(raw) === LANAI_DOOR_KIND && tile?.kind === LANAI_DOORWAY_TILE)
+        raw[0x14] = LANAI_DOOR_FACING[tile.rot & 3]!;
+      const ev = stamp.t.event;
+      if (ev) {
+        if (!this.info || !this.maps.eventTable(this.info.dungeon))
+          throw new Error('この MapGroup には EventObject の表がないので、イベントを持つものは置けません');
+        const look = ev.chara ? this.maps.addCharaRow(ev.chara.kind, ev.chara.model) : ev.look;
+        w32(raw, EVENT_FIELD, this.maps.addNewEventRow(this.info.dungeon, ev.action, look));
+      } else this.copyEventRow(section, raw);
     }
     const rec: Rec = { raw, x: 0, y: 0 };
     setRecCellPos(rec, LANAI_LAYOUTS[section]!, cx, cy);
@@ -302,7 +333,25 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           const label = lanaiRecLabel(k, r.raw) + (action >= 0 ? ` ・ 動作 ${hex8(action).toUpperCase()}` : '');
           out.set(key, { section: k, raw: r.raw.slice(), label, source: m.name });
         }
-    return [...out.values()];
+    // records made from nothing (a button, a character, a range), each with an EventObject row of its own
+    const fresh = table
+      ? lanaiEventParts(this.maps.session.table('MapObject'), this.maps.contentTable('MapChara'), this.partDefaults())
+      : [];
+    return [...fresh, ...out.values()];
+  }
+
+  /**
+   * The looks of a new NPC or monster when the content has none: the model of MapChara row 0 (most contents keep an
+   * NPC there), else the first NPC model (MapObject 0x199〜) there is; the first monster with a design.
+   */
+  private partDefaults(): { npcModel: number; monsterDesign: number } {
+    const objects = this.maps.session.table('MapObject');
+    const mc = this.maps.contentTable('MapChara');
+    const row0 = mc?.rows ? new DataView(mc.row(0).buffer, mc.row(0).byteOffset).getUint16(0x2c, true) : 0;
+    let npcModel = lanaiObjectRef(objects, row0) ? row0 : 0;
+    for (let r = 0x199; !npcModel && r < (objects?.rows ?? 0); r++) if (lanaiObjectRef(objects, r)) npcModel = r;
+    const monsterDesign = lanaiMonsters(this.maps.session).find((m) => m.name && m.designRow > 0)?.designRow ?? 0;
+    return { npcModel, monsterDesign };
   }
 
   /** MapObject rows the props of the content's maps use, most used first. */
@@ -415,6 +464,21 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
         });
     });
   }
+
+  // doors (kind 12): on a doorway tile (kind 9), facing its opening, as 177 of the data's 191 doors are
+  (doc.recs[3] ?? []).forEach((r, i) => {
+    if (lanaiExitKind(r.raw) !== LANAI_DOOR_KIND) return;
+    const [px, py] = recCellPos(r, LANAI_LAYOUTS[3]!);
+    const t = tileAt(doc, Math.floor(px), Math.floor(py));
+    if (!t) return;
+    const msg =
+      t.kind !== LANAI_DOORWAY_TILE
+        ? `扉 #${i}: 出入口のタイル (種類 ${LANAI_DOORWAY_TILE}) の上にありません (壁や部屋の中に立ちます)`
+        : r.raw[0x14] !== LANAI_DOOR_FACING[t.rot & 3]
+          ? `扉 #${i}: 向き (${r.raw[0x14]}) が出入口のタイルの向きに合っていません (${LANAI_DOOR_FACING[t.rot & 3]} にすると開口部をふさぎます)`
+          : null;
+    if (msg) out.push({ level: 'warn', msg, target: rec(3, i), key: `door/${r.x},${r.y}/${r.raw[0x14]}` });
+  });
 
   // EventObject rows: in the group's table, one record each (records that share a row share its state)
   const users = new Map<number, number>();

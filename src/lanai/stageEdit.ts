@@ -218,6 +218,45 @@ export async function cloneLanaiContent(
 }
 
 /**
+ * Why an added content cannot be removed, or null when it can. Rows can only be taken off the end of a table, so the
+ * content must be the last of Contents and its stage rows the last of MapStageIntegration (the last added stage: the
+ * stages are removed newest first).
+ */
+export function lanaiContentRemoveBlock(s: LanaiSession, c: LanaiContent): string | null {
+  const contents = s.need('Contents'),
+    integration = s.need('MapStageIntegration');
+  if (c.index < contents.originalRows || !s.createdFiles.has(c.archive)) return '元からあるステージは削除できません';
+  if (c.index !== contents.rows - 1) return '最後に追加したステージから順に削除できます';
+  const rows = c.stages.map((st) => st.row).sort((a, b) => a - b);
+  if (rows.some((r, i) => r !== integration.rows - rows.length + i || r < integration.originalRows))
+    return 'ステージの行が MapStageIntegration の最後にないので削除できません';
+  return null;
+}
+
+/**
+ * Remove an added content (the undo of cloneLanaiContent): its stage rows (and their name rows of MessageMapStage when
+ * they are the last and no other stage uses them), its Contents row, its archive and CRR, and its event script.
+ */
+export function removeLanaiContent(s: LanaiSession, c: LanaiContent): void {
+  const block = lanaiContentRemoveBlock(s, c);
+  if (block) throw new Error(block);
+  const contents = s.need('Contents'),
+    integration = s.need('MapStageIntegration'),
+    messages = s.need('MessageMapStage');
+  const names = c.stages.map((st) => st.messageId);
+  for (let k = 0; k < c.stages.length; k++) integration.removeLastRow();
+  const used = new Set(Array.from({ length: integration.rows }, (_, r) => integration.u32(r, 0xc)));
+  for (const id of [...names].reverse()) {
+    const m = messages.find(id);
+    if (m === messages.rows - 1 && m >= messages.originalRows && !used.has(id)) messages.removeLastRow();
+  }
+  contents.removeLastRow();
+  s.removeFile(c.archive);
+  if (s.createdFiles.has(lanaiCrrName(c.index))) s.removeFile(lanaiCrrName(c.index));
+  s.edited();
+}
+
+/**
  * Where a stage starts (contents.md §3.3): the MapGroup MapStage +0x3A names (MapStageIntegration +0x46; the stage
  * select puts it in the save's current group 0x29, FUN_002E7814) and that group's first map and arrival point (MapGroup
  * +0x14 / +0x18, a section 3 record's point ID). All 126 stages of the ROM start at a map of their own map table.

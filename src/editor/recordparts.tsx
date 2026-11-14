@@ -9,6 +9,8 @@ export interface PartTemplate {
   raw: Uint8Array;
   label: string;
   source: string;
+  /** The picker's category in place of the section's (templateCategory). */
+  category?: string;
 }
 export type RecordPartStamp<T> = { type: 'prop'; row: number; dir: number } | { type: 'template'; t: T };
 export const partTemplateKey = (t: PartTemplate): string => `template/${t.section}/${t.source}/${t.raw.join('.')}`;
@@ -92,13 +94,14 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       choices.push({
         key,
         name: template.label,
-        category: templateCategory(template.section),
-        sub: template.source,
-        title: `${template.source} の設定を引き継ぎます`,
+        category: template.category ?? templateCategory(template.section),
+        sub: template.category ? undefined : template.source,
+        title: template.category ? template.label : `${template.source} の設定を引き継ぎます`,
         icon: photo(modelForTemplate(template)),
       });
     }
     const order = ['宝箱', '床のギミック', '出入口・扉', 'ギミック', '地点', 'その他'];
+    // a category not in the list (an adapter's own) goes first
     choices.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
     if (status) choices.push({ key: 'status', name: status, category: '読み込み状況', unavailable: status });
   }

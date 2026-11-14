@@ -234,6 +234,31 @@ export class LanaiSession {
     this.createdFiles.set(name, bytes.slice());
   }
 
+  /**
+   * Take out a file addFile added (an added stage's archive or CRR) with what was read and edited of it: its tables,
+   * map database, stage image and event script.
+   */
+  removeFile(name: string): void {
+    if (!this.createdFiles.delete(name)) throw new Error(`ファイル ${name} は追加したものではありません`);
+    this.dropArchive(name);
+    for (const [k, l] of this.layouts) if (l.archive === name) this.layouts.delete(k);
+    this.stageScripts.delete(name);
+  }
+
+  /** Forget what was read of a root archive (the next read reads it anew). */
+  private dropArchive(key: string): void {
+    for (const t of this.others.filter((t) => t.archive === key)) {
+      this.refs.delete(t.table);
+      this.others.splice(this.others.indexOf(t), 1);
+    }
+    this.otherSources.delete(key);
+    this.archives.delete(key);
+    this.tablesOf.delete(key);
+    this.tablesRead.delete(key);
+    this.mapDbs.delete(key);
+    this.mapDbsRead.delete(key);
+  }
+
   setConditionScript(id: number, source: string): void {
     if (!Number.isInteger(id) || id < 1 || id > 0xffff) throw new Error('スクリプト番号は 1〜65535 です');
     parseConditionScript(source);
@@ -503,18 +528,7 @@ export class LanaiSession {
       if (r.table) r.table.data = r.table.original;
       this.mapsReset(r.archive);
     }
-    for (const key of this.createdFiles.keys()) {
-      for (const t of this.others.filter((t) => t.archive === key)) {
-        this.refs.delete(t.table);
-        this.others.splice(this.others.indexOf(t), 1);
-      }
-      this.otherSources.delete(key);
-      this.archives.delete(key);
-      this.tablesOf.delete(key);
-      this.tablesRead.delete(key);
-      this.mapDbs.delete(key);
-      this.mapDbsRead.delete(key);
-    }
+    for (const key of this.createdFiles.keys()) this.dropArchive(key);
     this.createdFiles.clear();
     this.conditionScripts.clear();
     this.stageScripts.clear();

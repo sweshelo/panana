@@ -88,7 +88,7 @@ describe('RPG FREE! stage script: reading', () => {
       { op: 'addGold', amount: -30 },
     ]);
     expect(c.then).toEqual([
-      { op: 'door', row: 3, open: true },
+      { op: 'door', row: 3, open: true, show: true },
       { op: 'door', row: 4, open: false },
       { op: 'wait', seconds: 0.5 },
       { op: 'collision', row: null, on: false },
@@ -224,7 +224,7 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     const records = eventRecords(maps, 1);
     expect(records.get(5)!.map(recordTrigger)).toContain('talk');
     const wrong = await checkStageScript(s, c, 'function f() { show(chara(5)); hide(chara(9999)) }\non button(1, 5) f');
-    expect(wrong.notes.join('\n')).toContain('「ボタンを踏んだとき」の種類ではありません');
+    expect(wrong.notes.join('\n')).toContain('「ボタンを踏んだとき (降りると戻る)」の種類ではありません');
     expect(wrong.notes.join('\n')).toContain('chara(9999)');
     expect(wrong.notes.join('\n')).not.toContain('chara(5) の');
     // scripts are for added stages

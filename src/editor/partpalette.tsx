@@ -107,12 +107,14 @@ export interface PartChoice {
 }
 /** Stable string keys keep asynchronously added templates separate from object row numbers. */
 export function PartPicker({
+  title = 'パーツを選ぶ',
   choices,
   current,
   onPick,
   onClose,
   controls,
 }: {
+  title?: string;
   choices: readonly PartChoice[];
   current?: string;
   onPick: (key: string) => void;
@@ -141,7 +143,7 @@ export function PartPicker({
   const selected = choices.findIndex((choice) => choice.key === current);
   return (
     <GridPicker
-      title="パーツを選ぶ"
+      title={title}
       entries={entries}
       categories={categories}
       groupByCategory

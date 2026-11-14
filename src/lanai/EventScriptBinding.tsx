@@ -18,7 +18,7 @@ export function recordTriggers(section: number, raw: Uint8Array): ScriptTrigger[
   const kind = u32(raw, 0);
   if (section === 8 && kind >= 100) return [];
   const t = recordTrigger({ section, kind: section === 5 ? kind : 0 });
-  return t === 'area' ? ['area', 'defeat'] : t ? [t] : [];
+  return t === 'area' ? ['area', 'defeat'] : t === 'button' ? ['button', 'switch'] : t ? [t] : [];
 }
 
 export function EventScriptBinding({

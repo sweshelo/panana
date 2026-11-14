@@ -21,6 +21,7 @@ import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
 import { LanaiStageThumbnail } from './StageThumbnail';
+import { lanaiContentRemoveBlock, removeLanaiContent } from './stageEdit';
 import { LanaiStageContents } from './StageContents';
 
 type Filter = 'all' | 'stages' | 'none';
@@ -105,6 +106,39 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
   );
 }
 
+/** Remove an added content (stageEdit.ts removeLanaiContent), after asking: the newest first. */
+function RemoveContentButton({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+  const [error, setError] = useState<string | null>(null);
+  const block = lanaiContentRemoveBlock(session, c);
+  return (
+    <>
+      <button
+        className="danger"
+        disabled={!!block}
+        title={block ?? '追加したステージを、マップ・イベントのスクリプトごと削除します'}
+        onClick={() => {
+          const what = `「${contentTitle(c)}」(コンテンツ ${c.index})`;
+          if (!confirm(`${what} を削除します。マップやイベントのスクリプトも消え、元に戻せません。`)) return;
+          try {
+            removeLanaiContent(session, c);
+            location.hash = `#/stages/${c.index - 1}`;
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }}
+      >
+        追加したステージを削除
+      </button>
+      {block && <span className="muted small">{block}</span>}
+      {error && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
 function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
@@ -130,6 +164,7 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
         >
           ＋ コンテンツを複製して追加
         </button>
+        {session.createdFiles.has(c.archive) && <RemoveContentButton session={session} c={c} />}
       </div>
       <h3>ステージ (MapStageIntegration)</h3>
       {!c.stages.length ? (
