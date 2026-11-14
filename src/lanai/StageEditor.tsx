@@ -22,6 +22,7 @@ import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiSession } from './session';
 import type { LanaiCondition } from './conditions';
 import { LanaiStageThumbnail, uploadedStageThumbnail } from './StageThumbnail';
+import { addLanaiEmptyStage } from './emptyStage';
 import {
   cloneLanaiContent,
   editLanaiStage,
@@ -433,6 +434,56 @@ export function LanaiContentCreator({
           setBusy(true);
           try {
             const index = await cloneLanaiContent(session, content, title, { script, intro });
+            location.hash = `#/stages/${index}`;
+            onClose();
+          } catch (e) {
+            setError((e as Error).message);
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? '作成中…' : '追加する'}
+      </button>
+    </Dialog>
+  );
+}
+
+/** Adds an empty stage (emptyStage.ts: content 99's room with a gate at its start and the game's opening). */
+export function LanaiEmptyStageCreator({
+  session,
+  onClose,
+}: {
+  session: LanaiSession;
+  onClose: () => void;
+}): ReactNode {
+  const [title, setTitle] = useState('新しいステージ'),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  return (
+    <Dialog title="空のステージを追加" onClose={onClose}>
+      <p>
+        {`何もないステージを新しいコンテンツ番号で追加します。コンテンツ ${LANAI_EMPTY_SCRIPT_CONTENT} (未使用の「あみだクジ（仮）」) の 3×3 の部屋に、ゲームと同じ形の門 (開始地点) と、門から歩いて入る入場の演出を付けます。`}
+      </p>
+      <p className="muted small">
+        マップ・敵の群れ・宝箱・イベントは自分で足します。見た目はマップのページの「見た目
+        (タイルセット)」で替えられます (最初は洞窟A)。ゴールは無いので、クリアするにはゴールの宝箱などを置いてください。
+      </p>
+      <label className="field">
+        <span>ステージ名</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <button
+        disabled={busy || !title.trim()}
+        className="primary"
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const index = await addLanaiEmptyStage(session, title);
             location.hash = `#/stages/${index}`;
             onClose();
           } catch (e) {

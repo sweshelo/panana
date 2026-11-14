@@ -85,6 +85,7 @@ import type { LanaiSession } from './session';
 import { LanaiEventSelect } from './EventSelect';
 import { EventConditionFields } from './EventConditionFields';
 import { DestinationFields } from './DestinationFields';
+import { LanaiTilesetField } from './TilesetField';
 
 /** The link to a map of a content (the stage page's list uses it too), with a record selected (`@section.index`). */
 export const lanaiMapHref = (content: number, name?: string, rec?: { section: number; index: number }): string =>
@@ -629,6 +630,7 @@ function Inspector({
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
       {st.info && <Facts maps={st.maps} info={st.info} view={view} />}
+      {st.info && <LanaiTilesetField maps={st.maps} info={st.info} />}
       <Stages content={content} />
     </>
   );

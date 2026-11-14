@@ -518,6 +518,11 @@ export class LanaiMaps {
     return tableNamed(this.tables, name);
   }
 
+  /** Puts a MapParts<name> table the session added to the archive among the tilesets (tilesets.ts). */
+  addPartsTable(entry: number, table: LanaiTable): void {
+    this.partsByEntry.set(entry, table);
+  }
+
   /**
    * Append a copy of EventObject row `from` to a group's table, with a state slot of its own: the first slot of the
    * group (below its count) that no row uses, or 0xFFFF (the row number) when none is free. Returns the new row.

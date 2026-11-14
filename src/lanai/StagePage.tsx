@@ -13,7 +13,7 @@ import { lanaiMapHref } from './MapPage';
 import { textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
 import { conditionText } from './conditions';
-import { LanaiContentCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
+import { LanaiContentCreator, LanaiEmptyStageCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
 import { LanaiStageScriptEditor } from './StageScriptEditor';
 import { ScriptApiBrowser } from './ScriptApiBrowser';
 import { LanaiMessage } from './MessageView';
@@ -143,6 +143,7 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
   const [creating, setCreating] = useState(false);
+  const [creatingEmpty, setCreatingEmpty] = useState(false);
   const read = useAsync(() => readContent(session, c), [session, c]);
   return (
     <>
@@ -163,6 +164,13 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
           onClick={() => setCreating(true)}
         >
           ＋ コンテンツを複製して追加
+        </button>
+        <button
+          disabled={!session.canExport}
+          onClick={() => setCreatingEmpty(true)}
+          title="何もない部屋に門と入場の演出だけがあるステージを追加します"
+        >
+          ＋ 空のステージを追加
         </button>
         {session.createdFiles.has(c.archive) && <RemoveContentButton session={session} c={c} />}
       </div>
@@ -232,6 +240,7 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
         </table>
       )}
       {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
+      {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
       {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
       <h3>マップ</h3>
       <ContentMaps session={session} c={c} />
