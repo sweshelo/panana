@@ -247,7 +247,13 @@ export class LanaiMapView {
         const rad = Math.max(3, s * (k === 3 ? 0.26 : 0.15));
         g.beginPath();
         if (k === 3) {
-          if (lanaiExitKind(r.raw) === 100) g.rect(x - rad, y - rad * 0.4, rad * 2, rad * 0.8);
+          const kind = lanaiExitKind(r.raw);
+          if (kind === 2 || kind === 4) {
+            g.fillStyle = '#15465a';
+            g.strokeStyle = selected ? '#fff' : '#48cdd3';
+            g.lineWidth = Math.max(2, rad * 0.3);
+            g.arc(x, y, rad, 0, Math.PI * 2);
+          } else if (kind === 100) g.rect(x - rad, y - rad * 0.4, rad * 2, rad * 0.8);
           else {
             g.moveTo(x, y - rad);
             g.lineTo(x + rad, y);

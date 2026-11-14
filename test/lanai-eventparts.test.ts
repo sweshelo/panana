@@ -116,10 +116,12 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     const parts = lanaiEventParts(undefined, undefined, { npcModel: 0x1a2, monsterDesign: 7 });
     expect(parts.map((p) => [p.section, p.section === 3 ? p.raw[0x15] : u32(p.raw, 0)])).toEqual([
       [5, 4],
+      [5, 4],
       [5, 0],
       [5, 1],
       [3, LANAI_DOOR_KIND],
       [3, LANAI_DOOR_KIND],
+      [3, 4],
       [3, 5],
       [3, 6],
       [4, 0],
@@ -128,9 +130,12 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
       [8, 0],
     ]);
     // no MapChara row of the kind: one is made when placed
-    expect(parts[1]!.event.chara).toEqual({ kind: 0, model: 0x1a2 });
-    expect(parts[2]!.event.chara).toEqual({ kind: 1, model: 7 });
-    expect(parts[3]!.event.action).toBe(LANAI_ACTION_EXTERNAL_DOOR);
+    expect(parts[0]!.event.switchTrigger).toBe('switch');
+    expect(parts[1]!.event.switchTrigger).toBe('button');
+    expect(parts[2]!.event.chara).toEqual({ kind: 0, model: 0x1a2 });
+    expect(parts[3]!.event.chara).toEqual({ kind: 1, model: 7 });
+    expect(parts[4]!.event.action).toBe(LANAI_ACTION_EXTERNAL_DOOR);
+    expect(parts[6]!.event.action).toBe(0x80000012);
   });
 
   test('what the look is a row of', () => {
@@ -254,7 +259,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     const st = lanaiEditState(maps);
     const info = maps.mapByName('D01001B01')!;
     st.open(info);
-    const button = st.templates().find((x) => x.source === '新規ボタン')!;
+    const button = st.templates().find((x) => x.source === '新規保持スイッチ')!;
     const rows: number[] = [];
     for (const x of [2, 3])
       st.edit((d) => {

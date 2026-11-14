@@ -68,6 +68,7 @@ export interface LanaiTemplate {
   model?: LanaiRecordModel | null;
   /** The add panel's category in place of the section's. */
   category?: string;
+  iconLabel?: string;
 }
 
 export type LanaiStamp =
@@ -85,7 +86,9 @@ export const lanaiRecEventRow = (section: number, raw: Uint8Array): number =>
 /** The first door named by an authored button's bound function. */
 export function lanaiButtonDoor(maps: LanaiMaps, group: number, row: number): number | null {
   const script = maps.session.stageScripts.get(maps.content.archive.toUpperCase())?.doc;
-  const binding = script?.bindings.find((b) => b.group === group && b.row === row && b.trigger === 'switch');
+  const binding = script?.bindings.find(
+    (b) => b.group === group && b.row === row && (b.trigger === 'switch' || b.trigger === 'button'),
+  );
   const body = script?.functions.find((f) => f.name === binding?.fn)?.body;
   const match = body?.match(/\bopenDoor\((\d+)\)/u);
   return match ? Number(match[1]) : null;
@@ -105,11 +108,13 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
         ? 'ゴールの宝箱 (見た目 3、開けるとクリア)'
         : `宝箱 (見た目 ${u32(raw, 0)})`;
     case 5:
-      return u32(raw, 0) === LANAI_REPAIR_POINT
-        ? '回復ポイント (種類 13)'
-        : u32(raw, 0) === LANAI_REPAIR_FIELD
-          ? '回復の場 (種類 12)'
-          : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
+      return [4, 5, 6].includes(u32(raw, 0))
+        ? 'スイッチ（動作はスクリプト割当による）'
+        : u32(raw, 0) === LANAI_REPAIR_POINT
+          ? '回復ポイント (種類 13)'
+          : u32(raw, 0) === LANAI_REPAIR_FIELD
+            ? '回復の場 (種類 12)'
+            : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
     case 8:
       return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
     case 9:
@@ -295,15 +300,16 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           events.setU32(row, LANAI_EVENT_ACTIONS[0] + 4, ev.destination.map);
           events.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.destination.point);
         }
-        if (ev.buttonDoor !== undefined) {
+        if (ev.switchTrigger) {
           const session = this.maps.session;
           const archive = this.maps.content.archive.toUpperCase();
-          if (!session.createdFiles.has(archive)) throw new Error('ボタンと扉の連動は追加ステージで使えます');
+          if (!session.createdFiles.has(archive)) throw new Error('スイッチのスクリプトは追加ステージで使えます');
           const stored = session.stageScripts.get(archive);
           const script = structuredClone(stored?.doc ?? emptyScriptDoc());
-          const name = `openDoor${row}`;
-          script.functions.push({ name, body: `openDoor(${ev.buttonDoor})` });
-          script.bindings.push({ trigger: 'switch', group: this.info.dungeon, row, fn: name });
+          const name =
+            ev.buttonDoor === undefined ? `switch${this.info.dungeon}_${row}` : `openDoor${this.info.dungeon}_${row}`;
+          script.functions.push({ name, body: ev.buttonDoor === undefined ? '' : `openDoor(${ev.buttonDoor})` });
+          script.bindings.push({ trigger: ev.switchTrigger, group: this.info.dungeon, row, fn: name });
           session.setStageScriptDoc(archive, script, stored?.key);
         }
         if (ev.chest) {
@@ -412,14 +418,31 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           const label =
             k === 3 && kind === LANAI_DOOR_KIND
               ? action === 0x80000017
-                ? '通路をふさぐ扉'
-                : '移動する扉'
-              : k === 4
-                ? goal
-                  ? 'クリア宝箱'
-                  : '通常の宝箱'
-                : lanaiRecLabel(k, r.raw);
-          out.set(key, { section: k, raw: r.raw.slice(), label, source: m.name, category });
+                ? '通路をふさぐ扉（外から開く）'
+                : action === 0x80000015
+                  ? '触れると開く扉'
+                  : action === 0x80000016
+                    ? '触れて開き、場所を移動する扉'
+                    : action === 0x80000018
+                      ? '外から開くと移動できる扉'
+                      : action === 0x8000002d
+                        ? 'スクリプト付きの扉'
+                        : '扉（既存の動作を複製）'
+              : k === 3 && kind === 4 && action === 0x80000012
+                ? 'ワープホール（場所を移動）'
+                : k === 4
+                  ? goal
+                    ? 'クリア宝箱'
+                    : '通常の宝箱'
+                  : lanaiRecLabel(k, r.raw);
+          out.set(key, {
+            section: k,
+            raw: r.raw.slice(),
+            label,
+            source: m.name,
+            category,
+            iconLabel: k === 3 && (kind === 2 || kind === 4) ? '◉' : undefined,
+          });
         }
     // records made from nothing (a button, a character, a range), each with an EventObject row of its own
     const fresh = table
@@ -653,19 +676,6 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
           })?.model
         )
           out.push({ level: 'warn', msg: `ボタン #${i}: 見た目未設定です`, target: rec(k, i), key: `buttonlook/${i}` });
-        if (
-          k === 5 &&
-          [4, 5, 6].includes(u32(r.raw, 0)) &&
-          maps.session.createdFiles.has(maps.content.archive.toUpperCase()) &&
-          action === 0x8000002d &&
-          lanaiButtonDoor(maps, info.dungeon, ev) === null
-        )
-          out.push({
-            level: 'warn',
-            msg: `ボタン #${i}: 操作対象の扉がありません`,
-            target: rec(k, i),
-            key: `buttontarget/${i}`,
-          });
       });
   for (const [row, n] of users)
     if (n > 1)

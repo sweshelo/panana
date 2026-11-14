@@ -691,7 +691,7 @@ function ChestPlacement({
   );
 }
 
-/** Only the persistent switch has a verified runtime path; it must name an existing external door. */
+/** Choose the switch's script path before placement. */
 function SwitchPlacement({
   st,
   template,
@@ -703,6 +703,8 @@ function SwitchPlacement({
   onReady: (t: typeof template) => void;
   onClose: () => void;
 }): ReactNode {
+  const persistent = template.event?.switchTrigger === 'switch';
+  const [mode, setMode] = useState<'door' | 'script'>(persistent ? 'door' : 'script');
   const [door, setDoor] = useState(0);
   const doc = st.current;
   const table = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
@@ -728,31 +730,47 @@ function SwitchPlacement({
         })
       : [];
   return (
-    <Dialog title="ボタンで扉を開く" onClose={onClose}>
-      <p className="small">一度踏むと押したままになり、選んだ扉を開く演出が再生されます。</p>
-      <label className="field">
-        <span>このボタンで開く扉</span>
-        <PlacedPickButton
-          title="マップ上の扉を選ぶ"
-          value={door}
-          choices={choices}
-          missing={() => '扉を選ぶ…'}
-          onChange={setDoor}
-        />
-      </label>
-      {!enabled && <p className="error">この連動は新しく追加したステージで使えます。</p>}
-      {!choices.length && <p className="muted small">先に「通路をふさぐ扉」をこのマップに置いてください。</p>}
-      <p className="muted small">「踏んでいる間だけ」は離れたときの閉扉と挟み込みを確認するまで選べません。</p>
+    <Dialog title={`${persistent ? '保持スイッチ' : 'プッシュスイッチ'}を置く`} onClose={onClose}>
+      <p className="small">{persistent ? '一度踏むと押したままになります。' : '踏むと押され、離れると戻ります。'}</p>
+      {persistent && (
+        <label className="field">
+          <span>踏んだときの動作</span>
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'door' | 'script')}>
+            <option value="door">扉を開くスクリプトを作る</option>
+            <option value="script">自由なスクリプトを作る</option>
+          </select>
+        </label>
+      )}
+      {mode === 'door' ? (
+        <>
+          <label className="field">
+            <span>このスイッチで開く扉</span>
+            <PlacedPickButton
+              title="マップ上の扉を選ぶ"
+              value={door}
+              choices={choices}
+              missing={() => '扉を選ぶ…'}
+              onChange={setDoor}
+            />
+          </label>
+          {!choices.length && <p className="muted small">先に「通路をふさぐ扉」をこのマップに置いてください。</p>}
+        </>
+      ) : (
+        <p className="muted small">
+          空の関数とスイッチへの割当を作ります。配置後にステージのスクリプトでフラグ、変数、複数の扉などの処理を書けます。
+        </p>
+      )}
+      {!enabled && <p className="error">スイッチのスクリプトは新しく追加したステージで使えます。</p>}
       <div className="row">
         <button onClick={onClose}>キャンセル</button>
         <button
           className="primary"
-          disabled={!enabled || !door || !choices.some((c) => c.value === door)}
+          disabled={!enabled || (mode === 'door' && (!door || !choices.some((c) => c.value === door)))}
           onClick={() =>
             onReady({
               ...template,
-              label: `${template.label} → 扉 #${door}`,
-              event: { ...template.event!, buttonDoor: door },
+              label: mode === 'door' ? `${template.label} → 扉 #${door}` : template.label,
+              event: { ...template.event!, buttonDoor: mode === 'door' ? door : undefined },
             })
           }
         >
@@ -862,7 +880,7 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
         help="目的からパーツを選び、マップをクリックして配置します。通常・クリア宝箱は独立した中身の表を作ります。配置後に報酬、移動先、スクリプトの接続を設定してください。装飾はゲーム中の動作を持ちません。Esc で選択に戻ります。"
         prepareTemplate={(template, choose) => {
           if (template.event?.chest) setChest({ template, choose });
-          else if (template.source === '新規ボタン') setSwitchPart({ template, choose });
+          else if (template.event?.switchTrigger) setSwitchPart({ template, choose });
           else if (template.event?.destination) setExitPart({ template, choose });
           else choose(template);
         }}
@@ -1117,6 +1135,14 @@ function RecFields({
     LANAI_EVENT_SECTIONS.includes(section as 3 | 4 | 5 | 8) && !(section === 8 && u32(rec.raw, 0) >= 100);
   const ev = hasEvent ? lanaiRecEventRow(section, rec.raw) : 0;
   const events = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
+  const switchBinding =
+    section === 5 && st.info
+      ? st.maps.session.stageScripts
+          .get(st.maps.content.archive.toUpperCase())
+          ?.doc.bindings.find(
+            (b) => b.group === st.info!.dungeon && b.row === ev && (b.trigger === 'switch' || b.trigger === 'button'),
+          )
+      : undefined;
   const linkedDoor = section === 5 && st.info ? lanaiButtonDoor(st.maps, st.info.dungeon, ev) : null;
   const linkedButtons =
     section === 3 && st.info
@@ -1127,14 +1153,22 @@ function RecFields({
       : [];
   return (
     <>
-      <h3>{lanaiRecLabel(section, rec.raw)}</h3>
+      <h3>
+        {switchBinding?.trigger === 'switch'
+          ? '保持スイッチ'
+          : switchBinding?.trigger === 'button'
+            ? 'プッシュスイッチ'
+            : lanaiRecLabel(section, rec.raw)}
+      </h3>
       <h4>見た目</h4>
       <ModelLine view={view} look={view.look(section, index)} />
       {ev > 0 && events && ev < events.rows && <LookField st={st} view={view} section={section} rec={rec} row={ev} />}
       {(section === 3 || (section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)))) && <h4>接続</h4>}
       {section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)) && (
         <p className="small">
-          {linkedDoor === null ? '操作対象の扉: 未設定' : `このボタンで開く: 扉のイベント #${linkedDoor}`}
+          {linkedDoor === null
+            ? '扉への直接接続なし。動作はスクリプトで設定できます。'
+            : `このボタンで開く: 扉のイベント #${linkedDoor}`}
         </p>
       )}
       {linkedButtons.length > 0 && (
@@ -1618,7 +1652,7 @@ function EventFields({
       <EventConditionFields st={st} event={row} field={LANAI_EVENT_DISAPPEAR} />
       <p className="muted small">
         出る条件が成り立ち、消える条件が成り立たないときに出現します。スクリプト (CRO)
-        が条件を上書きする場合があります。
+        が条件を上書きする場合があります。マップ読込後にフラグを変えても、その場で出現条件が再判定されるとは限りません。
       </p>
       <EventScriptBinding st={st} section={section} index={index} row={row} />
       {LANAI_EVENT_ACTIONS.map((o, i) => (

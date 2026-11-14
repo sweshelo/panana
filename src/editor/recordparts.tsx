@@ -11,6 +11,8 @@ export interface PartTemplate {
   source: string;
   /** The picker's category in place of the section's (templateCategory). */
   category?: string;
+  /** Symbol for a runtime effect that has no renderable model thumbnail. */
+  iconLabel?: string;
 }
 export type RecordPartStamp<T> = { type: 'prop'; row: number; dir: number } | { type: 'template'; t: T };
 export const partTemplateKey = (t: PartTemplate): string => `template/${t.section}/${t.source}/${t.raw.join('.')}`;
@@ -74,6 +76,14 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   const photo = (model: M | null): ReactNode => (
     <PartPhoto source={source} part={model} partKey={JSON.stringify(model)} />
   );
+  const templateIcon = (template: T): ReactNode =>
+    template.iconLabel ? (
+      <span className="photo photo-lg stamp-badge" aria-hidden="true">
+        {template.iconLabel}
+      </span>
+    ) : (
+      photo(modelForTemplate(template))
+    );
   const choices: PartChoice[] = [];
   const stamps = new Map<string, RecordPartStamp<T>>();
   if (open) {
@@ -102,9 +112,9 @@ export function RecordPartPanel<T extends PartTemplate, M>({
         key,
         name: template.label,
         category: template.category ?? templateCategory(template.section),
-        sub: `${template.source}${modelForTemplate(template) ? '' : ' / 見た目未設定'}`,
+        sub: `${template.source}${template.iconLabel ? ' / エフェクト（図示）' : modelForTemplate(template) ? '' : ' / 見た目未設定'}`,
         title: template.category ? template.label : `${template.source} の設定を引き継ぎます`,
-        icon: photo(modelForTemplate(template)),
+        icon: templateIcon(template),
       });
     }
     const order = [
@@ -139,7 +149,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
               ? selected.t.label
               : 'パーツを選ぶ…'
         }
-        icon={model ? photo(model) : undefined}
+        icon={selected?.type === 'template' ? templateIcon(selected.t) : model ? photo(model) : undefined}
         help={help}
         onChoose={() => setOpen(true)}
         directions={

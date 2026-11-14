@@ -64,7 +64,7 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const { info } = start();
     const st = lanaiEditState(maps);
     st.open(info);
-    const template = st.templates().find((t) => t.source === '新規ボタン')!;
+    const template = st.templates().find((t) => t.source === '新規保持スイッチ')!;
     const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
     const count = st.current!.recs[5]?.length ?? 0;
     st.edit((doc) =>
@@ -78,7 +78,12 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const row = u32(st.current!.recs[5]!.at(-1)!.raw, 4);
     expect(lanaiButtonDoor(maps, info.dungeon, row)).toBe(1);
     const stored = s.stageScripts.get(c.archive.toUpperCase())!;
-    expect(stored.doc.bindings).toContainEqual({ trigger: 'switch', group: info.dungeon, row, fn: `openDoor${row}` });
+    expect(stored.doc.bindings).toContainEqual({
+      trigger: 'switch',
+      group: info.dungeon,
+      row,
+      fn: `openDoor${info.dungeon}_${row}`,
+    });
     expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
     const files = new Map<string, Uint8Array>();
     await buildStageScripts(s, files);
@@ -89,6 +94,30 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     st.redo();
     expect(lanaiButtonDoor(maps, info.dungeon, row)).toBe(1);
     st.undo();
+  });
+
+  test('both switch types can be placed without a door and receive editable script functions', async () => {
+    const { info } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
+    for (const [source, trigger, x] of [
+      ['新規保持スイッチ', 'switch', 4],
+      ['新規プッシュスイッチ', 'button', 5],
+    ] as const) {
+      const template = st.templates().find((t) => t.source === source)!;
+      st.edit((doc) => st.placeStamp(doc, { type: 'template', t: template }, x, 5));
+      const row = u32(st.current!.recs[5]!.at(-1)!.raw, 4);
+      const stored = s.stageScripts.get(c.archive.toUpperCase())!;
+      const binding = stored.doc.bindings.find((b) => b.group === info.dungeon && b.row === row);
+      expect(binding?.trigger).toBe(trigger);
+      expect(stored.doc.functions.find((f) => f.name === binding?.fn)?.body).toBe('');
+      expect(lanaiButtonDoor(maps, info.dungeon, row)).toBeNull();
+      expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
+    }
+    st.undo();
+    st.undo();
+    expect(s.stageScripts.get(c.archive.toUpperCase())!.doc).toEqual(before);
   });
 
   test('a new stair keeps its selected destination in the event row and undoes with the record', () => {
@@ -119,6 +148,36 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     st.undo();
     expect(st.current!.recs[3]!.length).toBe(count);
     expect(events.rows).toBe(before);
+  });
+
+  test('a warp hole uses the ROM warp gate kind and stores its destination', () => {
+    const { info, g } = start();
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const template = st.templates().find((t) => t.source === '新規ワープホール')!;
+    expect(template.iconLabel).toBe('◉');
+    st.edit((doc) =>
+      st.placeStamp(
+        doc,
+        {
+          type: 'template',
+          t: { ...template, event: { ...template.event!, destination: { map: info.hash, point: g.firstPoint } } },
+        },
+        5.5,
+        5.5,
+      ),
+    );
+    const hole = st.current!.recs[3]!.at(-1)!;
+    const row = u32(hole.raw, 4);
+    const events = maps.eventTable(info.dungeon)!;
+    expect(hole.raw[0x15]).toBe(4);
+    expect([events.u32(row, 0x10), events.u32(row, 0x14), events.u32(row, 0x18)]).toEqual([
+      0x80000012,
+      info.hash,
+      g.firstPoint,
+    ]);
+    expect(lanaiValidateAll(maps, info, st.current!).filter((i) => i.key.startsWith('destination/'))).toEqual([]);
+    st.undo();
   });
 
   test('another tileset: its table is copied in, with a MapPartsType and a MapResource row; saved and restored', async () => {

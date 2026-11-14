@@ -69,7 +69,9 @@ export interface NewEventRow {
   /** First opening, then the two retry states of a goal chest. */
   rewards?: LanaiTreasureSlot[][];
   clears?: number;
-  /** A verified persistent switch opens this door's EventObject row through on switch. */
+  /** Which CRO button class and trigger to create when this part is placed. */
+  switchTrigger?: 'switch' | 'button';
+  /** Optionally open this door's EventObject row from the generated switch function. */
   buttonDoor?: number;
   destination?: { map: number; point: number };
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */
@@ -85,6 +87,7 @@ export interface LanaiEventPart {
   event: NewEventRow;
   model: LanaiRecordModel | null;
   category: string;
+  iconLabel?: string;
 }
 
 /** What a record's look (EventObject +0x5A) is a row of, for the inspector. */
@@ -163,15 +166,19 @@ export function lanaiEventParts(
   const out: LanaiEventPart[] = [];
   const part = (p: LanaiEventPart): void => void out.push(p);
   const switchLook = lanaiObjectRef(mapObject, VERIFIED_SWITCH_LOOK) ? VERIFIED_SWITCH_LOOK : 0;
-  part({
-    section: 5,
-    raw: record(5, 4),
-    label: '踏むボタン（保持式はスクリプトの「押したまま」を選ぶ）',
-    source: '新規ボタン',
-    category: 'スイッチ',
-    event: { action: LANAI_ACTION_SCRIPT, look: switchLook },
-    model: switchLook ? { type: 'object', row: switchLook } : null,
-  });
+  for (const [trigger, label, source] of [
+    ['switch', '保持スイッチ（一度踏むと押したまま）', '新規保持スイッチ'],
+    ['button', 'プッシュスイッチ（離れると戻る）', '新規プッシュスイッチ'],
+  ] as const)
+    part({
+      section: 5,
+      raw: record(5, 4),
+      label,
+      source,
+      category: 'スイッチ',
+      event: { action: LANAI_ACTION_SCRIPT, look: switchLook, switchTrigger: trigger },
+      model: switchLook ? { type: 'object', row: switchLook } : null,
+    });
   for (const kind of [LANAI_CHARA_NPC, LANAI_CHARA_MONSTER]) {
     const monster = kind === LANAI_CHARA_MONSTER;
     const row = lanaiCharaOfKind(mapChara, mapObject, kind);
@@ -198,6 +205,7 @@ export function lanaiEventParts(
   });
   for (const [kind, label, action, source] of [
     [LANAI_DOOR_KIND, '場所を移動する扉', 0x80000016, '新規移動扉'],
+    [4, 'ワープホール（場所を移動）', 0x80000012, '新規ワープホール'],
     [5, '上り階段', 0x80000013, '新規上り階段'],
     [6, '下り階段', 0x80000013, '新規下り階段'],
   ] as const) {
@@ -213,6 +221,7 @@ export function lanaiEventParts(
         destination: { map: 0, point: 0 },
       },
       model: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? { type: 'object', row: 53 } : null,
+      iconLabel: kind === 4 ? '◉' : undefined,
     });
   }
   for (const goal of [false, true]) {
