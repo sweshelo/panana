@@ -59,6 +59,12 @@ export interface ScriptCompletions {
 
 export const lineIdText = (id: number): string => `0x${id.toString(16).toUpperCase()}`;
 const PARAM: Record<string, string> = { i: '整数', f: '小数', v: 'vec(x, y, z)', c: 'だれに', p: 'だれに' };
+/** A result type of the table as it is shown: "u32" = 32 bits, "?" after it = read from the code but not settled. */
+export const apiResultLabel = (result: string): string => {
+  const t = result.replace(/\?$/u, '');
+  const name = t === 'u32' ? '32bit' : t === 'ptr' ? 'ポインター' : t;
+  return result.endsWith('?') ? `${name} (推定)` : name;
+};
 /** The arguments an author writes for an API function (a ScriptMessageParam is not written). */
 const apiForm = (r: ScriptApiRow): string =>
   `${r[1]}(${[...r[3]]
@@ -70,7 +76,7 @@ const methods = (classes: string[]): ScriptCompletion[] =>
     (CLASSES.get(c) ?? []).map((r) => ({
       label: r[1],
       detail: apiForm(r).slice(r[1].length),
-      info: `${c}::${r[1]}(${r[4]})`,
+      info: `${apiResultLabel(r[5])} ${c}::${r[1]}(${r[4]})`,
       apply: `${r[1]}(`,
       type: 'method' as const,
     })),

@@ -60,6 +60,11 @@ export interface ScriptCall {
   args: ScriptArg[];
   /** The result is one byte (the bits above it are not defined). */
   byte: boolean;
+  /**
+   * What it returns (scriptApiTable.ts: void, bool, u8, s8, u16, s16, u32, ptr, float; "?" after it = not settled).
+   * A float comes back in s0 and a void function leaves nothing: neither can be compared.
+   */
+  result: string;
 }
 export type ScriptCmp = '==' | '!=' | '<' | '<=' | '>' | '>=';
 export interface ScriptCond {
@@ -414,7 +419,15 @@ export function parseStageScript(src: string): StageScript {
     const words = (self ? 1 : 0) + args.filter((a) => a.k !== 'f').length;
     if (count('v') > 2 || count('m') > 2 || count('c') > 1 || count('p') > 2 || words > 8 || count('f') > 8)
       fail(`${shown} は引数が多く、スクリプトからは呼べません`, at);
-    return { name: `${r[0]}::${r[1]}`, sym: r[2], self, player: r[0] === 'ScriptPlayer', args, byte: r[5] === '8' };
+    return {
+      name: `${r[0]}::${r[1]}`,
+      sym: r[2],
+      self,
+      player: r[0] === 'ScriptPlayer',
+      args,
+      byte: /^(bool|u8)/u.test(r[5]),
+      result: r[5],
+    };
   };
   /** A call that begins at the token just read (a class's name or a character), or null. */
   const apiCallAt = (t: Token): ScriptCall | null => {
@@ -433,7 +446,13 @@ export function parseStageScript(src: string): StageScript {
     const t = next();
     if (t.t !== 'id') fail('変数か ask(…) / item(…) / state(…) / monsters() が要ります', t);
     const api = apiCallAt(t);
-    if (api) return { kind: 'call', call: api };
+    if (api) {
+      // read from the game's code (script-returns.md); an unsettled void ("void?") is left to the author
+      if (api.result === 'void') fail(`${api.name} は値を返しません (戻り値は void)。比べずに、文として呼びます`, t);
+      if (api.result.startsWith('float'))
+        fail(`${api.name} は小数 (float) を返します。スクリプトの条件では整数しか比べられません`, t);
+      return { kind: 'call', call: api };
+    }
     if (is('(')) {
       if (t.s === 'ask') return { kind: 'ask', msg: call('ask', () => u32('台詞の行 ID'))[0] };
       if (t.s === 'item') return { kind: 'item', item: call('item', () => u32('アイテム ID'))[0] };

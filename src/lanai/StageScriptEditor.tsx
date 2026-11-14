@@ -21,7 +21,7 @@ import { lanaiMaps, type LanaiMaps } from './maps';
 import { lanaiMonsterName } from './monsterBook';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
-import { lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
+import { apiResultLabel, lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
 import { ScriptCodeEditor } from './ScriptCodeEditor';
 import {
   docBound,
@@ -292,7 +292,9 @@ function ScriptApiList(): ReactNode {
         ゲームの関数をそのまま呼びます: ScriptSound.Play(0x84, 0)。ScriptChara / ScriptPlayer
         の関数はキャラに付けて書きます: hero.SetVisible(0)、chara(3).StartAnimation(0x8000006E, 0, 1, 0)。const
         GSvec&amp; は vec(x, y, z)、キャラ (ScriptChara&amp; / ChrObject*) は hero / self / chara(イベント)、const
-        ScriptMessageParam&amp; は書きません。引数の意味はゲームの解析によります (待つ関数は自分で呼ぶ必要があります)。
+        ScriptMessageParam&amp; は書きません。引数の意味はゲームの解析によります
+        (待つ関数は自分で呼ぶ必要があります)。「→」の後は戻り値の型です。if で比べられるのは整数を返す関数だけで、void
+        と float は文として呼びます。
       </p>
       <input
         aria-label="Script API を探す"
@@ -308,6 +310,10 @@ function ScriptApiList(): ReactNode {
                 {r[0] === 'ScriptChara' || r[0] === 'ScriptPlayer' ? `だれに.${r[1]}` : `${r[0]}.${r[1]}`}
               </td>
               <td className="mono small">{`(${r[4]})`}</td>
+              <td
+                className="mono small"
+                title="戻り値の型 (ゲームのコードから読んだもの)"
+              >{`→ ${apiResultLabel(r[5])}`}</td>
               <td className="small">{r[0] === 'ScriptPlayer' ? 'hero だけ' : ''}</td>
             </tr>
           ))}

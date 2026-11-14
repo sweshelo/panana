@@ -115,6 +115,17 @@ describe('RPG FREE! stage script: reading', () => {
     expect(err('on talk(1, 5) { fight(1) }')).toContain('「fight」という文はありません');
     expect(err('on talk(1, 5) { talk(1) } @')).toContain('使えない文字');
   });
+
+  test('the result of an API function: an integer is compared, void and float are not values', () => {
+    // read from the game's code (scriptApiTable.ts; lanai-custom-stages 3ds/research/script-returns.md)
+    const body = (cond: string): string => `on talk(1, 5) { if (${cond}) { wait(1) } }`;
+    expect(() => parseStageScript(body('ScriptCamera.IsAnimation() == 1'))).not.toThrow();
+    expect(() => parseStageScript(body('ScriptMap.GetCurrentMapGroupID() == 1'))).not.toThrow();
+    expect(() => parseStageScript(body('ScriptMap.ChangeMap(1, 2) == 1'))).toThrow('void');
+    expect(() => parseStageScript(body('ScriptCamera.GetTargetDistance() == 1'))).toThrow('float');
+    // as statements they are called as before
+    expect(() => parseStageScript('on talk(1, 5) { ScriptMap.ChangeMap(1, 2) }')).not.toThrow();
+  });
 });
 
 describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
