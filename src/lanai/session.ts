@@ -101,6 +101,19 @@ export function archiveTables(name: string, arc: Archive): LanaiTableRef[] {
 export const LANAI_EDITS_KEY = 'lanai/edits/v1';
 
 /**
+ * The master tables whose rows the custom-stage distribution (lanai-custom-stages) lays over the game's master
+ * (its 3ds/runtime/lanai.c master_header). A delivered stage with a row of any other table is refused whole.
+ */
+export const LANAI_DELIVERABLE_TABLES = [
+  'Contents',
+  'MapStageIntegration',
+  'MessageMapStage',
+  'MessageMapName',
+  'ItemData',
+  'ItemDataCore',
+];
+
+/**
  * A row edit kept across loads: the table (tableKey), the row, the row as it was (null for a row an edit added) and as
  * it is. Only the bytes that differ are put back, so a row the Update changed elsewhere keeps the Update's bytes.
  */
@@ -810,6 +823,61 @@ export class LanaiSession {
   async modZip(): Promise<Uint8Array> {
     const pkg = packageOn(this.baseMod, await this.allModFiles(), this.codeIps());
     // read by the distribution server (lanai-custom-stages): the key and the flags each scripted stage owns
+    const stages = await stageScriptManifest(this);
+    if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
+    return buildModZip(pkg, LANAI.titleId);
+  }
+
+  /**
+   * The master tables (and their changed rows) the custom-stage distribution cannot deliver: it lays only the rows of
+   * LANAI_DELIVERABLE_TABLES over the game's master, and refuses a stage with a row of any other table whole.
+   * Compared with the ROM's master, so a base MOD's changes count too.
+   */
+  async distributionDiscards(): Promise<{ table: string; rows: number }[]> {
+    return (await this.distributionMaster()).discards;
+  }
+
+  private async distributionMaster(): Promise<{
+    arc: Archive;
+    keep: Map<number, Uint8Array>;
+    discards: { table: string; rows: number }[];
+  }> {
+    const arc = parseArchive(await this.raw.readRomfs(LANAI.master));
+    const rom = new Map(archiveTables(LANAI.master, arc).map((t) => [t.entry, t]));
+    const keep = new Map<number, Uint8Array>();
+    const discards: { table: string; rows: number }[] = [];
+    for (const t of this.tables) {
+      if (t.archive !== LANAI.master) continue;
+      const r = rom.get(t.entry);
+      if (t.added || !r) {
+        discards.push({ table: t.table.name, rows: t.table.rows });
+        continue;
+      }
+      if (equalBytes(t.table.data, r.table.data)) continue;
+      if (LANAI_DELIVERABLE_TABLES.includes(t.table.name)) {
+        keep.set(r.index, t.table.data);
+        continue;
+      }
+      let rows = Math.abs(t.table.rows - r.table.rows);
+      for (let i = 0; i < Math.min(t.table.rows, r.table.rows); i++)
+        if (!equalBytes(t.table.row(i), r.table.row(i))) rows++;
+      discards.push({ table: t.table.name, rows });
+    }
+    return { arc, keep, discards };
+  }
+
+  /**
+   * The zip for the custom-stage distribution (lanai-custom-stages): like modZip, but the master carries only the
+   * changes of LANAI_DELIVERABLE_TABLES (the other tables as in the ROM) and there is no exefs/code.ips (the
+   * distribution does not deliver it). Throws on condition scripts, which the distribution refuses.
+   */
+  async distributionZip(): Promise<Uint8Array> {
+    if (this.conditionScripts.size)
+      throw new Error('条件スクリプト (code.ips) を使うステージは、カスタムステージとして配信できません');
+    const files = await this.allModFiles();
+    const { arc, keep } = await this.distributionMaster();
+    files.set(LANAI.master, rebuildArchive(arc, keep));
+    const pkg = packageOn(this.baseMod, files, null);
     const stages = await stageScriptManifest(this);
     if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
     return buildModZip(pkg, LANAI.titleId);

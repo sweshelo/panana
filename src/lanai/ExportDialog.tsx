@@ -9,7 +9,7 @@ import { CodeModOption } from '../ui/CodeModOption';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { download } from '../ui/download';
-import type { LanaiSession } from './session';
+import { LANAI_DELIVERABLE_TABLES, type LanaiSession } from './session';
 
 export function LanaiExportDialog({ session, onClose }: { session: LanaiSession; onClose: () => void }): ReactNode {
   const [error, setError] = useState('');
@@ -23,6 +23,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   const fieldStartGuard = session.needsFieldStartGuard;
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
+  const discards = useAsync(() => session.distributionDiscards(), [session]);
   const archives = [
     ...new Set([
       ...changed.map((t) => t.archive),
@@ -101,6 +102,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
               </ul>
               <BaseModNote mod={session.baseMod} />
               <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', ips ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
+              <DistributionNote discards={Array.isArray(discards) ? discards : null} scripts={scripts} />
               {error && <div className="error">{error}</div>}
               <div className="row">
                 <button
@@ -114,6 +116,17 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                   }}
                 >
                   MOD の zip をダウンロード
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      download(await session.distributionZip(), 'denpa-free-stage.zip');
+                    } catch (e) {
+                      setError((e as Error).message);
+                    }
+                  }}
+                >
+                  カスタムステージ配信用の zip をダウンロード
                 </button>
                 <button
                   onClick={() => {
@@ -130,5 +143,35 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
         </>
       )}
     </Dialog>
+  );
+}
+
+/** What the custom-stage distribution zip leaves out: master tables the game cannot take, and exefs/code.ips. */
+function DistributionNote({
+  discards,
+  scripts,
+}: {
+  discards: { table: string; rows: number }[] | null;
+  scripts: number;
+}): ReactNode {
+  return (
+    <div className="muted small">
+      <p>
+        カスタムステージ配信用の zip は、配信 (uwapo) がゲームに届けられる変更だけを入れます。master の表は{' '}
+        {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけを残し、ほかの表は ROM のままに戻します
+        (ゲームはほかの表の行を含むステージを丸ごと読み込まないため)。exefs/code.ips は入れません。
+      </p>
+      {scripts > 0 && <p className="error">条件スクリプトがあるので、配信用には書き出せません。</p>}
+      {discards && discards.length > 0 && (
+        <>
+          <p>配信用の zip では、次の変更を捨てます:</p>
+          <ul>
+            {discards.map((d) => (
+              <li key={d.table}>{`master の ${d.table}: ${d.rows} 行`}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
