@@ -1,5 +1,5 @@
 // The pages of a 電波人間のRPG FREE! (lanai) dump: the stages (contents), the maps, the talks, the strings of the tables, the
-// monsters, the items, the actions, the shops, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
+// monsters, the items, the actions, the shops, the BGM and sound effects, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useMemo, useState, type ReactNode } from 'react';
 import { LanaiActionPage } from '../lanai/ActionPage';
 import { LanaiCodePage } from '../lanai/CodePage';
@@ -13,6 +13,7 @@ import { LanaiMonsterPage } from '../lanai/MonsterPage';
 import { useLanaiRevision } from '../lanai/MonsterEditor';
 import { LanaiSession } from '../lanai/session';
 import { LanaiShopPage } from '../lanai/ShopPage';
+import { LanaiSoundPage } from '../lanai/SoundPage';
 import { LanaiStagePage } from '../lanai/StagePage';
 import { LanaiTalkPage } from '../lanai/TalkPage';
 import { LanaiWorldPage } from '../lanai/WorldPage';
@@ -34,6 +35,7 @@ export const LANAI_PAGES = [
   ['items', 'アイテム'],
   ['actions', 'アクション'],
   ['shops', 'ショップ'],
+  ['sounds', 'BGM・効果音'],
   ['codes', 'コード・配信'],
   ['romfs', 'RomFS'],
 ] as const;
@@ -49,6 +51,7 @@ const TITLES: Record<LanaiPage, string> = {
   items: 'アイテム',
   actions: 'アクション',
   shops: 'ショップ',
+  sounds: 'BGM・効果音',
   codes: 'コード入力・チェックイン',
   romfs: 'RomFS',
 };
@@ -154,6 +157,8 @@ export function LanaiShell({
           <LanaiActionPage session={session} arg={a} />
         ) : id === 'shops' ? (
           <LanaiShopPage session={session} arg={a} />
+        ) : id === 'sounds' ? (
+          <LanaiSoundPage session={session} arg={a} />
         ) : id === 'codes' ? (
           <LanaiCodePage session={session} arg={a} />
         ) : (
