@@ -4,6 +4,7 @@ import { animationKey } from '../cgfx/player';
 import { modelSet } from '../pages/modelview';
 import { BookList, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { ModelView } from '../ui/ModelView';
+import { Photo } from '../ui/Photo';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import {
@@ -81,6 +82,12 @@ export function LanaiAnimationPage({ session, arg }: { session: LanaiSession; ar
             { head: '種類', cell: (item) => (item.kind === 'npc' ? 'NPC' : '電波人間') },
             { head: 'モデル', cell: (item) => item.name },
           ]}
+          photo={(item) => (
+            <Photo
+              model={item.kind === 'npc' ? lanaiNpcModel(session, item.row) : lanaiDenpaModel(session)}
+              title={item.name}
+            />
+          )}
           listRef={list}
         />
       </div>
