@@ -50,7 +50,8 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
           <table className="book-table">
             <thead>
               <tr>
-                <th>群れ</th>
+                <th>行番号 (battle に書く値)</th>
+                <th>行 ID</th>
                 <th>モンスター</th>
               </tr>
             </thead>
@@ -60,6 +61,7 @@ export function LanaiStageContents({ maps }: { maps: LanaiMaps }): ReactNode {
                   <td>
                     <a href={lanaiGroupHref(maps.content.index, group.row)}>群れ #{group.row}</a>
                   </td>
+                  <td className="mono muted">{`0x${group.id.toString(16).toUpperCase()}`}</td>
                   <td>
                     <MonsterGroupLine maps={maps} value={group.id} showRow={false} />
                   </td>

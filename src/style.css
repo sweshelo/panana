@@ -3054,6 +3054,18 @@ label.edited-label {
   border-radius: 6px;
   background: var(--panel2);
 }
+.lanai-anchor {
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.lanai-anchor a {
+  overflow-wrap: anywhere;
+}
+.lanai-arrivals {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
 .lanai-id-value {
   font-size: 22px;
   color: var(--text);
@@ -3276,4 +3288,20 @@ dialog.stage-editor > .picker-head h2 {
 }
 .stage-chest-reward-first .photo {
   box-shadow: 0 0 6px 1px gold;
+}
+.script-function {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.script-function > .row {
+  flex-wrap: wrap;
+}
+
+.script-function > p {
+  margin: 0;
 }

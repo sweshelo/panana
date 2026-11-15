@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { scriptDocFromSource, SCRIPT_RESERVED } from '../src/lanai/eventScript';
 import {
   scriptCompletions,
+  scriptBattleMarks,
   scriptFoldRange,
   scriptFunctionProblem,
   scriptLineMarks,
@@ -22,6 +23,10 @@ const assist: ScriptAssist = {
   records: [
     { row: 3, label: '扉' },
     { row: 12, label: 'キャラ・物 種類 1 (話しかけたとき)' },
+  ],
+  groups: [
+    { row: 0, id: 0x80000000, label: '(空)' },
+    { row: 5, id: 0x80000010, label: 'トーチゴースト・いちごおばけ' },
   ],
 };
 const labels = (before: string, explicit = false): string[] =>
@@ -99,6 +104,22 @@ describe('completion', () => {
     ]);
     expect(scriptCompletions('camera(chara(1', assist)!.options.map((o) => o.apply)).toEqual(['12']);
   });
+  test('battle offers MonsterGroup row positions with their different row IDs and members', () => {
+    const all = scriptCompletions('battle(', assist)!;
+    expect(all.options.map((o) => [o.apply, o.label])).toEqual([
+      ['0', '群れ #0 (空)'],
+      ['5', '群れ #5 トーチゴースト・いちごおばけ'],
+    ]);
+    expect(all.options[1]!.detail).toContain('行 ID 0x80000010');
+    expect(scriptCompletions('battle(5', assist)!.options.map((o) => o.apply)).toEqual(['5']);
+    expect(scriptCompletions('battle(16', assist)).toBeNull();
+  });
+});
+
+test('battle annotations name only calls in code, not comments', () => {
+  const source = 'battle(5)\n// battle(8)\n/* battle(9) */ battle(0)';
+  expect(scriptBattleMarks(source).map((m) => m.row)).toEqual([5, 0]);
+  expect(source.slice(0, scriptBattleMarks(source)[0]!.at)).toBe('battle(5)');
 });
 
 describe('where a text is wrong', () => {

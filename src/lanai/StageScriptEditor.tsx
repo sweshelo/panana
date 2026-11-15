@@ -152,6 +152,7 @@ function FunctionText({
   body,
   applyError,
   onChange,
+  onBlur,
 }: {
   session: LanaiSession;
   maps: LanaiMaps | null;
@@ -164,6 +165,7 @@ function FunctionText({
   /** What applying the script said of this function, shown while the text itself is not found wrong. */
   applyError: string | null;
   onChange: (body: string) => void;
+  onBlur: () => void;
 }): ReactNode {
   const lines = useMemo(
     () => (maps && group !== undefined ? (talkLines(session, maps, group) ?? []) : []),
@@ -177,9 +179,26 @@ function FunctionText({
     [maps, group, revision],
   );
   const varNames = vars.map((v) => v.name).join(' ');
+  const battleGroups = useMemo(() => {
+    const mp = session.table('MonsterParameter');
+    return (maps?.monsterGroups() ?? []).map((g) => ({
+      row: g.row,
+      id: g.id,
+      label:
+        [
+          ...new Set(
+            g.monsters.map((id) => {
+              const row = mp?.find(id) ?? -1;
+              return row < 0 ? hexId(id) : lanaiMonsterName(session, row);
+            }),
+          ),
+        ].join('、') || '(空)',
+    }));
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, maps, revision]);
   const assist = useMemo<ScriptAssist>(
-    () => ({ vars: varNames ? varNames.split(' ') : [], lines, records }),
-    [varNames, lines, records],
+    () => ({ vars: varNames ? varNames.split(' ') : [], lines, records, groups: battleGroups }),
+    [varNames, lines, records, battleGroups],
   );
   const problem = useMemo(() => scriptFunctionProblem(vars, body), [vars, body]);
   const problems = useMemo(() => (problem ? [{ ...problem, severity: 'error' as const }] : []), [problem]);
@@ -189,6 +208,7 @@ function FunctionText({
         label={`関数 ${name} の本文`}
         value={body}
         onChange={onChange}
+        onBlur={onBlur}
         assist={assist}
         problems={problems}
       />
@@ -269,8 +289,8 @@ function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMap
         </tbody>
       </table>
       <p className="muted small">
-        行 ID (マップのページ・群れのページで出る 0x800000NN) は行番号と同じとは限りません。battle()
-        には左の行番号を書きます。
+        行番号は表の上から 0, 1, 2… と数えた位置です。行 ID はその行が持つ別の識別値です。
+        この表では同じ群れを横一列に並べています。battle() には左の行番号を書きます。
       </p>
     </details>
   );
@@ -378,7 +398,11 @@ export function LanaiStageScriptEditor({
     }
   };
   const apply = (): void => {
-    if (setDoc(docOfDraft(draft, bindings))) setDraft(draftOf(session.stageScripts.get(archive)?.doc));
+    if (setDoc(docOfDraft(draft, bindings)))
+      setDraft({
+        vars: draft.vars.map((v) => ({ ...v })),
+        functions: draft.functions.map((f) => ({ ...f, was: f.name })),
+      });
   };
   const setVar = (k: number, v: Partial<ScriptDoc['vars'][number]>): void =>
     setDraft({ ...draft, vars: draft.vars.map((x, j) => (j === k ? { ...x, ...v } : x)) });
@@ -507,6 +531,9 @@ export function LanaiStageScriptEditor({
               body={f.body}
               applyError={error?.fn === f.name ? error.message : null}
               onChange={(body) => setFn(f.id, { body })}
+              onBlur={() => {
+                if (dirty) apply();
+              }}
             />
             {maps && groups.length > 0 && (
               <BodyLines session={session} maps={maps} group={given[0]?.group ?? groups[0]!} body={f.body} />
@@ -515,37 +542,9 @@ export function LanaiStageScriptEditor({
               {given.length
                 ? `割り当て: ${given.map(bindingLabel).join('、')}`
                 : f.was
-                  ? '割り当てなし (キャラ・範囲・ボタンにはマップのページでレコードの「スクリプトの関数」から、マップが始まるときには下のチェックで割り当てます)'
+                  ? '割り当てなし (キャラ・範囲・ボタンにはマップのページでレコードの「スクリプトの関数」から、マップが始まるときには下のプルダウンで割り当てます)'
                   : '未反映 (反映すると割り当てられます)'}
             </p>
-            {stored && f.was && f.was === f.name && groups.length > 0 && (
-              <div className="row">
-                {groups.map((g) => {
-                  const cur = startBinding(stored.doc, g);
-                  return (
-                    <label
-                      key={g}
-                      className="layer"
-                      title="戦闘から戻ったときにも実行されます (battle() の続きはここに書きます)"
-                    >
-                      <input
-                        type="checkbox"
-                        aria-label={`関数 ${f.name} を MapGroup ${g} が始まるときに実行する`}
-                        checked={cur?.fn === f.was}
-                        onChange={(e) =>
-                          setDoc(
-                            e.target.checked
-                              ? docBound(stored.doc, { trigger: 'start', group: g, row: 0, fn: f.was! })
-                              : docUnbound(stored.doc, { trigger: 'start', group: g, row: 0 }),
-                          )
-                        }
-                      />
-                      {`MapGroup ${g} が始まるとき (戦闘のあとも)${cur && cur.fn !== f.was ? ` ※いまは ${cur.fn}` : ''}`}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
           </div>
         );
       })}
@@ -574,7 +573,11 @@ export function LanaiStageScriptEditor({
         <button onClick={apply} disabled={!dirty}>
           スクリプトを反映
         </button>
-        {dirty && <button onClick={() => setDraft(draftOf(stored?.doc))}>変更を捨てる</button>}
+        {dirty && (
+          <button data-script-discard onClick={() => setDraft(draftOf(stored?.doc))}>
+            変更を捨てる
+          </button>
+        )}
         {dirty && <span className="muted small">未反映の変更があります</span>}
         {stored && !dirty && <span className="muted small mono">{`stageKey ${stored.key}`}</span>}
       </div>

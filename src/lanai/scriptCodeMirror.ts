@@ -39,6 +39,7 @@ import {
 } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import {
+  scriptBattleMarks,
   scriptCompletions,
   scriptFoldRange,
   scriptLineMarks,
@@ -214,13 +215,28 @@ export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOpti
   const readOnly = new Compartment();
 
   const lineTexts = (view: EditorView): DecorationSet => {
-    if (!assist.lines.length) return Decoration.none;
+    if (!assist.lines.length && !assist.groups?.length) return Decoration.none;
     const out: Range<Decoration>[] = [];
-    for (const m of scriptLineMarks(view.state.doc.toString())) {
+    const source = view.state.doc.toString();
+    for (const m of scriptLineMarks(source)) {
       const line = assist.lines.find((l) => l.id === m.id);
       out.push(
         Decoration.widget({
           widget: new LineText(line ? line.text || '(本文なし)' : 'この行 ID は台詞の表にありません', !line),
+          side: 1,
+        }).range(m.at),
+      );
+    }
+    for (const m of scriptBattleMarks(source)) {
+      const group = assist.groups?.find((g) => g.row === m.row);
+      out.push(
+        Decoration.widget({
+          widget: new LineText(
+            group
+              ? ` 群れ #${group.row}: ${group.label} (行 ID ${`0x${group.id.toString(16).toUpperCase()}`})`
+              : ` 群れ #${m.row} は表にありません`,
+            !group,
+          ),
           side: 1,
         }).range(m.at),
       );

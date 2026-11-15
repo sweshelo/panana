@@ -10,6 +10,7 @@ const NO_PROBLEMS: ScriptProblem[] = [];
 export function ScriptCodeEditor({
   value,
   onChange,
+  onBlur,
   label,
   readOnly = false,
   assist = NO_ASSIST,
@@ -17,6 +18,7 @@ export function ScriptCodeEditor({
 }: {
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   label: string;
   readOnly?: boolean;
   assist?: ScriptAssist;
@@ -60,7 +62,13 @@ export function ScriptCodeEditor({
   useEffect(() => handle.current?.setReadOnly(readOnly), [readOnly, ready]);
 
   return (
-    <div className="script-code">
+    <div
+      className="script-code"
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget) && !e.relatedTarget?.closest('[data-script-discard]'))
+          onBlur?.();
+      }}
+    >
       {!ready && (
         <textarea
           aria-label={label}

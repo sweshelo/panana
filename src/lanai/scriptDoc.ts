@@ -97,8 +97,12 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   ),
   w('statement', 'openDoorNow(イベント)', '扉を演出なしで開ける (当たり判定と状態だけ。見た目は開かない)'),
   w('statement', 'closeDoor(イベント)', '扉を閉める'),
-  w('statement', 'disable()', '範囲のイベントで: この範囲をもう働かなくする'),
-  w('statement', 'collision(イベント, 0 / 1)', '範囲を働かなくする / 働くようにする'),
+  w(
+    'statement',
+    'disable()',
+    '範囲のイベントで: 現在のマップにいる間、この範囲を働かなくする。戦闘・マップ再読込で元に戻る',
+  ),
+  w('statement', 'collision(イベント, 0 / 1)', '現在のマップ内で範囲を無効 / 有効にする。再読込で元に戻る'),
   w('statement', 'remove(イベント)', 'そのイベントのキャラ・物を消す'),
   w('statement', 'vanishMonster(イベント)', 'マップ上のモンスターを、本家のボス撃破後と同じ消滅演出で消す'),
   w(

@@ -36,6 +36,8 @@ export interface ScriptAssist {
   lines: { id: number; text: string }[];
   /** The events of that MapGroup's records: the row a statement names, and what the record is. */
   records: { row: number; label: string }[];
+  /** MonsterGroup rows: battle() uses row positions, while their IDs may differ. */
+  groups?: { row: number; id: number; label: string }[];
 }
 export const NO_ASSIST: ScriptAssist = { vars: [], lines: [], records: [] };
 
@@ -86,6 +88,15 @@ const methods = (classes: string[]): ScriptCompletion[] =>
 const LINE_CALLS = ['talk', 'say', 'ask'];
 const ROW_CALLS = ['chara', 'openDoor', 'openDoorNow', 'closeDoor', 'collision', 'remove', 'vanishMonster', 'state'];
 
+/** Calls in code, excluding comments, whose argument is a MonsterGroup row position. */
+export function scriptBattleMarks(source: string): { row: number; at: number }[] {
+  const code = source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
+  return [...code.matchAll(/\bbattle\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)/gu)].map((m) => ({
+    row: Number(m[1]),
+    at: m.index + m[0].length,
+  }));
+}
+
 /** What can be written at the end of `before` (a function's text up to the cursor), or null: nothing to offer. */
 export function scriptCompletions(before: string, assist: ScriptAssist, explicit = false): ScriptCompletions | null {
   // inside a comment of the line: nothing
@@ -118,6 +129,18 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
     const options = assist.records
       .filter((r) => String(r.row).startsWith(call[2]!))
       .map((r) => ({ label: `${r.row} ${r.label}`, apply: String(r.row), type: 'constant' as const }));
+    return options.length ? { from: before.length - call[2]!.length, options, filter: false } : null;
+  }
+  if (call?.[1] === 'battle' && /^\d*$/u.test(call[2]!)) {
+    const options = (assist.groups ?? [])
+      .filter((g) => String(g.row).startsWith(call[2]!))
+      .map((g) => ({
+        label: `群れ #${g.row} ${g.label}`,
+        detail: `行番号 ${g.row} · 行 ID ${lineIdText(g.id)}`,
+        info: `battle(${g.row}) と書きます。MonsterGroup の行 ${g.row}、行 ID ${lineIdText(g.id)}。${g.label}`,
+        apply: String(g.row),
+        type: 'constant' as const,
+      }));
     return options.length ? { from: before.length - call[2]!.length, options, filter: false } : null;
   }
 
