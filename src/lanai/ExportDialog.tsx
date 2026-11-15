@@ -9,7 +9,7 @@ import { CodeModOption } from '../ui/CodeModOption';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { download } from '../ui/download';
-import { LANAI_DELIVERABLE_TABLES, type LanaiSession } from './session';
+import { LANAI_DELIVERABLE_TABLES, LANAI_DISTRIBUTION_LOCK, type LanaiSession } from './session';
 
 export function LanaiExportDialog({ session, onClose }: { session: LanaiSession; onClose: () => void }): ReactNode {
   const [error, setError] = useState('');
@@ -47,7 +47,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
           <CodeModOption
             title="lanai"
             on={session.dropCap}
-            problem={session.dropCapProblem()}
+            problem={session.distributionMode && !session.dropCap ? LANAI_DISTRIBUTION_LOCK : session.dropCapProblem()}
             onChange={(on) => {
               session.dropCap = on;
               session.edited();
@@ -125,9 +125,9 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                   すべての変更を元に戻す
                 </button>
               </div>
-              <DistributionBox session={session} scripts={scripts} tick={tick} onChange={() => redraw((x) => x + 1)} />
             </>
           )}
+          <DistributionBox session={session} scripts={scripts} tick={tick} onChange={() => redraw((x) => x + 1)} />
         </>
       )}
     </Dialog>
@@ -159,6 +159,19 @@ function DistributionBox({
   return (
     <fieldset className="field">
       <legend>カスタムステージ配信 (uwapo)</legend>
+      <label>
+        <input
+          type="checkbox"
+          checked={session.distributionMode}
+          onChange={(e) => {
+            session.distributionMode = e.target.checked;
+            session.edited();
+            onChange();
+          }}
+        />
+        配信用の編集モード (配信で欠落する変更を加えられなくする: master の {LANAI_DELIVERABLE_TABLES.length}{' '}
+        表以外・条件スクリプトの追加・コードの MOD)
+      </label>
       <p className="muted small">
         配信用の zip には、配信がゲームに届けられる変更だけを入れます。master の表は{' '}
         {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけを残し、ほかの表は ROM のままに戻します

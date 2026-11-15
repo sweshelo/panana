@@ -46,7 +46,7 @@ import {
 } from './message';
 import { LanaiRows } from './rows';
 import { LANAI_TABLES } from './tables';
-import { LanaiTable } from './table';
+import { LanaiLockedError, LanaiTable } from './table';
 
 /** A table of a root archive. */
 export interface LanaiTableRef {
@@ -113,6 +113,24 @@ export interface LanaiDistributionDiscard {
   edited: boolean;
 }
 
+/** Why a table or a feature is locked in the custom-stage distribution mode. */
+export const LANAI_DISTRIBUTION_LOCK = '配信用の編集モードでは変えられません (カスタムステージの配信で欠落するため)';
+
+/**
+ * Shows the locked writes the pages do not catch (LanaiLockedError thrown from an event handler reaches window's
+ * error event) as an alert, once per page.
+ */
+function alertLockedWrites(): void {
+  const w = globalThis as { window?: Window; lanaiLockAlert?: boolean };
+  if (!w.window || w.lanaiLockAlert) return;
+  w.lanaiLockAlert = true;
+  w.window.addEventListener('error', (e) => {
+    if (!(e.error instanceof LanaiLockedError)) return;
+    e.preventDefault();
+    alert(e.error.message);
+  });
+}
+
 export const LANAI_DELIVERABLE_TABLES = [
   'Contents',
   'MapStageIntegration',
@@ -165,6 +183,8 @@ export interface LanaiSaved {
   entries?: LanaiSavedEntry[];
   /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
   dropCap?: boolean;
+  /** The custom-stage distribution mode is on (LanaiSession.distributionMode). */
+  distributionMode?: boolean;
 }
 
 /** The map database of a content's root archive (entry C9F79000, maps.ts), shared by the pages and the MOD export. */
@@ -284,6 +304,8 @@ export class LanaiSession {
   }
 
   setConditionScript(id: number, source: string): void {
+    if (this.distribution && !this.conditionScripts.has(id))
+      throw new LanaiLockedError(`条件スクリプト: ${LANAI_DISTRIBUTION_LOCK}`);
     if (!Number.isInteger(id) || id < 1 || id > 0xffff) throw new Error('スクリプト番号は 1〜65535 です');
     parseConditionScript(source);
     this.conditionScripts.set(id, source);
@@ -337,6 +359,23 @@ export class LanaiSession {
   revision = 0;
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
   dropCap = false;
+  private distribution = false;
+
+  /**
+   * The custom-stage distribution mode: the edits the distribution would leave out are refused (the master tables
+   * other than LANAI_DELIVERABLE_TABLES are locked, condition scripts and the code MOD cannot be turned on). Edits made
+   * before stay (distributionDiscards lists them, revertUndeliverable undoes them).
+   */
+  get distributionMode(): boolean {
+    return this.distribution;
+  }
+
+  set distributionMode(on: boolean) {
+    this.distribution = on;
+    const reason = on ? LANAI_DISTRIBUTION_LOCK : null;
+    for (const t of [...this.tables, ...this.others])
+      if (t.archive === LANAI.master && !LANAI_DELIVERABLE_TABLES.includes(t.table.name)) t.table.lock = reason;
+  }
   /** The dump as opened, without the base MOD ({@link dump} reads through it). */
   raw!: Dump;
   /** The existing MOD the dump is read with (its files and code.ips also go into the export), or null. */
@@ -362,6 +401,7 @@ export class LanaiSession {
   ): Promise<LanaiSession> {
     const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
+    alertLockedWrites();
     if (dump.title !== LANAI) throw new Error(`『${LANAI.name}』のダンプではありません`);
     const names = dump
       .names()
@@ -604,6 +644,7 @@ export class LanaiSession {
       ...(mapTables.length ? { mapTables } : {}),
       ...(entries.length ? { entries } : {}),
       ...(this.dropCap ? { dropCap: true } : {}),
+      ...(this.distribution ? { distributionMode: true } : {}),
     };
   }
 
@@ -672,6 +713,7 @@ export class LanaiSession {
       this.mapsReset(a);
     }
     if (touched.size) this.revision++;
+    this.distributionMode = !!saved.distributionMode;
   }
 
   /** Puts the saved rows and strings back (only those of the archives `only` when given). */

@@ -97,52 +97,55 @@ function BattleFieldRowEditor({
   return (
     <div className={`event-box${t.rowChanged(row) ? ' edited' : ''}`}>
       <div className="small muted">{`${t.name} の行 ${row} (行 ID ${hex8(t.rowId(row)).toUpperCase()})${t.rowChanged(row) ? '・変更済み' : ''}`}</div>
-      <label className="field">
-        <span>背景 (+0x00 / +0x04)</span>
-        <select
-          value={key}
-          onChange={(e) => {
-            const b = LANAI_BATTLE_BACKGROUNDS.find((x) => lanaiBackgroundKey(x.archive, x.entry) === e.target.value);
-            if (b)
-              edit(() => {
-                t.setU32(row, LANAI_BF.archive, b.archive);
-                t.setU32(row, LANAI_BF.entry, b.entry);
-              });
-          }}
-        >
-          {!known && <option value={key}>{lanaiBackgroundName(archive, entry)}</option>}
-          {LANAI_BATTLE_BACKGROUNDS.map((b) => {
-            const k = lanaiBackgroundKey(b.archive, b.entry);
-            return (
-              <option key={k} value={k}>
-                {lanaiBackgroundName(b.archive, b.entry)}
-              </option>
-            );
-          })}
-        </select>
-        <ModelPreviewButton
-          model={lanaiBattleBackgroundRef(session, archive, entry)}
-          name={lanaiBackgroundName(archive, entry)}
-          inside
-          note="地面 (原点) の少し上から見回しています (ドラッグで向き、ホイールで画角)。戦闘のカメラの位置は再現していません。"
-        />
-      </label>
-      <div className="field">
-        <span>戦闘の BGM (+0x08)</span>
-        {sounds ? (
-          <SoundButton
-            game={session}
-            sounds={sounds}
-            value={bgm}
-            kind="bgm"
-            max={MAX_SOUND}
-            title="戦闘の BGM を選ぶ"
-            onChange={(v) => edit(() => t.setU32(row, LANAI_BF.bgm, v))}
+      {t.lock && <div className="muted small">{t.lock}</div>}
+      <fieldset disabled={!!t.lock} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+        <label className="field">
+          <span>背景 (+0x00 / +0x04)</span>
+          <select
+            value={key}
+            onChange={(e) => {
+              const b = LANAI_BATTLE_BACKGROUNDS.find((x) => lanaiBackgroundKey(x.archive, x.entry) === e.target.value);
+              if (b)
+                edit(() => {
+                  t.setU32(row, LANAI_BF.archive, b.archive);
+                  t.setU32(row, LANAI_BF.entry, b.entry);
+                });
+            }}
+          >
+            {!known && <option value={key}>{lanaiBackgroundName(archive, entry)}</option>}
+            {LANAI_BATTLE_BACKGROUNDS.map((b) => {
+              const k = lanaiBackgroundKey(b.archive, b.entry);
+              return (
+                <option key={k} value={k}>
+                  {lanaiBackgroundName(b.archive, b.entry)}
+                </option>
+              );
+            })}
+          </select>
+          <ModelPreviewButton
+            model={lanaiBattleBackgroundRef(session, archive, entry)}
+            name={lanaiBackgroundName(archive, entry)}
+            inside
+            note="地面 (原点) の少し上から見回しています (ドラッグで向き、ホイールで画角)。戦闘のカメラの位置は再現していません。"
           />
-        ) : (
-          <span>{`サウンド ${bgm}`}</span>
-        )}
-      </div>
+        </label>
+        <div className="field">
+          <span>戦闘の BGM (+0x08)</span>
+          {sounds ? (
+            <SoundButton
+              game={session}
+              sounds={sounds}
+              value={bgm}
+              kind="bgm"
+              max={MAX_SOUND}
+              title="戦闘の BGM を選ぶ"
+              onChange={(v) => edit(() => t.setU32(row, LANAI_BF.bgm, v))}
+            />
+          ) : (
+            <span>{`サウンド ${bgm}`}</span>
+          )}
+        </div>
+      </fieldset>
       <div className="muted small">
         {users.length > 1 ? (
           <>
