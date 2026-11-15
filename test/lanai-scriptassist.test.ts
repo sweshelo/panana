@@ -58,7 +58,7 @@ describe('completion', () => {
     expect(r.filter).toBe(true);
     const talk = r.options.find((o) => o.label === 'talk')!;
     expect(talk.apply).toBe('talk(');
-    expect(talk.detail).toBe('(行 ID)');
+    expect(talk.detail).toBe('(行 ID[, 吹き出し])');
     expect(r.options.find((o) => o.label === 'if')!.apply).toBe('if (');
     expect(r.options.find((o) => o.label === 'hero')!.apply).toBe('hero');
     expect(r.options.find((o) => o.label === 'return')!.apply).toBe('return');
@@ -70,6 +70,18 @@ describe('completion', () => {
     expect(labels('talk(0x10)\n', true)).toContain('talk');
     expect(scriptCompletions('// ta', assist)).toBeNull();
     expect(scriptCompletions('wait(0.5', assist)).toBeNull();
+  });
+  test('the second argument: the window of a line, the icon of a popup', () => {
+    expect(labels('talk(0x10, ')).toEqual(['bubble', 'window']);
+    expect(labels('say(0x10, w')).toEqual(['window']);
+    expect(labels('popup(chara(31), ')[0]).toBe('0 ! (びっくり)');
+    expect(labels('popup(hero, 1')).toEqual([
+      '1 水色のしずく (汗)',
+      '10 キラッ (ひらめき)',
+      '11 青い線 (青ざめ・焦り)',
+      '12 … の吹き出し',
+    ]);
+    expect(scriptWordKind('window')).toBe('atom');
   });
   test('after a class: its functions', () => {
     const r = scriptCompletions('ScriptSound.Pl', assist)!;

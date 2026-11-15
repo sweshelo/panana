@@ -73,7 +73,8 @@ export interface ScriptCond {
   than: number;
 }
 export type ScriptNode =
-  | { op: 'talk'; msg: number; auto: boolean }
+  /** dialog: the window the line opens in (StartMessage's AppDialogType, TalkDialog). */
+  | { op: 'talk'; msg: number; auto: boolean; dialog: TalkDialog }
   | { op: 'if'; cond: ScriptCond; then: ScriptNode[]; else: ScriptNode[] }
   | { op: 'switch'; value: ScriptValue; cases: { value: number; body: ScriptNode[] }[]; default: ScriptNode[] | null }
   | { op: 'set'; name: string; value: number }
@@ -108,6 +109,21 @@ export type ScriptNode =
   | { op: 'call'; call: ScriptCall }
   | { op: 'break' }
   | { op: 'return' };
+
+/**
+ * The window a line opens in: StartMessage's AppDialogType (code.bin 0x2E0920). 0 lets the line's row choose by its
+ * speaker kind (talk table +0x08, read through the message source's vt+0x10, 0x45FB58): 0 opens the system's window
+ * (that of signs), any other the talk balloon (0x2DF254). A type other than 0 opens the window it names instead
+ * (OpenMessage(AppDialogType), 0x2DF2FC): 2 the system's window, any other the balloon. The ROM's CROs pass 0 (and
+ * call OpenMessage(1) 4 times); 1 and 2 through StartMessage were read from the code, not yet seen in the game.
+ */
+export type TalkDialog = 0 | 1 | 2;
+export const TALK_DIALOG = { row: 0, bubble: 1, window: 2 } as const satisfies Record<string, TalkDialog>;
+export const TALK_DIALOG_LABEL: Record<TalkDialog, string> = {
+  0: '台詞の行の話者で決まる (話者なし = システムのウィンドウ、ほか = 会話の吹き出し)',
+  1: '会話の吹き出し (NPC の台詞と同じ)',
+  2: 'システムのウィンドウ (看板と同じ)',
+};
 
 export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
@@ -546,8 +562,22 @@ export function parseStageScript(src: string): StageScript {
         if (!ctx.inSwitch) fail('break は switch の中でだけ使えます', t);
         return { op: 'break' };
       case 'talk':
-      case 'say':
-        return { op: 'talk', msg: call(t.s, () => u32('台詞の行 ID'))[0], auto: t.s === 'say' };
+      case 'say': {
+        // talk(line[, bubble | window | 0〜2])
+        need('(');
+        const msg = u32('台詞の行 ID');
+        let dialog: TalkDialog = TALK_DIALOG.row;
+        if (eat(',')) {
+          const d = peek();
+          if (d.t === 'id' && (d.s === 'bubble' || d.s === 'window')) {
+            next();
+            dialog = TALK_DIALOG[d.s];
+          } else if (d.t === 'num') dialog = int('吹き出しの種類', 0, 2) as TalkDialog;
+          else fail(`${t.s} の 2 つ目は吹き出しの種類です: bubble (会話の吹き出し) / window (システムのウィンドウ)`, d);
+        }
+        if (!eat(')')) fail(`${t.s} の引数は (台詞の行 ID[, bubble / window]) です`);
+        return { op: 'talk', msg, auto: t.s === 'say', dialog };
+      }
       case 'popup': {
         // popup(icon) is popup(hero, icon)
         need('(');
@@ -1191,6 +1221,8 @@ function assembleAll(lines: string[], base: number): { words: number[]; labels: 
  *   [sp+0x98..0xA7] a second GSvec and [sp+0xA8..0xAF] two ChrObject* of a Script API call's arguments
  * r4 = this, r5 = 0, r6 = 0x80000079, r7 = 0x80000075, r8 = the camera is held; s16 = 0.0, s17 = 1.0, s18 = 0.2.
  */
+/** ScriptChara +0xB: the popup kind it showed (0xFF: none; see the popup statement). */
+const POPUP_KIND = 0xb;
 const FRAME = { size: 0xb0, smpA: 0x10, smpB: 0x18, obj: 0x20, obj2: 0x70, vec: 0x88, vec2: 0x98, tmp: 0xa8 } as const;
 
 const BRANCH_IF_NOT: Record<ScriptCmp, string> = {
@@ -1473,7 +1505,7 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         fn.op('str r5, [sp]'); // the 5th argument: bool = 0
         fn.load('r0', rowId(n.msg));
         smpArgs(fn);
-        fn.op('mov r3, #0', 'vmov.f32 s0, s18');
+        fn.op(`mov r3, #${n.dialog}`, 'vmov.f32 s0, s18');
         fn.call(moves ? A.msg : A.msgAuto);
         if (moves) mouth('r7');
         break;
@@ -1518,7 +1550,11 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         break;
       }
       case 'popup':
-        // ScriptChara c(chr); c.SetPopup(2, icon, 1, 1, 0, GSVEC_ZERO); ~c
+        // ScriptChara c(chr); c.SetPopup(2, icon, 1, 1, 0, GSVEC_ZERO); c.+0xB = 0xFF; ~c
+        // SetPopup keeps the kind it showed at +0xB (0xFF from the ctor, 0x2E2750) and ~ScriptChara takes the icon
+        // down when it is not 0xFF (0x2FFD74 → 0x2D51B0): the ROM's CROs keep their ScriptChara for the whole event
+        // (an NPC's at this+0xC), ours lives for the statement, so the icon would go as it came. The hero's survived
+        // only by the dtor's own test for the party (0x2FFD8C). popupEnd() (FinishPopupIcon) does not read +0xB.
         withChara(c, n.who, FRAME.obj, false, (ref) => {
           fn.op(
             'mov r0, #1',
@@ -1532,6 +1568,7 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
           fn.load('r2', n.icon);
           fn.op('mov r3, #1');
           fn.call(A.popup);
+          if (n.who.kind !== 'self') fn.op('mov r0, #0xff', `strb r0, [sp, #${hx(FRAME.obj + POPUP_KIND)}]`);
         });
         break;
       case 'popupEnd':

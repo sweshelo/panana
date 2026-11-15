@@ -108,6 +108,8 @@ export const LANAI_EXIT_KIND: Record<number, string> = {
   4: 'ワープゲート',
   5: '上り階段',
   6: '下り階段',
+  // 40 of the ROM's 54 have the action 0x1D (穴、HoleFallCommon), the rest a script
+  7: '落とし穴',
   12: '扉',
   16: 'レベルの扉',
   100: '壁の扉',
@@ -612,6 +614,22 @@ export class LanaiMaps {
     if (!t.rows) throw new Error(`${t.name} に行 0 がありません`);
     const row = t.addRow(0);
     t.setU32(row, LANAI_EVENT_ACTIONS[0], action);
+    t.setU16(row, 0x5a, look);
+    return this.giveSlot(group, t, row);
+  }
+
+  /**
+   * Append an EventObject row of the bytes `bytes` (a row of another content: romParts.ts romEventRow) with the look
+   * `look` and a state slot of its own. Returns the new row.
+   */
+  addEventRowBytes(group: number, bytes: Uint8Array, look: number): number {
+    const t = this.eventTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
+    if (!t.rows) throw new Error(`${t.name} に行 0 がありません`);
+    if (bytes.length !== t.rowSize)
+      throw new Error(`EventObject の行の大きさが違います (${bytes.length} / ${t.rowSize})`);
+    const row = t.addRow(0);
+    t.setRow(row, bytes);
     t.setU16(row, 0x5a, look);
     return this.giveSlot(group, t, row);
   }

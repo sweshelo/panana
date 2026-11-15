@@ -12,7 +12,7 @@ import type { AutoProfile } from '../editor/autotile';
 import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { f32, hex8, u32, w32, wf32 } from '../util/bytes';
-import { LANAI_ACTION_GOAL_CHEST, LANAI_DESTINATION_ACTIONS } from './actions';
+import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTIONS, LANAI_DESTINATION_ACTIONS } from './actions';
 import {
   LANAI_EVENT_SECTIONS,
   LANAI_FACING_OFFSET,
@@ -39,10 +39,13 @@ import {
   LANAI_SIGN_KIND,
   lanaiEventParts,
   lanaiFloorParts,
+  lanaiLookKind,
   type NewEventRow,
 } from './eventParts';
+import { romEventRow, type LanaiRomPart } from './romParts';
 import { lanaiMonsters } from './monsters';
 import {
+  LANAI_CHARA_MONSTER,
   LANAI_GOAL_CHEST,
   LANAI_REPAIR_FIELD,
   LANAI_REPAIR_POINT,
@@ -63,6 +66,8 @@ const WALL_DOOR = 100;
 
 /** The add panel's category of the records copied from the stage's own maps. */
 export const LANAI_EXISTING_CATEGORY = '既存ギミック';
+/** The add panel's category of the records of every kind the ROM's stages have (romParts.ts). */
+export const LANAI_ROM_CATEGORY = 'ROM の全種類';
 
 /** A record of the group's maps to copy (it keeps its EventObject row). */
 export interface LanaiTemplate {
@@ -332,20 +337,25 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         if (!this.info || !this.maps.eventTable(this.info.dungeon))
           throw new Error('この MapGroup には EventObject の表がないので、イベントを持つものは置けません');
         // checked before any row is added, so that nothing is left behind
-        if (ev.talk && !this.maps.talkTable(this.info.dungeon))
+        if ((ev.talk || ev.lines?.length) && !this.maps.talkTable(this.info.dungeon))
           throw new Error('この MapGroup には台詞の表がないので、メッセージを持つものは置けません');
         const look = ev.chara ? this.maps.addCharaRow(ev.chara.kind, ev.chara.model) : ev.look;
-        const row = this.maps.addNewEventRow(this.info.dungeon, ev.action, look);
+        const row = ev.from
+          ? this.maps.addEventRowBytes(this.info.dungeon, ev.from, look)
+          : this.maps.addNewEventRow(this.info.dungeon, ev.action, look);
         w32(raw, EVENT_FIELD, row);
         // New scripted ranges promise an event on entry. Channel 1 (bit 15) is checked every frame;
-        // channel 2 is checked when A/L is pressed.
-        if (stamp.t.section === 8) {
+        // channel 2 is checked when A/L is pressed. (A ROM part keeps its sample's bits.)
+        if (stamp.t.section === 8 && !ev.from) {
           const events = this.maps.eventTable(this.info.dungeon)!;
           events.setU16(row, 0x5c, events.u16(row, 0x5c) | 0x8000);
         }
-        if (ev.talk) {
-          const line = this.maps.addTalkRow(this.info.dungeon, ev.talk.text, ev.talk.speaker);
-          this.maps.eventTable(this.info.dungeon)!.setU32(row, LANAI_EVENT_ACTIONS[0] + 4, line);
+        for (const l of [
+          ...(ev.talk ? [{ stage: 0, arg: ev.talk.arg ?? 0, text: ev.talk.text, speaker: ev.talk.speaker }] : []),
+          ...(ev.lines ?? []),
+        ]) {
+          const line = this.maps.addTalkRow(this.info.dungeon, l.text, l.speaker);
+          this.maps.eventTable(this.info.dungeon)!.setU32(row, LANAI_EVENT_ACTIONS[l.stage]! + 4 + 4 * l.arg, line);
         }
         if (ev.destination) {
           const events = this.maps.eventTable(this.info.dungeon)!;
@@ -487,6 +497,65 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       ? lanaiEventParts(this.maps.session.table('MapObject'), this.maps.contentTable('MapChara'), this.partDefaults())
       : [];
     return [...fresh, ...lanaiFloorParts(), ...out.values()];
+  }
+
+  /**
+   * The ROM's kinds of records (romParts.ts) as parts of the open map: a record like the sample with a new EventObject
+   * row like the sample's (romEventRow: what names the sample's content cleared, the lines copied as new lines of the
+   * group, a character's MapChara row made anew). Their destination is chosen when placed (ExitPlacement).
+   */
+  romTemplates(parts: readonly LanaiRomPart[]): LanaiTemplate[] {
+    if (!this.info) return [];
+    const content = this.maps.content.index;
+    const hasEvents = !!this.maps.eventTable(this.info.dungeon);
+    const out: LanaiTemplate[] = [];
+    for (const p of [...parts].sort((a, b) => a.section - b.section || a.kind - b.kind || a.action - b.action)) {
+      const raw = p.raw.slice();
+      // the sample's row number means nothing here: the new row is given when placed
+      if ((LANAI_EVENT_SECTIONS as readonly number[]).includes(p.section)) w32(raw, EVENT_FIELD, 0);
+      const from = romEventRow(p, content);
+      if (from && !hasEvents) continue;
+      const action = p.action >>> 0;
+      const what = from
+        ? action === LANAI_ACTION_NONE
+          ? '動作なし'
+          : (LANAI_ACTIONS[action]?.name ?? `動作 0x${(action & 0xff).toString(16).toUpperCase()}`)
+        : 'イベントなし';
+      const look = from ? new DataView(from.buffer).getUint16(0x5a, true) : 0;
+      const lookKind = lanaiLookKind(p.section, raw);
+      let model: LanaiRecordModel | null | undefined;
+      if (p.chara)
+        model =
+          p.chara.kind === LANAI_CHARA_MONSTER
+            ? { type: 'monster', design: p.chara.model }
+            : { type: 'object', row: p.chara.model };
+      else if (lookKind === 'object' && look && lanaiObjectRef(this.maps.session.table('MapObject'), look))
+        model = { type: 'object', row: look };
+      let event: NewEventRow | undefined;
+      if (from) {
+        const [first, ...rest] = p.lines;
+        const talk = first && first.stage === 0 ? first : undefined;
+        event = {
+          action,
+          look: p.chara ? 0 : lookKind === 'chara' ? 0 : look,
+          from,
+          ...(p.chara ? { chara: p.chara } : {}),
+          ...(talk ? { talk: { text: talk.text, speaker: talk.speaker, arg: talk.arg } } : {}),
+          ...(talk ? (rest.length ? { lines: rest } : {}) : p.lines.length ? { lines: p.lines } : {}),
+          ...(LANAI_DESTINATION_ACTIONS.includes(action) ? { destination: { map: 0, point: 0 } } : {}),
+        };
+      }
+      out.push({
+        section: p.section,
+        raw,
+        label: `${lanaiRecLabel(p.section, raw)}（${what}）`,
+        source: `ROM ${p.source}、${p.count} 件`,
+        category: LANAI_ROM_CATEGORY,
+        ...(event ? { event } : {}),
+        ...(model !== undefined ? { model } : {}),
+      });
+    }
+    return out;
   }
 
   /**

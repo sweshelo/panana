@@ -79,7 +79,11 @@ export interface NewEventRow {
    * Add a line to the group's talk table when placed and name it in the action's first argument: its text (the text
    * form of message.ts) and the speaker kind of its row (talk.ts TALK_SPEAKER).
    */
-  talk?: { text: string; speaker: number };
+  talk?: { text: string; speaker: number; arg?: number };
+  /** More lines added when placed, each named in an argument of an action (stage 0〜2) of the row (a ROM part's). */
+  lines?: { stage: number; arg: number; text: string; speaker: number }[];
+  /** Start from these bytes of an EventObject row (romParts.ts romEventRow) instead of row 0; `action` is its first. */
+  from?: Uint8Array;
   /** The part opens the content's shop (the dialog and the inspector link to its stock). */
   shop?: boolean;
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */

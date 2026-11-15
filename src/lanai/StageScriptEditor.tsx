@@ -23,6 +23,7 @@ import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
 import { apiResultLabel, lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
 import { ScriptCodeEditor } from './ScriptCodeEditor';
+import { PopupIconList } from './PopupIconList';
 import {
   docBound,
   docUnbound,
@@ -737,6 +738,7 @@ export function LanaiStageScriptEditor({
           (変数を書いておき、「マップが始まるとき」の関数や出る条件・消える条件で見ます)。
         </p>
       </details>
+      <PopupIconList session={session} />
       <ScriptApiList />
       {maps && <BattleGroups session={session} maps={maps} />}
       {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} />)}

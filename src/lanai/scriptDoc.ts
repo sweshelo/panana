@@ -51,8 +51,16 @@ const w = (kind: ScriptWord['kind'], form: string, about: string): ScriptWord =>
 
 /** What can be written in a function, in the order the help shows it. */
 export const SCRIPT_WORDS: ScriptWord[] = [
-  w('statement', 'talk(行 ID)', '台詞。話しかけたときのイベントでは、話している間キャラの口が動く'),
-  w('statement', 'say(行 ID)', '台詞 (口は動かさない)。話者が主人公の行は、先頭の電波人間の性格の行に替わる'),
+  w(
+    'statement',
+    'talk(行 ID[, 吹き出し])',
+    '台詞。話しかけたときのイベントでは、話している間キャラの口が動く。吹き出し: bubble = 会話の吹き出し / window = システムのウィンドウ。省くと台詞の行の話者で決まる (話者なし = ウィンドウ)',
+  ),
+  w(
+    'statement',
+    'say(行 ID[, 吹き出し])',
+    '台詞 (口は動かさない)。話者が主人公の行は、先頭の電波人間の性格の行に替わる。吹き出しは talk と同じ',
+  ),
   w('value', 'ask(行 ID)', '「はい / いいえ」を聞く。if (ask(…)) { はい } else { いいえ }'),
   w('statement', '名前 = 値', '変数に書く (数値は 0〜255、フラグは 0 / 1)'),
   w(
@@ -65,7 +73,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('who', 'hero', '先頭の電波人間'),
   w('who', 'self', 'イベントの持ち主 (話しかけた相手・踏んだボタン)'),
   w('who', 'chara(イベント)', 'そのイベントを使うキャラ・物・扉'),
-  w('statement', 'popup(だれに, アイコン)', '頭の上にアイコンを出す (11 = 汗)。popupEnd(だれに) で消す'),
+  w(
+    'statement',
+    'popup(だれに, アイコン)',
+    '頭の上にアイコンを出す (0 = !、2 = ?、6 = ハート … 一覧は「popup() のアイコン」)。popupEnd(だれに) で消す',
+  ),
   w('statement', 'popupEnd(だれに)', 'アイコンを消す'),
   w('statement', 'emotion(表情)', '先頭の電波人間の目の表情。emotionEnd() で戻す'),
   w('statement', 'emotionEnd()', '表情を戻す'),
@@ -212,7 +224,7 @@ function after_battle() {
 export function scriptLineRefs(body: string): number[] {
   const out: number[] = [];
   const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, '');
-  for (const m of code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)/gu)) {
+  for (const m of code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*(?:,\s*\w+\s*)?\)/gu)) {
     const id = Number(m[1]);
     if (!out.includes(id)) out.push(id);
   }

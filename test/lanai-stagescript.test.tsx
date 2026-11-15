@@ -8,7 +8,10 @@ import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { LANAI_ACTION_NONE, LANAI_ACTION_SCRIPT } from '../src/lanai/actions';
 import { croHooks, lanaiContents } from '../src/lanai/contents';
 import { parseCro } from '../src/lanai/cro';
+import { assembleLine } from '../src/game/asm';
 import {
+  compileStageScript,
+  CRO_TEXT,
   parseStageScript,
   scriptDocFromSource,
   scriptDocSource,
@@ -23,8 +26,9 @@ import {
 import { sha256 } from '../src/lanai/codes';
 import { lanaiMaps } from '../src/lanai/maps';
 import { crsExports } from '../src/lanai/scriptApi';
+import { lanaiPopupIcon, POPUP_ICONS, POPUP_TABLE } from '../src/lanai/popupIcons';
 import { LanaiSession } from '../src/lanai/session';
-import { cloneLanaiContent, lanaiCrrName } from '../src/lanai/stageEdit';
+import { cloneLanaiContent, contentScript, lanaiCrrName, LANAI_EMPTY_SCRIPT_CONTENT } from '../src/lanai/stageEdit';
 import { checkStageScript, eventRecords, LANAI_STAGE_MANIFEST, recordTrigger } from '../src/lanai/stageScript';
 import { LanaiStageScriptEditor, STAGE_SCRIPT_EXAMPLE } from '../src/lanai/StageScriptEditor';
 import { openImages } from '../src/rom/dump';
@@ -54,8 +58,20 @@ describe('RPG FREE! stage script: reading', () => {
     expect(cond.then.map((n) => n.op)).toEqual(['popup', 'se', 'talk', 'set']);
     expect(cond.else).toEqual([
       { op: 'set', name: 'STATE_A', value: 1 },
-      { op: 'talk', msg: 0x65, auto: false },
+      { op: 'talk', msg: 0x65, auto: false, dialog: 0 },
     ]);
+  });
+
+  test('a line names its window: the speaker of its row by default, bubble / window / 0〜2 in its place', () => {
+    const body = (src: string): unknown => parseStageScript(`on area(1, 1) { ${src} }`).events[0]!.body;
+    expect(body('talk(1); say(2, bubble); talk(3, window); say(4, 2)')).toEqual([
+      { op: 'talk', msg: 1, auto: false, dialog: 0 },
+      { op: 'talk', msg: 2, auto: true, dialog: 1 },
+      { op: 'talk', msg: 3, auto: false, dialog: 2 },
+      { op: 'talk', msg: 4, auto: true, dialog: 2 },
+    ]);
+    expect(() => body('talk(1, 3)')).toThrow('吹き出しの種類は 0〜2');
+    expect(() => body('talk(1, balloon)')).toThrow('bubble');
   });
 
   test('variables take flag numbers in the order they are declared; reset marks those of one visit', () => {
@@ -151,6 +167,44 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
       SEEN = 1
     }
     on start(1) { vanishMonster(5) }`;
+
+  test('popup keeps its icon past the statement; a line passes its window to StartMessage', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    /** How many words of the built code (the template's and the script's) are the instruction `line`. */
+    const count = (src: string, line: string): number => {
+      const text = compileStageScript(base, parseStageScript(src)).cro.segments[CRO_TEXT]!.bytes!;
+      const v = new DataView(text.buffer, text.byteOffset, text.byteLength);
+      const w = assembleLine(line, 0).words[0]!;
+      return Array.from({ length: text.length >> 2 }, (_, k) => v.getUint32(4 * k, true)).filter((x) => x === w).length;
+    };
+    // ~ScriptChara takes the icon down unless its +0xB (the kind it showed) is 0xFF: the stack object's is set so
+    const forget = 'strb r0, [sp, #0x2b]';
+    expect(count('on area(1, 1) { popup(chara(5), 6) }', forget)).toBe(count('on area(1, 1) {}', forget) + 1);
+    // the NPC's own ScriptChara (self) lives as long as the event, as the ROM's do
+    expect(count('on talk(1, 5) { popup(self, 6) }', forget)).toBe(count('on talk(1, 5) {}', forget));
+    for (const [arg, line] of [
+      ['window', 'mov r3, #2'],
+      ['bubble', 'mov r3, #1'],
+    ] as const)
+      expect(count(`on area(1, 1) { talk(1, ${arg}) }`, line)).toBe(count('on area(1, 1) { talk(1) }', line) + 1);
+  });
+
+  test('the icons of popup() are the 13 entries code.bin names (kind 2 of the popup object), each a BCH', async () => {
+    const s = await open();
+    const code = s.dump.code;
+    expect(POPUP_ICONS.map((p) => p.hash)).toEqual(
+      POPUP_ICONS.map((_, k) =>
+        new DataView(code.buffer, code.byteOffset).getUint32(POPUP_TABLE - 0x100000 + 4 * k, true),
+      ),
+    );
+    for (const p of POPUP_ICONS) {
+      const { file } = await lanaiPopupIcon(s, p.icon);
+      expect(file.models.length).toBe(1);
+      expect(file.textures.length).toBe(1);
+    }
+  });
 
   test('every function the code can call is exported by lanai.crs', async () => {
     const s = await open();

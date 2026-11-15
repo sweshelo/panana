@@ -2,13 +2,22 @@
 // itself: what kind a word is (its colour), what can be written at a place (completion), where a function's text is
 // wrong, which lines of talk it names and where a block folds. All from the tables the compiler reads
 // (eventScript.ts, scriptDoc.ts, scriptApiTable.ts), so the editor cannot fall behind the language.
-import { parseStageScript, scriptDocSource, ScriptError, SCRIPT_RESERVED, type ScriptDoc } from './eventScript';
+import {
+  parseStageScript,
+  scriptDocSource,
+  ScriptError,
+  SCRIPT_RESERVED,
+  TALK_DIALOG,
+  TALK_DIALOG_LABEL,
+  type ScriptDoc,
+} from './eventScript';
+import { POPUP_ICONS } from './popupIcons';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
 import { SCRIPT_WORDS } from './scriptDoc';
 
 export type ScriptWordKind = 'keyword' | 'atom' | 'who' | 'builtin' | 'class';
 
-const ATOMS = ['true', 'false'];
+const ATOMS = ['true', 'false', 'bubble', 'window'];
 const WHO = ['hero', 'self', 'chara'];
 /** Words of the language that are not in SCRIPT_WORDS under their own name. */
 const MORE_BUILTINS = ['vec'];
@@ -131,6 +140,26 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
       .map((r) => ({ label: `${r.row} ${r.label}`, apply: String(r.row), type: 'constant' as const }));
     return options.length ? { from: before.length - call[2]!.length, options, filter: false } : null;
   }
+  // the second argument: the window of a line, the icon of a popup
+  const second = /\b(talk|say|popup)\s*\(\s*[^(),\n]*(?:\([^()\n]*\))?\s*,\s*(\w*)$/u.exec(before);
+  if (second) {
+    const typed = second[2]!;
+    const options: ScriptCompletion[] =
+      second[1] === 'popup'
+        ? POPUP_ICONS.map((p) => ({
+            label: `${p.icon} ${p.label}`,
+            apply: String(p.icon),
+            type: 'constant' as const,
+          })).filter((o) => o.apply.startsWith(typed))
+        : (['bubble', 'window'] as const)
+            .filter((k) => k.startsWith(typed))
+            .map((k) => ({
+              label: k,
+              detail: ` ${TALK_DIALOG_LABEL[TALK_DIALOG[k]]}`,
+              type: 'constant' as const,
+            }));
+    return options.length ? { from: before.length - typed.length, options, filter: false } : null;
+  }
   if (call?.[1] === 'battle' && /^\d*$/u.test(call[2]!)) {
     const options = (assist.groups ?? [])
       .filter((g) => String(g.row).startsWith(call[2]!))
@@ -198,7 +227,7 @@ export function scriptFunctionProblem(vars: ScriptDoc['vars'], body: string): { 
 /** The lines of talk a function's text names: the ID, and the place just after the call's closing parenthesis. */
 export function scriptLineMarks(body: string): { id: number; at: number }[] {
   const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => ' '.repeat(c.length));
-  return [...code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)/gu)].map((m) => ({
+  return [...code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*(?:,\s*\w+\s*)?\)/gu)].map((m) => ({
     id: Number(m[1]),
     at: m.index + m[0].length,
   }));

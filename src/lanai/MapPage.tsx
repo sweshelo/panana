@@ -103,6 +103,7 @@ import { LANAI_TREASURE_GOLD, LANAI_TREASURE_ITEM, type LanaiTreasureSlot } from
 import { LanaiMapView } from './mapview';
 import { ScriptMovePanel } from './ScriptMovePanel';
 import type { LanaiSession } from './session';
+import { lanaiRomParts, type LanaiRomPart } from './romParts';
 import { LanaiEventSelect } from './EventSelect';
 import { EventConditionFields } from './EventConditionFields';
 import { DestinationFields, lanaiDestinationPoints } from './DestinationFields';
@@ -122,6 +123,23 @@ const LANAI_TOOLS = TOOLS.map((t): (typeof TOOLS)[number] =>
 const noop = (): void => {};
 
 /** Re-render on every change of the content's maps (edits, reverts, sections put back). */
+/** The ROM's kinds of records (romParts.ts), read in the background; empty until they are. */
+function useRomParts(session: LanaiSession): readonly LanaiRomPart[] {
+  const [parts, setParts] = useState<readonly LanaiRomPart[]>(NO_ROM_PARTS);
+  useEffect(() => {
+    let live = true;
+    lanaiRomParts(session).then(
+      (p) => live && setParts(p),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [session]);
+  return parts;
+}
+const NO_ROM_PARTS: readonly LanaiRomPart[] = [];
+
 function useMaps(maps: LanaiMaps | null): number {
   return useSyncExternalStore(
     (f) => (maps ? maps.on(f) : noop),
@@ -936,7 +954,7 @@ function TalkPlacement({
   onClose: () => void;
 }): ReactNode {
   const shop = !!template.event?.shop;
-  const [text, setText] = useState(shop ? 'いらっしゃいませ。' : '');
+  const [text, setText] = useState(template.event?.talk?.text || (shop ? 'いらっしゃいませ。' : ''));
   const talk = st.info ? st.maps.talkTable(st.info.dungeon) : undefined;
   let error = '';
   try {
@@ -1008,7 +1026,8 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
     choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
   } | null>(null);
   const revision = useMaps(st.maps);
-  const templates = useMemo(() => st.templates(), [st, st.info, revision]);
+  const romParts = useRomParts(st.maps.session);
+  const templates = useMemo(() => [...st.templates(), ...st.romTemplates(romParts)], [st, st.info, revision, romParts]);
   const props = useMemo(() => st.props(), [st, st.info, revision]);
   const objects = st.maps.session.table('MapObject');
   const all = useMemo(
@@ -1028,7 +1047,7 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
         directions={FACING_LABELS}
         modelForProp={(row) => ({ type: 'object' as const, row })}
         modelForTemplate={(t) => t.model ?? view.partLook(t.section, t.raw)?.model ?? null}
-        help="目的からパーツを選び、マップをクリックして配置します。通常・クリア宝箱は独立した中身の表を作ります。配置後に報酬、移動先、スクリプトの接続を設定してください。「既存ギミック」はこのステージにあるものの複製です。装飾はゲーム中の動作を持ちません。Esc で選択に戻ります。"
+        help="目的からパーツを選び、マップをクリックして配置します。通常・クリア宝箱は独立した中身の表を作ります。配置後に報酬、移動先、スクリプトの接続を設定してください。「既存ギミック」はこのステージにあるものの複製、「ROM の全種類」は本編のステージにある種類を 1 つずつ写したもの (行き先・台詞・ほかの表の行は置いてから設定) です。装飾はゲーム中の動作を持ちません。Esc で選択に戻ります。"
         prepareTemplate={(template, choose) => {
           if (template.event?.chest) setChest({ template, choose });
           else if (template.event?.switchTrigger) setSwitchPart({ template, choose });

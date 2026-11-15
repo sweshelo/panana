@@ -1255,6 +1255,22 @@ details.fold[open] > summary {
   flex-direction: column;
   overflow-wrap: anywhere;
 }
+.popup-icon {
+  padding: 4px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.popup-icon.active {
+  border-color: var(--accent, var(--border));
+}
+.popup-icon canvas {
+  width: 64px;
+  height: 64px;
+}
 .bch-anims ul {
   margin: 4px 0;
   padding-left: 20px;
