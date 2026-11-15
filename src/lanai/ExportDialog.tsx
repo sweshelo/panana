@@ -152,8 +152,9 @@ function DistributionBox({
   const [error, setError] = useState('');
   const loaded = useAsync(() => session.distributionDiscards(), [session, tick]);
   const discards = Array.isArray(loaded) ? loaded : [];
-  const edited = discards.filter((d) => d.edited);
-  const fromBase = discards.filter((d) => !d.edited);
+  // without a base MOD every difference from the ROM is an edit of this session
+  const fromBase = session.baseMod ? discards.filter((d) => d.edited === false) : [];
+  const edited = discards.filter((d) => !fromBase.includes(d));
   const undoable = edited.length > 0 || session.dropCap;
   return (
     <fieldset className="field">
