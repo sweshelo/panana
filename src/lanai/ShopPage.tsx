@@ -12,6 +12,7 @@ import { hex8, u32 } from '../util/bytes';
 import { contentTitle, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
 import { lanaiItemHref } from './ItemPage';
+import { lanaiShopHref } from './hrefs';
 import { LANAI_ITEM_KINDS, lanaiItems, type LanaiItem } from './items';
 import { lanaiMapHref } from './MapPage';
 import { lanaiMaps, type LanaiMaps } from './maps';
@@ -44,8 +45,7 @@ import {
 /** The page of the items a random slot of `kind` draws (the kind's pool). */
 export const lanaiShopSlotHref = (kind: number): string => `#/shops/slot.${kind.toString(16)}`;
 
-export const lanaiShopHref = (content: number, shop?: number): string =>
-  `#/shops/${content}${shop === undefined ? '' : `.${shop}`}`;
+export { lanaiShopHref };
 
 const LIMIT_HELP =
   '買える数の上限 (ShopItem +0x26。0 = 制限なし。買った数は店と並びの位置ごとに数えます)。+0x27 が 0 でない行は、+0x27 が上限で、買った数は +0x28 の番号ごと (同じ番号の行で共通) に数えます (naauao lanai/shops.md §2)。';
@@ -496,7 +496,13 @@ function Clerks({
         <p className="muted small">
           {multi
             ? 'このコンテンツには店が複数あり、店の人 (型 0x32) はいません。島の店などは CRO のスクリプトやメニューから開くと推定しています。'
-            : 'この店を開く店の人 (型 0x32) は、このコンテンツのマップにいません。'}
+            : 'この店を開く店の人 (型 0x32) は、このコンテンツのマップにいません。'}{' '}
+          {!multi && (
+            <>
+              <a href={lanaiMapHref(content.index)}>マップのページ</a>
+              のパーツ「店の人（話しかけるとショップ）」で置けます。
+            </>
+          )}
         </p>
       </>
     );

@@ -3,6 +3,8 @@ import { PlacedPickButton, type PlacedChoice } from '../editor/objectpick';
 import { recCellPos } from '../game/sections';
 import { MapPickerButton, type MapPickerGroups } from '../ui/MapPicker';
 import { hex8, u32 } from '../util/bytes';
+import { lanaiMapHref } from './hrefs';
+import { lanaiDestinationPlace } from './mapLinks';
 import { LANAI_LAYOUTS, lanaiExitLabel, lanaiFloorLabel, type LanaiMaps } from './maps';
 
 export function lanaiDestinationPoints(maps: LanaiMaps, hash: number): PlacedChoice[] {
@@ -35,6 +37,7 @@ export function DestinationFields({
   point,
   onChange,
   labels = ['行き先のマップ', '行き先の地点 ID'],
+  link = false,
 }: {
   maps: LanaiMaps;
   map: number;
@@ -42,6 +45,8 @@ export function DestinationFields({
   onChange: (map: number, point: number) => void;
   /** The labels of the map and the point fields. */
   labels?: [map: string, point: string];
+  /** Show a link to the destination's record on the map page (the inspector; not the dialogs shown before placing). */
+  link?: boolean;
 }): ReactNode {
   const dest = maps.map(map);
   const groups: MapPickerGroups = maps.groups.flatMap((g) => {
@@ -55,6 +60,7 @@ export function DestinationFields({
     return rows.length ? [[maps.groupName(g.row) || `ダンジョン ${g.row}`, rows]] : [];
   });
   const points = lanaiDestinationPoints(maps, map);
+  const place = link ? lanaiDestinationPlace(maps, map, point) : null;
   return (
     <>
       <label className="field">
@@ -86,6 +92,19 @@ export function DestinationFields({
         />
       </label>
       {dest && !dest.world && points.length === 0 && <p className="muted small">行き先に出入口がありません。</p>}
+      {place && (
+        <p className="small">
+          <a
+            href={lanaiMapHref(maps.content.index, place.map, place)}
+            title="行き先の出入口を選んだ状態でマップを開く"
+          >{`→ 行き先へ移動 (${place.map} の出入口 #${place.index})`}</a>
+        </p>
+      )}
+      {link && dest?.world && (
+        <p className="small">
+          <a href={`#/world/${maps.content.index}.${dest.name}`}>{`→ 行き先のワールドマップ ${dest.name} を開く`}</a>
+        </p>
+      )}
     </>
   );
 }

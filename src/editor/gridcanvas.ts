@@ -96,6 +96,15 @@ export class GridCanvas {
     this.draw();
   }
 
+  /** Bring cell coordinates (cx, cy) to the middle of the view, keeping the zoom. */
+  centerOn(cx: number, cy: number): void {
+    const r = this.canvas.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    this.ox = r.width / 2 - cx * this.scale;
+    this.oy = r.height / 2 - cy * this.scale;
+    this.draw();
+  }
+
   /** Fit cells with a margin of one cell around them. */
   fitCells(cells: readonly { x: number; y: number }[]): void {
     if (!cells.length) return;

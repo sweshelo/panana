@@ -14,6 +14,8 @@ import { contentTitle } from './contents';
 import { useLanaiContents } from './useContents';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiMessageSource } from './MessageSource';
+import { lanaiAppendTalkRow } from './maps';
+import { encodeLanaiMessage, parseLanaiText } from './message';
 import type { LanaiSession, LanaiTableRef } from './session';
 import {
   isTalkTable,
@@ -117,7 +119,9 @@ function TalkList({
   wanted: string | undefined;
 }): ReactNode {
   const revision = useLanaiRevision(session);
-  const all = useMemo(() => tables.flatMap(talkGroups), [tables]);
+  // again when a row was added (here, or by a new sign or NPC of the map page)
+  const rowCount = tables.reduce((n, t) => n + t.table.rows, 0);
+  const all = useMemo(() => tables.flatMap(talkGroups), [tables, rowCount]);
   const byKey = useMemo(() => new Map(all.map((g) => [g.key, g])), [all]);
   const selected = useSticky<string>(
     wanted,
@@ -141,6 +145,21 @@ function TalkList({
   );
   const sel = byKey.get(selected);
   const counts = { set: all.filter((g) => g.kind === 'set').length };
+  /** The table a new line goes to: the selected line's, else the first. */
+  const target = sel?.ref ?? tables[0];
+  const addLine = (): void => {
+    if (!target) return;
+    try {
+      // the speaker kind of the selected line when it is a single row (an NPC's), else the ROM's usual NPC kind 18
+      const speaker = sel && sel.kind !== 'set' ? talkSpeaker(sel.ref, sel.rows[0]!) : 18;
+      const row = lanaiAppendTalkRow(target.table, encodeLanaiMessage(parseLanaiText('新しいメッセージ')), speaker);
+      session.edited();
+      const g = talkGroups(target).find((x) => x.rows.includes(row));
+      if (g) location.hash = talksHref(scope, g);
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  };
   return (
     <>
       <div className="book-side">
@@ -165,6 +184,16 @@ function TalkList({
             <p className="muted">このコンテンツには会話の表 (message / voice / 話者の 12 バイトの行) がありません。</p>
           )}
           {!!all.length && <div className="muted small">{`性格違いの組 ${counts.set}`}</div>}
+          {target && scope !== MASTER && (
+            <div className="row">
+              <button
+                title={`${target.table.name} の末尾に新しい行を足します。マップの NPC や看板の「台詞」欄から選べます`}
+                onClick={addLine}
+              >
+                ＋ 新しいメッセージ
+              </button>
+            </div>
+          )}
           <table className="book-table">
             <thead>
               <tr>

@@ -112,6 +112,20 @@ export class AnimatedModel {
     this.update(0);
   }
 
+  /**
+   * Add material animations over the selected motion's, by name or by the prefix of their name ("010_"): a texture that
+   * shows one of several digits, as the number on a door, that the game picks by the record's data. Returns whether
+   * the model has one.
+   */
+  addMaterial(name: string): boolean {
+    const extra = this.model.animations.filter(
+      (a) => a.kind === 'material' && a.material.length && (a.name === name || animationKey(a.name) === name),
+    );
+    this.material = [...this.material, ...extra];
+    this.update(0);
+    return extra.length > 0;
+  }
+
   /** World matrix of a bone at the last update (null when the model has no such bone). */
   boneMatrix(name: string): THREE.Matrix4 | null {
     const i = this.model.bones.findIndex((b) => b.name === name);

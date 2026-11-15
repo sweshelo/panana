@@ -24,11 +24,12 @@
 import { LANAI_ROT_CODEC } from '../game/sections';
 import { u32, w32, wf32 } from '../util/bytes';
 import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_SCRIPT } from './actions';
-import { LANAI_FACING_OFFSET, LANAI_LAYOUTS } from './maps';
+import { LANAI_FACING_OFFSET, LANAI_FLOOR_ICE, LANAI_FLOOR_KIND, LANAI_FLOOR_POISON, LANAI_LAYOUTS } from './maps';
 import {
   LANAI_CHARA_MONSTER,
   LANAI_CHARA_NPC,
   LANAI_CLEAR_WARP,
+  LANAI_FLOOR_ROWS,
   LANAI_REPAIR_FIELD,
   LANAI_REPAIR_POINT,
   lanaiCharaKind,
@@ -74,6 +75,13 @@ export interface NewEventRow {
   /** Optionally open this door's EventObject row from the generated switch function. */
   buttonDoor?: number;
   destination?: { map: number; point: number };
+  /**
+   * Add a line to the group's talk table when placed and name it in the action's first argument: its text (the text
+   * form of message.ts) and the speaker kind of its row (talk.ts TALK_SPEAKER).
+   */
+  talk?: { text: string; speaker: number };
+  /** The part opens the content's shop (the dialog and the inspector link to its stock). */
+  shop?: boolean;
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */
   chara?: NewChara;
 }
@@ -88,6 +96,61 @@ export interface LanaiEventPart {
   model: LanaiRecordModel | null;
   category: string;
   iconLabel?: string;
+}
+
+/** A new record that has no EventObject row (a floor gimmick). */
+export interface LanaiPlainPart {
+  section: number;
+  raw: Uint8Array;
+  label: string;
+  source: string;
+  category: string;
+  /** The model the game places for it (the add panel's thumbnail). */
+  model: LanaiRecordModel | null;
+}
+
+/** The sign: section 5 kind 11 with the action 0x2F, whose 9 records of the ROM all look like MapObject #223. */
+export const LANAI_SIGN_KIND = 11;
+export const LANAI_ACTION_SIGN = 0x8000002f;
+const SIGN_LOOK = 223;
+/** An NPC that says one line and turns back (actions.ts 0x02), and the clerk (0x32: a line, then the content's shop). */
+export const LANAI_ACTION_TALK = 0x80000002;
+export const LANAI_ACTION_SHOP = 0x80000032;
+/** The speaker kinds (talk table +0x08) of the ROM's lines: 0 on every sign's, 18 on most NPCs' and clerks'. */
+export const LANAI_SPEAKER_NONE = 0;
+export const LANAI_SPEAKER_NPC = 18;
+
+/**
+ * Floor gimmicks (section 1) made from nothing. A record is 16 bytes: the cell at +0x00 / +0x02, +0x0C = 1 and the
+ * kind at +0x0D, everything else 0 (all 439 records of the ROM are so: 29 / 18 / 173 / 219 of kinds 0〜3), and it names
+ * no EventObject row, so a new one is the same bytes as the ROM's. Kind 1 is the poison floor and kind 3 the frozen
+ * floor (seen in the game by the user); placing a new one was not tried in the game.
+ */
+export function lanaiFloorParts(): LanaiPlainPart[] {
+  const floor = (kind: number): Uint8Array => {
+    const raw = new Uint8Array(LANAI_LAYOUTS[1]!.size);
+    raw[0x0c] = 1;
+    raw[LANAI_FLOOR_KIND] = kind;
+    return raw;
+  };
+  return [
+    {
+      section: 1,
+      raw: floor(LANAI_FLOOR_POISON),
+      label: '毒床（上を歩くとダメージ）',
+      source: '新規毒床',
+      category: '床のギミック',
+      model: { type: 'object', row: LANAI_FLOOR_ROWS[LANAI_FLOOR_POISON]! },
+    },
+    {
+      section: 1,
+      raw: floor(LANAI_FLOOR_ICE),
+      label: '凍った床（すべる）',
+      source: '新規凍った床',
+      category: '床のギミック',
+      model: { type: 'object', row: LANAI_FLOOR_ROWS[LANAI_FLOOR_ICE]! },
+    },
+  ];
 }
 
 /** What a record's look (EventObject +0x5A) is a row of, for the inspector. */
@@ -232,6 +295,38 @@ export function lanaiEventParts(
             : null,
       iconLabel: (kind === 4 || kind === 2) && !warpLook ? '◉' : undefined,
     });
+  }
+  // lines said from the data (no script): a sign, an NPC with one line, a clerk who opens the content's shop
+  const signLook = lanaiObjectRef(mapObject, SIGN_LOOK) ? SIGN_LOOK : 0;
+  part({
+    section: 5,
+    raw: record(5, LANAI_SIGN_KIND),
+    label: '看板（調べるとメッセージ）',
+    source: '新規看板',
+    category: 'メッセージ・店',
+    event: { action: LANAI_ACTION_SIGN, look: signLook, talk: { text: '', speaker: LANAI_SPEAKER_NONE } },
+    model: signLook ? { type: 'object', row: signLook } : null,
+  });
+  {
+    const row = lanaiCharaOfKind(mapChara, mapObject, LANAI_CHARA_NPC);
+    const model = row ? lanaiCharaObject(mapChara, row) : defaults.npcModel;
+    if (model)
+      for (const shop of [false, true])
+        part({
+          section: 5,
+          raw: record(5, LANAI_CHARA_NPC),
+          label: shop ? '店の人（話しかけるとショップ）' : '話す NPC（話しかけるとメッセージ）',
+          source: shop ? '新規店の人' : '新規話す NPC',
+          category: 'メッセージ・店',
+          event: {
+            action: shop ? LANAI_ACTION_SHOP : LANAI_ACTION_TALK,
+            look: row,
+            chara: row ? undefined : { kind: LANAI_CHARA_NPC, model },
+            talk: { text: '', speaker: LANAI_SPEAKER_NPC },
+            shop: shop || undefined,
+          },
+          model: { type: 'object', row: model },
+        });
   }
   for (const goal of [false, true]) {
     const raw = record(4, goal ? 3 : 0);

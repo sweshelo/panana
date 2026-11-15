@@ -21,7 +21,12 @@ import { ROW_ID, type LanaiTable } from './table';
 
 /** What a record's model is: a MapObject row (number) of the master, a MonsterDesign row, or an effect (EffectData row). */
 export type LanaiRecordModel =
-  | { type: 'object'; row: number }
+  | {
+      type: 'object';
+      row: number;
+      /** The prefix ("010_") of a material animation of the model to show (the number of a level door), at its first frame. */
+      material?: string;
+    }
   /** A monster's model: a MonsterDesign row (monsterModels.ts). */
   | { type: 'monster'; design: number }
   /** An effect the game puts there instead of a model (EffectData row; the viewer draws a marker). */
@@ -103,6 +108,31 @@ export const LANAI_WALL_DOOR = 100;
 const STAIRS_UP_ID = 1,
   STAIRS_DOWN_ID = 2,
   WALL_DOOR_ID = 5;
+
+/**
+ * The MapObject row (a row number) of a floor gimmick (section 1) by its kind (+0x0D): FUN_0021C534 @0x21C588〜0x21C5B0
+ * of the Update v17408 picks 0 → 0x5A gimk_08_damg5_01, 1 → 0x59 gimk_07_damg3_01 (the poison floor), 2 / 3 → 0x71
+ * gimk_16_frozen_3 (kind 3 is the frozen floor; only it also sets bit 1 of the cell's +0x0A, the slide by the
+ * behaviour). No tileset or indoor switch; analysed by Codex, 2026-11-15.
+ */
+export const LANAI_FLOOR_ROWS: Record<number, number> = { 0: 90, 1: 89, 2: 113, 3: 113 };
+
+/** MapObject rows of the level door gimk_03_gate_06 (the exit kind 16's default and its copy). */
+export const LANAI_LEVEL_DOOR_ROWS: readonly number[] = [49, 59];
+
+/**
+ * The material animation that shows the number of a level door (EventObject +0x5C, its low 8 bits: FUN_0021D744
+ * @0x21E610 passes them to FUN_00448444, which compares them with fixed values and picks the animation by the prefix of
+ * its name, "010_" = 010_number_05): 5, 10〜50 by 5 and 60〜90 by 10 show their own number, 6 the eye, anything else
+ * "99". Undefined for 0 (no number is set).
+ */
+export function lanaiLevelDoorNumber(level: number): string | undefined {
+  const v = level & 0xff;
+  if (!level) return undefined;
+  if (v === 6) return '025_';
+  const i = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 90].indexOf(v);
+  return `${String(i < 0 ? 24 : 10 + i).padStart(3, '0')}_`;
+}
 
 /** MapObject rows (row numbers) section 5 places for a kind when EventObject +0x5A is 0: 3 → 0x3F gimk_04_heal_1, 9 → 0x72, 10 → 0x75. */
 const SECTION5_DEFAULT_ROWS: Record<number, number> = { 3: 0x3f, 9: 0x72, 10: 0x75 };
@@ -248,6 +278,11 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
   const ev = evRow && ctx.events && evRow < ctx.events.rows ? ctx.events.row(evRow) : null;
   const evModel = ev ? u16(ev, LANAI_EO_MODEL) : 0;
   switch (section) {
+    case 1: {
+      // a floor gimmick: its kind's model on the cell, not turned (FUN_0021C534)
+      const row = valid(LANAI_FLOOR_ROWS[raw[0x0d]!] ?? 0);
+      return row ? object(row, 0) : null;
+    }
     case 2: {
       const row = valid(u32(raw, 0));
       return row ? object(row, QUARTER[dirOf(raw[0x10]!)]!) : null;
@@ -281,7 +316,11 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       // doors, gates and warps stand where the record is: the cell's centre and the record's own offset (+0x0C / +0x10,
       // × 100), which the data's doors use to stand on the edge of their cell (± 1.0, 1.46 for gimk_03_gate_10). The
       // code adds nothing towards the direction (FUN_0021D744 @0x21D86C; only kinds 0x13 / 0x44 are moved along it).
-      return object(row, exitAngle(dir) + (DOOR_TURNED(kind) ? 0 : Math.PI));
+      const look = object(row, exitAngle(dir) + (DOOR_TURNED(kind) ? 0 : Math.PI));
+      // a level door shows the level of its EventObject +0x5C on the model
+      const number = LANAI_LEVEL_DOOR_ROWS.includes(row) && ev ? lanaiLevelDoorNumber(u16(ev, 0x5c)) : undefined;
+      if (number && look.model?.type === 'object') look.model.material = number;
+      return look;
     }
     case 4: {
       // EventObject +0x5A, else the look (+0x00) picks one of the chests (looks past 3 take look 0); they are not turned

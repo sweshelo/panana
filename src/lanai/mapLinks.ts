@@ -78,3 +78,49 @@ export function lanaiMapLinks(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDoc):
   });
   return out;
 }
+
+/** The action of a range that moves to another map when walked into (actions.ts 0x0D): a map and a point, as the exits'. */
+const RANGE_MOVE_ACTION = 0x8000000d;
+
+/** A record that leads somewhere: its map, section and index. */
+export interface LanaiRecordPlace {
+  map: string;
+  section: number;
+  index: number;
+}
+
+/** The record a destination (a map's hash and a point ID) arrives at: the first exit of the map with that ID. */
+export function lanaiDestinationPlace(maps: LanaiMaps, hash: number, point: number): LanaiRecordPlace | null {
+  const info = maps.map(hash);
+  if (!info || info.world) return null;
+  const index = (maps.doc(info).recs[3] ?? []).findIndex(
+    (r) => lanaiExitKind(r.raw) !== WALL_DOOR && u32(r.raw, 0) === point,
+  );
+  return index < 0 ? null : { map: info.name, section: 3, index };
+}
+
+/**
+ * The records of the content's maps that lead to a point of a map (the first action of their EventObject row): exits
+ * (section 3) and the ranges that move to another map (section 8, action 0x0D).
+ */
+export function lanaiArrivals(maps: LanaiMaps, hash: number, point: number): LanaiRecordPlace[] {
+  const out: LanaiRecordPlace[] = [];
+  const o = LANAI_EVENT_ACTIONS[0]!;
+  for (const m of maps.maps) {
+    if (m.world) continue;
+    const events = maps.eventTable(m.dungeon);
+    if (!events) continue;
+    const doc = maps.doc(m);
+    for (const section of [3, 8])
+      (doc.recs[section] ?? []).forEach((r, index) => {
+        const row = u32(r.raw, 4);
+        if (!row || row >= events.rows) return;
+        const type = events.u32(row, o);
+        const leads =
+          section === 3 ? LANAI_DESTINATION_ACTIONS.includes(type) : u32(r.raw, 0) < 100 && type === RANGE_MOVE_ACTION;
+        if (leads && events.u32(row, o + 4) === hash && events.u32(row, o + 8) === point)
+          out.push({ map: m.name, section, index });
+      });
+  }
+  return out;
+}

@@ -56,13 +56,15 @@ interface LoadedModel {
  * The model at the first frame of its first motion: "001_" (a closed chest or door), else "000_" (an NPC's wait);
  * null = it has none.
  */
-function posed(f: ModelFactory, hash: number): THREE.Object3D | null {
+function posed(f: ModelFactory, hash: number, material?: string): THREE.Object3D | null {
   const motions = f.set.models.get(hash)?.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length) ?? [];
   const first =
     motions.find((a) => animationKey(a.name) === '001_') ?? motions.find((a) => animationKey(a.name) === '000_');
-  if (!first) return null;
+  if (!first && !material) return null;
   const m = new AnimatedModel(f, hash);
-  m.select(first.name);
+  m.select(first?.name ?? null);
+  // a material animation the record picks (the number of a level door: mapObjects.ts lanaiLevelDoorNumber)
+  if (material) m.addMaterial(material);
   return new THREE.Group().add(m.group);
 }
 
@@ -179,6 +181,16 @@ export class LanaiMapView {
     this.scene.fitCells(this.doc.tiles);
   }
 
+  /** Bring a record to the middle of both views (a link to the record: MapPage.tsx). */
+  centerOnRecord(section: number, index: number): void {
+    const rec = this.doc.recs[section]?.[index];
+    const L = LANAI_LAYOUTS[section];
+    if (!rec || !L) return;
+    const [x, y] = recCellPos(rec, L);
+    this.grid.centerOn(x, y);
+    this.scene.centerOn(x, y);
+  }
+
   /** Redraw both views (after a display setting changed). */
   refresh(): void {
     this.grid.draw();
@@ -229,7 +241,7 @@ export class LanaiMapView {
         const x = px * s,
           y = py * s;
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
-        if (k === 8) drawRange(g, s, lanaiRange(r.raw, events), selected);
+        if (k === 8) drawRange(g, s, lanaiRange(r, events), selected);
         g.fillStyle = SECTION_COLORS[k]!;
         g.strokeStyle = selected ? '#fff' : 'rgba(0,0,0,0.7)';
         g.lineWidth = selected ? 2.5 : 1;
@@ -328,7 +340,9 @@ export class LanaiMapView {
   }
 
   private modelKey(m: LanaiRecordModel): string {
-    return m.type === 'monster' ? `m${m.design}` : `o${m.row}`;
+    return m.type === 'monster'
+      ? `m${m.design}`
+      : `o${m.row}${m.type === 'object' && m.material ? `/${m.material}` : ''}`;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -368,7 +382,13 @@ export class LanaiMapView {
     }
     if (!got) return null;
     const factory = new ModelFactory(got.set);
-    return { factory, hash: got.hash, name: got.set.paths.get(got.hash) ?? '', pose: posed(factory, got.hash) };
+    const material = m.type === 'object' ? m.material : undefined;
+    return {
+      factory,
+      hash: got.hash,
+      name: got.set.paths.get(got.hash) ?? '',
+      pose: posed(factory, got.hash, material),
+    };
   }
 
   private sync3d(): void {
@@ -404,7 +424,7 @@ export class LanaiMapView {
         const selected = sel.type === 'rec' && sel.section === k && sel.index === i;
         // a range: its walls in place of the marker
         if (k === 8) {
-          const wall = rangeWalls(lanaiRange(r.raw, events).shape);
+          const wall = rangeWalls(lanaiRange(r, events).shape);
           if (wall) {
             const edges = new THREE.EdgesGeometry(wall, 30);
             this.rangeGeos.push(wall, edges);
@@ -528,7 +548,7 @@ function drawRange(g: CanvasRenderingContext2D, s: number, range: LanaiRange, se
   g.strokeStyle = SECTION_COLORS[8]!;
   g.fillStyle = SECTION_COLORS[8]!;
   g.lineWidth = selected ? 2 : 1.25;
-  g.setLineDash(range.otherChannel ? [4, 3] : []);
+  g.setLineDash(range.pressToStart ? [4, 3] : []);
   g.beginPath();
   if (shape.type === 'circle') {
     if (shape.r <= 0) {

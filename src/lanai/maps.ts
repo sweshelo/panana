@@ -15,6 +15,8 @@ import {
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
 import { lanaiCharaRowBytes } from './mapObjects';
+import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiText } from './message';
+import { talkColumns, TALK_SPEAKER } from './talk';
 import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -107,9 +109,30 @@ export const LANAI_EXIT_KIND: Record<number, string> = {
   5: '上り階段',
   6: '下り階段',
   12: '扉',
+  16: 'レベルの扉',
   100: '壁の扉',
 };
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
+/** The exit kind (+0x15) of the level door (MapObject #49 gimk_03_gate_06 when the row has no look). */
+export const LANAI_LEVEL_DOOR_KIND = 16;
+/**
+ * EventObject +0x5C of a level door: the level the door asks for (the "X" of its LvX; the ROM's 14 doors with the
+ * model have 5 / 10 / 30 / 40 / 50 / 60 there, every other door 0). Ranges (section 8) keep a flag in bit 15 of the
+ * same field (rangeShape.ts).
+ */
+export const LANAI_EVENT_LEVEL = 0x5c;
+/**
+ * Section 1 +0x0D: the kind of a floor gimmick (0〜3 in the ROM). Kind 1 is the poison floor and kind 3 the frozen
+ * (slippery) floor, both seen in the game by the user; 0 and 2 are not known yet.
+ */
+export const LANAI_FLOOR_KIND = 0x0d;
+export const LANAI_FLOOR_POISON = 1;
+export const LANAI_FLOOR_ICE = 3;
+export const LANAI_FLOOR_KINDS: Record<number, string> = {
+  [LANAI_FLOOR_POISON]: '毒床',
+  [LANAI_FLOOR_ICE]: '凍った床',
+};
+export const lanaiFloorKindLabel = (kind: number): string => LANAI_FLOOR_KINDS[kind] ?? `床のギミック ${kind}`;
 export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
@@ -516,6 +539,48 @@ export class LanaiMaps {
     return g.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : this.contentTable('MessageContents');
   }
 
+  /**
+   * Append a line to a group's talk table and return its row (what the talking actions name: actions.ts). The row is a
+   * copy of one of the table's rows (so that its message field is a string field) with the message `text` (the text
+   * form of message.ts), the speaker kind `speaker` (+0x08: 0 for a sign, 18 for most NPCs of the ROM) and no voice
+   * (the ROM's NPC lines have an empty one).
+   */
+  addTalkRow(group: number, text: string, speaker: number): number {
+    const t = this.talkTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の台詞の表がありません`);
+    return lanaiAppendTalkRow(t, encodeLanaiMessage(parseLanaiText(text)), speaker);
+  }
+
+  /** The lines an edit added to a group's talk table (an undo point of the map page; the ROM's rows are not in it). */
+  talkRows(group: number): LanaiTalkRows | null {
+    const t = this.talkTable(group);
+    const cols = t && talkColumns({ table: t });
+    if (!t || !cols) return null;
+    const added: LanaiTalkRows['added'] = [];
+    for (let r = t.originalRows; r < t.rows; r++)
+      added.push({
+        speaker: t.u8(r, TALK_SPEAKER),
+        message: t.isString(r, cols.message) ? lanaiMessageBytes(t.data, t.u32(r, cols.message)).slice() : null,
+      });
+    return { group, rows: t.rows, added };
+  }
+
+  /**
+   * Put a group's talk table back to the number of rows saved by talkRows: rows added since are removed, rows removed
+   * since are added again with their text. The rows both have keep the text they have now (it is edited in the
+   * message editor, outside the undo points).
+   */
+  restoreTalkRows(saved: LanaiTalkRows): void {
+    const t = this.talkTable(saved.group);
+    if (!t) return;
+    while (t.rows > saved.rows && t.rows > t.originalRows) t.removeLastRow();
+    for (let r = t.rows; r < saved.rows; r++) {
+      const row = saved.added[r - t.originalRows];
+      if (!row?.message) break;
+      lanaiAppendTalkRow(t, row.message, row.speaker);
+    }
+  }
+
   /** A table of the content's archive by its name ("MapChara"). */
   contentTable(name: string): LanaiTable | undefined {
     return tableNamed(this.tables, name);
@@ -761,6 +826,29 @@ export class LanaiMaps {
     }
     return out;
   }
+}
+
+/** The rows an edit added to a talk table (LanaiMaps.talkRows). */
+export interface LanaiTalkRows {
+  group: number;
+  /** Rows of the table then. */
+  rows: number;
+  /** The rows after the ROM's: the speaker kind and the message's bytes (null: the field is not a string). */
+  added: { speaker: number; message: Uint8Array | null }[];
+}
+
+/** Appends a row with the message `bytes` (encoded, with its terminator) to a talk table; returns its row. */
+export function lanaiAppendTalkRow(t: LanaiTable, bytes: Uint8Array, speaker: number): number {
+  const cols = talkColumns({ table: t });
+  if (!cols) throw new Error(`${t.name} は台詞の表ではありません`);
+  let donor = -1;
+  for (let r = t.rows - 1; r >= 0 && donor < 0; r--) if (t.isString(r, cols.message)) donor = r;
+  if (donor < 0) throw new Error(`${t.name} に写せる台詞の行がありません`);
+  const row = t.addRow(donor);
+  t.setU8(row, TALK_SPEAKER, speaker);
+  t.setString(row, cols.message, bytes);
+  if (cols.voice >= 0 && t.isString(row, cols.voice)) t.setString(row, cols.voice, new Uint8Array(2));
+  return row;
 }
 
 /** A copy of a table's rows (an undo point). */

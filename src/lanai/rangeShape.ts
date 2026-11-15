@@ -11,9 +11,9 @@
 //   and depth 100 × (+0x14), 100 × (+0x18) (0x4504BC; halved at the test 0x4500E4). The edges are inside.
 // - What is tested is one point (the party's position) against the shape (0x20F7D8 → 0x450018), each time it is
 //   called: there is no "entered / left" in it; the first range that holds the point wins.
-// - EventObject +0x5C bit 15 picks the channel: set = 1, clear = 2 (0x4504DC). The walking check (0x20F7D8) asks for
-//   2, so a range with bit 15 is not entered by walking (another path, 0x20FC68 / 0x20FC98, asks for 1).
-import { CELL } from '../game/sections';
+// - EventObject +0x5C bit 15 picks the channel: set = 1, clear = 2 (0x4504DC). The per-frame path
+//   (0x210598 -> 0x20FC68 / 0x20FC98) asks for 1; the A/L button path (0x2106C0 -> 0x20F7D8) asks for 2.
+import { CELL, type Rec } from '../game/sections';
 import { f32, u16, u32 } from '../util/bytes';
 import type { LanaiTable } from './table';
 
@@ -21,7 +21,7 @@ import type { LanaiTable } from './table';
 export const LANAI_RANGE_PROP_KIND = 100;
 /** EventObject +0x5A: a circle's radius in 100 world units. */
 const EO_RADIUS = 0x5a;
-/** EventObject +0x5C: bit 15 = the range is of channel 1 (not hit by walking). */
+/** EventObject +0x5C: bit 15 = channel 1 (entered by walking); clear = channel 2 (A/L button). */
 const EO_CHANNEL = 0x5c;
 
 export type LanaiRangeShape =
@@ -33,29 +33,26 @@ export interface LanaiRange {
   shape: LanaiRangeShape | null;
   /** Why it makes no range, or what keeps it from being walked into. */
   note: string;
-  /** EventObject +0x5C bit 15: hit by the other path, not by walking. */
-  otherChannel: boolean;
+  /** The range needs A/L while inside it, instead of starting when walked into. */
+  pressToStart: boolean;
 }
 
 const finite = (v: number): number => (Number.isFinite(v) ? v : 0);
 
 /** The range a section 8 record makes, with its EventObject table (the circle's radius and the channel are there). */
-export function lanaiRange(raw: Uint8Array, events: LanaiTable | undefined): LanaiRange {
+export function lanaiRange(rec: Rec, events: LanaiTable | undefined): LanaiRange {
+  const { raw, x, y } = rec;
   const kind = u32(raw, 0);
   if (kind >= LANAI_RANGE_PROP_KIND)
-    return { shape: null, note: '置物 (範囲の当たり判定は作られません)', otherChannel: false };
+    return { shape: null, note: '置物 (範囲の当たり判定は作られません)', pressToStart: false };
   const ev = u32(raw, 4);
   const row = events && ev > 0 && ev < events.rows ? events.row(ev) : null;
-  if (!ev) return { shape: null, note: 'イベント番号が 0 なので、範囲は作られません', otherChannel: false };
-  if (!row) return { shape: null, note: `イベント ${ev} が表にないので、範囲は作られません`, otherChannel: false };
-  const x = ((raw[8]! | (raw[9]! << 8)) << 16) >> 16,
-    y = ((raw[10]! | (raw[11]! << 8)) << 16) >> 16;
+  if (!ev) return { shape: null, note: 'イベント番号が 0 なので、範囲は作られません', pressToStart: false };
+  if (!row) return { shape: null, note: `イベント ${ev} が表にないので、範囲は作られません`, pressToStart: false };
   const ox = x + finite(f32(raw, 0x0c)),
     oy = y + finite(f32(raw, 0x10));
-  const otherChannel = (u16(row, EO_CHANNEL) & 0x8000) !== 0;
-  const channel = otherChannel
-    ? 'EventObject +0x5C の bit 15 が立っているので、歩いて入っても起きません (別の経路の判定)。'
-    : '';
+  const pressToStart = (u16(row, EO_CHANNEL) & 0x8000) === 0;
+  const channel = pressToStart ? 'A ボタンを押すと起きます。' : '歩いて入ると起きます。';
   if (raw[0x1d] === 0) {
     const radius = u16(row, EO_RADIUS);
     const shape: LanaiRangeShape = {
@@ -66,7 +63,7 @@ export function lanaiRange(raw: Uint8Array, events: LanaiTable | undefined): Lan
     };
     return {
       shape,
-      otherChannel,
+      pressToStart,
       note:
         (radius
           ? `円: 半径 ${radius * 100} (${shape.r.toFixed(1)} マス、イベントの +0x5A = ${radius})。`
@@ -84,7 +81,7 @@ export function lanaiRange(raw: Uint8Array, events: LanaiTable | undefined): Lan
   };
   return {
     shape,
-    otherChannel,
+    pressToStart,
     note:
       `矩形: 幅 ${w * 100} × 奥行き ${h * 100} (${shape.w.toFixed(1)} × ${shape.h.toFixed(1)} マス)。位置は左上 (北西) の角で、向きでは回りません。` +
       (w <= 0 || h <= 0 ? '幅か奥行きが 0 なので、線か点にしか当たりません。' : '') +
