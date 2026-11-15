@@ -13,7 +13,7 @@ import { LANAI_DELIVERABLE_TABLES, type LanaiSession } from './session';
 
 export function LanaiExportDialog({ session, onClose }: { session: LanaiSession; onClose: () => void }): ReactNode {
   const [error, setError] = useState('');
-  const [, redraw] = useState(0);
+  const [tick, redraw] = useState(0);
   const changed = session.changedTables();
   const maps = session.changedMapDbs();
   const mapTables = session.changedMapTables();
@@ -23,7 +23,6 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   const fieldStartGuard = session.needsFieldStartGuard;
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
-  const discards = useAsync(() => session.distributionDiscards(), [session]);
   const archives = [
     ...new Set([
       ...changed.map((t) => t.archive),
@@ -102,7 +101,6 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
               </ul>
               <BaseModNote mod={session.baseMod} />
               <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', ips ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
-              <DistributionNote discards={Array.isArray(discards) ? discards : null} scripts={scripts} />
               {error && <div className="error">{error}</div>}
               <div className="row">
                 <button
@@ -118,17 +116,6 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                   MOD の zip をダウンロード
                 </button>
                 <button
-                  onClick={async () => {
-                    try {
-                      download(await session.distributionZip(), 'denpa-free-stage.zip');
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  カスタムステージ配信用の zip をダウンロード
-                </button>
-                <button
                   onClick={() => {
                     if (!confirm('すべての変更を元に戻しますか?')) return;
                     session.revertAll();
@@ -138,6 +125,7 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
                   すべての変更を元に戻す
                 </button>
               </div>
+              <DistributionBox session={session} scripts={scripts} tick={tick} onChange={() => redraw((x) => x + 1)} />
             </>
           )}
         </>
@@ -146,32 +134,78 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
   );
 }
 
-/** What the custom-stage distribution zip leaves out: master tables the game cannot take, and exefs/code.ips. */
-function DistributionNote({
-  discards,
+/**
+ * The custom-stage distribution: what its zip leaves out (master tables the game cannot take, exefs/code.ips), its
+ * download, and a button that undoes only the edits it would leave out.
+ */
+function DistributionBox({
+  session,
   scripts,
+  tick,
+  onChange,
 }: {
-  discards: { table: string; rows: number }[] | null;
+  session: LanaiSession;
   scripts: number;
+  tick: number;
+  onChange: () => void;
 }): ReactNode {
+  const [error, setError] = useState('');
+  const loaded = useAsync(() => session.distributionDiscards(), [session, tick]);
+  const discards = Array.isArray(loaded) ? loaded : [];
+  const edited = discards.filter((d) => d.edited);
+  const fromBase = discards.filter((d) => !d.edited);
+  const undoable = edited.length > 0 || session.dropCap;
   return (
-    <div className="muted small">
-      <p>
-        カスタムステージ配信用の zip は、配信 (uwapo) がゲームに届けられる変更だけを入れます。master の表は{' '}
+    <fieldset className="field">
+      <legend>カスタムステージ配信 (uwapo)</legend>
+      <p className="muted small">
+        配信用の zip には、配信がゲームに届けられる変更だけを入れます。master の表は{' '}
         {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけを残し、ほかの表は ROM のままに戻します
         (ゲームはほかの表の行を含むステージを丸ごと読み込まないため)。exefs/code.ips は入れません。
       </p>
       {scripts > 0 && <p className="error">条件スクリプトがあるので、配信用には書き出せません。</p>}
-      {discards && discards.length > 0 && (
+      {loaded instanceof Error && <div className="error">{loaded.message}</div>}
+      {discards.length > 0 || session.dropCap ? (
         <>
-          <p>配信用の zip では、次の変更を捨てます:</p>
+          <p>配信では次の変更が欠落します:</p>
           <ul>
-            {discards.map((d) => (
+            {edited.map((d) => (
               <li key={d.table}>{`master の ${d.table}: ${d.rows} 行`}</li>
             ))}
+            {fromBase.map((d) => (
+              <li key={d.table}>{`master の ${d.table}: ${d.rows} 行 (ベース MOD の変更。ここでは取り消せません)`}</li>
+            ))}
+            {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (exefs/code.ips)</li>}
           </ul>
         </>
+      ) : (
+        loaded !== undefined && <p className="muted small">配信で欠落する変更はありません。</p>
       )}
-    </div>
+      {error && <div className="error">{error}</div>}
+      <div className="row">
+        <button
+          className="primary"
+          onClick={async () => {
+            try {
+              download(await session.distributionZip(), 'denpa-free-stage.zip');
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        >
+          配信用の zip をダウンロード
+        </button>
+        <button
+          disabled={!undoable}
+          onClick={() => {
+            if (!confirm('配信で欠落する変更だけを元に戻しますか? (ほかの変更は残ります)')) return;
+            session.revertUndeliverable();
+            onChange();
+          }}
+        >
+          配信で欠落する変更だけを取り消す
+        </button>
+      </div>
+    </fieldset>
   );
 }

@@ -104,6 +104,15 @@ export const LANAI_EDITS_KEY = 'lanai/edits/v1';
  * The master tables whose rows the custom-stage distribution (lanai-custom-stages) lays over the game's master
  * (its 3ds/runtime/lanai.c master_header). A delivered stage with a row of any other table is refused whole.
  */
+/** A master table whose changes the custom-stage distribution leaves out (LanaiSession.distributionDiscards). */
+export interface LanaiDistributionDiscard {
+  table: string;
+  /** Rows that differ from the ROM (added and removed ones too). */
+  rows: number;
+  /** Whether Panana's edits are among them (else they come from the base MOD). */
+  edited: boolean;
+}
+
 export const LANAI_DELIVERABLE_TABLES = [
   'Contents',
   'MapStageIntegration',
@@ -831,26 +840,27 @@ export class LanaiSession {
   /**
    * The master tables (and their changed rows) the custom-stage distribution cannot deliver: it lays only the rows of
    * LANAI_DELIVERABLE_TABLES over the game's master, and refuses a stage with a row of any other table whole.
-   * Compared with the ROM's master, so a base MOD's changes count too.
+   * Compared with the ROM's master, so a base MOD's changes count too; `edited` = Panana's edits are among them (what
+   * revertUndeliverable undoes), else they all come from the base MOD.
    */
-  async distributionDiscards(): Promise<{ table: string; rows: number }[]> {
+  async distributionDiscards(): Promise<LanaiDistributionDiscard[]> {
     return (await this.distributionMaster()).discards;
   }
 
   private async distributionMaster(): Promise<{
     arc: Archive;
     keep: Map<number, Uint8Array>;
-    discards: { table: string; rows: number }[];
+    discards: LanaiDistributionDiscard[];
   }> {
     const arc = parseArchive(await this.raw.readRomfs(LANAI.master));
     const rom = new Map(archiveTables(LANAI.master, arc).map((t) => [t.entry, t]));
     const keep = new Map<number, Uint8Array>();
-    const discards: { table: string; rows: number }[] = [];
-    for (const t of this.tables) {
+    const discards: LanaiDistributionDiscard[] = [];
+    for (const t of [...this.tables, ...this.others]) {
       if (t.archive !== LANAI.master) continue;
       const r = rom.get(t.entry);
       if (t.added || !r) {
-        discards.push({ table: t.table.name, rows: t.table.rows });
+        discards.push({ table: t.table.name, rows: t.table.rows, edited: true });
         continue;
       }
       if (equalBytes(t.table.data, r.table.data)) continue;
@@ -861,9 +871,24 @@ export class LanaiSession {
       let rows = Math.abs(t.table.rows - r.table.rows);
       for (let i = 0; i < Math.min(t.table.rows, r.table.rows); i++)
         if (!equalBytes(t.table.row(i), r.table.row(i))) rows++;
-      discards.push({ table: t.table.name, rows });
+      discards.push({ table: t.table.name, rows, edited: t.table.changed });
     }
     return { arc, keep, discards };
+  }
+
+  /**
+   * Undoes only the edits the custom-stage distribution would leave out: the master tables other than
+   * LANAI_DELIVERABLE_TABLES (put back as read; an added one is removed) and the code MOD (exefs/code.ips). The base
+   * MOD's changes and the condition scripts (a stage's conditions name them) stay.
+   */
+  revertUndeliverable(): void {
+    for (const t of [...this.tables, ...this.others].filter((x) => x.archive === LANAI.master)) {
+      if (LANAI_DELIVERABLE_TABLES.includes(t.table.name)) continue;
+      if (t.added) this.removeTable(t);
+      else if (t.table.changed) t.table.revert();
+    }
+    this.dropCap = false;
+    this.edited();
   }
 
   /**

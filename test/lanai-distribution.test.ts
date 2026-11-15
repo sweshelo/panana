@@ -27,7 +27,7 @@ describe.skipIf(!hasLanai)('RPG FREE! custom-stage distribution zip (ROM)', () =
     items.setU32(0, 8, romItem ^ 1);
     s.edited();
 
-    expect(await s.distributionDiscards()).toEqual([{ table: 'BattleField', rows: 1 }]);
+    expect(await s.distributionDiscards()).toEqual([{ table: 'BattleField', rows: 1, edited: true }]);
 
     const zip = unzipSync(await s.distributionZip());
     expect(zip[`${LANAI.titleId}/exefs/code.ips`]).toBeUndefined();
@@ -41,5 +41,24 @@ describe.skipIf(!hasLanai)('RPG FREE! custom-stage distribution zip (ROM)', () =
     const mod = unzipSync(await s.modZip());
     const modTables = archiveTables(LANAI.master, parseArchive(mod[`${LANAI.titleId}/romfs/${LANAI.master}`]!));
     expect(modTables.find((t) => t.table.name === 'BattleField')!.table.u32(0, 8)).toBe(romField ^ 1);
+  }, 300_000);
+
+  test('revertUndeliverable undoes the BattleField edit and the code MOD, keeps the ItemData edit', async () => {
+    s.revertAll();
+    const field = s.need('BattleField');
+    const items = s.need('ItemData');
+    const romField = field.u32(0, 8);
+    field.setU32(0, 8, romField ^ 2);
+    const item = items.u32(0, 8) ^ 2;
+    items.setU32(0, 8, item);
+    s.dropCap = true;
+    s.edited();
+
+    s.revertUndeliverable();
+    expect(field.u32(0, 8)).toBe(romField);
+    expect(field.changed).toBe(false);
+    expect(items.u32(0, 8)).toBe(item);
+    expect(s.dropCap).toBe(false);
+    expect(await s.distributionDiscards()).toEqual([]);
   }, 300_000);
 });
