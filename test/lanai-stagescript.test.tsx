@@ -96,6 +96,14 @@ describe('RPG FREE! stage script: reading', () => {
     ]);
   });
 
+  test('a defeated map monster has its own effect statement', () => {
+    const event = parseStageScript('on start(1) { if (monsters() == 0) { vanishMonster(9) } }').events[0]!;
+    const branch = event.body[0]!;
+    if (branch.op !== 'if') throw new Error('if');
+    expect(branch.then).toEqual([{ op: 'vanishMonster', row: 9 }]);
+    expect(() => parseStageScript('on start(1) { vanishMonster(-1) }')).toThrow();
+  });
+
   test('a mistake is told with its line', () => {
     const err = (src: string): string => {
       try {
@@ -141,7 +149,8 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     on talk(1, 5) {
       if (STATE == 0) { talk(1); STATE = 1 } else { talk(2) }
       SEEN = 1
-    }`;
+    }
+    on start(1) { vanishMonster(5) }`;
 
   test('every function the code can call is exported by lanai.crs', async () => {
     const s = await open();
@@ -181,6 +190,15 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(hooks).not.toContain(SLOT_AREA);
     expect(m.namedImports.map((x) => x.name)).toContain(SCRIPT_API.npcCtor);
     expect(m.namedImports.map((x) => x.name)).toContain(SCRIPT_API.setBit);
+    for (const symbol of [
+      SCRIPT_API.monsterSize,
+      SCRIPT_API.effectCtor,
+      SCRIPT_API.effectCreate,
+      SCRIPT_API.effectStart,
+      SCRIPT_API.shadowPos,
+      SCRIPT_API.alphaTo,
+    ])
+      expect(m.namedImports.map((x) => x.name)).toContain(symbol);
     // the CRR holds the SHA-256 of the CRO's first 0x80 bytes
     const crr = zip[`${root}/romfs/${lanaiCrrName(index)}`]!;
     const digest = Buffer.from(sha256(cro.subarray(0, 0x80))).toString('hex');

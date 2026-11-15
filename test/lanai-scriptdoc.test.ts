@@ -20,6 +20,7 @@ import {
   STAGE_SCRIPT_EXAMPLE,
   startBinding,
 } from '../src/lanai/scriptDoc';
+import { scriptCompletions, scriptFunctionProblem } from '../src/lanai/scriptAssist';
 
 describe('RPG FREE! stage script: the document of the editor', () => {
   const doc: ScriptDoc = {
@@ -118,6 +119,7 @@ describe('RPG FREE! stage script: the document of the editor', () => {
       closeDoor: 'closeDoor(1)',
       collision: 'collision(1, 0)',
       remove: 'remove(1)',
+      vanishMonster: 'vanishMonster(1)',
       battle: 'battle(1)',
       stageName: 'stageName()',
       return: 'return',
@@ -134,6 +136,13 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     expect(words.filter((x) => x !== 'disable' && !(x in example))).toEqual([]);
     for (const x of Object.values(example)) expect(() => body(x)).not.toThrow();
     expect(() => parseStageScript('on area(1, 1) { disable() }')).not.toThrow();
+  });
+
+  test('the function editor accepts the monster effect statement', () => {
+    expect(scriptFunctionProblem([], 'vanishMonster(9)')).toBeNull();
+    expect(
+      scriptCompletions('vanishMonster(', { vars: [], lines: [], records: [{ row: 9, label: 'ボス' }] })?.options,
+    ).toEqual([{ label: '9 ボス', apply: '9', type: 'constant' }]);
   });
 });
 

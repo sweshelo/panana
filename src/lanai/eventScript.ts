@@ -101,6 +101,8 @@ export type ScriptNode =
   | { op: 'wait'; seconds: number }
   | { op: 'collision'; row: number | null; on: boolean }
   | { op: 'remove'; row: number }
+  /** A defeated map monster fades out with the shipped boss effect, then its event object is deleted. */
+  | { op: 'vanishMonster'; row: number }
   | { op: 'battle'; group: number }
   | { op: 'stageName' }
   | { op: 'call'; call: ScriptCall }
@@ -637,6 +639,8 @@ export function parseStageScript(src: string): StageScript {
       }
       case 'remove':
         return { op: 'remove', row: call(t.s, () => row())[0] };
+      case 'vanishMonster':
+        return { op: 'vanishMonster', row: call(t.s, () => row('モンスターのイベント番号'))[0] };
       case 'battle':
         return { op: 'battle', group: call(t.s, () => u32('モンスターの群れ (MonsterGroup の行)'))[0] };
       case 'stageName':
@@ -928,6 +932,14 @@ export const SCRIPT_API = {
   rotateTo: '_ZN11ScriptChara8RotateToEff10GSAnimModebbb',
   rotateCharaTo: '_ZN11ScriptChara13RotateCharaToERS_f10GSAnimModebb',
   setVisible: '_ZN11ScriptChara10SetVisibleEb',
+  cancelAutoAnim: '_ZN11ScriptChara19CancelAutoAnimationEv',
+  blendAnim: '_ZN11ScriptChara12SetBlendAnimEb',
+  alphaTo: '_ZN11ScriptChara7AlphaToEff10GSAnimModebbf',
+  shadowPos: '_ZNK11ScriptChara12GetShadowPosEv',
+  monsterSize: '_ZN17ScriptMonsterCtrl14GetMonsterSizeEP9ChrObject',
+  effectCtor: '_ZN12ScriptEffectC1Ev',
+  effectCreate: '_ZN12ScriptEffect12CreateEffectEj9GSLayerID',
+  effectStart: '_ZN12ScriptEffect11StartEffectEf',
   gsvecZero: 'GSVEC_ZERO',
   play: '_ZN11ScriptSound4PlayEtf',
   pauseBgm: '_ZN11ScriptSound8PauseBGMEf',
@@ -1199,6 +1211,7 @@ interface Ctx {
   vars: Map<string, ScriptVar>;
   exit: string;
   breakTo: string | null;
+  effectAt: number | null;
 }
 
 function zeroSmps(fn: Fn): void {
@@ -1416,6 +1429,13 @@ const usesCamera = (nodes: ScriptNode[]): boolean =>
       isShownDoor(n) ||
       (n.op === 'if' && (usesCamera(n.then) || usesCamera(n.else))) ||
       (n.op === 'switch' && (n.cases.some((k) => usesCamera(k.body)) || usesCamera(n.default ?? []))),
+  );
+const usesVanish = (nodes: ScriptNode[]): boolean =>
+  nodes.some(
+    (n) =>
+      n.op === 'vanishMonster' ||
+      (n.op === 'if' && (usesVanish(n.then) || usesVanish(n.else))) ||
+      (n.op === 'switch' && (n.cases.some((k) => usesVanish(k.body)) || usesVanish(n.default ?? []))),
   );
 const fadesIn = (nodes: ScriptNode[]): boolean =>
   nodes.some(
@@ -1669,6 +1689,78 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         fn.load('r0', n.row);
         fn.call(A.deleteObject);
         break;
+      case 'vanishMonster': {
+        // contents0001 D01BossWin (+0x94c/+0x9b8): keep ScriptEffect on the event until its destructor.
+        const at = c.effectAt!;
+        const small = g.uniq(`${fn.name}_vanish_small`),
+          large = g.uniq(`${fn.name}_vanish_large`),
+          created = g.uniq(`${fn.name}_vanish_created`),
+          noEffect = g.uniq(`${fn.name}_vanish_no_effect`),
+          done = g.uniq(`${fn.name}_vanish_done`);
+        fn.load('r0', n.row);
+        fn.call(A.mapChara);
+        fn.op('cmp r0, #0', `beq ${done}`, `str r0, [sp, #${hx(FRAME.tmp)}]`, 'mov r1, r0');
+        fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
+        fn.call(A.charaCtor);
+        fn.op(`ldr r0, [sp, #${hx(FRAME.tmp)}]`);
+        fn.call(A.monsterSize);
+        fn.op(
+          'cmp r0, #1',
+          'cmpne r0, #2',
+          'cmpne r0, #4',
+          `beq ${small}`,
+          'cmp r0, #6',
+          'cmpne r0, #8',
+          'cmpne r0, #0xa',
+          'cmpne r0, #0x10',
+          `beq ${large}`,
+          'mov r0, #0',
+          `str r0, [sp, #${hx(FRAME.tmp + 4)}]`,
+          `b ${created}`,
+        );
+        fn.at(small);
+        fn.load('r1', 0xc1);
+        fn.op(`b ${created}_make`);
+        fn.at(large);
+        fn.load('r1', 0xc2);
+        fn.at(`${created}_make`);
+        fn.op(`add r0, r4, #${hx(at)}`, 'mov r2, #3');
+        fn.call(A.effectCreate);
+        fn.op('mov r0, #1', `str r0, [sp, #${hx(FRAME.tmp + 4)}]`);
+        fn.at(created);
+        const ref = (): void => fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
+        ref();
+        fn.call(A.cancelAutoAnim);
+        startAnim(ref, 0x80000066, 0, false);
+        ref();
+        fn.op('mov r1, #0');
+        fn.call(A.blendAnim);
+        ref();
+        fn.load('r1', WAIT_ANIM_ARG);
+        fn.call(A.waitAnimation);
+        ref();
+        fn.op('vmov.f32 s0, s16', 'vmov.f32 s1, s17', 'vmov.f32 s2, s16', 'mov r1, #2', 'mov r2, #0', 'mov r3, #0');
+        fn.call(A.alphaTo);
+        fn.load('r0', 0xb8);
+        fn.op('vmov.f32 s0, s16');
+        fn.call(A.play);
+        fn.op(`ldr r0, [sp, #${hx(FRAME.tmp + 4)}]`, 'cmp r0, #0', `beq ${noEffect}`);
+        ref();
+        fn.call(A.shadowPos);
+        fn.op('mov r1, r0', `add r0, r4, #${hx(at)}`);
+        fn.call(A.setPos);
+        fn.op(`add r0, r4, #${hx(at)}`, 'vmov.f32 s0, s17');
+        fn.call(A.effectStart);
+        fn.at(noEffect);
+        ref();
+        fn.call(A.waitNode);
+        fn.load('r0', n.row);
+        fn.call(A.deleteObject);
+        ref();
+        fn.call(A.charaDtor);
+        fn.at(done);
+        break;
+      }
       case 'battle':
         // EncountBoss asks for the battle and returns; the event ends here (script-abi.md §7). The group is looked up
         // in the content's MonsterGroup (master +0x1068, an _ENCOUNT table) by FUN_0031C038: a value below 0x80000000
@@ -1888,6 +1980,7 @@ export function compileStageScript(
     ...e,
     cls: `PnEvent${k}`,
     shape: SHAPE[e.trigger],
+    effect: usesVanish(e.body),
     intro: e.trigger === 'intro' ? intros[e.group] : undefined,
   }));
   for (const e of events) {
@@ -2029,18 +2122,23 @@ export function compileStageScript(
         f.load('r0', e.intro.flag);
         f.call(A.getBit);
         f.op('tst r0, #0xff', 'movne r0, #0', `bne ${after ? `${after.cls}_make` : ret}`);
-        f.load('r0', NEW_SIZE.intro);
+        f.load('r0', NEW_SIZE.intro + (e.effect ? 0x4c : 0));
         f.call(A.new);
         f.op('cmp r0, #0', `beq ${ret}`);
         f.load('r1', e.intro.map);
         f.call(A.introCtor);
         f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]');
+        if (e.effect) {
+          f.op('mov r4, r0', `add r0, r0, #${hx(NEW_SIZE.intro)}`);
+          f.call(A.effectCtor);
+          f.op('mov r0, r4');
+        }
         // the gate's door stands open until the party is in (D01Intro's factory: StartAnimation(0x8000006E))
         if (e.intro.gate?.door) f.op('mov r4, r0', `bl ${e.cls}_open`, 'mov r0, r4');
         f.op(`b ${ret}`);
         continue;
       }
-      f.load('r0', NEW_SIZE[shape]);
+      f.load('r0', NEW_SIZE[shape] + (e.effect ? 0x4c : 0));
       f.call(A.new);
       f.op('cmp r0, #0', `beq ${ret}`);
       if (shape === 'npc') {
@@ -2066,6 +2164,11 @@ export function compileStageScript(
         if (byGroup) f.load('r1', START_EVENT_ID);
         else f.op('mov r1, r4');
         f.call(A.esCtor);
+      }
+      if (e.effect) {
+        f.op('mov r4, r0', `add r0, r0, #${hx(NEW_SIZE[shape])}`);
+        f.call(A.effectCtor);
+        f.op('mov r0, r4');
       }
       f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]', `b ${ret}`);
     }
@@ -2153,7 +2256,10 @@ export function compileStageScript(
       x.load('r0', FADE_DISPLAY);
       x.call(A.fadeIn);
     } else if (e.intro) introBefore(x, g, e.cls, e.intro);
-    compileNodes({ fn: x, g, trigger: e.trigger, vars, exit, breakTo: null }, e.body);
+    compileNodes(
+      { fn: x, g, trigger: e.trigger, vars, exit, breakTo: null, effectAt: e.effect ? NEW_SIZE[e.shape] : null },
+      e.body,
+    );
     x.at(exit);
     if (camera) {
       // an event that ends with the camera held gives it back at once
@@ -2169,6 +2275,13 @@ export function compileStageScript(
 
     const d1 = new Fn(g, `${e.cls}_d1`),
       d0 = new Fn(g, `${e.cls}_d0`);
+    if (e.effect) {
+      for (const d of [d1, d0]) {
+        d.op('push {r4, lr}', 'mov r4, r0', `add r0, r0, #${hx(NEW_SIZE[e.shape])}`);
+        d.call(A.charaDtor);
+        d.op('mov r0, r4', 'pop {r4, lr}');
+      }
+    }
     if (e.intro) {
       // IntroCommon's own: CommonHeroMsg's destructor (it puts its vtable back), then delete (0x1A0648 / 0x1A0658)
       d1.tail(A.heroMsgD1);

@@ -84,7 +84,7 @@ const methods = (classes: string[]): ScriptCompletion[] =>
 
 /** The statements and values that name a line of talk, and those that name an event's row. */
 const LINE_CALLS = ['talk', 'say', 'ask'];
-const ROW_CALLS = ['chara', 'openDoor', 'openDoorNow', 'closeDoor', 'collision', 'remove', 'state'];
+const ROW_CALLS = ['chara', 'openDoor', 'openDoorNow', 'closeDoor', 'collision', 'remove', 'vanishMonster', 'state'];
 
 /** What can be written at the end of `before` (a function's text up to the cursor), or null: nothing to offer. */
 export function scriptCompletions(before: string, assist: ScriptAssist, explicit = false): ScriptCompletions | null {
