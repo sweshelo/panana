@@ -71,7 +71,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'emotionEnd()', '表情を戻す'),
   w('statement', 'anim(だれに, アニメ[, 種類])', 'モーションを始める。waitAnim(だれに) で終わるまで待つ'),
   w('statement', 'waitAnim(だれに)', 'モーションが終わるまで待つ'),
-  w('statement', 'move(だれに, x, y, z)', 'その位置まで動かして、着くまで待つ (先頭の電波人間は歩くモーション付き)'),
+  w(
+    'statement',
+    'move(だれに, x, y, z)',
+    'その位置まで動かして、着くまで待つ (先頭の電波人間は歩くモーション付き)。x・z はマップの横・縦、y は高さ (床 = 0)。1 セル = 500 で、セル c の中心は 250 + 500 × c。マップのページの 2D・3D でドラッグして直せる',
+  ),
   w('statement', 'turn(だれに, 角度)', '向きを変える (度)'),
   w('statement', 'face(だれに, 相手)', '相手のほうを向かせる'),
   w('statement', 'show(だれに)', '見えるようにする'),

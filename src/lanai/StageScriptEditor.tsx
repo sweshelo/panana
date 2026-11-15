@@ -65,6 +65,18 @@ function docOfDraft(draft: Draft, bindings: ScriptBinding[]): ScriptDoc {
     }),
   };
 }
+/** A draft after the applied script changed from `was` to `now`: the functions it left as they were take the new text. */
+function syncedDraft(draft: Draft, was: ScriptDoc | undefined, now: ScriptDoc | undefined): Draft {
+  let changed = false;
+  const functions = draft.functions.map((f) => {
+    const before = was?.functions.find((x) => x.name === f.was);
+    const after = now?.functions.find((x) => x.name === f.was);
+    if (!before || !after || f.name !== f.was || f.body !== before.body || after.body === f.body) return f;
+    changed = true;
+    return { ...f, body: after.body };
+  });
+  return changed ? { ...draft, functions } : draft;
+}
 const sameText = (a: Draft, doc: ScriptDoc | undefined): boolean =>
   JSON.stringify([a.vars, a.functions.map((f) => [f.name, f.body])]) ===
   JSON.stringify([doc?.vars ?? [], (doc?.functions ?? []).map((f) => [f.name, f.body])]);
@@ -381,6 +393,14 @@ export function LanaiStageScriptEditor({
     };
   }, [session, content, source, revision]);
 
+  // The applied script can change elsewhere (a move() dragged on the map's page): a function the draft has not changed
+  // takes the new text; one being edited here keeps the draft's.
+  const storedDoc = stored?.doc;
+  const [seen, setSeen] = useState(storedDoc);
+  if (seen !== storedDoc) {
+    setSeen(storedDoc);
+    setDraft((d) => syncedDraft(d, seen, storedDoc));
+  }
   const dirty = !sameText(draft, stored?.doc);
   const bindings = stored?.doc.bindings ?? [];
   const names = [...draft.vars.map((v) => v.name), ...draft.functions.map((f) => f.name)];

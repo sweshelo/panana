@@ -3305,3 +3305,31 @@ dialog.stage-editor > .picker-head h2 {
 .script-function > p {
   margin: 0;
 }
+
+/* lanai map page: the move() statements of the stage's script (ScriptMovePanel.tsx) */
+.move-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.move-row {
+  padding: 4px 6px;
+  margin: 2px 0;
+  border-left: 3px solid #ffb347;
+}
+.move-row.active {
+  background: rgba(255, 179, 71, 0.15);
+}
+.move-coords {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.move-coord {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.move-coord input {
+  width: 5.5em;
+}
