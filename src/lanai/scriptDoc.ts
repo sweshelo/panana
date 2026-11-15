@@ -81,7 +81,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'popupEnd(だれに)', 'アイコンを消す'),
   w('statement', 'emotion(表情)', '先頭の電波人間の目の表情。emotionEnd() で戻す'),
   w('statement', 'emotionEnd()', '表情を戻す'),
-  w('statement', 'anim(だれに, アニメ[, 種類])', 'モーションを始める。waitAnim(だれに) で終わるまで待つ'),
+  w(
+    'statement',
+    'anim(だれに, アニメ[, 種類])',
+    'AnimData の行 ID でモーションを始める。種類 0 は行の既定値。キャラのアニメページで ID とプレビューを確認できる。waitAnim(だれに) で終わるまで待つ',
+  ),
   w('statement', 'waitAnim(だれに)', 'モーションが終わるまで待つ'),
   w(
     'statement',

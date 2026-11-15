@@ -283,6 +283,7 @@ h3 {
 }
 .shell[data-page='map'] .page-map,
 .shell[data-page='monsters'] .page-monsters,
+.shell[data-page='animations'] .page-animations,
 .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups,
 .shell[data-page='actions'] .page-actions,

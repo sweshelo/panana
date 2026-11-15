@@ -2,6 +2,7 @@
 // monsters, the items, the actions, the shops, the BGM and sound effects, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useMemo, useState, type ReactNode } from 'react';
 import { LanaiActionPage } from '../lanai/ActionPage';
+import { LanaiAnimationPage } from '../lanai/AnimationPage';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
@@ -31,6 +32,7 @@ export const LANAI_PAGES = [
   ['talks', 'セリフ'],
   ['messages', 'メッセージ'],
   ['monsters', 'モンスター'],
+  ['animations', 'キャラのアニメ'],
   ['groups', '群れ'],
   ['items', 'アイテム'],
   ['actions', 'アクション'],
@@ -47,6 +49,7 @@ const TITLES: Record<LanaiPage, string> = {
   talks: 'セリフ',
   messages: 'メッセージ',
   monsters: 'モンスター',
+  animations: 'キャラクターのアニメーション',
   groups: '群れ',
   items: 'アイテム',
   actions: 'アクション',
@@ -149,6 +152,8 @@ export function LanaiShell({
           <LanaiMessagePage session={session} arg={a} />
         ) : id === 'monsters' ? (
           <LanaiMonsterPage session={session} arg={a} />
+        ) : id === 'animations' ? (
+          <LanaiAnimationPage session={session} arg={a} />
         ) : id === 'groups' ? (
           <LanaiGroupPage session={session} arg={a} />
         ) : id === 'items' ? (
