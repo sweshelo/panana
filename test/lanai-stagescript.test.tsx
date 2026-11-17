@@ -112,6 +112,31 @@ describe('RPG FREE! stage script: reading', () => {
     ]);
   });
 
+  test('and binds before or, parentheses override it, and missing operands fail', () => {
+    const script = parseStageScript(`
+      var A: bit
+      var B: bit
+      var C: bit
+      on start(1) {
+        if (A || B && C) { wait(1) }
+        if ((A || B) && !C) { wait(2) }
+      }`);
+    const [first, second] = script.events[0]!.body;
+    if (first?.op !== 'if' || second?.op !== 'if') throw new Error('if');
+    const leaf = (name: string, cmp: '==' | '!=') => ({ value: { kind: 'var' as const, name }, cmp, than: 0 });
+    expect(first.cond).toEqual({
+      op: 'or',
+      left: leaf('A', '!='),
+      right: { op: 'and', left: leaf('B', '!='), right: leaf('C', '!=') },
+    });
+    expect(second.cond).toEqual({
+      op: 'and',
+      left: { op: 'or', left: leaf('A', '!='), right: leaf('B', '!=') },
+      right: leaf('C', '=='),
+    });
+    expect(() => parseStageScript('var A: bit; on start(1) { if (A &&) {} }')).toThrow();
+  });
+
   test('a defeated map monster has its own effect statement', () => {
     const event = parseStageScript('on start(1) { if (monsters() == 0) { vanishMonster(9) } }').events[0]!;
     const branch = event.body[0]!;
@@ -167,6 +192,17 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
       SEEN = 1
     }
     on start(1) { vanishMonster(5) }`;
+
+  test('compound conditions compile into the stage CRO', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const script = parseStageScript(
+      'var A: bit; var B: bit; on start(1) { if (A || (B && item(1) >= 1)) { wait(1) } }',
+    );
+    const built = compileStageScript(base, script).cro.segments[CRO_TEXT]!.bytes!;
+    expect(built.length).toBeGreaterThan(base.segments[CRO_TEXT]!.bytes!.length);
+  });
 
   test('popup keeps its icon past the statement; a line passes its window to StartMessage', async () => {
     const s = await open();

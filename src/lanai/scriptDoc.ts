@@ -66,7 +66,7 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'flow',
     'if (条件) { … } else { … }',
-    '条件: 名前、!名前、名前 == 値 (!= < <= > >=)、ask(行 ID)、item(ID) >= 個数、state(イベント) >= 値、monsters() == 0',
+    '条件: 名前、!名前、名前 == 値 (!= < <= > >=)、ask(行 ID)、item(ID) >= 個数、state(イベント) >= 値、monsters() == 0。&& / || / ( ) で組み合わせます (&& を先に評価)',
   ),
   w('flow', 'switch (名前) { case 値: … default: … }', '値で分ける。case は下へ続かない (break は書かなくてよい)'),
   w('flow', 'return', 'イベントをそこで終える'),

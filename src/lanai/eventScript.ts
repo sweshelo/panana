@@ -67,11 +67,12 @@ export interface ScriptCall {
   result: string;
 }
 export type ScriptCmp = '==' | '!=' | '<' | '<=' | '>' | '>=';
-export interface ScriptCond {
+export interface ScriptComparison {
   value: ScriptValue;
   cmp: ScriptCmp;
   than: number;
 }
+export type ScriptCond = ScriptComparison | { op: 'and' | 'or'; left: ScriptCond; right: ScriptCond };
 export type ScriptNode =
   /** dialog: the window the line opens in (StartMessage's AppDialogType, TalkDialog). */
   | { op: 'talk'; msg: number; auto: boolean; dialog: TalkDialog }
@@ -203,7 +204,7 @@ function tokens(src: string): Token[] {
   const out: Token[] = [];
   let line = 1;
   const re =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?))|([A-Za-z_]\w*)|(==|!=|<=|>=|[(){},:;=<>!.])|(.)/gu;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?))|([A-Za-z_]\w*)|(&&|\|\||==|!=|<=|>=|[(){},:;=<>!.])|(.)/gu;
   for (const m of src.matchAll(re)) {
     const pos = m.index;
     if (m[1]) line += m[1].split('\n').length - 1;
@@ -252,11 +253,13 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
   const called = (c: ScriptCall): string | null =>
     c.args.reduce<string | null>((p, a) => p ?? (a.k === 'c' || a.k === 'p' ? who(a.who) : null), who(c.self));
   const valued = (v: ScriptValue): string | null => (v.kind === 'call' ? called(v.call) : null);
+  const condition = (c: ScriptCond): string | null =>
+    'op' in c ? (condition(c.left) ?? condition(c.right)) : valued(c.value);
   for (const n of body) {
     let p: string | null = null;
     switch (n.op) {
       case 'if':
-        p = valued(n.cond.value) ?? eventProblem(trigger, n.then) ?? eventProblem(trigger, n.else);
+        p = condition(n.cond) ?? eventProblem(trigger, n.then) ?? eventProblem(trigger, n.else);
         break;
       case 'call':
         p = called(n.call);
@@ -484,7 +487,12 @@ export function parseStageScript(src: string): StageScript {
     if (!vars.has(t.s)) fail(`変数「${t.s}」はありません`, t);
     return { kind: 'var', name: t.s };
   };
-  const cond = (): ScriptCond => {
+  const conditionAtom = (): ScriptCond => {
+    if (eat('(')) {
+      const inner = cond();
+      need(')');
+      return inner;
+    }
     const not = eat('!');
     const v = value();
     if (peek().t === 'p' && CMPS.includes(peek().s)) {
@@ -493,6 +501,16 @@ export function parseStageScript(src: string): StageScript {
       return { value: v, cmp, than: int('比べる値', -0x80000000, 0x7fffffff) };
     }
     return { value: v, cmp: not ? '==' : '!=', than: 0 };
+  };
+  const conditionAnd = (): ScriptCond => {
+    let left = conditionAtom();
+    while (eat('&&')) left = { op: 'and', left, right: conditionAtom() };
+    return left;
+  };
+  const cond = (): ScriptCond => {
+    let left = conditionAnd();
+    while (eat('||')) left = { op: 'or', left, right: conditionAnd() };
+    return left;
   };
 
   interface Ctx {
@@ -1477,6 +1495,27 @@ const fadesIn = (nodes: ScriptNode[]): boolean =>
       (n.op === 'switch' && (n.cases.some((k) => fadesIn(k.body)) || fadesIn(n.default ?? []))),
   );
 
+/** Branch to exactly one target; a skipped side never evaluates its calls. */
+function compileCondition(c: Ctx, condition: ScriptCond, whenTrue: string, whenFalse: string): void {
+  const { fn, g } = c;
+  if ('op' in condition) {
+    const next = g.uniq(`${fn.name}_condition`);
+    if (condition.op === 'and') {
+      compileCondition(c, condition.left, next, whenFalse);
+      fn.at(next);
+      compileCondition(c, condition.right, whenTrue, whenFalse);
+    } else {
+      compileCondition(c, condition.left, whenTrue, next);
+      fn.at(next);
+      compileCondition(c, condition.right, whenTrue, whenFalse);
+    }
+    return;
+  }
+  compileValue(c, condition.value);
+  fn.cmp('r0', condition.than);
+  fn.op(`${BRANCH_IF_NOT[condition.cmp]} ${whenFalse}`, `b ${whenTrue}`);
+}
+
 function compileNodes(c: Ctx, written: ScriptNode[]): void {
   const { fn, g } = c;
   const nodes = expandDoors(written);
@@ -1511,11 +1550,11 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         break;
       }
       case 'if': {
-        const other = g.uniq(`${fn.name}_else`),
+        const yes = g.uniq(`${fn.name}_then`),
+          other = g.uniq(`${fn.name}_else`),
           end = g.uniq(`${fn.name}_fi`);
-        compileValue(c, n.cond.value);
-        fn.cmp('r0', n.cond.than);
-        fn.op(`${BRANCH_IF_NOT[n.cond.cmp]} ${other}`);
+        compileCondition(c, n.cond, yes, other);
+        fn.at(yes);
         compileNodes(c, n.then);
         if (n.else.length) fn.op(`b ${end}`);
         fn.at(other);

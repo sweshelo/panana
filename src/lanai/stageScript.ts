@@ -153,9 +153,15 @@ function charaRows(body: ScriptNode[]): number[] {
     who(v.call.self);
     for (const a of v.call.args) if (a.k === 'c' || a.k === 'p') who(a.who);
   };
+  const condition = (c: Extract<ScriptNode, { op: 'if' }>['cond']): void => {
+    if ('op' in c) {
+      condition(c.left);
+      condition(c.right);
+    } else value(c.value);
+  };
   for (const n of body) {
     if (n.op === 'if') {
-      value(n.cond.value);
+      condition(n.cond);
       out.push(...charaRows(n.then), ...charaRows(n.else));
     } else if (n.op === 'switch') {
       value(n.value);

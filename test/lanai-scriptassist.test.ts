@@ -7,6 +7,7 @@ import {
   scriptBattleMarks,
   scriptFoldRange,
   scriptFunctionProblem,
+  scriptHoverInfo,
   scriptLineMarks,
   scriptWordKind,
   type ScriptAssist,
@@ -126,6 +127,17 @@ describe('completion', () => {
     expect(scriptCompletions('battle(5', assist)!.options.map((o) => o.apply)).toEqual(['5']);
     expect(scriptCompletions('battle(16', assist)).toBeNull();
   });
+});
+
+test('hover explains built-in calls and API argument counts', () => {
+  expect(scriptHoverInfo('', 'talk')).toMatchObject({
+    signatures: ['talk(行 ID[, 吹き出し]) — 引数 1〜2 個'],
+  });
+  expect(scriptHoverInfo('', 'talk')!.about).toContain('吹き出し');
+  expect(scriptHoverInfo('ScriptSound.', 'Play')!.signatures.some((x) => x.includes('引数'))).toBe(true);
+  expect(scriptHoverInfo('hero.', 'SetVisible')!.signatures.some((x) => x.includes('引数 1 個'))).toBe(true);
+  expect(scriptHoverInfo('// talk ', 'talk')).toBeNull();
+  expect(scriptHoverInfo('', 'UNKNOWN')).toBeNull();
 });
 
 test('battle annotations name only calls in code, not comments', () => {

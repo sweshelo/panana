@@ -30,6 +30,7 @@ import {
   drawSelection,
   EditorView,
   highlightActiveLine,
+  hoverTooltip,
   keymap,
   lineNumbers,
   ViewPlugin,
@@ -42,6 +43,7 @@ import {
   scriptBattleMarks,
   scriptCompletions,
   scriptFoldRange,
+  scriptHoverInfo,
   scriptLineMarks,
   scriptWordKind,
   type ScriptAssist,
@@ -113,7 +115,7 @@ const language = StreamLanguage.define<StreamState>({
       const kind = scriptWordKind(word[0]);
       return kind ? TOKEN[kind] : 'variable';
     }
-    if (stream.match(/^(?:==|!=|<=|>=|[=<>!])/u)) return 'operator';
+    if (stream.match(/^(?:&&|\|\||==|!=|<=|>=|[=<>!])/u)) return 'operator';
     const c = stream.next();
     if (c === '{') state.depth++;
     else if (c === '}') state.depth = Math.max(0, state.depth - 1);
@@ -173,6 +175,9 @@ const THEME = EditorView.theme(
     '.cm-tooltip': { backgroundColor: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text)' },
     '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--accent)', color: '#fff' },
     '.cm-completionDetail': { color: 'var(--muted)', fontStyle: 'normal' },
+    '.cm-script-hover': { padding: '6px 9px', maxWidth: '36em', whiteSpace: 'pre-line' },
+    '.cm-script-hover-signature': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+    '.cm-script-hover-about': { color: 'var(--muted)', marginTop: '4px' },
     '.cm-panels': { backgroundColor: 'var(--panel)', color: 'var(--text)' },
     '.cm-matchingBracket': { backgroundColor: 'rgba(76, 141, 255, 0.25)', outline: 'none' },
     '.cm-script-line': { color: 'var(--muted)', paddingLeft: '1em', fontStyle: 'italic' },
@@ -319,6 +324,31 @@ export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOpti
         closeBrackets(),
         foldService.of((state, from, to) => scriptFoldRange(state.doc.toString(), from, to)),
         autocompletion({ override: [complete], icons: false }),
+        hoverTooltip((view, pos) => {
+          const word = view.state.wordAt(pos);
+          if (!word) return null;
+          const info = scriptHoverInfo(view.state.sliceDoc(0, word.from), view.state.sliceDoc(word.from, word.to));
+          if (!info) return null;
+          return {
+            pos: word.from,
+            end: word.to,
+            create: () => {
+              const dom = document.createElement('div');
+              dom.className = 'cm-script-hover';
+              for (const signature of info.signatures) {
+                const row = document.createElement('div');
+                row.className = 'cm-script-hover-signature';
+                row.textContent = signature;
+                dom.append(row);
+              }
+              const about = document.createElement('div');
+              about.className = 'cm-script-hover-about';
+              about.textContent = info.about;
+              dom.append(about);
+              return { dom };
+            },
+          };
+        }),
         lineTextPlugin,
         keymap.of([
           ...closeBracketsKeymap,

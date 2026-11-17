@@ -93,6 +93,58 @@ const methods = (classes: string[]): ScriptCompletion[] =>
     })),
   );
 
+export interface ScriptHoverInfo {
+  signatures: string[];
+  about: string;
+}
+
+/** Help for the function under the pointer, from the same tables as completion. */
+export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo | null {
+  if (!/^[A-Za-z_]\w*$/u.test(name)) return null;
+  const line = before.slice(before.lastIndexOf('\n') + 1);
+  if (line.includes('//') || before.lastIndexOf('/*') > before.lastIndexOf('*/')) return null;
+  const member = /(?:([A-Za-z_]\w*)|chara\s*\([^()\n]*\))\s*\.\s*$/u.exec(before);
+  if (member) {
+    const receiver = member[1];
+    const classes =
+      receiver === 'hero'
+        ? ['ScriptPlayer', 'ScriptChara']
+        : receiver === 'self' || !receiver
+          ? ['ScriptChara']
+          : [receiver];
+    const rows = classes.flatMap((cls) => (CLASSES.get(cls) ?? []).filter((r) => r[1] === name));
+    if (!rows.length) return null;
+    return {
+      signatures: [
+        ...new Set(rows.map((r) => `${r[0]}.${apiForm(r)} — 引数 ${[...r[3]].filter((c) => c !== 'm').length} 個`)),
+      ],
+      about: [
+        ...new Set(
+          rows.map((r) => {
+            const types = r[4]
+              .split(', ')
+              .filter((_, index) => r[3][index] !== 'm')
+              .join(', ');
+            return `戻り値: ${apiResultLabel(r[5])}。引数の型: ${types || 'なし'}`;
+          }),
+        ),
+      ].join('\n'),
+    };
+  }
+  const builtin = BUILTINS.get(name);
+  if (builtin?.form.startsWith(`${name}(`)) {
+    const params = builtin.form.slice(name.length + 1, builtin.form.indexOf(')', name.length));
+    const max = params ? params.split(',').length : 0;
+    const min = max - (params.includes('[') ? 1 : 0);
+    return {
+      signatures: [`${builtin.form} — 引数 ${min === max ? String(max) : `${min}〜${max}`} 個`],
+      about: builtin.about,
+    };
+  }
+  if (name === 'vec') return { signatures: ['vec(x, y, z) — 引数 3 個'], about: 'Script API の位置を表す値' };
+  return null;
+}
+
 /** The statements and values that name a line of talk, and those that name an event's row. */
 const LINE_CALLS = ['talk', 'say', 'ask'];
 const ROW_CALLS = ['chara', 'openDoor', 'openDoorNow', 'closeDoor', 'collision', 'remove', 'vanishMonster', 'state'];

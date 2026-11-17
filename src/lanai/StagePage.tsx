@@ -106,7 +106,7 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {c && <ContentDetail key={c.index} session={session} c={c} />}
+        {c && <ContentDetail key={c.index} session={session} c={c} revision={revision} />}
       </div>
       {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
     </div>
@@ -146,11 +146,20 @@ function RemoveContentButton({ session, c }: { session: LanaiSession; c: LanaiCo
   );
 }
 
-function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+function ContentDetail({
+  session,
+  c,
+  revision,
+}: {
+  session: LanaiSession;
+  c: LanaiContent;
+  revision: number;
+}): ReactNode {
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
   const [creating, setCreating] = useState(false);
-  const read = useAsync(() => readContent(session, c), [session, c]);
+  // An edit rebuilds the content summary. Keep the detail mounted while its archive is refreshed.
+  const read = useAsync(() => readContent(session, c), [session, c.archive, revision], { keepPrevious: true });
   return (
     <>
       <div className="book-head">
