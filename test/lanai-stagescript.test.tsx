@@ -39,6 +39,12 @@ const B0 = STAGE_BYTE_FLAGS.first,
   T0 = STAGE_BIT_FLAGS.first;
 
 describe('RPG FREE! stage script: reading', () => {
+  test('full source indents function bodies and preserves nested indentation after editing', () => {
+    const source = `function scene() {\n  if (state(1) == 0) {\n    talk(0x60)\n  }\n}\non talk(1, 5) scene\n`;
+    const doc = scriptDocFromSource(source);
+    expect(doc.functions[0]!.body).toBe('if (state(1) == 0) {\n  talk(0x60)\n}');
+    expect(scriptDocSource(doc).text).toBe(source);
+  });
   test('the example of the editor reads: a variable, an event of a character, its statements', () => {
     const s = parseStageScript(STAGE_SCRIPT_EXAMPLE);
     expect(s.vars).toEqual([{ name: 'STATE_A', kind: 'byte', reset: false, flag: B0 }]);

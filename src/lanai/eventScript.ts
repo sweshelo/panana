@@ -806,7 +806,7 @@ export function scriptDocSource(doc: ScriptDoc): {
     const lines = f.body.replace(/\r\n?/gu, '\n').split('\n');
     bodies.push({ name: f.name, first: out.length + 1, lines: lines.length });
     // a line comment on the last line must not take the closing brace with it
-    out.push(...lines, '}');
+    out.push(...lines.map((line) => (line.trim() ? `  ${line}` : line)), '}');
   }
   for (const b of doc.bindings) out.push(bindingText(b));
   return { text: `${out.join('\n')}\n`, bodies };
