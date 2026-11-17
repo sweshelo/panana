@@ -18,7 +18,7 @@ import {
 } from './tilesets';
 
 /** The floor of a tileset with its texture, for ui/Photo. */
-function floorPhoto(maps: LanaiMaps, ts: LanaiTileset): ModelRef | null {
+export function floorPhoto(maps: LanaiMaps, ts: LanaiTileset): ModelRef | null {
   const floor = ts.floor;
   if (!floor) return null;
   const textureArchive = u32(ts.resource, 0),

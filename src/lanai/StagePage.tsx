@@ -9,6 +9,7 @@ import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
+import { MapDataManager } from './MapDataManager';
 import { lanaiMapHref } from './MapPage';
 import { textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
@@ -380,6 +381,7 @@ function ContentMaps({ session, c }: { session: LanaiSession; c: LanaiContent })
   if (maps instanceof Error) return <div className="muted">マップ表がありません</div>;
   return (
     <>
+      <MapDataManager maps={maps} />
       <ul>
         {maps.maps.map((m) => (
           <li key={m.index}>

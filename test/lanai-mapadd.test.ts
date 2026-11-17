@@ -7,8 +7,10 @@ import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { ArmMachine } from '../src/game/arm';
 import { MapDb } from '../src/game/mapdb';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
+import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
 import { fieldStartPatch, LANAI_NO_FIELD_START } from '../src/lanai/fieldStart';
 import {
+  addLanaiMapData,
   addLanaiGroup,
   addLanaiMap,
   canRemoveGroup,
@@ -22,6 +24,12 @@ import {
   renameLanaiGroup,
   renameLanaiMap,
   rowName,
+  separateLanaiGroupMapData,
+  sharedLanaiMapDataRows,
+  setLanaiGroupFirstMap,
+  setLanaiGroupMapData,
+  setLanaiMapData,
+  setLanaiMapGroup,
   suggestGroupCode,
   suggestMapName,
 } from '../src/lanai/mapadd';
@@ -411,6 +419,227 @@ describe.skipIf(!hasLanai)('RPG FREE! maps and dungeons added (ROM)', () => {
     expect(mg.rows).toBe(groupRows);
     expect(s.addedTables()).toEqual([]);
     expect(s.modFiles().size).toBe(0);
+  }, 300000);
+
+  test('a new dungeon can own its MapData rows and remove them with the dungeon', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const stage = lanaiContents(local)[38]!;
+    const floors = await lanaiMaps(local, stage);
+    const template = floors.mapByName('D01001B01')!.dungeon;
+    const source = floors.groups[template]!;
+    const md = floors.contentTable('MapData')!;
+    const sourceRow = md.find(source.mapData);
+    const original = md.row(sourceRow).slice();
+    const originalTable = floors.tableBytes.slice();
+    const firstMap = groupMaps(floors, template)[0]!;
+    const overrideRow = md.addRow(sourceRow);
+    const originalRows = md.rows;
+    const overrideRef = md.rowIds.length ? md.rowId(overrideRow) : overrideRow;
+    const withOverride = originalTable.slice();
+    w32(withOverride, firstMap.index * LANAI_MAP_ROW + 0x28, overrideRef);
+    floors.setTableBytes(withOverride);
+
+    for (const copyMaps of [true, false]) {
+      const code = suggestGroupCode(floors);
+      const r = addLanaiGroup(floors, {
+        template,
+        name: '個別の MapData',
+        code,
+        copyMaps,
+        separateMapData: true,
+        first: copyMaps
+          ? undefined
+          : { template: groupMaps(floors, template)[0]!, floor: -1, name: `${code}001B01`, copyTiles: true },
+      });
+      const own = floors.groups[r.group]!;
+      const ownRow = md.find(own.mapData);
+      expect(ownRow).toBeGreaterThanOrEqual(originalRows);
+      expect(ownRow).not.toBe(sourceRow);
+      expect(equalBytes(md.row(ownRow), original)).toBe(true);
+      if (source.mapDataIndoor) {
+        expect(md.find(own.mapDataIndoor)).toBeGreaterThanOrEqual(originalRows);
+        expect(own.mapDataIndoor).not.toBe(source.mapDataIndoor);
+      }
+      for (const m of r.made) {
+        const from = groupMaps(floors, template).find((x) => x.name.slice(3) === m.name.slice(3));
+        if (from?.mapDataId && from.mapDataId !== 0x80000000)
+          expect(md.find(m.mapDataId)).toBeGreaterThanOrEqual(originalRows);
+      }
+      const copiedOverride = copyMaps ? r.made.find((m) => m.name.slice(3) === firstMap.name.slice(3)) : r.made[0];
+      expect(copiedOverride).toBeDefined();
+      expect(md.find(copiedOverride!.mapDataId)).toBeGreaterThanOrEqual(originalRows);
+      expect(copiedOverride!.mapDataId).not.toBe(overrideRef);
+      const before = md.u16(sourceRow, 4);
+      md.setU16(ownRow, 4, before ^ 1);
+      expect(md.u16(sourceRow, 4)).toBe(before);
+      const saved = local.saved();
+      const again = await LanaiSession.open(dump, { fresh: true });
+      await again.restore(saved);
+      const restored = await lanaiMaps(again, lanaiContents(again)[38]!);
+      expect(restored.groups[r.group]!.mapData).toBe(own.mapData);
+      expect(restored.contentTable('MapData')!.u16(ownRow, 4)).toBe(before ^ 1);
+      removeLanaiGroup(floors, r.group);
+      expect(md.rows).toBe(originalRows);
+      expect(equalBytes(md.row(sourceRow), original)).toBe(true);
+    }
+    floors.setTableBytes(originalTable);
+    md.removeLastRow();
+    expect(local.modFiles().size).toBe(0);
+  }, 300000);
+
+  test('an existing dungeon can separate MapData after a map was added', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const stage = lanaiContents(local)[38]!;
+    const floors = await lanaiMaps(local, stage);
+    const source = floors.mapByName('D01001B01')!;
+    const group = source.dungeon;
+    const md = floors.contentTable('MapData')!;
+    const before = floors.groups[group]!;
+    const outdoor = md.find(before.mapData);
+    const indoor = before.mapDataIndoor ? md.find(before.mapDataIndoor) : -1;
+    const added = addLanaiMap(floors, {
+      template: source,
+      floor: source.floor,
+      name: suggestMapName(floors, groupCode(floors, group), source.floor),
+      copy: 'tiles',
+    });
+    const override = before.mapData;
+    const table = floors.tableBytes.slice();
+    w32(table, added.index * LANAI_MAP_ROW + 0x28, override);
+    floors.setTableBytes(table);
+    const originalRows = md.rows;
+    const copied = sharedLanaiMapDataRows(floors, group).length;
+    expect(copied).toBeGreaterThanOrEqual(1);
+    expect(separateLanaiGroupMapData(floors, group)).toBe(copied);
+    expect(md.rows).toBe(originalRows + copied);
+    const own = floors.groups[group]!;
+    expect(md.find(own.mapData)).toBeGreaterThanOrEqual(originalRows);
+    if (indoor >= 0) expect(md.find(own.mapDataIndoor)).toBeGreaterThanOrEqual(originalRows);
+    const ownMap = floors.mapByName(added.name)!;
+    expect(md.find(ownMap.mapDataId)).toBeGreaterThanOrEqual(originalRows);
+    expect(sharedLanaiMapDataRows(floors, group)).toEqual([]);
+    expect(separateLanaiGroupMapData(floors, group)).toBe(0);
+    const originalSound = md.u16(outdoor, 4);
+    md.setU16(md.find(own.mapData), 4, originalSound ^ 1);
+    expect(md.u16(outdoor, 4)).toBe(originalSound);
+    const again = await LanaiSession.open(dump, { fresh: true });
+    await again.restore(local.saved());
+    const restored = await lanaiMaps(again, lanaiContents(again)[38]!);
+    expect(restored.groups[group]!.mapData).toBe(own.mapData);
+    expect(restored.mapByName(added.name)!.mapDataId).toBe(ownMap.mapDataId);
+    expect(restored.contentTable('MapData')!.u16(md.find(own.mapData), 4)).toBe(originalSound ^ 1);
+    expect(local.modFiles().get(stage.archive)).toBeDefined();
+  }, 300000);
+
+  test('MapGroup and map references can select a copied MapData row', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const stage = lanaiContents(local)[38]!;
+    const floors = await lanaiMaps(local, stage);
+    const source = floors.mapByName('D01001B01')!;
+    const group = source.dungeon;
+    const md = floors.contentTable('MapData')!;
+    const oldRow = md.find(floors.groups[group]!.mapData);
+    const row = addLanaiMapData(floors, oldRow);
+    const otherRow = addLanaiMapData(floors, oldRow);
+    expect(equalBytes(md.row(row), md.row(oldRow))).toBe(true);
+    setLanaiGroupMapData(floors, group, false, row);
+    expect(floors.mapDataRow(source, floors.doc(source))).toBe(row);
+    const added = addLanaiMap(floors, {
+      template: source,
+      floor: source.floor,
+      name: suggestMapName(floors, groupCode(floors, group), source.floor),
+      copy: 'all',
+    });
+    setLanaiMapData(floors, added, otherRow);
+    expect(floors.mapDataRow(floors.map(added.hash)!, floors.doc(added))).toBe(otherRow);
+    setLanaiMapData(floors, added, row);
+    const point = (floors.doc(added).recs[3] ?? []).find((r) => r.raw[0x15] !== 100);
+    expect(point).toBeDefined();
+    setLanaiGroupFirstMap(floors, group, added.hash, u32(point!.raw, 0));
+    expect(() => setLanaiMapGroup(floors, added, group + 1)).toThrow();
+    const sourcePoint = (floors.doc(source).recs[3] ?? []).find((r) => r.raw[0x15] !== 100)!;
+    setLanaiGroupFirstMap(floors, group, source.hash, u32(sourcePoint.raw, 0));
+    const code = suggestGroupCode(floors);
+    const next = addLanaiGroup(floors, {
+      template: group,
+      name: '付け替え先',
+      code,
+      copyMaps: false,
+      first: { template: source, floor: -1, name: `${code}001B01`, copyTiles: true },
+    });
+    setLanaiMapGroup(floors, added, next.group);
+    expect(floors.map(added.hash)!.dungeon).toBe(next.group);
+    expect(floors.map(added.hash)!.mapDataId).toBe(md.rowId(row));
+    const again = await LanaiSession.open(dump, { fresh: true });
+    await again.restore(local.saved());
+    const restored = await lanaiMaps(again, lanaiContents(again)[38]!);
+    expect(restored.groups[group]!.mapData).toBe(md.rowId(row));
+    expect(restored.map(added.hash)!.dungeon).toBe(next.group);
+    expect(restored.map(added.hash)!.mapDataId).toBe(md.rowId(row));
+    expect(local.modFiles().get(stage.archive)).toBeDefined();
+  }, 300000);
+
+  test('a dungeon added in this stage can be copied again', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const stage = lanaiContents(local)[38]!;
+    const floors = await lanaiMaps(local, stage);
+    const template = floors.mapByName('D01001B01')!.dungeon;
+    const first = addLanaiGroup(floors, {
+      template,
+      name: '一つ目',
+      code: suggestGroupCode(floors),
+      copyMaps: true,
+      separateMapData: true,
+    });
+    const second = addLanaiGroup(floors, {
+      template: first.group,
+      name: '二つ目',
+      code: suggestGroupCode(floors),
+      copyMaps: true,
+      separateMapData: true,
+    });
+    expect(second.made).toHaveLength(first.made.length);
+    const firstEvent = floors.groups[first.group]!.eventEntry;
+    const secondEvent = floors.groups[second.group]!.eventEntry;
+    const firstRef = local.addedTables().find((x) => x.entry === firstEvent)!;
+    const secondRef = local.addedTables().find((x) => x.entry === secondEvent)!;
+    expect(secondRef.added!.like).toBe(firstRef.added!.like);
+    expect(floors.groups[second.group]!.mapData).not.toBe(floors.groups[first.group]!.mapData);
+    expect(findEntry(parseArchive(local.modFiles().get(stage.archive)!), secondEvent)).toBeDefined();
+    const restored = await LanaiSession.open(dump, { fresh: true });
+    await restored.restore(local.saved());
+    const restoredMaps = await lanaiMaps(restored, lanaiContents(restored)[38]!);
+    expect(restoredMaps.groups[second.group]!.eventEntry).toBe(secondEvent);
+    expect(restoredMaps.eventTable(second.group)?.rows).toBe(floors.eventTable(first.group)?.rows);
+    removeLanaiGroup(floors, second.group);
+    removeLanaiGroup(floors, first.group);
+    expect(local.modFiles().size).toBe(0);
+  }, 300000);
+
+  test('an added stage can copy a newly added dungeon', async () => {
+    const local = await LanaiSession.open(dump, { fresh: true });
+    const index = await addLanaiEmptyStage(local, '複製テスト');
+    const stage = lanaiContents(local)[index]!;
+    const floors = await lanaiMaps(local, stage);
+    const first = addLanaiGroup(floors, {
+      template: 1,
+      name: '一つ目',
+      code: suggestGroupCode(floors),
+      copyMaps: true,
+      separateMapData: true,
+    });
+    const second = addLanaiGroup(floors, {
+      template: first.group,
+      name: '二つ目',
+      code: suggestGroupCode(floors),
+      copyMaps: true,
+      separateMapData: true,
+    });
+    expect(stage.archive).toBe('F0000000');
+    expect(second.made).toHaveLength(first.made.length);
+    expect(
+      findEntry(parseArchive(local.modFiles().get(stage.archive)!), floors.groups[second.group]!.eventEntry),
+    ).toBeDefined();
   }, 300000);
 
   test('a ROM dungeon renamed gets a name row of its own (the shared row keeps its text)', () => {

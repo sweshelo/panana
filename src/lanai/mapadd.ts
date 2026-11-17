@@ -258,6 +258,8 @@ export interface LanaiNewGroupSpec {
    * `first` (no records; an EventObject table with its empty row 0 only).
    */
   copyMaps: boolean;
+  /** Give this group copies of the MapData rows its group and maps use, instead of sharing the source rows. */
+  separateMapData?: boolean;
   first?: { template: LanaiMapInfo; floor: number; name: string; copyTiles: boolean };
 }
 
@@ -357,7 +359,7 @@ export function addLanaiGroup(
   const from = groupCode(maps, spec.template);
   const sourceMaps = groupMaps(maps, spec.template);
   // the names of the maps first (nothing is changed when one does not fit)
-  let plan: { from: LanaiMapInfo; name: string; floor: number; copy: 'none' | 'tiles' | 'all' }[];
+  let plan: { from: LanaiMapInfo; name: string; floor: number; copy: 'none' | 'tiles' | 'all'; mapDataId?: number }[];
   if (spec.copyMaps) {
     if (!sourceMaps.length) throw new Error('写す元のダンジョンにマップがありません');
     plan = sourceMaps.map((m) => ({
@@ -380,6 +382,18 @@ export function addLanaiGroup(
     if (names.has(p.name)) throw new Error(`${p.name} が 2 つになります`);
     names.add(p.name);
   }
+  const mapData = spec.separateMapData ? maps.contentTable('MapData') : undefined;
+  if (spec.separateMapData && !mapData) throw new Error('このステージには MapData の表がありません');
+  const mapDataRefs = spec.separateMapData
+    ? [
+        ...new Set([
+          g.mapData,
+          ...(g.mapDataIndoor ? [g.mapDataIndoor] : []),
+          ...plan.map((p) => p.from.mapDataId).filter((ref) => ref !== 0 && ref !== 0x80000000),
+        ]),
+      ]
+    : [];
+  for (const ref of mapDataRefs) if (mapData!.find(ref) < 0) throw new Error(`MapData の行 ${ref} が見つかりません`);
   const stateFirst = nextStateSlot(maps);
   if (stateFirst + g.stateCount > 0xffff) throw new Error('状態の枠の番号が 0xFFFF を超えます');
 
@@ -387,7 +401,14 @@ export function addLanaiGroup(
   const table = LanaiTable.copyOf(events, spec.copyMaps ? events.rows : 1);
   const group = mg.rows;
   const entry = newEntryHash(maps, rand);
-  session.addTable(maps.content.archive, entry, newFileName(maps, ref.file, group), g.eventEntry, table);
+  // An added group's EventObject entry is not in the source archive. Its packing template is the original entry.
+  session.addTable(
+    maps.content.archive,
+    entry,
+    newFileName(maps, ref.file, group),
+    ref.added?.like ?? g.eventEntry,
+    table,
+  );
   maps.addContentTable(entry, table);
   const tr = tableResource(maps);
   if (tr && tr.rowSize >= 4) {
@@ -400,6 +421,20 @@ export function addLanaiGroup(
   mg.setU32(row, LANAI_MG.name, addNameRow(maps, g.nameId, name));
   mg.setU32(row, LANAI_MG.eventEntry, entry);
   mg.setU16(row, LANAI_MG.stateFirst, stateFirst);
+  if (mapData) {
+    const copies = new Map<number, number>();
+    for (const ref of mapDataRefs) {
+      const added = mapData.addRow(mapData.find(ref));
+      copies.set(ref, mapData.rowIds.length ? mapData.rowId(added) : added);
+    }
+    if (copies.has(g.mapData)) mg.setU32(row, 8, copies.get(g.mapData)!);
+    if (g.mapDataIndoor && copies.has(g.mapDataIndoor)) mg.setU32(row, 0x0c, copies.get(g.mapDataIndoor)!);
+    for (const p of plan) {
+      // The map row can override MapGroup's MapData; keep that override private as well.
+      const copy = copies.get(p.from.mapDataId);
+      if (copy !== undefined) p.mapDataId = copy;
+    }
+  }
   maps.readGroups();
 
   // the maps: new hashes, the sections copied (a copy) or the first map's tiles
@@ -426,7 +461,9 @@ export function addLanaiGroup(
       for (const [k, b] of Object.entries(src.raw)) if (Number(k) !== 6) doc.raw[Number(k)] = b.slice();
     }
     addSections(maps, sections, doc);
-    rows.push(newRow(mapRow(maps, p.from), slots, group, p.floor, p.name));
+    const next = newRow(mapRow(maps, p.from), slots, group, p.floor, p.name);
+    if (p.mapDataId !== undefined) w32(next, 0x28, p.mapDataId);
+    rows.push(next);
     hashOf.set(p.from.hash, slots[0]!);
     made.push(slots[0]!);
   }
@@ -520,6 +557,138 @@ export function recodeLanaiGroup(maps: LanaiMaps, group: number, code: string): 
   maps.session.edited();
 }
 
+/** MapData rows this group uses, including explicit references in its map rows. */
+function groupMapDataRefs(maps: LanaiMaps, group: number): number[] {
+  const g = maps.groups[group];
+  if (!g) throw new Error(`MapGroup ${group} はありません`);
+  return [
+    ...new Set([
+      g.mapData,
+      ...(g.mapDataIndoor ? [g.mapDataIndoor] : []),
+      ...groupMaps(maps, group)
+        .map((m) => m.mapDataId)
+        .filter((ref) => ref !== 0 && ref !== 0x80000000),
+    ]),
+  ];
+}
+
+/** Rows that still need a private copy for an existing group. */
+export function sharedLanaiMapDataRows(maps: LanaiMaps, group: number): number[] {
+  const md = maps.contentTable('MapData');
+  if (!md) throw new Error('このステージには MapData の表がありません');
+  const other = new Set<number>();
+  for (const g of maps.groups) {
+    if (g.row === group) continue;
+    for (const ref of groupMapDataRefs(maps, g.row)) {
+      const row = md.find(ref);
+      if (row >= 0) other.add(row);
+    }
+  }
+  return groupMapDataRefs(maps, group).filter((ref) => {
+    const row = md.find(ref);
+    if (row < 0) throw new Error(`MapData の行 ${ref} が見つかりません`);
+    return row < md.originalRows || other.has(row);
+  });
+}
+
+/** Give an existing group's outdoor, indoor and map-specific MapData references private rows. */
+export function separateLanaiGroupMapData(maps: LanaiMaps, group: number): number {
+  const mg = maps.mapGroup;
+  const md = maps.contentTable('MapData');
+  if (!mg || !md) throw new Error('このステージには MapGroup / MapData の表がありません');
+  if (group <= 0) throw new Error(`MapGroup ${group} はダンジョンではありません`);
+  const refs = sharedLanaiMapDataRows(maps, group);
+  if (!refs.length) return 0;
+  const copies = new Map<number, number>();
+  for (const ref of refs) {
+    const row = md.addRow(md.find(ref));
+    copies.set(ref, md.rowIds.length ? md.rowId(row) : row);
+  }
+  const g = maps.groups[group]!;
+  if (copies.has(g.mapData)) mg.setU32(group, 8, copies.get(g.mapData)!);
+  if (copies.has(g.mapDataIndoor)) mg.setU32(group, 0x0c, copies.get(g.mapDataIndoor)!);
+  const table = maps.tableBytes.slice();
+  for (const m of groupMaps(maps, group)) {
+    const copy = copies.get(m.mapDataId);
+    if (copy !== undefined) w32(table, m.index * LANAI_MAP_ROW + 0x28, copy);
+  }
+  maps.setTableBytes(table);
+  maps.session.edited();
+  return refs.length;
+}
+
+/** A MapData reference suitable for the map or MapGroup tables. Row 0 is reserved as a map's group fallback. */
+function mapDataRef(maps: LanaiMaps, row: number, explicitMap = false): number {
+  const md = maps.contentTable('MapData');
+  if (!md || !Number.isInteger(row) || row < 0 || row >= md.rows) throw new Error(`MapData 行 ${row} はありません`);
+  const ref = md.rowIds.length ? md.rowId(row) : row;
+  if (explicitMap && (ref === 0 || ref === 0x80000000)) throw new Error('MapData 行 0 はマップの個別指定に使えません');
+  return ref;
+}
+
+/** Copy a MapData row as a new editable row of this stage. */
+export function addLanaiMapData(maps: LanaiMaps, sourceRow: number): number {
+  const md = maps.contentTable('MapData');
+  mapDataRef(maps, sourceRow);
+  const row = md!.addRow(sourceRow);
+  maps.session.edited();
+  maps.changed();
+  return row;
+}
+
+/** Point a group's outdoor or indoor setting at any MapData row in the stage. */
+export function setLanaiGroupMapData(maps: LanaiMaps, group: number, indoor: boolean, row: number | null): void {
+  const mg = maps.mapGroup;
+  if (!mg || !maps.groups[group]) throw new Error(`MapGroup ${group} はありません`);
+  if (!indoor && row === null) throw new Error('屋外用の MapData を選んでください');
+  mg.setU32(group, indoor ? 0x0c : 0x08, row === null ? 0 : mapDataRef(maps, row));
+  maps.readGroups();
+  maps.changed();
+  maps.session.edited();
+}
+
+/** Choose a map's own MapData row, or let the group choose based on indoor tiles. */
+export function setLanaiMapData(maps: LanaiMaps, info: LanaiMapInfo, row: number | null): void {
+  const current = maps.map(info.hash);
+  if (!current) throw new Error(`マップ ${info.name} はありません`);
+  const ref = row === null ? 0 : mapDataRef(maps, row, true);
+  const table = maps.tableBytes.slice();
+  w32(table, current.index * LANAI_MAP_ROW + 0x28, ref);
+  maps.setTableBytes(table);
+  maps.session.edited();
+}
+
+/** Reassign an existing map to another group in this stage. Its first-map setting must remain valid. */
+export function setLanaiMapGroup(maps: LanaiMaps, info: LanaiMapInfo, group: number): void {
+  const current = maps.map(info.hash);
+  if (!current) throw new Error(`マップ ${info.name} はありません`);
+  if (!maps.groups[group] || group <= 0) throw new Error(`MapGroup ${group} はありません`);
+  if (current.dungeon === group) return;
+  if (maps.groups[current.dungeon]?.firstMap === current.hash)
+    throw new Error(
+      `${current.name} は MapGroup ${current.dungeon} の最初のマップです。先に最初のマップを変更してください`,
+    );
+  const table = maps.tableBytes.slice();
+  w32(table, current.index * LANAI_MAP_ROW + ROW_GROUP, group);
+  maps.setTableBytes(table);
+  maps.session.edited();
+}
+
+/** Choose the first map and arrival point used by a MapGroup. */
+export function setLanaiGroupFirstMap(maps: LanaiMaps, group: number, map: number, point: number): void {
+  const mg = maps.mapGroup;
+  const info = maps.map(map);
+  if (!mg || !maps.groups[group]) throw new Error(`MapGroup ${group} はありません`);
+  if (!info || info.dungeon !== group || info.world) throw new Error(`MapGroup ${group} に選んだマップはありません`);
+  const hasPoint = (maps.doc(info).recs[3] ?? []).some((rec) => rec.raw[0x15] !== 100 && u32(rec.raw, 0) === point);
+  if (!hasPoint) throw new Error(`${info.name} に地点 ${hex8(point)} はありません`);
+  mg.setU32(group, LANAI_MG.firstMap, map);
+  mg.setU32(group, LANAI_MG.firstPoint, point);
+  maps.readGroups();
+  maps.changed();
+  maps.session.edited();
+}
+
 // ---- taking out what was added
 
 /** Take out an added map (its row and its sections). The EventObject rows copied for it stay (unused). */
@@ -545,6 +714,12 @@ export function removeLanaiGroup(maps: LanaiMaps, group: number): void {
   const mg = maps.mapGroup!;
   if (!canRemoveGroup(maps, group)) throw new Error('消せるのは、追加したダンジョンのうち最後のものだけです');
   const g = maps.groups[group]!;
+  const md = maps.contentTable('MapData');
+  const mapDataRows = new Set(
+    [g.mapData, ...(g.mapDataIndoor ? [g.mapDataIndoor] : []), ...groupMaps(maps, group).map((m) => m.mapDataId)]
+      .filter((ref) => ref !== 0x80000000)
+      .map((ref) => md?.find(ref) ?? -1),
+  );
   for (const m of groupMaps(maps, group).reverse()) if (m.added) removeLanaiMap(maps, m);
   const ref = maps.session
     .addedTables()
@@ -559,6 +734,16 @@ export function removeLanaiGroup(maps: LanaiMaps, group: number): void {
   if (msg && ownsName(maps, group) && msg.find(g.nameId) === msg.rows - 1) msg.removeLastRow();
   mg.removeLastRow();
   maps.readGroups();
+  // Rows copied for this group were appended to MapData. Drop only unreferenced rows at its tail.
+  while (md && md.rows > md.originalRows && mapDataRows.has(md.rows - 1)) {
+    const tail = md.rows - 1;
+    const used =
+      maps.groups.some((x) =>
+        [x.mapData, ...(x.mapDataIndoor ? [x.mapDataIndoor] : [])].some((ref) => md.find(ref) === tail),
+      ) || maps.maps.some((m) => m.mapDataId !== 0 && m.mapDataId !== 0x80000000 && md.find(m.mapDataId) === tail);
+    if (used) break;
+    md.removeLastRow();
+  }
   maps.session.edited();
   maps.changed();
 }

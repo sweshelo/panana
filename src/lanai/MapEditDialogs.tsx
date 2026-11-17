@@ -197,6 +197,7 @@ export function LanaiNewGroupDialog({
     current && groups.includes(current.dungeon) ? current.dungeon : (groups[0] ?? -1),
   );
   const [copyMaps, setCopyMaps] = useState(true);
+  const [separateMapData, setSeparateMapData] = useState(false);
   const [name, setName] = useState('');
   const [code, setCode] = useState<string | null>(null);
   const [floor, setFloor] = useState('-1');
@@ -231,6 +232,7 @@ export function LanaiNewGroupDialog({
         name,
         code: c,
         copyMaps,
+        separateMapData,
         first: copyMaps ? undefined : { template: tmpl, floor: f, name: first, copyTiles },
       });
       onCreated(r.first);
@@ -260,6 +262,10 @@ export function LanaiNewGroupDialog({
       <label className="layer">
         <input type="checkbox" checked={copyMaps} onChange={(e) => setCopyMaps(e.target.checked)} />
         {` マップごと複製する (${list.length} 枚)`}
+      </label>
+      <label className="layer">
+        <input type="checkbox" checked={separateMapData} onChange={(e) => setSeparateMapData(e.target.checked)} />
+        {' MapData を共有しない (見た目・フィールド音を個別に編集)'}
       </label>
       <Field label="名前 (ゲームに出る)">
         <input
@@ -339,7 +345,7 @@ export function LanaiNewGroupDialog({
       {nameProblem && <div className="error">{nameProblem}</div>}
       {help([
         '新しいダンジョンとマップは、今開いているステージ内に追加されます。別のステージにあるマップを付け替えたり共有したりする操作ではありません。',
-        `ダンジョンの番号は MapGroup ${maps.mapGroup.rows} (表の末尾に追加) です。見た目 (MapData)・BGM・会話の表は写す元と同じにし、名前の項目 (MessageMapName) は新しく足します。`,
+        `ダンジョンの番号は MapGroup ${maps.mapGroup.rows} (表の末尾に追加) です。${separateMapData ? 'MapData の行を複製し、見た目・フィールド音をこのダンジョンだけで編集できます。' : 'MapData の行を写す元と共有します。'}会話の表は写す元と同じにし、名前の項目 (MessageMapName) は新しく足します。`,
         copyMaps
           ? 'イベントの表 (EventObject) は写す元のものを丸ごと写した新しいエントリにします。写したマップどうしをつなぐ階段・出入口の行き先は写しのマップに付け替えるので、写しの中を行き来できます。ダンジョンの外へ出る出口はそのままです。'
           : 'イベントの表 (EventObject) はイベントなし (番号 0) だけの新しいエントリにします。宝箱や出入口はあとから足してください。',

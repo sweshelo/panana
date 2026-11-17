@@ -38,6 +38,7 @@ export function DestinationFields({
   onChange,
   labels = ['行き先のマップ', '行き先の地点 ID'],
   link = false,
+  group,
 }: {
   maps: LanaiMaps;
   map: number;
@@ -47,20 +48,24 @@ export function DestinationFields({
   labels?: [map: string, point: string];
   /** Show a link to the destination's record on the map page (the inspector; not the dialogs shown before placing). */
   link?: boolean;
+  /** Restrict the destination picker to maps of one MapGroup. */
+  group?: number;
 }): ReactNode {
   const [picker, setPicker] = useState<'map' | 'point' | null>(null);
   const [pendingMap, setPendingMap] = useState<number | null>(null);
   const dest = maps.map(map);
-  const groups: MapPickerGroups = maps.groups.flatMap((g) => {
-    const rows = maps.maps
-      .filter((m) => !m.world && m.dungeon === g.row)
-      .map((m) => ({
-        hash: m.hash,
-        title: lanaiFloorLabel(m.floor) || '地上',
-        code: m.name,
-      }));
-    return rows.length ? [[maps.groupName(g.row) || `ダンジョン ${g.row}`, rows]] : [];
-  });
+  const groups: MapPickerGroups = maps.groups
+    .filter((g) => group === undefined || g.row === group)
+    .flatMap((g) => {
+      const rows = maps.maps
+        .filter((m) => !m.world && m.dungeon === g.row)
+        .map((m) => ({
+          hash: m.hash,
+          title: lanaiFloorLabel(m.floor) || '地上',
+          code: m.name,
+        }));
+      return rows.length ? [[maps.groupName(g.row) || `ダンジョン ${g.row}`, rows]] : [];
+    });
   const points = lanaiDestinationPoints(maps, map);
   const mapCount = groups.reduce((count, [, rows]) => count + rows.length, 0);
   const pickMap = pendingMap ?? map;

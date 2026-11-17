@@ -10,6 +10,7 @@ import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { buildStageScripts, checkStageScript } from '../src/lanai/stageScript';
 import { lanaiTilesets, mapDataTileset, setLanaiTileset, tilesetGaps, tilesetTable } from '../src/lanai/tilesets';
+import { addLanaiMapData } from '../src/lanai/mapadd';
 import { openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -274,6 +275,16 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
   test('ROM stages keep their tileset', async () => {
     const rom = await lanaiMaps(s, lanaiContents(s)[28]!);
     const all = await lanaiTilesets(s);
-    await expect(setLanaiTileset(s, rom, 0, all[0]!)).rejects.toThrow('追加したステージ');
+    await expect(setLanaiTileset(s, rom, 0, all[0]!)).rejects.toThrow('新しい MapData 行');
+    const row = addLanaiMapData(rom, 0);
+    const next = all.find((t) => t.entry !== mapDataTileset(rom, 0))!;
+    await setLanaiTileset(s, rom, row, next);
+    expect(mapDataTileset(rom, row)).toBe(next.entry);
+    expect(mapDataTileset(rom, 0)).not.toBe(next.entry);
+    expect(s.modFiles().get(rom.content.archive)).toBeDefined();
+    const restored = await LanaiSession.open(dump, { fresh: true });
+    await restored.restore(s.saved());
+    const romAgain = await lanaiMaps(restored, lanaiContents(restored)[28]!);
+    expect(mapDataTileset(romAgain, row)).toBe(next.entry);
   });
 });

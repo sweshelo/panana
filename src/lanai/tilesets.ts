@@ -142,7 +142,7 @@ export async function tilesetTable(s: LanaiSession, maps: LanaiMaps, ts: LanaiTi
 /**
  * Gives the maps of a MapData row of the content the tileset `ts`: its MapParts table is copied into the content's
  * archive when the content does not have it, with a MapPartsType row and a MapResource row (its texture). Only for
- * the contents added in this session (the ROM's archives keep their tables).
+ * an added stage, or a new MapData row in a ROM stage (the original rows stay intact).
  */
 export async function setLanaiTileset(
   s: LanaiSession,
@@ -151,13 +151,13 @@ export async function setLanaiTileset(
   ts: LanaiTileset,
 ): Promise<void> {
   const archive = maps.content.archive;
-  if (!s.createdFiles.has(archive.toUpperCase()))
-    throw new Error('タイルセットは追加したステージでだけ変えられます (ROM のステージは写してから)');
   const md = maps.contentTable('MapData'),
     pt = maps.contentTable('MapPartsType'),
     mr = maps.contentTable('MapResource');
   if (!md || !pt || !mr) throw new Error('このステージには MapData / MapPartsType / MapResource の表がありません');
   if (mapDataRow < 0 || mapDataRow >= md.rows) throw new Error(`MapData の行 ${mapDataRow} がありません`);
+  if (!s.createdFiles.has(archive.toUpperCase()) && mapDataRow < md.originalRows)
+    throw new Error('ROM の MapData 行のタイルセットは変更できません。新しい MapData 行を作って割り当ててください');
   if (!pt.rows) throw new Error('MapPartsType に行がありません');
   // the table: the content's own, or a copy packed like the content's first MapParts table
   if (!maps.contentTable(`${PARTS}${ts.name}`)) {
