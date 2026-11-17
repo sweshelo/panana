@@ -31,6 +31,7 @@ import { LanaiSession } from '../src/lanai/session';
 import { cloneLanaiContent, contentScript, lanaiCrrName, LANAI_EMPTY_SCRIPT_CONTENT } from '../src/lanai/stageEdit';
 import { checkStageScript, eventRecords, LANAI_STAGE_MANIFEST, recordTrigger } from '../src/lanai/stageScript';
 import { LanaiStageScriptEditor, STAGE_SCRIPT_EXAMPLE } from '../src/lanai/StageScriptEditor';
+import { LanaiStageSourcePage } from '../src/lanai/StageSourcePage';
 import { openImages } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
@@ -373,7 +374,12 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     s.setStageScript(c.archive, SCRIPT);
     const html = renderToString(<LanaiStageScriptEditor session={s} content={c} />);
     expect(html).toContain('イベントのスクリプト');
-    expect(html).toContain('var STATE: byte');
+    expect(html).toContain(`#/stages/${index}/script`);
+    expect(html).not.toContain('反映済みのスクリプト (文字列)');
     expect(html).toContain('stageKey');
+    const source = renderToString(<LanaiStageSourcePage session={s} content={c} />);
+    expect(source).toContain('aria-label="スクリプト全文"');
+    expect(source).toContain('var STATE: byte');
+    expect(source).toContain('関数ドキュメント');
   });
 });

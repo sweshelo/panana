@@ -39,6 +39,22 @@ import { checkStageScript, eventRecords, groupOpening, recordTrigger, type Stage
 
 export { STAGE_SCRIPT_EXAMPLE } from './scriptDoc';
 
+function openSourceTab(session: LanaiSession, content: LanaiContent): void {
+  const tab = window.open('', '_blank');
+  if (!tab) return;
+  tab.document.title = `${content.stages[0]?.name ?? 'ステージ'} — スクリプト`;
+  tab.document.head.innerHTML = document.head.innerHTML;
+  tab.document.body.innerHTML = '<div id="stage-source-root"></div>';
+  void Promise.all([import('react-dom/client'), import('./StageSourcePage')]).then(([react, page]) => {
+    if (tab.closed) return;
+    const host = tab.document.getElementById('stage-source-root');
+    if (!host) return;
+    const root = react.createRoot(host);
+    root.render(<page.LanaiStageSourcePage session={session} content={content} hostWindow={tab} />);
+    tab.addEventListener('pagehide', () => root.unmount(), { once: true });
+  });
+}
+
 /** A function as it is being edited: `was` is its name in the applied script (what its bindings name). */
 interface DraftFunction {
   id: number;
@@ -311,7 +327,7 @@ function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMap
 const hexId = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase()}`;
 
 /** The Script API functions a script can call by name, searched by a part of the name. */
-function ScriptApiList(): ReactNode {
+export function ScriptApiList({ expanded = false }: { expanded?: boolean }): ReactNode {
   const [filter, setFilter] = useState('');
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -319,7 +335,7 @@ function ScriptApiList(): ReactNode {
     return rows.slice(0, 80);
   }, [filter]);
   return (
-    <details>
+    <details open={expanded}>
       <summary className="small">{`名前で呼べる Script API (${SCRIPT_API_ROWS.length} 個)`}</summary>
       <p className="muted small">
         ゲームの関数をそのまま呼びます: ScriptSound.Play(0x84, 0)。ScriptChara / ScriptPlayer
@@ -354,6 +370,41 @@ function ScriptApiList(): ReactNode {
       </table>
       {shown.length === 80 && <p className="muted small">先頭の 80 個を表示しています。名前で絞り込んでください。</p>}
     </details>
+  );
+}
+
+export function StageScriptDocs({ session, content }: { session: LanaiSession; content: LanaiContent }): ReactNode {
+  const [maps, setMaps] = useState<LanaiMaps | null>(null);
+  useEffect(() => {
+    let live = true;
+    void lanaiMaps(session, content).then((m) => live && setMaps(m));
+    return () => {
+      live = false;
+    };
+  }, [session, content]);
+  const groups = maps ? maps.groups.flatMap((g, k) => (g && maps.eventTable(k) ? [k] : [])) : [];
+  return (
+    <>
+      <h3>書けること</h3>
+      <table className="book-table">
+        <tbody>
+          {SCRIPT_WORDS.map((x) => (
+            <tr key={x.form}>
+              <td className="mono small">{x.form}</td>
+              <td className="small">{x.about}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted small">
+        台詞は MapGroup の台詞の表の行 ID で指します。battle()
+        のあとは戦闘に移り、勝つとマップの読み込みからやり直しになります。
+      </p>
+      <PopupIconList session={session} />
+      <ScriptApiList expanded />
+      {maps && <BattleGroups session={session} maps={maps} />}
+      {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} />)}
+    </>
   );
 }
 
@@ -453,6 +504,16 @@ export function LanaiStageScriptEditor({
   return (
     <>
       <h3>イベントのスクリプト</h3>
+      <a
+        href={`#/stages/${content.index}/script`}
+        target="_blank"
+        onClick={(e) => {
+          e.preventDefault();
+          openSourceTab(session, content);
+        }}
+      >
+        反映済みのスクリプトを全文編集 ↗
+      </a>
       <p className="muted small">
         関数 1 つが 1
         つのイベントです。関数を書いて「スクリプトを反映」し、マップのページでキャラ・範囲・ボタンのレコードに割り当てます
@@ -692,12 +753,6 @@ export function LanaiStageScriptEditor({
         </>
       )}
 
-      {stored && (
-        <details>
-          <summary className="small">反映済みのスクリプト (文字列)</summary>
-          <pre className="mono small">{stored.source}</pre>
-        </details>
-      )}
       {check && (
         <>
           {check.problems.map((p) => (
@@ -719,29 +774,6 @@ export function LanaiStageScriptEditor({
           )}
         </>
       )}
-
-      <details>
-        <summary className="small">書けること</summary>
-        <table className="book-table">
-          <tbody>
-            {SCRIPT_WORDS.map((x) => (
-              <tr key={x.form}>
-                <td className="mono small">{x.form}</td>
-                <td className="small">{x.about}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="muted small">
-          台詞は、その MapGroup の台詞の表の「行 ID」で指します (行番号ではありません)。battle()
-          のあとは戦闘に移り、勝つとマップの読み込みからやり直しになるため、「勝ったら」の処理は続きに書けません
-          (変数を書いておき、「マップが始まるとき」の関数や出る条件・消える条件で見ます)。
-        </p>
-      </details>
-      <PopupIconList session={session} />
-      <ScriptApiList />
-      {maps && <BattleGroups session={session} maps={maps} />}
-      {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} />)}
     </>
   );
 }

@@ -2,6 +2,8 @@ import { findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive } fr
 import { sha256 } from './codes';
 import { encodeLanaiMessage, parseLanaiText } from './message';
 import { hex8, w32, equalBytes } from '../util/bytes';
+import { readSarc } from '../layout/sarc';
+import { readBflim, replaceBflimImage } from '../layout/bflim';
 import { CRO_COMMON_HOOKS, croHooks, lanaiContents, type LanaiContent, type LanaiStage } from './contents';
 import { lanaiMaps } from './maps';
 import type { LanaiSession } from './session';
@@ -126,6 +128,47 @@ export interface LanaiCloneOptions {
    * gate, the stage's name, the gate closes; stage-intro.md). On unless false.
    */
   intro?: boolean;
+  /** Clear the source stage's presentation and entrance requirements for a stage made from the empty template. */
+  resetStage?: boolean;
+}
+
+async function resetNewStage(
+  s: LanaiSession,
+  archive: string,
+  stageRow: number,
+  localRow: number,
+  thumbnail: number,
+  messageRow: number,
+): Promise<void> {
+  const messages = s.need('MessageMapStage');
+  const blank = encodeLanaiMessage(parseLanaiText(''));
+  for (const name of ['stage_mission', 'stage_exp']) {
+    const offset = messages.fields.find((f) => f.name === name)?.offset;
+    if (offset === undefined) throw new Error(`${name} の欄がありません`);
+    messages.setString(messageRow, offset, blank);
+  }
+  const integration = s.need('MapStageIntegration');
+  const local = (await s.tablesIn(archive)).find((t) => t.table.name === 'MapStage')?.table;
+  if (!local) throw new Error('MapStage がありません');
+  for (const [table, row, levelOffset, staminaOffset] of [
+    [integration, stageRow, 0x40, 0x49],
+    [local, localRow, 0x34, 0x3d],
+  ] as const) {
+    table.setBits(row, levelOffset, 16, 16, 0);
+    table.setBits(row, staminaOffset & ~3, (staminaOffset & 3) * 8, 8, 0);
+    for (const offset of [0x1c, 0x28]) {
+      table.setU32(row, offset, 0);
+      table.setU32(row, offset + 4, 0);
+      table.setBits(row, offset + 8, 0, 8, 0);
+    }
+  }
+  const body = (await s.readLayout(archive, thumbnail)).slice();
+  const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))?.[1];
+  if (!texture) throw new Error('サムネイル画像がありません');
+  const image = readBflim(texture);
+  const pixels = new Uint8Array(image.width * image.height * 4);
+  body.set(replaceBflimImage(texture, pixels), texture.byteOffset - body.byteOffset);
+  await s.setLayout(archive, thumbnail, body);
 }
 
 /** A content starts as an editable copy of the source, including its original native CRO. No script decompilation. */
@@ -202,6 +245,7 @@ export async function cloneLanaiContent(
   copyStage.setU32(local.r, 0xc, messageId);
   copyStage.setBits(local.r, 0x38, 0, 16, index);
   copyStage.setBits(local.r, 0x34, 0, 16, stageSlot);
+  if (options.resetStage) await resetNewStage(s, archive, row, local.r, srcStage.thumbnail, messageRow);
   // Known data-driven clear actions and self-clear predicates follow the new content. Native code is preserved.
   for (const { table: t } of copied.filter((t) => t.table.name.endsWith('_EventObject')))
     for (let r = 0; r < t.rows; r++) {

@@ -63,7 +63,7 @@ export async function addLanaiEmptyStage(s: LanaiSession, title: string): Promis
   const below = Array.from({ length: CORRIDOR + 1 }, (_, k) => dTiles.get(`${donor.rec.x},${donor.rec.y + k}`));
   if (below.some((t) => !t)) throw new Error(`コンテンツ ${LANAI_GATE_DONOR} の門の下の通路が見つかりません`);
 
-  const index = await cloneLanaiContent(s, template, title, { script: 'empty', intro: false });
+  const index = await cloneLanaiContent(s, template, title, { script: 'empty', intro: false, resetStage: true });
   try {
     const { maps, doc, rec, info } = await startOf(s, index, false);
     const a = maps.tileSource(info!, doc),

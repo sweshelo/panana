@@ -23,12 +23,35 @@ import { talksHref } from './TalkPage';
 import { LanaiStageThumbnail } from './StageThumbnail';
 import { lanaiContentRemoveBlock, removeLanaiContent } from './stageEdit';
 import { LanaiStageContents } from './StageContents';
+import { LanaiStageSourcePage } from './StageSourcePage';
 
 type Filter = 'all' | 'stages' | 'none';
 
 const staminaText = (c: LanaiContent): string => [...new Set(c.stages.map((s) => s.stamina))].join(' / ');
 
-export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+export function LanaiStagePage({
+  session,
+  arg,
+  script = false,
+}: {
+  session: LanaiSession;
+  arg: string | undefined;
+  script?: boolean;
+}): ReactNode {
+  return script ? (
+    <LanaiStageSourceRoute session={session} arg={arg} />
+  ) : (
+    <LanaiStageOverview session={session} arg={arg} />
+  );
+}
+
+function LanaiStageSourceRoute({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+  const revision = useLanaiRevision(session);
+  const contents = useMemo(() => lanaiContents(session), [session, revision]);
+  return <LanaiStageSourcePage key={arg} session={session} content={contents[Number(arg)]} />;
+}
+
+function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const revision = useLanaiRevision(session);
   const contents = useMemo(() => lanaiContents(session), [session, revision]);
   const index = useSticky<number>(

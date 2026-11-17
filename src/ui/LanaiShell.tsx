@@ -139,9 +139,9 @@ export function LanaiShell({
           <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
-      render={(id, { arg: a }) =>
+      render={(id, { arg: a, hash }) =>
         id === 'stages' ? (
-          <LanaiStagePage session={session} arg={a} />
+          <LanaiStagePage session={session} arg={a} script={hash === `#/stages/${a}/script`} />
         ) : id === 'maps' ? (
           <LanaiMapPage session={session} arg={a} />
         ) : id === 'world' ? (

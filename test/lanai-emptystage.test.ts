@@ -3,6 +3,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { findEntry, parseArchive } from '../src/archive/gsarc';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
+import { lanaiStageThumbnail } from '../src/lanai/StageThumbnail';
 import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
 import { lanaiButtonDoor, lanaiEditState, lanaiValidateAll } from '../src/lanai/mapedit';
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
@@ -34,6 +35,32 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const doc = maps.doc(info);
     return { g, info, doc, rec: doc.recs[3]!.find((r) => u32(r.raw, 0) === g.firstPoint)! };
   };
+
+  test('a new stage starts without template mission, requirements, stamina or thumbnail art', async () => {
+    const stage = c.stages[0]!;
+    expect(stage.name).toBe('空のステージ');
+    expect(stage.mission).toBe('');
+    expect(stage.note).toBe('');
+    expect(stage.stamina).toBe(0);
+    expect(stage.recommendedLevel).toBe(0);
+    expect(stage.visible).toEqual({ kind: 0, v1: 0, v2: 0 });
+    expect(stage.hidden).toEqual({ kind: 0, v1: 0, v2: 0 });
+    const image = await lanaiStageThumbnail(s, c.archive, stage.thumbnail);
+    expect(image.rgba.every((value, i) => value === (i % 4 === 3 ? 255 : 0))).toBe(true);
+    const local = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')!.table;
+    expect(local.u8(0, 0x3d)).toBe(0);
+    expect(local.u16(0, 0x36)).toBe(0);
+    expect(local.u8(0, 0x24)).toBe(0);
+    expect(local.u8(0, 0x30)).toBe(0);
+    const restored = await LanaiSession.open(dump, { fresh: true });
+    await restored.restore(s.saved());
+    expect(lanaiContents(restored)[c.index]!.stages[0]!.mission).toBe('');
+    expect(
+      (await lanaiStageThumbnail(restored, c.archive, stage.thumbnail)).rgba.every(
+        (value, i) => value === (i % 4 === 3 ? 255 : 0),
+      ),
+    ).toBe(true);
+  });
 
   test('the room gets a gate at its bottom middle, a corridor below and a door row', () => {
     const { info, doc, rec } = start();
