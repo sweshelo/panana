@@ -46,7 +46,6 @@ export function SoundPage({ session, arg, visit, sounds }: PageProps & { sounds:
         selected={selected}
         href={soundHref}
         uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う mapData の欄の数"
         usedLabel="マップで使う"
       >
         <AddedRow row={selected} />
@@ -134,21 +133,22 @@ export function SoundView({
   selected,
   href,
   uses,
-  usesTitle,
   usedLabel,
   silent,
+  listTop,
   children,
 }: {
   game: SoundSource;
   sounds: SoundNames;
   selected: number;
   href: (row: number) => string;
-  /** How many places use a row (the list's last column and the "used" filter). */
+  /** How many places use a row (for the "used" filter). */
   uses: (row: number) => number;
-  usesTitle: string;
   usedLabel: string;
   /** A sound archive entry whose own volume is zero. */
   silent?: (row: number) => boolean;
+  /** Controls placed above the list, inside the left column. */
+  listTop?: ReactNode;
   children: ReactNode;
 }): ReactNode {
   const [query, setQuery] = useState('');
@@ -172,6 +172,7 @@ export function SoundView({
   return (
     <>
       <div className="book-side">
+        {listTop}
         <ListFilter
           query={query}
           setQuery={setQuery}
@@ -194,12 +195,10 @@ export function SoundView({
             <thead>
               <tr>
                 <th />
-                <th>#</th>
-                <th title="サウンドアーカイブ内の番号。左の # は SoundData の行番号">BCSAR #</th>
+                <th title="SoundData の行番号。SE の se() 引数はこの番号">#</th>
+                <th title="サウンドアーカイブ内の番号。SE の se() 引数は左の #">BCSAR #</th>
                 <th>名前</th>
                 <th>種類</th>
-                {silent && <th title="BCSAR 自体の音量が 0">音源</th>}
-                <th title={usesTitle}>使用</th>
               </tr>
             </thead>
             <tbody>
@@ -212,8 +211,6 @@ export function SoundView({
                   <td className="num muted">{sounds.index(r) ?? ''}</td>
                   <td className="mono">{sounds.name(r) || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{SOUND_KIND[sounds.kind(r)]}</td>
-                  {silent && <td className="muted">{silent(r) ? '無音' : ''}</td>}
-                  <td className="num muted">{uses(r) || ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -224,7 +221,7 @@ export function SoundView({
         <div className="book-head">
           <PlayButton game={game} sounds={sounds} row={selected} className="large" />
           <h2 className="mono">{sounds.name(selected) || `サウンド ${selected}`}</h2>
-          <span className="muted">{`#${selected}  ${SOUND_KIND[sounds.kind(selected)]}  (soundData.bin)`}</span>
+          <span className="muted">{`#${selected}  ${SOUND_KIND[sounds.kind(selected)]}  (SoundData 行)`}</span>
         </div>
         {!sounds.named && <p className="muted">サウンドアーカイブが読めなかったので、音の名前はわかりません。</p>}
         {silent?.(selected) && <p className="muted small">この BCSAR 音源は音量 0 です。試聴しても音は鳴りません。</p>}

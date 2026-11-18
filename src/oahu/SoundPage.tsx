@@ -54,7 +54,6 @@ export function OahuSoundBook({
         selected={selected}
         href={oahuSoundHref}
         uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う場所の数 (mapData の欄・決まった戦闘・コード)"
         usedLabel="使われている"
       >
         <OahuSoundUses use={uses.get(selected) ?? []} hasCode={!!session.code} />

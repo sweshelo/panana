@@ -59,12 +59,16 @@ describe.skipIf(!hasLanai)('RPG FREE! sounds', () => {
     expect(s.soundArchivePath()).toBe('sound/patch.bcsar');
   });
 
-  test('the sound page gives the SE argument as a SoundData row', () => {
+  test('the sound page keeps the list and detail in two columns and labels the SE row', () => {
     const html = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="122" uses={new Map()} />);
-    expect(html).toContain('se(0x7A)');
+    expect(html).toContain('<div class="book"><div class="book-side">');
+    expect(html).toContain('title="SoundData の行番号。SE の se() 引数はこの番号"');
+    expect(html).toContain('#122  効果音  (SoundData 行)');
+    expect(html).not.toContain('se(0x7A)');
+    expect(html).not.toContain('>音源</th>');
+    expect(html).not.toContain('>使用</th>');
     const ice = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="450" uses={new Map()} />);
     expect(ice).toContain('SE_BTL_WING_ICE_A');
-    expect(ice).toContain('se(0x1C2)');
     expect(ice).toContain('sound/patch.bcsar');
   });
 

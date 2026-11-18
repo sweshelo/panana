@@ -86,58 +86,53 @@ export function LanaiSoundBook({
   );
   return (
     <div className="book">
-      {workspace?.opened.lanai === session && openedKeys(workspace.opened).length > 1 && (
-        <>
-          <button type="button" onClick={() => setImportOpen(true)}>
-            ほかの作品から効果音を移植
-          </button>
-          {importOpen && (
-            <Dialog title="効果音を移植" onClose={() => setImportOpen(false)}>
-              <input
-                type="search"
-                aria-label="移植する効果音を検索"
-                placeholder="効果音の名前で検索"
-                value={importQuery}
-                onChange={(e) => setImportQuery(e.target.value)}
-              />
-              <BgmPortTab
-                opened={workspace.opened}
-                session={session}
-                target="lanai"
-                kind="se"
-                max={0xffff}
-                query={importQuery}
-                onPicked={(row) => {
-                  setImportOpen(false);
-                  window.location.hash = lanaiSoundHref(row);
-                }}
-              />
-            </Dialog>
-          )}
-        </>
-      )}
-      <p className="muted small">
-        {session.dump.update
-          ? '既存の BGM・ME は Base の sound/sound.bcsar、Update の音は sound/patch.bcsar'
-          : 'Base の sound/sound.bcsar'}
-        と SoundData を照合しています。
-      </p>
       <SoundView
         game={session}
         sounds={sounds}
         selected={selected}
         href={lanaiSoundHref}
         uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う場所の数 (戦闘の背景・マップの音・扉の開く音)"
         usedLabel="使われている"
         silent={silent}
+        listTop={
+          workspace?.opened.lanai === session && openedKeys(workspace.opened).length > 1 ? (
+            <>
+              <button type="button" onClick={() => setImportOpen(true)}>
+                ほかの作品から効果音を移植
+              </button>
+              {importOpen && (
+                <Dialog title="効果音を移植" onClose={() => setImportOpen(false)}>
+                  <input
+                    type="search"
+                    aria-label="移植する効果音を検索"
+                    placeholder="効果音の名前で検索"
+                    value={importQuery}
+                    onChange={(e) => setImportQuery(e.target.value)}
+                  />
+                  <BgmPortTab
+                    opened={workspace.opened}
+                    session={session}
+                    target="lanai"
+                    kind="se"
+                    max={0xffff}
+                    query={importQuery}
+                    onPicked={(row) => {
+                      setImportOpen(false);
+                      window.location.hash = lanaiSoundHref(row);
+                    }}
+                  />
+                </Dialog>
+              )}
+            </>
+          ) : null
+        }
       >
-        {sounds.kind(selected) === 'se' && (
-          <p className="muted small">
-            ステージのスクリプトでは <code>{`se(0x${selected.toString(16).toUpperCase()})`}</code> を使います。 番号は
-            SoundData の行で、BCSAR の音番号とは異なります。
-          </p>
-        )}
+        <p className="muted small">
+          {session.dump.update
+            ? '既存の BGM・ME は Base の sound/sound.bcsar、Update の音は sound/patch.bcsar'
+            : 'Base の sound/sound.bcsar'}
+          と SoundData を照合しています。
+        </p>
         <LanaiSoundUses use={uses.get(selected) ?? []} />
         <p className="muted small">
           {read instanceof Error

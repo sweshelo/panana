@@ -593,7 +593,6 @@ describe('sounds', () => {
         selected={2}
         href={(r) => `#/sounds/${r}`}
         uses={(r) => soundUses(game).get(r)?.length ?? 0}
-        usesTitle=""
         usedLabel="マップで使う"
       >
         <MapUses use={soundUses(game).get(2) ?? []} users={new Map([[0, [map]]])} mapTitle={() => '山のどうくつ B1'} />
@@ -603,6 +602,7 @@ describe('sounds', () => {
     expect(html).toContain('0x01000001');
     expect(html).toContain('play-button large');
     expect(html).toContain('BCSAR の音 1');
+    expect(html).not.toContain('>使用</th>');
     expect(html).toContain('使っているマップの設定 (2)');
     expect(html).toContain('href="#/map/D01B01001"');
     expect(html).toContain('(読めるマップにはなし)');
