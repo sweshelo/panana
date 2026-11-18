@@ -400,6 +400,12 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const sign = of(5, 11, 0x8000002f);
     expect(sign.event!.talk!.text.length).toBeGreaterThan(0);
     const tile = st.current!.tiles[0]!;
+    const alternateGate = templates.find((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.look === 735)!;
+    expect(alternateGate.model).toEqual({ type: 'object', row: 735 });
+    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: alternateGate }, tile.x + 0.5, tile.y + 0.5));
+    expect(events.u16(eventRows, 0x5a)).toBe(735);
+    st.undo();
+    expect(events.rows).toBe(eventRows);
     for (const t of [pit, of(5, 13, 0x80000030), sign])
       st.edit((doc) => st.placeStamp(doc, { type: 'template', t }, tile.x + 0.5, tile.y + 0.5));
     expect(events.rows).toBe(eventRows + 3);
