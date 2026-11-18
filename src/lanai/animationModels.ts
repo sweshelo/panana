@@ -3,6 +3,7 @@ import { findEntry, entryBlob, unpackEntry } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { bchAnimations, parseBch, unwrapBch } from '../bch/bch';
 import type { CgfxModel } from '../cgfx/cgfx';
+import type { CgfxAnimation } from '../cgfx/anim';
 import type { TilesetModels } from '../cgfx/tileset';
 import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels';
 import type { ModelRef } from '../pages/modelview';
@@ -83,6 +84,16 @@ export function lanaiAnimationIds(session: LanaiSession): LanaiAnimationId[] {
       defaultType: table.u8(row, 8),
     };
   });
+}
+
+/** Match the AnimData prefix to a playable skeletal motion, or a material-only animation. */
+export function lanaiAnimationName(animations: readonly CgfxAnimation[], prefix: string): string | null {
+  const key = (name: string): boolean => name.slice(0, 4) === prefix;
+  return (
+    animations.find((a) => a.kind === 'skeletal' && a.skeletal.length && key(a.name))?.name ??
+    animations.find((a) => a.kind === 'material' && a.material.length && key(a.name))?.name ??
+    null
+  );
 }
 
 async function bch(session: LanaiSession, archive: string, hash: number) {

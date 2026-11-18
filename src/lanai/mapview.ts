@@ -8,8 +8,8 @@
 import * as THREE from 'three';
 import { lanaiRange, type LanaiRange, type LanaiRangeShape } from './rangeShape';
 import { AnimatedModel, animationKey } from '../cgfx/player';
-import { lanaiAnimationIds, lanaiDenpaModel } from './animationModels';
-import type { ScriptWho } from './eventScript';
+import { lanaiAnimationIds, lanaiAnimationName, lanaiDenpaModel } from './animationModels';
+import { scriptRowId, type ScriptWho } from './eventScript';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
@@ -143,6 +143,7 @@ export class LanaiMapView {
   private previewSelf: number | null = null;
   private previewRevision = 0;
   private previewFrame = 0;
+  private previewLastFrame = 0;
   private previewCamera: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
   private readonly overlay = new CellOverlay();
   /** Loaded models of records ("o<MapObject row>" / "m<MonsterDesign row>"); null while loading or when there is none. */
@@ -318,7 +319,8 @@ export class LanaiMapView {
   }
 
   private previewRecord(row: number): { section: number; index: number; x: number; z: number } | null {
-    for (const section of LANAI_EVENT_SECTIONS)
+    // An EventObject row can have several records. For chara(), prefer the character over a linked door or range.
+    for (const section of [5, 3, 4, 8] as const)
       for (let index = 0; index < (this.doc.recs[section]?.length ?? 0); index++) {
         const rec = this.doc.recs[section]![index]!;
         if (lanaiRecEventRow(section, rec.raw) !== row) continue;
@@ -412,10 +414,18 @@ export class LanaiMapView {
 
   previewMotion(who: ScriptWho, id: number): number {
     const actor = this.previewActors.get(this.previewKey(who))!;
-    const prefix = lanaiAnimationIds(this.maps.session).find((a) => a.id === id)?.prefix;
-    const name = actor.motion?.motions.find((a) => prefix && animationKey(a.name) === prefix)?.name;
-    if (!name || !actor.motion)
-      throw new Error(`アニメ ${id.toString(16)} に対応するモーションがこのモデルにありません。`);
+    const fullId = scriptRowId(id);
+    const prefix = lanaiAnimationIds(this.maps.session).find((a) => a.id === fullId)?.prefix;
+    if (!prefix)
+      throw new Error(`アニメ 0x${id.toString(16)} (行 ID 0x${fullId.toString(16)}) は AnimData にありません。`);
+    const animations = actor.motion?.model.animations ?? [];
+    const name = lanaiAnimationName(animations, prefix);
+    if (!name || !actor.motion) {
+      const available = [...new Set(animations.map((a) => animationKey(a.name)))].slice(0, 12).join(', ');
+      throw new Error(
+        `アニメ 0x${id.toString(16)} (${prefix}) に対応するモーションがこのモデルにありません。${available ? `収録: ${available}` : 'モーションなし'}。`,
+      );
+    }
     actor.motion.select(name);
     actor.started = performance.now();
     actor.frames = actor.motion.frames;
@@ -425,12 +435,19 @@ export class LanaiMapView {
 
   private runPreviewFrames(): void {
     if (this.previewFrame) return;
-    const step = (): void => {
+    const step = (now: number): void => {
       this.previewFrame = 0;
-      this.previewTick();
+      // AnimatedModel skins vertices on the CPU. A second 60 Hz loop in the command runner used to do the work twice.
+      if (now - this.previewLastFrame >= 50) {
+        this.previewLastFrame = now;
+        this.previewTick(now);
+      }
       if (
         [...this.previewActors.values()].some(
-          (a) => a.motion && a.started && (a.motion.loop || performance.now() - a.started < (a.frames / 60) * 1000),
+          (a) =>
+            a.motion &&
+            a.started &&
+            now - a.started < Math.min(a.motion.loop ? 3000 : Infinity, (a.frames / 60) * 1000),
         )
       )
         this.previewFrame = requestAnimationFrame(step);
@@ -438,9 +455,14 @@ export class LanaiMapView {
     this.previewFrame = requestAnimationFrame(step);
   }
 
-  previewTick(): void {
+  private previewTick(now: number): void {
     for (const actor of this.previewActors.values())
-      if (actor.motion && actor.started) actor.motion.update(((performance.now() - actor.started) / 1000) * 60);
+      if (actor.motion && actor.started) {
+        const elapsed = now - actor.started;
+        const limit = Math.min(actor.motion.loop ? 3000 : Infinity, (actor.frames / 60) * 1000);
+        actor.motion.update((Math.min(elapsed, limit) / 1000) * 60);
+        if (elapsed >= limit) actor.started = 0;
+      }
     this.scene.draw();
   }
 
@@ -453,6 +475,7 @@ export class LanaiMapView {
     this.previewRevision++;
     cancelAnimationFrame(this.previewFrame);
     this.previewFrame = 0;
+    this.previewLastFrame = 0;
     for (const actor of this.previewActors.values()) {
       this.previewGroup.remove(actor.group);
       actor.factory?.dispose();

@@ -1252,7 +1252,7 @@ const BRANCH_IF_NOT: Record<ScriptCmp, string> = {
   '>=': 'blt',
 };
 /** Item IDs are row IDs (0x800000NN); the script may leave the high bit out. */
-const rowId = (n: number): number => (0x80000000 | n) >>> 0;
+export const scriptRowId = (n: number): number => (0x80000000 | n) >>> 0;
 
 interface Ctx {
   fn: Fn;
@@ -1329,13 +1329,13 @@ function compileValue(c: Ctx, v: ScriptValue): void {
       fn.op('and r0, r0, #0xff');
       break;
     case 'item':
-      fn.load('r0', rowId(v.item));
+      fn.load('r0', scriptRowId(v.item));
       fn.op('mov r1, #1');
       fn.call(A.getItem);
       break;
     case 'ask':
       zeroSmps(fn);
-      fn.load('r0', rowId(v.msg));
+      fn.load('r0', scriptRowId(v.msg));
       smpArgs(fn);
       fn.call(A.yesNo);
       fn.op('cmp r0, #0', 'movne r0, #1');
@@ -1542,7 +1542,7 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         if (moves) mouth('r6');
         zeroSmps(fn);
         fn.op('str r5, [sp]'); // the 5th argument: bool = 0
-        fn.load('r0', rowId(n.msg));
+        fn.load('r0', scriptRowId(n.msg));
         smpArgs(fn);
         fn.op(`mov r3, #${n.dialog}`, 'vmov.f32 s0, s18');
         fn.call(moves ? A.msg : A.msgAuto);
@@ -1629,7 +1629,7 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         break;
       case 'anim': {
         const player = n.who.kind === 'hero';
-        withChara(c, n.who, FRAME.obj, player, (ref) => startAnim(ref, rowId(n.id), n.type, player));
+        withChara(c, n.who, FRAME.obj, player, (ref) => startAnim(ref, scriptRowId(n.id), n.type, player));
         break;
       }
       case 'waitAnim':
@@ -1735,7 +1735,7 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         fn.call(A.play);
         break;
       case 'addItem':
-        fn.load('r0', rowId(n.item));
+        fn.load('r0', scriptRowId(n.item));
         fn.load('r1', n.count);
         if (n.show) fn.op('mov r2, #1');
         fn.call(n.show ? A.itemGet : A.addItem);

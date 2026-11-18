@@ -109,11 +109,15 @@ export function ScriptPreviewControls({
     const animate = (seconds: number, update: (fraction: number) => void): Promise<void> =>
       new Promise((resolve) => {
         const start = performance.now();
+        let last = -Infinity;
         const step = (): void => {
           if (!alive()) return resolve();
-          const fraction = seconds <= 0 ? 1 : Math.min(1, (performance.now() - start) / (seconds * 1000));
-          update(fraction);
-          view.previewTick();
+          const now = performance.now();
+          const fraction = seconds <= 0 ? 1 : Math.min(1, (now - start) / (seconds * 1000));
+          if (fraction >= 1 || now - last >= 40) {
+            update(fraction);
+            last = now;
+          }
           if (fraction >= 1) resolve();
           else requestAnimationFrame(step);
         };
