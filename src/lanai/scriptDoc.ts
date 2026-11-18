@@ -105,7 +105,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'fadeOut(秒)', '画面を暗くする。暗いままイベントを終えないこと'),
   w('statement', 'fadeIn(秒)', '画面を明るくする'),
   w('statement', 'follow(0 / 1)', '仲間が先頭についてくるのを止める / 戻す'),
-  w('statement', 'se(音)', 'SoundData の行番号の音を鳴らす (BCSAR の音番号とは別。例: 0x7A = SE_BTL_ASSAULT)'),
+  w(
+    'statement',
+    'se(音)',
+    'SoundData の行番号の音を鳴らす (BCSAR の音番号とは別。Update v1.17 の 0x7A = SE_FLD_DOOR4)',
+  ),
   w('statement', 'wait(秒)', '待つ'),
   w('statement', 'addItem(ID, 個数)', 'アイテムを増やす (負の数で減らす)'),
   w('statement', 'getItem(ID, 個数)', 'アイテムを増やし、「手に入れた」の文を出す'),

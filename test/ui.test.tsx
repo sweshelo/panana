@@ -602,7 +602,7 @@ describe('sounds', () => {
     expect(html).toContain('300 / 300 件');
     expect(html).toContain('0x01000001');
     expect(html).toContain('play-button large');
-    expect(html).toContain('sound.bcsar の音 1');
+    expect(html).toContain('BCSAR の音 1');
     expect(html).toContain('使っているマップの設定 (2)');
     expect(html).toContain('href="#/map/D01B01001"');
     expect(html).toContain('(読めるマップにはなし)');

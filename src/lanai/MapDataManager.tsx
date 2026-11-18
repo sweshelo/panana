@@ -17,6 +17,7 @@ import {
 } from './mapadd';
 import { lanaiFloorLabel, type LanaiMaps } from './maps';
 import { lanaiMapHref } from './MapPage';
+import { useLanaiRevision } from './MonsterEditor';
 import { floorPhoto } from './TilesetField';
 import {
   lanaiTilesets,
@@ -153,7 +154,8 @@ function MapDataRow({ maps, row, sounds }: { maps: LanaiMaps; row: number; sound
 /** The MapGroup settings and the MapData references of the maps in one content. */
 export function MapDataManager({ maps }: { maps: LanaiMaps }): ReactNode {
   const md = maps.contentTable('MapData');
-  const soundResult = useAsync(() => maps.session.sounds(), [maps.session]);
+  const revision = useLanaiRevision(maps.session);
+  const soundResult = useAsync(() => maps.session.sounds(), [maps.session, revision]);
   const sounds = soundResult && !(soundResult instanceof Error) ? soundResult : null;
   const [source, setSource] = useState(0);
   const [error, setError] = useState('');
@@ -203,7 +205,7 @@ export function MapDataManager({ maps }: { maps: LanaiMaps }): ReactNode {
             <th>MapResource</th>
             <th>フィールド BGM</th>
             <th>戦闘前の曲</th>
-            <th>遭遇 SE</th>
+            <th>足音</th>
             <th>使用マップ</th>
           </tr>
         </thead>

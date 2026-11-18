@@ -58,6 +58,14 @@ export function LanaiSoundBook({
   const [importOpen, setImportOpen] = useState(false);
   const [importQuery, setImportQuery] = useState('');
   const workspace = useWorkspace();
+  const renderer = useAsync(() => session.soundRenderer(), [session, sounds]);
+  const silent =
+    renderer && !(renderer instanceof Error)
+      ? (row: number): boolean => {
+          const index = sounds.index(row);
+          return index !== null && renderer.archive.sounds[index]?.volume === 0;
+        }
+      : undefined;
   // read once: the tables are the session's own, so the list is made again from them when the page is asked to
   const [round, setRound] = useState(0);
   const read = useAsync(
@@ -104,6 +112,10 @@ export function LanaiSoundBook({
           )}
         </>
       )}
+      <p className="muted small">
+        {session.dump.update ? 'Update の sound/patch.bcsar' : 'Base の sound/sound.bcsar'} と SoundData
+        を照合しています。
+      </p>
       <SoundView
         game={session}
         sounds={sounds}
@@ -112,17 +124,12 @@ export function LanaiSoundBook({
         uses={(r) => uses.get(r)?.length ?? 0}
         usesTitle="この音を使う場所の数 (戦闘の背景・マップの音・扉の開く音)"
         usedLabel="使われている"
+        silent={silent}
       >
         {sounds.kind(selected) === 'se' && (
           <p className="muted small">
             ステージのスクリプトでは <code>{`se(0x${selected.toString(16).toUpperCase()})`}</code> を使います。 番号は
             SoundData の行で、BCSAR の音番号とは異なります。
-          </p>
-        )}
-        {selected >= 107 && selected <= 111 && sounds.index(selected) === selected + 81 && (
-          <p className="muted small">
-            この行の BCSAR シーケンスは音を出さずに終了します。MapData にこの番号が記録されていても、
-            ゲーム内で聞こえる別の音の出所はまだ特定できていません。
           </p>
         )}
         <LanaiSoundUses use={uses.get(selected) ?? []} />
@@ -149,7 +156,7 @@ export function LanaiSoundBook({
 
 const USES_INFO = [
   '戦闘の背景: master の BattleField と各コンテンツの BattleFieldContents の +0x08 (戦闘の BGM)。群れ (MonsterGroup +0x00) がその行を選びます。',
-  'マップ: 各コンテンツの MapData の +0x04 フィールドの BGM・+0x06 戦闘の前の曲・+0x08 マップ内の効果音。+0x08 とゲーム内で実際に聞こえる音の対応は未解明です。マップのページの「音・戦闘背景」で変えられます。',
+  'マップ: 各コンテンツの MapData の +0x04 フィールドの BGM・+0x06 戦闘の前の曲・+0x08 足音。Update の patch.bcsar では +0x08 の主な値 107〜111 が SE_FLD_STEPS1〜5 を指します。マップのページの「音・戦闘背景」で変えられます。',
   '扉: 鍵つきの扉などの動作 (EventObject) の引数「開く音」。',
   'コードやステージのスクリプト (CRO、ScriptSound.Play など) から鳴らす音は数えていません。',
 ].join('\n');

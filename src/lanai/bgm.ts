@@ -1,4 +1,3 @@
-import { BCSAR_PATH } from '../game/sound';
 import { rendererOf, titleName, type BgmCandidate } from '../port/bgm';
 import { SOUND_PREFIX, portedPath, templateSound } from '../port/sounds';
 import { SoundArchive } from '../sound/formats';
@@ -9,8 +8,7 @@ import type { LanaiSession } from './session';
 
 /** FREE!'s BGM fields reference SoundData rows directly; no RPG2 slot patch is needed. */
 export async function portLanaiBgm(o: Opened, s: LanaiSession, c: BgmCandidate, max: number): Promise<number> {
-  const read = (n: string): Promise<Uint8Array> => Promise.resolve(s.soundFiles.get(n) ?? s.dump.readRomfs(n));
-  const bytes = await read(BCSAR_PATH);
+  const bytes = await s.readSoundArchive();
   const a = new SoundArchive(bytes);
   // Include the source index: distinct sounds may have the same name in one archive.
   const base = `${c.kind === 'se' ? 'SE' : 'BGM'}_${SOUND_PREFIX[c.title]}_${c.name}_${c.index}`;
@@ -68,7 +66,7 @@ export async function portLanaiBgm(o: Opened, s: LanaiSession, c: BgmCandidate, 
   if (template === undefined) throw new Error('音のひな形がありません');
   const row = table.addRow(template);
   table.setU32(row, 0, (0x01000000 | index) >>> 0);
-  s.soundFiles.set(BCSAR_PATH, built);
+  s.soundFiles.set(s.soundArchivePath(), built);
   if (previous < 0) s.soundFiles.set(`sound/${portedPath(name)}`, stream);
   s.soundsChanged();
   s.edited();

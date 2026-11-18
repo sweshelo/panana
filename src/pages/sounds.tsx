@@ -1,4 +1,4 @@
-// BGM and sound effects: every soundData row with its name (sound/sound.bcsar) and the maps whose mapData picks it
+// BGM and sound effects: every soundData row with its name (from the active sound archive) and the maps whose mapData picks it
 // as their field BGM, battle BGM or footsteps (those are changed in the map editor, src/editor/sounds.tsx).
 // SoundView is the list and the head of the detail, shared with RPG3's page (src/oahu/SoundPage.tsx).
 import { useMemo, useRef, useState, type ReactNode } from 'react';
@@ -21,7 +21,7 @@ import { BGM_EXT_BASE, bgmValue } from '../game/bgmext';
 
 export const soundHref = (row: number): string => `#/sounds/${row}`;
 
-type Filter = SoundKind | 'all' | 'used';
+type Filter = SoundKind | 'all' | 'used' | 'silent';
 
 const SLOT_LABEL = Object.fromEntries(SOUND_SLOTS.map(([slot, label]) => [slot, label]));
 
@@ -136,6 +136,7 @@ export function SoundView({
   uses,
   usesTitle,
   usedLabel,
+  silent,
   children,
 }: {
   game: SoundSource;
@@ -146,6 +147,8 @@ export function SoundView({
   uses: (row: number) => number;
   usesTitle: string;
   usedLabel: string;
+  /** A sound archive entry whose own volume is zero. */
+  silent?: (row: number) => boolean;
   children: ReactNode;
 }): ReactNode {
   const [query, setQuery] = useState('');
@@ -160,7 +163,10 @@ export function SoundView({
       archiveQuery ? sounds.index(r) !== Number(archiveQuery[1]) : q && String(r) !== q && !sounds.name(r).includes(q)
     )
       continue;
-    if (filter === 'used' ? !uses(r) : filter !== 'all' && sounds.kind(r) !== filter) continue;
+    if (
+      filter === 'used' ? !uses(r) : filter === 'silent' ? !silent?.(r) : filter !== 'all' && sounds.kind(r) !== filter
+    )
+      continue;
     rows.push(r);
   }
   return (
@@ -179,6 +185,7 @@ export function SoundView({
             ['se', '効果音'],
             ['other', 'その他'],
             ['used', usedLabel],
+            ...(silent ? ([['silent', '無音の音源']] as [Filter, string][]) : []),
           ]}
         />
         <div className="book-list" ref={list}>
@@ -188,9 +195,10 @@ export function SoundView({
               <tr>
                 <th />
                 <th>#</th>
-                <th title="sound.bcsar 内の番号。左の # は SoundData の行番号">BCSAR #</th>
+                <th title="サウンドアーカイブ内の番号。左の # は SoundData の行番号">BCSAR #</th>
                 <th>名前</th>
                 <th>種類</th>
+                {silent && <th title="BCSAR 自体の音量が 0">音源</th>}
                 <th title={usesTitle}>使用</th>
               </tr>
             </thead>
@@ -204,6 +212,7 @@ export function SoundView({
                   <td className="num muted">{sounds.index(r) ?? ''}</td>
                   <td className="mono">{sounds.name(r) || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{SOUND_KIND[sounds.kind(r)]}</td>
+                  {silent && <td className="muted">{silent(r) ? '無音' : ''}</td>}
                   <td className="num muted">{uses(r) || ''}</td>
                 </tr>
               ))}
@@ -217,9 +226,10 @@ export function SoundView({
           <h2 className="mono">{sounds.name(selected) || `サウンド ${selected}`}</h2>
           <span className="muted">{`#${selected}  ${SOUND_KIND[sounds.kind(selected)]}  (soundData.bin)`}</span>
         </div>
-        {!sounds.named && <p className="muted">sound/sound.bcsar が読めなかったので、音の名前はわかりません。</p>}
+        {!sounds.named && <p className="muted">サウンドアーカイブが読めなかったので、音の名前はわかりません。</p>}
+        {silent?.(selected) && <p className="muted small">この BCSAR 音源は音量 0 です。試聴しても音は鳴りません。</p>}
         <p className="muted small">
-          ▶ で試聴できます。BGM・ME は sound/stream/ の曲を、効果音は sound.bcsar の波形とシーケンスを鳴らします
+          ▶ で試聴できます。BGM・ME は sound/stream/ の曲を、効果音はサウンドアーカイブの波形とシーケンスを鳴らします
           (効果音のシーケンスはこのエディタでの再現なので、ゲームと少し違って聞こえることがあります)。
         </p>
         <table className="enc-table">
@@ -228,7 +238,7 @@ export function SoundView({
               <td>+0x00 アイテム ID</td>
               <td className="mono">{`0x${hex8(sounds.item(selected))}`}</td>
               <td className="muted">
-                {sounds.item(selected) >>> 24 === 1 ? `sound.bcsar の音 ${sounds.item(selected) & 0xffffff}` : ''}
+                {sounds.item(selected) >>> 24 === 1 ? `BCSAR の音 ${sounds.item(selected) & 0xffffff}` : ''}
               </td>
             </tr>
             <tr>

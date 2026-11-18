@@ -26,7 +26,7 @@ import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
-import { SoundNames, bcsarSoundNames } from '../game/sound';
+import { BCSAR_PATH, SoundNames, bcsarSoundNames } from '../game/sound';
 import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
@@ -957,14 +957,39 @@ export class LanaiSession {
     this.renderer = null;
   }
 
-  private soundDump(): Dump {
-    return { ...this.dump, readRomfs: async (name) => this.soundFiles.get(name) ?? this.dump.readRomfs(name) };
+  /** The Update replaces the Base sound archive at a different path. */
+  soundArchivePath(): string {
+    return this.dump.update ? 'sound/patch.bcsar' : BCSAR_PATH;
   }
 
-  /** Names of the SoundData rows (+0x00 = sound.bcsar item ID, battle-field.md §5), from the Base's sound/sound.bcsar. */
+  private async readSoundFile(name: string): Promise<Uint8Array> {
+    const edited = this.soundFiles.get(name);
+    if (edited) return edited;
+    if (this.dump.update && this.dump.readUpdateRomfs) {
+      try {
+        return await this.dump.readUpdateRomfs(name);
+      } catch {
+        // Older streams can still be stored in the Base RomFS.
+      }
+    }
+    return this.dump.readRomfs(name);
+  }
+
+  readSoundArchive(): Promise<Uint8Array> {
+    return this.readSoundFile(this.soundArchivePath());
+  }
+
+  private soundDump(): Dump {
+    return {
+      ...this.dump,
+      readRomfs: (name) => this.readSoundFile(name === BCSAR_PATH ? this.soundArchivePath() : name),
+    };
+  }
+
+  /** SoundData rows named by the archive the running game mounts (patch.bcsar with an Update). */
   sounds(): Promise<SoundNames> {
     const t = this.need('SoundData');
-    const edited = this.soundFiles.get('sound/sound.bcsar');
+    const edited = this.soundFiles.get(this.soundArchivePath());
     if (edited)
       return (this.soundNames ??= Promise.resolve(
         new SoundNames(
@@ -974,14 +999,16 @@ export class LanaiSession {
       ));
     return (this.soundNames ??= loadSoundNames(
       this.soundDump(),
-      'lanai/sound/names/v1',
+      this.dump.update
+        ? `lanai/sound/patch-names/v1/${this.dump.update.titleVersion ?? 'unknown'}`
+        : 'lanai/sound/base-names/v1',
       Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
     ));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
 
-  /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
+  /** Plays sounds from patch.bcsar with an Update, or sound.bcsar for Base only. */
   soundRenderer(): Promise<SoundRenderer> {
     this.renderer ??= openSoundRenderer(this.soundDump()).catch((err: Error) => {
       this.renderer = null;

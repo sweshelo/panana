@@ -101,13 +101,13 @@ describe.skipIf(!hasLanai)('FREE! custom assets', () => {
       const index = s.need('SoundData').u32(row, 0) & 0xffffff;
       expect(await renderer.render(index, 0.1, false)).toBeDefined();
       const files = await s.allModFiles();
-      expect(files.has('sound/sound.bcsar')).toBe(true);
+      expect(files.has('sound/patch.bcsar')).toBe(true);
       expect(await s.dump.readRomfs('sound/sound.bcsar')).toEqual(original);
       const saved = s.saved();
       s.revertAll();
       await s.restore(saved);
       expect((await s.sounds()).name(row)).toContain(c.name);
-      expect((await s.allModFiles()).get('sound/sound.bcsar')).toEqual(files.get('sound/sound.bcsar'));
+      expect((await s.allModFiles()).get('sound/patch.bcsar')).toEqual(files.get('sound/patch.bcsar'));
     },
   );
 
@@ -144,7 +144,7 @@ describe.skipIf(!hasLanai)('FREE! custom assets', () => {
       await expect((await target.soundRenderer()).render(names.index(row)!, 1, false)).resolves.toBeDefined();
       await expect((await target.soundRenderer()).render(names.index(sequenceRow)!, 1, false)).resolves.toBeDefined();
       const files = await target.allModFiles();
-      expect(files.has('sound/sound.bcsar')).toBe(true);
+      expect(files.has('sound/patch.bcsar')).toBe(true);
       expect([...files.keys()].filter((n) => n.startsWith('sound/stream/')).length).toBe(3);
       const saved = target.saved();
       target.revertAll();

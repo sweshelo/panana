@@ -107,10 +107,10 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
     const sounds = await s.sounds();
     expect(sounds.rows).toBe(896);
     expect([2, 3, 4, 676].map((r) => sounds.name(r))).toEqual([
-      'BGM_BATTLE_NORMAL',
-      'BGM_BATTLE_BOSS',
-      'BGM_BATTLE_GOAL',
-      'BGM_BATTLE_HONOLULU',
+      'BGM_BATTLE_2',
+      'BGM_BATTLE_3',
+      'BGM_MAP_E_TOWER',
+      'BGM_MAP_SNOW',
     ]);
   });
 

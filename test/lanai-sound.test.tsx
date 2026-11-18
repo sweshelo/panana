@@ -1,4 +1,4 @@
-// 電波人間のRPG FREE! (lanai): the SoundData rows named from sound/sound.bcsar, the places of the data that name them
+// 電波人間のRPG FREE! (lanai): the SoundData rows named from the active BCSAR, the places of the data that name them
 // (src/lanai/sound.ts) and the BGM / sound effect page. Needs the decrypted Base and Update; skipped when missing.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToString } from 'react-dom/server';
@@ -39,32 +39,36 @@ describe.skipIf(!hasLanai)('RPG FREE! sounds', () => {
     sounds = await s.sounds();
   }, 300000);
 
-  test('SoundData rows are named from sound.bcsar', () => {
+  test('Update SoundData rows are named from patch.bcsar', () => {
     expect(sounds.rows).toBe(s.need('SoundData').rows);
     expect(sounds.named).toBe(true);
     const kinds = new Set(Array.from({ length: sounds.rows - 1 }, (_, i) => sounds.kind(i + 1)));
     expect(kinds.has('bgm')).toBe(true);
     expect(kinds.has('se')).toBe(true);
-    expect([sounds.index(0x6b), sounds.name(0x6b)]).toEqual([188, 'SE_ILD_CHANGE']);
-    expect([sounds.index(0x7a), sounds.name(0x7a)]).toEqual([197, 'SE_BTL_ASSAULT']);
-    expect(sounds.name(0x84)).toBe('ME_DEFEAT');
+    expect([sounds.index(0x6b), sounds.name(0x6b)]).toEqual([188, 'SE_FLD_STEPS1']);
+    expect([sounds.index(0x6e), sounds.name(0x6e)]).toEqual([191, 'SE_FLD_STEPS4']);
+    expect([sounds.index(0x7a), sounds.name(0x7a)]).toEqual([197, 'SE_FLD_DOOR4']);
+    expect(sounds.name(0x84)).toBe('SE_FLD_SURPRISE');
+    expect([sounds.index(450), sounds.name(450)]).toEqual([578, 'SE_BTL_WING_ICE_A']);
+    expect(s.soundArchivePath()).toBe('sound/patch.bcsar');
   });
 
   test('the sound page gives the SE argument as a SoundData row', () => {
     const html = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="122" uses={new Map()} />);
     expect(html).toContain('se(0x7A)');
-    const empty = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="110" uses={new Map()} />);
-    expect(empty).toContain('BCSAR シーケンスは音を出さずに終了します');
-    expect(empty).toContain('BCSAR #');
+    const ice = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="450" uses={new Map()} />);
+    expect(ice).toContain('SE_BTL_WING_ICE_A');
+    expect(ice).toContain('se(0x1C2)');
+    expect(ice).toContain('sound/patch.bcsar');
   });
 
-  test('the five map field IDs are silent archive sequences, while other SE can render', async () => {
+  test('the field footsteps and se(450) render from the Update archive', async () => {
     const renderer = await s.soundRenderer();
     for (let row = 107; row <= 111; row++) {
       const pcm = await renderer.render(sounds.index(row)!, 8, false);
-      expect(() => requireAudible(pcm)).toThrow('無音');
+      expect(() => requireAudible(pcm)).not.toThrow();
     }
-    const audible = await renderer.render(sounds.index(122)!, 8, false);
+    const audible = await renderer.render(sounds.index(450)!, 8, false);
     expect(() => requireAudible(audible)).not.toThrow();
   });
 
