@@ -15,7 +15,7 @@ export interface BgmCandidate {
   /** Sound index in that game's sound.bcsar. */
   index: number;
   name: string;
-  kind: 'bgm' | 'me';
+  kind: 'bgm' | 'me' | 'se';
 }
 
 const SOUND_ITEM = 0x01000000;
@@ -30,7 +30,7 @@ export function rendererOf(o: Opened, key: TitleKey): Promise<SoundRenderer> | n
 
 export const titleName = (key: TitleKey): string => TITLES.find((t) => t.key === key)?.name ?? key;
 
-/** The streams of the other opened games (BGM_* / ME_*), by game. */
+/** Portable BGM/ME streams and SE sounds of the other opened games, by game. */
 export async function bgmCandidates(o: Opened, target: TitleKey = 'kahara'): Promise<BgmCandidate[]> {
   const out: BgmCandidate[] = [];
   for (const key of openedKeys(o)) {
@@ -38,9 +38,15 @@ export async function bgmCandidates(o: Opened, target: TitleKey = 'kahara'): Pro
     const r = await rendererOf(o, key)?.catch(() => null);
     if (!r) continue;
     r.archive.sounds.forEach((s, index) => {
-      if (s.type !== 'stream' || typeof r.archive.file(s.fileId) !== 'string') return;
-      const kind = s.name.startsWith('BGM_') ? 'bgm' : s.name.startsWith('ME_') ? 'me' : null;
-      if (kind) out.push({ title: key, index, name: s.name, kind });
+      const kind = s.name.startsWith('BGM_')
+        ? 'bgm'
+        : s.name.startsWith('ME_')
+          ? 'me'
+          : s.name.startsWith('SE_')
+            ? 'se'
+            : null;
+      if (!kind || (kind !== 'se' && (s.type !== 'stream' || typeof r.archive.file(s.fileId) !== 'string'))) return;
+      out.push({ title: key, index, name: s.name, kind });
     });
   }
   return out;
@@ -70,6 +76,7 @@ export async function portedRows(session: Session): Promise<Map<string, number>>
  * game's. Returns the row (the caller saves the edit).
  */
 export async function portBgm(o: Opened, session: Session, c: BgmCandidate): Promise<number> {
+  if (c.kind === 'se') throw new Error('RPG2 の BGM 欄に効果音は設定できません');
   const r = await rendererOf(o, c.title);
   const dump = openedDump(o, c.title);
   if (!r || !dump) throw new Error(`${titleName(c.title)} を開いていません`);

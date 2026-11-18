@@ -1,11 +1,10 @@
-// The sound picker's "ほかの作品から移植" tab (RPG2): the BGM / ME streams of the other opened games, each playable;
-// picking one ports it into a soundData row after the game's and picks that row (port/bgm.ts). A BGM ported before
-// is reused.
+// The sound picker's "ほかの作品から移植" tab: streams for BGM / ME and rendered SE from the other opened games.
 import { useState, type ReactNode } from 'react';
 import { bgmCandidates, portBgm, portedRows, rendererOf, titleName, type BgmCandidate } from '../port/bgm';
 import { BGM_EXT_SLOTS } from '../game/bgmext';
 import type { Session } from '../session';
 import { soundPlayer, usePlayer } from '../sound/player';
+import { requireAudible } from '../sound/render';
 import { useAsync } from './useAsync';
 import type { Opened } from './workspace';
 import type { LanaiSession } from '../lanai/session';
@@ -27,8 +26,15 @@ function CandidatePlay({ opened, c }: { opened: Opened; c: BgmCandidate }): Reac
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        void soundPlayer.toggle(key, async () =>
-          (await rendererOf(opened, c.title)!).render(c.index, BGM_SECONDS, true),
+        void soundPlayer.toggle(
+          key,
+          async () => {
+            const pcm = await (
+              await rendererOf(opened, c.title)!
+            ).render(c.index, c.kind === 'se' ? 8 : BGM_SECONDS, c.kind !== 'se');
+            return c.kind === 'se' ? requireAudible(pcm) : pcm;
+          },
+          c.kind !== 'se',
         );
       }}
     >
@@ -44,15 +50,17 @@ export function BgmPortTab({
   onPicked,
   target = 'kahara',
   max = 0xffffffff,
+  kind = '',
 }: {
   opened: Opened;
-  /** RPG2's session. */
+  /** The destination session. */
   session: Session | LanaiSession;
   target?: 'kahara' | 'lanai';
   max?: number;
+  kind?: 'bgm' | 'me' | 'se' | 'other' | '';
   /** The picker's filter (name). */
   query: string;
-  /** The soundData row that plays the ported BGM. */
+  /** The soundData row that plays the ported sound. */
   onPicked: (row: number) => void;
 }): ReactNode {
   const list = useAsync(() => bgmCandidates(opened, target), [opened, target]);
@@ -68,7 +76,7 @@ export function BgmPortTab({
   if (!list.length)
     return (
       <div className="muted">
-        ほかの作品を開いていないか、移植できるストリームの曲がありません。上のバーの「ROM」から、ほかの作品の CIA
+        ほかの作品を開いていないか、移植できる音がありません。上のバーの「ROM」から、ほかの作品の CIA
         を追加してください。
       </div>
     );
@@ -93,12 +101,12 @@ export function BgmPortTab({
   };
 
   const q = query.trim().toUpperCase();
-  const shown = list.filter((c) => !q || c.name.includes(q));
+  const shown = list.filter((c) => (kind === 'se' ? c.kind === 'se' : c.kind !== 'se') && (!q || c.name.includes(q)));
   return (
     <>
       <p className="muted small">
         {target === 'lanai'
-          ? '開いているほかの作品の曲を試聴できます。選ぶとこの作品へ追加し、この欄に設定します。移植した曲は変更の保存と MOD 書き出しに含まれます。'
+          ? '開いているほかの作品の音を試聴できます。効果音は音声に変換して移植します。選ぶとこの作品へ追加し、この欄に設定します。移植した音は変更の保存と MOD 書き出しに含まれます。'
           : `開いているほかの作品の BGM・ME (ストリームの曲) です。選ぶと 電波人間のRPG2 の sound.bcsar に入れて soundData に行を足し、この欄に選びます。足した行は BGM の欄で 0x80〜 の値になり、書き出しにコードのパッチ「BGM の追加枠」が入ります (${BGM_EXT_SLOTS} 曲まで)。`}
       </p>
       {busy && <p className="muted small">{`${busy.name} を移植しています…`}</p>}
@@ -125,7 +133,7 @@ export function BgmPortTab({
                     <CandidatePlay opened={opened} c={c} />
                     <span className="sound-cell-text">
                       <span className="mono sound-name">{c.name}</span>
-                      <span className="muted small">{`${c.kind === 'bgm' ? 'BGM' : 'ME (短い曲)'}${row === undefined ? '' : `・移植済み (#${row})`}`}</span>
+                      <span className="muted small">{`${c.kind === 'bgm' ? 'BGM' : c.kind === 'me' ? 'ME (短い曲)' : '効果音'}${row === undefined ? '' : `・移植済み (#${row})`}`}</span>
                     </span>
                   </div>
                 );

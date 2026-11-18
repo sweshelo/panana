@@ -79,6 +79,12 @@ export class SoundRenderer {
   }
 }
 
+/** Reject an empty archive sequence before presenting it as a playable or portable effect. */
+export function requireAudible(pcm: Pcm): Pcm {
+  if (pcm.channels.some((channel) => channel.some((sample) => Math.abs(sample) > 1e-6))) return pcm;
+  throw new Error('BCSAR から描画した音声は無音です。ゲーム内の別経路で鳴る音かは未確認です');
+}
+
 /** A copy scaled by `gain` (the sound's volume). */
 function scale(p: Pcm, gain: number): Pcm {
   if (gain === 1) return p;

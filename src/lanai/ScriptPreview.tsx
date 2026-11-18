@@ -8,6 +8,8 @@ import { LanaiMapView } from './mapview';
 import { runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
+import { soundPlayer } from '../sound/player';
+import { requireAudible } from '../sound/render';
 
 const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `chara(${who.row})` : who.kind);
 const previewCommand = (node: ScriptNode): string => {
@@ -81,6 +83,7 @@ export function ScriptPreviewControls({
 
   const stop = (): void => {
     runId.current++;
+    soundPlayer.stop();
     view.clearPreview();
     setRunning(false);
     setFade(0);
@@ -93,6 +96,7 @@ export function ScriptPreviewControls({
     setLog([]);
     return () => {
       runId.current++;
+      soundPlayer.stop();
       view.clearPreview();
     };
   }, [view, source, functionName]);
@@ -199,6 +203,19 @@ export function ScriptPreviewControls({
             case 'wait':
               await animate(node.seconds, () => {});
               break;
+            case 'se': {
+              const session = view.st.maps.session;
+              const sounds = await session.sounds();
+              const index = sounds.index(node.id);
+              if (index === null) throw new Error(`SoundData 行 ${node.id} に音がありません。`);
+              await soundPlayer.play(
+                `preview:lanai:${index}`,
+                async () => requireAudible(await (await session.soundRenderer()).render(index, 8, false)),
+                false,
+              );
+              if (soundPlayer.state.error) throw new Error(soundPlayer.state.error.message);
+              break;
+            }
             case 'return':
               setStatus('return で終了しました。');
               returned = true;

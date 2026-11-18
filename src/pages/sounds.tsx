@@ -153,9 +153,13 @@ export function SoundView({
   const list = useRef<HTMLDivElement>(null);
   useActiveRow(list, selected);
   const q = query.trim().toUpperCase();
+  const archiveQuery = /^BCSAR:(\d+)$/.exec(q);
   const rows: number[] = [];
   for (let r = 1; r < sounds.rows; r++) {
-    if (q && String(r) !== q && !sounds.name(r).includes(q)) continue;
+    if (
+      archiveQuery ? sounds.index(r) !== Number(archiveQuery[1]) : q && String(r) !== q && !sounds.name(r).includes(q)
+    )
+      continue;
     if (filter === 'used' ? !uses(r) : filter !== 'all' && sounds.kind(r) !== filter) continue;
     rows.push(r);
   }
@@ -165,7 +169,7 @@ export function SoundView({
         <ListFilter
           query={query}
           setQuery={setQuery}
-          placeholder="名前 (BGM_CAVE など) か行番号で検索"
+          placeholder="名前・行番号・BCSAR:188 で検索"
           filter={filter}
           setFilter={setFilter}
           options={[
@@ -184,6 +188,7 @@ export function SoundView({
               <tr>
                 <th />
                 <th>#</th>
+                <th title="sound.bcsar 内の番号。左の # は SoundData の行番号">BCSAR #</th>
                 <th>名前</th>
                 <th>種類</th>
                 <th title={usesTitle}>使用</th>
@@ -196,6 +201,7 @@ export function SoundView({
                     <PlayButton game={game} sounds={sounds} row={r} />
                   </td>
                   <td className="num muted">{r}</td>
+                  <td className="num muted">{sounds.index(r) ?? ''}</td>
                   <td className="mono">{sounds.name(r) || <span className="muted">(名前なし)</span>}</td>
                   <td className="muted">{SOUND_KIND[sounds.kind(r)]}</td>
                   <td className="num muted">{uses(r) || ''}</td>

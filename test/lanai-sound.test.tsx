@@ -15,6 +15,7 @@ import {
 } from '../src/lanai/sound';
 import { LanaiSoundBook } from '../src/lanai/SoundPage';
 import { openImages } from '../src/rom/dump';
+import { requireAudible } from '../src/sound/render';
 import { LANAI_PAGES } from '../src/ui/LanaiShell';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
@@ -44,6 +45,27 @@ describe.skipIf(!hasLanai)('RPG FREE! sounds', () => {
     const kinds = new Set(Array.from({ length: sounds.rows - 1 }, (_, i) => sounds.kind(i + 1)));
     expect(kinds.has('bgm')).toBe(true);
     expect(kinds.has('se')).toBe(true);
+    expect([sounds.index(0x6b), sounds.name(0x6b)]).toEqual([188, 'SE_ILD_CHANGE']);
+    expect([sounds.index(0x7a), sounds.name(0x7a)]).toEqual([197, 'SE_BTL_ASSAULT']);
+    expect(sounds.name(0x84)).toBe('ME_DEFEAT');
+  });
+
+  test('the sound page gives the SE argument as a SoundData row', () => {
+    const html = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="122" uses={new Map()} />);
+    expect(html).toContain('se(0x7A)');
+    const empty = renderToString(<LanaiSoundBook session={s} sounds={sounds} arg="110" uses={new Map()} />);
+    expect(empty).toContain('BCSAR シーケンスは音を出さずに終了します');
+    expect(empty).toContain('BCSAR #');
+  });
+
+  test('the five map field IDs are silent archive sequences, while other SE can render', async () => {
+    const renderer = await s.soundRenderer();
+    for (let row = 107; row <= 111; row++) {
+      const pcm = await renderer.render(sounds.index(row)!, 8, false);
+      expect(() => requireAudible(pcm)).toThrow('無音');
+    }
+    const audible = await renderer.render(sounds.index(122)!, 8, false);
+    expect(() => requireAudible(audible)).not.toThrow();
   });
 
   test('the master’s battle fields name their BGM', () => {

@@ -12,10 +12,9 @@ export function previewProblem(node: ScriptNode): string | null {
     case 'camera':
     case 'fade':
     case 'wait':
+    case 'se':
     case 'return':
       return null;
-    case 'se':
-      return 'se() の番号と音の表の対応は未確認です。音の再生を省略しました。';
     case 'if':
     case 'switch':
       return '条件分岐にはゲーム中の状態が必要です。分岐全体を省略しました。';

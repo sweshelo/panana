@@ -4,20 +4,19 @@ import { runPreviewNodes } from '../src/lanai/previewSequence';
 
 const body = (source: string) => parseStageScript(`function demo() { ${source} }`).functions[0]!.body;
 
-test('preview preserves source order and skips an unverified sound', async () => {
+test('preview preserves source order and runs a sound', async () => {
   const seen: string[] = [];
   await runPreviewNodes(
-    body('move(hero, 250, 0, 250); wait(0.1); se(0x84); turn(hero, 90)'),
+    body('move(hero, 250, 0, 250); wait(0.1); se(0x7A); turn(hero, 90)'),
     () => true,
     async (node) => {
       seen.push(node.op);
     },
-    (node, index, reason) => {
-      seen.push(`skip ${index + 1}: ${node.op}`);
-      expect(reason).toContain('音の再生を省略');
+    () => {
+      throw new Error('音の実行を省略してはいけません');
     },
   );
-  expect(seen).toEqual(['move', 'wait', 'skip 3: se', 'turn']);
+  expect(seen).toEqual(['move', 'wait', 'se', 'turn']);
 });
 
 test('preview cancellation and return prevent later actions', async () => {

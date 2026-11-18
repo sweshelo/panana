@@ -110,4 +110,46 @@ describe.skipIf(!hasLanai)('FREE! custom assets', () => {
       expect((await s.allModFiles()).get('sound/sound.bcsar')).toEqual(files.get('sound/sound.bcsar'));
     },
   );
+
+  test.skipIf(!hasOahuBase || !hasOahuUpdate)(
+    'SE ports render internal sounds and keep same-named source sounds distinct',
+    async () => {
+      const target = await LanaiSession.open(
+        await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as File).name),
+        { fresh: true },
+      );
+      const oahu = await OahuSession.open(
+        await openImages([Bun.file(OAHU_BASE), Bun.file(OAHU_UPDATE)], (f) => (f as File).name),
+      );
+      const opened: Opened = { lanai: target, oahu };
+      const renderer = await oahu.soundRenderer();
+      const effects = (await bgmCandidates(opened, 'lanai')).filter(
+        (c) => c.kind === 'se' && renderer.archive.sounds[c.index]?.type === 'wave',
+      );
+      expect(effects.length).toBeGreaterThan(1);
+      const first = effects[0]!;
+      const second = { ...effects[1]!, name: first.name };
+      const row = await portLanaiBgm(opened, target, first, 65535);
+      expect(await portLanaiBgm(opened, target, first, 65535)).toBe(row);
+      const other = await portLanaiBgm(opened, target, second, 65535);
+      expect(other).not.toBe(row);
+      const sequence = (await bgmCandidates(opened, 'lanai')).find(
+        (c) => c.kind === 'se' && renderer.archive.sounds[c.index]?.type === 'sequence',
+      )!;
+      const sequenceRow = await portLanaiBgm(opened, target, sequence, 65535);
+      const names = await target.sounds();
+      expect(names.kind(row)).toBe('se');
+      expect(names.name(row)).not.toBe(names.name(other));
+      expect(names.kind(sequenceRow)).toBe('se');
+      await expect((await target.soundRenderer()).render(names.index(row)!, 1, false)).resolves.toBeDefined();
+      await expect((await target.soundRenderer()).render(names.index(sequenceRow)!, 1, false)).resolves.toBeDefined();
+      const files = await target.allModFiles();
+      expect(files.has('sound/sound.bcsar')).toBe(true);
+      expect([...files.keys()].filter((n) => n.startsWith('sound/stream/')).length).toBe(3);
+      const saved = target.saved();
+      target.revertAll();
+      await target.restore(saved);
+      expect((await target.sounds()).name(row)).toBe(names.name(row));
+    },
+  );
 });

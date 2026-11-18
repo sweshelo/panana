@@ -11,7 +11,7 @@
 //       case 1: talk(0x61)
 //       case 2: talk(0x62); return
 //     }
-//     if (ask(0x63)) { popup(hero, 11); se(0x84); talk(0x64); STATE = 2 } else { STATE = 1; talk(0x65) }
+//     if (ask(0x63)) { popup(hero, 11); se(0x7A); talk(0x64); STATE = 2 } else { STATE = 1; talk(0x65) }
 //   }
 //   on talk(1, 5) greet        // … of the character of EventObject row 5 of MapGroup 1
 //   on area(1, 1) { say(0x66); disable() }   // the event written in place: entering the range of row 1

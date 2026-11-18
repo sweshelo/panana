@@ -105,7 +105,7 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'fadeOut(秒)', '画面を暗くする。暗いままイベントを終えないこと'),
   w('statement', 'fadeIn(秒)', '画面を明るくする'),
   w('statement', 'follow(0 / 1)', '仲間が先頭についてくるのを止める / 戻す'),
-  w('statement', 'se(音)', '音を鳴らす (SoundData の行)'),
+  w('statement', 'se(音)', 'SoundData の行番号の音を鳴らす (BCSAR の音番号とは別。例: 0x7A = SE_BTL_ASSAULT)'),
   w('statement', 'wait(秒)', '待つ'),
   w('statement', 'addItem(ID, 個数)', 'アイテムを増やす (負の数で減らす)'),
   w('statement', 'getItem(ID, 個数)', 'アイテムを増やし、「手に入れた」の文を出す'),
@@ -167,7 +167,7 @@ on talk(1, 5) {
     case 2: talk(0x62); return
   }
   if (ask(0x63)) {
-    popup(11); se(0x84)
+    popup(11); se(0x7A)
     talk(0x64)
     STATE_A = 2
   } else {
@@ -204,7 +204,7 @@ export const SCRIPT_SAMPLES: ScriptSample[] = [
 function boss_talk() {
   talk(0x10)
   if (ask(0x11)) {
-    popup(self, 11); se(0x84)
+    popup(self, 11); se(0x7A)
     BOSS = 2          // 2 = 戦いを始めた (勝てばそのまま、負ければ reset で 0)
     battle(5)         // 5 = MonsterGroup の行番号 (行 ID ではない)。ここでイベントは終わる
   } else {

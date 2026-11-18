@@ -2,6 +2,7 @@
 // button, filtered by kind (BGM / 効果音 …) and by name or row. The BGM and footsteps of the map editor use it.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SOUND_KIND, type SoundField, type SoundKind, type SoundNames, type SoundSource } from '../game/sound';
+import { requireAudible } from '../sound/render';
 import { soundPlayer, usePlayer } from '../sound/player';
 import { BgmPortTab } from './BgmPort';
 import { Dialog } from './Dialog';
@@ -45,7 +46,10 @@ export function PlayButton({
         const se = sounds.kind(row) === 'se';
         void soundPlayer.toggle(
           key,
-          async () => (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se),
+          async () => {
+            const pcm = await (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se);
+            return se ? requireAudible(pcm) : pcm;
+          },
           !se,
         );
       }}
@@ -187,6 +191,7 @@ export function SoundPicker({
             session={portSession}
             target={portTarget}
             max={max}
+            kind={kind}
             query={query}
             onPicked={(r) => {
               const v = field ? field.value(r) : r <= max ? r : null;

@@ -1,7 +1,7 @@
 // BGM and sound effects of 電波人間のRPG FREE!: the SoundData rows (named from sound/sound.bcsar, as the other games':
 // session.ts sounds()) and the places of the data known to name one (naauao lanai/battle-field.md §5, map.md §7.3):
 // - the master's BattleField +0x08 and the contents' BattleFieldContents +0x08: the BGM of a battle field;
-// - the contents' MapData +0x04 / +0x06 / +0x08: a map's field BGM, the tune before a battle, the encounter sound;
+// - the contents' MapData +0x04 / +0x06 / +0x08: a map's field BGM, the tune before a battle, a field SE slot;
 // - the opening sound of a door: an argument of the door actions of the contents' EventObject rows (actions.ts).
 // The sounds played from the code and from the contents' scripts (CRO) are not listed.
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
