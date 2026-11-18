@@ -13,9 +13,15 @@ export interface PartTemplate {
   category?: string;
   /** Symbol for a runtime effect that has no renderable model thumbnail. */
   iconLabel?: string;
+  /** Explanation kept out of the short name; visible in the picker tooltip. */
+  description?: string;
+  keywords?: string;
+  subtitle?: string;
+  choiceKey?: string;
 }
 export type RecordPartStamp<T> = { type: 'prop'; row: number; dir: number } | { type: 'template'; t: T };
-export const partTemplateKey = (t: PartTemplate): string => `template/${t.section}/${t.source}/${t.raw.join('.')}`;
+export const partTemplateKey = (t: PartTemplate): string =>
+  `template/${t.section}/${t.choiceKey ?? `${t.source}/${t.raw.join('.')}`}`;
 export function templateCategory(section: number): string {
   return (
     (
@@ -94,9 +100,11 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       stamps.set(key, { type: 'prop', row: prop, dir });
       choices.push({
         key,
-        name: `装飾・動作なし #${prop}`,
+        name: `置物 #${prop}`,
         category: '装飾',
-        sub: used.has(prop) ? '装飾・動作なし / 使用中' : '装飾・動作なし',
+        sub: used.has(prop) ? '使用中' : '動作なし',
+        tooltip: `置物 #${prop}\nゲーム中の動作はありません。${used.has(prop) ? '\nこのステージで使用中。' : ''}`,
+        keywords: `装飾 MapObject ${prop}`,
         icon: (
           <span className="part-decorative-photo">
             {photo(modelForProp(prop))}
@@ -112,19 +120,32 @@ export function RecordPartPanel<T extends PartTemplate, M>({
         key,
         name: template.label,
         category: template.category ?? templateCategory(template.section),
-        sub: `${template.source}${template.iconLabel ? ' / エフェクト（図示）' : modelForTemplate(template) ? '' : ' / 見た目未設定'}`,
-        title: template.category ? template.label : `${template.source} の設定を引き継ぎます`,
+        sub: template.subtitle ?? template.description?.split('。')[0] ?? template.source,
+        tooltip: [
+          template.label,
+          template.description,
+          `出典: ${template.source}`,
+          template.iconLabel ? 'エフェクトの図示です。' : modelForTemplate(template) ? '' : '見た目は未設定です。',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        keywords: `${template.source} ${template.description ?? ''} ${template.keywords ?? ''}`,
         icon: templateIcon(template),
       });
     }
     const order = [
+      '新規・設定付き',
+      '出入口・移動',
       '扉・移動',
       'スイッチ',
       '宝箱・ゴール',
+      '回復',
+      '装置・その他',
       '人物・敵',
       'メッセージ・店',
       '範囲イベント',
       '床のギミック',
+      '地点',
       '既存ギミック',
       '装飾',
       '宝箱',
@@ -146,10 +167,17 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       <PartSelection
         label={
           selected?.type === 'prop'
-            ? `装飾・動作なし #${selected.row}`
+            ? `置物 #${selected.row}`
             : selected?.type === 'template'
               ? selected.t.label
               : 'パーツを選ぶ…'
+        }
+        description={
+          selected?.type === 'template'
+            ? selected.t.description
+            : selected?.type === 'prop'
+              ? 'ゲーム中の動作はありません。'
+              : undefined
         }
         icon={selected?.type === 'template' ? templateIcon(selected.t) : model ? photo(model) : undefined}
         help={help}

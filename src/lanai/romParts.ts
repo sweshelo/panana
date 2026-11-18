@@ -1,6 +1,6 @@
 // Every kind of record the ROM's stages place, as parts for any map (the add panel's "ROM のギミック"): one sample of
-// each section / kind / first action over the maps of all the ROM's contents (127 contents, 123 combinations in the
-// Update v17408). The copy is a record as the sample's and a new EventObject row like its own, with what names the
+// each section / kind / first action and, for exits, each 3D look over the maps of all the ROM's contents.
+// The copy is a record as the sample's and a new EventObject row like its own, with what names the
 // sample's content left out (mapedit.ts lanaiRomTemplate): its destination, its lines (copied as new lines of the
 // group), its rows of other tables. Left out of the catalog: the script (0x2D, the sample's CRO does what it does),
 // the chests (their contents are rows of the content: eventParts.ts makes them) and the world map's records.
@@ -27,6 +27,8 @@ export interface LanaiRomPart {
   kind: number;
   /** The first action of its EventObject row (-1: the record has none). */
   action: number;
+  /** EventObject +0x5A: a distinct 3D appearance for an exit (0 uses the kind's default). */
+  look: number;
   /** The sample's record (its EventObject row is the sample's: replaced when placed). */
   raw: Uint8Array;
   /** The sample's EventObject row (100 bytes), or null. */
@@ -40,8 +42,8 @@ export interface LanaiRomPart {
   source: string;
 }
 
-export const romPartKey = (section: number, kind: number, action: number): string =>
-  `${section}/${kind}/${action >>> 0}`;
+export const romPartKey = (section: number, kind: number, action: number, look?: number): string =>
+  `${section}/${kind}/${action >>> 0}${look === undefined ? '' : `/${look}`}`;
 
 /** The kind a record is told by in its section (the exit kind of section 3, the floor's of 1, else +0x00). */
 export const lanaiRecKind = (section: number, raw: Uint8Array): number =>
@@ -85,7 +87,9 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
           // a script is the sample's CRO; 0x0D moves to a world map's entrance, which the destination picker does not list
           if (action === LANAI_ACTION_SCRIPT || action === LANAI_ACTION_TO_WORLD) continue;
           const kind = lanaiRecKind(section, r.raw);
-          const key = romPartKey(section, kind, action);
+          const look = has ? events!.u16(ev, EO_LOOK) : 0;
+          // An exit's model changes with its EventObject look. Keep each appearance selectable.
+          const key = romPartKey(section, kind, action, section === 3 ? look : undefined);
           const seen = out.get(key);
           if (seen) {
             seen.count++;
@@ -102,13 +106,13 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
                 lines.push({ stage, arg, text, speaker: talk.u8(v, TALK_SPEAKER) });
               }
             });
-          const look = has ? events!.u16(ev, EO_LOOK) : 0;
           const charaKind = section === 5 && kind <= 2 && look ? lanaiCharaKind(mapChara, look) : -1;
           const model = charaKind >= 0 ? lanaiCharaObject(mapChara, look) : 0;
           out.set(key, {
             section,
             kind,
             action,
+            look,
             raw: r.raw.slice(),
             event: has ? events!.row(ev).slice(0, LANAI_EVENT_ROW) : null,
             lines,

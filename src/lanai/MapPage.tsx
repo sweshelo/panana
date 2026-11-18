@@ -769,7 +769,8 @@ function ChestPlacement({
           onClick={() =>
             onReady({
               ...template,
-              label: `${template.label} · ${first.length > 1 ? `${first.length} 候補から抽選` : first[0]!.kind === 'gold' ? `${first[0]!.value}G` : lanaiItemName(st.maps.session, first[0]!.value)}`,
+              description:
+                `${template.description ?? ''} ${first.length > 1 ? `${first.length} 候補から抽選` : first[0]!.kind === 'gold' ? `${first[0]!.value}G` : lanaiItemName(st.maps.session, first[0]!.value)}`.trim(),
               event: {
                 ...template.event!,
                 rewards: goal ? [slots(first), slots(retry), slots(retry)] : [slots(first)],
@@ -866,7 +867,9 @@ function SwitchPlacement({
           onClick={() =>
             onReady({
               ...template,
-              label: door ? `${template.label} → 扉 #${door}` : template.label,
+              description: door
+                ? `${template.description ?? ''} 扉 #${door} を開きます。`.trim()
+                : template.description,
               event: { ...template.event!, buttonDoor: door || undefined },
             })
           }
@@ -937,7 +940,7 @@ function ExitPlacement({
             raw[0x14] = LANAI_ROT_CODEC.encode(direction);
             onReady({
               ...template,
-              label: `${template.label} → ${st.maps.map(map)?.name ?? ''}`,
+              description: connectNow ? `行き先: ${st.maps.map(map)?.name ?? ''}。` : '行き先は配置後に設定します。',
               raw,
               event: { ...template.event!, destination: connectNow ? { map, point } : { map: 0, point: 0 } },
             });
@@ -1004,7 +1007,7 @@ function TalkPlacement({
           onClick={() =>
             onReady({
               ...template,
-              label: `${template.label} · 「${text.trim().split('\n')[0]!.slice(0, 16)}」`,
+              description: `${template.description ?? ''} 台詞: ${text.trim().split('\n')[0]!}`.trim(),
               event: { ...template.event!, talk: { ...template.event!.talk!, text } },
             })
           }
@@ -1056,7 +1059,7 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
         directions={FACING_LABELS}
         modelForProp={(row) => ({ type: 'object' as const, row })}
         modelForTemplate={(t) => t.model ?? view.partLook(t.section, t.raw)?.model ?? null}
-        help="目的からパーツを選び、マップをクリックして配置します。通常・クリア宝箱は独立した中身の表を作ります。配置後に報酬、移動先、スクリプトの接続を設定してください。「既存ギミック」はこのステージにあるものの複製、「ROM の全種類」は本編のステージにある種類を 1 つずつ写したもの (行き先・台詞・ほかの表の行は置いてから設定) です。装飾はゲーム中の動作を持ちません。Esc で選択に戻ります。"
+        help="パーツを選んでマップをクリックすると配置できます。ROM 由来のパーツは種類ごとに分類し、3D 外観が違うものは別の候補にしました。新規・設定付きは配置時に行き先や台詞などを設定できます。既存ギミックはこのステージから設定を複製します。装飾にはゲーム中の動作がありません。Esc で選択に戻ります。"
         prepareTemplate={(template, choose) => {
           if (template.event?.chest) setChest({ template, choose });
           else if (template.event?.switchTrigger) setSwitchPart({ template, choose });

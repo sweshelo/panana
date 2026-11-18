@@ -1372,6 +1372,17 @@ details.fold[open] > summary {
 .monster-cell.current {
   background: #2d4a7a;
 }
+.part-choice > span:not(.photo):not(.part-decorative-photo) {
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+.part-choice > .small {
+  -webkit-line-clamp: 1 !important;
+}
 .monster-grid.wide {
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }

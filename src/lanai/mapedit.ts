@@ -51,6 +51,7 @@ import {
   LANAI_REPAIR_POINT,
   lanaiDoorOffset,
   lanaiObjectRef,
+  lanaiExitDefaultRow,
   lanaiRecordLook,
   type LanaiRecordModel,
 } from './mapObjects';
@@ -66,9 +67,6 @@ const WALL_DOOR = 100;
 
 /** The add panel's category of the records copied from the stage's own maps. */
 export const LANAI_EXISTING_CATEGORY = '既存ギミック';
-/** The add panel's category of the records of every kind the ROM's stages have (romParts.ts). */
-export const LANAI_ROM_CATEGORY = 'ROM の全種類';
-
 /** A record of the group's maps to copy (it keeps its EventObject row). */
 export interface LanaiTemplate {
   section: number;
@@ -83,6 +81,10 @@ export interface LanaiTemplate {
   /** The add panel's category in place of the section's. */
   category?: string;
   iconLabel?: string;
+  description?: string;
+  keywords?: string;
+  subtitle?: string;
+  choiceKey?: string;
 }
 
 export type LanaiStamp =
@@ -90,7 +92,7 @@ export type LanaiStamp =
   { type: 'prop'; row: number; dir: number } | { type: 'template'; t: LanaiTemplate };
 
 export function lanaiStampLabel(s: LanaiStamp): string {
-  return s.type === 'prop' ? `置物 (MapObject #${s.row})` : `${s.t.label} (${s.t.source} から)`;
+  return s.type === 'prop' ? `置物 #${s.row}` : s.t.label;
 }
 
 /** EventObject row of a record (sections 3 / 4 / 5 / 8), 0 for the others. */
@@ -116,27 +118,48 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
     case 2:
       return `置物 #${u32(raw, 0)}`;
     case 3:
-      return lanaiExitLabel(lanaiExitKind(raw));
+      return lanaiExitLabel(lanaiExitKind(raw)).replace(/^種類 (\d+)$/u, '出入口 #$1');
     case 4:
-      return u32(raw, 0) === LANAI_GOAL_CHEST
-        ? 'ゴールの宝箱 (見た目 3、開けるとクリア)'
-        : `宝箱 (見た目 ${u32(raw, 0)})`;
+      return u32(raw, 0) === LANAI_GOAL_CHEST ? 'クリア宝箱' : '宝箱';
     case 5:
-      return [4, 5, 6].includes(u32(raw, 0))
-        ? 'スイッチ（動作はスクリプト割当による）'
-        : u32(raw, 0) === LANAI_SIGN_KIND
-          ? '看板'
-          : u32(raw, 0) === LANAI_REPAIR_POINT
-            ? '回復ポイント (種類 13)'
-            : u32(raw, 0) === LANAI_REPAIR_FIELD
-              ? '回復の場 (種類 12)'
-              : `キャラ・オブジェクト 種類 ${u32(raw, 0)}`;
+      return u32(raw, 0) === 0
+        ? 'NPC'
+        : u32(raw, 0) === 1
+          ? 'モンスター'
+          : u32(raw, 0) === 2
+            ? '電波人間'
+            : [4, 5, 6].includes(u32(raw, 0))
+              ? 'スイッチ'
+              : u32(raw, 0) === LANAI_SIGN_KIND
+                ? '看板'
+                : u32(raw, 0) === LANAI_REPAIR_POINT
+                  ? '回復ポイント'
+                  : u32(raw, 0) === LANAI_REPAIR_FIELD
+                    ? '回復の場'
+                    : `装置 #${u32(raw, 0)}`;
     case 8:
-      return u32(raw, 0) >= 100 ? `範囲の置物 ${u32(raw, 0)}` : `イベントの範囲 ${u32(raw, 0)}`;
+      return u32(raw, 0) >= 100 ? `範囲の置物 #${u32(raw, 0)}` : `イベント範囲 #${u32(raw, 0)}`;
     case 9:
       return `地点 ${u32(raw, 0)}`;
   }
   return `区画 ${section}`;
+}
+
+/** A ROM entry is grouped by what the placed record does, while its exact kind stays searchable. */
+export function lanaiRomPartCategory(section: number, kind: number, action: number): string {
+  if (section === 3) return '出入口・移動';
+  if (section === 1) return '床のギミック';
+  if (section === 8) return '範囲イベント';
+  if (section === 9) return '地点';
+  if (section === 5) {
+    if (kind === 0 && [0x80000001, 0x80000002, 0x80000003, 0x80000032].includes(action)) return 'メッセージ・店';
+    if (kind <= 2) return '人物・敵';
+    if ([4, 5, 6].includes(kind)) return 'スイッチ';
+    if (kind === LANAI_SIGN_KIND) return 'メッセージ・店';
+    if ([3, LANAI_REPAIR_FIELD, LANAI_REPAIR_POINT].includes(kind)) return '回復';
+    return '装置・その他';
+  }
+  return 'その他';
 }
 
 /** The turn (0..3) of a facing byte; a byte that is none of the masks reads as 0. */
@@ -468,7 +491,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           const label =
             k === 3 && kind === LANAI_DOOR_KIND
               ? action === 0x80000017
-                ? '通路をふさぐ扉（外から開く）'
+                ? '通路をふさぐ扉'
                 : action === 0x80000015
                   ? '触れると開く扉'
                   : action === 0x80000016
@@ -477,13 +500,13 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
                       ? '外から開くと移動できる扉'
                       : action === 0x8000002d
                         ? 'スクリプト付きの扉'
-                        : '扉（既存の動作を複製）'
+                        : '扉'
               : k === 3 && kind === 4 && action === 0x80000012
                 ? 'ワープゲート'
                 : k === 3 && kind === 2 && action === 0x80000014
                   ? 'ワープホール'
                   : k === 5 && [4, 5, 6].includes(kind)
-                    ? '既存のスイッチ（元マップの動作を複製）'
+                    ? 'スイッチ'
                     : k === 4
                       ? goal
                         ? 'クリア宝箱'
@@ -494,6 +517,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
             raw: r.raw.slice(),
             label,
             source: m.name,
+            description: `このステージの ${m.name} から動作と設定を複製します。${action >= 0 && LANAI_ACTIONS[action] ? `動作: ${LANAI_ACTIONS[action]!.name}。` : ''}`,
             // what the stage already has, in one category (the parts made from nothing have the categories by purpose)
             category: LANAI_EXISTING_CATEGORY,
           });
@@ -502,7 +526,14 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     const fresh = table
       ? lanaiEventParts(this.maps.session.table('MapObject'), this.maps.contentTable('MapChara'), this.partDefaults())
       : [];
-    return [...fresh, ...lanaiFloorParts(), ...out.values()];
+    return [
+      ...fresh.map((part) => ({
+        ...part,
+        category: ['スイッチ', '宝箱・ゴール'].includes(part.category) ? part.category : '新規・設定付き',
+      })),
+      ...lanaiFloorParts().map((part) => ({ ...part, category: '新規・設定付き' })),
+      ...out.values(),
+    ];
   }
 
   /**
@@ -515,7 +546,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     const content = this.maps.content.index;
     const hasEvents = !!this.maps.eventTable(this.info.dungeon);
     const out: LanaiTemplate[] = [];
-    for (const p of [...parts].sort((a, b) => a.section - b.section || a.kind - b.kind || a.action - b.action)) {
+    for (const p of [...parts].sort(
+      (a, b) => a.section - b.section || a.kind - b.kind || a.action - b.action || a.look - b.look,
+    )) {
       const raw = p.raw.slice();
       // the sample's row number means nothing here: the new row is given when placed
       if ((LANAI_EVENT_SECTIONS as readonly number[]).includes(p.section)) w32(raw, EVENT_FIELD, 0);
@@ -527,6 +560,18 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           ? '動作なし'
           : (LANAI_ACTIONS[action]?.name ?? `動作 0x${(action & 0xff).toString(16).toUpperCase()}`)
         : 'イベントなし';
+      const recordName = lanaiRecLabel(p.section, raw);
+      const generic = /^出入口 #\d+$|^装置 #\d+$/u.test(recordName);
+      const name = generic && from && action !== LANAI_ACTION_NONE ? what.split(/[（(]/u)[0]!.trim() : recordName;
+      const appearance = p.section === 3 ? p.look || lanaiExitDefaultRow(p.kind) : 0;
+      const description = [
+        what !== name && what !== 'イベントなし' ? `動作: ${what}。` : '',
+        `区画 ${p.section}、種類 ${p.kind}。`,
+        appearance ? `外観: MapObject #${appearance}。` : '',
+        from ? '元ステージ固有の参照は配置先で設定してください。' : '',
+      ]
+        .filter(Boolean)
+        .join('');
       const look = from ? new DataView(from.buffer).getUint16(0x5a, true) : 0;
       const lookKind = lanaiLookKind(p.section, raw);
       let model: LanaiRecordModel | null | undefined;
@@ -554,9 +599,17 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       out.push({
         section: p.section,
         raw,
-        label: `${lanaiRecLabel(p.section, raw)}（${what}）`,
+        label: name,
+        description,
+        subtitle: appearance
+          ? `外観 #${appearance}${what !== name && what !== 'イベントなし' ? ` · ${what}` : ''}`
+          : what === name
+            ? `種類 ${p.kind}`
+            : what,
+        keywords: `区画 ${p.section} 種類 ${p.kind} ${what}`,
+        choiceKey: `rom/${p.section}/${p.kind}/${p.action}/${p.look}`,
         source: `ROM ${p.source}、${p.count} 件`,
-        category: LANAI_ROM_CATEGORY,
+        category: lanaiRomPartCategory(p.section, p.kind, action),
         ...(event ? { event } : {}),
         ...(model !== undefined ? { model } : {}),
       });

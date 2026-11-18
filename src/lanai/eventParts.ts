@@ -34,6 +34,7 @@ import {
   LANAI_REPAIR_POINT,
   lanaiCharaKind,
   lanaiCharaObject,
+  lanaiExitDefaultRow,
   lanaiObjectRef,
   type LanaiRecordModel,
 } from './mapObjects';
@@ -100,6 +101,7 @@ export interface LanaiEventPart {
   model: LanaiRecordModel | null;
   category: string;
   iconLabel?: string;
+  description?: string;
 }
 
 /** A new record that has no EventObject row (a floor gimmick). */
@@ -111,6 +113,7 @@ export interface LanaiPlainPart {
   category: string;
   /** The model the game places for it (the add panel's thumbnail). */
   model: LanaiRecordModel | null;
+  description?: string;
 }
 
 /** The sign: section 5 kind 11 with the action 0x2F, whose 9 records of the ROM all look like MapObject #223. */
@@ -141,7 +144,8 @@ export function lanaiFloorParts(): LanaiPlainPart[] {
     {
       section: 1,
       raw: floor(LANAI_FLOOR_POISON),
-      label: '毒床（上を歩くとダメージ）',
+      label: '毒床',
+      description: '上を歩くとダメージを受けます。',
       source: '新規毒床',
       category: '床のギミック',
       model: { type: 'object', row: LANAI_FLOOR_ROWS[LANAI_FLOOR_POISON]! },
@@ -149,7 +153,8 @@ export function lanaiFloorParts(): LanaiPlainPart[] {
     {
       section: 1,
       raw: floor(LANAI_FLOOR_ICE),
-      label: '凍った床（すべる）',
+      label: '凍った床',
+      description: '上を歩くとすべります。',
       source: '新規凍った床',
       category: '床のギミック',
       model: { type: 'object', row: LANAI_FLOOR_ROWS[LANAI_FLOOR_ICE]! },
@@ -223,8 +228,6 @@ export interface LanaiEventPartDefaults {
 
 /** The blue switch model #75 was checked in Azahar; the other commonly used rows have not been checked as buttons. */
 const VERIFIED_SWITCH_LOOK = 75;
-/** The warp hole model identified in the game by the user. */
-const VERIFIED_WARP_LOOK = 104;
 
 /** Purpose-based parts that can be made without copying a record. */
 export function lanaiEventParts(
@@ -235,15 +238,15 @@ export function lanaiEventParts(
   const out: LanaiEventPart[] = [];
   const part = (p: LanaiEventPart): void => void out.push(p);
   const switchLook = lanaiObjectRef(mapObject, VERIFIED_SWITCH_LOOK) ? VERIFIED_SWITCH_LOOK : 0;
-  const warpLook = lanaiObjectRef(mapObject, VERIFIED_WARP_LOOK) ? VERIFIED_WARP_LOOK : 0;
-  for (const [trigger, label, source] of [
-    ['switch', '保持スイッチ（一度踏むと押したまま）', '新規保持スイッチ'],
-    ['button', 'プッシュスイッチ（離れると戻る）', '新規プッシュスイッチ'],
+  for (const [trigger, label, source, description] of [
+    ['switch', '保持スイッチ', '新規保持スイッチ', '一度踏むと押したままになります。'],
+    ['button', 'プッシュスイッチ', '新規プッシュスイッチ', '離れると元に戻ります。'],
   ] as const)
     part({
       section: 5,
       raw: record(5, 4),
       label,
+      description,
       source,
       category: 'スイッチ',
       event: { action: LANAI_ACTION_SCRIPT, look: switchLook, switchTrigger: trigger },
@@ -257,7 +260,8 @@ export function lanaiEventParts(
     part({
       section: 5,
       raw: record(5, kind),
-      label: `${monster ? 'モンスター' : 'NPC'} (話しかけるとスクリプト。見た目は置いてから選ぶ)`,
+      label: monster ? 'モンスター' : 'NPC',
+      description: '話しかけるとスクリプトを実行します。見た目は配置後に選べます。',
       source: `新規キャラ ${kind}`,
       category: '人物・敵',
       event: { action: LANAI_ACTION_SCRIPT, look: row, chara: row ? undefined : { kind, model } },
@@ -267,7 +271,8 @@ export function lanaiEventParts(
   part({
     section: 3,
     raw: record(3, LANAI_DOOR_KIND),
-    label: '通路をふさぐ扉（スクリプトから開く）',
+    label: '通路をふさぐ扉',
+    description: 'スクリプトから開く扉です。',
     source: '新規扉',
     category: '扉・移動',
     event: { action: LANAI_ACTION_EXTERNAL_DOOR, look: lanaiObjectRef(mapObject, 53) ? 53 : 0 },
@@ -280,24 +285,26 @@ export function lanaiEventParts(
     [5, '上り階段', 0x80000013, '新規上り階段'],
     [6, '下り階段', 0x80000013, '新規下り階段'],
   ] as const) {
+    const defaultLook = kind === 4 || kind === 2 ? lanaiExitDefaultRow(kind) : 0;
+    const warpModel = defaultLook && lanaiObjectRef(mapObject, defaultLook) ? defaultLook : 0;
     part({
       section: 3,
       raw: record(3, kind),
       label,
+      description: '行き先は配置時か配置後に指定できます。',
       source,
       category: '扉・移動',
       event: {
         action,
-        look: kind === 4 || kind === 2 ? warpLook : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
+        look: kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53) ? 53 : 0,
         destination: { map: 0, point: 0 },
       },
-      model:
-        (kind === 4 || kind === 2) && warpLook
-          ? { type: 'object', row: warpLook }
-          : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53)
-            ? { type: 'object', row: 53 }
-            : null,
-      iconLabel: (kind === 4 || kind === 2) && !warpLook ? '◉' : undefined,
+      model: warpModel
+        ? { type: 'object', row: warpModel }
+        : kind === LANAI_DOOR_KIND && lanaiObjectRef(mapObject, 53)
+          ? { type: 'object', row: 53 }
+          : null,
+      iconLabel: (kind === 4 || kind === 2) && !warpModel ? '◉' : undefined,
     });
   }
   // lines said from the data (no script): a sign, an NPC with one line, a clerk who opens the content's shop
@@ -305,7 +312,8 @@ export function lanaiEventParts(
   part({
     section: 5,
     raw: record(5, LANAI_SIGN_KIND),
-    label: '看板（調べるとメッセージ）',
+    label: '看板',
+    description: '調べるとメッセージを表示します。',
     source: '新規看板',
     category: 'メッセージ・店',
     event: { action: LANAI_ACTION_SIGN, look: signLook, talk: { text: '', speaker: LANAI_SPEAKER_NONE } },
@@ -319,7 +327,8 @@ export function lanaiEventParts(
         part({
           section: 5,
           raw: record(5, LANAI_CHARA_NPC),
-          label: shop ? '店の人（話しかけるとショップ）' : '話す NPC（話しかけるとメッセージ）',
+          label: shop ? '店の人' : '話す NPC',
+          description: shop ? '話しかけるとショップを開きます。' : '話しかけるとメッセージを表示します。',
           source: shop ? '新規店の人' : '新規話す NPC',
           category: 'メッセージ・店',
           event: {
@@ -337,7 +346,8 @@ export function lanaiEventParts(
     part({
       section: 4,
       raw,
-      label: goal ? 'クリア宝箱（初回・再挑戦の報酬を設定）' : '通常の宝箱（報酬を設定）',
+      label: goal ? 'クリア宝箱' : '通常の宝箱',
+      description: goal ? '初回と再挑戦の報酬を配置時に設定します。' : '報酬を配置時に設定します。',
       source: goal ? '新規クリア宝箱' : '新規宝箱',
       category: '宝箱・ゴール',
       event: { action: goal ? LANAI_ACTION_GOAL_CHEST : 0x8000000e, look: 0, chest: goal ? 'goal' : 'normal' },
@@ -347,7 +357,8 @@ export function lanaiEventParts(
   part({
     section: 8,
     raw: lanaiRangeRecord('rect'),
-    label: 'イベントの範囲 (矩形、入るとスクリプト)',
+    label: 'イベントの範囲・矩形',
+    description: '矩形の範囲に入るとスクリプトを実行します。',
     source: '新規範囲 矩形',
     category: '範囲イベント',
     event: { action: LANAI_ACTION_SCRIPT, look: 0 },
@@ -356,7 +367,8 @@ export function lanaiEventParts(
   part({
     section: 8,
     raw: lanaiRangeRecord('circle'),
-    label: 'イベントの範囲 (円、入るとスクリプト)',
+    label: 'イベントの範囲・円',
+    description: '円の範囲に入るとスクリプトを実行します。',
     source: '新規範囲 円',
     category: '範囲イベント',
     event: { action: LANAI_ACTION_SCRIPT, look: 1 },

@@ -133,6 +133,16 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const info = maps.mapByName('D01001B01')!;
     const st = lanaiEditState(maps);
     st.open(info);
+    expect(st.templates().find((t) => t.source === '新規ワープゲート')).toMatchObject({
+      label: 'ワープゲート',
+      model: { type: 'object', row: 44 },
+      event: { look: 0 },
+    });
+    expect(st.templates().find((t) => t.source === '新規ワープホール')).toMatchObject({
+      label: 'ワープホール',
+      model: { type: 'object', row: 105 },
+      event: { look: 0 },
+    });
     const ctl = new Controller(st);
     const doc = st.current!;
     const i = doc.tiles.findIndex((t) => t.kind === 5);
@@ -342,6 +352,18 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
 
   test('the ROM’s kinds are parts of any map: a pit, a recovery point and a sign placed with rows of their own', async () => {
     const parts = await lanaiRomParts(s);
+    expect(
+      parts
+        .filter((p) => p.section === 3 && p.kind === 2 && p.action === 0x80000014)
+        .map((p) => p.look)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 107]);
+    expect(
+      parts
+        .filter((p) => p.section === 3 && p.kind === 4 && p.action === 0x80000012)
+        .map((p) => p.look)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 735]);
     const key = (p: { section: number; kind: number; action: number }): string =>
       romPartKey(p.section, p.kind, p.action);
     const keys = new Set(parts.map(key));
@@ -362,6 +384,11 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const talk = maps.talkTable(info.dungeon)!;
     const [eventRows, talkRows] = [events.rows, talk.rows];
     const templates = st.romTemplates(parts);
+    expect(
+      templates
+        .filter((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.action === 0x80000012)
+        .map((t) => t.subtitle),
+    ).toEqual(['外観 #44', '外観 #735']);
     const of = (section: number, kind: number, action: number) =>
       templates.find(
         (t) => t.section === section && lanaiRecKind(section, t.raw) === kind && t.event?.action === action >>> 0,

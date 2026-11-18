@@ -2,6 +2,7 @@
 // MonsterPicker and ItemPicker fill it from RPG2's books; RPG3's books fill it from their own tables.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Dialog } from './Dialog';
+import { useInfoTooltipId } from './InfoTip';
 
 export interface GridEntry {
   id: number;
@@ -10,6 +11,8 @@ export interface GridEntry {
   icon: ReactNode;
   sub?: string;
   title?: string;
+  /** Full name and explanation, shown on hover or keyboard focus inside the dialog. */
+  tooltip?: string;
   /** Why the entry cannot be picked (greyed out); null or undefined when it can. */
   unavailable?: string | null;
   /** Matched by the category filter. */
@@ -35,6 +38,34 @@ export interface PickerChoice {
   keywords?: string;
 }
 
+function GridCell({
+  entry: e,
+  current,
+  onPick,
+  className = '',
+}: {
+  entry: GridEntry;
+  current?: number;
+  onPick: (id: number) => void;
+  className?: string;
+}): ReactNode {
+  const tooltipId = useInfoTooltipId();
+  return (
+    <button
+      className={`monster-cell${className ? ` ${className}` : ''}${e.unavailable ? ' sold' : ''}${e.id === current ? ' current' : ''}`}
+      disabled={!!e.unavailable}
+      title={e.tooltip ? undefined : (e.unavailable ?? e.title)}
+      data-tooltip-id={e.tooltip ? tooltipId : undefined}
+      data-tooltip-content={e.tooltip}
+      onClick={() => onPick(e.id)}
+    >
+      {e.icon}
+      <span>{e.name}</span>
+      {e.sub && <span className="muted small">{e.sub}</span>}
+    </button>
+  );
+}
+
 /**
  * Every entry as a picture with its name. `sections` come first, each under its heading, then every entry (under
  * "すべて" when there are sections or choices); `current` is highlighted and scrolled into view.
@@ -51,6 +82,7 @@ export function GridPicker({
   placeholder = '名前か番号で絞り込み',
   controls,
   wide = false,
+  cellClassName,
   onPick,
   onClose,
 }: {
@@ -69,6 +101,7 @@ export function GridPicker({
   placeholder?: string;
   /** Wider cells for entries with several lines of text (`sub` keeps its line breaks). */
   wide?: boolean;
+  cellClassName?: string;
   onPick: (id: number) => void;
   onClose: () => void;
 }): ReactNode {
@@ -83,19 +116,6 @@ export function GridPicker({
   const match = (e: GridEntry): boolean =>
     (!c || e.category === c) && (!q || e.name.includes(q) || String(e.id) === q || !!e.keywords?.includes(q));
   const byId = new Map(entries.map((e) => [e.id, e]));
-  const cell = (e: GridEntry, key: string): ReactNode => (
-    <button
-      key={key}
-      className={`monster-cell${e.unavailable ? ' sold' : ''}${e.id === current ? ' current' : ''}`}
-      disabled={!!e.unavailable}
-      title={e.unavailable ?? e.title}
-      onClick={() => onPick(e.id)}
-    >
-      {e.icon}
-      <span>{e.name}</span>
-      {e.sub && <span className="muted small">{e.sub}</span>}
-    </button>
-  );
   const shown = [
     ...sections.map((s) => ({
       label: s.label,
@@ -161,7 +181,11 @@ export function GridPicker({
             {s.label && (
               <h4 className={'picker-heading' + (groupByCategory ? ' picker-category-heading' : '')}>{s.label}</h4>
             )}
-            <div className={`monster-grid${wide ? ' wide' : ''}`}>{s.list.map((e) => cell(e, `${i}:${e.id}`))}</div>
+            <div className={`monster-grid${wide ? ' wide' : ''}`}>
+              {s.list.map((e) => (
+                <GridCell key={`${i}:${e.id}`} entry={e} current={current} onPick={onPick} className={cellClassName} />
+              ))}
+            </div>
           </section>
         ))}
         {!shown.length && !shownChoices.length && <div className="muted">見つかりません</div>}

@@ -288,7 +288,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     expect(copied.every((t) => t.category === LANAI_EXISTING_CATEGORY)).toBe(true);
     // no badge in place of the model: the picker draws the 3D model of the look
     expect(all.filter((t) => t.section === 3 && [2, 4].includes(t.raw[0x15]!)).every((t) => !t.iconLabel)).toBe(true);
-    expect(all.find((t) => t.source === '新規毒床')?.category).toBe('床のギミック');
+    expect(all.find((t) => t.source === '新規毒床')?.category).toBe('新規・設定付き');
   });
 
   test('a sign, a talking NPC and a clerk add a line to the talk table; undo and redo keep it', () => {

@@ -8,6 +8,9 @@ export const INFO_TOOLTIP = 'info-tip';
 /** Id of the tooltip the InfoTips below show in (a Dialog gives its own). */
 const TooltipId = createContext(INFO_TOOLTIP);
 
+/** The tooltip belonging to the current dialog (or the page when outside a dialog). */
+export const useInfoTooltipId = (): string => useContext(TooltipId);
+
 export function InfoTip({ text }: { text: string }): ReactNode {
   const id = useContext(TooltipId);
   return (
