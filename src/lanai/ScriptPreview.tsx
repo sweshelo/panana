@@ -1,14 +1,47 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { LanaiContent } from './contents';
-import { parseStageScript, type ScriptWho } from './eventScript';
+import { parseStageScript, type ScriptNode, type ScriptWho } from './eventScript';
 import { LanaiEditState } from './mapedit';
 import type { LanaiMapInfo } from './maps';
 import { LanaiMapView } from './mapview';
-import { previewProblem, runPreviewNodes } from './previewSequence';
+import { runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
 
 const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `chara(${who.row})` : who.kind);
+const previewCommand = (node: ScriptNode): string => {
+  switch (node.op) {
+    case 'anim':
+      return `anim(${whoText(node.who)}, 0x${node.id.toString(16)}, ${node.type})`;
+    case 'waitAnim':
+      return `waitAnim(${whoText(node.who)})`;
+    case 'move':
+      return `move(${whoText(node.who)}, ${node.x}, ${node.y}, ${node.z})`;
+    case 'turn':
+      return `turn(${whoText(node.who)}, ${node.degrees})`;
+    case 'face':
+      return `face(${whoText(node.who)}, ${whoText(node.to)})`;
+    case 'show':
+      return `${node.on ? 'show' : 'hide'}(${whoText(node.who)})`;
+    case 'camera':
+      return `${node.who ? `camera(${whoText(node.who)}, ${node.seconds})` : `cameraBack(${node.seconds})`}`;
+    case 'fade':
+      return `fade${node.out ? 'Out' : 'In'}(${node.seconds})`;
+    case 'wait':
+      return `wait(${node.seconds})`;
+    case 'se':
+      return `se(0x${node.id.toString(16)})`;
+    case 'call':
+      return node.call.name;
+    default:
+      return node.op;
+  }
+};
+
+interface PreviewLogLine {
+  text: string;
+  skipped: boolean;
+}
 
 export function ScriptPreviewControls({
   view,
@@ -30,6 +63,7 @@ export function ScriptPreviewControls({
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [fade, setFade] = useState(0);
+  const [log, setLog] = useState<PreviewLogLine[]>([]);
   const runId = useRef(0);
   const functionName = script.value?.functions.some((f) => f.name === selected)
     ? selected
@@ -37,12 +71,6 @@ export function ScriptPreviewControls({
   const fn = script.value?.functions.find((f) => f.name === functionName);
   const binding = script.value?.events.find((e) => e.fn === functionName && e.group === view.info.dungeon);
   const self = binding && binding.trigger !== 'start' && binding.trigger !== 'intro' ? binding.row : null;
-  const unsupported =
-    fn?.body.flatMap((n, i) => {
-      const p = previewProblem(n);
-      return p ? [`${i + 1}. ${p}`] : [];
-    }) ?? [];
-
   useEffect(() => {
     view.scene.canvas.style.filter = `brightness(${1 - fade})`;
     return () => {
@@ -61,6 +89,7 @@ export function ScriptPreviewControls({
     setRunning(false);
     setFade(0);
     setStatus('');
+    setLog([]);
     return () => {
       runId.current++;
       view.clearPreview();
@@ -74,6 +103,7 @@ export function ScriptPreviewControls({
     view.beginPreview(self);
     setFade(0);
     setRunning(true);
+    setLog([]);
     onStart?.();
     const alive = (): boolean => runId.current === id;
     const animate = (seconds: number, update: (fraction: number) => void): Promise<void> =>
@@ -95,75 +125,93 @@ export function ScriptPreviewControls({
     };
     const lastAnim = new Map<string, number>();
     let returned = false;
+    let skippedCount = 0;
     try {
-      await runPreviewNodes(fn.body, alive, async (node, index) => {
-        setStatus(`${index + 1} / ${fn.body.length}: ${node.op}`);
-        switch (node.op) {
-          case 'anim': {
-            await ensure(node.who);
-            const seconds = view.previewMotion(node.who, node.id);
-            lastAnim.set(whoText(node.who), performance.now() + seconds * 1000);
-            break;
-          }
-          case 'waitAnim': {
-            const remaining = Math.max(0, (lastAnim.get(whoText(node.who)) ?? 0) - performance.now()) / 1000;
-            await animate(remaining, () => {});
-            break;
-          }
-          case 'move': {
-            await ensure(node.who);
-            const from = view.previewPosition(node.who);
-            const seconds = Math.min(10, Math.max(0.2, Math.hypot(node.x - from.x, node.z - from.z) / 500));
-            await animate(seconds, (t) =>
-              view.previewSetPosition(
-                node.who,
-                from.x + (node.x - from.x) * t,
-                from.y + (node.y - from.y) * t,
-                from.z + (node.z - from.z) * t,
-              ),
-            );
-            break;
-          }
-          case 'turn':
-            await ensure(node.who);
-            view.previewSetAngle(node.who, node.degrees);
-            await animate(0.4, () => {});
-            break;
-          case 'face': {
-            await ensure(node.who);
-            await ensure(node.to);
-            const a = view.previewPosition(node.who),
-              b = view.previewPosition(node.to);
-            view.previewSetAngle(node.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
-            break;
-          }
-          case 'show':
-            await ensure(node.who);
-            view.previewSetVisible(node.who, node.on);
-            break;
-          case 'camera':
-            if (node.who) {
+      await runPreviewNodes(
+        fn.body,
+        alive,
+        async (node, index) => {
+          setStatus(`${index + 1} / ${fn.body.length}: ${node.op}`);
+          switch (node.op) {
+            case 'anim': {
               await ensure(node.who);
-              view.previewFocus(node.who);
-            } else view.fit();
-            await animate(node.seconds, () => {});
-            break;
-          case 'fade': {
-            const from = node.out ? 0 : 1,
-              to = node.out ? 1 : 0;
-            await animate(node.seconds, (t) => setFade(from + (to - from) * t));
-            break;
+              const seconds = view.previewMotion(node.who, node.id);
+              lastAnim.set(whoText(node.who), performance.now() + seconds * 1000);
+              break;
+            }
+            case 'waitAnim': {
+              const until = lastAnim.get(whoText(node.who));
+              if (until === undefined) throw new Error('対応する anim() を再生できなかったため省略しました。');
+              const remaining = Math.max(0, until - performance.now()) / 1000;
+              await animate(remaining, () => {});
+              break;
+            }
+            case 'move': {
+              await ensure(node.who);
+              const from = view.previewPosition(node.who);
+              const seconds = Math.min(10, Math.max(0.2, Math.hypot(node.x - from.x, node.z - from.z) / 500));
+              await animate(seconds, (t) =>
+                view.previewSetPosition(
+                  node.who,
+                  from.x + (node.x - from.x) * t,
+                  from.y + (node.y - from.y) * t,
+                  from.z + (node.z - from.z) * t,
+                ),
+              );
+              break;
+            }
+            case 'turn':
+              await ensure(node.who);
+              view.previewSetAngle(node.who, node.degrees);
+              await animate(0.4, () => {});
+              break;
+            case 'face': {
+              await ensure(node.who);
+              await ensure(node.to);
+              const a = view.previewPosition(node.who),
+                b = view.previewPosition(node.to);
+              view.previewSetAngle(node.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
+              break;
+            }
+            case 'show':
+              await ensure(node.who);
+              view.previewSetVisible(node.who, node.on);
+              break;
+            case 'camera':
+              if (node.who) {
+                await ensure(node.who);
+                view.previewFocus(node.who);
+              } else view.fit();
+              await animate(node.seconds, () => {});
+              break;
+            case 'fade': {
+              const from = node.out ? 0 : 1,
+                to = node.out ? 1 : 0;
+              await animate(node.seconds, (t) => setFade(from + (to - from) * t));
+              break;
+            }
+            case 'wait':
+              await animate(node.seconds, () => {});
+              break;
+            case 'return':
+              setStatus('return で終了しました。');
+              returned = true;
+              break;
           }
-          case 'wait':
-            await animate(node.seconds, () => {});
-            break;
-          case 'return':
-            setStatus('return で終了しました。');
-            returned = true;
-            break;
-        }
-      });
-      if (alive() && !returned) setStatus('再生が終わりました。停止で表示を戻せます。');
+          if (alive())
+            setLog((previous) => [...previous, { text: `${index + 1}. ${previewCommand(node)}`, skipped: false }]);
+        },
+        (node, index, reason) => {
+          skippedCount++;
+          setLog((previous) => [
+            ...previous,
+            { text: `${index + 1}. ${previewCommand(node)} — ${reason}`, skipped: true },
+          ]);
+          setStatus(`${index + 1} / ${fn.body.length}: ${node.op} を省略`);
+        },
+      );
+      if (alive() && !returned)
+        setStatus(`再生が終わりました${skippedCount ? `（${skippedCount} 件を省略）` : ''}。停止で表示を戻せます。`);
     } catch (e) {
       if (alive()) setStatus((e as Error).message);
     } finally {
@@ -197,7 +245,17 @@ export function ScriptPreviewControls({
           {self !== null ? ` / self: イベント ${self}` : ''}
         </p>
       )}
-      {unsupported.length > 0 && <p className="muted small">停止する命令: {unsupported.join(' / ')}</p>}
+      <pre className="script-preview-log" role="log" aria-label="プレビューのログ" aria-live="polite">
+        <code>
+          {log.length
+            ? log.map((line, index) => (
+                <span key={index} className={line.skipped ? 'script-preview-skipped' : undefined}>
+                  {line.text}
+                </span>
+              ))
+            : '再生すると命令のログが表示されます。'}
+        </code>
+      </pre>
       {status && (
         <p className="small" role="status">
           {status}

@@ -3405,6 +3405,23 @@ dialog.stage-editor > .picker-head h2 {
 .script-preview-controls p {
   margin: 6px 0;
 }
+.script-preview-log {
+  max-height: 190px;
+  overflow: auto;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.script-preview-log code span {
+  display: block;
+}
+.script-preview-skipped {
+  color: #e9bd4c;
+}
 @media (max-width: 850px) {
   .stage-source-page {
     height: auto;
