@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { MOUSE } from 'three';
 import type { LanaiContent } from './contents';
 import { parseStageScript, type ScriptNode, type ScriptWho } from './eventScript';
 import { LanaiEditState } from './mapedit';
@@ -98,6 +99,7 @@ export function ScriptPreviewControls({
 
   const play = async (): Promise<void> => {
     if (!fn) return;
+    const clock = view.hostWindow;
     runId.current++;
     const id = runId.current;
     view.beginPreview(self);
@@ -108,18 +110,18 @@ export function ScriptPreviewControls({
     const alive = (): boolean => runId.current === id;
     const animate = (seconds: number, update: (fraction: number) => void): Promise<void> =>
       new Promise((resolve) => {
-        const start = performance.now();
+        const start = clock.performance.now();
         let last = -Infinity;
         const step = (): void => {
           if (!alive()) return resolve();
-          const now = performance.now();
+          const now = clock.performance.now();
           const fraction = seconds <= 0 ? 1 : Math.min(1, (now - start) / (seconds * 1000));
           if (fraction >= 1 || now - last >= 40) {
             update(fraction);
             last = now;
           }
           if (fraction >= 1) resolve();
-          else requestAnimationFrame(step);
+          else clock.requestAnimationFrame(step);
         };
         step();
       });
@@ -140,13 +142,13 @@ export function ScriptPreviewControls({
             case 'anim': {
               await ensure(node.who);
               const seconds = view.previewMotion(node.who, node.id);
-              lastAnim.set(whoText(node.who), performance.now() + seconds * 1000);
+              lastAnim.set(whoText(node.who), clock.performance.now() + seconds * 1000);
               break;
             }
             case 'waitAnim': {
               const until = lastAnim.get(whoText(node.who));
               if (until === undefined) throw new Error('対応する anim() を再生できなかったため省略しました。');
-              const remaining = Math.max(0, until - performance.now()) / 1000;
+              const remaining = Math.max(0, until - clock.performance.now()) / 1000;
               await animate(remaining, () => {});
               break;
             }
@@ -288,17 +290,38 @@ export function StagePreviewScene({
   const info = options.find((m) => m.name === name) ?? options[0];
   useEffect(() => {
     if (!maps || !info || !host.current) return;
+    const container = host.current;
+    const hostWindow = container.ownerDocument.defaultView ?? window;
+    // The wheel belongs to OrbitControls while the pointer is over the preview. Keep the docs pane still.
+    const preventOuterScroll = (event: WheelEvent): void => event.preventDefault();
+    // Firefox's middle-click autoscroll otherwise competes with OrbitControls' middle-button pan.
+    const preventMiddleDrag = (event: MouseEvent | PointerEvent): void => {
+      if (event.button === 1) event.preventDefault();
+    };
+    container.addEventListener('wheel', preventOuterScroll, { capture: true, passive: false });
     const state = new LanaiEditState(maps);
     state.open(info);
-    const next = new LanaiMapView(state, info);
+    const next = new LanaiMapView(state, info, hostWindow);
     next.scene.pointer = null;
+    next.scene.controls.mouseButtons.LEFT = MOUSE.ROTATE;
+    next.scene.pixelRatioLimit = 1;
     next.showMoves = false;
     next.showLinks = false;
-    host.current.append(next.scene.canvas);
+    next.scene.canvas.addEventListener('pointerdown', preventMiddleDrag, { capture: true });
+    next.scene.canvas.addEventListener('mousedown', preventMiddleDrag, { capture: true });
+    next.scene.canvas.addEventListener('auxclick', preventMiddleDrag);
+    container.append(next.scene.canvas);
     setView(next);
-    const frame = requestAnimationFrame(() => next.fit());
+    const frame = hostWindow.requestAnimationFrame(() => {
+      next.scene.resizeToCanvas();
+      next.fit();
+    });
     return () => {
-      cancelAnimationFrame(frame);
+      hostWindow.cancelAnimationFrame(frame);
+      container.removeEventListener('wheel', preventOuterScroll, true);
+      next.scene.canvas.removeEventListener('pointerdown', preventMiddleDrag, true);
+      next.scene.canvas.removeEventListener('mousedown', preventMiddleDrag, true);
+      next.scene.canvas.removeEventListener('auxclick', preventMiddleDrag);
       next.scene.canvas.remove();
       next.dispose();
       state.dispose();
@@ -323,6 +346,7 @@ export function StagePreviewScene({
       {loaded instanceof Error && <p className="error small">{loaded.message}</p>}
       {!loaded && <p className="muted small">マップを読み込み中…</p>}
       <div className="stage-preview-canvas" ref={host} />
+      {view && <p className="muted small">ドラッグで回転、ホイールで拡大・縮小できます。</p>}
       {view && <ScriptPreviewControls key={info?.hash} view={view} source={source} />}
     </section>
   );

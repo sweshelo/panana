@@ -3386,10 +3386,11 @@ dialog.stage-editor > .picker-head h2 {
   margin: 0;
 }
 .stage-preview-canvas {
-  height: min(38vh, 360px);
-  min-height: 220px;
+  height: clamp(180px, 28vh, 250px);
+  width: 100%;
   margin: 10px 0;
   background: #15171c;
+  overscroll-behavior: contain;
 }
 .stage-preview-canvas canvas {
   display: block;

@@ -138,6 +138,8 @@ export class LanaiMapView {
   private readonly tileLayer = new TileLayer();
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
+  /** The existing map visuals of each EventObject row; preview hides these without rebuilding the whole map. */
+  private readonly recordVisuals = new Map<number, THREE.Object3D[]>();
   private readonly previewGroup = new THREE.Group();
   private readonly previewActors = new Map<string, PreviewActor>();
   private previewSelf: number | null = null;
@@ -170,10 +172,11 @@ export class LanaiMapView {
   constructor(
     readonly st: LanaiEditState,
     readonly info: LanaiMapInfo,
+    readonly hostWindow: Window = window,
   ) {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
-    this.scene = new MapScene('view3d');
+    this.scene = new MapScene('view3d', 30, hostWindow);
     this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group, this.moveGroup, this.previewGroup);
     // a move() point under the pointer is dragged instead of what the editor's tools do there
     const pointer = (tol: () => number, canvas: HTMLCanvasElement) => ({
@@ -383,7 +386,8 @@ export class LanaiMapView {
       else if (tile) group.position.set(cellToWorld(tile.x), group.position.y, cellToWorld(tile.y));
       this.previewGroup.add(group);
       this.previewActors.set(key, { group, motion, factory, started: 0, frames: 0, fallback });
-      this.sync3d();
+      if (row !== null) for (const visual of this.recordVisuals.get(row) ?? []) visual.visible = false;
+      this.scene.draw();
     } catch (e) {
       factory?.dispose();
       throw e;
@@ -427,7 +431,7 @@ export class LanaiMapView {
       );
     }
     actor.motion.select(name);
-    actor.started = performance.now();
+    actor.started = this.hostWindow.performance.now();
     actor.frames = actor.motion.frames;
     this.runPreviewFrames();
     return actor.frames / 60;
@@ -450,9 +454,9 @@ export class LanaiMapView {
             now - a.started < Math.min(a.motion.loop ? 3000 : Infinity, (a.frames / 60) * 1000),
         )
       )
-        this.previewFrame = requestAnimationFrame(step);
+        this.previewFrame = this.hostWindow.requestAnimationFrame(step);
     };
-    this.previewFrame = requestAnimationFrame(step);
+    this.previewFrame = this.hostWindow.requestAnimationFrame(step);
   }
 
   private previewTick(now: number): void {
@@ -473,7 +477,7 @@ export class LanaiMapView {
 
   clearPreview(): void {
     this.previewRevision++;
-    cancelAnimationFrame(this.previewFrame);
+    this.hostWindow.cancelAnimationFrame(this.previewFrame);
     this.previewFrame = 0;
     this.previewLastFrame = 0;
     for (const actor of this.previewActors.values()) {
@@ -485,6 +489,7 @@ export class LanaiMapView {
       }
     }
     this.previewActors.clear();
+    for (const visuals of this.recordVisuals.values()) for (const visual of visuals) visual.visible = true;
     this.previewSelf = null;
     if (this.previewCamera) {
       this.scene.camera.position.copy(this.previewCamera.position);
@@ -492,7 +497,17 @@ export class LanaiMapView {
       this.scene.controls.update();
       this.previewCamera = null;
     }
-    if (!this.disposed) this.sync3d();
+    if (!this.disposed) this.scene.draw();
+  }
+
+  private addRecordVisual(section: number, raw: Uint8Array, visual: THREE.Object3D): void {
+    this.markers.add(visual);
+    if (!(LANAI_EVENT_SECTIONS as readonly number[]).includes(section)) return;
+    const row = lanaiRecEventRow(section, raw);
+    let visuals = this.recordVisuals.get(row);
+    if (!visuals) this.recordVisuals.set(row, (visuals = []));
+    visuals.push(visual);
+    visual.visible = !this.previewActors.has(`chara:${row}`);
   }
 
   private changed(what: EditEvent): void {
@@ -712,6 +727,7 @@ export class LanaiMapView {
       })),
     );
     this.markers.clear();
+    this.recordVisuals.clear();
     for (const g of this.rangeGeos) g.dispose();
     this.rangeGeos = [];
     const events = this.maps.eventTable(this.info.dungeon);
@@ -727,14 +743,13 @@ export class LanaiMapView {
             const edges = new THREE.EdgesGeometry(wall, 30);
             this.rangeGeos.push(wall, edges);
             const m = selected ? this.rangeMats.selected : this.rangeMats.normal;
-            this.markers.add(new THREE.Mesh(wall, m.fill), new THREE.LineSegments(edges, m.line));
+            this.addRecordVisual(k, r.raw, new THREE.Mesh(wall, m.fill));
+            this.addRecordVisual(k, r.raw, new THREE.LineSegments(edges, m.line));
             return;
           }
         }
         const look = this.showModels ? this.look(k, i) : null;
         const model = look?.model ? this.recordModel(look.model) : null;
-        const row = (LANAI_EVENT_SECTIONS as readonly number[]).includes(k) ? lanaiRecEventRow(k, r.raw) : null;
-        if (row !== null && this.previewActors.has(`chara:${row}`)) return;
         if (model) {
           const [ox, oz] = look!.offset ?? [0, 0];
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
@@ -742,13 +757,13 @@ export class LanaiMapView {
           // monsters keep their own size (not checked against the game yet)
           if (look!.model!.type === 'object')
             model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
-          this.markers.add(model);
+          this.addRecordVisual(k, r.raw, model);
           if (!selected) return;
         }
         const m = new THREE.Mesh(this.markerGeo, this.markerMats.get(SECTION_COLORS[k]!, selected));
         m.position.set(px * CELL, model ? 260 : 100, py * CELL);
         if (selected) m.scale.setScalar(1.4);
-        this.markers.add(m);
+        this.addRecordVisual(k, r.raw, m);
       });
     }
     this.overlay.sync(doc, sel, layers.room);
