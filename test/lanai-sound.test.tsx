@@ -39,12 +39,18 @@ describe.skipIf(!hasLanai)('RPG FREE! sounds', () => {
     sounds = await s.sounds();
   }, 300000);
 
-  test('Update SoundData rows are named from patch.bcsar', () => {
+  test('existing BGM/ME use Base and later Update rows use patch.bcsar', () => {
     expect(sounds.rows).toBe(s.need('SoundData').rows);
     expect(sounds.named).toBe(true);
     const kinds = new Set(Array.from({ length: sounds.rows - 1 }, (_, i) => sounds.kind(i + 1)));
     expect(kinds.has('bgm')).toBe(true);
     expect(kinds.has('se')).toBe(true);
+    expect(sounds.name(1)).toBe('BGM_TITLE');
+    expect(sounds.name(2)).toBe('BGM_BATTLE_NORMAL');
+    expect(sounds.name(50)).toBe('ME_ITEMGET');
+    expect(sounds.name(73)).toBe('ME_INN');
+    expect(sounds.name(74)).toBe('SE_SYS_SELECT');
+    expect(sounds.name(731)).toBe('BGM_BATTLE_2');
     expect([sounds.index(0x6b), sounds.name(0x6b)]).toEqual([188, 'SE_FLD_STEPS1']);
     expect([sounds.index(0x6e), sounds.name(0x6e)]).toEqual([191, 'SE_FLD_STEPS4']);
     expect([sounds.index(0x7a), sounds.name(0x7a)]).toEqual([197, 'SE_FLD_DOOR4']);
@@ -62,8 +68,10 @@ describe.skipIf(!hasLanai)('RPG FREE! sounds', () => {
     expect(ice).toContain('sound/patch.bcsar');
   });
 
-  test('the field footsteps and se(450) render from the Update archive', async () => {
-    const renderer = await s.soundRenderer();
+  test('BGM and SE render from their respective archives', async () => {
+    expect((await s.soundRendererFor(2)).archive.sounds[sounds.index(2)!]?.name).toBe('BGM_BATTLE_NORMAL');
+    expect((await s.soundRendererFor(731)).archive.sounds[sounds.index(731)!]?.name).toBe('BGM_BATTLE_2');
+    const renderer = await s.soundRendererFor(107);
     for (let row = 107; row <= 111; row++) {
       const pcm = await renderer.render(sounds.index(row)!, 8, false);
       expect(() => requireAudible(pcm)).not.toThrow();

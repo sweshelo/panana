@@ -210,7 +210,7 @@ export function ScriptPreviewControls({
               if (index === null) throw new Error(`SoundData 行 ${node.id} に音がありません。`);
               await soundPlayer.play(
                 `preview:lanai:${index}`,
-                async () => requireAudible(await (await session.soundRenderer()).render(index, 8, false)),
+                async () => requireAudible(await (await session.soundRendererFor(node.id)).render(index, 8, false)),
                 false,
               );
               if (soundPlayer.state.error) throw new Error(soundPlayer.state.error.message);

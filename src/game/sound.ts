@@ -59,6 +59,7 @@ export interface SoundField {
 /** What plays the sounds of a soundData row (Game for RPG2, OahuSession for RPG3). */
 export interface SoundSource {
   soundRenderer(): Promise<SoundRenderer>;
+  soundRendererFor?(row: number): Promise<SoundRenderer>;
 }
 
 export type SoundKind = 'bgm' | 'me' | 'se' | 'other';
@@ -80,6 +81,8 @@ export class SoundNames {
     private names: string[] | null,
     /** soundData rows: volume (+8). */
     volumes: number[] = [],
+    /** A game may use different archives for different SoundData rows. */
+    private readonly rowName?: (row: number, index: number) => string,
   ) {
     this.table = Array.isArray(items)
       ? { count: items.length, item: (r) => items[r] ?? 0, volume: (r) => volumes[r] ?? 0 }
@@ -127,6 +130,7 @@ export class SoundNames {
   name(row: number): string {
     const id = this.item(row);
     if (!id || id >>> 24 !== 1 || !this.names) return '';
+    if (this.rowName) return this.rowName(row, id & 0xffffff);
     return this.names[id & 0xffffff] ?? '';
   }
 

@@ -97,7 +97,7 @@ describe.skipIf(!hasLanai)('FREE! custom assets', () => {
       expect(await portLanaiBgm(opened, s, c, 65535)).toBe(row);
       expect(s.need('SoundData').rows).toBe(before + 1);
       expect((await s.sounds()).name(row)).toContain(c.name);
-      const renderer = await s.soundRenderer();
+      const renderer = await s.soundRendererFor(row);
       const index = s.need('SoundData').u32(row, 0) & 0xffffff;
       expect(await renderer.render(index, 0.1, false)).toBeDefined();
       const files = await s.allModFiles();
@@ -141,8 +141,10 @@ describe.skipIf(!hasLanai)('FREE! custom assets', () => {
       expect(names.kind(row)).toBe('se');
       expect(names.name(row)).not.toBe(names.name(other));
       expect(names.kind(sequenceRow)).toBe('se');
-      await expect((await target.soundRenderer()).render(names.index(row)!, 1, false)).resolves.toBeDefined();
-      await expect((await target.soundRenderer()).render(names.index(sequenceRow)!, 1, false)).resolves.toBeDefined();
+      await expect((await target.soundRendererFor(row)).render(names.index(row)!, 1, false)).resolves.toBeDefined();
+      await expect(
+        (await target.soundRendererFor(sequenceRow)).render(names.index(sequenceRow)!, 1, false),
+      ).resolves.toBeDefined();
       const files = await target.allModFiles();
       expect(files.has('sound/patch.bcsar')).toBe(true);
       expect([...files.keys()].filter((n) => n.startsWith('sound/stream/')).length).toBe(3);

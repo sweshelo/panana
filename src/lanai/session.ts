@@ -955,9 +955,10 @@ export class LanaiSession {
   soundsChanged(): void {
     this.soundNames = null;
     this.renderer = null;
+    this.patchRenderer = null;
   }
 
-  /** The Update replaces the Base sound archive at a different path. */
+  /** The Update adds a second archive for its SoundData rows. */
   soundArchivePath(): string {
     return this.dump.update ? 'sound/patch.bcsar' : BCSAR_PATH;
   }
@@ -979,42 +980,54 @@ export class LanaiSession {
     return this.readSoundFile(this.soundArchivePath());
   }
 
-  private soundDump(): Dump {
+  private soundDump(archive = this.soundArchivePath()): Dump {
     return {
       ...this.dump,
-      readRomfs: (name) => this.readSoundFile(name === BCSAR_PATH ? this.soundArchivePath() : name),
+      readRomfs: (name) => this.readSoundFile(name === BCSAR_PATH ? archive : name),
     };
   }
 
-  /** SoundData rows named by the archive the running game mounts (patch.bcsar with an Update). */
+  /** Existing BGM/ME rows use Base; later Update rows use patch.bcsar. */
   sounds(): Promise<SoundNames> {
     const t = this.need('SoundData');
-    const edited = this.soundFiles.get(this.soundArchivePath());
-    if (edited)
-      return (this.soundNames ??= Promise.resolve(
-        new SoundNames(
-          Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
-          bcsarSoundNames(edited),
-        ),
-      ));
-    return (this.soundNames ??= loadSoundNames(
-      this.soundDump(),
-      this.dump.update
-        ? `lanai/sound/patch-names/v1/${this.dump.update.titleVersion ?? 'unknown'}`
-        : 'lanai/sound/base-names/v1',
-      Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
-    ));
+    const items = Array.from({ length: t.rows }, (_, i) => t.u32(i, 0));
+    if (!this.dump.update && !this.soundFiles.has(BCSAR_PATH))
+      return (this.soundNames ??= loadSoundNames(this.dump, 'lanai/sound/base-names/v1', items));
+    return (this.soundNames ??= Promise.all([
+      this.readSoundFile(BCSAR_PATH),
+      this.dump.update ? this.readSoundArchive() : this.readSoundFile(BCSAR_PATH),
+    ]).then(([base, patch]) => {
+      const baseNames = bcsarSoundNames(base);
+      const patchNames = bcsarSoundNames(patch);
+      return new SoundNames(
+        items,
+        baseNames,
+        [],
+        (row, index) => (this.dump.update && row > 73 ? patchNames : baseNames)[index] ?? '',
+      );
+    }));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
+  private patchRenderer: Promise<SoundRenderer> | null = null;
 
-  /** Plays sounds from patch.bcsar with an Update, or sound.bcsar for Base only. */
+  /** The original sound archive, including the existing BGM and ME. */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= openSoundRenderer(this.soundDump()).catch((err: Error) => {
+    this.renderer ??= openSoundRenderer(this.soundDump(BCSAR_PATH)).catch((err: Error) => {
       this.renderer = null;
       throw err;
     });
     return this.renderer;
+  }
+
+  /** The archive selected by a SoundData row. */
+  soundRendererFor(row: number): Promise<SoundRenderer> {
+    if (!this.dump.update || row <= 73) return this.soundRenderer();
+    this.patchRenderer ??= openSoundRenderer(this.soundDump()).catch((err: Error) => {
+      this.patchRenderer = null;
+      throw err;
+    });
+    return this.patchRenderer;
   }
 
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */

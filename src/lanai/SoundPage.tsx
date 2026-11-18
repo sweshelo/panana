@@ -20,7 +20,7 @@ export { lanaiSoundHref };
 
 export function LanaiSoundPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const revision = useLanaiRevision(session);
-  // again after an edit (a BGM ported from another game adds a row and changes sound.bcsar)
+  // again after an edit (a ported sound adds a row and changes its archive)
   const sounds = useAsync(() => session.sounds(), [session, revision]);
   // the list stays while the names are read again
   const [shown, setShown] = useState<SoundNames | null>(null);
@@ -58,11 +58,15 @@ export function LanaiSoundBook({
   const [importOpen, setImportOpen] = useState(false);
   const [importQuery, setImportQuery] = useState('');
   const workspace = useWorkspace();
-  const renderer = useAsync(() => session.soundRenderer(), [session, sounds]);
+  const renderers = useAsync(
+    () => Promise.all([session.soundRenderer(), session.soundRendererFor(74)]),
+    [session, sounds],
+  );
   const silent =
-    renderer && !(renderer instanceof Error)
+    renderers && !(renderers instanceof Error)
       ? (row: number): boolean => {
           const index = sounds.index(row);
+          const renderer = session.dump.update && row > 73 ? renderers[1] : renderers[0];
           return index !== null && renderer.archive.sounds[index]?.volume === 0;
         }
       : undefined;
@@ -113,8 +117,10 @@ export function LanaiSoundBook({
         </>
       )}
       <p className="muted small">
-        {session.dump.update ? 'Update の sound/patch.bcsar' : 'Base の sound/sound.bcsar'} と SoundData
-        を照合しています。
+        {session.dump.update
+          ? '既存の BGM・ME は Base の sound/sound.bcsar、Update の音は sound/patch.bcsar'
+          : 'Base の sound/sound.bcsar'}
+        と SoundData を照合しています。
       </p>
       <SoundView
         game={session}

@@ -28,7 +28,7 @@ export function PlayButton({
   const st = usePlayer();
   const index = sounds.index(row);
   if (index === null) return null;
-  const key = `sound:${index}`;
+  const key = `sound:${row}:${index}`;
   const on = st.key === key;
   const error = st.error?.key === key ? st.error.message : null;
   const name = sounds.name(row) || `サウンド ${row}`;
@@ -47,7 +47,9 @@ export function PlayButton({
         void soundPlayer.toggle(
           key,
           async () => {
-            const pcm = await (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se);
+            const pcm = await (
+              await (game.soundRendererFor?.(row) ?? game.soundRenderer())
+            ).render(index, se ? 8 : BGM_SECONDS, !se);
             return se ? requireAudible(pcm) : pcm;
           },
           !se,
