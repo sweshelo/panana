@@ -102,6 +102,7 @@ import { LanaiItemPicker } from './pickers';
 import { LANAI_TREASURE_GOLD, LANAI_TREASURE_ITEM, type LanaiTreasureSlot } from './treasure';
 import { LanaiMapView } from './mapview';
 import { ScriptMovePanel } from './ScriptMovePanel';
+import { ScriptPreviewControls } from './ScriptPreview';
 import type { LanaiSession } from './session';
 import { lanaiRomParts, type LanaiRomPart } from './romParts';
 import { LanaiEventSelect } from './EventSelect';
@@ -505,7 +506,15 @@ function MapDetail({
           <>
             <Inspector st={st} view={view} content={content} />
             {session.createdFiles.has(content.archive.toUpperCase()) && (
-              <ScriptMovePanel view={view} stageHref={lanaiStageHref(content.index)} />
+              <>
+                <h3>演出プレビュー</h3>
+                <ScriptPreviewControls
+                  view={view}
+                  source={session.stageScripts.get(content.archive.toUpperCase())?.source ?? ''}
+                  onStart={() => setMode('split')}
+                />
+                <ScriptMovePanel view={view} stageHref={lanaiStageHref(content.index)} />
+              </>
             )}
             <h3>検証</h3>
             <MapChecks st={st} hash={info.hash} validate={(doc) => lanaiValidate(maps, info, doc)} />

@@ -5,6 +5,7 @@ import { StageScriptDocs } from './StageScriptEditor';
 import type { LanaiSession } from './session';
 import { checkStageScript } from './stageScript';
 import { useLanaiRevision } from './MonsterEditor';
+import { StagePreviewScene } from './ScriptPreview';
 
 /** Full source editor for an added stage. Its source is the same document used by the function editor and MOD export. */
 export function LanaiStageSourcePage({
@@ -106,6 +107,7 @@ export function LanaiStageSourcePage({
           )}
         </section>
         <aside className="stage-source-docs" aria-label="関数ドキュメント">
+          <StagePreviewScene session={session} content={content} source={source} />
           <StageScriptDocs session={session} content={content} />
         </aside>
       </div>

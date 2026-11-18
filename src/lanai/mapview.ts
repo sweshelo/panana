@@ -8,6 +8,8 @@
 import * as THREE from 'three';
 import { lanaiRange, type LanaiRange, type LanaiRangeShape } from './rangeShape';
 import { AnimatedModel, animationKey } from '../cgfx/player';
+import { lanaiAnimationIds, lanaiDenpaModel } from './animationModels';
+import type { ScriptWho } from './eventScript';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
@@ -76,6 +78,15 @@ interface LoadedModel {
   pose: THREE.Object3D | null;
 }
 
+interface PreviewActor {
+  group: THREE.Object3D;
+  motion: AnimatedModel | null;
+  factory: ModelFactory | null;
+  started: number;
+  frames: number;
+  fallback: boolean;
+}
+
 /**
  * The model at the first frame of its first motion: "001_" (a closed chest or door), else "000_" (an NPC's wait);
  * null = it has none.
@@ -127,6 +138,12 @@ export class LanaiMapView {
   private readonly tileLayer = new TileLayer();
   private readonly fallback = new TileFallback();
   private readonly markers = new THREE.Group();
+  private readonly previewGroup = new THREE.Group();
+  private readonly previewActors = new Map<string, PreviewActor>();
+  private previewSelf: number | null = null;
+  private previewRevision = 0;
+  private previewFrame = 0;
+  private previewCamera: { position: THREE.Vector3; target: THREE.Vector3 } | null = null;
   private readonly overlay = new CellOverlay();
   /** Loaded models of records ("o<MapObject row>" / "m<MonsterDesign row>"); null while loading or when there is none. */
   private readonly objects = new Map<string, LoadedModel | null>();
@@ -156,7 +173,7 @@ export class LanaiMapView {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d');
-    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group, this.moveGroup);
+    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group, this.moveGroup, this.previewGroup);
     // a move() point under the pointer is dragged instead of what the editor's tools do there
     const pointer = (tol: () => number, canvas: HTMLCanvasElement) => ({
       /** Whether the press picked a move() point (the editor's tools then get nothing). */
@@ -239,6 +256,7 @@ export class LanaiMapView {
   }
 
   dispose(): void {
+    this.clearPreview();
     this.partImages.dispose();
     this.disposed = true;
     this.unsubscribe();
@@ -280,6 +298,178 @@ export class LanaiMapView {
     this.grid.draw();
     this.sync3d();
     this.signal.emit();
+  }
+
+  /** Preview actors live only in this view. They never write to the map or session. */
+  beginPreview(self: number | null): void {
+    this.clearPreview();
+    this.previewSelf = self;
+    this.previewCamera = {
+      position: this.scene.camera.position.clone(),
+      target: this.scene.controls.target.clone(),
+    };
+  }
+
+  private previewKey(who: ScriptWho): string {
+    if (who.kind === 'hero') return 'hero';
+    const row = who.kind === 'self' ? this.previewSelf : who.row;
+    if (row === null) throw new Error('self の対象イベントがありません。関数をマップのイベントに割り当ててください。');
+    return `chara:${row}`;
+  }
+
+  private previewRecord(row: number): { section: number; index: number; x: number; z: number } | null {
+    for (const section of LANAI_EVENT_SECTIONS)
+      for (let index = 0; index < (this.doc.recs[section]?.length ?? 0); index++) {
+        const rec = this.doc.recs[section]![index]!;
+        if (lanaiRecEventRow(section, rec.raw) !== row) continue;
+        const [x, z] = recCellPos(rec, LANAI_LAYOUTS[section]!);
+        return { section, index, x: cellToWorld(x), z: cellToWorld(z) };
+      }
+    return null;
+  }
+
+  async previewActor(who: ScriptWho): Promise<void> {
+    const key = this.previewKey(who);
+    if (this.previewActors.has(key)) return;
+    const revision = this.previewRevision;
+    const row = key === 'hero' ? null : Number(key.slice(6));
+    const rec = row === null ? null : this.previewRecord(row);
+    if (row !== null && !rec) throw new Error(`イベント ${row} はこのマップにありません。`);
+    let factory: ModelFactory | null = null;
+    let motion: AnimatedModel | null = null;
+    let group: THREE.Object3D | null = null;
+    let fallback = false;
+    try {
+      if (row === null) {
+        const ref = lanaiDenpaModel(this.maps.session);
+        const loaded = await ref.load();
+        if (this.disposed || revision !== this.previewRevision) return;
+        if (!loaded) throw new Error('先頭の電波人間のモデルを読めませんでした。');
+        factory = new ModelFactory(loaded.set);
+        motion = new AnimatedModel(factory, loaded.hash);
+        group = motion.group;
+      } else {
+        const look = this.look(rec!.section, rec!.index);
+        if (look?.model && look.model.type !== 'effect') {
+          const loaded = await this.loadModel(look.model).catch(() => null);
+          if (this.disposed || revision !== this.previewRevision) return loaded?.factory.dispose();
+          if (loaded) {
+            factory = loaded.factory;
+            try {
+              motion = new AnimatedModel(factory, loaded.hash);
+              group = motion.group;
+              if (look.model.type === 'object')
+                group.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look.model.row));
+              group.rotation.y = look.angle;
+            } catch {
+              factory.dispose();
+              factory = null;
+            }
+          }
+        }
+      }
+      if (!group) {
+        fallback = true;
+        group = new THREE.Mesh(
+          new THREE.ConeGeometry(70, 190, 12),
+          new THREE.MeshLambertMaterial({ color: key === 'hero' ? '#86dfff' : '#ffa967' }),
+        );
+        group.position.y = 95;
+      }
+      const tile = this.doc.tiles[0];
+      if (rec) group.position.set(rec.x, group.position.y, rec.z);
+      else if (tile) group.position.set(cellToWorld(tile.x), group.position.y, cellToWorld(tile.y));
+      this.previewGroup.add(group);
+      this.previewActors.set(key, { group, motion, factory, started: 0, frames: 0, fallback });
+      this.sync3d();
+    } catch (e) {
+      factory?.dispose();
+      throw e;
+    }
+  }
+
+  previewPosition(who: ScriptWho): THREE.Vector3 {
+    const actor = this.previewActors.get(this.previewKey(who));
+    if (!actor) throw new Error('プレビューのキャラがありません。');
+    return actor.group.position.clone();
+  }
+
+  previewSetPosition(who: ScriptWho, x: number, y: number, z: number): void {
+    const actor = this.previewActors.get(this.previewKey(who))!;
+    actor.group.position.set(x, y, z);
+    this.scene.draw();
+  }
+
+  previewSetAngle(who: ScriptWho, degrees: number): void {
+    this.previewActors.get(this.previewKey(who))!.group.rotation.y = (degrees * Math.PI) / 180;
+    this.scene.draw();
+  }
+
+  previewSetVisible(who: ScriptWho, visible: boolean): void {
+    this.previewActors.get(this.previewKey(who))!.group.visible = visible;
+    this.scene.draw();
+  }
+
+  previewMotion(who: ScriptWho, id: number): number {
+    const actor = this.previewActors.get(this.previewKey(who))!;
+    const prefix = lanaiAnimationIds(this.maps.session).find((a) => a.id === id)?.prefix;
+    const name = actor.motion?.motions.find((a) => prefix && animationKey(a.name) === prefix)?.name;
+    if (!name || !actor.motion)
+      throw new Error(`アニメ ${id.toString(16)} に対応するモーションがこのモデルにありません。`);
+    actor.motion.select(name);
+    actor.started = performance.now();
+    actor.frames = actor.motion.frames;
+    this.runPreviewFrames();
+    return actor.frames / 60;
+  }
+
+  private runPreviewFrames(): void {
+    if (this.previewFrame) return;
+    const step = (): void => {
+      this.previewFrame = 0;
+      this.previewTick();
+      if (
+        [...this.previewActors.values()].some(
+          (a) => a.motion && a.started && (a.motion.loop || performance.now() - a.started < (a.frames / 60) * 1000),
+        )
+      )
+        this.previewFrame = requestAnimationFrame(step);
+    };
+    this.previewFrame = requestAnimationFrame(step);
+  }
+
+  previewTick(): void {
+    for (const actor of this.previewActors.values())
+      if (actor.motion && actor.started) actor.motion.update(((performance.now() - actor.started) / 1000) * 60);
+    this.scene.draw();
+  }
+
+  previewFocus(who: ScriptWho): void {
+    const p = this.previewPosition(who);
+    this.scene.centerOn(p.x / CELL, p.z / CELL);
+  }
+
+  clearPreview(): void {
+    this.previewRevision++;
+    cancelAnimationFrame(this.previewFrame);
+    this.previewFrame = 0;
+    for (const actor of this.previewActors.values()) {
+      this.previewGroup.remove(actor.group);
+      actor.factory?.dispose();
+      if (actor.fallback && actor.group instanceof THREE.Mesh) {
+        actor.group.geometry.dispose();
+        (actor.group.material as THREE.Material).dispose();
+      }
+    }
+    this.previewActors.clear();
+    this.previewSelf = null;
+    if (this.previewCamera) {
+      this.scene.camera.position.copy(this.previewCamera.position);
+      this.scene.controls.target.copy(this.previewCamera.target);
+      this.scene.controls.update();
+      this.previewCamera = null;
+    }
+    if (!this.disposed) this.sync3d();
   }
 
   private changed(what: EditEvent): void {
@@ -520,6 +710,8 @@ export class LanaiMapView {
         }
         const look = this.showModels ? this.look(k, i) : null;
         const model = look?.model ? this.recordModel(look.model) : null;
+        const row = (LANAI_EVENT_SECTIONS as readonly number[]).includes(k) ? lanaiRecEventRow(k, r.raw) : null;
+        if (row !== null && this.previewActors.has(`chara:${row}`)) return;
         if (model) {
           const [ox, oz] = look!.offset ?? [0, 0];
           model.position.set(px * CELL + ox, 0, py * CELL + oz);

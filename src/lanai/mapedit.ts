@@ -166,6 +166,7 @@ type LanaiTables = {
 };
 
 export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
+  private readonly unsubscribeMaps: () => void;
   info: LanaiMapInfo | null = null;
   /** The open map's tile models (MapData row, tileset). Indoor tiles can change it (map.md §6.1): it is read again after every edit. */
   source: LanaiTileSource | null = null;
@@ -182,7 +183,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       this.maps.session.edited();
     });
     // the session put the sections back (or reverted them): the open document is read again
-    this.maps.on(() => {
+    this.unsubscribeMaps = this.maps.on(() => {
       if (this.info && this.current && !this.info.world && this.maps.doc(this.info) !== this.current) {
         this.reopen();
         this.emit('map');
@@ -191,6 +192,11 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         this.emit('map');
       }
     });
+  }
+
+  /** Release the map subscription of a temporary, read-only preview state. */
+  dispose(): void {
+    this.unsubscribeMaps();
   }
 
   open(info: LanaiMapInfo): void {

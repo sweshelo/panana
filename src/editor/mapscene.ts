@@ -19,6 +19,7 @@ export class MapScene {
   private readonly raycaster = new THREE.Raycaster();
   private raf = 0;
   private pointerDown = false;
+  private readonly resizeObserver: ResizeObserver;
   pointer: GridPointer | null = null;
 
   constructor(className: string, grid = 30) {
@@ -66,7 +67,8 @@ export class MapScene {
       this.pointerDown = false;
     });
     c.addEventListener('pointerleave', () => this.pointer?.leave());
-    new ResizeObserver(() => this.resize()).observe(c);
+    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver.observe(c);
   }
 
   /** Pointer -> cell coordinates on the ground plane (y = 0). */
@@ -147,6 +149,7 @@ export class MapScene {
   }
 
   dispose(): void {
+    this.resizeObserver.disconnect();
     cancelAnimationFrame(this.raf);
     cancelAnimationFrame(this.glide);
     this.controls.dispose();
