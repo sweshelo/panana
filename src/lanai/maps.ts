@@ -102,7 +102,12 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
+// Kinds 0 / 1 / 8 / 10 / 11 / 13〜15 / 19 / 28〜69: ROM survey of Issue #219 (2,258 records of 553 maps) and the
+// Update code.bin (0x21D970〜 placement by kind, 0x1F841C bottom-screen icon by kind). 9 (no record in the ROM) and
+// 17 / 18 (no action; how they open is unknown) keep their numbers.
 export const LANAI_EXIT_KIND: Record<number, string> = {
+  0: 'マップの門',
+  1: 'ワールドへの門',
   2: 'ワープホール',
   3: 'クリアのワープ',
   4: 'ワープゲート',
@@ -110,10 +115,38 @@ export const LANAI_EXIT_KIND: Record<number, string> = {
   6: '下り階段',
   // 40 of the ROM's 54 have the action 0x1D (穴、HoleFallCommon), the rest a script
   7: '落とし穴',
+  8: '落下の到着点',
+  10: '見えない出入口',
+  11: '到着点',
   12: '扉',
+  13: '鍵つき扉',
+  14: '移動扉',
+  15: '像をはめる扉',
   16: 'レベルの扉',
+  19: '裏口',
+  68: '崖の降下点',
   100: '壁の扉',
 };
+/** Kinds 28〜69 (but 68): a building's door, each kind with its own default model (twn_bill*). */
+const isBuildingExit = (k: number): boolean => k >= 28 && k <= 69 && k !== 68;
+/** What the ROM tells of a kind (the add panel's tooltip); the certainty is said where it is a guess. */
+export const LANAI_EXIT_NOTE: Record<number, string> = {
+  0: '別マップの地点へ移る門 (ROM 101 件、ほぼ全件が門移動 0x11)。到着側も主に種類 0。',
+  1: 'ワールドマップへ出る門 (ROM 20 件、19 件の行き先が W01)。ワールド移動を種類で固定する分岐は未確認。',
+  8: '落とし穴 (種類 7) や崖 (種類 68) から落ちた先の地点。動作も見た目もない。移動元の行き先に選ぶ。',
+  9: 'ROM に配置例がない種類。ARM に専用のモデル配置 (#104) はあるが用途は不明。',
+  10: '見えない (obj_invisible) 出入口。施設や町の出入りに使われ、一部は CRO 制御。船専用の根拠はない。',
+  11: '動作のない到着点 (ROM 656 件)。ワープ・門などの行き先に選ぶ。下画面には表示されない。',
+  13: '鍵アイテムで開く扉 (動作 0x15)。ROM では 1 件のみ。',
+  14: '別マップへ移る扉。確認つき (0x39) と確認なし (0x16) がある。',
+  15: '像をはめて開く扉 (0x3B)。開けた後は鍵扉 (0x15) になる。',
+  17: '動作のない扉型 (既定 #50、鉄格子と推測)。開閉の条件は未確認。',
+  18: '動作のない扉型 (既定 #51、上下に開く扉と推測)。開閉の条件は未確認。',
+  19: '見えない裏口 (動作 0x1C)。ROM では 1 件のみ。',
+  68: '崖を降りる地点 (動作 0x34)。降りた先は種類 8 の地点。',
+};
+export const lanaiExitNote = (k: number): string =>
+  LANAI_EXIT_NOTE[k] ?? (isBuildingExit(k) ? '建物の扉。種類ごとに既定の建物モデル (twn_bill) が違う。' : '');
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 /** The exit kind (+0x15) of the level door (MapObject #49 gimk_03_gate_06 when the row has no look). */
 export const LANAI_LEVEL_DOOR_KIND = 16;
@@ -135,7 +168,11 @@ export const LANAI_FLOOR_KINDS: Record<number, string> = {
   [LANAI_FLOOR_ICE]: '凍った床',
 };
 export const lanaiFloorKindLabel = (kind: number): string => LANAI_FLOOR_KINDS[kind] ?? `床のギミック ${kind}`;
-export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
+export const lanaiExitLabel = (k: number): string =>
+  LANAI_EXIT_KIND[k] ?? (isBuildingExit(k) ? `建物の入口 ${k}` : `種類 ${k}`);
+/** The add panel's group of an exit kind: a point to arrive at, a door, or a way out. */
+export const lanaiExitCategory = (k: number): '到着点' | '扉' | '出入口・移動' =>
+  k === 8 || k === 11 ? '到着点' : (k >= 12 && k <= 19) || k === 100 ? '扉' : '出入口・移動';
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
 /**

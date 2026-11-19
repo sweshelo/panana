@@ -33,7 +33,9 @@ import {
   LANAI_FLOOR_POISON,
   LANAI_LEVEL_DOOR_KIND,
   lanaiEventSlot,
+  lanaiExitCategory,
   lanaiExitLabel,
+  lanaiExitNote,
   lanaiFloorKindLabel,
   LANAI_LAYOUTS,
   lanaiMaps,
@@ -238,6 +240,21 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     });
     expect(look?.model).toEqual({ type: 'object', row: 49, material: '015_' });
     expect(lanaiExitLabel(LANAI_LEVEL_DOOR_KIND)).toBe('レベルの扉');
+  });
+
+  test('the exit kinds the ROM survey names and groups (Issue #219)', () => {
+    expect(lanaiExitLabel(0)).toBe('マップの門');
+    expect(lanaiExitLabel(11)).toBe('到着点');
+    expect(lanaiExitLabel(40)).toBe('建物の入口 40');
+    expect(lanaiExitLabel(68)).toBe('崖の降下点');
+    // not settled: keep the number
+    expect(lanaiExitLabel(17)).toBe('種類 17');
+    expect(lanaiExitLabel(9)).toBe('種類 9');
+    expect(lanaiExitNote(17)).toContain('未確認');
+    expect(lanaiExitCategory(8)).toBe('到着点');
+    expect(lanaiExitCategory(13)).toBe('扉');
+    expect(lanaiExitCategory(2)).toBe('出入口・移動');
+    expect(lanaiRecLabel(3, Object.assign(new Uint8Array(0x18), { [0x15]: 18 }))).toBe('出入口 #18');
   });
 
   test('the anchor of a record in the link to a map', () => {

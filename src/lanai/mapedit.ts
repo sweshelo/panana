@@ -20,8 +20,10 @@ import {
   LANAI_EVENT_ACTIONS,
   LANAI_POINT_SECTIONS,
   lanaiEventSlot,
+  lanaiExitCategory,
   lanaiExitKind,
   lanaiExitLabel,
+  lanaiExitNote,
   lanaiFloorKindLabel,
   LANAI_FLOOR_KIND,
   type LanaiTalkRows,
@@ -147,7 +149,7 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
 
 /** A ROM entry is grouped by what the placed record does, while its exact kind stays searchable. */
 export function lanaiRomPartCategory(section: number, kind: number, action: number): string {
-  if (section === 3) return '出入口・移動';
+  if (section === 3) return lanaiExitCategory(kind);
   if (section === 1) return '床のギミック';
   if (section === 8) return '範囲イベント';
   if (section === 9) return '地点';
@@ -565,6 +567,7 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
       const name = generic && from && action !== LANAI_ACTION_NONE ? what.split(/[（(]/u)[0]!.trim() : recordName;
       const appearance = p.section === 3 ? p.look || lanaiExitDefaultRow(p.kind) : 0;
       const description = [
+        p.section === 3 ? lanaiExitNote(p.kind) : '',
         what !== name && what !== 'イベントなし' ? `動作: ${what}。` : '',
         `区画 ${p.section}、種類 ${p.kind}。`,
         appearance ? `外観: MapObject #${appearance}。` : '',
