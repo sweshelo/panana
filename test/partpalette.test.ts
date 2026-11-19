@@ -73,6 +73,7 @@ test('template keys survive refreshed descriptors and keep source records distin
   expect(partTemplateKey(t)).toBe(partTemplateKey({ ...t, raw: t.raw.slice() }));
   expect(partTemplateKey({ ...t, source: 'other' })).not.toBe(partTemplateKey(t));
   expect(partTemplateKey({ ...t, raw: new Uint8Array([1, 2, 4]) })).not.toBe(partTemplateKey(t));
+  expect(partTemplateKey({ ...t, choiceKey: 'look/44' })).not.toBe(partTemplateKey({ ...t, choiceKey: 'look/735' }));
   expect(templateCategory(5)).toBe('ギミック');
   expect(templateCategory(8)).toBe('ギミック');
   expect(templateCategory(4)).toBe('宝箱');

@@ -241,6 +241,17 @@ export function LanaiGroupDetail({
   };
   const pattern = LANAI_MG_PATTERNS.map((_, i) => t.u8(g.row, LANAI_MG_PATTERN + i));
   const patternTotal = pattern.reduce((a, b) => a + b, 0);
+  const emptyPatterns = g.row
+    ? [LANAI_MG_LISTS[0], LANAI_MG_LISTS[0], LANAI_MG_LISTS[3], LANAI_MG_LISTS[4]]
+        .map((list, i) => ({
+          name: LANAI_MG_PATTERNS[i]!,
+          selected: pattern[i]! > 0,
+          populated: lanaiMgSlots(t, g.row, list).some(
+            (slot) => slot.id !== 0 && slot.id !== 0x80000000 && (list.weight < 0 || slot.weight > 0),
+          ),
+        }))
+        .filter((x) => x.selected && !x.populated)
+    : [];
   const flags = t.u8(g.row, LANAI_MG_FLAGS);
   const ctx: SlotCtx = {
     session,
@@ -312,6 +323,12 @@ export function LanaiGroupDetail({
         </tbody>
       </table>
       {!patternTotal && <div className="muted small">重みがすべて 0 なので、この群れの敵は出ません。</div>}
+      {emptyPatterns.length > 0 && (
+        <div className="muted small">
+          {emptyPatterns.map((x) => x.name).join('・')}{' '}
+          が選ばれますが、対応するリストに敵がいません。この出方では敵のいない戦闘になります。
+        </div>
+      )}
       <div className="book-cols group-cols">
         {LANAI_MG_LISTS.map((list) => (
           <ListEditor key={list.key} ctx={ctx} list={list} />

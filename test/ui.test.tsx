@@ -501,7 +501,8 @@ describe('encounter groups', () => {
     expect(html).toContain('(なし: 敵が出ない)');
     expect(html).toContain('2 / 2 件');
     expect(html).toContain('<tr class="active"><td class="num muted">1</td>');
-    expect(html).toContain('(敵なし)');
+    expect(html).toContain('class="photo empty-group-icon"');
+    expect(html).toContain('aria-label="敵なし"');
     expect(html.match(/edited-mark/g)?.length).toBe(1);
     const list = renderToString(
       <GroupList game={game} book={book} uses={new Map()} selected={0} onSelect={() => {}} />,
@@ -592,7 +593,6 @@ describe('sounds', () => {
         selected={2}
         href={(r) => `#/sounds/${r}`}
         uses={(r) => soundUses(game).get(r)?.length ?? 0}
-        usesTitle=""
         usedLabel="マップで使う"
       >
         <MapUses use={soundUses(game).get(2) ?? []} users={new Map([[0, [map]]])} mapTitle={() => '山のどうくつ B1'} />
@@ -601,7 +601,8 @@ describe('sounds', () => {
     expect(html).toContain('300 / 300 件');
     expect(html).toContain('0x01000001');
     expect(html).toContain('play-button large');
-    expect(html).toContain('sound.bcsar の音 1');
+    expect(html).toContain('BCSAR の音 1');
+    expect(html).not.toContain('>使用</th>');
     expect(html).toContain('使っているマップの設定 (2)');
     expect(html).toContain('href="#/map/D01B01001"');
     expect(html).toContain('(読めるマップにはなし)');

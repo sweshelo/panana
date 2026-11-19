@@ -2,7 +2,7 @@
 // content's BattleFieldContents (12 B: +0x00 archive and +0x04 entry of the background model, +0x08 the battle BGM as a
 // SoundData row) picked by the group (MonsterGroup +0x00, from the content's table when +0x69 bit3 is set). A value the
 // table doesn't have is its row 0. MapResource +0x10 is the content row a map starts with, and MapData +0x04 / +0x06 /
-// +0x08 are the map's field BGM, the tune of one encounter path and the encounter sound.
+// +0x08 are the map's field BGM, the tune of one encounter path and footsteps.
 import type { ModelRef } from '../pages/modelview';
 import { hex8 } from '../util/bytes';
 import type { LanaiMaps } from './maps';
@@ -16,7 +16,7 @@ export const LANAI_BF = { archive: 0x00, entry: 0x04, bgm: 0x08 } as const;
 export const LANAI_MG_FIELD_CONTENTS = 0x08;
 /** MapResource +0x10: the BattleFieldContents row ID a map starts with (0 = the group's). */
 export const LANAI_RESOURCE_BATTLE_FIELD = 0x10;
-/** MapData: field BGM, the tune FUN_001DAB34 plays before a battle, the encounter sound (u16 SoundData rows). */
+/** MapData: field BGM, the tune FUN_001DAB34 plays before a battle, and footsteps (u16 SoundData rows). */
 export const LANAI_MAP_SOUNDS = [
   { offset: 0x04, label: 'フィールドの BGM', kind: 'bgm', note: '0 なら MapGroup で決まる (ワールドマップ・海など)' },
   {
@@ -25,7 +25,12 @@ export const LANAI_MAP_SOUNDS = [
     kind: 'bgm',
     note: 'エンカウントの経路の 1 つで戦闘の前に鳴らす。戦闘が始まると戦闘の背景の行の BGM に変わる (推定)',
   },
-  { offset: 0x08, label: 'エンカウントの効果音', kind: 'se', note: '0 なら 107。値は 107〜111 (推定)' },
+  {
+    offset: 0x08,
+    label: '足音',
+    kind: 'se',
+    note: '0 なら 107。Update の patch.bcsar では #107〜#111 が SE_FLD_STEPS1〜5',
+  },
 ] as const;
 
 export const LANAI_BG_ARCHIVES = [0x52120000, 0xf0f40000];

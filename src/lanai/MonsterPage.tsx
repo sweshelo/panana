@@ -7,11 +7,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { InfoTip } from '../ui/InfoTip';
 import { ModelTextures } from '../ui/ModelTextures';
+import { replaceLanaiMonsterTexture } from './textures';
 import { ModelView } from '../ui/ModelView';
 import { PortLookButton } from '../ui/PortLook';
 import { MonsterList } from '../ui/MonsterList';
 import { RowFields } from '../ui/RowFields';
 import { TextBox } from '../ui/book';
+import { LanaiDescription } from './Description';
 import { CopyRemoveButtons, NewRecordButton, type CopySpec } from '../ui/RecordButtons';
 import { lanaiCanRemoveMonster, lanaiCopyMonster, lanaiRemoveMonster, lanaiTransformSources } from './monsterCopy';
 import { useAsync } from '../ui/useAsync';
@@ -28,14 +30,7 @@ import {
   statsContext,
   useLanaiRevision,
 } from './MonsterEditor';
-import {
-  lanaiActionName,
-  lanaiFlavor,
-  lanaiItemName,
-  lanaiMonsterChanged,
-  lanaiMonsterStats,
-  lanaiTransforms,
-} from './monsterBook';
+import { lanaiActionName, lanaiItemName, lanaiMonsterChanged, lanaiMonsterStats, lanaiTransforms } from './monsterBook';
 import { lanaiMonsterModel, lanaiMonsterSet } from './monsterModels';
 import { ACTION_SLOT_OFFSETS, lanaiRevertMonster, lanaiStatsOf } from './monsterStats';
 import {
@@ -207,7 +202,7 @@ function lanaiMonsterUsers(session: LanaiSession, row: number): string[] {
 
 const PARAM_INFO = [
   '変更はマスター (2135000A) の MonsterParameter と能力の表 (MonsterParameterMain / Extra / RegularEvent / SpecialEvent) として書き出されます。',
-  '名前・群れの名前は表の文字列で、ここで書き換えられます。説明文はまだ編集できません。+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
+  '名前・群れの名前・説明文を編集できます。+0x00 の bit20-29 が見た目 (MonsterDesign の行番号) です (code.bin 0x306E84)。',
   '能力は +0x16 bit0-2 の表の +0x14 の行にあります (naauao lanai/monsters.md)。',
 ].join('\n');
 
@@ -233,7 +228,8 @@ function MonsterDetail({
   const params = session.rows('MonsterParameter');
   const designs = session.rows('MonsterDesign');
   const voice = lanaiVoice(params.table, m.row);
-  const flavor = lanaiFlavor(session, m.design);
+  const flavor = session.table('MessageFlavor');
+  const flavorRow = flavor?.find(m.design) ?? -1;
   const ref = lanaiStatsOf(session, m.row);
   const stats = ref ? session.rows(ref.table) : null;
   const f = ref && stats ? stats.access(ref.row) : null;
@@ -282,10 +278,12 @@ function MonsterDetail({
             <tbody>
               <NameRow session={session} row={m.row} offset={0x04} label="名前" edited={edited} />
               <NameRow session={session} row={m.row} offset={0x0c} label="群れの名前" edited={edited} />
-              {flavor && (
+              {flavor && flavorRow >= 0 && (
                 <tr>
                   <th title={`MonsterParameter +0x10、MessageFlavor ${hex8(m.design)}`}>説明</th>
-                  <td className="book-desc">{flavor}</td>
+                  <td className="book-desc">
+                    <LanaiDescription key={m.row} session={session} table={flavor} row={flavorRow} onEdit={edited} />
+                  </td>
                 </tr>
               )}
               {voice.bytes.length > 0 && (
@@ -464,7 +462,11 @@ function MonsterModel({
   return (
     <div>
       <ModelView model={model} name={m.name || 'monster'} />
-      <ModelTextures model={model} />
+      <ModelTextures
+        model={model}
+        replace={(name, image) => replaceLanaiMonsterTexture(session, m.row, name, image)}
+        replaceInfo="画像を読み込み、このモンスター専用のテクスチャにします"
+      />
       <div className="row">
         <PortLookButton target="lanai" row={m.row} onDone={edited} />
       </div>

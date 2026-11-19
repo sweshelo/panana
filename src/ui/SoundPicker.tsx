@@ -2,6 +2,7 @@
 // button, filtered by kind (BGM / 効果音 …) and by name or row. The BGM and footsteps of the map editor use it.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { SOUND_KIND, type SoundField, type SoundKind, type SoundNames, type SoundSource } from '../game/sound';
+import { requireAudible } from '../sound/render';
 import { soundPlayer, usePlayer } from '../sound/player';
 import { BgmPortTab } from './BgmPort';
 import { Dialog } from './Dialog';
@@ -27,7 +28,7 @@ export function PlayButton({
   const st = usePlayer();
   const index = sounds.index(row);
   if (index === null) return null;
-  const key = `sound:${index}`;
+  const key = `sound:${row}:${index}`;
   const on = st.key === key;
   const error = st.error?.key === key ? st.error.message : null;
   const name = sounds.name(row) || `サウンド ${row}`;
@@ -45,7 +46,12 @@ export function PlayButton({
         const se = sounds.kind(row) === 'se';
         void soundPlayer.toggle(
           key,
-          async () => (await game.soundRenderer()).render(index, se ? 8 : BGM_SECONDS, !se),
+          async () => {
+            const pcm = await (
+              await (game.soundRendererFor?.(row) ?? game.soundRenderer())
+            ).render(index, se ? 8 : BGM_SECONDS, !se);
+            return se ? requireAudible(pcm) : pcm;
+          },
           !se,
         );
       }}
@@ -88,7 +94,14 @@ export function SoundPicker({
   // RPG2's BGMs can also come from another opened game (ui/BgmPort.tsx)
   const ws = useWorkspace();
   const kahara = ws?.opened.kahara?.session;
-  const portable = !!ws && !!kahara && !!field && game === kahara.game && openedKeys(ws.opened).length > 1;
+  const lanai = ws?.opened.lanai;
+  const portTarget = lanai && game === lanai ? 'lanai' : 'kahara';
+  const portSession = portTarget === 'lanai' ? lanai : kahara;
+  const portable =
+    !!ws &&
+    !!portSession &&
+    (portTarget === 'lanai' || (!!field && game === kahara?.game)) &&
+    openedKeys(ws.opened).length > 1;
   const [tab, setTab] = useState<'own' | 'port'>('own');
   const grid = useRef<HTMLDivElement>(null);
   const player = usePlayer();
@@ -177,10 +190,13 @@ export function SoundPicker({
         <div className="picker-list">
           <BgmPortTab
             opened={ws.opened}
-            session={kahara}
+            session={portSession}
+            target={portTarget}
+            max={max}
+            kind={kind}
             query={query}
             onPicked={(r) => {
-              const v = field.value(r);
+              const v = field ? field.value(r) : r <= max ? r : null;
               if (v !== null) onPick(v);
             }}
           />

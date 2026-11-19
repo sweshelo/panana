@@ -53,6 +53,9 @@ export function lanaiCopyStats(session: LanaiSession, monster: number): number {
  * Rows an edit added are removed when nothing names them any more and they are the last of their table.
  */
 export function lanaiRevertMonster(session: LanaiSession, monster: number): void {
+  const flavor = session.table('MessageFlavor');
+  const description = flavor?.find(session.need('MonsterParameter').u32(monster, 0x10)) ?? -1;
+  if (flavor && description >= 0 && flavor.originalRow(description)) flavor.revertRow(description);
   const before = lanaiStatsOf(session, monster);
   const acts = before ? lanaiStatsActions(session, before) : [];
   const p = session.need('MonsterParameter');

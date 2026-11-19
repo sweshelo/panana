@@ -800,6 +800,12 @@ export class MonsterBook {
     return this.monsters.filter((m) => m.design === design).map((m) => m.row);
   }
 
+  /** Message ID of a monster's description (MonsterDesign +0x04), 0 = none. */
+  descriptionId(row: number): number {
+    const m = this.monster(row);
+    return m && m.design < this.design.rows ? u32(this.design.row(m.design), 4) : 0;
+  }
+
   /** Message ID of a monster's name (MonsterDesign +0x00), 0 = none. */
   nameId(row: number): number {
     const d = this.monster(row)?.design ?? this.design.rows;

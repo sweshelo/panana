@@ -6,6 +6,7 @@
 //   followed by its entries, the references counting from the table), STRG gets the names (the lookup tree is kept:
 //   the game picks sounds by item ID, from soundData).
 import { align, concat, s32, u16, u32, w16, w32 } from '../util/bytes';
+import type { Pcm } from './formats';
 
 const CSTM_V21 = 0x02010000;
 
@@ -125,6 +126,64 @@ export function cstmChannels(d: Uint8Array): number {
   if (!info) throw new Error('CSTM に INFO がありません');
   const body = info.offset + 8;
   return d[body + s32(d, body + 4) + 2]!;
+}
+
+/** Encode a rendered sound effect as a one-shot PCM16 stream for import into another game's archive. */
+export function cstmFromPcm(pcm: Pcm): Uint8Array {
+  const channels = pcm.channels.length;
+  const samples = pcm.channels[0]?.length ?? 0;
+  if (!channels || channels > 2 || !samples || pcm.channels.some((c) => c.length !== samples))
+    throw new Error('効果音のチャンネルまたは長さが不正です');
+  const rate = Math.round(pcm.rate);
+  if (rate < 1 || rate > 0xffffffff) throw new Error('効果音のサンプルレートが不正です');
+  const head = new Uint8Array(0x40);
+  head.set(new TextEncoder().encode('CSTM'));
+  w16(head, 4, 0xfeff);
+  w16(head, 6, 0x40);
+  const info = new Uint8Array(8 + 0x5c + 4 + channels * 16);
+  info.set(new TextEncoder().encode('INFO'));
+  const b = 8;
+  w16(info, b, 0x4100);
+  w32(info, b + 4, 0x18);
+  w32(info, b + 0x0c, -1);
+  w16(info, b + 0x10, 0x0101);
+  w32(info, b + 0x14, 0x5c);
+  const si = b + 0x18;
+  info[si] = 1;
+  info[si + 2] = channels;
+  w32(info, si + 4, rate);
+  w32(info, si + 12, samples);
+  w32(info, si + 16, 1);
+  w32(info, si + 20, samples * 2);
+  w32(info, si + 24, samples);
+  w32(info, si + 28, samples * 2);
+  w32(info, si + 32, samples);
+  w32(info, si + 36, samples * 2);
+  w32(info, si + 40, 4);
+  w32(info, si + 44, samples);
+  w16(info, si + 48, 0x1f00);
+  w32(info, si + 52, 0x18);
+  const ct = b + 0x5c;
+  w32(info, ct, channels);
+  for (let c = 0; c < channels; c++) {
+    w16(info, ct + 4 + c * 8, 0x4102);
+    w32(info, ct + 8 + c * 8, 4 + channels * 8 + c * 8);
+    w32(info, ct + 4 + channels * 8 + c * 8 + 4, -1);
+  }
+  const seek = new Uint8Array(8 + 0x18);
+  seek.set(new TextEncoder().encode('SEEK'));
+  const data = new Uint8Array(8 + 0x18 + samples * channels * 2);
+  data.set(new TextEncoder().encode('DATA'));
+  for (let c = 0; c < channels; c++)
+    for (let i = 0; i < samples; i++) {
+      const value = Math.max(-1, Math.min(1, pcm.channels[c]![i]!));
+      w16(data, 8 + 0x18 + (c * samples + i) * 2, Math.round(value * (value < 0 ? 32768 : 32767)));
+    }
+  return buildBlocks(head, 0x02020000, [
+    [0x4000, info],
+    [0x4001, seek],
+    [0x4002, data],
+  ]);
 }
 
 export interface NewStreamSound {

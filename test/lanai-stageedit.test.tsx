@@ -24,6 +24,11 @@ import { findEntry } from '../src/archive/gsarc';
 import { u32 } from '../src/util/bytes';
 import { LanaiTable } from '../src/lanai/table';
 import { LanaiStagePage } from '../src/lanai/StagePage';
+import { LanaiStageContents } from '../src/lanai/StageContents';
+import { GroupIconRow } from '../src/ui/GroupDetail';
+import { LanaiStageEditor } from '../src/lanai/StageEditor';
+import { lanaiStageThumbnail } from '../src/lanai/StageThumbnail';
+import { LanaiExportDialog } from '../src/lanai/ExportDialog';
 import { parseLanaiText } from '../src/lanai/message';
 import { openImages, overlayDump, parsePatchList, type Dump } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
@@ -58,6 +63,33 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     dump = await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as File).name);
   });
   const fresh = () => LanaiSession.open(dump, { fresh: true });
+
+  test('stage overview shows linked group and chest icons with separate first and repeat rewards', async () => {
+    const session = await fresh();
+    const maps = await lanaiMaps(session, lanaiContents(session)[1]!);
+    const html = renderToString(createElement(LanaiStageContents, { maps }));
+    expect(html).toContain('class="stage-overview"');
+    expect(html.match(/class="stage-overview-panel"/g)?.length).toBe(2);
+    expect(html).toContain('#/groups/1.');
+    expect(html).toContain('#/maps/1.');
+    expect(html).toContain('stage-chest-kind');
+    expect(html).toContain('1回目');
+    expect(html).toContain('2回目');
+    expect(html).toContain('stage-chest-reward-first');
+    const chestRows = [...html.matchAll(/<tr>[\s\S]*?<\/tr>/g)]
+      .map((match) => match[0])
+      .filter((row) => row.includes('stage-chest-kind'));
+    const firstGoal = chestRows.findIndex((row) => row.includes('stage-chest-reward-first'));
+    expect(firstGoal).toBeGreaterThan(0);
+    expect(chestRows.slice(firstGoal).every((row) => row.includes('stage-chest-reward-first'))).toBe(true);
+    expect(html).not.toContain('<hr');
+    expect(html).not.toContain('<th>出現マップ</th>');
+    expect(html).not.toContain('%');
+    expect(html).not.toContain('small muted">MapGroup');
+    const empty = renderToString(createElement(GroupIconRow, { icons: [], changed: false }));
+    expect(empty).toContain('empty-group-icon');
+    expect(empty).toContain('aria-label="敵なし"');
+  });
 
   test('CRS uses the Update exports and preserves overloads and argument types', async () => {
     const exports = crsExports(await dump.readUpdateRomfs!('app/lanai.crs'));
@@ -186,6 +218,7 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(m.read(record + 0x118, 4)).toBe(17);
     expect(m.read(record + 0x120, 1)).toBe(3);
     expect(m.read(record + 0x12c, 1)).toBe(0);
+    expect(m.read(record + 0x14a, 2)).toBe(t.u16(0, 0x36));
     m.write(record + 0x134, 1, 4); // presence of a display entry, normally initialized by its constructor
     expect(m.run(0x2a9024, [0, record])).toBe(0);
     flag = 1;
@@ -203,6 +236,7 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     await editLanaiStage(s, c, stage, {
       order: 1234,
       stamina: 7,
+      recommendedLevel: 321,
       visible: { kind: 6, v1: 23, v2: 3 },
       hidden: { kind: 0, v1: 0, v2: 0 },
     });
@@ -211,15 +245,74 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(local.u32(0, 0)).toBe(1234);
     expect(table.u8(stage.row, 0x49)).toBe(7);
     expect(local.u8(0, 0x3d)).toBe(7);
+    expect(table.u16(stage.row, 0x42)).toBe(321);
+    expect(local.u16(0, 0x36)).toBe(321);
+    expect(table.u16(stage.row, 0x40)).toBe(new DataView(before.buffer).getUint16(0x40, true));
     expect(table.u32(stage.row, 0x20)).toBe(3);
     expect(local.u32(0, 0x20)).toBe(3);
     expect([...table.row(stage.row).slice(0x25, 0x28)]).toEqual([...before.slice(0x25, 0x28)]);
     const html = renderToString(createElement(LanaiStagePage, { session: s, arg: '2' }));
-    expect(html).toContain('名前・ミッション・説明を編集');
-    expect(html).toContain('#/messages/');
+    expect(html).toContain('class="stage-edit-row" tabindex="0"');
+    expect(html).not.toContain('名前・ミッション・説明を編集');
     const restored = await fresh();
     await restored.restore(s.saved());
     expect(restored.need('MapStageIntegration').u8(stage.row, 0x49)).toBe(7);
+    expect(lanaiContents(restored)[2]!.stages[0]!.recommendedLevel).toBe(321);
+    const editor = renderToString(createElement(LanaiStageEditor, { session: s, content: c, stage, onClose() {} }));
+    expect(editor).toContain('推奨レベル');
+    expect(editor).toContain('サムネイル');
+    expect(editor).toContain('aria-label="サムネイルを選ぶ"');
+    expect(editor).not.toContain('ゲーム内の画像から選ぶ');
+    expect(editor).not.toContain('メッセージ ' + stage.messageId.toString(16).toUpperCase().padStart(8, '0'));
+    expect(editor).toContain('名前・ミッション・説明');
+    expect(editor).toContain('stage_name');
+  });
+
+  test('stage thumbnails are decoded, copied independently, saved, exported with table edits and reverted', async () => {
+    const s = await fresh(),
+      cs = lanaiContents(s),
+      c = cs[1]!,
+      source = cs[4]!,
+      stage = c.stages[0]!;
+    const values = { order: stage.order, stamina: stage.stamina, visible: stage.visible, hidden: stage.hidden };
+    expect(cs.slice(1, 6).map((c) => c.stages[0]!.recommendedLevel)).toEqual([1, 5, 10, 20, 25]);
+    const original = (await s.readLayout(c.archive, stage.thumbnail)).slice();
+    const sourceBody = (await s.readLayout(source.archive, source.stages[0]!.thumbnail)).slice();
+    const image = await lanaiStageThumbnail(s, source.archive, source.stages[0]!.thumbnail);
+    expect([image.width, image.height, image.rgba.length]).toEqual([144, 132, 144 * 132 * 4]);
+    for (const recommendedLevel of [-1, 1.5, 65536, NaN])
+      await expect(editLanaiStage(s, c, stage, { ...values, recommendedLevel })).rejects.toThrow('推奨レベル');
+    expect(s.changed).toBe(false);
+    await editLanaiStage(s, c, stage, {
+      ...values,
+      thumbnail: { archive: source.archive, hash: source.stages[0]!.thumbnail },
+    });
+    expect(s.changed).toBe(true);
+    expect(s.changedTables()).toHaveLength(0); // image alone still enables export
+    const exported = renderToString(createElement(LanaiExportDialog, { session: s, onClose() {} }));
+    expect(exported).toContain('MOD の zip をダウンロード');
+    expect(exported).not.toContain('まだ何も変更していません');
+    const files = s.modFiles(),
+      arc = parseArchive(files.get(c.archive)!);
+    expect(equalBytesOf(unpackEntry(arc, findEntry(arc, stage.thumbnail)!).body, sourceBody)).toBe(true);
+    expect(files.has(source.archive)).toBe(false);
+    expect(equalBytesOf(await s.readLayout(source.archive, source.stages[0]!.thumbnail), sourceBody)).toBe(true);
+    const restored = await fresh();
+    await restored.restore(s.saved());
+    expect(equalBytesOf(await restored.readLayout(c.archive, stage.thumbnail), sourceBody)).toBe(true);
+    await editLanaiStage(restored, c, stage, { ...values, recommendedLevel: 65535 });
+    const rebuilt = parseArchive(restored.modFiles().get(c.archive)!);
+    expect(equalBytesOf(unpackEntry(rebuilt, findEntry(rebuilt, stage.thumbnail)!).body, sourceBody)).toBe(true);
+    const ref = (await restored.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')!;
+    expect(new LanaiTable(unpackEntry(rebuilt, rebuilt.entries[ref.index]!).body).u16(0, 0x36)).toBe(65535);
+    // Cloning also captures the replaced thumbnail, and later edits to the original stay independent.
+    const index = await cloneLanaiContent(restored, lanaiContents(restored)[1]!, '画像のコピー');
+    const copy = lanaiContents(restored)[index]!;
+    expect(equalBytesOf(await restored.readLayout(copy.archive, copy.stages[0]!.thumbnail), sourceBody)).toBe(true);
+    restored.revertAll();
+    expect(restored.changed).toBe(false);
+    expect(restored.modFiles().size).toBe(0);
+    expect(equalBytesOf(await restored.readLayout(c.archive, stage.thumbnail), original)).toBe(true);
   });
 
   test('copy appends independent archive, definition, integration and message; reload, edit, export and revert', async () => {

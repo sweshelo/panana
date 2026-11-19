@@ -1,7 +1,8 @@
 // The pages of a 電波人間のRPG FREE! (lanai) dump: the stages (contents), the maps, the talks, the strings of the tables, the
-// monsters, the items, the actions, the shops, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
+// monsters, the items, the actions, the shops, the BGM and sound effects, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
 import { useMemo, useState, type ReactNode } from 'react';
 import { LanaiActionPage } from '../lanai/ActionPage';
+import { LanaiAnimationPage } from '../lanai/AnimationPage';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
@@ -13,6 +14,7 @@ import { LanaiMonsterPage } from '../lanai/MonsterPage';
 import { useLanaiRevision } from '../lanai/MonsterEditor';
 import { LanaiSession } from '../lanai/session';
 import { LanaiShopPage } from '../lanai/ShopPage';
+import { LanaiSoundPage } from '../lanai/SoundPage';
 import { LanaiStagePage } from '../lanai/StagePage';
 import { LanaiTalkPage } from '../lanai/TalkPage';
 import { LanaiWorldPage } from '../lanai/WorldPage';
@@ -30,10 +32,12 @@ export const LANAI_PAGES = [
   ['talks', 'セリフ'],
   ['messages', 'メッセージ'],
   ['monsters', 'モンスター'],
+  ['animations', 'キャラのアニメ'],
   ['groups', '群れ'],
   ['items', 'アイテム'],
   ['actions', 'アクション'],
   ['shops', 'ショップ'],
+  ['sounds', 'BGM・効果音'],
   ['codes', 'コード・配信'],
   ['romfs', 'RomFS'],
 ] as const;
@@ -45,10 +49,12 @@ const TITLES: Record<LanaiPage, string> = {
   talks: 'セリフ',
   messages: 'メッセージ',
   monsters: 'モンスター',
+  animations: 'キャラクターのアニメーション',
   groups: '群れ',
   items: 'アイテム',
   actions: 'アクション',
   shops: 'ショップ',
+  sounds: 'BGM・効果音',
   codes: 'コード入力・チェックイン',
   romfs: 'RomFS',
 };
@@ -133,9 +139,9 @@ export function LanaiShell({
           <BaseModButton title={dump.title} mod={session.baseMod} onChange={onBaseMod} />
         </>
       )}
-      render={(id, { arg: a }) =>
+      render={(id, { arg: a, hash }) =>
         id === 'stages' ? (
-          <LanaiStagePage session={session} arg={a} />
+          <LanaiStagePage session={session} arg={a} script={hash === `#/stages/${a}/script`} />
         ) : id === 'maps' ? (
           <LanaiMapPage session={session} arg={a} />
         ) : id === 'world' ? (
@@ -146,6 +152,8 @@ export function LanaiShell({
           <LanaiMessagePage session={session} arg={a} />
         ) : id === 'monsters' ? (
           <LanaiMonsterPage session={session} arg={a} />
+        ) : id === 'animations' ? (
+          <LanaiAnimationPage session={session} arg={a} />
         ) : id === 'groups' ? (
           <LanaiGroupPage session={session} arg={a} />
         ) : id === 'items' ? (
@@ -154,6 +162,8 @@ export function LanaiShell({
           <LanaiActionPage session={session} arg={a} />
         ) : id === 'shops' ? (
           <LanaiShopPage session={session} arg={a} />
+        ) : id === 'sounds' ? (
+          <LanaiSoundPage session={session} arg={a} />
         ) : id === 'codes' ? (
           <LanaiCodePage session={session} arg={a} />
         ) : (

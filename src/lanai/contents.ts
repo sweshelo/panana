@@ -13,6 +13,10 @@ export interface LanaiStage {
   content: number;
   /** +0x00: steps of 0x64 (the order, 推定). */
   order: number;
+  /** +0x04: Stage_symbol*.arc layout entry in the content's archive. */
+  thumbnail: number;
+  /** +0x42 (MapStage +0x36): recommended level, u16. Zero hides the level. */
+  recommendedLevel: number;
   /** +0x0C: row ID of MessageMapStage. */
   messageId: number;
   name: string;
@@ -53,6 +57,8 @@ export function lanaiContents(s: LanaiSession): LanaiContent[] {
       row: r,
       content: u32(row, 0x34),
       order: u32(row, 0),
+      thumbnail: msi.u32(r, 4),
+      recommendedLevel: msi.u16(r, 0x42),
       messageId,
       name: m < 0 ? '' : s.plain(msg, m, 'stage_name').trim(),
       mission: m < 0 ? '' : s.plain(msg, m, 'stage_mission').trim(),

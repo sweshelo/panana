@@ -1,6 +1,7 @@
 // Item book: every item with its category, prices, use effect, and where to get it (shops, chests,
 // monster drops).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { MessageEditor, gmsgSource } from '../ui/message';
 import type { MapInfo } from '../game/codebin';
 import type { EventTable } from '../game/events';
 import type { Game } from '../game/game';
@@ -28,7 +29,6 @@ import {
   EditedMark,
   ListFilter,
   NumberInput,
-  TextBox,
   useActiveRow,
   useEdits,
   useScrollTop,
@@ -369,20 +369,20 @@ function TextEditor({
   const texts = session.game.master.texts;
   const nameId = u32(session.game.master.itemData.row(it.id), 0x0c);
   const rows = it.descriptions.filter((d) => d.id && texts.text(d.id));
-  const box = (id: number, offset: number, label: string, multi: boolean): ReactNode => {
-    const t = texts.text(id);
+  const box = (id: number, offset: number, label: string): ReactNode => {
     return (
       <tr key={offset}>
         <th title={`itemData +0x${offset.toString(16).toUpperCase()}、メッセージ ${id}`}>{label}</th>
         <td className="book-desc">
           {texts.editable(id) ? (
-            <TextBox
+            <MessageEditor
               key={`${it.id}:${id}`}
-              value={t?.text ?? ''}
-              multi={multi}
-              edited={texts.isEdited(id)}
-              onCommit={(v) => {
-                items.setText(it.id, offset, v);
+              texts={{ ...gmsgSource(texts), setText: (_id, text) => items.setText(it.id, offset, text) }}
+              id={id}
+              compact
+              apply={(fn) => {
+                fn();
+                items.set(it.id, {});
                 onEdit();
               }}
             />
@@ -396,8 +396,8 @@ function TextEditor({
   return (
     <table className="enc-table desc-table">
       <tbody>
-        {nameId > 0 && box(nameId, 0x0c, '名前', false)}
-        {rows.map((d) => box(d.id, d.offset, d.label, true))}
+        {nameId > 0 && box(nameId, 0x0c, '名前')}
+        {rows.map((d) => box(d.id, d.offset, d.label))}
       </tbody>
     </table>
   );

@@ -7,6 +7,7 @@ import { Controller } from '../src/editor/controller';
 import { MapDb } from '../src/game/mapdb';
 import { buildTiles, LANAI_ROT_CODEC, type Rec } from '../src/game/sections';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
+import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_SCRIPT } from '../src/lanai/actions';
 import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
 import {
   LANAI_EVENT_SLOT,
@@ -18,6 +19,7 @@ import {
   type LanaiMaps,
 } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
+import { lanaiRecKind, lanaiRomParts, romPartKey } from '../src/lanai/romParts';
 import {
   lanaiChestField,
   lanaiChestUsers,
@@ -131,6 +133,16 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const info = maps.mapByName('D01001B01')!;
     const st = lanaiEditState(maps);
     st.open(info);
+    expect(st.templates().find((t) => t.source === '新規ワープゲート')).toMatchObject({
+      label: 'ワープゲート',
+      model: { type: 'object', row: 44 },
+      event: { look: 0 },
+    });
+    expect(st.templates().find((t) => t.source === '新規ワープホール')).toMatchObject({
+      label: 'ワープホール',
+      model: { type: 'object', row: 105 },
+      event: { look: 0 },
+    });
     const ctl = new Controller(st);
     const doc = st.current!;
     const i = doc.tiles.findIndex((t) => t.kind === 5);
@@ -289,6 +301,131 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       break;
     }
     expect(done).toBe(true);
+  }, 300000);
+
+  test('new normal and goal chests create private rewards and undo together with placement', () => {
+    const info = maps.mapByName('D01001B01')!;
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const events = maps.eventTable(info.dungeon)!;
+    const treasure = maps.treasureGroup!;
+    const eventRows = events.rows;
+    const rewardRows = treasure.rows;
+    const chestRows = st.current!.recs[4]?.length ?? 0;
+    const tile = st.current!.tiles[0]!;
+    for (const [source, count] of [
+      ['新規宝箱', 1],
+      ['新規クリア宝箱', 3],
+    ] as const) {
+      const template = st.templates().find((t) => t.source === source)!;
+      expect(template).toBeDefined();
+      const rewards = Array.from({ length: count }, (_, i) => [{ value: 100 + i, kind: 2, weight: 1 }]);
+      st.edit((doc) =>
+        st.placeStamp(
+          doc,
+          { type: 'template', t: { ...template, event: { ...template.event!, rewards } } },
+          tile.x + 0.5,
+          tile.y + 0.5,
+        ),
+      );
+      const raw = st.current!.recs[4]!.at(-1)!.raw;
+      const row = u32(raw, 4);
+      expect(row).toBe(events.rows - 1);
+      expect(events.u32(row, 0x10)).toBe(count === 3 ? LANAI_ACTION_GOAL_CHEST : 0x8000000e);
+      if (count === 3) expect(events.u32(row, 0x18)).toBe(content.index);
+      for (let i = 0; i < count; i++) {
+        const field = [0x14, 0x2c, 0x44][i]!;
+        expect(events.u32(row, field)).toBe(rewardRows + i + (source === '新規クリア宝箱' ? 1 : 0));
+        expect(lanaiTreasureSlots(treasure, events.u32(row, field))).toEqual(rewards[i]!);
+      }
+    }
+    expect(events.rows).toBe(eventRows + 2);
+    expect(treasure.rows).toBe(rewardRows + 4);
+    expect(lanaiValidate(maps, info, st.current!).filter((i) => i.key.startsWith('reward/'))).toHaveLength(0);
+    st.undo();
+    st.undo();
+    expect(st.current!.recs[4]?.length ?? 0).toBe(chestRows);
+    expect(events.rows).toBe(eventRows);
+    expect(treasure.rows).toBe(rewardRows);
+    expect(s.modFiles().size).toBe(0);
+  });
+
+  test('the ROM’s kinds are parts of any map: a pit, a recovery point and a sign placed with rows of their own', async () => {
+    const parts = await lanaiRomParts(s);
+    expect(
+      parts
+        .filter((p) => p.section === 3 && p.kind === 2 && p.action === 0x80000014)
+        .map((p) => p.look)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 107]);
+    expect(
+      parts
+        .filter((p) => p.section === 3 && p.kind === 4 && p.action === 0x80000012)
+        .map((p) => p.look)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 735]);
+    const key = (p: { section: number; kind: number; action: number }): string =>
+      romPartKey(p.section, p.kind, p.action);
+    const keys = new Set(parts.map(key));
+    for (const k of [
+      romPartKey(3, 7, 0x8000001d),
+      romPartKey(5, 13, 0x80000030),
+      romPartKey(5, 11, 0x8000002f),
+      romPartKey(1, 0, -1),
+    ])
+      expect(keys.has(k)).toBe(true);
+    // the scripts (the sample's CRO) and the chests (rows of the content's TreasureGroup) are not in it
+    expect(parts.some((p) => p.action === LANAI_ACTION_SCRIPT || p.section === 4)).toBe(false);
+
+    const info = maps.mapByName('D01001B01')!;
+    const st = lanaiEditState(maps);
+    st.open(info);
+    const events = maps.eventTable(info.dungeon)!;
+    const talk = maps.talkTable(info.dungeon)!;
+    const [eventRows, talkRows] = [events.rows, talk.rows];
+    const templates = st.romTemplates(parts);
+    expect(
+      templates
+        .filter((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.action === 0x80000012)
+        .map((t) => t.subtitle),
+    ).toEqual(['外観 #44', '外観 #735']);
+    const of = (section: number, kind: number, action: number) =>
+      templates.find(
+        (t) => t.section === section && lanaiRecKind(section, t.raw) === kind && t.event?.action === action >>> 0,
+      )!;
+    const pit = of(3, 7, 0x8000001d);
+    expect(pit.label).toContain('落とし穴');
+    // a destination is chosen when it is placed (the sample's is a map of its own content)
+    expect(pit.event!.destination).toEqual({ map: 0, point: 0 });
+    const sign = of(5, 11, 0x8000002f);
+    expect(sign.event!.talk!.text.length).toBeGreaterThan(0);
+    const tile = st.current!.tiles[0]!;
+    const alternateGate = templates.find((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.look === 735)!;
+    expect(alternateGate.model).toEqual({ type: 'object', row: 735 });
+    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: alternateGate }, tile.x + 0.5, tile.y + 0.5));
+    expect(events.u16(eventRows, 0x5a)).toBe(735);
+    st.undo();
+    expect(events.rows).toBe(eventRows);
+    for (const t of [pit, of(5, 13, 0x80000030), sign])
+      st.edit((doc) => st.placeStamp(doc, { type: 'template', t }, tile.x + 0.5, tile.y + 0.5));
+    expect(events.rows).toBe(eventRows + 3);
+    const rowOf = (section: number): number => u32(st.current!.recs[section]!.at(-1)!.raw, 4);
+    const pitRow = st.current!.recs[3]!.at(-1)!;
+    expect(u32(pitRow.raw, 4)).toBe(eventRows);
+    expect(events.u32(eventRows, 0x10)).toBe(0x8000001d);
+    expect([events.u32(eventRows, 0x14), events.u32(eventRows, 0x18)]).toEqual([0, 0]);
+    expect([events.u8(eventRows, 0x5f), events.u8(eventRows, 0x60)]).toEqual([0, 0]);
+    expect(events.u32(eventRows + 1, 0x10)).toBe(0x80000030);
+    // the sign's line is a new row of this group's talk table
+    expect(rowOf(5)).toBe(eventRows + 2);
+    expect(talk.rows).toBe(talkRows + 1);
+    expect(events.u32(eventRows + 2, 0x14)).toBe(talkRows);
+    st.undo();
+    st.undo();
+    st.undo();
+    expect(events.rows).toBe(eventRows);
+    expect(talk.rows).toBe(talkRows);
+    expect(s.modFiles().size).toBe(0);
   }, 300000);
 
   test('chest contents: TreasureGroup entries edited, a row of its own, undo, export and saving', async () => {

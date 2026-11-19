@@ -26,12 +26,16 @@ import { overlayDump, type BaseMod, type Dump } from '../rom/dump';
 import { LANAI } from '../rom/titles';
 import { equalBytes, hex8, u32 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
-import type { SoundNames } from '../game/sound';
+import { BCSAR_PATH, SoundNames, bcsarSoundNames } from '../game/sound';
 import type { SoundRenderer } from '../sound/render';
 import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { conditionScriptPatch, parseConditionScript } from './conditionScript';
-import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY } from './maps';
+import { scriptDocFromSource, scriptDocIsEmpty, scriptDocSource, scriptOfDoc, type ScriptDoc } from './eventScript';
+import { buildStageScripts, LANAI_STAGE_MANIFEST, stageScriptManifest } from './stageScript';
+import { CRO_HOOK_START_EVENT, croHooks } from './contents';
+import { fieldStartPatch, hasMarkedLanaiFloors, markAddedLanaiFloors } from './fieldStart';
+import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY, restoreMissingLanaiSections } from './maps';
 import {
   encodeLanaiMessage,
   lanaiPlain,
@@ -42,7 +46,7 @@ import {
 } from './message';
 import { LanaiRows } from './rows';
 import { LANAI_TABLES } from './tables';
-import { LanaiTable } from './table';
+import { LanaiLockedError, LanaiTable } from './table';
 
 /** A table of a root archive. */
 export interface LanaiTableRef {
@@ -97,6 +101,46 @@ export function archiveTables(name: string, arc: Archive): LanaiTableRef[] {
 export const LANAI_EDITS_KEY = 'lanai/edits/v1';
 
 /**
+ * The master tables whose rows the custom-stage distribution (lanai-custom-stages) lays over the game's master
+ * (its 3ds/runtime/lanai.c master_header). A delivered stage with a row of any other table is refused whole.
+ */
+/** A master table whose changes the custom-stage distribution leaves out (LanaiSession.distributionDiscards). */
+export interface LanaiDistributionDiscard {
+  table: string;
+  /** Rows that differ from the ROM (added and removed ones too). */
+  rows: number;
+  /** Whether Panana's edits are among them (else they come from the base MOD). */
+  edited: boolean;
+}
+
+/** Why a table or a feature is locked in the custom-stage distribution mode. */
+export const LANAI_DISTRIBUTION_LOCK = '配信用の編集モードでは変えられません (カスタムステージの配信で欠落するため)';
+
+/**
+ * Shows the locked writes the pages do not catch (LanaiLockedError thrown from an event handler reaches window's
+ * error event) as an alert, once per page.
+ */
+function alertLockedWrites(): void {
+  const w = globalThis as { window?: Window; lanaiLockAlert?: boolean };
+  if (!w.window || w.lanaiLockAlert) return;
+  w.lanaiLockAlert = true;
+  w.window.addEventListener('error', (e) => {
+    if (!(e.error instanceof LanaiLockedError)) return;
+    e.preventDefault();
+    alert(e.error.message);
+  });
+}
+
+export const LANAI_DELIVERABLE_TABLES = [
+  'Contents',
+  'MapStageIntegration',
+  'MessageMapStage',
+  'MessageMapName',
+  'ItemData',
+  'ItemDataCore',
+];
+
+/**
  * A row edit kept across loads: the table (tableKey), the row, the row as it was (null for a row an edit added) and as
  * it is. Only the bytes that differ are put back, so a row the Update changed elsewhere keeps the Update's bytes.
  */
@@ -118,8 +162,16 @@ export type LanaiSavedMapTable = [archive: string, bytes: Uint8Array];
 export type LanaiSavedEntry = [archive: string, hash: number, file: string, like: number, bytes: Uint8Array];
 
 export interface LanaiSaved {
+  soundFiles?: [string, Uint8Array][];
   createdFiles?: [string, Uint8Array][];
   conditionScripts?: [number, string][];
+  /**
+   * The event scripts of the added stages, by archive: [archive, stage key, the editor's document] (stageScript.ts).
+   * Sessions saved before the document have the script's text in its place.
+   */
+  stageScripts?: [string, string, string | ScriptDoc][];
+  /** Replaced layout entries (archive, entry hash, unpacked body). */
+  layouts?: [string, number, Uint8Array][];
   rows: LanaiSavedRow[];
   /** Written strings (absent in edits saved before strings could be written, and when none were). */
   strings?: LanaiSavedString[];
@@ -131,6 +183,8 @@ export interface LanaiSaved {
   entries?: LanaiSavedEntry[];
   /** Panana's code MOD "ドロップ率の天井を撤廃" is on (game/dropcap.ts). */
   dropCap?: boolean;
+  /** The custom-stage distribution mode is on (LanaiSession.distributionMode). */
+  distributionMode?: boolean;
 }
 
 /** The map database of a content's root archive (entry C9F79000, maps.ts), shared by the pages and the MOD export. */
@@ -141,12 +195,16 @@ export interface LanaiMapDb {
   db: MapDb;
   /** The content's map table (entry 131C5000, n × 0x4C; maps.ts), null when the archive has none. */
   table: LanaiMapTable | null;
+  /** The content's CRO implements indexed export 3 (a field-start event). */
+  hasStartEvent: boolean;
 }
 
 /** A content's map table: the bytes as read and as edited (maps appended, names written; maps.ts LanaiMaps). */
 export interface LanaiMapTable {
   entry: ArcEntry;
   original: Uint8Array;
+  /** Source ROM rows for marking legacy maps in imported or cloned archives. */
+  sourceRows?: Uint8Array;
   data: Uint8Array;
 }
 
@@ -181,9 +239,38 @@ function addedRowSource(t: LanaiTable, after: Uint8Array): number | undefined {
 export const lanaiTableKey = (t: Pick<LanaiTableRef, 'archive' | 'entry'>): string => `${t.archive}/${hex8(t.entry)}`;
 
 export class LanaiSession {
+  readonly soundFiles = new Map<string, Uint8Array>();
   /** New archive/CRR files; the initial archive bytes are the baseline for subsequent table/map edits. */
   readonly createdFiles = new Map<string, Uint8Array>();
   readonly conditionScripts = new Map<number, string>();
+  /**
+   * The event scripts of the added stages by archive (eventScript.ts): built into the archive's CRO when the MOD is
+   * written. The key names the stage on the 3DS (the file of its flags) and stays the same while the stage is edited.
+   */
+  readonly stageScripts = new Map<string, { key: string; doc: ScriptDoc; source: string }>();
+  private readonly layouts = new Map<string, { archive: string; arc: Archive; entry: ArcEntry; body: Uint8Array }>();
+
+  /** A layout's current body, including a thumbnail replacement. */
+  async readLayout(archive: string, hash: number): Promise<Uint8Array> {
+    const key = archive.toUpperCase();
+    const edited = this.layouts.get(`${key}/${hex8(hash)}`);
+    if (edited) return edited.body;
+    const arc = await this.archive(key);
+    const entry = findEntry(arc, hash);
+    if (!entry || entry.type !== 6) throw new Error('ステージ画像のレイアウトがありません');
+    return unpackEntry(arc, entry).body;
+  }
+
+  /** Replaces a layout without invalidating the archive's editable tables/maps. Call edited() after the whole edit. */
+  async setLayout(archive: string, hash: number, body: Uint8Array): Promise<void> {
+    const name = archive.toUpperCase();
+    const arc = await this.archive(name);
+    const entry = findEntry(arc, hash);
+    if (!entry || entry.type !== 6) throw new Error('ステージ画像のレイアウトがありません');
+    const key = `${name}/${hex8(hash)}`;
+    if (equalBytes(body, unpackEntry(arc, entry).body)) this.layouts.delete(key);
+    else this.layouts.set(key, { archive: name, arc, entry, body: body.slice() });
+  }
 
   addFile(name: string, bytes: Uint8Array): void {
     if (this.createdFiles.has(name) || this.dump.files?.().some((f) => f.path.toUpperCase() === name.toUpperCase()))
@@ -191,10 +278,64 @@ export class LanaiSession {
     this.createdFiles.set(name, bytes.slice());
   }
 
+  /**
+   * Take out a file addFile added (an added stage's archive or CRR) with what was read and edited of it: its tables,
+   * map database, stage image and event script.
+   */
+  removeFile(name: string): void {
+    if (!this.createdFiles.delete(name)) throw new Error(`ファイル ${name} は追加したものではありません`);
+    this.dropArchive(name);
+    for (const [k, l] of this.layouts) if (l.archive === name) this.layouts.delete(k);
+    this.stageScripts.delete(name);
+  }
+
+  /** Forget what was read of a root archive (the next read reads it anew). */
+  private dropArchive(key: string): void {
+    for (const t of this.others.filter((t) => t.archive === key)) {
+      this.refs.delete(t.table);
+      this.others.splice(this.others.indexOf(t), 1);
+    }
+    this.otherSources.delete(key);
+    this.archives.delete(key);
+    this.tablesOf.delete(key);
+    this.tablesRead.delete(key);
+    this.mapDbs.delete(key);
+    this.mapDbsRead.delete(key);
+  }
+
   setConditionScript(id: number, source: string): void {
+    if (this.distribution && !this.conditionScripts.has(id))
+      throw new LanaiLockedError(`条件スクリプト: ${LANAI_DISTRIBUTION_LOCK}`);
     if (!Number.isInteger(id) || id < 1 || id > 0xffff) throw new Error('スクリプト番号は 1〜65535 です');
     parseConditionScript(source);
     this.conditionScripts.set(id, source);
+  }
+
+  /**
+   * Sets (or with an empty source removes) the event script of an added stage from its text; throws a ScriptError when
+   * it does not read. The text becomes the editor's document (an event written in place becomes a function).
+   */
+  setStageScript(archive: string, source: string, key?: string): void {
+    this.setStageScriptDoc(archive, source.trim() ? scriptDocFromSource(source) : null, key);
+  }
+
+  /**
+   * Sets (or with null / an empty document removes) the event script of an added stage: its variables, functions and
+   * what the functions are given to. Throws a ScriptDocError when it does not read.
+   */
+  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string): void {
+    const name = archive.toUpperCase();
+    if (!doc || scriptDocIsEmpty(doc)) {
+      this.stageScripts.delete(name);
+      return;
+    }
+    if (!this.createdFiles.has(name)) throw new Error('イベントのスクリプトは追加したステージにだけ書けます');
+    scriptOfDoc(doc);
+    this.stageScripts.set(name, {
+      key: key ?? this.stageScripts.get(name)?.key ?? crypto.randomUUID(),
+      doc: structuredClone(doc),
+      source: scriptDocSource(doc).text,
+    });
   }
 
   private readonly archives = new Map<string, Promise<Archive>>();
@@ -218,6 +359,23 @@ export class LanaiSession {
   revision = 0;
   /** Whether the export writes Panana's code MOD "ドロップ率の天井を撤廃" (game/dropcap.ts) to exefs/code.ips. */
   dropCap = false;
+  private distribution = false;
+
+  /**
+   * The custom-stage distribution mode: the edits the distribution would leave out are refused (the master tables
+   * other than LANAI_DELIVERABLE_TABLES are locked, condition scripts and the code MOD cannot be turned on). Edits made
+   * before stay (distributionDiscards lists them, revertUndeliverable undoes them).
+   */
+  get distributionMode(): boolean {
+    return this.distribution;
+  }
+
+  set distributionMode(on: boolean) {
+    this.distribution = on;
+    const reason = on ? LANAI_DISTRIBUTION_LOCK : null;
+    for (const t of [...this.tables, ...this.others])
+      if (t.archive === LANAI.master && !LANAI_DELIVERABLE_TABLES.includes(t.table.name)) t.table.lock = reason;
+  }
   /** The dump as opened, without the base MOD ({@link dump} reads through it). */
   raw!: Dump;
   /** The existing MOD the dump is read with (its files and code.ips also go into the export), or null. */
@@ -243,6 +401,7 @@ export class LanaiSession {
   ): Promise<LanaiSession> {
     const dump = baseMod ? overlayDump(raw, baseMod) : raw;
     await PortStore.install(dump);
+    alertLockedWrites();
     if (dump.title !== LANAI) throw new Error(`『${LANAI.name}』のダンプではありません`);
     const names = dump
       .names()
@@ -273,13 +432,41 @@ export class LanaiSession {
     const key = name.toUpperCase();
     let p = this.mapDbs.get(key);
     if (!p) {
-      p = this.archive(key).then((arc) => {
+      p = this.archive(key).then(async (arc) => {
         const entry = findEntry(arc, LANAI_MAPDB_ENTRY);
         if (!entry) return null;
         const te = findEntry(arc, LANAI_MAP_TABLE_ENTRY);
         const tb = te ? unpackEntry(arc, te).body : null;
-        const table = te && tb ? { entry: te, original: tb, data: tb } : null;
-        const r: LanaiMapDb = { archive: key, arc, entry, db: new MapDb(unpackEntry(arc, entry).body), table };
+        const table: LanaiMapTable | null = te && tb ? { entry: te, original: tb, data: tb } : null;
+        const cro = arc.entries.find((e) => e.comp === 1 && zipEntryName(entryBlob(arc, e))?.endsWith('.cro'));
+        const script = cro && unpackEntry(arc, cro);
+        const hasStartEvent = !!script && croHooks(script.body).includes(CRO_HOOK_START_EVENT);
+        if (hasStartEvent && table && script && (this.baseMod?.romfs.has(key) || this.createdFiles.has(key))) {
+          // Cloning retains the original CRO entry name even when Contents gets a new row.
+          // For old, unmarked exports, verify that the CRO still matches the source ROM before
+          // protecting appended rows. A base MOD can supply its own scripts for its own maps.
+          const source = /^contents(\d+)\.cro$/i.exec(script.name ?? '');
+          const contents = this.need('Contents');
+          const original = source && contents.originalRow(Number(source[1]));
+          const archive = original && hex8(u32(original, 0));
+          if (archive && this.raw.names().includes(archive)) {
+            const sourceArc = parseArchive(await this.raw.readRomfs(archive));
+            const sourceCro = findEntry(sourceArc, cro!.hash);
+            const sourceMap = findEntry(sourceArc, LANAI_MAP_TABLE_ENTRY);
+            if (sourceCro && sourceMap && equalBytes(unpackEntry(sourceArc, sourceCro).body, script.body)) {
+              table.sourceRows = unpackEntry(sourceArc, sourceMap).body;
+              table.data = markAddedLanaiFloors(table.original, table.sourceRows);
+            }
+          }
+        }
+        const r: LanaiMapDb = {
+          archive: key,
+          arc,
+          entry,
+          db: new MapDb(unpackEntry(arc, entry).body),
+          table,
+          hasStartEvent,
+        };
         this.mapDbsRead.set(key, r);
         return r;
       });
@@ -376,11 +563,18 @@ export class LanaiSession {
     return [...this.tables, ...this.others].filter((t) => !t.added && t.table.changed);
   }
 
+  changedLayouts(): { archive: string; hash: number }[] {
+    return [...this.layouts.values()].map(({ archive, entry }) => ({ archive, hash: entry.hash }));
+  }
+
   /** Whether anything differs from the ROM (tables or maps). */
   get changed(): boolean {
     return (
       this.createdFiles.size > 0 ||
+      this.soundFiles.size > 0 ||
       this.conditionScripts.size > 0 ||
+      this.stageScripts.size > 0 ||
+      this.layouts.size > 0 ||
       this.changedTables().length > 0 ||
       this.changedMapDbs().length > 0 ||
       this.changedMapTables().length > 0 ||
@@ -399,20 +593,13 @@ export class LanaiSession {
       if (r.table) r.table.data = r.table.original;
       this.mapsReset(r.archive);
     }
-    for (const key of this.createdFiles.keys()) {
-      for (const t of this.others.filter((t) => t.archive === key)) {
-        this.refs.delete(t.table);
-        this.others.splice(this.others.indexOf(t), 1);
-      }
-      this.otherSources.delete(key);
-      this.archives.delete(key);
-      this.tablesOf.delete(key);
-      this.tablesRead.delete(key);
-      this.mapDbs.delete(key);
-      this.mapDbsRead.delete(key);
-    }
+    for (const key of this.createdFiles.keys()) this.dropArchive(key);
     this.createdFiles.clear();
+    this.soundFiles.clear();
+    this.soundsChanged();
     this.conditionScripts.clear();
+    this.stageScripts.clear();
+    this.layouts.clear();
     this.dropCap = false;
     this.edited();
   }
@@ -439,13 +626,25 @@ export class LanaiSession {
     ]);
     return {
       rows,
+      ...(this.soundFiles.size ? { soundFiles: [...this.soundFiles] } : {}),
       ...(this.createdFiles.size ? { createdFiles: [...this.createdFiles] } : {}),
       ...(this.conditionScripts.size ? { conditionScripts: [...this.conditionScripts] } : {}),
+      ...(this.stageScripts.size
+        ? { stageScripts: [...this.stageScripts].map(([a, x]) => [a, x.key, x.doc] as [string, string, ScriptDoc]) }
+        : {}),
+      ...(this.layouts.size
+        ? {
+            layouts: [...this.layouts.values()].map(
+              ({ archive, entry, body }) => [archive, entry.hash, body.slice()] as [string, number, Uint8Array],
+            ),
+          }
+        : {}),
       ...(strings.length ? { strings } : {}),
       ...(maps.length ? { maps } : {}),
       ...(mapTables.length ? { mapTables } : {}),
       ...(entries.length ? { entries } : {}),
       ...(this.dropCap ? { dropCap: true } : {}),
+      ...(this.distribution ? { distributionMode: true } : {}),
     };
   }
 
@@ -457,8 +656,15 @@ export class LanaiSession {
    * archives and the map sections, whose archives are read first, after it).
    */
   async restore(saved: LanaiSaved): Promise<void> {
+    for (const [name, bytes] of saved.soundFiles ?? []) this.soundFiles.set(name, bytes);
+    this.soundsChanged();
     for (const [name, bytes] of saved.createdFiles ?? []) this.addFile(name, bytes);
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
+    for (const [archive, key, script] of saved.stageScripts ?? []) {
+      if (typeof script === 'string') this.setStageScript(archive, script, key);
+      else this.setStageScriptDoc(archive, script, key);
+    }
+    for (const [archive, hash, body] of saved.layouts ?? []) await this.setLayout(archive, hash, body);
     this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);
     const known = new Set([...this.sources.keys(), ...this.otherSources.keys()]);
@@ -489,7 +695,8 @@ export class LanaiSession {
     for (const [archive, bytes] of saved.mapTables ?? []) {
       const r = await this.mapDb(archive).catch(() => null);
       if (!r?.table || bytes.length % 0x4c) continue;
-      r.table.data = equalBytes(bytes, r.table.original) ? r.table.original : bytes.slice();
+      const marked = markAddedLanaiFloors(bytes, r.table.sourceRows ?? r.table.original);
+      r.table.data = equalBytes(marked, r.table.original) ? r.table.original : marked.slice();
       touched.add(r.archive);
     }
     for (const [archive, h, bytes] of saved.maps ?? []) {
@@ -500,8 +707,13 @@ export class LanaiSession {
       else r.db.set(h, bytes.slice());
       touched.add(r.archive);
     }
-    for (const a of touched) this.mapsReset(a);
+    for (const a of touched) {
+      const r = this.mapDbsRead.get(a)!;
+      if (r.table) restoreMissingLanaiSections(r.db, r.table.data);
+      this.mapsReset(a);
+    }
     if (touched.size) this.revision++;
+    this.distributionMode = !!saved.distributionMode;
   }
 
   /** Puts the saved rows and strings back (only those of the archives `only` when given). */
@@ -571,6 +783,7 @@ export class LanaiSession {
       void at(name, arc).m.set(index, bytes);
     const sourceOf = (archive: string): Archive => (this.sources.get(archive) ?? this.otherSources.get(archive))!;
     for (const t of this.changedTables()) put(t.archive, sourceOf(t.archive), t.index, t.table.data);
+    for (const { archive, arc, entry, body } of this.layouts.values()) put(archive, arc, entry.index, body);
     for (const r of this.mapDbsRead.values()) {
       if (r.db.changedHashes().length || r.db.addedHashes().length) put(r.archive, r.arc, r.entry.index, r.db.build());
       if (r.table && !equalBytes(r.table.data, r.table.original))
@@ -586,6 +799,7 @@ export class LanaiSession {
       });
     }
     const files = new Map(this.createdFiles);
+    for (const [name, bytes] of this.soundFiles) files.set(name, bytes);
     for (const [name, { arc, m, added }] of repl) files.set(name, rebuildArchive(arc, m, added));
     const roots = [...this.createdFiles.keys()].filter((n) => /^[0-9A-F]{8}$/.test(n));
     if (roots.length) {
@@ -601,7 +815,20 @@ export class LanaiSession {
 
   /** The RomFS files of the MOD with the archives holding ported models (#100). */
   async allModFiles(): Promise<Map<string, Uint8Array>> {
+    // An imported MOD or a saved clone can already contain maps exported by an older Panana,
+    // even when the user has never opened their map page in this session.
+    const contents = this.need('Contents');
+    for (let row = 0; row < contents.rows; row++) {
+      const archive = hex8(contents.u32(row, 0));
+      if (!this.createdFiles.has(archive) && !this.baseMod?.romfs.has(archive)) continue;
+      const r = await this.mapDb(archive);
+      if (r?.table) {
+        if (r.table.sourceRows) r.table.data = markAddedLanaiFloors(r.table.data, r.table.sourceRows);
+        restoreMissingLanaiSections(r.db, r.table.data);
+      }
+    }
     const files = this.modFiles();
+    await buildStageScripts(this, files);
     for (const [name, b] of await (await PortStore.of('lanai')).archives()) if (!files.has(name)) files.set(name, b);
     return files;
   }
@@ -615,6 +842,10 @@ export class LanaiSession {
     }
   }
 
+  get needsFieldStartGuard(): boolean {
+    return [...this.mapDbsRead.values()].some((r) => r.hasStartEvent && r.table && hasMarkedLanaiFloors(r.table.data));
+  }
+
   /**
    * exefs/code.ips: the base MOD's, then Panana's code MODs that are on; null when there is none (throws when one cannot
    * be built).
@@ -622,14 +853,15 @@ export class LanaiSession {
   codeIps(): Uint8Array | null {
     const base = this.baseMod?.ips ?? null;
     const script = conditionScriptPatch(this);
-    if (!this.dropCap && !script) return base;
+    const guard = this.needsFieldStartGuard ? fieldStartPatch(lanaiCode(this.dump)) : null;
+    if (!this.dropCap && !script && !guard) return base;
     const problem = this.dropCap ? this.dropCapProblem() : null;
     if (problem) throw new Error(problem);
     const code = lanaiCode(this.dump);
     const built = [
       ...buildPatches(
         code,
-        [...(this.dropCap ? [dropCapPatch('lanai')] : []), ...(script ? [script] : [])],
+        [...(this.dropCap ? [dropCapPatch('lanai')] : []), ...(script ? [script] : []), ...(guard ? [guard] : [])],
         LANAI_LAYOUT,
       ).values(),
     ];
@@ -640,30 +872,162 @@ export class LanaiSession {
 
   /** The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and exefs/code.ips. */
   async modZip(): Promise<Uint8Array> {
-    return buildModZip(packageOn(this.baseMod, await this.allModFiles(), this.codeIps()), LANAI.titleId);
+    const pkg = packageOn(this.baseMod, await this.allModFiles(), this.codeIps());
+    // read by the distribution server (lanai-custom-stages): the key and the flags each scripted stage owns
+    const stages = await stageScriptManifest(this);
+    if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
+    return buildModZip(pkg, LANAI.titleId);
+  }
+
+  /**
+   * The master tables (and their changed rows) the custom-stage distribution cannot deliver: it lays only the rows of
+   * LANAI_DELIVERABLE_TABLES over the game's master, and refuses a stage with a row of any other table whole.
+   * Compared with the ROM's master, so a base MOD's changes count too; `edited` = Panana's edits are among them (what
+   * revertUndeliverable undoes), else they all come from the base MOD.
+   */
+  async distributionDiscards(): Promise<LanaiDistributionDiscard[]> {
+    return (await this.distributionMaster()).discards;
+  }
+
+  private async distributionMaster(): Promise<{
+    arc: Archive;
+    keep: Map<number, Uint8Array>;
+    discards: LanaiDistributionDiscard[];
+  }> {
+    const arc = parseArchive(await this.raw.readRomfs(LANAI.master));
+    const rom = new Map(archiveTables(LANAI.master, arc).map((t) => [t.entry, t]));
+    const keep = new Map<number, Uint8Array>();
+    const discards: LanaiDistributionDiscard[] = [];
+    for (const t of [...this.tables, ...this.others]) {
+      if (t.archive !== LANAI.master) continue;
+      const r = rom.get(t.entry);
+      if (t.added || !r) {
+        discards.push({ table: t.table.name, rows: t.table.rows, edited: true });
+        continue;
+      }
+      if (equalBytes(t.table.data, r.table.data)) continue;
+      if (LANAI_DELIVERABLE_TABLES.includes(t.table.name)) {
+        keep.set(r.index, t.table.data);
+        continue;
+      }
+      let rows = Math.abs(t.table.rows - r.table.rows);
+      for (let i = 0; i < Math.min(t.table.rows, r.table.rows); i++)
+        if (!equalBytes(t.table.row(i), r.table.row(i))) rows++;
+      discards.push({ table: t.table.name, rows, edited: t.table.changed });
+    }
+    return { arc, keep, discards };
+  }
+
+  /**
+   * Undoes only the edits the custom-stage distribution would leave out: the master tables other than
+   * LANAI_DELIVERABLE_TABLES (put back as read; an added one is removed) and the code MOD (exefs/code.ips). The base
+   * MOD's changes and the condition scripts (a stage's conditions name them) stay.
+   */
+  revertUndeliverable(): void {
+    for (const t of [...this.tables, ...this.others].filter((x) => x.archive === LANAI.master)) {
+      if (LANAI_DELIVERABLE_TABLES.includes(t.table.name)) continue;
+      if (t.added) this.removeTable(t);
+      else if (t.table.changed) t.table.revert();
+    }
+    this.dropCap = false;
+    this.edited();
+  }
+
+  /**
+   * The zip for the custom-stage distribution (lanai-custom-stages): like modZip, but the master carries only the
+   * changes of LANAI_DELIVERABLE_TABLES (the other tables as in the ROM) and there is no exefs/code.ips (the
+   * distribution does not deliver it). Throws on condition scripts, which the distribution refuses.
+   */
+  async distributionZip(): Promise<Uint8Array> {
+    if (this.conditionScripts.size)
+      throw new Error('条件スクリプト (code.ips) を使うステージは、カスタムステージとして配信できません');
+    const files = await this.allModFiles();
+    const { arc, keep } = await this.distributionMaster();
+    files.set(LANAI.master, rebuildArchive(arc, keep));
+    const pkg = packageOn(this.baseMod, files, null);
+    const stages = await stageScriptManifest(this);
+    if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
+    return buildModZip(pkg, LANAI.titleId);
   }
 
   private soundNames: Promise<SoundNames> | null = null;
 
-  /** Names of the SoundData rows (+0x00 = sound.bcsar item ID, battle-field.md §5), from the Base's sound/sound.bcsar. */
+  soundsChanged(): void {
+    this.soundNames = null;
+    this.renderer = null;
+    this.patchRenderer = null;
+  }
+
+  /** The Update adds a second archive for its SoundData rows. */
+  soundArchivePath(): string {
+    return this.dump.update ? 'sound/patch.bcsar' : BCSAR_PATH;
+  }
+
+  private async readSoundFile(name: string): Promise<Uint8Array> {
+    const edited = this.soundFiles.get(name);
+    if (edited) return edited;
+    if (this.dump.update && this.dump.readUpdateRomfs) {
+      try {
+        return await this.dump.readUpdateRomfs(name);
+      } catch {
+        // Older streams can still be stored in the Base RomFS.
+      }
+    }
+    return this.dump.readRomfs(name);
+  }
+
+  readSoundArchive(): Promise<Uint8Array> {
+    return this.readSoundFile(this.soundArchivePath());
+  }
+
+  private soundDump(archive = this.soundArchivePath()): Dump {
+    return {
+      ...this.dump,
+      readRomfs: (name) => this.readSoundFile(name === BCSAR_PATH ? archive : name),
+    };
+  }
+
+  /** Existing BGM/ME rows use Base; later Update rows use patch.bcsar. */
   sounds(): Promise<SoundNames> {
     const t = this.need('SoundData');
-    return (this.soundNames ??= loadSoundNames(
-      this.dump,
-      'lanai/sound/names/v1',
-      Array.from({ length: t.rows }, (_, i) => t.u32(i, 0)),
-    ));
+    const items = Array.from({ length: t.rows }, (_, i) => t.u32(i, 0));
+    if (!this.dump.update && !this.soundFiles.has(BCSAR_PATH))
+      return (this.soundNames ??= loadSoundNames(this.dump, 'lanai/sound/base-names/v1', items));
+    return (this.soundNames ??= Promise.all([
+      this.readSoundFile(BCSAR_PATH),
+      this.dump.update ? this.readSoundArchive() : this.readSoundFile(BCSAR_PATH),
+    ]).then(([base, patch]) => {
+      const baseNames = bcsarSoundNames(base);
+      const patchNames = bcsarSoundNames(patch);
+      return new SoundNames(
+        items,
+        baseNames,
+        [],
+        (row, index) => (this.dump.update && row > 73 ? patchNames : baseNames)[index] ?? '',
+      );
+    }));
   }
 
   private renderer: Promise<SoundRenderer> | null = null;
+  private patchRenderer: Promise<SoundRenderer> | null = null;
 
-  /** Plays the sounds of sound/sound.bcsar (its streams from sound/stream/). */
+  /** The original sound archive, including the existing BGM and ME. */
   soundRenderer(): Promise<SoundRenderer> {
-    this.renderer ??= openSoundRenderer(this.dump).catch((err: Error) => {
+    this.renderer ??= openSoundRenderer(this.soundDump(BCSAR_PATH)).catch((err: Error) => {
       this.renderer = null;
       throw err;
     });
     return this.renderer;
+  }
+
+  /** The archive selected by a SoundData row. */
+  soundRendererFor(row: number): Promise<SoundRenderer> {
+    if (!this.dump.update || row <= 73) return this.soundRenderer();
+    this.patchRenderer ??= openSoundRenderer(this.soundDump()).catch((err: Error) => {
+      this.patchRenderer = null;
+      throw err;
+    });
+    return this.patchRenderer;
   }
 
   /** A table of the master (or a language archive) by its name ("MonsterParameter"). */

@@ -53,7 +53,6 @@ export function HonoluluSoundBook({
         selected={selected}
         href={honoluluSoundHref}
         uses={(r) => uses.get(r)?.length ?? 0}
-        usesTitle="この音を使う場所の数 (mapData +0x07 の階の BGM、推定)"
         usedLabel="使われている"
       >
         <HonoluluSoundUses use={uses.get(selected) ?? []} />

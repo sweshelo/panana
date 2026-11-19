@@ -49,6 +49,11 @@ export class LanaiTable {
   /** The (hash, value) pairs of the extra region (meaning not known). */
   extra: [number, number][] = [];
   private byId?: Map<number, number>;
+  /**
+   * Why the table cannot be edited now (the custom-stage distribution mode, LanaiSession.distributionMode), or null.
+   * Writes throw LanaiLockedError; putting rows back as read (revertRow, revert) still works.
+   */
+  lock: string | null = null;
   /** The bytes as read, once the table was edited. */
   private orig: Uint8Array | null = null;
   private origRows = 0;
@@ -223,8 +228,9 @@ export class LanaiTable {
     return Array.from({ length: this.rows }, (_, i) => i).filter((i) => this.rowChanged(i));
   }
 
-  /** Before the first write: keep the bytes as read and write into a copy. */
-  private writable(): void {
+  /** Before the first write: keep the bytes as read and write into a copy (refused while locked, unless reverting). */
+  private writable(reverting = false): void {
+    if (this.lock && !reverting) throw new LanaiLockedError(`${this.name}: ${this.lock}`);
     if (!this.orig) {
       this.orig = this.data;
       this.data = this.data.slice();
@@ -310,7 +316,7 @@ export class LanaiTable {
     if (!o) throw new Error(`${this.name}: 行 ${i} は追加した行です`);
     const keys = this.writtenIn(i);
     if (!keys.length && equalBytes(o, this.row(i))) return;
-    this.writable();
+    this.writable(true);
     for (const k of keys) this.written.delete(k);
     this.data.set(o, this.at(i, 0));
     if (keys.length) this.relayout();
@@ -549,4 +555,9 @@ export class LanaiTable {
     copy.rebuild([], copy.rowIds.slice(), []);
     return copy.data;
   }
+}
+
+/** A write to a locked table (LanaiTable.lock). */
+export class LanaiLockedError extends Error {
+  override name = 'LanaiLockedError';
 }

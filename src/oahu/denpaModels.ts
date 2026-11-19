@@ -124,7 +124,7 @@ const HAIR_COLORS = [
   [240, 0, 17],
 ];
 
-function faceMaterials(face: CgfxModel, a: DenpaAppearance): CgfxMaterial[] {
+export function faceMaterials(face: CgfxModel, a: DenpaAppearance): CgfxMaterial[] {
   const values: Record<string, number> = {
     Brow: a.brow,
     Eye: a.eye,
@@ -174,7 +174,7 @@ function boneWorld(bones: CgfxBone[]): THREE.Matrix4[] {
 }
 
 /** Attach models to named bones, remapping skin indices and bind positions so the body motion moves all parts. */
-function attach(
+export function attach(
   target: CgfxModel,
   part: CgfxModel,
   parent: number,

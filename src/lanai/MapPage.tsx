@@ -13,6 +13,7 @@ import { InfoTip } from '../ui/InfoTip';
 // EventObject table) and is saved with the session's edits (session.ts).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { editorKey } from '../editor/controller';
+import { PlacedPickButton, type PlacedChoice } from '../editor/objectpick';
 import { HexInput, RawBytes } from '../editor/fields';
 import { kindName, ROT_ARROW } from '../editor/legend';
 import {
@@ -28,22 +29,41 @@ import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
 import { MapToolbox, TOOLS } from '../editor/tools';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
-import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, type Rec } from '../game/sections';
+import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';
 import { NumberInput, useSticky } from '../ui/book';
-import { MapPickerButton, type MapPickerGroups, type MapPickerRow } from '../ui/MapPicker';
+import { Dialog } from '../ui/Dialog';
+import { LanaiMapPicker } from './MapPicker';
 import { MessageEditor } from '../ui/message';
 import { useAsync } from '../ui/useAsync';
 import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
-import { lanaiEditState, lanaiRecEventRow, lanaiRecLabel, lanaiValidate, type LanaiEditState } from './mapedit';
+import { EventScriptBinding } from './EventScriptBinding';
+import { LANAI_ACTION_EXTERNAL_DOOR, LANAI_ACTION_SHOP, LANAI_SPEAKER_NPC } from './eventParts';
+import { lanaiCenterOnAnchor, lanaiMapHref, lanaiShopHref, setLanaiCenterOnAnchor } from './hrefs';
+import { lanaiArrivals } from './mapLinks';
+import { encodeLanaiMessage, parseLanaiText } from './message';
+import { TALK_SPEAKER } from './talk';
+import { LookField } from './LookField';
+import { LANAI_RANGE_PROP_KIND, lanaiRange } from './rangeShape';
+import {
+  lanaiButtonDoor,
+  lanaiEditState,
+  lanaiRecEventRow,
+  lanaiRecLabel,
+  lanaiValidate,
+  type LanaiEditState,
+} from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
   LANAI_EVENT_APPEAR,
   LANAI_EVENT_ARGS,
   LANAI_EVENT_DISAPPEAR,
+  LANAI_EVENT_LEVEL,
+  LANAI_LEVEL_DOOR_KIND,
+  lanaiExitKind,
   LANAI_EVENT_SECTIONS,
   LANAI_EVENT_SLOT,
   LANAI_FACING_OFFSET,
@@ -54,7 +74,6 @@ import {
   lanaiEventSlot,
   lanaiFloorLabel,
   lanaiMaps,
-  loadedLanaiMaps,
   type LanaiMapInfo,
   type LanaiMaps,
 } from './maps';
@@ -62,8 +81,11 @@ import {
   LANAI_ACTION_GOAL_CHEST,
   LANAI_ACTION_NONE,
   LANAI_ACTION_SCRIPT,
+  LANAI_ACTION_RUNS,
   LANAI_ACTION_TYPES,
   LANAI_ACTIONS,
+  LANAI_DESTINATION_ACTIONS,
+  lanaiActionTypesFor,
   lanaiActionName,
   talkMessageOffset,
 } from './actions';
@@ -75,15 +97,21 @@ import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
 import { LANAI_CHARA_KIND, lanaiCharaKind, lanaiObjectRef, type LanaiRecordLook } from './mapObjects';
 import { lanaiMonsters } from './monsters';
+import { lanaiItemName } from './monsterBook';
+import { LanaiItemPicker } from './pickers';
+import { LANAI_TREASURE_GOLD, LANAI_TREASURE_ITEM, type LanaiTreasureSlot } from './treasure';
 import { LanaiMapView } from './mapview';
+import { ScriptMovePanel } from './ScriptMovePanel';
+import { ScriptPreviewControls } from './ScriptPreview';
 import type { LanaiSession } from './session';
+import { lanaiRomParts, type LanaiRomPart } from './romParts';
 import { LanaiEventSelect } from './EventSelect';
 import { EventConditionFields } from './EventConditionFields';
-import { DestinationFields } from './DestinationFields';
+import { DestinationFields, lanaiDestinationPoints } from './DestinationFields';
+import { LanaiTilesetField } from './TilesetField';
 
-/** The link to a map of a content (the stage page's list uses it too), with a record selected (`@section.index`). */
-export const lanaiMapHref = (content: number, name?: string, rec?: { section: number; index: number }): string =>
-  `#/maps/${content}${name ? `.${encodeURIComponent(name)}` : ''}${name && rec ? `@${rec.section}.${rec.index}` : ''}`;
+// The link to a map of a content (the stage page's list uses it too), with a record as the anchor (`@section.index`).
+export { lanaiMapHref };
 
 /** The link to a content's stages (the stage page lists its maps: this is the way back). */
 export const lanaiStageHref = (content: number): string => `#/stages/${content}`;
@@ -96,6 +124,23 @@ const LANAI_TOOLS = TOOLS.map((t): (typeof TOOLS)[number] =>
 const noop = (): void => {};
 
 /** Re-render on every change of the content's maps (edits, reverts, sections put back). */
+/** The ROM's kinds of records (romParts.ts), read in the background; empty until they are. */
+function useRomParts(session: LanaiSession): readonly LanaiRomPart[] {
+  const [parts, setParts] = useState<readonly LanaiRomPart[]>(NO_ROM_PARTS);
+  useEffect(() => {
+    let live = true;
+    lanaiRomParts(session).then(
+      (p) => live && setParts(p),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [session]);
+  return parts;
+}
+const NO_ROM_PARTS: readonly LanaiRomPart[] = [];
+
 function useMaps(maps: LanaiMaps | null): number {
   return useSyncExternalStore(
     (f) => (maps ? maps.on(f) : noop),
@@ -121,12 +166,12 @@ export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: str
           マップを読み込み中…
         </p>
       ) : loaded instanceof Error ? (
-        <NoMaps session={session} contents={contents} content={c} error={loaded.message} />
+        <NoMaps session={session} content={c} error={loaded.message} />
       ) : (
         <MapDetail
           key={c.index}
           session={session}
-          contents={contents}
+
           content={c}
           maps={loaded}
           name={m?.[2] ? decodeURIComponent(m[2]) : undefined}
@@ -137,106 +182,54 @@ export function LanaiMapPage({ session, arg }: { session: LanaiSession; arg: str
   );
 }
 
-/** Rows of the map picker are a content and a map table row (map hashes are only unique within a content). */
-const pickId = (content: number, row: number): number => content * 0x1000 + row;
-/** The row of a content whose maps are not read yet: picking it opens the content's first map. */
-const CONTENT_ROW = 0xfff;
-
-/** "甘口のどうくつ" (the MapGroup's name) or "MapGroup 3". */
-const groupLabel = (maps: LanaiMaps, g: number): string => maps.groupName(g) || `MapGroup ${g}`;
-
-/**
- * The maps of every stage for the map picker (the same dialog as RPG2's and RPG3's): the maps of the contents read so
- * far by stage and MapGroup, and a row for each other content that opens it.
- */
-function useMapGroups(session: LanaiSession, contents: LanaiContent[], current: LanaiMaps | null): MapPickerGroups {
-  const revision = useMaps(current);
-  return useMemo(
-    () =>
-      contents.flatMap((c): MapPickerGroups => {
-        const head = `${c.index}: ${contentTitle(c)}`;
-        const maps = current?.content.index === c.index ? current : loadedLanaiMaps(session, c.index);
-        if (!maps)
-          return [
-            [head, [{ hash: pickId(c.index, CONTENT_ROW), title: 'このステージのマップを開く', code: c.archive }]],
-          ];
-        const byGroup = new Map<number, MapPickerRow[]>();
-        for (const m of maps.maps) {
-          const title = m.world
-            ? 'ワールドマップ (表示のみ)'
-            : `${lanaiFloorLabel(m.floor) || '地上'}・${maps.doc(m).tiles.length} マス`;
-          byGroup.set(m.dungeon, [
-            ...(byGroup.get(m.dungeon) ?? []),
-            { hash: pickId(c.index, m.index), title, code: m.name },
-          ]);
-        }
-        return [...byGroup]
-          .sort(([a], [b]) => a - b)
-          .map(([g, rows]): [string, MapPickerRow[]] => [`${head} — ${groupLabel(maps, g)}  (MapGroup ${g})`, rows]);
-      }),
-    [session, contents, current, revision],
-  );
-}
-
-/** The maps with edits, as picker rows. */
-function modifiedIds(session: LanaiSession, contents: LanaiContent[]): Set<number> {
-  const out = new Set<number>();
-  for (const c of contents) {
-    const maps = loadedLanaiMaps(session, c.index);
-    for (const m of maps?.maps ?? []) if (m.added || maps!.isChanged(m)) out.add(pickId(c.index, m.index));
-  }
-  return out;
-}
+/** The MapGroup name shown alongside the current map. */
+const groupLabel = (maps: LanaiMaps, group: number): string => maps.groupName(group) || 'MapGroup ' + group;
 
 /** The header's map picker. */
 function Picker({
   session,
-  contents,
   maps,
   content,
   info,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   maps: LanaiMaps | null;
   content: LanaiContent;
   info: LanaiMapInfo | null;
 }): ReactNode {
-  const groups = useMapGroups(session, contents, maps);
+  const [picking, setPicking] = useState(false);
   const label =
     maps && info
       ? `${contentTitle(content)} — ${groupLabel(maps, info.dungeon)}・${lanaiFloorLabel(info.floor) || '地上'}  ${info.name}`
       : `${content.index}: ${contentTitle(content)} (マップなし)`;
   return (
-    <MapPickerButton
-      groups={groups}
-      value={pickId(content.index, info ? info.index : CONTENT_ROW)}
-      className="map-select"
-      modified={modifiedIds(session, contents)}
-      label={label}
-      onChange={(id) => {
-        const c = contents[Math.floor(id / 0x1000)];
-        if (!c) return;
-        const row = id % 0x1000;
-        const m =
-          row === CONTENT_ROW
-            ? undefined
-            : (c.index === content.index ? maps : loadedLanaiMaps(session, c.index))?.maps[row];
-        location.hash = lanaiMapHref(c.index, m?.name);
-      }}
-    />
+    <>
+      <button className="map-select" onClick={() => setPicking(true)}>
+        {label}
+      </button>
+      {picking && (
+        <LanaiMapPicker
+          session={session}
+          currentContent={content.index}
+          currentMap={info?.name}
+          onPick={(index, name) => {
+            location.hash = lanaiMapHref(index, name);
+            setPicking(false);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
   );
 }
 
 /** Shown while a content has no maps (or they did not load): another map can still be picked. */
 function NoMaps({
   session,
-  contents,
   content,
   error,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   content: LanaiContent;
   error: string;
 }): ReactNode {
@@ -249,7 +242,7 @@ function NoMaps({
       left={null}
       right={null}
       status={null}
-      header={<Picker session={session} contents={contents} maps={null} content={content} info={null} />}
+      header={<Picker session={session} maps={null} content={content} info={null} />}
       placeholder={
         <div style={{ padding: 16 }}>
           <div className="error">{error}</div>
@@ -262,14 +255,12 @@ function NoMaps({
 
 function MapDetail({
   session,
-  contents,
   content,
   maps,
   name,
   rec,
 }: {
   session: LanaiSession;
-  contents: LanaiContent[];
   content: LanaiContent;
   maps: LanaiMaps;
   name: string | undefined;
@@ -318,12 +309,35 @@ function MapDetail({
   useEffect(() => {
     requestAnimationFrame(() => view?.refresh());
   }, [view, mode]);
-  // the record a link names (after the map was opened above)
-  useEffect(() => {
-    if (view && rec && st.current?.hash === info.hash && st.current.recs[rec.section]?.[rec.index])
-      st.select({ type: 'rec', section: rec.section, index: rec.index });
-  }, [view, st, info, rec?.section, rec?.index]);
   const open = view && st.current?.hash === info.hash;
+  // The anchor of a record (`@section.index`). A link that names one selects the record (the inspector shows it) and
+  // brings it to the middle of the views (unless the display setting is off); selecting a record writes its anchor to
+  // the address bar, so the address can be copied as a link to it. `ownAnchor` is the address the page wrote itself:
+  // the route then names the selected record, which must not be centred as a link's is.
+  const ownAnchor = useRef('');
+  useEffect(() => {
+    const own = ownAnchor.current === lanaiMapHref(content.index, info.name, rec);
+    ownAnchor.current = '';
+    if (own || !view || !rec || st.current?.hash !== info.hash || !st.current.recs[rec.section]?.[rec.index]) return;
+    const sel = st.selection;
+    if (!(sel.type === 'rec' && sel.section === rec.section && sel.index === rec.index))
+      st.select({ type: 'rec', section: rec.section, index: rec.index });
+    if (!lanaiCenterOnAnchor()) return;
+    // after the view was fitted to the map (queued when it was made)
+    const frame = requestAnimationFrame(() => view.centerOnRecord(rec.section, rec.index));
+    return () => cancelAnimationFrame(frame);
+  }, [view, st, info, rec?.section, rec?.index]);
+  const selected = st.selection.type === 'rec' ? `${st.selection.section}.${st.selection.index}` : '';
+  useEffect(() => {
+    // the pages stay mounted while another one is shown: only the map page's address is written
+    if (!open || !location.hash.startsWith('#/maps')) return;
+    const sel = st.selection;
+    const want = lanaiMapHref(content.index, info.name, sel.type === 'rec' ? sel : undefined);
+    if (location.hash === want) return;
+    ownAnchor.current = want;
+    history.replaceState(history.state, '', want);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  }, [open, selected, st, info.name, content.index]);
   const [dialog, setDialog] = useState<'map' | 'group' | 'names' | null>(null);
   const goto = (n: string): void => {
     setDialog(null);
@@ -336,7 +350,7 @@ function MapDetail({
       pane3d={pane3d}
       header={
         <>
-          <Picker session={session} contents={contents} maps={maps} content={content} info={info} />
+          <Picker session={session} maps={maps} content={content} info={info} />
           <span className="muted small">{`マップ番号 ${info.index}・${hex8(info.hash).toUpperCase()}${info.added ? '・追加したマップ' : ''}`}</span>
           <button
             title="このステージのダンジョンに新しいマップ (階) を足す、またはマップを複製する"
@@ -345,10 +359,10 @@ function MapDetail({
             ＋ マップを追加・複製
           </button>
           <button
-            title="このステージに新しいダンジョン (MapGroup) を足す、またはダンジョンをマップごと複製する"
+            title="今開いているステージ内に新しいダンジョンを作るか、マップごと複製する"
             onClick={() => setDialog('group')}
           >
-            ＋ ダンジョンを追加・複製
+            ＋ このステージにダンジョンを追加
           </button>
           <button
             title="マップのコード、ダンジョンの名前・コードを変える (追加したものは消せる)"
@@ -433,6 +447,55 @@ function MapDetail({
                   checked={view.showModels}
                   set={(v) => (view.showModels = v)}
                 />
+                <LayerBox
+                  view={view}
+                  label="つながり (ボタンと扉・ワープの行き先)"
+                  checked={view.showLinks}
+                  set={(v) => (view.showLinks = v)}
+                  color="#e58cff"
+                />
+                <LayerBox
+                  view={view}
+                  label="スクリプトの move() の行き先 (ドラッグで編集)"
+                  checked={view.showMoves}
+                  set={(v) => (view.showMoves = v)}
+                  color="#ffb347"
+                />
+                <label
+                  className="layer"
+                  title="オブジェクトへのリンク (URL の @区画.番号) を開いたとき、対象を 2D・3D の画面の中心に移します"
+                >
+                  <input
+                    type="checkbox"
+                    checked={lanaiCenterOnAnchor()}
+                    onChange={(e) => {
+                      setLanaiCenterOnAnchor(e.target.checked);
+                      view.refresh();
+                    }}
+                  />{' '}
+                  リンクで開いた対象を画面の中心にする
+                </label>
+                <h3>2D</h3>
+                <div className="seg">
+                  {(
+                    [
+                      ['symbols', '記号'],
+                      ['minimap', 'ミニマップ風'],
+                    ] as const
+                  ).map(([style, label]) => (
+                    <button
+                      key={style}
+                      type="button"
+                      className={view.style2d === style ? 'active' : ''}
+                      onClick={() => {
+                        view.style2d = style;
+                        view.refresh();
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </MapLayers>
             </MapSettings>
           </>
@@ -442,6 +505,17 @@ function MapDetail({
         open && (
           <>
             <Inspector st={st} view={view} content={content} />
+            {session.createdFiles.has(content.archive.toUpperCase()) && (
+              <>
+                <h3>演出プレビュー</h3>
+                <ScriptPreviewControls
+                  view={view}
+                  source={session.stageScripts.get(content.archive.toUpperCase())?.source ?? ''}
+                  onStart={() => setMode('split')}
+                />
+                <ScriptMovePanel view={view} stageHref={lanaiStageHref(content.index)} />
+              </>
+            )}
             <h3>検証</h3>
             <MapChecks st={st} hash={info.hash} validate={(doc) => lanaiValidate(maps, info, doc)} />
           </>
@@ -591,10 +665,381 @@ function Facts({ maps, info, view }: { maps: LanaiMaps; info: LanaiMapInfo; view
 
 const FACING_LABELS = ['↓ 南 (4)', '← 西 (2)', '↑ 北 (1)', '→ 東 (8)'];
 
+type ChestReward = { kind: 'gold' | 'item'; value: number; weight: number };
+
+/** The reward is chosen before a chest becomes a stamp; each placement gets independent TreasureGroup rows. */
+function ChestPlacement({
+  st,
+  template,
+  onReady,
+  onClose,
+}: {
+  st: LanaiEditState;
+  template: NonNullable<Extract<NonNullable<LanaiEditState['stamp']>, { type: 'template' }>['t']>;
+  onReady: (t: typeof template) => void;
+  onClose: () => void;
+}): ReactNode {
+  const goal = template.event?.chest === 'goal';
+  const [first, setFirst] = useState<ChestReward[]>([{ kind: 'gold', value: 0, weight: 1 }]);
+  const [retry, setRetry] = useState<ChestReward[]>([{ kind: 'gold', value: 0, weight: 1 }]);
+  const [clears, setClears] = useState(st.maps.content.index);
+  const [pick, setPick] = useState<{ which: 'first' | 'retry'; index: number } | null>(null);
+  const reward = (
+    label: string,
+    values: ChestReward[],
+    set: (v: ChestReward[]) => void,
+    which: 'first' | 'retry',
+  ): ReactNode => {
+    const change = (index: number, next: ChestReward): void =>
+      set(values.map((value, i) => (i === index ? next : value)));
+    return (
+      <div className="treasure">
+        <h3>{label}</h3>
+        {values.map((value, index) => (
+          <div className="row" key={index}>
+            <select
+              aria-label={`${label}の候補 ${index + 1}`}
+              value={value.kind}
+              onChange={(e) => change(index, { ...value, kind: e.target.value as ChestReward['kind'], value: 0 })}
+            >
+              <option value="gold">G</option>
+              <option value="item">アイテム</option>
+            </select>
+            {value.kind === 'gold' ? (
+              <NumberInput
+                value={value.value}
+                min={0}
+                max={0x7fffffff}
+                title="金額"
+                onCommit={(n) => change(index, { ...value, value: n })}
+              />
+            ) : (
+              <button onClick={() => setPick({ which, index })}>
+                {value.value ? lanaiItemName(st.maps.session, value.value) : 'アイテムを選ぶ…'}
+              </button>
+            )}
+            {values.length > 1 && (
+              <NumberInput
+                value={value.weight}
+                min={1}
+                max={0xffff}
+                title="抽選の重み"
+                onCommit={(n) => change(index, { ...value, weight: n })}
+              />
+            )}
+            {values.length > 1 && (
+              <button className="danger" title="候補を外す" onClick={() => set(values.filter((_, i) => i !== index))}>
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {values.length < 10 && (
+          <button onClick={() => set([...values, { kind: 'gold', value: 0, weight: 1 }])}>＋ 抽選候補を追加</button>
+        )}
+        {values.length > 1 && <p className="muted small">重みに比例して 1 つ選ばれます。</p>}
+      </div>
+    );
+  };
+  const slots = (values: ChestReward[]): LanaiTreasureSlot[] =>
+    values.map((value) => ({
+      kind: value.kind === 'gold' ? LANAI_TREASURE_GOLD : LANAI_TREASURE_ITEM,
+      value: value.value,
+      weight: value.weight,
+    }));
+  const valid = (values: ChestReward[]): boolean => values.every((value) => value.value > 0 && value.weight > 0);
+  return (
+    <Dialog title={goal ? 'クリア宝箱を置く' : '通常の宝箱を置く'} onClose={onClose}>
+      <p className="muted small">報酬を決めてからマップ上に置きます。候補を増やすと抽選になります。</p>
+      {reward('開けたとき', first, setFirst, 'first')}
+      {goal && (
+        <>
+          {reward('再挑戦のとき', retry, setRetry, 'retry')}
+          <label className="field">
+            <span>クリア対象</span>
+            <ContentSelect maps={st.maps} value={clears} onChange={setClears} />
+          </label>
+        </>
+      )}
+      <div className="row">
+        <button onClick={onClose}>キャンセル</button>
+        <button
+          className="primary"
+          disabled={!valid(first) || (goal && (!valid(retry) || !clears))}
+          onClick={() =>
+            onReady({
+              ...template,
+              description:
+                `${template.description ?? ''} ${first.length > 1 ? `${first.length} 候補から抽選` : first[0]!.kind === 'gold' ? `${first[0]!.value}G` : lanaiItemName(st.maps.session, first[0]!.value)}`.trim(),
+              event: {
+                ...template.event!,
+                rewards: goal ? [slots(first), slots(retry), slots(retry)] : [slots(first)],
+                clears,
+              },
+            })
+          }
+        >
+          この設定で置く
+        </button>
+      </div>
+      {pick && (
+        <LanaiItemPicker
+          session={st.maps.session}
+          current={0}
+          onClose={() => setPick(null)}
+          onPick={(row) => {
+            const value = st.maps.session.need('ItemData').rowId(row);
+            const values = pick.which === 'first' ? first : retry;
+            (pick.which === 'first' ? setFirst : setRetry)(
+              values.map((reward, i) => (i === pick.index ? { ...reward, kind: 'item', value } : reward)),
+            );
+            setPick(null);
+          }}
+        />
+      )}
+    </Dialog>
+  );
+}
+
+/** Choose the switch's script path before placement. */
+function SwitchPlacement({
+  st,
+  template,
+  onReady,
+  onClose,
+}: {
+  st: LanaiEditState;
+  template: ReturnType<LanaiEditState['templates']>[number];
+  onReady: (t: typeof template) => void;
+  onClose: () => void;
+}): ReactNode {
+  const persistent = template.event?.switchTrigger === 'switch';
+  const [door, setDoor] = useState(0);
+  const doc = st.current;
+  const table = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
+  const archive = st.maps.content.archive.toUpperCase();
+  const enabled = st.maps.session.createdFiles.has(archive);
+  const choices: PlacedChoice[] =
+    doc && table
+      ? (doc.recs[3] ?? []).flatMap((r, index) => {
+          const event = lanaiRecEventRow(3, r.raw);
+          if (!event || event >= table.rows || table.u32(event, LANAI_EVENT_ACTIONS[0]) !== LANAI_ACTION_EXTERNAL_DOOR)
+            return [];
+          const [x, y] = recCellPos(r, LANAI_LAYOUTS[3]!);
+          return [
+            {
+              value: event,
+              name: `通路をふさぐ扉 #${index}`,
+              sub: `セル (${x.toFixed(1)}, ${y.toFixed(1)})`,
+              where: { doc, x, y },
+              model: null,
+              badge: '扉',
+            },
+          ];
+        })
+      : [];
+  return (
+    <Dialog title={`${persistent ? '保持スイッチ' : 'プッシュスイッチ'}を置く`} onClose={onClose}>
+      <p className="small">{persistent ? '一度踏むと押したままになります。' : '踏むと押され、離れると戻ります。'}</p>
+      {persistent && (
+        <label className="field">
+          <span>自動で開く扉（任意）</span>
+          <PlacedPickButton
+            title="扉を選ぶ（選ばなくても配置できます）"
+            value={door}
+            choices={choices}
+            extra={[{ value: 0, label: '指定しない', sub: '配置後にスクリプトを編集できます' }]}
+            onChange={setDoor}
+          />
+        </label>
+      )}
+      <p className="muted small">
+        {door
+          ? '選んだ扉を開く関数とスイッチへの割当を作ります。'
+          : '空の関数とスイッチへの割当を作ります。扉の配置前でも置けます。配置後にステージのスクリプトを編集してください。'}
+      </p>
+      {!enabled && <p className="error">スイッチのスクリプトは新しく追加したステージで使えます。</p>}
+      <div className="row">
+        <button onClick={onClose}>キャンセル</button>
+        <button
+          className="primary"
+          disabled={!enabled}
+          onClick={() =>
+            onReady({
+              ...template,
+              description: door
+                ? `${template.description ?? ''} 扉 #${door} を開きます。`.trim()
+                : template.description,
+              event: { ...template.event!, buttonDoor: door || undefined },
+            })
+          }
+        >
+          この設定で置く
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** A destination can be connected now or after both ends have been placed. */
+function ExitPlacement({
+  st,
+  template,
+  onReady,
+  onClose,
+}: {
+  st: LanaiEditState;
+  template: ReturnType<LanaiEditState['templates']>[number];
+  onReady: (t: typeof template) => void;
+  onClose: () => void;
+}): ReactNode {
+  const [connectNow, setConnectNow] = useState(false);
+  const [map, setMap] = useState(0);
+  const [point, setPoint] = useState(0);
+  const [direction, setDirection] = useState(0);
+  const valid = !!st.maps.map(map) && lanaiDestinationPoints(st.maps, map).some((p) => p.value === point);
+  return (
+    <Dialog title={`${template.label}を置く`} onClose={onClose}>
+      <label className="field">
+        <span>行き先</span>
+        <select value={connectNow ? 'now' : 'later'} onChange={(e) => setConnectNow(e.target.value === 'now')}>
+          <option value="later">後で設定する</option>
+          <option value="now">今選ぶ</option>
+        </select>
+      </label>
+      {connectNow ? (
+        <DestinationFields
+          maps={st.maps}
+          map={map}
+          point={point}
+          onChange={(nextMap, nextPoint) => {
+            setMap(nextMap);
+            setPoint(nextPoint);
+          }}
+        />
+      ) : (
+        <p className="muted small">先に配置して、相手の出入口を置いた後でインスペクタの「行き先」を設定できます。</p>
+      )}
+      <label className="field">
+        <span>向き</span>
+        <select value={direction} onChange={(e) => setDirection(Number(e.target.value))}>
+          {FACING_LABELS.map((label, index) => (
+            <option key={index} value={index}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="row">
+        <button onClick={onClose}>キャンセル</button>
+        <button
+          className="primary"
+          disabled={connectNow && !valid}
+          onClick={() => {
+            const raw = template.raw.slice();
+            raw[0x14] = LANAI_ROT_CODEC.encode(direction);
+            onReady({
+              ...template,
+              description: connectNow ? `行き先: ${st.maps.map(map)?.name ?? ''}。` : '行き先は配置後に設定します。',
+              raw,
+              event: { ...template.event!, destination: connectNow ? { map, point } : { map: 0, point: 0 } },
+            });
+          }}
+        >
+          この設定で置く
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+/** The line of a sign, an NPC or a clerk is written before it is placed; each placement adds a row to the group's talk table. */
+function TalkPlacement({
+  st,
+  template,
+  onReady,
+  onClose,
+}: {
+  st: LanaiEditState;
+  template: ReturnType<LanaiEditState['templates']>[number];
+  onReady: (t: typeof template) => void;
+  onClose: () => void;
+}): ReactNode {
+  const shop = !!template.event?.shop;
+  const [text, setText] = useState(template.event?.talk?.text || (shop ? 'いらっしゃいませ。' : ''));
+  const talk = st.info ? st.maps.talkTable(st.info.dungeon) : undefined;
+  let error = '';
+  try {
+    encodeLanaiMessage(parseLanaiText(text));
+  } catch (e) {
+    error = (e as Error).message;
+  }
+  return (
+    <Dialog title={`${template.label.replace(/（.*$/u, '')}を置く`} onClose={onClose}>
+      <label className="field">
+        <span>{shop ? '店を開く前の台詞' : 'メッセージ'}</span>
+        <textarea
+          aria-label="メッセージ"
+          rows={4}
+          autoFocus
+          value={text}
+          placeholder="ここに表示する文"
+          onChange={(e) => setText(e.target.value)}
+        />
+      </label>
+      <p className="muted small">
+        {talk
+          ? `台詞の表 ${talk.name} に新しい行を足します (今 ${talk.rows} 件)。ルビは {ruby:親字|よみ}、改ページは {page} と書けます。置いた後もインスペクタで書き換えられます。`
+          : 'この MapGroup には台詞の表がありません。'}
+      </p>
+      {shop && (
+        <p className="small">
+          話しかけると台詞のあと、このステージのショップ (Shop の行 0、推定) が開きます。品揃えは{' '}
+          <a href={lanaiShopHref(st.maps.content.index, 0)}>ショップのページ</a>で編集します。
+        </p>
+      )}
+      {error && <p className="error">{error}</p>}
+      <div className="row">
+        <button onClick={onClose}>キャンセル</button>
+        <button
+          className="primary"
+          disabled={!talk || !text.trim() || !!error}
+          onClick={() =>
+            onReady({
+              ...template,
+              description: `${template.description ?? ''} 台詞: ${text.trim().split('\n')[0]!}`.trim(),
+              event: { ...template.event!, talk: { ...template.event!.talk!, text } },
+            })
+          }
+        >
+          この設定で置く
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 /** Adding records: props (section 2) and copies of the group's records; copying and removing the selected one. */
 function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): ReactNode {
+  const [chest, setChest] = useState<{
+    template: ReturnType<LanaiEditState['templates']>[number];
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
+  } | null>(null);
+  const [switchPart, setSwitchPart] = useState<{
+    template: ReturnType<LanaiEditState['templates']>[number];
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
+  } | null>(null);
+  const [exitPart, setExitPart] = useState<{
+    template: ReturnType<LanaiEditState['templates']>[number];
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
+  } | null>(null);
+  const [talkPart, setTalkPart] = useState<{
+    template: ReturnType<LanaiEditState['templates']>[number];
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
+  } | null>(null);
   const revision = useMaps(st.maps);
-  const templates = useMemo(() => st.templates(), [st, st.info, revision]);
+  const romParts = useRomParts(st.maps.session);
+  const templates = useMemo(() => [...st.templates(), ...st.romTemplates(romParts)], [st, st.info, revision, romParts]);
   const props = useMemo(() => st.props(), [st, st.info, revision]);
   const objects = st.maps.session.table('MapObject');
   const all = useMemo(
@@ -602,29 +1047,82 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
     [objects],
   );
   return (
-    <RecordPartPanel
-      st={st}
-      source={view}
-      templates={templates}
-      rows={all}
-      usedRows={props}
-      maxRow={0xffff}
-      validRow={(row) => !!lanaiObjectRef(objects, row)}
-      directions={FACING_LABELS}
-      modelForProp={(row) => ({ type: 'object' as const, row })}
-      modelForTemplate={(t) => view.partLook(t.section, t.raw)?.model ?? null}
-      help="マップをクリックして配置、Esc で選択に戻ります。レコードの写しには独立したイベントと状態を付けます。出入口には新しい地点 ID を付けます。"
-    />
+    <>
+      <RecordPartPanel
+        st={st}
+        source={view}
+        templates={templates}
+        rows={all}
+        usedRows={props}
+        maxRow={0xffff}
+        validRow={(row) => !!lanaiObjectRef(objects, row)}
+        directions={FACING_LABELS}
+        modelForProp={(row) => ({ type: 'object' as const, row })}
+        modelForTemplate={(t) => t.model ?? view.partLook(t.section, t.raw)?.model ?? null}
+        help="パーツを選んでマップをクリックすると配置できます。ROM 由来のパーツは種類ごとに分類し、3D 外観が違うものは別の候補にしました。新規・設定付きは配置時に行き先や台詞などを設定できます。既存ギミックはこのステージから設定を複製します。装飾にはゲーム中の動作がありません。Esc で選択に戻ります。"
+        prepareTemplate={(template, choose) => {
+          if (template.event?.chest) setChest({ template, choose });
+          else if (template.event?.switchTrigger) setSwitchPart({ template, choose });
+          else if (template.event?.destination) setExitPart({ template, choose });
+          else if (template.event?.talk) setTalkPart({ template, choose });
+          else choose(template);
+        }}
+      />
+      {chest && (
+        <ChestPlacement
+          st={st}
+          template={chest.template}
+          onReady={(ready) => {
+            chest.choose(ready);
+            setChest(null);
+          }}
+          onClose={() => setChest(null)}
+        />
+      )}
+      {switchPart && (
+        <SwitchPlacement
+          st={st}
+          template={switchPart.template}
+          onReady={(ready) => {
+            switchPart.choose(ready);
+            setSwitchPart(null);
+          }}
+          onClose={() => setSwitchPart(null)}
+        />
+      )}
+      {talkPart && (
+        <TalkPlacement
+          st={st}
+          template={talkPart.template}
+          onReady={(ready) => {
+            talkPart.choose(ready);
+            setTalkPart(null);
+          }}
+          onClose={() => setTalkPart(null)}
+        />
+      )}
+      {exitPart && (
+        <ExitPlacement
+          st={st}
+          template={exitPart.template}
+          onReady={(ready) => {
+            exitPart.choose(ready);
+            setExitPart(null);
+          }}
+          onClose={() => setExitPart(null)}
+        />
+      )}
+    </>
   );
 }
 
 /** Fields of a section's records besides the position and the facing (map.md §5). */
 const REC_FIELDS: Record<number, FieldDef[]> = {
-  1: [{ key: 'kind', offset: 0x0d, type: 'u8', label: '種類 (+0x0D)' }],
+  1: [{ key: 'kind', offset: 0x0d, type: 'u8', label: '種類 (+0x0D、1 = 毒床、3 = 凍った床)' }],
   2: [{ key: 'row', offset: 0, type: 'u32', label: 'MapObject 番号' }],
   3: [
     { key: 'ev', offset: 4, type: 'u32', label: 'イベント番号' },
-    { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (5 上り / 6 下り / 100 壁の扉)' },
+    { key: 'kind', offset: 0x15, type: 'u8', label: '種類 (5 上り / 6 下り / 16 レベルの扉 / 100 壁の扉)' },
   ],
   4: [
     { key: 'look', offset: 0, type: 'u32', label: '見た目 (0〜3)' },
@@ -635,9 +1133,8 @@ const REC_FIELDS: Record<number, FieldDef[]> = {
     { key: 'ev', offset: 4, type: 'u32', label: 'イベント番号' },
   ],
   8: [
-    { key: 'type', offset: 0, type: 'u32', label: '種類 (100 以上 = 置物)' },
+    { key: 'type', offset: 0, type: 'u32', label: '種類 (0 円・1 / 2 矩形、100 以上 = 置物)' },
     { key: 'ev', offset: 4, type: 'u32', label: 'イベント番号' },
-    { key: 'shape', offset: 0x1d, type: 'u8', label: '形 (0 円 / 1 矩形)' },
   ],
   9: [
     { key: 'type', offset: 0, type: 'u32', label: '種類' },
@@ -678,9 +1175,37 @@ function Inspector({
   return (
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
+      {st.info && <PlacedEventIndex st={st} />}
       {st.info && <Facts maps={st.maps} info={st.info} view={view} />}
+      {st.info && <LanaiTilesetField maps={st.maps} info={st.info} />}
       <Stages content={content} />
     </>
+  );
+}
+
+/** IDs in scripts are EventObject row numbers, shared by all maps of this MapGroup. */
+function PlacedEventIndex({ st }: { st: LanaiEditState }): ReactNode {
+  const doc = st.current;
+  if (!doc) return null;
+  const entries = LANAI_EVENT_SECTIONS.flatMap((section) =>
+    (doc.recs[section] ?? []).flatMap((rec, index) => {
+      if (section === 8 && u32(rec.raw, 0) >= LANAI_RANGE_PROP_KIND) return [];
+      const event = lanaiRecEventRow(section, rec.raw);
+      return event ? [{ section, index, event, label: lanaiRecLabel(section, rec.raw) }] : [];
+    }),
+  );
+  return (
+    <details className="lanai-event-index">
+      <summary>{`配置物のイベントID一覧（${entries.length}件）`}</summary>
+      <p className="muted small">/stages の関数では、対象のイベント ID を十進数で指定します。</p>
+      <div className="lanai-event-index-list">
+        {entries.map(({ section, index, event, label }) => (
+          <button key={`${section}/${index}`} type="button" onClick={() => st.select({ type: 'rec', section, index })}>
+            <strong className="mono">{event}</strong> {label} #{index}
+          </button>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -830,17 +1355,191 @@ function RecFields({
   const hasEvent =
     LANAI_EVENT_SECTIONS.includes(section as 3 | 4 | 5 | 8) && !(section === 8 && u32(rec.raw, 0) >= 100);
   const ev = hasEvent ? lanaiRecEventRow(section, rec.raw) : 0;
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const eventKey = `${st.info?.dungeon ?? 0}/${ev}`;
   const events = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
+  const primaryAction = ev > 0 && events && ev < events.rows ? events.u32(ev, LANAI_EVENT_ACTIONS[0]) : 0;
+  const switchBinding =
+    section === 5 && st.info
+      ? st.maps.session.stageScripts
+          .get(st.maps.content.archive.toUpperCase())
+          ?.doc.bindings.find(
+            (b) => b.group === st.info!.dungeon && b.row === ev && (b.trigger === 'switch' || b.trigger === 'button'),
+          )
+      : undefined;
+  const linkedDoor = section === 5 && st.info ? lanaiButtonDoor(st.maps, st.info.dungeon, ev) : null;
+  const linkedButtons =
+    section === 3 && st.info
+      ? (st.current?.recs[5] ?? []).flatMap((button, i) => {
+          const row = lanaiRecEventRow(5, button.raw);
+          return lanaiButtonDoor(st.maps, st.info!.dungeon, row) === ev && ev ? [i] : [];
+        })
+      : [];
+  const content = st.maps.content.index;
+  const mapName = st.info?.name;
+  /** The link to a record of the open map (its anchor). */
+  const anchor = (s: number, i: number): string => lanaiMapHref(content, mapName, { section: s, index: i });
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const here = anchor(section, index);
+  const linkedDoorIndex =
+    linkedDoor === null ? -1 : (st.current?.recs[3] ?? []).findIndex((r) => lanaiRecEventRow(3, r.raw) === linkedDoor);
+  const levelDoor = section === 3 && lanaiExitKind(rec.raw) === LANAI_LEVEL_DOOR_KIND;
+  const hasRow = ev > 0 && !!events && ev < events.rows;
+  const level = levelDoor && hasRow ? events!.u16(ev, LANAI_EVENT_LEVEL) : 0;
+  // the exits (and the ranges that move the party) of the stage's maps that lead here
+  const pointId = section === 3 && rec.raw[0x15] !== 100 ? u32(rec.raw, 0) : 0;
+  const arrivals = useMemo(
+    () => (pointId && st.info ? lanaiArrivals(st.maps, st.info.hash, pointId) : []),
+    [st.maps, st.maps.revision, st.info, pointId],
+  );
   return (
     <>
-      <h3>{`${L.label} #${index}`}</h3>
-      <p className="muted small">{lanaiRecLabel(section, rec.raw)}</p>
+      <h3>
+        {switchBinding?.trigger === 'switch'
+          ? '保持スイッチ'
+          : switchBinding?.trigger === 'button'
+            ? 'プッシュスイッチ'
+            : levelDoor && level
+              ? `レベル ${level} の扉`
+              : lanaiRecLabel(section, rec.raw)}
+      </h3>
+      <div className="row small lanai-anchor">
+        <a href={here} title="このオブジェクトを選んだ状態でマップを開くリンク (URL のアンカー)">
+          {`🔗 ${mapName ?? ''}@${section}.${index}`}
+        </a>
+        <button
+          type="button"
+          title="このオブジェクトへのリンクをコピーする"
+          onClick={() =>
+            void navigator.clipboard.writeText(`${location.origin}${location.pathname}${location.search}${here}`).then(
+              () => setCopiedLink(here),
+              () => setCopiedLink(null),
+            )
+          }
+        >
+          {copiedLink === here ? 'コピー済み' : 'リンクをコピー'}
+        </button>
+      </div>
+      <div className="lanai-id-summary">
+        {ev > 0 ? (
+          <>
+            <span>スクリプトで使うイベント ID</span>
+            <div className="row">
+              <strong className="mono lanai-id-value">{ev}</strong>
+              <button
+                type="button"
+                onClick={() =>
+                  void navigator.clipboard.writeText(String(ev)).then(
+                    () => setCopiedKey(eventKey),
+                    () => setCopiedKey(null),
+                  )
+                }
+              >
+                {copiedKey === eventKey ? 'コピー済み' : 'IDをコピー'}
+              </button>
+            </div>
+            <span className="muted small">{`MapGroup ${st.info?.dungeon ?? '?'} の EventObject 行。openDoor(${ev}) などで使います。`}</span>
+          </>
+        ) : (
+          <span className="muted small">この配置物にスクリプト用のイベント ID はありません。</span>
+        )}
+        {section === 3 && rec.raw[0x15] !== 100 && (
+          <span className="small">{`到着地点 ID: ${hex8(u32(rec.raw, 0)).toUpperCase()}（イベント ID とは別）`}</span>
+        )}
+        {section === 2 && <span className="small">{`見た目のモデル ID: ${u32(rec.raw, 0)}`}</span>}
+      </div>
+      <h4>見た目</h4>
       <ModelLine view={view} look={view.look(section, index)} />
+      {ev > 0 && events && ev < events.rows && <LookField st={st} view={view} section={section} rec={rec} row={ev} />}
+      {(section === 3 || (section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)))) && <h4>接続</h4>}
+      {levelDoor && hasRow && (
+        <>
+          <label className="field">
+            <span>必要レベル (LvX の X)</span>
+            <NumberInput
+              value={level}
+              min={0}
+              max={0x7fff}
+              onCommit={(v) => st.setEventField(ev, (t) => t.setU16(ev, LANAI_EVENT_LEVEL, v))}
+            />
+          </label>
+          <p className="muted small">
+            イベントの +0x5C。扉 (MapObject #49 / #59 gimk_03_gate_06) の数字は下位 8 bit で決まり、5・10〜50 (5
+            刻み)・60〜90 (10 刻み) はその数、6 は目の印、ほかの値は「99」と表示されます (3D に反映)。
+          </p>
+          {primaryAction === 0x80000016 ? (
+            <p className="muted small">
+              {level >= 10
+                ? `参加メンバーの最低レベルが ${level} 以上なら開きます (6 は無条件で開き、7〜9 は開きません)。`
+                : level === 6
+                  ? '6 は無条件で開きます。'
+                  : level >= 7
+                    ? '7〜9 では開きません。'
+                    : '1〜5 の扱いは未確認です (判定が比べるのは 10 以上の値)。'}
+            </p>
+          ) : (
+            <p className="muted small">
+              レベルで開くかを判定するのは動作「鍵つきの扉 (行き先あり)」(0x16)
+              だけです。この扉の動作では数字は表示だけです (ROM のレベル 5 の扉は「外から開ける扉」、10 はスクリプト)。
+            </p>
+          )}
+        </>
+      )}
+      {section === 3 && ev > 0 && events && LANAI_DESTINATION_ACTIONS.includes(primaryAction) && (
+        <DestinationFields
+          link
+          maps={st.maps}
+          map={events.u32(ev, LANAI_EVENT_ACTIONS[0] + 4)}
+          point={events.u32(ev, LANAI_EVENT_ACTIONS[0] + 8)}
+          onChange={(map, point) =>
+            st.setEventField(ev, (table) => {
+              table.setU32(ev, LANAI_EVENT_ACTIONS[0] + 4, map);
+              table.setU32(ev, LANAI_EVENT_ACTIONS[0] + 8, point);
+            })
+          }
+        />
+      )}
+      {section === 5 && [4, 5, 6].includes(u32(rec.raw, 0)) && (
+        <p className="small">
+          {linkedDoor === null ? (
+            '扉への直接接続なし。動作はスクリプトで設定できます。'
+          ) : linkedDoorIndex < 0 ? (
+            `このボタンで開く: 扉のイベント #${linkedDoor} (このマップにはない)`
+          ) : (
+            <>
+              このボタンで開く:{' '}
+              <a href={anchor(3, linkedDoorIndex)}>{`→ 扉 #${linkedDoorIndex} (イベント #${linkedDoor})`}</a>
+            </>
+          )}
+        </p>
+      )}
+      {linkedButtons.length > 0 && (
+        <div className="row small">
+          この扉を開くボタン:{' '}
+          {linkedButtons.map((i) => (
+            <a key={i} href={anchor(5, i)}>{`→ ボタン #${i}`}</a>
+          ))}
+        </div>
+      )}
+      {arrivals.length > 0 && (
+        <div className="small">
+          ここへ来る出入口:
+          <ul className="lanai-arrivals">
+            {arrivals.map((a) => (
+              <li key={`${a.map}/${a.section}/${a.index}`}>
+                <a href={lanaiMapHref(content, a.map, a)}>
+                  {`→ ${a.map} の${a.section === 3 ? '出入口' : '範囲'} #${a.index}`}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <h4>配置</h4>
       <RecPositionFields st={st} rec={rec} L={L} />
-      {section === 3 && <p className="small">{`地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}`}</p>}
       {facing !== undefined && st.canRotate(section) && (
         <label className="field">
-          <span>{`向き (+0x${facing.toString(16).toUpperCase()}、R で回す)`}</span>
+          <span>向き (R で回す)</span>
           <select
             value={LANAI_ROT_CODEC.decode(rec.raw[facing]!)}
             onChange={(e) =>
@@ -858,50 +1557,162 @@ function RecFields({
           </select>
         </label>
       )}
-      {(REC_FIELDS[section] ?? [])
-        .filter((f) => f.key !== 'ev' || hasEvent)
-        .map((f) =>
-          f.key === 'ev' ? (
-            <div key={f.key} className="field">
-              <span>イベント</span>
-              {events ? (
-                <LanaiEventSelect
-                  st={st}
-                  value={ev}
-                  allowNone={section === 3 || section === 8}
-                  onChange={(v) => st.edit(() => w32(rec.raw, 4, v))}
+      <details>
+        <summary className="small">区画・行番号などの詳細</summary>
+        <p className="muted small">{`${L.label} #${index}${section === 3 ? `・地点 ID ${hex8(u32(rec.raw, 0)).toUpperCase()}` : ''}`}</p>
+        {(REC_FIELDS[section] ?? [])
+          .filter((f) => f.key !== 'ev' || hasEvent)
+          .map((f) =>
+            f.key === 'ev' ? (
+              <div key={f.key} className="field">
+                <span>イベント</span>
+                {events ? (
+                  <LanaiEventSelect
+                    st={st}
+                    value={ev}
+                    allowNone={section === 3 || section === 8}
+                    onChange={(v) => st.edit(() => w32(rec.raw, 4, v))}
+                  />
+                ) : (
+                  <span className="muted small">イベントの表がありません</span>
+                )}
+              </div>
+            ) : (
+              <label key={f.key} className="field">
+                <span>{f.label}</span>
+                <NumberInput
+                  value={readField(rec.raw, f)}
+                  min={0}
+                  max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
+                  onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
                 />
-              ) : (
-                <span className="muted small">イベントの表がありません</span>
-              )}
-            </div>
-          ) : (
-            <label key={f.key} className="field">
-              <span>{f.label}</span>
-              <NumberInput
-                value={readField(rec.raw, f)}
-                min={0}
-                max={f.type === 'u8' ? 255 : f.type === 'u16' ? 0xffff : 0x7fffffff}
-                onCommit={(v) => st.edit(() => writeField(rec.raw, f, v))}
-              />
-            </label>
-          ),
-        )}
+              </label>
+            ),
+          )}
+        <details>
+          <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
+          <code className="small mono" style={{ wordBreak: 'break-all' }}>
+            {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
+          </code>
+        </details>
+      </details>
+      {section === 8 && u32(rec.raw, 0) < LANAI_RANGE_PROP_KIND && <RangeFields st={st} rec={rec} events={events} />}
+      {ev > 0 && events && ev < events.rows && <h4>動作・報酬</h4>}
+      {hasRow && primaryAction === LANAI_ACTION_SHOP && (
+        <p className="small">
+          台詞のあと、このステージのショップ (Shop の行 0、推定) を開きます。{' '}
+          <a href={lanaiShopHref(content, 0)}>→ 品揃えをショップのページで編集</a>
+        </p>
+      )}
       {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
       {ev > 0 &&
         (events && ev < events.rows ? (
-          <EventFields st={st} section={section} index={index} row={ev} />
+          <>
+            <EventFields st={st} section={section} index={index} row={ev} />
+          </>
         ) : (
           <p className="muted small">
             {events ? `イベント番号 ${ev} は表 (${events.rows} 件) の外です` : `イベント番号 ${ev} (表なし)`}
           </p>
         ))}
-      <details>
-        <summary className="small">{`レコードのバイト (${rec.raw.length})`}</summary>
-        <code className="small mono" style={{ wordBreak: 'break-all' }}>
-          {[...rec.raw].map((b) => b.toString(16).padStart(2, '0')).join(' ')}
-        </code>
-      </details>
+    </>
+  );
+}
+
+/**
+ * A range's hit shape as the game makes it (rangeShape.ts): the shape (+0x1D: 0 a circle, else a rectangle), the
+ * rectangle's full width and depth (+0x14 / +0x18, 1 = 100 world units = 1/5 of a cell) or the circle's radius (the
+ * event's +0x5A, same unit). The map draws the shape.
+ */
+function RangeFields({
+  st,
+  rec,
+  events,
+}: {
+  st: LanaiEditState;
+  rec: Rec;
+  events: ReturnType<LanaiEditState['maps']['eventTable']>;
+}): ReactNode {
+  const range = lanaiRange(rec, events);
+  const circle = rec.raw[0x1d] === 0;
+  const ev = u32(rec.raw, 4);
+  const hasRow = !!events && ev > 0 && ev < events.rows;
+  const f = (o: number): number => {
+    const v = new DataView(rec.raw.buffer, rec.raw.byteOffset).getFloat32(o, true);
+    return Number.isFinite(v) ? v : 0;
+  };
+  const setF = (o: number, v: number): void =>
+    st.edit(() => new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(o, v, true));
+  return (
+    <>
+      {hasRow && (
+        <label className="field">
+          <span>範囲イベントの起動</span>
+          <select
+            aria-label="範囲イベントの起動"
+            value={range.pressToStart ? 'press' : 'walk'}
+            onChange={(e) =>
+              st.setEventField(ev, (t) =>
+                t.setU16(ev, 0x5c, (t.u16(ev, 0x5c) & 0x7fff) | (e.target.value === 'walk' ? 0x8000 : 0)),
+              )
+            }
+          >
+            <option value="walk">歩いて入る</option>
+            <option value="press">範囲内で A を押す</option>
+          </select>
+        </label>
+      )}
+      <label className="field">
+        <span>当たり判定の形 (+0x1D)</span>
+        <select
+          aria-label="範囲の形"
+          value={circle ? 0 : 1}
+          onChange={(e) =>
+            st.edit(() => {
+              const c = e.target.value === '0';
+              rec.raw[0x1d] = c ? 0 : 1;
+              // the data keeps the kind equal to the shape (kind 0 = circle, 1 = rectangle)
+              if (u32(rec.raw, 0) <= 2) w32(rec.raw, 0, c ? 0 : 1);
+              if (!c && f(0x14) <= 0 && f(0x18) <= 0) {
+                new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(0x14, 3, true);
+                new DataView(rec.raw.buffer, rec.raw.byteOffset).setFloat32(0x18, 1, true);
+              }
+            })
+          }
+        >
+          <option value={0}>円 (中心と半径)</option>
+          <option value={1}>矩形 (北西の角と幅・奥行き)</option>
+        </select>
+      </label>
+      {circle ? (
+        <label className="field">
+          <span>半径 (イベントの +0x5A、1 = 1/5 マス)</span>
+          {hasRow ? (
+            <NumberInput
+              value={events!.u16(ev, 0x5a)}
+              min={0}
+              max={0xffff}
+              onCommit={(v) => st.setEventField(ev, (t) => t.setU16(ev, 0x5a, v))}
+            />
+          ) : (
+            <span className="muted small">イベントがないので決まりません</span>
+          )}
+        </label>
+      ) : (
+        <>
+          <label className="field">
+            <span>幅 (東西、+0x14、1 = 1/5 マス)</span>
+            <NumberInput value={f(0x14)} min={0} max={10000} step={0.1} onCommit={(v) => setF(0x14, v)} />
+          </label>
+          <label className="field">
+            <span>奥行き (南北、+0x18、1 = 1/5 マス)</span>
+            <NumberInput value={f(0x18)} min={0} max={10000} step={0.1} onCommit={(v) => setF(0x18, v)} />
+          </label>
+        </>
+      )}
+      <p className="muted small">
+        {`${range.note} 判定はパーティの位置 1 点が形の中にあるかどうかで、判定そのものには「入った・出た」の区別がありません (続けて起きるかはイベントの状態と disable() で決まります)。`}
+      </p>
     </>
   );
 }
@@ -994,8 +1805,6 @@ function BattlePanel({ st }: { st: LanaiEditState }): ReactNode {
   );
 }
 
-const ACTION_STATES = ['状態 0', '状態 1', '状態 2〜3'];
-
 /** "13: むふふふ、むふふふ！笑いが止…" for a row of a talk table. */
 function talkRowLabel(session: LanaiSession, t: LanaiTable, offset: number, row: number): string {
   const text = t.isString(row, offset) ? session.plainAt(t, t.u32(row, offset)).replace(/\s+/g, ' ').trim() : '';
@@ -1012,11 +1821,16 @@ function ActionFields({
   row,
   offset,
   index,
+  allowed,
+  destinationInConnection,
 }: {
   st: LanaiEditState;
   row: number;
   offset: number;
   index: number;
+  /** The types the record's event takes (actions.ts lanaiActionTypesFor), when known. */
+  allowed?: number[];
+  destinationInConnection?: boolean;
 }): ReactNode {
   const info = st.info!;
   const session = st.maps.session;
@@ -1034,7 +1848,9 @@ function ActionFields({
     f();
     session.edited();
   };
-  const types = LANAI_ACTION_TYPES.includes(type) ? LANAI_ACTION_TYPES : [type, ...LANAI_ACTION_TYPES];
+  const offered = allowed ?? LANAI_ACTION_TYPES;
+  const types = offered.includes(type) ? offered : [type, ...offered];
+  const ignored = !!allowed && type !== 0 && !allowed.includes(type);
   const talkArgs = action?.talk ?? [];
   const lines = talkArgs.map((a, k): ReactNode => {
     const v = arg(a);
@@ -1048,6 +1864,13 @@ function ActionFields({
       );
     const none = action!.zeroIsNone && v === 0;
     const inside = v < talk.rows;
+    /** A new row of the talk table for this argument (the speaker kind of the line it had, else an NPC's). */
+    const addLine = (): void =>
+      st.editTables(() => {
+        const speaker = inside && !none ? talk.u8(v, TALK_SPEAKER) : LANAI_SPEAKER_NPC;
+        const line = st.maps.addTalkRow(info.dungeon, '新しいメッセージ', speaker);
+        t.setU32(row, offset + 4 + a * 4, line);
+      });
     return (
       <div key={a}>
         <label className="field">
@@ -1061,15 +1884,24 @@ function ActionFields({
             ))}
           </select>
         </label>
+        <div className="row">
+          <button
+            type="button"
+            title="台詞の表に新しい行を足し、この欄をその行に付け替えます (ほかの NPC と共有しない文になります)"
+            onClick={addLine}
+          >
+            ＋ 新しいメッセージを作る
+          </button>
+        </div>
         {inside && !none && <MessageEditor texts={lanaiMessageSource(session, talk, message)} id={v} apply={apply} />}
       </div>
     );
   });
-  const destination = [0x80000011, 0x80000013, 0x80000039].includes(type);
+  const destination = LANAI_DESTINATION_ACTIONS.includes(type);
   const known = Object.entries(action?.args ?? {}).filter(([a]) => !destination || Number(a) > 1);
   return (
     <details open={index === 0 || (type !== 0 && type !== LANAI_ACTION_NONE)}>
-      <summary className="small">{`動作 ${index + 1} (${ACTION_STATES[index]}): ${lanaiActionName(type)}`}</summary>
+      <summary className="small">{`動作 ${index + 1} (${LANAI_ACTION_RUNS[index]}): ${lanaiActionName(type)}`}</summary>
       <label className="field">
         <span>動作の型</span>
         <select
@@ -1081,11 +1913,17 @@ function ActionFields({
           ))}
         </select>
       </label>
+      {ignored && (
+        <p className="muted small">
+          この型は、このレコードの区画・種類では働きません
+          (ゲームはレコードの区画と種類でイベントの種類を決め、合わない型は何もしない)。
+        </p>
+      )}
       {action?.note && <p className="muted small">{action.note}</p>}
       {type === LANAI_ACTION_SCRIPT && talk && (
         <p className="muted small">
           {
-            '台詞を変えるには: 型を「一言」「会話 (台詞 4 つ)」などに変えて、台詞を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'
+            '台詞を変えるには: 型を「一言」などに変えて、台詞を選ぶ (CRO はそのまま。スクリプトだった NPC がゲームで同じように話すかは実機で未確認)。'
           }
         </p>
       )}
@@ -1093,8 +1931,9 @@ function ActionFields({
         <p className="muted small">{`台詞の表: ${talk.name} (${talk.rows} 件、${group?.talkEntry ? 'MapGroup +0x24' : 'MapGroup +0x24 が 0 なのでコンテンツの MessageContents'})。文を書き換えると、同じ番号を使うほかの NPC の台詞も変わる。`}</p>
       )}
       {lines}
-      {destination && (
+      {destination && !destinationInConnection && (
         <DestinationFields
+          link
           maps={st.maps}
           map={arg(0)}
           point={arg(1)}
@@ -1172,6 +2011,9 @@ function EventFields({
   const group = st.maps.group(info);
   const users = eventUsers(st.maps, info, row);
   const slot = lanaiEventSlot(t, row);
+  const raw = st.current?.recs[section]?.[index]?.raw;
+  const allowed = raw ? lanaiActionTypesFor(section, section === 5 ? u32(raw, 0) : undefined) : undefined;
+  const levelDoor = section === 3 && !!raw && lanaiExitKind(raw) === LANAI_LEVEL_DOOR_KIND;
   const u8f = (o: number, label: string): ReactNode => (
     <label key={o} className="field">
       <span>{label}</span>
@@ -1196,33 +2038,56 @@ function EventFields({
   );
   return (
     <>
-      <h4>{`イベント #${row} (${t.name})${row >= t.originalRows ? ' (追加したイベント)' : ''}`}</h4>
       {users > 1 && (
         <div className="row">
           <span className="muted small">{`このイベントは ${users} 個のレコードが使っています (状態と動作を共有)。`}</span>
           <button onClick={() => st.separateEventRow(section, index)}>このレコード専用のイベントにする</button>
         </div>
       )}
+      <h4>条件</h4>
       <EventConditionFields st={st} event={row} field={LANAI_EVENT_APPEAR} />
       <EventConditionFields st={st} event={row} field={LANAI_EVENT_DISAPPEAR} />
       <p className="muted small">
         出る条件が成り立ち、消える条件が成り立たないときに出現します。スクリプト (CRO)
-        が条件を上書きする場合があります。
+        が条件を上書きする場合があります。マップ読込後にフラグを変えても、その場で出現条件が再判定されるとは限りません。
       </p>
+      <EventScriptBinding st={st} section={section} index={index} row={row} />
       {LANAI_EVENT_ACTIONS.map((o, i) => (
-        <ActionFields key={o} st={st} row={row} offset={o} index={i} />
+        <ActionFields
+          key={o}
+          st={st}
+          row={row}
+          offset={o}
+          index={i}
+          allowed={allowed}
+          destinationInConnection={section === 3 && i === 0}
+        />
       ))}
-      {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = イベント番号)`)}
       <p className="muted small">
-        {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
-        {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
+        動作は「何回目の実行か」で切り替わります: 1 回目は動作 1、2 回目は動作 2、3 回目以降は動作 3
+        (無ければ前の動作)。条件で選ばれるのでも、1 回で順に実行されるのでもありません。
       </p>
-      {u16f(0x5a, '+0x5A (範囲の半径・モデルと推定)')}
-      {u16f(0x5c, '+0x5C (未解析)')}
-      {u8f(0x5e, '+0x5E (未解析)')}
       <details>
-        <summary className="small">{`イベントのバイト (${t.rowSize})`}</summary>
-        <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />
+        <summary className="small">イベント番号・状態の枠などの詳細</summary>
+        <p className="muted small">{`イベント #${row} (${t.name})${row >= t.originalRows ? ' (追加したイベント)' : ''}`}</p>
+        {u16f(LANAI_EVENT_SLOT, `状態の枠 (+0x58、${LANAI_SLOT_IS_ROW} = イベント番号)`)}
+        <p className="muted small">
+          {`使う枠 ${slot}・MapGroup の枠 ${group?.stateCount ?? '?'} 個 (先頭 ${group?.stateFirst ?? '?'})`}
+          {group && slot >= group.stateCount ? '。枠の数以上なので状態は保存されません' : ''}
+        </p>
+        {u16f(
+          LANAI_EVENT_LEVEL,
+          levelDoor
+            ? '+0x5C: 必要レベル (レベルの扉)'
+            : section === 8
+              ? '+0x5C (bit 15 = 歩いて入る。0 = 範囲内で A。下位 15 bit は未解析)'
+              : '+0x5C (レベルの扉では必要レベル。ほかは未解析)',
+        )}
+        {u8f(0x5e, '+0x5E (未解析)')}
+        <details>
+          <summary className="small">{`イベントのバイト (${t.rowSize})`}</summary>
+          <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />
+        </details>
       </details>
     </>
   );

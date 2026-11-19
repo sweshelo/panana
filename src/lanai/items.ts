@@ -125,16 +125,21 @@ export function lanaiItems(session: LanaiSession): LanaiItem[] {
 
 /** The description (ItemDataCore +0x28: a MessageItemFlavor row ID; +0x38: which of the three tables). */
 export function lanaiItemDescription(session: LanaiSession, it: LanaiItem): string {
+  const ref = lanaiItemDescriptionRef(session, it);
+  return ref ? session.plain(ref.table, ref.row, 'message') : '';
+}
+
+export function lanaiItemDescriptionRef(session: LanaiSession, it: LanaiItem) {
   const core = session.need('ItemDataCore');
   const id = core.u32(it.core, 0x28);
-  if (!id) return '';
+  if (!id) return null;
   const flavors = session.tables.filter((t) => t.table.name === 'MessageItemFlavor').map((t) => t.table);
   const which = core.u8(it.core, 0x38);
   for (const t of [flavors[which === 1 || which === 2 ? which : 0], ...flavors]) {
     const r = t?.find(id) ?? -1;
-    if (t && r >= 0) return session.plain(t, r, 'message');
+    if (t && r >= 0) return { table: t, row: r };
   }
-  return '';
+  return null;
 }
 
 /** The entry body of an item's model, or null. */

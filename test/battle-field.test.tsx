@@ -110,7 +110,7 @@ describe.skipIf(!hasLanai)('RPG FREE! battle field and BGM', () => {
       'BGM_BATTLE_NORMAL',
       'BGM_BATTLE_BOSS',
       'BGM_BATTLE_GOAL',
-      'BGM_BATTLE_HONOLULU',
+      'BGM_MAP_SNOW',
     ]);
   });
 

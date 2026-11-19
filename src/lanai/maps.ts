@@ -14,6 +14,9 @@ import {
 } from '../game/sections';
 import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
+import { lanaiCharaRowBytes } from './mapObjects';
+import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiText } from './message';
+import { talkColumns, TALK_SPEAKER } from './talk';
 import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -29,6 +32,24 @@ export const LANAI_MAP_NAME_MAX = 11;
 
 /** Slot of the map table row that holds section k (section k = slot k; section 7 has no data, 8 / 9 moved up). */
 export const LANAI_SECTION_SLOT = [0, 1, 2, 3, 4, 5, 6, -1, 7, 8] as const;
+
+/** Older Panana maps omitted empty sections. Update 0x2B164C reads slots 0–8 with lower_bound
+ * and uses the next entry's offset and size without checking its hash. All 553 normal ROM maps
+ * index each of these slots, with size zero for an empty section. World maps have a different layout. */
+export function restoreMissingLanaiSections(db: MapDb, table: Uint8Array): number {
+  let restored = 0;
+  for (let row = 0; row + MAP_ROW <= table.length; row += MAP_ROW) {
+    if (table[row + NAME_OFFSET] === 0x57) continue; // W01 / W02
+    for (const slot of LANAI_SECTION_SLOT) {
+      if (slot < 0) continue;
+      const hash = u32(table, row + slot * 4);
+      if (db.has(hash)) continue;
+      db.add(hash, new Uint8Array());
+      restored++;
+    }
+  }
+  return restored;
+}
 
 /**
  * Record layouts of the sections (§3): oahu's, with the treasure and character positions in 100 units. Every offset
@@ -82,12 +103,38 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
 export const LANAI_EXIT_KIND: Record<number, string> = {
+  2: 'ワープホール',
   3: 'クリアのワープ',
+  4: 'ワープゲート',
   5: '上り階段',
   6: '下り階段',
+  // 40 of the ROM's 54 have the action 0x1D (穴、HoleFallCommon), the rest a script
+  7: '落とし穴',
+  12: '扉',
+  16: 'レベルの扉',
   100: '壁の扉',
 };
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
+/** The exit kind (+0x15) of the level door (MapObject #49 gimk_03_gate_06 when the row has no look). */
+export const LANAI_LEVEL_DOOR_KIND = 16;
+/**
+ * EventObject +0x5C of a level door: the level the door asks for (the "X" of its LvX; the ROM's 14 doors with the
+ * model have 5 / 10 / 30 / 40 / 50 / 60 there, every other door 0). Ranges (section 8) keep a flag in bit 15 of the
+ * same field (rangeShape.ts).
+ */
+export const LANAI_EVENT_LEVEL = 0x5c;
+/**
+ * Section 1 +0x0D: the kind of a floor gimmick (0〜3 in the ROM). Kind 1 is the poison floor and kind 3 the frozen
+ * (slippery) floor, both seen in the game by the user; 0 and 2 are not known yet.
+ */
+export const LANAI_FLOOR_KIND = 0x0d;
+export const LANAI_FLOOR_POISON = 1;
+export const LANAI_FLOOR_ICE = 3;
+export const LANAI_FLOOR_KINDS: Record<number, string> = {
+  [LANAI_FLOOR_POISON]: '毒床',
+  [LANAI_FLOOR_ICE]: '凍った床',
+};
+export const lanaiFloorKindLabel = (kind: number): string => LANAI_FLOOR_KINDS[kind] ?? `床のギミック ${kind}`;
 export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
@@ -494,9 +541,56 @@ export class LanaiMaps {
     return g.talkEntry ? this.tables.find((t) => t.entry === g.talkEntry)?.table : this.contentTable('MessageContents');
   }
 
+  /**
+   * Append a line to a group's talk table and return its row (what the talking actions name: actions.ts). The row is a
+   * copy of one of the table's rows (so that its message field is a string field) with the message `text` (the text
+   * form of message.ts), the speaker kind `speaker` (+0x08: 0 for a sign, 18 for most NPCs of the ROM) and no voice
+   * (the ROM's NPC lines have an empty one).
+   */
+  addTalkRow(group: number, text: string, speaker: number): number {
+    const t = this.talkTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の台詞の表がありません`);
+    return lanaiAppendTalkRow(t, encodeLanaiMessage(parseLanaiText(text)), speaker);
+  }
+
+  /** The lines an edit added to a group's talk table (an undo point of the map page; the ROM's rows are not in it). */
+  talkRows(group: number): LanaiTalkRows | null {
+    const t = this.talkTable(group);
+    const cols = t && talkColumns({ table: t });
+    if (!t || !cols) return null;
+    const added: LanaiTalkRows['added'] = [];
+    for (let r = t.originalRows; r < t.rows; r++)
+      added.push({
+        speaker: t.u8(r, TALK_SPEAKER),
+        message: t.isString(r, cols.message) ? lanaiMessageBytes(t.data, t.u32(r, cols.message)).slice() : null,
+      });
+    return { group, rows: t.rows, added };
+  }
+
+  /**
+   * Put a group's talk table back to the number of rows saved by talkRows: rows added since are removed, rows removed
+   * since are added again with their text. The rows both have keep the text they have now (it is edited in the
+   * message editor, outside the undo points).
+   */
+  restoreTalkRows(saved: LanaiTalkRows): void {
+    const t = this.talkTable(saved.group);
+    if (!t) return;
+    while (t.rows > saved.rows && t.rows > t.originalRows) t.removeLastRow();
+    for (let r = t.rows; r < saved.rows; r++) {
+      const row = saved.added[r - t.originalRows];
+      if (!row?.message) break;
+      lanaiAppendTalkRow(t, row.message, row.speaker);
+    }
+  }
+
   /** A table of the content's archive by its name ("MapChara"). */
   contentTable(name: string): LanaiTable | undefined {
     return tableNamed(this.tables, name);
+  }
+
+  /** Puts a MapParts<name> table the session added to the archive among the tilesets (tilesets.ts). */
+  addPartsTable(entry: number, table: LanaiTable): void {
+    this.partsByEntry.set(entry, table);
   }
 
   /**
@@ -507,7 +601,57 @@ export class LanaiMaps {
     const t = this.eventTable(group);
     if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
     if (from <= 0 || from >= t.rows) throw new RangeError(`イベント番号 ${from} は写せません (表は ${t.rows} 件)`);
-    const row = t.addRow(from);
+    return this.giveSlot(group, t, t.addRow(from));
+  }
+
+  /**
+   * Append a new EventObject row to a group's table: a copy of row 0 (the empty row: no action, the end's padding)
+   * with the first action `action` and the look (+0x5A) `look`, with a state slot of its own. Returns the new row.
+   */
+  addNewEventRow(group: number, action: number, look: number): number {
+    const t = this.eventTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
+    if (!t.rows) throw new Error(`${t.name} に行 0 がありません`);
+    const row = t.addRow(0);
+    t.setU32(row, LANAI_EVENT_ACTIONS[0], action);
+    t.setU16(row, 0x5a, look);
+    return this.giveSlot(group, t, row);
+  }
+
+  /**
+   * Append an EventObject row of the bytes `bytes` (a row of another content: romParts.ts romEventRow) with the look
+   * `look` and a state slot of its own. Returns the new row.
+   */
+  addEventRowBytes(group: number, bytes: Uint8Array, look: number): number {
+    const t = this.eventTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の EventObject の表がありません`);
+    if (!t.rows) throw new Error(`${t.name} に行 0 がありません`);
+    if (bytes.length !== t.rowSize)
+      throw new Error(`EventObject の行の大きさが違います (${bytes.length} / ${t.rowSize})`);
+    const row = t.addRow(0);
+    t.setRow(row, bytes);
+    t.setU16(row, 0x5a, look);
+    return this.giveSlot(group, t, row);
+  }
+
+  /**
+   * Append a MapChara row to the content (the looks of its characters: EventObject +0x5A of section 5 kinds 0〜2): an
+   * NPC (kind 0) of a MapObject row or a monster (kind 1) of a MonsterDesign row. The motions are taken from a row of
+   * the same kind when the content has one (mapObjects.ts lanaiCharaRowBytes). Returns the new row.
+   */
+  addCharaRow(kind: number, model: number): number {
+    const t = this.contentTable('MapChara');
+    if (!t) throw new Error('このコンテンツには MapChara の表がありません');
+    if (t.rowSize !== 0x30) throw new Error(`MapChara の行の大きさが ${t.rowSize} です (0x30 のはず)`);
+    let donor: Uint8Array | undefined;
+    for (let r = 1; r < t.rows && !donor; r++) if ((t.u32(r, 0) & 7) === kind) donor = t.row(r);
+    const row = t.addRow();
+    t.setRow(row, lanaiCharaRowBytes(kind, model, donor));
+    return row;
+  }
+
+  /** Give a row added to a group's table the first state slot no other row uses (or 0xFFFF: the row number). */
+  private giveSlot(group: number, t: LanaiTable, row: number): number {
     const used = new Set(Array.from({ length: row }, (_, r) => lanaiEventSlot(t, r)));
     const count = this.groups[group]?.stateCount ?? 0;
     let slot = 0;
@@ -700,6 +844,29 @@ export class LanaiMaps {
     }
     return out;
   }
+}
+
+/** The rows an edit added to a talk table (LanaiMaps.talkRows). */
+export interface LanaiTalkRows {
+  group: number;
+  /** Rows of the table then. */
+  rows: number;
+  /** The rows after the ROM's: the speaker kind and the message's bytes (null: the field is not a string). */
+  added: { speaker: number; message: Uint8Array | null }[];
+}
+
+/** Appends a row with the message `bytes` (encoded, with its terminator) to a talk table; returns its row. */
+export function lanaiAppendTalkRow(t: LanaiTable, bytes: Uint8Array, speaker: number): number {
+  const cols = talkColumns({ table: t });
+  if (!cols) throw new Error(`${t.name} は台詞の表ではありません`);
+  let donor = -1;
+  for (let r = t.rows - 1; r >= 0 && donor < 0; r--) if (t.isString(r, cols.message)) donor = r;
+  if (donor < 0) throw new Error(`${t.name} に写せる台詞の行がありません`);
+  const row = t.addRow(donor);
+  t.setU8(row, TALK_SPEAKER, speaker);
+  t.setString(row, cols.message, bytes);
+  if (cols.voice >= 0 && t.isString(row, cols.voice)) t.setString(row, cols.voice, new Uint8Array(2));
+  return row;
 }
 
 /** A copy of a table's rows (an undo point). */

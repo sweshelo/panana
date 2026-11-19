@@ -9,22 +9,50 @@ import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
+import { MapDataManager } from './MapDataManager';
 import { lanaiMapHref } from './MapPage';
-import { messagesHref, textColumns } from './MessagePage';
+import { textColumns } from './MessagePage';
 import { useLanaiRevision } from './MonsterEditor';
 import { conditionText } from './conditions';
-import { LanaiContentCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
+import { LanaiContentCreator, LanaiEmptyStageCreator, LanaiStageEditor, LanaiStageStartEditor } from './StageEditor';
+import { LanaiStageScriptEditor } from './StageScriptEditor';
 import { ScriptApiBrowser } from './ScriptApiBrowser';
 import { LanaiMessage } from './MessageView';
 import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
+import { LanaiStageThumbnail } from './StageThumbnail';
+import { lanaiContentRemoveBlock, removeLanaiContent } from './stageEdit';
+import { LanaiStageContents } from './StageContents';
+import { LanaiStageSourcePage } from './StageSourcePage';
 
 type Filter = 'all' | 'stages' | 'none';
 
 const staminaText = (c: LanaiContent): string => [...new Set(c.stages.map((s) => s.stamina))].join(' / ');
 
-export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+export function LanaiStagePage({
+  session,
+  arg,
+  script = false,
+}: {
+  session: LanaiSession;
+  arg: string | undefined;
+  script?: boolean;
+}): ReactNode {
+  return script ? (
+    <LanaiStageSourceRoute session={session} arg={arg} />
+  ) : (
+    <LanaiStageOverview session={session} arg={arg} />
+  );
+}
+
+function LanaiStageSourceRoute({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
+  const revision = useLanaiRevision(session);
+  const contents = useMemo(() => lanaiContents(session), [session, revision]);
+  return <LanaiStageSourcePage key={arg} session={session} content={contents[Number(arg)]} />;
+}
+
+function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const revision = useLanaiRevision(session);
   const contents = useMemo(() => lanaiContents(session), [session, revision]);
   const index = useSticky<number>(
@@ -34,6 +62,7 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
   );
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [creatingEmpty, setCreatingEmpty] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   useActiveRow(list, index);
@@ -53,6 +82,11 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
   return (
     <div className="book">
       <div className="book-side">
+        <div className="row new-record">
+          <button className="primary" disabled={!session.canExport} onClick={() => setCreatingEmpty(true)}>
+            ＋ 新しいステージ
+          </button>
+        </div>
         <ListFilter
           query={query}
           setQuery={setQuery}
@@ -96,17 +130,60 @@ export function LanaiStagePage({ session, arg }: { session: LanaiSession; arg: s
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {c && <ContentDetail key={c.index} session={session} c={c} />}
+        {c && <ContentDetail key={c.index} session={session} c={c} revision={revision} />}
       </div>
+      {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
     </div>
   );
 }
 
-function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+/** Remove an added content (stageEdit.ts removeLanaiContent), after asking: the newest first. */
+function RemoveContentButton({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
+  const [error, setError] = useState<string | null>(null);
+  const block = lanaiContentRemoveBlock(session, c);
+  return (
+    <>
+      <button
+        className="danger"
+        disabled={!!block}
+        title={block ?? '追加したステージを、マップ・イベントのスクリプトごと削除します'}
+        onClick={() => {
+          const what = `「${contentTitle(c)}」(コンテンツ ${c.index})`;
+          if (!confirm(`${what} を削除します。マップやイベントのスクリプトも消え、元に戻せません。`)) return;
+          try {
+            removeLanaiContent(session, c);
+            location.hash = `#/stages/${c.index - 1}`;
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }}
+      >
+        追加したステージを削除
+      </button>
+      {block && <span className="muted small">{block}</span>}
+      {error && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
+  );
+}
+
+function ContentDetail({
+  session,
+  c,
+  revision,
+}: {
+  session: LanaiSession;
+  c: LanaiContent;
+  revision: number;
+}): ReactNode {
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
   const [creating, setCreating] = useState(false);
-  const read = useAsync(() => readContent(session, c), [session, c]);
+  // An edit rebuilds the content summary. Keep the detail mounted while its archive is refreshed.
+  const read = useAsync(() => readContent(session, c), [session, c.archive, revision], { keepPrevious: true });
   return (
     <>
       <div className="book-head">
@@ -127,11 +204,8 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
         >
           ＋ コンテンツを複製して追加
         </button>
+        {session.createdFiles.has(c.archive) && <RemoveContentButton session={session} c={c} />}
       </div>
-      {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
-      {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
-      <h3>マップ</h3>
-      <ContentMaps session={session} c={c} />
       <h3>ステージ (MapStageIntegration)</h3>
       {!c.stages.length ? (
         <p className="muted">このコンテンツを指す行はありません。</p>
@@ -141,11 +215,12 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
             <tr>
               <th>行</th>
               <th>ステージ名</th>
+              <th>サムネイル</th>
+              <th>推奨レベル</th>
               <th>ミッション</th>
               <th title="+0x49 (MapStage +0x3D)。クイズの正解と照合して確定">スタミナ</th>
               <th title="+0x1C〜+0x30">解放・非表示条件</th>
               <th title="+0x00。0x64 刻み (並び順と推定)">順</th>
-              <th>編集</th>
             </tr>
           </thead>
           <tbody>
@@ -154,12 +229,28 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
               const exp =
                 m < 0 ? undefined : session.field(msg, m, msg.fields.find((f) => f.name === 'stage_exp')?.offset ?? -1);
               return (
-                <tr key={s.row}>
+                <tr
+                  key={s.row}
+                  className="stage-edit-row"
+                  tabIndex={0}
+                  aria-label={`${s.name || `ステージの行 ${s.row}`} を編集`}
+                  onClick={() => setEditing(s)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setEditing(s);
+                    }
+                  }}
+                >
                   <td className="num muted">{s.row}</td>
                   <td>
                     {s.name || <span className="muted">(なし)</span>}
                     <div className="muted small mono">{`MessageMapStage ${hex8(s.messageId)}`}</div>
                   </td>
+                  <td>
+                    <LanaiStageThumbnail session={session} archive={c.archive} hash={s.thumbnail} name={s.name} />
+                  </td>
+                  <td className="num">{s.recommendedLevel || '—'}</td>
                   <td>
                     {s.mission}
                     {exp && (
@@ -174,16 +265,16 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
                     <div>非表示: {conditionText(s.hidden)}</div>
                   </td>
                   <td className="num muted">{s.order}</td>
-                  <td>
-                    <button onClick={() => setEditing(s)}>編集</button>
-                    {m >= 0 && <a href={messagesHref(session.refOf(msg)!, m)}>名前・ミッション・説明を編集</a>}
-                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       )}
+      {creating && <LanaiContentCreator session={session} content={c} onClose={() => setCreating(false)} />}
+      {editing && <LanaiStageEditor session={session} content={c} stage={editing} onClose={() => setEditing(null)} />}
+      <h3>マップ</h3>
+      <ContentMaps session={session} c={c} />
       {!read ? (
         <p className="muted">アーカイブを読み込み中…</p>
       ) : read instanceof Error ? (
@@ -197,6 +288,9 @@ function ContentDetail({ session, c }: { session: LanaiSession; c: LanaiContent 
               <LanaiStageStartEditor session={session} content={c} stage={st} archive={read} />
             </div>
           ))}
+          {session.createdFiles.has(c.archive.toUpperCase()) && (
+            <LanaiStageScriptEditor session={session} content={c} />
+          )}
           <ContentArchiveView session={session} c={c} a={read} />
         </>
       )}
@@ -286,16 +380,20 @@ function ContentMaps({ session, c }: { session: LanaiSession; c: LanaiContent })
   if (!maps) return <div className="muted">マップ表を読み込み中…</div>;
   if (maps instanceof Error) return <div className="muted">マップ表がありません</div>;
   return (
-    <ul>
-      {maps.maps.map((m) => (
-        <li key={m.index}>
-          <a className="mono" href={lanaiMapHref(c.index, m.name)}>
-            {m.name}
-          </a>
-          <span className="muted">{` ${lanaiFloorLabel(m.floor) || '地上'}・${maps.groupName(m.dungeon) || 'MapGroup'} (MapGroup ${m.dungeon})・${m.world ? 'ワールドマップ (W01)' : `${maps.doc(m).tiles.length} マス`}・マップ表の行 ${m.index}`}</span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <MapDataManager maps={maps} />
+      <ul>
+        {maps.maps.map((m) => (
+          <li key={m.index}>
+            <a className="mono" href={lanaiMapHref(c.index, m.name)}>
+              {m.name}
+            </a>
+            <span className="muted">{` ${lanaiFloorLabel(m.floor) || '地上'}・${maps.groupName(m.dungeon) || 'MapGroup'} (MapGroup ${m.dungeon})・${m.world ? 'ワールドマップ (W01)' : `${maps.doc(m).tiles.length} マス`}・マップ表の行 ${m.index}`}</span>
+          </li>
+        ))}
+      </ul>
+      <LanaiStageContents maps={maps} />
+    </>
   );
 }
 

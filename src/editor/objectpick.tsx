@@ -142,6 +142,9 @@ export function PlacedPickButton({
   choices,
   extra = [],
   missing,
+  open: controlledOpen,
+  onOpen,
+  onClose,
   onChange,
 }: {
   title: string;
@@ -149,9 +152,18 @@ export function PlacedPickButton({
   choices: PlacedChoice[];
   extra?: { value: number; label: string; sub?: string }[];
   missing?: (value: number) => string;
+  /** Let a parent coordinate this picker with another dialog. */
+  open?: boolean;
+  onOpen?: () => void;
+  onClose?: () => void;
   onChange: (value: number) => void;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const pickerOpen = controlledOpen ?? open;
+  const close = (): void => {
+    setOpen(false);
+    onClose?.();
+  };
   const cur = choices.find((c) => c.value === value);
   const curExtra = extra.find((c) => c.value === value);
   const label = cur ? cur.name : curExtra ? curExtra.label : missing ? missing(value) : `${value}`;
@@ -176,7 +188,7 @@ export function PlacedPickButton({
         className="loot-item placed-button"
         title={cur?.sub ?? curExtra?.sub ?? ''}
         aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
+        onClick={() => (onOpen ? onOpen() : setOpen(true))}
       >
         {cur ? (
           cur.model ? (
@@ -193,7 +205,7 @@ export function PlacedPickButton({
           <span className="muted"> ▾</span>
         </span>
       </button>
-      {open && (
+      {pickerOpen && (
         <GridPicker
           title={title}
           entries={entries}
@@ -203,9 +215,9 @@ export function PlacedPickButton({
           groupByCategory={!!categories}
           wide
           placeholder="名前・種類・番号で絞り込み"
-          onClose={() => setOpen(false)}
+          onClose={close}
           onPick={(id) => {
-            setOpen(false);
+            close();
             const v = id > 0 ? choices[id - 1]?.value : extra[-1 - id]?.value;
             if (v !== undefined) onChange(v);
           }}

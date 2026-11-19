@@ -9,9 +9,19 @@ export interface PartTemplate {
   raw: Uint8Array;
   label: string;
   source: string;
+  /** The picker's category in place of the section's (templateCategory). */
+  category?: string;
+  /** Symbol for a runtime effect that has no renderable model thumbnail. */
+  iconLabel?: string;
+  /** Explanation kept out of the short name; visible in the picker tooltip. */
+  description?: string;
+  keywords?: string;
+  subtitle?: string;
+  choiceKey?: string;
 }
 export type RecordPartStamp<T> = { type: 'prop'; row: number; dir: number } | { type: 'template'; t: T };
-export const partTemplateKey = (t: PartTemplate): string => `template/${t.section}/${t.source}/${t.raw.join('.')}`;
+export const partTemplateKey = (t: PartTemplate): string =>
+  `template/${t.section}/${t.choiceKey ?? `${t.source}/${t.raw.join('.')}`}`;
 export function templateCategory(section: number): string {
   return (
     (
@@ -35,6 +45,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   validRow,
   help,
   status,
+  prepareTemplate,
 }: {
   st: MapEditState<RecordPartStamp<T>>;
   source: PartThumbnailSource<M | null>;
@@ -48,6 +59,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   validRow: (row: number) => boolean;
   help: string;
   status?: string;
+  prepareTemplate?: (template: T, choose: (ready: T) => void) => void;
 }): ReactNode {
   useEditorState(st);
   const [open, setOpen] = useState(false);
@@ -70,6 +82,14 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   const photo = (model: M | null): ReactNode => (
     <PartPhoto source={source} part={model} partKey={JSON.stringify(model)} />
   );
+  const templateIcon = (template: T): ReactNode =>
+    template.iconLabel ? (
+      <span className="photo photo-lg stamp-badge" aria-hidden="true">
+        {template.iconLabel}
+      </span>
+    ) : (
+      photo(modelForTemplate(template))
+    );
   const choices: PartChoice[] = [];
   const stamps = new Map<string, RecordPartStamp<T>>();
   if (open) {
@@ -81,9 +101,16 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       choices.push({
         key,
         name: `置物 #${prop}`,
-        category: 'ギミック',
-        sub: used.has(prop) ? '使用中' : undefined,
-        icon: photo(modelForProp(prop)),
+        category: '装飾',
+        sub: used.has(prop) ? '使用中' : '動作なし',
+        tooltip: `置物 #${prop}\nゲーム中の動作はありません。${used.has(prop) ? '\nこのステージで使用中。' : ''}`,
+        keywords: `装飾 MapObject ${prop}`,
+        icon: (
+          <span className="part-decorative-photo">
+            {photo(modelForProp(prop))}
+            <span>装飾・動作なし</span>
+          </span>
+        ),
       });
     }
     for (const template of templates) {
@@ -92,14 +119,47 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       choices.push({
         key,
         name: template.label,
-        category: templateCategory(template.section),
-        sub: template.source,
-        title: `${template.source} の設定を引き継ぎます`,
-        icon: photo(modelForTemplate(template)),
+        category: template.category ?? templateCategory(template.section),
+        sub: template.subtitle ?? template.description?.split('。')[0] ?? template.source,
+        tooltip: [
+          template.label,
+          template.description,
+          `出典: ${template.source}`,
+          template.iconLabel ? 'エフェクトの図示です。' : modelForTemplate(template) ? '' : '見た目は未設定です。',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        keywords: `${template.source} ${template.description ?? ''} ${template.keywords ?? ''}`,
+        icon: templateIcon(template),
       });
     }
-    const order = ['宝箱', '床のギミック', '出入口・扉', 'ギミック', '地点', 'その他'];
-    choices.sort((a, b) => order.indexOf(a.category) - order.indexOf(b.category));
+    const order = [
+      '新規・設定付き',
+      '出入口・移動',
+      '扉・移動',
+      'スイッチ',
+      '宝箱・ゴール',
+      '回復',
+      '装置・その他',
+      '人物・敵',
+      'メッセージ・店',
+      '範囲イベント',
+      '床のギミック',
+      '地点',
+      '既存ギミック',
+      '装飾',
+      '宝箱',
+      '出入口・扉',
+      'ギミック',
+      '地点',
+      'その他',
+    ];
+    // a category not in the list (an adapter's own) goes first
+    choices.sort(
+      (a, b) =>
+        (order.indexOf(a.category) < 0 ? order.length : order.indexOf(a.category)) -
+        (order.indexOf(b.category) < 0 ? order.length : order.indexOf(b.category)),
+    );
     if (status) choices.push({ key: 'status', name: status, category: '読み込み状況', unavailable: status });
   }
   return (
@@ -112,7 +172,14 @@ export function RecordPartPanel<T extends PartTemplate, M>({
               ? selected.t.label
               : 'パーツを選ぶ…'
         }
-        icon={model ? photo(model) : undefined}
+        description={
+          selected?.type === 'template'
+            ? selected.t.description
+            : selected?.type === 'prop'
+              ? 'ゲーム中の動作はありません。'
+              : undefined
+        }
+        icon={selected?.type === 'template' ? templateIcon(selected.t) : model ? photo(model) : undefined}
         help={help}
         onChoose={() => setOpen(true)}
         directions={
@@ -128,7 +195,10 @@ export function RecordPartPanel<T extends PartTemplate, M>({
           onClose={() => setOpen(false)}
           onPick={(key) => {
             const stamp = stamps.get(key);
-            if (stamp) choose(stamp);
+            if (stamp?.type === 'template' && prepareTemplate) {
+              setOpen(false);
+              prepareTemplate(stamp.t, (ready) => choose({ type: 'template', t: ready }));
+            } else if (stamp) choose(stamp);
           }}
           controls={
             <details className="part-number-picker">

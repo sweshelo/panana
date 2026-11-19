@@ -1,11 +1,15 @@
-// A promise's value in a component (undefined while it is pending; an Error when it failed).
+// A promise's value in a component (undefined while pending unless keeping the previous value; an Error on failure).
 import { useEffect, useState, type DependencyList } from 'react';
 
-export function useAsync<T>(load: () => Promise<T>, deps: DependencyList): T | Error | undefined {
+export function useAsync<T>(
+  load: () => Promise<T>,
+  deps: DependencyList,
+  options: { keepPrevious?: boolean } = {},
+): T | Error | undefined {
   const [value, setValue] = useState<T | Error | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    setValue(undefined);
+    if (!options.keepPrevious) setValue(undefined);
     load().then(
       (v) => live && setValue(v),
       (err: unknown) => live && setValue(err instanceof Error ? err : new Error(String(err))),

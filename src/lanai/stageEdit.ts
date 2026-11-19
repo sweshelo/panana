@@ -2,6 +2,8 @@ import { findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive } fr
 import { sha256 } from './codes';
 import { encodeLanaiMessage, parseLanaiText } from './message';
 import { hex8, w32, equalBytes } from '../util/bytes';
+import { readSarc } from '../layout/sarc';
+import { readBflim, replaceBflimImage } from '../layout/bflim';
 import { CRO_COMMON_HOOKS, croHooks, lanaiContents, type LanaiContent, type LanaiStage } from './contents';
 import { lanaiMaps } from './maps';
 import type { LanaiSession } from './session';
@@ -19,9 +21,19 @@ export async function editLanaiStage(
   s: LanaiSession,
   c: LanaiContent,
   stage: LanaiStage,
-  values: { order: number; stamina: number; visible: LanaiCondition; hidden: LanaiCondition },
+  values: {
+    order: number;
+    stamina: number;
+    recommendedLevel?: number;
+    thumbnail?: { archive: string; hash: number } | Uint8Array;
+    visible: LanaiCondition;
+    hidden: LanaiCondition;
+  },
 ): Promise<void> {
   const { order, stamina, visible, hidden } = values;
+  const recommendedLevel = values.recommendedLevel ?? stage.recommendedLevel;
+  if (!Number.isInteger(recommendedLevel) || recommendedLevel < 0 || recommendedLevel > 0xffff)
+    throw new Error('推奨レベルは 0〜65535 で指定してください');
   if (
     !Number.isInteger(order) ||
     order < 0 ||
@@ -46,11 +58,20 @@ export async function editLanaiStage(
     throw new Error('条件の値が範囲外です');
   const { t, r } = await localStage(s, c, stage);
   const m = s.need('MapStageIntegration');
+  if (values.thumbnail) {
+    const body =
+      values.thumbnail instanceof Uint8Array
+        ? values.thumbnail
+        : await s.readLayout(values.thumbnail.archive, values.thumbnail.hash);
+    // Keep the destination's entry hash and layout name; its tables/maps remain independent of the source.
+    await s.setLayout(c.archive, stage.thumbnail, body);
+  }
   for (const [table, row, staminaOffset] of [
     [m, stage.row, 0x49],
     [t, r, 0x3d],
   ] as const) {
     table.setU32(row, 0, order);
+    table.setBits(row, staminaOffset === 0x49 ? 0x40 : 0x34, 16, 16, recommendedLevel);
     table.setBits(row, staminaOffset & ~3, (staminaOffset & 3) * 8, 8, stamina);
     for (const [c, offset] of [
       [visible, 0x1c],
@@ -69,10 +90,10 @@ export async function editLanaiStage(
  */
 export const LANAI_EMPTY_SCRIPT_CONTENT = 99;
 
-const crrName = (n: number): string => `.crr/contents${String(n).padStart(4, '0')}.crr`;
+export const lanaiCrrName = (n: number): string => `.crr/contents${String(n).padStart(4, '0')}.crr`;
 
 /** The CRO of a content's archive (ContentsDef row 2) and the Update CRR registering it. */
-async function contentScript(
+export async function contentScript(
   s: LanaiSession,
   c: LanaiContent,
   arc: Archive,
@@ -82,8 +103,8 @@ async function contentScript(
   const e = findEntry(arc, def.u32(2, 0));
   if (!e) throw new Error(`コンテンツ ${c.index} の ContentsDef の CRO がありません`);
   const crr =
-    s.createdFiles.get(crrName(c.index)) ??
-    (await (s.dump.readUpdateRomfs?.(crrName(c.index)) ?? s.dump.readRomfs(crrName(c.index))));
+    s.createdFiles.get(lanaiCrrName(c.index)) ??
+    (await (s.dump.readUpdateRomfs?.(lanaiCrrName(c.index)) ?? s.dump.readRomfs(lanaiCrrName(c.index))));
   return { entry: e.index, body: unpackEntry(arc, e).body, crr };
 }
 
@@ -102,6 +123,52 @@ export interface LanaiCloneOptions {
    * tables still work, the events written in the CRO do not.
    */
   script?: 'copy' | 'empty';
+  /**
+   * With 'empty': give the start group the game's opening (an `intro` event: the party walks in through the start's
+   * gate, the stage's name, the gate closes; stage-intro.md). On unless false.
+   */
+  intro?: boolean;
+  /** Clear the source stage's presentation and entrance requirements for a stage made from the empty template. */
+  resetStage?: boolean;
+}
+
+async function resetNewStage(
+  s: LanaiSession,
+  archive: string,
+  stageRow: number,
+  localRow: number,
+  thumbnail: number,
+  messageRow: number,
+): Promise<void> {
+  const messages = s.need('MessageMapStage');
+  const blank = encodeLanaiMessage(parseLanaiText(''));
+  for (const name of ['stage_mission', 'stage_exp']) {
+    const offset = messages.fields.find((f) => f.name === name)?.offset;
+    if (offset === undefined) throw new Error(`${name} の欄がありません`);
+    messages.setString(messageRow, offset, blank);
+  }
+  const integration = s.need('MapStageIntegration');
+  const local = (await s.tablesIn(archive)).find((t) => t.table.name === 'MapStage')?.table;
+  if (!local) throw new Error('MapStage がありません');
+  for (const [table, row, levelOffset, staminaOffset] of [
+    [integration, stageRow, 0x40, 0x49],
+    [local, localRow, 0x34, 0x3d],
+  ] as const) {
+    table.setBits(row, levelOffset, 16, 16, 0);
+    table.setBits(row, staminaOffset & ~3, (staminaOffset & 3) * 8, 8, 0);
+    for (const offset of [0x1c, 0x28]) {
+      table.setU32(row, offset, 0);
+      table.setU32(row, offset + 4, 0);
+      table.setBits(row, offset + 8, 0, 8, 0);
+    }
+  }
+  const body = (await s.readLayout(archive, thumbnail)).slice();
+  const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))?.[1];
+  if (!texture) throw new Error('サムネイル画像がありません');
+  const image = readBflim(texture);
+  const pixels = new Uint8Array(image.width * image.height * 4);
+  body.set(replaceBflimImage(texture, pixels), texture.byteOffset - body.byteOffset);
+  await s.setLayout(archive, thumbnail, body);
 }
 
 /** A content starts as an editable copy of the source, including its original native CRO. No script decompilation. */
@@ -137,8 +204,8 @@ export async function cloneLanaiContent(
   while (used.has(hex8(hash))) hash += 0x10000;
   const archive = hex8(hash);
   if (
-    s.createdFiles.has(crrName(index)) ||
-    s.dump.files?.().some((f) => f.path.toUpperCase() === crrName(index).toUpperCase())
+    s.createdFiles.has(lanaiCrrName(index)) ||
+    s.dump.files?.().some((f) => f.path.toUpperCase() === lanaiCrrName(index).toUpperCase())
   )
     throw new Error('追加先の CRR が既にあります');
   const arc = parseArchive(bytes);
@@ -160,7 +227,7 @@ export async function cloneLanaiContent(
   if (!crrRegisters(crr, cro)) throw new Error('CRO と CRR の登録ハッシュが一致しません');
   w32(newArchive, 4, hash);
   s.addFile(archive, newArchive);
-  s.addFile(crrName(index), crr);
+  s.addFile(lanaiCrrName(index), crr);
   const copied = await s.tablesIn(archive);
   const copiedDef = copied.find((t) => t.table.name === 'ContentsDef')!.table;
   copiedDef.setU32(0, 0, index);
@@ -178,6 +245,7 @@ export async function cloneLanaiContent(
   copyStage.setU32(local.r, 0xc, messageId);
   copyStage.setBits(local.r, 0x38, 0, 16, index);
   copyStage.setBits(local.r, 0x34, 0, 16, stageSlot);
+  if (options.resetStage) await resetNewStage(s, archive, row, local.r, srcStage.thumbnail, messageRow);
   // Known data-driven clear actions and self-clear predicates follow the new content. Native code is preserved.
   for (const { table: t } of copied.filter((t) => t.table.name.endsWith('_EventObject')))
     for (let r = 0; r < t.rows; r++) {
@@ -194,8 +262,51 @@ export async function cloneLanaiContent(
     }
   const cr = contents.addRow(source.index);
   contents.setU32(cr, 0, hash);
+  // the game's opening on the start group (an event script with `on intro(group) {}`), as the shipped stages have
+  const group = integration.u16(row, 0x46);
+  if (options.script === 'empty' && options.intro !== false && group > 0)
+    s.setStageScriptDoc(archive, { vars: [], functions: [], bindings: [{ trigger: 'intro', group, row: 0, fn: '' }] });
   s.edited();
   return index;
+}
+
+/**
+ * Why an added content cannot be removed, or null when it can. Rows can only be taken off the end of a table, so the
+ * content must be the last of Contents and its stage rows the last of MapStageIntegration (the last added stage: the
+ * stages are removed newest first).
+ */
+export function lanaiContentRemoveBlock(s: LanaiSession, c: LanaiContent): string | null {
+  const contents = s.need('Contents'),
+    integration = s.need('MapStageIntegration');
+  if (c.index < contents.originalRows || !s.createdFiles.has(c.archive)) return '元からあるステージは削除できません';
+  if (c.index !== contents.rows - 1) return '最後に追加したステージから順に削除できます';
+  const rows = c.stages.map((st) => st.row).sort((a, b) => a - b);
+  if (rows.some((r, i) => r !== integration.rows - rows.length + i || r < integration.originalRows))
+    return 'ステージの行が MapStageIntegration の最後にないので削除できません';
+  return null;
+}
+
+/**
+ * Remove an added content (the undo of cloneLanaiContent): its stage rows (and their name rows of MessageMapStage when
+ * they are the last and no other stage uses them), its Contents row, its archive and CRR, and its event script.
+ */
+export function removeLanaiContent(s: LanaiSession, c: LanaiContent): void {
+  const block = lanaiContentRemoveBlock(s, c);
+  if (block) throw new Error(block);
+  const contents = s.need('Contents'),
+    integration = s.need('MapStageIntegration'),
+    messages = s.need('MessageMapStage');
+  const names = c.stages.map((st) => st.messageId);
+  for (let k = 0; k < c.stages.length; k++) integration.removeLastRow();
+  const used = new Set(Array.from({ length: integration.rows }, (_, r) => integration.u32(r, 0xc)));
+  for (const id of [...names].reverse()) {
+    const m = messages.find(id);
+    if (m === messages.rows - 1 && m >= messages.originalRows && !used.has(id)) messages.removeLastRow();
+  }
+  contents.removeLastRow();
+  s.removeFile(c.archive);
+  if (s.createdFiles.has(lanaiCrrName(c.index))) s.removeFile(lanaiCrrName(c.index));
+  s.edited();
 }
 
 /**

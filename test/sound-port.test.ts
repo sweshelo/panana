@@ -14,7 +14,7 @@ import { SoundPortStore } from '../src/port/sounds';
 import { openImage, type Dump } from '../src/rom/dump';
 import { Session } from '../src/session';
 import { parseCstm, SoundArchive } from '../src/sound/formats';
-import { addStreamSounds, cstmChannels, cstmForKahara, cstmVersion, trackInfo } from '../src/sound/write';
+import { addStreamSounds, cstmChannels, cstmForKahara, cstmFromPcm, cstmVersion, trackInfo } from '../src/sound/write';
 import { OahuSession } from '../src/oahu/session';
 import type { Opened } from '../src/ui/workspace';
 import { concat, s32, u16, u32, w16, w32 } from '../src/util/bytes';
@@ -169,6 +169,23 @@ function csar(): Uint8Array {
 }
 
 describe('sound files for a ported BGM', () => {
+  test('rendered effect becomes a one-shot PCM16 stream', () => {
+    const pcm = {
+      rate: 32000,
+      channels: [Float32Array.of(-1, -0.5, 0, 0.5, 1), Float32Array.of(1, 0.5, 0, -0.5, -1)],
+      loop: false,
+      loopStart: 0,
+      loopEnd: 5,
+    };
+    const stream = cstmFromPcm(pcm);
+    const decoded = parseCstm(stream);
+    expect(cstmVersion(stream)).toBe(0x02020000);
+    expect(cstmChannels(stream)).toBe(2);
+    expect(decoded.rate).toBe(pcm.rate);
+    expect(decoded.loop).toBe(false);
+    for (let c = 0; c < 2; c++)
+      for (let i = 0; i < 5; i++) expect(decoded.channels[c]![i]!).toBeCloseTo(pcm.channels[c]![i]!, 4);
+  });
   test('a 2.2 stream gets a track table and plays the same', () => {
     const src = cstm22(100);
     const out = cstmForKahara(src);

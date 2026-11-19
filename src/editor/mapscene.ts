@@ -19,10 +19,17 @@ export class MapScene {
   private readonly raycaster = new THREE.Raycaster();
   private raf = 0;
   private pointerDown = false;
+  private readonly resizeObserver: ResizeObserver;
+  /** Limit a secondary preview's drawing pixels without changing the map editor's resolution. */
+  pixelRatioLimit = Infinity;
   pointer: GridPointer | null = null;
 
-  constructor(className: string, grid = 30) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+  constructor(
+    className: string,
+    grid = 30,
+    readonly hostWindow: Window = window,
+  ) {
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, canvas: hostWindow.document.createElement('canvas') });
     this.renderer.localClippingEnabled = true;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.canvas = this.renderer.domElement;
@@ -50,23 +57,25 @@ export class MapScene {
     const c = this.canvas;
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || !this.pointer) return;
       const p = this.pick(e);
       if (!p) return;
       this.pointerDown = true;
       c.setPointerCapture(e.pointerId);
-      this.pointer?.down(p[0], p[1], e);
+      this.pointer.down(p[0], p[1], e);
     });
     c.addEventListener('pointermove', (e) => {
+      if (!this.pointer) return;
       const p = this.pick(e);
-      if (p) this.pointer?.move(p[0], p[1], e);
+      if (p) this.pointer.move(p[0], p[1], e);
     });
     c.addEventListener('pointerup', (e) => {
       if (this.pointerDown) this.pointer?.up(e);
       this.pointerDown = false;
     });
     c.addEventListener('pointerleave', () => this.pointer?.leave());
-    new ResizeObserver(() => this.resize()).observe(c);
+    this.resizeObserver = new (hostWindow as Window & typeof globalThis).ResizeObserver(() => this.resizeToCanvas());
+    this.resizeObserver.observe(c);
   }
 
   /** Pointer -> cell coordinates on the ground plane (y = 0). */
@@ -79,12 +88,12 @@ export class MapScene {
     return [hit.x / CELL, hit.z / CELL];
   }
 
-  private resize(): void {
+  resizeToCanvas(): void {
     const c = this.canvas;
     const w = c.clientWidth,
       h = c.clientHeight;
     if (!w || !h) return;
-    this.renderer.setPixelRatio(window.devicePixelRatio || 1);
+    this.renderer.setPixelRatio(Math.min(this.hostWindow.devicePixelRatio || 1, this.pixelRatioLimit));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -114,19 +123,19 @@ export class MapScene {
     const to = new THREE.Vector3(cx * CELL, 0, cy * CELL);
     const from = t.clone();
     if (from.distanceTo(to) < 1) return;
-    const start = performance.now(),
+    const start = this.hostWindow.performance.now(),
       ms = 220;
-    cancelAnimationFrame(this.glide);
+    this.hostWindow.cancelAnimationFrame(this.glide);
     const step = (): void => {
-      const k = Math.min(1, (performance.now() - start) / ms);
+      const k = Math.min(1, (this.hostWindow.performance.now() - start) / ms);
       const e = 1 - (1 - k) ** 3;
       const p = from.clone().lerp(to, e);
       this.camera.position.add(p.clone().sub(t));
       t.copy(p);
       this.controls.update();
-      if (k < 1) this.glide = requestAnimationFrame(step);
+      if (k < 1) this.glide = this.hostWindow.requestAnimationFrame(step);
     };
-    this.glide = requestAnimationFrame(step);
+    this.glide = this.hostWindow.requestAnimationFrame(step);
   }
   private glide = 0;
 
@@ -140,15 +149,16 @@ export class MapScene {
 
   draw(): void {
     if (this.raf) return;
-    this.raf = requestAnimationFrame(() => {
+    this.raf = this.hostWindow.requestAnimationFrame(() => {
       this.raf = 0;
       this.renderer.render(this.scene, this.camera);
     });
   }
 
   dispose(): void {
-    cancelAnimationFrame(this.raf);
-    cancelAnimationFrame(this.glide);
+    this.resizeObserver.disconnect();
+    this.hostWindow.cancelAnimationFrame(this.raf);
+    this.hostWindow.cancelAnimationFrame(this.glide);
     this.controls.dispose();
     this.renderer.dispose();
   }
