@@ -25,6 +25,20 @@ describe('scriptMoves', () => {
     expect(m[2]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['3', '3', '3']);
   });
 
+  test('reads who.move(x, y, z) as well, in the order of the text', () => {
+    const body = 'chara(3).move(1, 2, 3)\nmove(hero, 4, 5, 6)\nself . move( -7 , 8, 0x10 )\nxhero.move(1, 1, 1)';
+    const m = scriptMoves(body);
+    expect(m.map((x) => [x.who, x.x, x.y, x.z, x.line])).toEqual([
+      [{ kind: 'chara', row: 3 }, 1, 2, 3, 1],
+      [{ kind: 'hero' }, 4, 5, 6, 2],
+      [{ kind: 'self' }, -7, 8, 16, 3],
+    ]);
+    // the 3 of the chara row is not taken for a number
+    expect(m[0]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['1', '2', '3']);
+    expect(m[2]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['-7', '8', '0x10']);
+    expect(withScriptMove(body, 0, 250, 0, 750).split('\n')[0]).toBe('chara(3).move(250, 0, 750)');
+  });
+
   test('a position written as a variable or vec() is not a point', () => {
     expect(scriptMoves('move(hero, A, 0, 0)\nhero.MoveTo(vec(1, 2, 3), 0, 0, 0, 0, 0)')).toEqual([]);
   });

@@ -40,7 +40,7 @@ export interface ScriptWord {
   /** The word a completion would insert (the form's first word). */
   word: string;
   about: string;
-  kind: 'value' | 'statement' | 'who' | 'flow';
+  kind: 'value' | 'statement' | 'who' | 'flow' | 'method';
 }
 const w = (kind: ScriptWord['kind'], form: string, about: string): ScriptWord => ({
   kind,
@@ -117,10 +117,17 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'statement',
     'openDoor(イベント)',
-    '「外から開ける扉」(動作の型 17) を、本家と同じ演出で開ける: カメラを扉へ → 解錠の音 → 開く音と扉のアニメ。続けて書いた扉は順に開け、最後にギミックの音を鳴らしてカメラを戻す',
+    '「外から開ける扉」(動作の型 17) を、本家と同じ演出で開ける: カメラを扉へ → 解錠の音 → 開く音と扉のアニメ。続けて書いた扉は順に開け、最後にギミックの音を鳴らしてカメラを戻す。音や順番を変えたいときは chara(イベント).camera(秒)・se(音)・chara(イベント).open()・jingle() で組む (見本「扉の演出を自分で組む」)',
   ),
   w('statement', 'openDoorNow(イベント)', '扉を演出なしで開ける (当たり判定と状態だけ。見た目は開かない)'),
   w('statement', 'closeDoor(イベント)', '扉を閉める'),
+  w(
+    'statement',
+    'jingle([音])',
+    'BGM を止めて (0.3 秒) ギミックの音を鳴らし、1 秒後に BGM を戻す (0.3 秒)。音を省くと openDoor と同じ 0x41',
+  ),
+  w('statement', 'bgmPause(秒)', 'BGM をフェードアウトして止める'),
+  w('statement', 'bgmResume(秒)', '止めた BGM を戻す'),
   w(
     'statement',
     'disable()',
@@ -146,8 +153,38 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'statement',
     'だれに.関数(引数)',
-    'キャラの Script API を呼ぶ (例: hero.SetVisible(0)、chara(3).MoveTo(vec(1, 2, 3), 0, 0, 0, 0, 0))',
+    'キャラの Script API を呼ぶ (例: hero.SetVisible(0)、chara(3).MoveTo(vec(1, 2, 3), 0, 0, 0, 0, 0))。小文字で始まる関数は下の「キャラのメソッド」',
   ),
+];
+
+const m = (form: string, about: string): ScriptWord => ({
+  kind: 'method',
+  form,
+  word: /\.([A-Za-z_]\w*)/u.exec(form)![1]!,
+  about,
+});
+/**
+ * The built-in methods of a character (eventScript.ts SCRIPT_METHODS): `だれに.名前(…)` is the statement of that name
+ * with the character first. Those of a door, an object or a monster take chara(イベント) alone.
+ */
+export const SCRIPT_METHOD_WORDS: ScriptWord[] = [
+  m('だれに.anim(アニメ[, 種類])', 'anim(だれに, アニメ[, 種類]) と同じ'),
+  m('だれに.waitAnim()', 'waitAnim(だれに) と同じ'),
+  m('だれに.move(x, y, z)', 'move(だれに, x, y, z) と同じ (マップのページでドラッグして直せる)'),
+  m('だれに.turn(角度)', 'turn(だれに, 角度) と同じ'),
+  m('だれに.face(相手)', 'face(だれに, 相手) と同じ'),
+  m('だれに.show()', 'show(だれに) と同じ'),
+  m('だれに.hide()', 'hide(だれに) と同じ'),
+  m('だれに.camera(秒)', 'camera(だれに, 秒) と同じ'),
+  m('だれに.popup(アイコン)', 'popup(だれに, アイコン) と同じ'),
+  m('だれに.popupEnd()', 'popupEnd(だれに) と同じ'),
+  m(
+    'chara(イベント).open()',
+    '扉の開くアニメを再生し、終わるまで待って開いた状態にする。カメラ・音・ギミックの音は付かない (前に se(音) を書く)',
+  ),
+  m('chara(イベント).close()', 'closeDoor(イベント) と同じ'),
+  m('chara(イベント).remove()', 'remove(イベント) と同じ'),
+  m('chara(イベント).vanishMonster()', 'vanishMonster(イベント) と同じ'),
 ];
 
 export interface ScriptSample {
@@ -191,6 +228,27 @@ export const SCRIPT_SAMPLES: ScriptSample[] = [
   // 3 = 扉のイベント番号
   follow(0)
   openDoor(3)
+  follow(1)
+}
+`,
+  },
+  {
+    name: '扉の演出を自分で組む',
+    about:
+      'openDoor(3) は下と同じことをします。音を替えたり、ギミックの音 (jingle) を省いたり、順番を入れ替えたりできます。0x79 = 解錠の音、0x7A = 開く音 (SoundData の行番号)。',
+    give: ['open_door_custom → ボタンのレコード (ボタンを踏んだとき (押したままになる))'],
+    source: `function open_door_custom() {
+  // 3 = 扉のイベント番号
+  follow(0)
+  chara(3).camera(1)
+  wait(0.5)
+  se(0x79)          // 解錠の音
+  wait(1.5)
+  se(0x7A)          // 開く音
+  chara(3).open()   // 扉のアニメ → 終わるまで待つ → 開いた状態
+  jingle()          // BGM を止めてギミックの音
+  wait(0.3)
+  cameraBack(1)
   follow(1)
 }
 `,

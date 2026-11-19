@@ -60,14 +60,14 @@ describe('RPG FREE! stage script: the document of the editor', () => {
   });
 
   test('the samples read, and their functions can be given as the sample says', () => {
-    expect(SCRIPT_SAMPLES.length).toBe(2);
+    expect(SCRIPT_SAMPLES.length).toBe(3);
     for (const s of SCRIPT_SAMPLES) {
       const d = scriptDocFromSource(s.source);
       expect(d.bindings).toEqual([]);
       expect(d.functions.length).toBe(s.give.length);
       for (const g of s.give) expect(d.functions.map((f) => f.name)).toContain(g.split(' ')[0]!);
     }
-    const [door, boss] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    const [door, , boss] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
     expect(
       scriptOfDoc(docBound(door!, { trigger: 'button', group: 1, row: 7, fn: 'open_door' })).events[0]!.trigger,
     ).toBe('button');
@@ -117,6 +117,9 @@ describe('RPG FREE! stage script: the document of the editor', () => {
       openDoor: 'openDoor(1)',
       openDoorNow: 'openDoorNow(1)',
       closeDoor: 'closeDoor(1)',
+      jingle: 'jingle()',
+      bgmPause: 'bgmPause(0.3)',
+      bgmResume: 'bgmResume(0.3)',
       collision: 'collision(1, 0)',
       remove: 'remove(1)',
       vanishMonster: 'vanishMonster(1)',
@@ -169,6 +172,67 @@ describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
       `door ${r}`,
     ];
     expect(ops).toEqual([...door(3), ...door(4), 'bgm', `se ${0x41}`, 'wait', 'bgm', 'wait', 'camera back', 'se 1']);
+  });
+  test('openDoor is the same as its parts written out (the sample builds it from them)', () => {
+    const parts = [
+      'chara(3).camera(1)',
+      'wait(0.5)',
+      'se(0x79)',
+      'wait(1.5)',
+      'se(0x7A)',
+      'chara(3).open()',
+      'jingle()',
+      'wait(0.3)',
+      'cameraBack(1)',
+    ].join('\n');
+    expect(expandDoors(body(parts))).toEqual(expandDoors(body('openDoor(3)')));
+    const sample = SCRIPT_SAMPLES.find((s) => s.source.includes('chara(3).open()'))!;
+    const fn = parseStageScript(sample.source.replace('function open_door_custom()', 'on button(1, 2)')).events[0]!;
+    expect(expandDoors(fn.body).slice(1, -1)).toEqual(expandDoors(body('openDoor(3)')));
+  });
+  test('the parts: open() without camera or sound, jingle with its sound, the BGM', () => {
+    expect(expandDoors(body('chara(3).open()'))).toEqual([
+      { op: 'anim', who: { kind: 'chara', row: 3 }, id: 0x73, type: 0 },
+      { op: 'waitAnim', who: { kind: 'chara', row: 3 } },
+      { op: 'door', row: 3, open: true },
+    ]);
+    expect(expandDoors(body('jingle(0x50)')).map((n) => (n.op === 'se' ? n.id : n.op))).toEqual([
+      'bgm',
+      0x50,
+      'wait',
+      'bgm',
+    ]);
+    expect(body('jingle()')).toEqual([{ op: 'jingle', id: 0x41 }]);
+    expect(body('bgmPause(0.3)\nbgmResume(1)')).toEqual([
+      { op: 'bgm', pause: true, seconds: 0.3 },
+      { op: 'bgm', pause: false, seconds: 1 },
+    ]);
+  });
+  test('the methods of a character are the statements of the same name', () => {
+    const same: [string, string][] = [
+      ['hero.anim(0x79)', 'anim(hero, 0x79)'],
+      ['chara(2).anim(5, 1)', 'anim(chara(2), 5, 1)'],
+      ['self.waitAnim()', 'waitAnim(self)'],
+      ['hero.move(1, 2.5, -3)', 'move(hero, 1, 2.5, -3)'],
+      ['self.turn(90)', 'turn(self, 90)'],
+      ['self.face(hero)', 'face(self, hero)'],
+      ['chara(4).show()', 'show(chara(4))'],
+      ['chara(4).hide()', 'hide(chara(4))'],
+      ['chara(4).camera(1)', 'camera(chara(4), 1)'],
+      ['hero.popup(2)', 'popup(hero, 2)'],
+      ['hero.popupEnd()', 'popupEnd(hero)'],
+      ['chara(3).close()', 'closeDoor(3)'],
+      ['chara(3).remove()', 'remove(3)'],
+      ['chara(3).vanishMonster()', 'vanishMonster(3)'],
+    ];
+    for (const [method, fn] of same) expect([method, body(method)]).toEqual([method, body(fn)]);
+  });
+  test('a method of an event needs chara(), a method is no value, and Script API calls stay', () => {
+    expect(() => body('hero.open()')).toThrow('chara(イベント番号) にだけ');
+    expect(() => body('self.remove()')).toThrow('chara(イベント番号) にだけ');
+    expect(() => body('if (hero.anim(1)) {}')).toThrow('文として');
+    expect(body('chara(3).StartAnimation(0x80000079, 0, 1, 0)')[0]!.op).toBe('call');
+    expect(body('hero.SetVisible(0)')[0]!.op).toBe('call');
   });
   test('openDoorNow and closeDoor stay as they are', () => {
     const nodes = body('openDoorNow(3)\ncloseDoor(3)');

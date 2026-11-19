@@ -21,14 +21,21 @@ export interface ScriptMove {
 
 const NUM = String.raw`-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)`;
 const WHO = String.raw`hero|self|chara\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)`;
-const MOVE_RE = new RegExp(String.raw`\bmove\s*\(\s*(${WHO})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)`, 'gu');
+const XYZ = String.raw`(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)`;
+/** move(who, x, y, z) and who.move(x, y, z): the character, then its row (chara), then x, y and z. */
+const MOVE_RE = new RegExp(String.raw`\bmove\s*\(\s*(${WHO})\s*,\s*${XYZ}`, 'gu');
+const METHOD_MOVE_RE = new RegExp(String.raw`(?<![\w.])(${WHO})\s*\.\s*move\s*\(\s*${XYZ}`, 'gu');
 const num = (s: string): number => (s.startsWith('-') ? -Number(s.slice(1)) : Number(s));
 
-/** The move() statements of a function's text whose position is written as three numbers (not in comments). */
+/** The moves (either form) of a function's text whose position is written as three numbers (not in comments). */
 export function scriptMoves(body: string): ScriptMove[] {
   // comments become spaces, so the offsets stay those of the text
   const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
-  return [...code.matchAll(MOVE_RE)].map((m) => {
+  const found = [
+    ...[...code.matchAll(MOVE_RE)].map((m) => ({ m, after: ',' })),
+    ...[...code.matchAll(METHOD_MOVE_RE)].map((m) => ({ m, after: '(' })),
+  ].sort((a, b) => a.m.index - b.m.index);
+  return found.map(({ m, after }) => {
     const whoText = m[1]!;
     const who: ScriptMoveWho =
       whoText === 'hero'
@@ -37,7 +44,7 @@ export function scriptMoves(body: string): ScriptMove[] {
           ? { kind: 'self' }
           : { kind: 'chara', row: num(m[2]!) };
     // the numbers are the last three groups: find each after the one before it
-    let at = m.index + m[0].indexOf(',', m[0].indexOf(whoText) + whoText.length);
+    let at = m.index + m[0].indexOf(after, m[0].indexOf(whoText) + whoText.length);
     const spans = [m[3]!, m[4]!, m[5]!].map((s) => {
       const from = code.indexOf(s, at);
       at = from + s.length;

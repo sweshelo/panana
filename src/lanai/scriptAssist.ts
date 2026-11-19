@@ -7,13 +7,15 @@ import {
   scriptDocSource,
   ScriptError,
   SCRIPT_RESERVED,
+  SCRIPT_ROW_METHODS,
   TALK_DIALOG,
   TALK_DIALOG_LABEL,
   type ScriptDoc,
+  type ScriptMethod,
 } from './eventScript';
 import { POPUP_ICONS } from './popupIcons';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
-import { SCRIPT_WORDS } from './scriptDoc';
+import { SCRIPT_METHOD_WORDS, SCRIPT_WORDS } from './scriptDoc';
 
 export type ScriptWordKind = 'keyword' | 'atom' | 'who' | 'builtin' | 'class';
 
@@ -24,6 +26,18 @@ const MORE_BUILTINS = ['vec'];
 const BUILTINS = new Map(SCRIPT_WORDS.filter((w) => /^[A-Za-z_]\w*$/u.test(w.word)).map((w) => [w.word, w]));
 const CLASSES = new Map<string, ScriptApiRow[]>();
 for (const r of SCRIPT_API_ROWS) CLASSES.set(r[0], [...(CLASSES.get(r[0]) ?? []), r]);
+const OWN_METHODS = new Map(SCRIPT_METHOD_WORDS.map((w) => [w.word, w]));
+/** The built-in methods of a character (`chara(N).` has all, `hero.` / `self.` those that take no event). */
+const ownMethods = (chara: boolean): ScriptCompletion[] =>
+  [...OWN_METHODS.values()]
+    .filter((w) => chara || !SCRIPT_ROW_METHODS.includes(w.word as ScriptMethod))
+    .map((w) => ({
+      label: w.word,
+      detail: w.form.slice(w.form.indexOf('.') + 1 + w.word.length),
+      info: w.about,
+      apply: `${w.word}(`,
+      type: 'function' as const,
+    }));
 /** The classes whose functions are called on a character (`hero.` has both, the others ScriptChara). */
 const MEMBER_CLASSES = ['ScriptChara', 'ScriptPlayer'];
 
@@ -106,6 +120,9 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
   const member = /(?:([A-Za-z_]\w*)|chara\s*\([^()\n]*\))\s*\.\s*$/u.exec(before);
   if (member) {
     const receiver = member[1];
+    const own = OWN_METHODS.get(name);
+    if (own && (!receiver || receiver === 'hero' || receiver === 'self'))
+      return { signatures: [`${own.form} — Panana の組み込み`], about: own.about };
     const classes =
       receiver === 'hero'
         ? ['ScriptPlayer', 'ScriptChara']
@@ -169,8 +186,10 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
   if (dot) {
     const from = before.length - dot[3]!.length;
     const left = dot[1];
-    if (left === 'hero') return { from, options: methods(['ScriptPlayer', 'ScriptChara']), filter: true };
-    if (left === 'self' || dot[2]) return { from, options: methods(['ScriptChara']), filter: true };
+    if (left === 'hero')
+      return { from, options: [...ownMethods(false), ...methods(['ScriptPlayer', 'ScriptChara'])], filter: true };
+    if (left === 'self') return { from, options: [...ownMethods(false), ...methods(['ScriptChara'])], filter: true };
+    if (dot[2]) return { from, options: [...ownMethods(true), ...methods(['ScriptChara'])], filter: true };
     if (left && CLASSES.has(left)) return { from, options: methods([left]), filter: true };
     return null;
   }

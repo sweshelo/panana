@@ -27,6 +27,7 @@ import { PopupIconList } from './PopupIconList';
 import {
   docBound,
   docUnbound,
+  SCRIPT_METHOD_WORDS,
   SCRIPT_SAMPLES,
   SCRIPT_WORDS,
   scriptLineRefs,
@@ -389,6 +390,21 @@ export function StageScriptDocs({ session, content }: { session: LanaiSession; c
       <table className="book-table">
         <tbody>
           {SCRIPT_WORDS.map((x) => (
+            <tr key={x.form}>
+              <td className="mono small">{x.form}</td>
+              <td className="small">{x.about}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3>キャラのメソッド</h3>
+      <p className="muted small">
+        だれに (hero / self / chara(イベント)) の後に .名前(…) と書きます。open() などイベント番号を使うものは
+        chara(イベント) にだけ書けます。大文字で始まる名前は Script API の呼び出しです。
+      </p>
+      <table className="book-table">
+        <tbody>
+          {SCRIPT_METHOD_WORDS.map((x) => (
             <tr key={x.form}>
               <td className="mono small">{x.form}</td>
               <td className="small">{x.about}</td>

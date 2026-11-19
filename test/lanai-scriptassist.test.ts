@@ -99,6 +99,15 @@ describe('completion', () => {
     // hero is a ScriptPlayer too
     expect(labels('hero.').length).toBeGreaterThan(labels('self.').length);
   });
+  test('after a character: the built-in methods beside the Script API', () => {
+    expect(labels('chara(3).')).toEqual(expect.arrayContaining(['open', 'close', 'anim', 'StartAnimation']));
+    expect(labels('hero.')).toEqual(expect.arrayContaining(['anim', 'move', 'SetVisible']));
+    // the methods of an event are of chara() alone
+    expect(labels('hero.')).not.toContain('open');
+    expect(labels('self.')).not.toContain('remove');
+    expect(scriptHoverInfo('chara(3).', 'open')!.about).toContain('扉');
+    expect(scriptHoverInfo('hero.', 'anim')!.signatures[0]).toContain('だれに.anim');
+  });
   test('the line of a talk: found by its text or its ID, written as the ID', () => {
     const all = scriptCompletions('talk(', assist)!;
     expect(all.options.map((o) => o.apply)).toEqual(['0x10', '0x11', '0x2A']);

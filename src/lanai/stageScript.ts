@@ -171,7 +171,8 @@ function charaRows(body: ScriptNode[]): number[] {
     else if (n.op === 'face') {
       who(n.who);
       who(n.to);
-    } else if ('who' in n) who(n.who);
+    } else if (n.op === 'doorMotion') out.push(n.row);
+    else if ('who' in n) who(n.who);
   }
   return out;
 }

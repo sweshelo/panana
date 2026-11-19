@@ -98,6 +98,10 @@ export type ScriptNode =
   | { op: 'addGold'; amount: number }
   /** A door opened or closed; `show`: opened as the game shows it (expandDoors). */
   | { op: 'door'; row: number; open: boolean; show?: boolean }
+  /** chara(row).open(): the door's opening motion, its end, then the door open (no camera, sound or jingle). */
+  | { op: 'doorMotion'; row: number }
+  /** The gimmick's jingle over the paused BGM (jingleNodes). */
+  | { op: 'jingle'; id: number }
   /** The BGM paused (fading out) or played again. */
   | { op: 'bgm'; pause: boolean; seconds: number }
   | { op: 'wait'; seconds: number }
@@ -302,6 +306,31 @@ for (const r of SCRIPT_API_ROWS) {
   if (!MEMBER_CLASSES.has(r[0])) API_CLASSES.add(r[0]);
 }
 
+/**
+ * The built-in methods of a character (`hero.anim(…)`, `chara(3).open()`): each the statement of the same name with the
+ * character first. Script API functions after the dot begin with a capital letter, so the two do not meet.
+ */
+export const SCRIPT_METHODS = [
+  'anim',
+  'waitAnim',
+  'move',
+  'turn',
+  'face',
+  'show',
+  'hide',
+  'camera',
+  'popup',
+  'popupEnd',
+  'open',
+  'close',
+  'remove',
+  'vanishMonster',
+] as const;
+export type ScriptMethod = (typeof SCRIPT_METHODS)[number];
+export const isScriptMethod = (s: string): s is ScriptMethod => (SCRIPT_METHODS as readonly string[]).includes(s);
+/** The methods that take the event of chara(row) (a door, an object or a monster): not hero or self. */
+export const SCRIPT_ROW_METHODS: readonly ScriptMethod[] = ['open', 'close', 'remove', 'vanishMonster'];
+
 /** Reads a script; throws a ScriptError naming the line. */
 export function parseStageScript(src: string): StageScript {
   const ts = tokens(src);
@@ -370,6 +399,67 @@ export function parseStageScript(src: string): StageScript {
   };
 
   const WHO_WORDS = ['hero', 'self', 'chara'];
+  /** A built-in method after `who.` (SCRIPT_METHODS): the statement of that name with the character first. */
+  const method = (w: ScriptWho, m: Token, name: ScriptMethod): ScriptNode => {
+    const rowOf = (): number =>
+      w.kind === 'chara' ? w.row : fail(`.${name}() は chara(イベント番号) にだけ書けます`, m);
+    switch (name) {
+      case 'anim': {
+        need('(');
+        const id = u32('アニメの番号');
+        const type = eat(',') ? int('アニメの種類', 0, 2) : 0;
+        if (!eat(')')) fail('.anim の引数は (アニメ[, 種類]) です');
+        return { op: 'anim', who: w, id, type };
+      }
+      case 'waitAnim':
+        call(name);
+        return { op: 'waitAnim', who: w };
+      case 'move': {
+        const pos = (): number => num('位置', -1e6, 1e6);
+        const [x, y, z] = call(name, pos, pos, pos);
+        return { op: 'move', who: w, x, y, z };
+      }
+      case 'turn':
+        return { op: 'turn', who: w, degrees: call(name, () => num('向き (度)', -3600, 3600))[0] };
+      case 'face':
+        return { op: 'face', who: w, to: call(name, who)[0] };
+      case 'show':
+      case 'hide':
+        call(name);
+        return { op: 'show', who: w, on: name === 'show' };
+      case 'camera':
+        return { op: 'camera', who: w, seconds: call(name, () => seconds('カメラ'))[0] };
+      case 'popup':
+        return { op: 'popup', who: w, icon: call(name, () => int('アイコン', 0, 255))[0] };
+      case 'popupEnd':
+        call(name);
+        return { op: 'popupEnd', who: w };
+      case 'open':
+      case 'close':
+      case 'remove':
+      case 'vanishMonster': {
+        const r = rowOf();
+        call(name);
+        if (name === 'open') return { op: 'doorMotion', row: r };
+        if (name === 'close') return { op: 'door', row: r, open: false };
+        return { op: name, row: r };
+      }
+    }
+  };
+  /** A built-in method statement beginning at the token just read, or null (the tokens left as they were). */
+  const methodAt = (t: Token): ScriptNode | null => {
+    if (t.t !== 'id' || !WHO_WORDS.includes(t.s)) return null;
+    const at = i;
+    i--;
+    const w = who();
+    const m = ts[i + 1];
+    if (is('.') && m?.t === 'id' && isScriptMethod(m.s)) {
+      i += 2;
+      return method(w, m, m.s);
+    }
+    i = at;
+    return null;
+  };
   /**
    * A Script API function called by name, the token before the dot read: `Class.Name(args)` or `who.Name(args)`.
    * The arguments are numbers, vec(x, y, z) and characters; the function is the one of that name they fit.
@@ -378,6 +468,7 @@ export function parseStageScript(src: string): StageScript {
     need('.');
     const fn = next();
     if (fn.t !== 'id') fail('関数の名前が要ります', fn);
+    if (self && isScriptMethod(fn.s)) fail(`.${fn.s}(…) は値を返しません。文として書きます`, fn);
     const classes = cls ? [cls] : self!.kind === 'hero' ? ['ScriptPlayer', 'ScriptChara'] : ['ScriptChara'];
     const rows = classes.flatMap((c) => API_INDEX.get(`${c}.${fn.s}`) ?? []);
     const shown = `${cls ?? classes[classes.length - 1]}::${fn.s}`;
@@ -533,6 +624,8 @@ export function parseStageScript(src: string): StageScript {
     if (eat(';')) return null;
     const t = next();
     if (t.t !== 'id') fail(`文が要ります (「${t.s}」がありました)`, t);
+    const own = methodAt(t);
+    if (own) return own;
     const api = apiCallAt(t);
     if (api) return { op: 'call', call: api };
     switch (t.s) {
@@ -672,6 +765,15 @@ export function parseStageScript(src: string): StageScript {
           open: t.s !== 'closeDoor',
           ...(t.s === 'openDoor' ? { show: true } : {}),
         };
+      case 'jingle': {
+        need('(');
+        const id = is(')') ? DOOR_SHOW.jingle : int('音 (SoundData の行)', 0, 0xffff);
+        if (!eat(')')) fail('jingle の引数は ([音]) です');
+        return { op: 'jingle', id };
+      }
+      case 'bgmPause':
+      case 'bgmResume':
+        return { op: 'bgm', pause: t.s === 'bgmPause', seconds: call(t.s, () => seconds('BGM'))[0] };
       case 'wait':
         return { op: 'wait', seconds: call(t.s, () => seconds('wait ', true))[0] };
       case 'disable':
@@ -1441,33 +1543,47 @@ export const DOOR_SHOW = {
 } as const;
 const isShownDoor = (n: ScriptNode): boolean => n.op === 'door' && n.open && !!n.show;
 
-/** The nodes with each run of openDoor() written out as the game shows doors opening (DOOR_SHOW). */
+/** chara(row).open(): the door's opening motion, its end, then the door open (DOOR_SHOW, without camera or sound). */
+export const doorMotionNodes = (row: number): ScriptNode[] => {
+  const door: ScriptWho = { kind: 'chara', row };
+  return [
+    { op: 'anim', who: door, id: DOOR_SHOW.motion, type: 0 },
+    { op: 'waitAnim', who: door },
+    { op: 'door', row, open: true },
+  ];
+};
+/** jingle(id): the BGM paused, the jingle, 1 s, the BGM again (DOOR_SHOW). */
+export const jingleNodes = (id: number = DOOR_SHOW.jingle): ScriptNode[] => [
+  { op: 'bgm', pause: true, seconds: DOOR_SHOW.bgmFade },
+  { op: 'se', id },
+  { op: 'wait', seconds: DOOR_SHOW.jingleWait },
+  { op: 'bgm', pause: false, seconds: DOOR_SHOW.bgmFade },
+];
+
+/**
+ * The nodes with each run of openDoor() written out as the game shows doors opening (DOOR_SHOW), and the parts a
+ * script writes itself (chara(row).open(), jingle()) written out as theirs. openDoor(row) is the same as
+ * `chara(row).camera(1); wait(0.5); se(0x79); wait(1.5); se(0x7A); chara(row).open(); jingle(); wait(0.3);
+ * cameraBack(1)`, the jingle and the camera's return only after the last of doors opened one after another.
+ */
 export function expandDoors(nodes: ScriptNode[]): ScriptNode[] {
   const out: ScriptNode[] = [];
   nodes.forEach((n, i) => {
+    if (n.op === 'doorMotion') return void out.push(...doorMotionNodes(n.row));
+    if (n.op === 'jingle') return void out.push(...jingleNodes(n.id));
     if (n.op !== 'door' || !isShownDoor(n)) return void out.push(n);
-    const door: ScriptWho = { kind: 'chara', row: n.row };
     const d = DOOR_SHOW;
     out.push(
-      { op: 'camera', who: door, seconds: d.camera },
+      { op: 'camera', who: { kind: 'chara', row: n.row }, seconds: d.camera },
       { op: 'wait', seconds: d.beforeUnlock },
       { op: 'se', id: d.unlock },
       { op: 'wait', seconds: d.beforeOpen },
       { op: 'se', id: d.open },
-      { op: 'anim', who: door, id: d.motion, type: 0 },
-      { op: 'waitAnim', who: door },
-      { op: 'door', row: n.row, open: true },
+      ...doorMotionNodes(n.row),
     );
     const next = nodes[i + 1];
     if (next && isShownDoor(next)) return;
-    out.push(
-      { op: 'bgm', pause: true, seconds: d.bgmFade },
-      { op: 'se', id: d.jingle },
-      { op: 'wait', seconds: d.jingleWait },
-      { op: 'bgm', pause: false, seconds: d.bgmFade },
-      { op: 'wait', seconds: d.after },
-      { op: 'camera', who: null, seconds: d.camera },
-    );
+    out.push(...jingleNodes(), { op: 'wait', seconds: d.after }, { op: 'camera', who: null, seconds: d.camera });
   });
   return out;
 }

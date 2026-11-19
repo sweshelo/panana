@@ -211,6 +211,19 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(built.length).toBeGreaterThan(base.segments[CRO_TEXT]!.bytes!.length);
   });
 
+  test('openDoor builds the same code as its parts written out (chara().camera / se / chara().open / jingle)', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const text = (body: string): Uint8Array =>
+      compileStageScript(base, parseStageScript(`on button(1, 2) { ${body} }`)).cro.segments[CRO_TEXT]!.bytes!;
+    const parts =
+      'chara(3).camera(1); wait(0.5); se(0x79); wait(1.5); se(0x7A); chara(3).open(); jingle(); wait(0.3); cameraBack(1)';
+    expect(text(parts)).toEqual(text('openDoor(3)'));
+    // without the jingle the code is shorter
+    expect(text('se(0x50); chara(3).open()').length).toBeLessThan(text('openDoor(3)').length);
+  });
+
   test('popup keeps its icon past the statement; a line passes its window to StartMessage', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
