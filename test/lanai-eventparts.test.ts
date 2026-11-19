@@ -250,8 +250,9 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     // not settled: keep the number
     expect(lanaiExitLabel(17)).toBe('種類 17');
     expect(lanaiExitLabel(9)).toBe('種類 9');
-    expect(lanaiExitNote(17)).toContain('未確認');
-    expect(lanaiExitCategory(8)).toBe('到着点');
+    expect(lanaiExitNote(17)).toContain('わかっていない');
+    expect(lanaiExitCategory(8)).toBe('出入口・移動');
+    expect(lanaiExitCategory(40)).toBe('建物');
     expect(lanaiExitCategory(13)).toBe('扉');
     expect(lanaiExitCategory(2)).toBe('出入口・移動');
     expect(lanaiRecLabel(3, Object.assign(new Uint8Array(0x18), { [0x15]: 18 }))).toBe('出入口 #18');

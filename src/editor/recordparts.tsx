@@ -138,7 +138,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       '出入口・移動',
       '扉・移動',
       '扉',
-      '到着点',
+      '建物',
       'スイッチ',
       '宝箱・ゴール',
       '回復',
