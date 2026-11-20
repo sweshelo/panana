@@ -54,12 +54,12 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'statement',
     'talk(行 ID[, 吹き出し])',
-    '台詞。話しかけたときのイベントでは、話している間キャラの口が動く。吹き出し: bubble = 会話の吹き出し / window = システムのウィンドウ。省くと台詞の行の話者で決まる (話者なし = ウィンドウ)',
+    '台詞。話しかけたときのイベントでは、話している間キャラの口が動く。吹き出し: bubble = 会話の吹き出し / window = システムのウィンドウ。省くと台詞の行の話者で決まる (話者なし = ウィンドウ)。話者の音 (文字送りの音) と合成音声は、台詞の行の話者の種別 (+0x08) と voice 欄で決まる (Panana で足した行は voice が空なので合成音声は鳴らない。文字送りの音の鳴らし分けは推定)',
   ),
   w(
     'statement',
     'say(行 ID[, 吹き出し])',
-    '台詞 (口は動かさない)。話者が主人公の行は、先頭の電波人間の性格の行に替わる。吹き出しは talk と同じ',
+    '台詞 (口は動かさない)。話者が主人公の行は、先頭の電波人間の性格の行に替わる。吹き出し・話者の音・合成音声は talk と同じ',
   ),
   w('value', 'ask(行 ID)', '「はい / いいえ」を聞く。if (ask(…)) { はい } else { いいえ }'),
   w('statement', '名前 = 値', '変数に書く (数値は 0〜255、フラグは 0 / 1)'),
@@ -104,7 +104,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'cameraBack(秒)', 'カメラをパーティへ戻す'),
   w('statement', 'fadeOut(秒)', '画面を暗くする。暗いままイベントを終えないこと'),
   w('statement', 'fadeIn(秒)', '画面を明るくする'),
-  w('statement', 'follow(0 / 1)', '仲間が先頭についてくるのを止める / 戻す'),
+  w(
+    'statement',
+    'follow(0 / 1)',
+    '仲間が先頭についてくるのを止める / 戻す。並べた隊形 (partyLineUp など) の位置は戻さず、そこから追従を再開する',
+  ),
   w(
     'statement',
     'se(音)',
@@ -114,11 +118,6 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w('statement', 'addItem(ID, 個数)', 'アイテムを増やす (負の数で減らす)'),
   w('statement', 'getItem(ID, 個数)', 'アイテムを増やし、「手に入れた」の文を出す'),
   w('statement', 'addGold(金額)', 'お金を増やす (負の数で減らす)'),
-  w(
-    'statement',
-    'openDoor(イベント)',
-    '「外から開ける扉」(動作の型 17) を、本家と同じ演出で開ける: カメラを扉へ → 解錠の音 → 開く音と扉のアニメ。続けて書いた扉は順に開け、最後にギミックの音を鳴らしてカメラを戻す。音や順番を変えたいときは chara(イベント).camera(秒)・se(音)・chara(イベント).open()・jingle() で組む (見本「扉の演出を自分で組む」)',
-  ),
   w('statement', 'openDoorNow(イベント)', '扉を演出なしで開ける (当たり判定と状態だけ。見た目は開かない)'),
   w('statement', 'closeDoor(イベント)', '扉を閉める'),
   w(
@@ -187,6 +186,70 @@ export const SCRIPT_METHOD_WORDS: ScriptWord[] = [
   m('chara(イベント).vanishMonster()', 'vanishMonster(イベント) と同じ'),
 ];
 
+/**
+ * The Script API functions each word of the language calls, in the order it calls them (read from compileNodes and
+ * checked against the Update's code; issue #223). Shown beside the word in the help and on hover.
+ */
+export const SCRIPT_WORD_CALLS: Record<string, string> = {
+  talk: 'ScriptChara::StartAnimation / ScriptMenu::StartMessage',
+  say: 'ScriptMenu::StartMessageAuto',
+  ask: 'ScriptMenu::SystemMessageYesNo',
+  popup: 'ScriptChara::SetPopup',
+  popupEnd: 'ScriptChara::FinishPopupIcon',
+  emotion: 'ScriptPlayer::SetEmotion',
+  emotionEnd: 'ScriptPlayer::RestoreEmotion',
+  anim: 'ScriptChara::StartAnimation / ScriptPlayer::StartAnimation',
+  waitAnim: 'ScriptChara::WaitAnimation',
+  move: 'ScriptChara::MoveTo / ScriptChara::WaitNodeAnimation / ScriptPlayer::StartAnimation',
+  turn: 'ScriptChara::RotateTo / ScriptSystem::WaitTime',
+  face: 'ScriptChara::RotateCharaTo / ScriptSystem::WaitTime',
+  show: 'ScriptChara::SetVisible',
+  hide: 'ScriptChara::SetVisible',
+  camera: 'ScriptCamera::PauseCameraUpdater / ScriptCamera::MoveEyeAndTarget / ScriptCamera::WaitAnimation',
+  cameraBack: 'ScriptCamera::MoveFieldCamera / ScriptCamera::WaitAnimation / ScriptCamera::ResumeCameraUpdater',
+  fadeOut: 'ScriptSystem::FadeOutWait',
+  fadeIn: 'ScriptSystem::FadeInWait',
+  follow: 'ScriptMap::SetUpdateFormation',
+  se: 'ScriptSound::Play',
+  wait: 'ScriptSystem::WaitTime',
+  addItem: 'ScriptFlag::AddItemNum',
+  getItem: 'ScriptMenu::ItemGet',
+  addGold: 'ScriptFlag::AddGold',
+  openDoorNow: 'ScriptMap::SetDoorOpenFlag',
+  closeDoor: 'ScriptMap::SetDoorCloseFlag',
+  jingle: 'ScriptSound::PauseBGM / ScriptSound::Play / ScriptSystem::WaitTime / ScriptSound::ReplayBGM',
+  bgmPause: 'ScriptSound::PauseBGM',
+  bgmResume: 'ScriptSound::ReplayBGM',
+  disable: 'ScriptMap::EnableEventCollision',
+  collision: 'ScriptMap::EnableEventCollision',
+  remove: 'ScriptMap::DeleteEventObject',
+  vanishMonster:
+    'ScriptMap::GetMapChara / ScriptMonsterCtrl::GetMonsterSize / ScriptEffect::CreateEffect / ScriptChara::CancelAutoAnimation / ScriptChara::StartAnimation / ScriptChara::SetBlendAnim / ScriptChara::WaitAnimation / ScriptChara::AlphaTo / ScriptSound::Play / ScriptChara::GetShadowPos / ScriptChara::SetPos / ScriptEffect::StartEffect / ScriptChara::WaitNodeAnimation / ScriptMap::DeleteEventObject',
+  battle: 'ScriptMap::EncountBoss',
+  stageName: 'ScriptMenu::ShowStageName',
+  item: 'ScriptFlag::GetItemNum',
+  state: 'ScriptFlag::GetScriptState',
+  monsters: 'ScriptMap::GetMonsterLimitCount',
+};
+/** The same for the methods of a character (SCRIPT_METHOD_WORDS), by the method's name. */
+export const SCRIPT_METHOD_CALLS: Record<string, string> = {
+  anim: 'ScriptChara::StartAnimation / ScriptPlayer::StartAnimation',
+  waitAnim: 'ScriptChara::WaitAnimation',
+  move: 'ScriptChara::MoveTo / ScriptChara::WaitNodeAnimation / ScriptPlayer::StartAnimation',
+  turn: 'ScriptChara::RotateTo / ScriptSystem::WaitTime',
+  face: 'ScriptChara::RotateCharaTo / ScriptSystem::WaitTime',
+  show: 'ScriptChara::SetVisible',
+  hide: 'ScriptChara::SetVisible',
+  camera: 'ScriptCamera::PauseCameraUpdater / ScriptCamera::MoveEyeAndTarget / ScriptCamera::WaitAnimation',
+  popup: 'ScriptChara::SetPopup',
+  popupEnd: 'ScriptChara::FinishPopupIcon',
+  open: 'ScriptChara::StartAnimation / ScriptChara::WaitAnimation / ScriptMap::SetDoorOpenFlag',
+  close: 'ScriptMap::SetDoorCloseFlag',
+  remove: 'ScriptMap::DeleteEventObject',
+  vanishMonster:
+    'ScriptMap::GetMapChara / ScriptMonsterCtrl::GetMonsterSize / ScriptEffect::CreateEffect / ScriptChara::CancelAutoAnimation / ScriptChara::StartAnimation / ScriptChara::SetBlendAnim / ScriptChara::WaitAnimation / ScriptChara::AlphaTo / ScriptSound::Play / ScriptChara::GetShadowPos / ScriptChara::SetPos / ScriptEffect::StartEffect / ScriptChara::WaitNodeAnimation / ScriptMap::DeleteEventObject',
+};
+
 export interface ScriptSample {
   name: string;
   about: string;
@@ -222,33 +285,12 @@ export const SCRIPT_SAMPLES: ScriptSample[] = [
   {
     name: 'ボタンを押したら扉が開く',
     about:
-      'ボタン (区画 5 の種類 4〜6) を踏むと、扉を開けます (カメラ・解錠の音・扉のアニメは openDoor がする)。扉は「外から開ける扉」(動作の型 17) にして、イベント番号を 3 のところに書きます。2 つ以上の扉は openDoor を続けて書くと順に開きます。',
+      'ボタン (区画 5 の種類 4〜6) を踏むと、扉を開けます (カメラ・解錠の音・扉のアニメはライブラリの openDoor がする。音を替えたいときはライブラリから追加して改造)。扉は「外から開ける扉」(動作の型 17) にして、イベント番号を 3 のところに書きます。2 つ以上の扉は openDoor を続けて書くと 1 つずつ (毎回ギミックの音とカメラの戻りつきで) 開きます。まとめて開けたいときは openDoor を改造します。',
     give: ['open_door → ボタンのレコード (ボタンを踏んだとき (押したままになる))'],
     source: `function open_door() {
   // 3 = 扉のイベント番号
   follow(0)
   openDoor(3)
-  follow(1)
-}
-`,
-  },
-  {
-    name: '扉の演出を自分で組む',
-    about:
-      'openDoor(3) は下と同じことをします。音を替えたり、ギミックの音 (jingle) を省いたり、順番を入れ替えたりできます。0x79 = 解錠の音、0x7A = 開く音 (SoundData の行番号)。',
-    give: ['open_door_custom → ボタンのレコード (ボタンを踏んだとき (押したままになる))'],
-    source: `function open_door_custom() {
-  // 3 = 扉のイベント番号
-  follow(0)
-  chara(3).camera(1)
-  wait(0.5)
-  se(0x79)          // 解錠の音
-  wait(1.5)
-  se(0x7A)          // 開く音
-  chara(3).open()   // 扉のアニメ → 終わるまで待つ → 開いた状態
-  jingle()          // BGM を止めてギミックの音
-  wait(0.3)
-  cameraBack(1)
   follow(1)
 }
 `,

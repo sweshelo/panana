@@ -42,7 +42,7 @@ export function EventScriptBinding({
   const triggers = recordTriggers(section, raw);
   if (!triggers.length) return null;
   const stored = session.stageScripts.get(archive);
-  const functions = stored?.doc.functions ?? [];
+  const functions = (stored?.doc.functions ?? []).filter((f) => !f.params);
   if (!stored || !functions.length)
     return (
       <p className="muted small">

@@ -28,6 +28,7 @@
 import { assembleLine, encodeImm } from '../game/asm';
 import { RELOC, croRegistrationHash, type Cro, type CroPatch, type CroReloc, type SegTag } from './cro';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
+import { SCRIPT_LIBRARY } from './scriptLibrary';
 
 // ------------------------------------------------------------------------------------------------ the script
 /** A character an action is done to: the party's first, the event's own (talk / button), or the one of a row. */
@@ -96,8 +97,8 @@ export type ScriptNode =
   | { op: 'se'; id: number }
   | { op: 'addItem'; item: number; count: number; show: boolean }
   | { op: 'addGold'; amount: number }
-  /** A door opened or closed; `show`: opened as the game shows it (expandDoors). */
-  | { op: 'door'; row: number; open: boolean; show?: boolean }
+  /** A door opened or closed (its state alone: chara(row).open() also shows it opening). */
+  | { op: 'door'; row: number; open: boolean }
   /** chara(row).open(): the door's opening motion, its end, then the door open (no camera, sound or jingle). */
   | { op: 'doorMotion'; row: number }
   /** The gimmick's jingle over the paused BGM (jingleNodes). */
@@ -146,6 +147,8 @@ export const triggerHasRow = (t: ScriptTrigger): boolean => t !== 'start' && t !
 
 export interface ScriptFunction {
   name: string;
+  /** Its parameters; a function with any is written out where it is called (and `body` is empty). */
+  params: ScriptParam[];
   body: ScriptNode[];
   line: number;
   /** Where the text between the braces is in the source. */
@@ -331,10 +334,109 @@ export const isScriptMethod = (s: string): s is ScriptMethod => (SCRIPT_METHODS 
 /** The methods that take the event of chara(row) (a door, an object or a monster): not hero or self. */
 export const SCRIPT_ROW_METHODS: readonly ScriptMethod[] = ['open', 'close', 'remove', 'vanishMonster'];
 
+/** A parameter of a function: a character (hero / self / chara(N), or N alone) or a number. */
+export interface ScriptParam {
+  name: string;
+  kind: 'chara' | 'num';
+}
+/** What a parameter stands for where the function is written out. */
+type ScriptBound = { kind: 'chara'; who: ScriptWho } | { kind: 'num'; v: number };
+/** What a function's body is read with where it is written (its mistakes told there, before any call). */
+const PARAM_STAND_IN: Record<ScriptParam['kind'], ScriptBound> = {
+  chara: { kind: 'chara', who: { kind: 'chara', row: 1 } },
+  num: { kind: 'num', v: 1 },
+};
+/** A function a body can call: its parameters, and where its body (the "{") is in the tokens it was read from. */
+interface FnDef {
+  name: string;
+  params: ScriptParam[];
+  ts: Token[];
+  body: number;
+  library: boolean;
+}
+/**
+ * The words the language's own statements and values are called by (not openDoor: a library function, which a
+ * function of the script's can take the place of). A function cannot be named so.
+ */
+export const SCRIPT_STATEMENTS: readonly string[] = [
+  'talk',
+  'say',
+  'ask',
+  'popup',
+  'popupEnd',
+  'emotion',
+  'emotionEnd',
+  'anim',
+  'waitAnim',
+  'move',
+  'turn',
+  'face',
+  'show',
+  'hide',
+  'camera',
+  'cameraBack',
+  'fadeOut',
+  'fadeIn',
+  'follow',
+  'se',
+  'addItem',
+  'getItem',
+  'addGold',
+  'openDoorNow',
+  'closeDoor',
+  'jingle',
+  'bgmPause',
+  'bgmResume',
+  'wait',
+  'disable',
+  'collision',
+  'remove',
+  'vanishMonster',
+  'battle',
+  'stageName',
+  'item',
+  'state',
+  'monsters',
+  'vec',
+];
+/** The functions written in tokens (at the top, outside any braces), found before the bodies are read. */
+function fnDefs(ts: Token[], library: boolean): FnDef[] {
+  const out: FnDef[] = [];
+  let depth = 0;
+  for (let k = 0; k < ts.length; k++) {
+    const t = ts[k]!;
+    if (t.t === 'p' && t.s === '{') depth++;
+    else if (t.t === 'p' && t.s === '}') depth--;
+    else if (depth === 0 && t.t === 'id' && t.s === 'function' && ts[k + 1]?.t === 'id' && ts[k + 2]?.s === '(') {
+      const params: ScriptParam[] = [];
+      let j = k + 3;
+      while (ts[j] && ts[j]!.t !== 'end' && ts[j]!.s !== ')') {
+        const kind = ts[j + 2]?.s;
+        if (ts[j]!.t === 'id' && ts[j + 1]?.s === ':' && (kind === 'chara' || kind === 'num')) {
+          params.push({ name: ts[j]!.s, kind });
+          j += 3;
+        } else j++;
+      }
+      if (ts[j]?.s === ')' && ts[j + 1]?.s === '{') out.push({ name: ts[k + 1]!.s, params, ts, body: j + 1, library });
+    }
+  }
+  return out;
+}
+
 /** Reads a script; throws a ScriptError naming the line. */
 export function parseStageScript(src: string): StageScript {
-  const ts = tokens(src);
+  let ts = tokens(src);
   let i = 0;
+  /** The arguments of the function being written out where it is called (expandCall), by the names of its parameters. */
+  let env = new Map<string, ScriptBound>();
+  const numParam = (t: Token): number | undefined => {
+    const b = t.t === 'id' ? env.get(t.s) : undefined;
+    return b?.kind === 'num' ? b.v : undefined;
+  };
+  const charaParam = (s: string): ScriptWho | undefined => {
+    const b = env.get(s);
+    return b?.kind === 'chara' ? b.who : undefined;
+  };
   const peek = (): Token => ts[i]!;
   const next = (): Token => ts[i++]!;
   const fail = (msg: string, t = peek()): never => {
@@ -347,20 +449,25 @@ export function parseStageScript(src: string): StageScript {
   };
   const int = (what: string, min: number, max: number): number => {
     const t = next();
-    const v = t.t === 'id' && (t.s === 'true' || t.s === 'false') ? Number(t.s === 'true') : t.n;
-    if ((t.t !== 'num' && !(t.t === 'id' && (t.s === 'true' || t.s === 'false'))) || !Number.isInteger(v))
-      fail(`${what}は整数で書きます`, t);
+    const p = numParam(t);
+    const bool = t.t === 'id' && (t.s === 'true' || t.s === 'false');
+    const v = p ?? (bool ? Number(t.s === 'true') : t.n);
+    if ((p === undefined && t.t !== 'num' && !bool) || !Number.isInteger(v)) fail(`${what}は整数で書きます`, t);
     if (v < min || v > max) fail(`${what}は ${min}〜${max} です`, t);
     return v;
   };
   const num = (what: string, min: number, max: number): number => {
     const t = next();
-    if (t.t !== 'num' || !Number.isFinite(t.n)) fail(`${what}は数で書きます`, t);
-    if (t.n < min || t.n > max) fail(`${what}は ${min}〜${max} です`, t);
-    return t.n;
+    const v = numParam(t) ?? (t.t === 'num' ? t.n : NaN);
+    if (!Number.isFinite(v)) fail(`${what}は数で書きます`, t);
+    if (v < min || v > max) fail(`${what}は ${min}〜${max} です`, t);
+    return v;
   };
   const vars = new Map<string, ScriptVar>();
   const functions = new Map<string, ScriptFunction>();
+  const defs = new Map<string, FnDef>();
+  /** The functions being written out, the outermost first (a function cannot call itself). */
+  const calling: string[] = [];
   const events: ScriptEvent[] = [];
   const pending: { event: ScriptEvent; name: string; at: Token }[] = [];
   const used = { byte: 0, bit: 0 };
@@ -376,6 +483,8 @@ export function parseStageScript(src: string): StageScript {
   const who = (): ScriptWho => {
     const t = next();
     if (t.t === 'id' && (t.s === 'hero' || t.s === 'self')) return { kind: t.s };
+    const p = t.t === 'id' ? charaParam(t.s) : undefined;
+    if (p) return p;
     if (t.t === 'id' && t.s === 'chara') {
       need('(');
       const r = row('キャラのイベント番号');
@@ -399,6 +508,8 @@ export function parseStageScript(src: string): StageScript {
   };
 
   const WHO_WORDS = ['hero', 'self', 'chara'];
+  /** A word that names a character: hero, self, chara or a parameter that is one. */
+  const isWhoWord = (s: string): boolean => WHO_WORDS.includes(s) || charaParam(s) !== undefined;
   /** A built-in method after `who.` (SCRIPT_METHODS): the statement of that name with the character first. */
   const method = (w: ScriptWho, m: Token, name: ScriptMethod): ScriptNode => {
     const rowOf = (): number =>
@@ -448,7 +559,7 @@ export function parseStageScript(src: string): StageScript {
   };
   /** A built-in method statement beginning at the token just read, or null (the tokens left as they were). */
   const methodAt = (t: Token): ScriptNode | null => {
-    if (t.t !== 'id' || !WHO_WORDS.includes(t.s)) return null;
+    if (t.t !== 'id' || !isWhoWord(t.s)) return null;
     const at = i;
     i--;
     const w = who();
@@ -487,11 +598,14 @@ export function parseStageScript(src: string): StageScript {
         const pos = (): number => num('vec の値', -1e9, 1e9);
         const [x, y, z] = call('vec', pos, pos, pos);
         raw.push({ kind: 'vec', x, y, z });
-      } else if (t.t === 'id' && WHO_WORDS.includes(t.s)) raw.push({ kind: 'who', who: who() });
+      } else if (t.t === 'id' && isWhoWord(t.s)) raw.push({ kind: 'who', who: who() });
       else if (t.t === 'id' && (t.s === 'true' || t.s === 'false'))
         raw.push({ kind: 'num', v: Number(next().s === 'true'), whole: true });
       else if (t.t === 'num') raw.push({ kind: 'num', v: next().n, whole: !t.s.includes('.') });
-      else fail(`${shown} の引数は、数・vec(x, y, z)・キャラ (hero / self / chara(イベント番号)) で書きます`, t);
+      else if (numParam(t) !== undefined) {
+        const v = numParam(next())!;
+        raw.push({ kind: 'num', v, whole: Number.isInteger(v) });
+      } else fail(`${shown} の引数は、数・vec(x, y, z)・キャラ (hero / self / chara(イベント番号)) で書きます`, t);
     }
     /** How well the arguments fit a function's parameters (0: they do not). */
     const fit = (r: ScriptApiRow): number => {
@@ -545,7 +659,7 @@ export function parseStageScript(src: string): StageScript {
   const apiCallAt = (t: Token): ScriptCall | null => {
     if (t.t !== 'id') return null;
     if (API_CLASSES.has(t.s) && is('.')) return apiCall(t.s, null, t);
-    if (WHO_WORDS.includes(t.s)) {
+    if (isWhoWord(t.s)) {
       i--;
       const w = who();
       if (is('.')) return apiCall(null, w, t);
@@ -614,16 +728,76 @@ export function parseStageScript(src: string): StageScript {
     const out: ScriptNode[] = [];
     while (!is('}')) {
       if (peek().t === 'end') fail('「}」が足りません');
-      const s = stmt(ctx);
-      if (s) out.push(s);
+      out.push(...stmt(ctx));
     }
     const close = next();
     return { body: out, from: open.pos + 1, to: close.pos };
   };
-  const stmt = (ctx: Ctx): ScriptNode | null => {
+  /** The parameters of a function: `name: chara` (a character) or `name: num` (a number), commas between. */
+  const params = (): ScriptParam[] => {
+    need('(');
+    const out: ScriptParam[] = [];
+    while (!eat(')')) {
+      if (out.length) need(',');
+      const n = name('引数');
+      if (out.some((p) => p.name === n.s)) fail(`引数「${n.s}」は 2 つあります`, n);
+      if (vars.has(n.s)) fail(`「${n.s}」は変数の名前です`, n);
+      need(':');
+      const k = next();
+      if (k.t !== 'id' || (k.s !== 'chara' && k.s !== 'num'))
+        fail('引数の種類は chara (キャラ・イベント番号) か num (数) です', k);
+      out.push({ name: n.s, kind: k.s as ScriptParam['kind'] });
+    }
+    return out;
+  };
+  /** A call of a function (the script's or the library's): its body written out here, the arguments put in. */
+  const expandCall = (d: FnDef, at: Token): ScriptNode[] => {
+    need('(');
+    const bound = new Map<string, ScriptBound>();
+    d.params.forEach((p, k) => {
+      if ((k && !eat(',')) || is(')')) fail(`${d.name} の引数は ${d.params.length} 個です`);
+      bound.set(
+        p.name,
+        p.kind === 'num'
+          ? { kind: 'num', v: num(`${d.name} の引数 ${p.name} `, -1e9, 1e9) }
+          : // a character: hero / self / chara(N), or the event's number alone
+            {
+              kind: 'chara',
+              who: peek().t === 'num' ? { kind: 'chara', row: row(`${d.name} の引数 ${p.name} `) } : who(),
+            },
+      );
+    });
+    if (!eat(')')) fail(`${d.name} の引数は ${d.params.length} 個です`);
+    if (calling.includes(d.name)) fail(`関数「${d.name}」は自分を (ほかの関数を通しても) 呼べません`, at);
+    if (calling.length >= 16) fail('関数の呼び出しが深すぎます', at);
+    const save = { ts, i, env };
+    ts = d.ts;
+    i = d.body;
+    env = bound;
+    calling.push(d.name);
+    try {
+      return block({ inSwitch: false }).body;
+    } catch (e) {
+      if (!(e instanceof ScriptError)) throw e;
+      const where = d.library ? `${d.name} (ライブラリ)` : `関数「${d.name}」(${e.line} 行目)`;
+      throw new ScriptError(`${where} の中: ${e.text}`, at.line);
+    } finally {
+      ts = save.ts;
+      i = save.i;
+      env = save.env;
+      calling.pop();
+    }
+  };
+  const stmt = (ctx: Ctx): ScriptNode[] => {
+    const s = statement(ctx);
+    return s === null ? [] : Array.isArray(s) ? s : [s];
+  };
+  const statement = (ctx: Ctx): ScriptNode | ScriptNode[] | null => {
     if (eat(';')) return null;
     const t = next();
     if (t.t !== 'id') fail(`文が要ります (「${t.s}」がありました)`, t);
+    const def = defs.get(t.s);
+    if (def && is('(') && !env.has(t.s)) return expandCall(def, t);
     const own = methodAt(t);
     if (own) return own;
     const api = apiCallAt(t);
@@ -635,7 +809,7 @@ export function parseStageScript(src: string): StageScript {
         need(')');
         const then = block(ctx).body;
         let other: ScriptNode[] = [];
-        if (eat('else')) other = is('if') ? [stmt(ctx)!] : block(ctx).body;
+        if (eat('else')) other = is('if') ? stmt(ctx) : block(ctx).body;
         return { op: 'if', cond: c, then, else: other };
       }
       case 'switch': {
@@ -660,9 +834,8 @@ export function parseStageScript(src: string): StageScript {
           need(':');
           while (!is('case') && !is('default') && !is('}')) {
             if (peek().t === 'end') fail('「}」が足りません');
-            const s = is('{') ? null : stmt({ ...ctx, inSwitch: true });
-            if (s) body.push(s);
-            else if (is('{')) body.push(...block({ ...ctx, inSwitch: true }).body);
+            if (is('{')) body.push(...block({ ...ctx, inSwitch: true }).body);
+            else body.push(...stmt({ ...ctx, inSwitch: true }));
           }
         }
         return { op: 'switch', value: v, cases, default: def };
@@ -756,15 +929,9 @@ export function parseStageScript(src: string): StageScript {
       }
       case 'addGold':
         return { op: 'addGold', amount: call(t.s, () => int('お金', -99999999, 99999999))[0] };
-      case 'openDoor':
       case 'openDoorNow':
       case 'closeDoor':
-        return {
-          op: 'door',
-          row: call(t.s, () => row('扉のイベント番号'))[0],
-          open: t.s !== 'closeDoor',
-          ...(t.s === 'openDoor' ? { show: true } : {}),
-        };
+        return { op: 'door', row: call(t.s, () => row('扉のイベント番号'))[0], open: t.s !== 'closeDoor' };
       case 'jingle': {
         need('(');
         const id = is(')') ? DOOR_SHOW.jingle : int('音 (SoundData の行)', 0, 0xffff);
@@ -811,6 +978,9 @@ export function parseStageScript(src: string): StageScript {
     if (SCRIPT_RESERVED.includes(t.s)) fail(`「${t.s}」は${what}の名前にできません`, t);
     return t;
   };
+  // the functions a body can call, before any body is read: the library's, then the script's (in their place)
+  for (const f of SCRIPT_LIBRARY) for (const d of fnDefs(tokens(f.source), true)) defs.set(d.name, d);
+  for (const d of fnDefs(ts, false)) defs.set(d.name, d);
   while (peek().t !== 'end') {
     if (eat(';')) continue;
     const t = next();
@@ -827,9 +997,14 @@ export function parseStageScript(src: string): StageScript {
     } else if (t.t === 'id' && t.s === 'function') {
       const n = name('関数');
       if (functions.has(n.s)) fail(`関数「${n.s}」は 2 つあります`, n);
-      need('(');
-      need(')');
-      functions.set(n.s, { name: n.s, line: t.line, ...block({ inSwitch: false }) });
+      if (SCRIPT_STATEMENTS.includes(n.s)) fail(`「${n.s}」は組み込みの文の名前なので、関数の名前にできません`, n);
+      const ps = params();
+      // a function with parameters is read with stand-ins for them here (to tell its mistakes where it is written),
+      // and again with the arguments wherever it is called
+      env = new Map(ps.map((p): [string, ScriptBound] => [p.name, PARAM_STAND_IN[p.kind]]));
+      const read = block({ inSwitch: false });
+      env = new Map();
+      functions.set(n.s, { name: n.s, line: t.line, params: ps, ...read, body: ps.length ? [] : read.body });
     } else if (t.t === 'id' && t.s === 'on') {
       const trig = next();
       if (trig.t !== 'id' || !(SCRIPT_TRIGGERS as readonly string[]).includes(trig.s))
@@ -864,6 +1039,8 @@ export function parseStageScript(src: string): StageScript {
   for (const p of pending) {
     const f = functions.get(p.name);
     if (!f) return fail(`関数「${p.name}」がありません`, p.at);
+    if (f.params.length)
+      fail(`関数「${p.name}」は引数があるので、イベントには割り当てられません (ほかの関数から呼びます)`, p.at);
     Object.assign(p.event, { body: f.body, from: f.from, to: f.to });
   }
   for (const e of events) {
@@ -877,8 +1054,8 @@ export function parseStageScript(src: string): StageScript {
 /** What the editor keeps of a stage's script: the variables as a table, one text per function, and what runs which. */
 export interface ScriptDoc {
   vars: { name: string; kind: 'byte' | 'bit'; reset: boolean }[];
-  /** `body`: the statements, without the braces. */
-  functions: { name: string; body: string }[];
+  /** `params`: the text between the parentheses (absent: none); `body`: the statements, without the braces. */
+  functions: { name: string; params?: string; body: string }[];
   bindings: ScriptBinding[];
 }
 export interface ScriptBinding {
@@ -904,7 +1081,7 @@ export function scriptDocSource(doc: ScriptDoc): {
   const bodies: { name: string; first: number; lines: number }[] = [];
   for (const v of doc.vars) out.push(`var ${v.name}: ${v.kind}${v.reset ? ' reset' : ''}`);
   for (const f of doc.functions) {
-    out.push(`function ${f.name}() {`);
+    out.push(`function ${f.name}(${f.params?.trim() ?? ''}) {`);
     const lines = f.body.replace(/\r\n?/gu, '\n').split('\n');
     bodies.push({ name: f.name, first: out.length + 1, lines: lines.length });
     // a line comment on the last line must not take the closing brace with it
@@ -938,9 +1115,11 @@ export function scriptOfDoc(doc: ScriptDoc): StageScript {
     if (seen.has(x.name)) throw new ScriptDocError(`「${x.name}」という名前が 2 つあります`, null, 0);
     seen.add(x.name);
   }
-  // each function alone first: a brace left open must not be told as a mistake of the function after it
+  // each function alone first: a brace left open must not be told as a mistake of the function after it (the others
+  // are there with empty bodies, so that it can call them)
   for (const f of doc.functions) {
-    const alone = scriptDocSource({ vars: doc.vars, functions: [f], bindings: [] });
+    const others = doc.functions.filter((o) => o !== f).map((o) => ({ ...o, body: '' }));
+    const alone = scriptDocSource({ vars: doc.vars, functions: [f, ...others], bindings: [] });
     try {
       parseStageScript(alone.text);
     } catch (e) {
@@ -974,7 +1153,11 @@ export function scriptDocFromSource(src: string): ScriptDoc {
   const s = parseStageScript(src);
   const doc: ScriptDoc = {
     vars: s.vars.map((v) => ({ name: v.name, kind: v.kind, reset: v.reset })),
-    functions: s.functions.map((f) => ({ name: f.name, body: dedent(src.slice(f.from, f.to)) })),
+    functions: s.functions.map((f) => ({
+      name: f.name,
+      ...(f.params.length ? { params: f.params.map((p) => `${p.name}: ${p.kind}`).join(', ') } : {}),
+      body: dedent(src.slice(f.from, f.to)),
+    })),
     bindings: [],
   };
   const names = new Set([...s.vars.map((v) => v.name), ...s.functions.map((f) => f.name)]);
@@ -1524,24 +1707,16 @@ function compileCall(c: Ctx, call: ScriptCall): void {
 }
 
 /**
- * A door opened as the game shows it, by the event that opens the door after the boss of content 1 (CRO 117
- * D01BossWin, code 0xF34〜0x1048, then SetDoorOpenFlag in its CtrlFlag): the camera to the door, 0.5 s, the unlocking
- * sound 0x79, 1.5 s, the opening sound 0x7A with the door's motion 0x80000073, its end; then, after the last door of a
- * run, the BGM paused (0.3 s) for the gimmick's jingle 0x41, 1 s, the BGM again, 0.3 s, and the camera back.
+ * The door after the boss of content 1 as the game opens it (CRO 117 D01BossWin, code 0xF34〜0x1048, then
+ * SetDoorOpenFlag in its CtrlFlag): the door's motion 0x80000073 (chara(row).open()) and the gimmick's jingle 0x41
+ * over the BGM paused for 0.3 s (jingle()). The whole show is the library's openDoor (scriptLibrary.ts).
  */
 export const DOOR_SHOW = {
-  camera: 1,
-  beforeUnlock: 0.5,
-  unlock: 0x79,
-  beforeOpen: 1.5,
-  open: 0x7a,
   motion: 0x73,
   bgmFade: 0.3,
   jingle: 0x41,
   jingleWait: 1,
-  after: 0.3,
 } as const;
-const isShownDoor = (n: ScriptNode): boolean => n.op === 'door' && n.open && !!n.show;
 
 /** chara(row).open(): the door's opening motion, its end, then the door open (DOOR_SHOW, without camera or sound). */
 export const doorMotionNodes = (row: number): ScriptNode[] => {
@@ -1560,39 +1735,17 @@ export const jingleNodes = (id: number = DOOR_SHOW.jingle): ScriptNode[] => [
   { op: 'bgm', pause: false, seconds: DOOR_SHOW.bgmFade },
 ];
 
-/**
- * The nodes with each run of openDoor() written out as the game shows doors opening (DOOR_SHOW), and the parts a
- * script writes itself (chara(row).open(), jingle()) written out as theirs. openDoor(row) is the same as
- * `chara(row).camera(1); wait(0.5); se(0x79); wait(1.5); se(0x7A); chara(row).open(); jingle(); wait(0.3);
- * cameraBack(1)`, the jingle and the camera's return only after the last of doors opened one after another.
- */
-export function expandDoors(nodes: ScriptNode[]): ScriptNode[] {
-  const out: ScriptNode[] = [];
-  nodes.forEach((n, i) => {
-    if (n.op === 'doorMotion') return void out.push(...doorMotionNodes(n.row));
-    if (n.op === 'jingle') return void out.push(...jingleNodes(n.id));
-    if (n.op !== 'door' || !isShownDoor(n)) return void out.push(n);
-    const d = DOOR_SHOW;
-    out.push(
-      { op: 'camera', who: { kind: 'chara', row: n.row }, seconds: d.camera },
-      { op: 'wait', seconds: d.beforeUnlock },
-      { op: 'se', id: d.unlock },
-      { op: 'wait', seconds: d.beforeOpen },
-      { op: 'se', id: d.open },
-      ...doorMotionNodes(n.row),
-    );
-    const next = nodes[i + 1];
-    if (next && isShownDoor(next)) return;
-    out.push(...jingleNodes(), { op: 'wait', seconds: d.after }, { op: 'camera', who: null, seconds: d.camera });
-  });
-  return out;
+/** The nodes with the parts that are several calls of the game (chara(row).open(), jingle()) written out. */
+export function expandParts(nodes: ScriptNode[]): ScriptNode[] {
+  return nodes.flatMap((n) =>
+    n.op === 'doorMotion' ? doorMotionNodes(n.row) : n.op === 'jingle' ? jingleNodes(n.id) : [n],
+  );
 }
 
 const usesCamera = (nodes: ScriptNode[]): boolean =>
   nodes.some(
     (n) =>
       n.op === 'camera' ||
-      isShownDoor(n) ||
       (n.op === 'if' && (usesCamera(n.then) || usesCamera(n.else))) ||
       (n.op === 'switch' && (n.cases.some((k) => usesCamera(k.body)) || usesCamera(n.default ?? []))),
   );
@@ -1634,7 +1787,7 @@ function compileCondition(c: Ctx, condition: ScriptCond, whenTrue: string, whenF
 
 function compileNodes(c: Ctx, written: ScriptNode[]): void {
   const { fn, g } = c;
-  const nodes = expandDoors(written);
+  const nodes = expandParts(written);
   const mouth = (reg: string): void => {
     fn.op('add r0, r4, #0xc', `mov r1, ${reg}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
     fn.call(A.anim);

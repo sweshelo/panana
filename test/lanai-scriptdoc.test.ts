@@ -3,10 +3,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   emptyScriptDoc,
-  expandDoors,
+  expandParts,
   type ScriptNode,
   parseStageScript,
   scriptDocFromSource,
+  scriptDocSource,
   scriptOfDoc,
   type ScriptDoc,
 } from '../src/lanai/eventScript';
@@ -14,13 +15,19 @@ import {
   docBound,
   docUnbound,
   rowBinding,
+  SCRIPT_METHOD_CALLS,
+  SCRIPT_METHOD_WORDS,
   SCRIPT_SAMPLES,
   scriptLineRefs,
+  SCRIPT_WORD_CALLS,
   SCRIPT_WORDS,
   STAGE_SCRIPT_EXAMPLE,
   startBinding,
 } from '../src/lanai/scriptDoc';
-import { scriptCompletions, scriptFunctionProblem } from '../src/lanai/scriptAssist';
+import { scriptCompletions, scriptFunctionProblem, scriptHoverInfo } from '../src/lanai/scriptAssist';
+import { SCRIPT_API_DOCS } from '../src/lanai/scriptApiDocs';
+import { SCRIPT_API_ROWS } from '../src/lanai/scriptApiTable';
+import { SCRIPT_LIBRARY } from '../src/lanai/scriptLibrary';
 
 describe('RPG FREE! stage script: the document of the editor', () => {
   const doc: ScriptDoc = {
@@ -60,14 +67,14 @@ describe('RPG FREE! stage script: the document of the editor', () => {
   });
 
   test('the samples read, and their functions can be given as the sample says', () => {
-    expect(SCRIPT_SAMPLES.length).toBe(3);
+    expect(SCRIPT_SAMPLES.length).toBe(2);
     for (const s of SCRIPT_SAMPLES) {
       const d = scriptDocFromSource(s.source);
       expect(d.bindings).toEqual([]);
       expect(d.functions.length).toBe(s.give.length);
       for (const g of s.give) expect(d.functions.map((f) => f.name)).toContain(g.split(' ')[0]!);
     }
-    const [door, , boss] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    const [door, boss] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
     expect(
       scriptOfDoc(docBound(door!, { trigger: 'button', group: 1, row: 7, fn: 'open_door' })).events[0]!.trigger,
     ).toBe('button');
@@ -151,8 +158,8 @@ describe('RPG FREE! stage script: the document of the editor', () => {
 
 describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
   const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
-  test('each door: the camera, the unlocking sound, the opening sound and motion; after the run: the jingle and the camera back', () => {
-    const ops = expandDoors(body('openDoor(3)\nopenDoor(4)\nse(1)')).map((n) =>
+  test('openDoor is a library function: the camera, the sounds, the motion, the jingle and the camera back', () => {
+    const ops = expandParts(body('openDoor(3)\nse(1)')).map((n) =>
       n.op === 'se'
         ? `se ${n.id}`
         : n.op === 'door'
@@ -161,7 +168,7 @@ describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
             ? `camera ${n.who ? 'door' : 'back'}`
             : n.op,
     );
-    const door = (r: number): string[] => [
+    expect(ops).toEqual([
       'camera door',
       'wait',
       `se ${0x79}`,
@@ -169,34 +176,34 @@ describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
       `se ${0x7a}`,
       'anim',
       'waitAnim',
-      `door ${r}`,
-    ];
-    expect(ops).toEqual([...door(3), ...door(4), 'bgm', `se ${0x41}`, 'wait', 'bgm', 'wait', 'camera back', 'se 1']);
+      'door 3',
+      'bgm',
+      `se ${0x41}`,
+      'wait',
+      'bgm',
+      'wait',
+      'camera back',
+      'se 1',
+    ]);
+    // its text, written in the script, does the same; the door can be written as chara(3)
+    const lib = SCRIPT_LIBRARY.find((f) => f.name === 'openDoor')!;
+    const inner = lib.source
+      .slice(lib.source.indexOf('{') + 1, lib.source.lastIndexOf('}'))
+      .replaceAll('door.', 'chara(3).');
+    expect(body(inner)).toEqual(body('openDoor(3)'));
+    expect(body('openDoor(chara(3))')).toEqual(body('openDoor(3)'));
   });
-  test('openDoor is the same as its parts written out (the sample builds it from them)', () => {
-    const parts = [
-      'chara(3).camera(1)',
-      'wait(0.5)',
-      'se(0x79)',
-      'wait(1.5)',
-      'se(0x7A)',
-      'chara(3).open()',
-      'jingle()',
-      'wait(0.3)',
-      'cameraBack(1)',
-    ].join('\n');
-    expect(expandDoors(body(parts))).toEqual(expandDoors(body('openDoor(3)')));
-    const sample = SCRIPT_SAMPLES.find((s) => s.source.includes('chara(3).open()'))!;
-    const fn = parseStageScript(sample.source.replace('function open_door_custom()', 'on button(1, 2)')).events[0]!;
-    expect(expandDoors(fn.body).slice(1, -1)).toEqual(expandDoors(body('openDoor(3)')));
+  test('a function of the script takes the place of the library one of the same name', () => {
+    const s = parseStageScript('function openDoor(door: chara) {\n  door.open()\n}\non button(1, 2) { openDoor(3) }');
+    expect(s.events[0]!.body).toEqual([{ op: 'doorMotion', row: 3 }]);
   });
   test('the parts: open() without camera or sound, jingle with its sound, the BGM', () => {
-    expect(expandDoors(body('chara(3).open()'))).toEqual([
+    expect(expandParts(body('chara(3).open()'))).toEqual([
       { op: 'anim', who: { kind: 'chara', row: 3 }, id: 0x73, type: 0 },
       { op: 'waitAnim', who: { kind: 'chara', row: 3 } },
       { op: 'door', row: 3, open: true },
     ]);
-    expect(expandDoors(body('jingle(0x50)')).map((n) => (n.op === 'se' ? n.id : n.op))).toEqual([
+    expect(expandParts(body('jingle(0x50)')).map((n) => (n.op === 'se' ? n.id : n.op))).toEqual([
       'bgm',
       0x50,
       'wait',
@@ -236,10 +243,105 @@ describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
   });
   test('openDoorNow and closeDoor stay as they are', () => {
     const nodes = body('openDoorNow(3)\ncloseDoor(3)');
-    expect(expandDoors(nodes)).toEqual(nodes);
-    expect(nodes.map((n) => n.op === 'door' && [n.open, !!n.show])).toEqual([
-      [true, false],
-      [false, false],
+    expect(expandParts(nodes)).toEqual(nodes);
+    expect(nodes).toEqual([
+      { op: 'door', row: 3, open: true },
+      { op: 'door', row: 3, open: false },
     ]);
+  });
+});
+
+const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
+
+describe('functions with parameters: written out where they are called', () => {
+  test('a character and a number put in; a door written as its event number', () => {
+    const s = parseStageScript(
+      'function show_off(who: chara, motion: num) {\n  who.anim(motion)\n  waitAnim(who)\n}\n' +
+        'on talk(1, 5) { show_off(self, 0x79); show_off(4, 2) }',
+    );
+    expect(s.functions[0]!.params).toEqual([
+      { name: 'who', kind: 'chara' },
+      { name: 'motion', kind: 'num' },
+    ]);
+    expect(s.functions[0]!.body).toEqual([]);
+    expect(s.events[0]!.body).toEqual([
+      { op: 'anim', who: { kind: 'self' }, id: 0x79, type: 0 },
+      { op: 'waitAnim', who: { kind: 'self' } },
+      { op: 'anim', who: { kind: 'chara', row: 4 }, id: 2, type: 0 },
+      { op: 'waitAnim', who: { kind: 'chara', row: 4 } },
+    ]);
+  });
+  test('a function without parameters can be called too, and a number goes into Script API calls and vec()', () => {
+    const s = parseStageScript(
+      'function at(x: num) { ScriptMap.SetPartyPosition(vec(x, 0, 30), 4, 1, 100) }\n' +
+        'function both() { at(10); wait(1) }\non start(1) { both() }',
+    );
+    const [call, wait] = s.events[0]!.body;
+    expect(call?.op === 'call' && call.call.args[0]).toEqual({ k: 'v', x: 10, y: 0, z: 30 });
+    expect(wait).toEqual({ op: 'wait', seconds: 1 });
+  });
+  test('the mistakes', () => {
+    const bad = (src: string): string => {
+      try {
+        parseStageScript(src);
+        return '';
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+    expect(bad('function f(a: num) { f(a) }')).toContain('自分を');
+    expect(bad('function f(a: num) { wait(a) }\non start(1) f')).toContain('イベントには割り当てられません');
+    expect(bad('function wait() {}')).toContain('組み込みの文');
+    expect(bad('function f(a: num) {}\non start(1) { f() }')).toContain('引数は 1 個');
+    expect(bad('function f(a: thing) {}')).toContain('chara');
+    expect(bad('function f(a: num, a: num) {}')).toContain('2 つ');
+    // a number where a character is wanted, and the other way
+    expect(bad('function f(a: num) { a.show() }')).not.toBe('');
+    expect(bad('function f(a: chara) { wait(a) }')).toContain('数');
+    // a mistake inside a library function is told at the call
+    expect(bad('on start(1) {\n  wait(1)\n  openDoor(hero)\n}')).toMatch(/^3 行目: openDoor \(ライブラリ\) の中/u);
+  });
+  test('the document keeps the parameters; a function can call another of the script', () => {
+    const doc: ScriptDoc = {
+      vars: [],
+      functions: [
+        { name: 'helper', params: 'd: chara', body: 'd.show()' },
+        { name: 'ev', body: 'helper(3)' },
+      ],
+      bindings: [{ trigger: 'talk', group: 1, row: 5, fn: 'ev' }],
+    };
+    expect(scriptDocFromSource(scriptDocSource(doc).text).functions).toEqual(doc.functions);
+    expect(scriptOfDoc(doc).events[0]!.body).toEqual([{ op: 'show', who: { kind: 'chara', row: 3 }, on: true }]);
+    expect(scriptFunctionProblem([], 'helper(3)', '', doc.functions, 'ev')).toBeNull();
+    expect(scriptFunctionProblem([], 'd.show()', 'd: chara', doc.functions, 'helper')).toBeNull();
+    expect(scriptFunctionProblem([], 'nothing(3)', '', doc.functions, 'ev')).not.toBeNull();
+  });
+  test('every library function reads when called', () => {
+    const calls: Record<string, string> = {
+      openDoor: 'openDoor(3)',
+      cameraLook: 'cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5)',
+      cameraNormal: 'cameraNormal(1.1)',
+      partyLineUp: 'partyLineUp(3750, 4150, 4)',
+      partyColumn: 'partyColumn(3750, 3030, 8)',
+    };
+    expect(SCRIPT_LIBRARY.map((f) => f.name).sort()).toEqual(Object.keys(calls).sort());
+    for (const [name, text] of Object.entries(calls)) expect([name, body(text).length > 0]).toEqual([name, true]);
+  });
+});
+
+describe('what the words do: the Script API under each, and the API descriptions', () => {
+  test('every word of the help and every method names the calls under it', () => {
+    const words = SCRIPT_WORDS.filter((x) => x.kind !== 'flow' && x.kind !== 'who' && /^[a-z]/u.test(x.word)).map(
+      (x) => x.word,
+    );
+    expect(words.filter((x) => !SCRIPT_WORD_CALLS[x])).toEqual([]);
+    expect(SCRIPT_METHOD_WORDS.map((x) => x.word).filter((x) => !SCRIPT_METHOD_CALLS[x])).toEqual([]);
+  });
+  test('every description is of a function of the table, and the hover shows it', () => {
+    const syms = new Set(SCRIPT_API_ROWS.map((r) => r[2]));
+    expect(Object.keys(SCRIPT_API_DOCS).filter((k) => !syms.has(k))).toEqual([]);
+    expect(scriptHoverInfo('ScriptCamera.', 'MoveFieldCamera')!.about).toContain('フィールド');
+    expect(scriptHoverInfo('', 'wait')!.about).toContain('中身: ScriptSystem::WaitTime');
+    expect(scriptHoverInfo('', 'cameraLook')!.about).toContain('ライブラリ');
   });
 });

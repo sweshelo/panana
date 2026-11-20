@@ -21,14 +21,17 @@ import { lanaiMaps, type LanaiMaps } from './maps';
 import { lanaiMonsterName } from './monsterBook';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
-import { apiResultLabel, lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
+import { libraryForm, SCRIPT_LIBRARY, type ScriptLibraryFunction } from './scriptLibrary';
+import { apiAbout, apiResultLabel, lineIdText, scriptFunctionProblem, type ScriptAssist } from './scriptAssist';
 import { ScriptCodeEditor } from './ScriptCodeEditor';
 import { PopupIconList } from './PopupIconList';
 import {
   docBound,
   docUnbound,
+  SCRIPT_METHOD_CALLS,
   SCRIPT_METHOD_WORDS,
   SCRIPT_SAMPLES,
+  SCRIPT_WORD_CALLS,
   SCRIPT_WORDS,
   scriptLineRefs,
   introBinding,
@@ -61,6 +64,8 @@ interface DraftFunction {
   id: number;
   was: string | null;
   name: string;
+  /** The text between the parentheses ('' for none). */
+  params: string;
   body: string;
 }
 interface Draft {
@@ -70,13 +75,25 @@ interface Draft {
 let nextId = 1;
 const draftOf = (doc: ScriptDoc | undefined): Draft => ({
   vars: (doc?.vars ?? []).map((v) => ({ ...v })),
-  functions: (doc?.functions ?? []).map((f) => ({ id: nextId++, was: f.name, name: f.name, body: f.body })),
+  functions: (doc?.functions ?? []).map((f) => ({
+    id: nextId++,
+    was: f.name,
+    name: f.name,
+    params: f.params ?? '',
+    body: f.body,
+  })),
+});
+/** A function of a draft as the document keeps it (no params key when it has none). */
+const docFunction = (f: DraftFunction): ScriptDoc['functions'][number] => ({
+  name: f.name,
+  ...(f.params.trim() ? { params: f.params.trim() } : {}),
+  body: f.body,
 });
 /** The document of a draft: the applied bindings follow their functions' new names; those of a deleted function go. */
 function docOfDraft(draft: Draft, bindings: ScriptBinding[]): ScriptDoc {
   return {
     vars: draft.vars.map((v) => ({ ...v })),
-    functions: draft.functions.map((f) => ({ name: f.name, body: f.body })),
+    functions: draft.functions.map(docFunction),
     bindings: bindings.flatMap((b) => {
       const f = draft.functions.find((x) => x.was === b.fn);
       return f ? [{ ...b, fn: f.name }] : [];
@@ -96,8 +113,8 @@ function syncedDraft(draft: Draft, was: ScriptDoc | undefined, now: ScriptDoc | 
   return changed ? { ...draft, functions } : draft;
 }
 const sameText = (a: Draft, doc: ScriptDoc | undefined): boolean =>
-  JSON.stringify([a.vars, a.functions.map((f) => [f.name, f.body])]) ===
-  JSON.stringify([doc?.vars ?? [], (doc?.functions ?? []).map((f) => [f.name, f.body])]);
+  JSON.stringify([a.vars, a.functions.map((f) => [f.name, f.params.trim(), f.body])]) ===
+  JSON.stringify([doc?.vars ?? [], (doc?.functions ?? []).map((f) => [f.name, f.params ?? '', f.body])]);
 /** A name not taken yet: stem, stem2, stem3 … */
 const freshName = (stem: string, taken: string[]): string => {
   let name = stem;
@@ -179,6 +196,8 @@ function FunctionText({
   revision,
   vars,
   name,
+  params,
+  others,
   body,
   applyError,
   onChange,
@@ -191,6 +210,9 @@ function FunctionText({
   revision: number;
   vars: ScriptDoc['vars'];
   name: string;
+  params: string;
+  /** The script's functions, which this one can call. */
+  others: ScriptDoc['functions'];
   body: string;
   /** What applying the script said of this function, shown while the text itself is not found wrong. */
   applyError: string | null;
@@ -230,7 +252,10 @@ function FunctionText({
     () => ({ vars: varNames ? varNames.split(' ') : [], lines, records, groups: battleGroups }),
     [varNames, lines, records, battleGroups],
   );
-  const problem = useMemo(() => scriptFunctionProblem(vars, body), [vars, body]);
+  const problem = useMemo(
+    () => scriptFunctionProblem(vars, body, params, others, name),
+    [vars, body, params, others, name],
+  );
   const problems = useMemo(() => (problem ? [{ ...problem, severity: 'error' as const }] : []), [problem]);
   return (
     <>
@@ -365,12 +390,46 @@ export function ScriptApiList({ expanded = false }: { expanded?: boolean }): Rea
                 title="戻り値の型 (ゲームのコードから読んだもの)"
               >{`→ ${apiResultLabel(r[5])}`}</td>
               <td className="small">{r[0] === 'ScriptPlayer' ? 'hero だけ' : ''}</td>
+              <td className="small" style={{ whiteSpace: 'pre-line' }}>
+                {apiAbout(r)}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       {shown.length === 80 && <p className="muted small">先頭の 80 個を表示しています。名前で絞り込んでください。</p>}
     </details>
+  );
+}
+
+/** The library's functions: each opens to its text, which can be copied (or put into the script, `onAdd`). */
+export function ScriptLibraryList({ onAdd }: { onAdd?: (f: ScriptLibraryFunction) => void }): ReactNode {
+  const [copied, setCopied] = useState('');
+  return (
+    <div className="script-library">
+      {SCRIPT_LIBRARY.map((f) => (
+        <details key={f.name}>
+          <summary>
+            <span className="mono">{libraryForm(f)}</span> <span className="small">{f.about}</span>
+          </summary>
+          <pre className="mono small">{f.source}</pre>
+          <div className="row">
+            <button
+              onClick={() =>
+                void navigator.clipboard.writeText(`${f.source}\n`).then(
+                  () => setCopied(f.name),
+                  () => setCopied(''),
+                )
+              }
+            >
+              コピー
+            </button>
+            {onAdd && <button onClick={() => onAdd(f)}>スクリプトに追加して改造</button>}
+            {copied === f.name && <span className="muted small">コピーしました</span>}
+          </div>
+        </details>
+      ))}
+    </div>
   );
 }
 
@@ -393,6 +452,9 @@ export function StageScriptDocs({ session, content }: { session: LanaiSession; c
             <tr key={x.form}>
               <td className="mono small">{x.form}</td>
               <td className="small">{x.about}</td>
+              <td className="mono small muted" title="中で呼ぶゲームの Script API">
+                {SCRIPT_WORD_CALLS[x.word] ?? ''}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -408,10 +470,21 @@ export function StageScriptDocs({ session, content }: { session: LanaiSession; c
             <tr key={x.form}>
               <td className="mono small">{x.form}</td>
               <td className="small">{x.about}</td>
+              <td className="mono small muted" title="中で呼ぶゲームの Script API">
+                {SCRIPT_METHOD_CALLS[x.word] ?? ''}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+      <h3>ライブラリ</h3>
+      <p className="muted small">
+        スクリプトの言葉で書いた関数です。書かなくても呼べます。同じ名前の関数をスクリプトに書くと、そちらが使われます
+        (コピーして改造できます)。関数は引数を持てます: chara はキャラ (hero / self /
+        chara(イベント)、またはイベント番号だけ)、 num
+        は数。呼んだところに中身が展開されるので、引数には決まった値を書きます。
+      </p>
+      <ScriptLibraryList />
       <p className="muted small">
         台詞は MapGroup の台詞の表の行 ID で指します。battle()
         のあとは戦闘に移り、勝つとマップの読み込みからやり直しになります。
@@ -439,6 +512,7 @@ export function LanaiStageScriptEditor({
   const [check, setCheck] = useState<StageScriptCheck | null>(null);
   const [maps, setMaps] = useState<LanaiMaps | null>(null);
   const [sample, setSample] = useState<ScriptSample | null>(null);
+  const [libraryNote, setLibraryNote] = useState('');
   useEffect(() => {
     let live = true;
     void lanaiMaps(session, content).then((m) => live && setMaps(m));
@@ -504,7 +578,7 @@ export function LanaiStageScriptEditor({
         ...draft.functions,
         ...doc.functions
           .filter((f) => !names.includes(f.name))
-          .map((f) => ({ id: nextId++, was: null, name: f.name, body: f.body })),
+          .map((f) => ({ id: nextId++, was: null, name: f.name, params: f.params ?? '', body: f.body })),
       ],
     });
     setSample(s);
@@ -515,7 +589,9 @@ export function LanaiStageScriptEditor({
     return (v.kind === 'byte' ? STAGE_BYTE_FLAGS : STAGE_BIT_FLAGS).first + before;
   };
   const groups = maps ? maps.groups.flatMap((g, k) => (g && maps.eventTable(k) ? [k] : [])) : [];
-  const appliedFns = stored?.doc.functions ?? [];
+  // a function with parameters is called by others, not given to an event
+  const appliedFns = (stored?.doc.functions ?? []).filter((f) => !f.params);
+  const others = useMemo(() => draft.functions.map(docFunction), [draft.functions]);
 
   return (
     <>
@@ -613,7 +689,15 @@ export function LanaiStageScriptEditor({
                 value={f.name}
                 onChange={(e) => setFn(f.id, { name: e.target.value })}
               />
-              <span className="mono">()</span>
+              <span className="mono">(</span>
+              <input
+                aria-label="関数の引数"
+                className="mono"
+                placeholder="引数なし (例: door: chara, sound: num)"
+                value={f.params}
+                onChange={(e) => setFn(f.id, { params: e.target.value })}
+              />
+              <span className="mono">)</span>
               <button onClick={() => setDraft({ ...draft, functions: draft.functions.filter((x) => x.id !== f.id) })}>
                 関数を削除
               </button>
@@ -626,6 +710,8 @@ export function LanaiStageScriptEditor({
               revision={revision}
               vars={draft.vars}
               name={f.name}
+              params={f.params}
+              others={others}
               body={f.body}
               applyError={error?.fn === f.name ? error.message : null}
               onChange={(body) => setFn(f.id, { body })}
@@ -651,7 +737,10 @@ export function LanaiStageScriptEditor({
           onClick={() =>
             setDraft({
               ...draft,
-              functions: [...draft.functions, { id: nextId++, was: null, name: freshName('event', names), body: '' }],
+              functions: [
+                ...draft.functions,
+                { id: nextId++, was: null, name: freshName('event', names), params: '', body: '' },
+              ],
             })
           }
         >
@@ -661,6 +750,24 @@ export function LanaiStageScriptEditor({
           <button key={s.name} onClick={() => insertSample(s)}>{`例: ${s.name}`}</button>
         ))}
       </div>
+      <details>
+        <summary className="small">ライブラリの関数をスクリプトに追加して改造する</summary>
+        <ScriptLibraryList
+          onAdd={(f) => {
+            if (names.includes(f.name)) return setLibraryNote(`「${f.name}」はもうスクリプトにあります`);
+            const fn = scriptDocFromSource(f.source).functions[0]!;
+            setDraft({
+              ...draft,
+              functions: [
+                ...draft.functions,
+                { id: nextId++, was: null, name: fn.name, params: fn.params ?? '', body: fn.body },
+              ],
+            });
+            setLibraryNote(`「${f.name}」を追加しました。反映すると、ライブラリの代わりにこちらが使われます`);
+          }}
+        />
+        {libraryNote && <p className="muted small">{libraryNote}</p>}
+      </details>
       {sample && (
         <p className="muted small">
           {`例「${sample.name}」を入れました。${sample.about} 割り当て: ${sample.give.join('、')}。`}

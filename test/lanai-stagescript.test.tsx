@@ -110,8 +110,8 @@ describe('RPG FREE! stage script: reading', () => {
       { op: 'addItem', item: 5, count: -1, show: false },
       { op: 'addGold', amount: -30 },
     ]);
-    expect(c.then).toEqual([
-      { op: 'door', row: 3, open: true, show: true },
+    // openDoor (the library's) is written out in place; the statements after it follow as they are
+    expect(c.then.slice(-4)).toEqual([
       { op: 'door', row: 4, open: false },
       { op: 'wait', seconds: 0.5 },
       { op: 'collision', row: null, on: false },
@@ -222,6 +222,13 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(text(parts)).toEqual(text('openDoor(3)'));
     // without the jingle the code is shorter
     expect(text('se(0x50); chara(3).open()').length).toBeLessThan(text('openDoor(3)').length);
+    // the library's camera and party functions (Script API calls with the arguments put in) build
+    for (const call of [
+      'cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5); cameraNormal(1.1)',
+      'partyLineUp(3750, 4150, 4); follow(1)',
+      'partyColumn(3750, 3030, 8); follow(1)',
+    ])
+      expect(text(call).length).toBeGreaterThan(text('').length);
   });
 
   test('popup keeps its icon past the statement; a line passes its window to StartMessage', async () => {

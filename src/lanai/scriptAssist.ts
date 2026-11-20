@@ -14,8 +14,16 @@ import {
   type ScriptMethod,
 } from './eventScript';
 import { POPUP_ICONS } from './popupIcons';
+import { SCRIPT_API_DOCS } from './scriptApiDocs';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
-import { SCRIPT_METHOD_WORDS, SCRIPT_WORDS } from './scriptDoc';
+import {
+  SCRIPT_METHOD_CALLS,
+  SCRIPT_METHOD_WORDS,
+  SCRIPT_WORD_CALLS,
+  SCRIPT_WORDS,
+  type ScriptWord,
+} from './scriptDoc';
+import { libraryForm, SCRIPT_LIBRARY } from './scriptLibrary';
 
 export type ScriptWordKind = 'keyword' | 'atom' | 'who' | 'builtin' | 'class';
 
@@ -23,10 +31,23 @@ const ATOMS = ['true', 'false', 'bubble', 'window'];
 const WHO = ['hero', 'self', 'chara'];
 /** Words of the language that are not in SCRIPT_WORDS under their own name. */
 const MORE_BUILTINS = ['vec'];
-const BUILTINS = new Map(SCRIPT_WORDS.filter((w) => /^[A-Za-z_]\w*$/u.test(w.word)).map((w) => [w.word, w]));
+/** The words of the help and the library's functions (the help shows those apart, with their text). */
+const BUILTINS = new Map<string, ScriptWord>([
+  ...SCRIPT_WORDS.filter((w) => /^[A-Za-z_]\w*$/u.test(w.word)).map((w): [string, ScriptWord] => [w.word, w]),
+  ...SCRIPT_LIBRARY.map((f): [string, ScriptWord] => [
+    f.name,
+    { kind: 'statement', form: libraryForm(f), word: f.name, about: `${f.about} (ライブラリの関数)` },
+  ]),
+]);
 const CLASSES = new Map<string, ScriptApiRow[]>();
 for (const r of SCRIPT_API_ROWS) CLASSES.set(r[0], [...(CLASSES.get(r[0]) ?? []), r]);
 const OWN_METHODS = new Map(SCRIPT_METHOD_WORDS.map((w) => [w.word, w]));
+/** A word's about, with the Script API functions it calls under it. */
+const withCalls = (about: string, calls: string | undefined): string =>
+  calls
+    ? `${about}
+中身: ${calls}`
+    : about;
 /** The built-in methods of a character (`chara(N).` has all, `hero.` / `self.` those that take no event). */
 const ownMethods = (chara: boolean): ScriptCompletion[] =>
   [...OWN_METHODS.values()]
@@ -96,12 +117,24 @@ const apiForm = (r: ScriptApiRow): string =>
     .filter((c) => c !== 'm')
     .map((c) => PARAM[c] ?? c)
     .join(', ')})`;
+/** What a function does (scriptApiDocs.ts), with its arguments and an example, as the editor shows it; '' if unread. */
+export function apiAbout(r: ScriptApiRow): string {
+  const d = SCRIPT_API_DOCS[r[2]];
+  if (!d) return '';
+  const params = [...r[3]].filter((c) => c !== 'm');
+  const args = (d.args ?? []).slice(0, params.length).map((a, k) => `${k + 1}. ${a}`);
+  return [
+    `${d.about}${d.settled ? '' : ' (推定)'}`,
+    ...(args.length ? [`引数: ${args.join(' / ')}`] : []),
+    ...(d.example ? [`例: ${d.example}`] : []),
+  ].join('\n');
+}
 const methods = (classes: string[]): ScriptCompletion[] =>
   classes.flatMap((c) =>
     (CLASSES.get(c) ?? []).map((r) => ({
       label: r[1],
       detail: apiForm(r).slice(r[1].length),
-      info: `${apiResultLabel(r[5])} ${c}::${r[1]}(${r[4]})`,
+      info: [`${apiResultLabel(r[5])} ${c}::${r[1]}(${r[4]})`, apiAbout(r)].filter(Boolean).join('\n'),
       apply: `${r[1]}(`,
       type: 'method' as const,
     })),
@@ -122,7 +155,10 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
     const receiver = member[1];
     const own = OWN_METHODS.get(name);
     if (own && (!receiver || receiver === 'hero' || receiver === 'self'))
-      return { signatures: [`${own.form} — Panana の組み込み`], about: own.about };
+      return {
+        signatures: [`${own.form} — Panana の組み込み`],
+        about: withCalls(own.about, SCRIPT_METHOD_CALLS[name]),
+      };
     const classes =
       receiver === 'hero'
         ? ['ScriptPlayer', 'ScriptChara']
@@ -142,7 +178,8 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
               .split(', ')
               .filter((_, index) => r[3][index] !== 'm')
               .join(', ');
-            return `戻り値: ${apiResultLabel(r[5])}。引数の型: ${types || 'なし'}`;
+            const about = apiAbout(r);
+            return `${about ? `${about}\n` : ''}戻り値: ${apiResultLabel(r[5])}。引数の型: ${types || 'なし'}`;
           }),
         ),
       ].join('\n'),
@@ -155,7 +192,7 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
     const min = max - (params.includes('[') ? 1 : 0);
     return {
       signatures: [`${builtin.form} — 引数 ${min === max ? String(max) : `${min}〜${max}`} 個`],
-      about: builtin.about,
+      about: withCalls(builtin.about, SCRIPT_WORD_CALLS[name]),
     };
   }
   if (name === 'vec') return { signatures: ['vec(x, y, z) — 引数 3 個'], about: 'Script API の位置を表す値' };
@@ -275,11 +312,21 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
   return { from: before.length - word.length, options, filter: true };
 }
 
-/** Where a function's text is wrong (the first place), or null. The line is counted in the function's text. */
-export function scriptFunctionProblem(vars: ScriptDoc['vars'], body: string): { line: number; message: string } | null {
+/**
+ * Where a function's text is wrong (the first place), or null. The line is counted in the function's text. `params`:
+ * its parameters' text; `others`: the script's other functions, which it can call (their bodies are not read).
+ */
+export function scriptFunctionProblem(
+  vars: ScriptDoc['vars'],
+  body: string,
+  params = '',
+  others: ScriptDoc['functions'] = [],
+  name = 'f',
+): { line: number; message: string } | null {
   let alone: ReturnType<typeof scriptDocSource>;
   try {
-    alone = scriptDocSource({ vars, functions: [{ name: 'f', body }], bindings: [] });
+    const rest = others.filter((o) => o.name !== name).map((o) => ({ ...o, body: '' }));
+    alone = scriptDocSource({ vars, functions: [{ name, params, body }, ...rest], bindings: [] });
   } catch {
     return null;
   }
