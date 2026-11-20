@@ -68,6 +68,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   ),
   w('statement', '名前 = 値', '変数に書く (数値は 0〜255、フラグは 0 / 1)'),
   w(
+    'statement',
+    '名前 = 変数 + 値 / 名前 += 値 / 名前++',
+    '変数を足し引きして書く (- -= -- も)。値は 0〜255 の数。範囲を越えると回り込む (byte の 255 + 1 は 0、bit は 0 と 1 が入れ替わる)',
+  ),
+  w(
     'flow',
     'if (条件) { … } else { … }',
     '条件: 名前、!名前、名前 == 値 (!= < <= > >=)、値を返す Script API (例: ScriptMenu.SystemMessageYesNo(0x80000063)、ScriptFlag.GetItemNum(0x80000005, 1) >= 2)。&& / || / ( ) で組み合わせます (&& を先に評価)',

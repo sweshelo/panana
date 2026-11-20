@@ -125,6 +125,36 @@ describe('RPG FREE! stage script: reading', () => {
     ]);
   });
 
+  test('assignments from a variable: a = a + 1, a += 1, a++ and their minus forms', () => {
+    const s = parseStageScript(`
+      var N: byte
+      var M: byte
+      var B: bit
+      on area(1, 1) { N = N + 1; N += 3; N++; N = M - 2; N -= 1; N--; N = M; B++; B = 1 }`);
+    expect(s.events[0]!.body).toEqual([
+      { op: 'set', name: 'N', value: 1, from: 'N' },
+      { op: 'set', name: 'N', value: 3, from: 'N' },
+      { op: 'set', name: 'N', value: 1, from: 'N' },
+      { op: 'set', name: 'N', value: 254, from: 'M' },
+      { op: 'set', name: 'N', value: 255, from: 'N' },
+      { op: 'set', name: 'N', value: 255, from: 'N' },
+      { op: 'set', name: 'N', value: 0, from: 'M' },
+      { op: 'set', name: 'B', value: 1, from: 'B' },
+      { op: 'set', name: 'B', value: 1 },
+    ]);
+    const err = (src: string): string => {
+      try {
+        parseStageScript(src);
+      } catch (e) {
+        return (e as ScriptError).message;
+      }
+      return '';
+    };
+    expect(err('var N: byte\non area(1, 1) { N += 256 }')).toContain('0〜255');
+    expect(err('var N: byte\non area(1, 1) { X++ }')).toContain('変数「X」はありません');
+    expect(err('var N: byte\non area(1, 1) { N = X + 1 }')).toContain('入れる値');
+  });
+
   test('conditions: variables and the values of Script API calls', () => {
     const s = parseStageScript(`
       var N: byte
@@ -247,6 +277,25 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     );
     const built = compileStageScript(base, script).cro.segments[CRO_TEXT]!.bytes!;
     expect(built.length).toBeGreaterThan(base.segments[CRO_TEXT]!.bytes!.length);
+  });
+
+  test('an assignment from a variable reads it, adds and wraps before it is written', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const words = (src: string): number[] => {
+      const t = compileStageScript(base, parseStageScript(src)).cro.segments[CRO_TEXT]!.bytes!;
+      const v = new DataView(t.buffer, t.byteOffset, t.byteLength);
+      return Array.from({ length: t.length >> 2 }, (_, k) => v.getUint32(4 * k, true));
+    };
+    const has = (src: string, line: string): boolean => words(src).includes(assembleLine(line, 0).words[0]!);
+    expect(has('var N: byte\non start(1) { N++ }', 'add r1, r0, #0x1')).toBe(true);
+    expect(has('var N: byte\non start(1) { N -= 2 }', 'add r1, r0, #0xfe')).toBe(true);
+    expect(has('var N: byte\non start(1) { N++ }', 'and r1, r1, #0xff')).toBe(true);
+    expect(has('var B: bit\non start(1) { B++ }', 'and r1, r1, #1')).toBe(true);
+    // the same code however it is written
+    expect(words('var N: byte\non start(1) { N++ }')).toEqual(words('var N: byte\non start(1) { N = N + 1 }'));
+    expect(words('var N: byte\non start(1) { N += 1 }')).toEqual(words('var N: byte\non start(1) { N = N + 1 }'));
   });
 
   test('a library function builds the same code as its text written out in the script', async () => {

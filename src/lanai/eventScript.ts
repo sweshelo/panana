@@ -11,6 +11,7 @@
 //       case 1: ScriptMenu.StartMessageAuto(0x80000061, 0, 0, 0.2)   // a Script API function, called by name
 //     }
 //     if (ScriptMenu.SystemMessageYesNo(0x80000063)) { hero.SetPopup(2, 11, 1, 1, 0, vec(0, 0, 0)); STATE = 2 }
+//     COUNT++                  // also COUNT += 2, COUNT = COUNT - 1, COUNT = STATE + 1 (wrapping at the variable's width)
 //   }
 //   on talk(1, 5) greet        // … of the character of EventObject row 5 of MapGroup 1
 //   on area(1, 1) { ScriptMap.EnableEventCollision(selfRow, 0) }   // written in place: entering the range of row 1
@@ -79,7 +80,11 @@ export type ScriptCond = ScriptComparison | { op: 'and' | 'or'; left: ScriptCond
 export type ScriptNode =
   | { op: 'if'; cond: ScriptCond; then: ScriptNode[]; else: ScriptNode[] }
   | { op: 'switch'; value: ScriptValue; cases: { value: number; body: ScriptNode[] }[]; default: ScriptNode[] | null }
-  | { op: 'set'; name: string; value: number }
+  /**
+   * `name = value`; with `from`, `name = from + value` (`a = a + 1`, `a += 1`, `a++`): `value` is then what is added,
+   * 0〜255, and the sum wraps as the variable does (a byte 255 + 1 = 0, a bit 1 + 1 = 0).
+   */
+  | { op: 'set'; name: string; value: number; from?: string }
   | { op: 'call'; call: ScriptCall }
   /** The shipped boss's vanishing effect at a monster's shadow (by its size), kept by the event (vanishEffect). */
   | { op: 'vanishEffect'; who: ScriptWho }
@@ -749,10 +754,38 @@ export function parseStageScript(src: string): StageScript {
       case 'vanishEffect':
         return { op: 'vanishEffect', who: call(t.s, who)[0] };
     }
-    if (eat('=')) {
+    // `a = 1`, `a = b + 1`, `a += 1`, `a++` (the two signs of ++ / -- / += / -= written together)
+    const glued = (sign: string, after: string): boolean =>
+      is(sign) && ts[i + 1]?.t === 'p' && ts[i + 1]!.s === after && ts[i + 1]!.pos === peek().pos + 1;
+    const step = ['+', '-'].find((s) => glued(s, s));
+    const compound = ['+', '-'].find((s) => glued(s, '='));
+    if (step || compound || is('=')) {
       const v = vars.get(t.s);
       if (!v) return fail(`変数「${t.s}」はありません`, t);
-      return { op: 'set', name: t.s, value: int('入れる値', 0, v.kind === 'bit' ? 1 : 255) };
+      const mask = v.kind === 'bit' ? 1 : 0xff;
+      const relative = (from: string, sign: string, by: number): ScriptNode => ({
+        op: 'set',
+        name: t.s,
+        value: (sign === '-' ? -by : by) & mask,
+        from,
+      });
+      if (step) {
+        i += 2;
+        return relative(t.s, step, 1);
+      }
+      if (compound) {
+        i += 2;
+        return relative(t.s, compound, int('足し引きする値', 0, 255));
+      }
+      next();
+      const src = peek();
+      if (src.t === 'id' && vars.has(src.s)) {
+        next();
+        if (!is('+') && !is('-')) return relative(src.s, '+', 0);
+        const sign = next().s;
+        return relative(src.s, sign, int('足し引きする値', 0, 255));
+      }
+      return { op: 'set', name: t.s, value: int('入れる値', 0, mask) };
     }
     return fail(
       is('(')
@@ -1633,8 +1666,12 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
       }
       case 'set': {
         const x = c.vars.get(n.name)!;
+        if (n.from !== undefined) {
+          // r0 = the variable read (0〜255), r1 = it + value, wrapped to the variable's width
+          compileValue(c, { kind: 'var', name: n.from });
+          fn.op(`add r1, r0, #${hx(n.value & 0xff)}`, `and r1, r1, #${x.kind === 'bit' ? 1 : '0xff'}`);
+        } else fn.load('r1', n.value & 0xff);
         fn.load('r0', x.flag);
-        fn.load('r1', n.value & 0xff);
         fn.call(x.kind === 'byte' ? A.setByte : A.setBit);
         break;
       }
