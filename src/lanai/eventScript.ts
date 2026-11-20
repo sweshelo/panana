@@ -11,7 +11,8 @@
 //       case 1: ScriptMenu.StartMessageAuto(0x80000061, 0, 0, 0.2)   // a Script API function, called by name
 //     }
 //     if (ScriptMenu.SystemMessageYesNo(0x80000063)) { hero.SetPopup(2, 11, 1, 1, 0, vec(0, 0, 0)); STATE = 2 }
-//     COUNT++                  // also COUNT += 2, COUNT = COUNT - 1, COUNT = STATE + 1 (wrapping at the variable's width)
+//     COUNT++                  // also COUNT += 2, COUNT = STATE * 2 + 1 (read when the event runs, wrapping at 0〜255)
+//     obj(3).RotateTo(COUNT * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1)   // a byte variable is a number; a bit is a bool
 //   }
 //   on talk(1, 5) greet        // … of the character of EventObject row 5 of MapGroup 1
 //   on area(1, 1) { ScriptMap.EnableEventCollision(selfRow, 0) }   // written in place: entering the range of row 1
@@ -52,7 +53,40 @@ export type ScriptArg =
   | { k: 'c'; who: ScriptWho }
   | { k: 'p'; who: ScriptWho }
   /** selfRow: the event's own row ID, as the game keeps it in the event's object (EventScript +4). */
-  | { k: 'own' };
+  | { k: 'own' }
+  /** A number worked out when the event runs (it reads a variable): an integer, a float or a bool (0 / 1). */
+  | { k: 'x'; as: 'i' | 'f' | 'b'; e: ScriptExpr };
+/**
+ * A number of the variables, worked out when the event runs: byte variables are numbers (+ - * / and ( ) with
+ * numbers), a bit variable is true / false (alone, or `!B` where a bit is set).
+ */
+export type ScriptExpr =
+  | { k: 'n'; v: number }
+  | { k: 'var'; name: string }
+  | { k: 'neg'; e: ScriptExpr }
+  | { k: 'not'; e: ScriptExpr }
+  | { k: '+' | '-' | '*' | '/'; l: ScriptExpr; r: ScriptExpr };
+/** The variables an expression reads, as many times as they are written. */
+const exprVars = (e: ScriptExpr): string[] =>
+  e.k === 'n' ? [] : e.k === 'var' ? [e.name] : 'e' in e ? exprVars(e.e) : [...exprVars(e.l), ...exprVars(e.r)];
+/** How many registers working an expression out takes (the left side in one, the right in the next). */
+const exprDepth = (e: ScriptExpr): number =>
+  e.k === 'n' || e.k === 'var' ? 1 : 'e' in e ? exprDepth(e.e) : Math.max(exprDepth(e.l), exprDepth(e.r) + 1);
+/** An expression as it is written. */
+export function scriptExprText(e: ScriptExpr): string {
+  switch (e.k) {
+    case 'n':
+      return String(e.v);
+    case 'var':
+      return e.name;
+    case 'neg':
+      return `-${scriptExprText(e.e)}`;
+    case 'not':
+      return `!${scriptExprText(e.e)}`;
+    default:
+      return `(${scriptExprText(e.l)} ${e.k} ${scriptExprText(e.r)})`;
+  }
+}
 /** A Script API function called by its name: `ScriptSound.Play(0x84, 0)`, `hero.SetVisible(0)`. */
 export interface ScriptCall {
   /** "Class::Name" as told in messages, and the symbol of lanai.crs. */
@@ -80,11 +114,13 @@ export type ScriptCond = ScriptComparison | { op: 'and' | 'or'; left: ScriptCond
 export type ScriptNode =
   | { op: 'if'; cond: ScriptCond; then: ScriptNode[]; else: ScriptNode[] }
   | { op: 'switch'; value: ScriptValue; cases: { value: number; body: ScriptNode[] }[]; default: ScriptNode[] | null }
+  /** `name = value`, a number known when the script is built. */
+  | { op: 'set'; name: string; value: number }
   /**
-   * `name = value`; with `from`, `name = from + value` (`a = a + 1`, `a += 1`, `a++`): `value` is then what is added,
-   * 0〜255, and the sum wraps as the variable does (a byte 255 + 1 = 0, a bit 1 + 1 = 0).
+   * `name = expr` read when the event runs (`a = b * 2`, `a += 1`, `a++`, `B = !C`): a byte wraps (255 + 1 = 0, a
+   * value with a decimal cut toward 0), a bit is set to whether the expression is not 0.
    */
-  | { op: 'set'; name: string; value: number; from?: string }
+  | { op: 'set'; name: string; expr: ScriptExpr }
   | { op: 'call'; call: ScriptCall }
   /** The shipped boss's vanishing effect at a monster's shadow (by its size), kept by the event (vanishEffect). */
   | { op: 'vanishEffect'; who: ScriptWho }
@@ -260,13 +296,30 @@ for (const r of SCRIPT_API_ROWS) {
   if (!MEMBER_CLASSES.has(r[0])) API_CLASSES.add(r[0]);
 }
 
+/** A Script API function's parameters: their letters (i f v m c p) and whether each is a bool. */
+const paramsOf = (r: ScriptApiRow): { k: string; bool: boolean }[] => {
+  const types = r[4].split(',').map((s) => s.trim());
+  return [...r[3]].map((k, j) => ({ k, bool: types[j] === 'bool' }));
+};
+/** An argument passed in a float register (s0 on). */
+const isFloatArg = (a: ScriptArg): boolean => a.k === 'f' || (a.k === 'x' && a.as === 'f');
+
 /** A parameter of a function: an object (hero / self / obj(N), or N alone) or a number. */
 export interface ScriptParam {
   name: string;
   kind: 'obj' | 'num';
 }
 /** What a parameter stands for where the function is written out. */
-type ScriptBound = { kind: 'obj'; who: ScriptWho } | { kind: 'num'; v: number };
+type ScriptBound =
+  | { kind: 'obj'; who: ScriptWho }
+  | { kind: 'num'; v: number }
+  /** A number given a variable: read when the event runs (`bit`: the bit variable it is, as true / false). */
+  | { kind: 'expr'; e: ScriptExpr; whole: boolean; bit: string | null };
+/** At most this many variables in one expression, and this deep (the registers it is worked out in). */
+const EXPR_VARS = 8;
+const EXPR_DEPTH = 6;
+/** At most this many Script API arguments read from variables in one call. */
+const EXPR_ARGS = 8;
 /** What a function's body is read with where it is written (its mistakes told there, before any call). */
 const PARAM_STAND_IN: Record<ScriptParam['kind'], ScriptBound> = {
   obj: { kind: 'obj', who: { kind: 'chara', row: 1 } },
@@ -316,10 +369,6 @@ export function parseStageScript(src: string): StageScript {
   let i = 0;
   /** The arguments of the function being written out where it is called (expandCall), by the names of its parameters. */
   let env = new Map<string, ScriptBound>();
-  const numParam = (t: Token): number | undefined => {
-    const b = t.t === 'id' ? env.get(t.s) : undefined;
-    return b?.kind === 'num' ? b.v : undefined;
-  };
   const objParam = (s: string): ScriptWho | undefined => {
     const b = env.get(s);
     return b?.kind === 'obj' ? b.who : undefined;
@@ -335,68 +384,109 @@ export function parseStageScript(src: string): StageScript {
     if (!eat(s)) fail(`「${s}」が要ります (「${peek().s || '終わり'}」がありました)`);
   };
   /**
-   * A number worked out when the script is built: numbers, true / false, num parameters, + - * / and ( ). `whole`: no
-   * number with a decimal point went into it and it came out whole (an integer argument of the Script API).
+   * A number: numbers, true / false, num parameters, byte variables, + - * / and ( ). `v`: the number when it is known
+   * when the script is built (no variable in it), else null and `e` is worked out when the event runs. `whole`: no
+   * number with a decimal point and no division by a variable went into it, and it came out whole (an integer argument
+   * of the Script API). `bit`: the bit variable it is (alone: a bit is true / false, not a number in a sum).
    */
-  const expr = (what: string): { v: number; whole: boolean; at: Token } => {
+  const expr = (what: string): { v: number | null; e: ScriptExpr; whole: boolean; bit: string | null; at: Token } => {
     const at = peek();
     let decimal = false;
-    const factor = (): number => {
+    let bit: { name: string; at: Token } | null = null;
+    const lit = (v: number): ScriptExpr => ({ k: 'n', v });
+    const bin = (k: '+' | '-' | '*' | '/', l: ScriptExpr, r: ScriptExpr, t: Token): ScriptExpr => {
+      if (k === '/' && r.k === 'n' && r.v === 0) fail('0 では割れません', t);
+      if (l.k === 'n' && r.k === 'n')
+        return lit(k === '+' ? l.v + r.v : k === '-' ? l.v - r.v : k === '*' ? l.v * r.v : l.v / r.v);
+      if (k === '/') decimal = true;
+      return { k, l, r };
+    };
+    const factor = (): ScriptExpr => {
       const t = next();
       if (t.t === 'p' && t.s === '(') {
         const v = sum();
         need(')');
         return v;
       }
-      if (t.t === 'p' && t.s === '-') return -factor();
+      if (t.t === 'p' && t.s === '-') {
+        const e = factor();
+        return e.k === 'n' ? lit(-e.v) : { k: 'neg', e };
+      }
       if (t.t === 'num') {
         if (t.s.includes('.')) decimal = true;
-        return t.n;
+        return lit(t.n);
       }
-      if (t.t === 'id' && (t.s === 'true' || t.s === 'false')) return Number(t.s === 'true');
-      const p = numParam(t);
-      if (p !== undefined) {
-        if (!Number.isInteger(p)) decimal = true;
-        return p;
+      if (t.t === 'id' && (t.s === 'true' || t.s === 'false')) return lit(Number(t.s === 'true'));
+      const b = t.t === 'id' ? env.get(t.s) : undefined;
+      if (b?.kind === 'num') {
+        if (!Number.isInteger(b.v)) decimal = true;
+        return lit(b.v);
+      }
+      if (b?.kind === 'expr') {
+        if (!b.whole) decimal = true;
+        if (b.bit) bit ??= { name: b.bit, at: t };
+        return b.e;
+      }
+      const x = t.t === 'id' && !b ? vars.get(t.s) : undefined;
+      if (x) {
+        if (x.kind === 'bit') bit ??= { name: x.name, at: t };
+        return { k: 'var', name: x.name };
       }
       if (t.t === 'id' && t.s === 'selfRow')
         fail(
           'selfRow はゲームが実行時に決める値なので、Script API の引数にそのまま書きます (計算や関数の引数には使えません)',
           t,
         );
-      return fail(`${what}は数で書きます`, t);
+      return fail(`${what}は数か byte の変数で書きます`, t);
     };
-    const product = (): number => {
+    const product = (): ScriptExpr => {
       let v = factor();
       for (;;) {
-        if (eat('*')) v *= factor();
+        if (eat('*')) v = bin('*', v, factor(), at);
         else if (is('/')) {
           const t = next();
-          const d = factor();
-          if (d === 0) fail('0 では割れません', t);
-          v /= d;
+          v = bin('/', v, factor(), t);
         } else return v;
       }
     };
-    const sum = (): number => {
+    const sum = (): ScriptExpr => {
       let v = product();
       for (;;) {
-        if (eat('+')) v += product();
-        else if (eat('-')) v -= product();
+        if (eat('+')) v = bin('+', v, product(), at);
+        else if (eat('-')) v = bin('-', v, product(), at);
         else return v;
       }
     };
-    const v = sum();
-    return { v, whole: !decimal && Number.isInteger(v), at };
+    const e = sum();
+    const b = bit as { name: string; at: Token } | null;
+    if (b && !(e.k === 'var' && e.name === b.name))
+      fail(`bit の変数「${b.name}」は true / false なので、計算には使えません (byte の変数を使います)`, b.at);
+    if (e.k !== 'n') {
+      if (new Set(exprVars(e)).size > EXPR_VARS) fail(`1 つの式に使える変数は ${EXPR_VARS} 個までです`, at);
+      if (exprDepth(e) > EXPR_DEPTH) fail('式が複雑すぎます (括弧の入れ子を減らすか、変数に分けて書きます)', at);
+    }
+    return {
+      v: e.k === 'n' ? e.v : null,
+      e,
+      whole: !decimal && (e.k !== 'n' || Number.isInteger(e.v)),
+      bit: b?.name ?? null,
+      at,
+    };
+  };
+  /** A number known when the script is built (no variable in it). */
+  const constant = (what: string): { v: number; at: Token } => {
+    const { v, at } = expr(what);
+    if (v === null) return fail(`${what}には変数を使えません (作るときに決まる数で書きます)`, at);
+    return { v, at };
   };
   const int = (what: string, min: number, max: number): number => {
-    const { v, at } = expr(what);
+    const { v, at } = constant(what);
     if (!Number.isInteger(v)) fail(`${what}は整数です (${v})`, at);
     if (v < min || v > max) fail(`${what}は ${min}〜${max} です (${v})`, at);
     return v;
   };
   const num = (what: string, min: number, max: number): number => {
-    const { v, at } = expr(what);
+    const { v, at } = constant(what);
     if (!Number.isFinite(v) || v < min || v > max) fail(`${what}は ${min}〜${max} です (${v})`, at);
     return v;
   };
@@ -476,6 +566,8 @@ export function parseStageScript(src: string): StageScript {
     if (!rows.length) fail(`${shown} という Script API はありません (またはスクリプトから呼べない引数を持ちます)`, fn);
     type Raw =
       | { kind: 'num'; v: number; whole: boolean }
+      /** Read from variables when the event runs; `bit`: a bit variable alone (true / false). */
+      | { kind: 'run'; e: ScriptExpr; whole: boolean; bit: boolean }
       | { kind: 'vec'; x: number; y: number; z: number }
       | { kind: 'who'; who: ScriptWho }
       | { kind: 'own' };
@@ -494,19 +586,29 @@ export function parseStageScript(src: string): StageScript {
         raw.push({ kind: 'own' });
       } else if (t.t === 'id' && isWhoWord(t.s)) raw.push({ kind: 'who', who: who() });
       else {
-        const e = expr(`${shown} の引数 (数・vec(x, y, z)・hero / self / obj(イベント番号)・selfRow) `);
-        raw.push({ kind: 'num', v: e.v, whole: e.whole });
+        const e = expr(`${shown} の引数 (数・変数・vec(x, y, z)・hero / self / obj(イベント番号)・selfRow) `);
+        raw.push(
+          e.v === null
+            ? { kind: 'run', e: e.e, whole: e.whole, bit: e.bit !== null }
+            : { kind: 'num', v: e.v, whole: e.whole },
+        );
       }
     }
     /** How well the arguments fit a function's parameters (0: they do not). */
     const fit = (r: ScriptApiRow): number => {
-      const params = [...r[3]].filter((k) => k !== 'm');
+      const params = paramsOf(r).filter((p) => p.k !== 'm');
       if (params.length !== raw.length) return 0;
       let score = 1;
       for (let k = 0; k < raw.length; k++) {
         const a = raw[k]!,
-          want = params[k]!;
-        if (a.kind === 'num' && want === 'i' && a.whole) score += 2;
+          want = params[k]!.k;
+        if (a.kind === 'run') {
+          // a bit variable is true / false: a bool parameter's alone
+          if (a.bit && (want !== 'i' || !params[k]!.bool)) return 0;
+          if (want === 'i' && a.whole) score += 2;
+          else if (want === 'f' && !a.bit) score += a.whole ? 1 : 2;
+          else return 0;
+        } else if (a.kind === 'num' && want === 'i' && a.whole) score += 2;
         else if (a.kind === 'num' && want === 'f') score += a.whole ? 1 : 2;
         else if (a.kind === 'own' && want === 'i') score += 2;
         else if (a.kind === 'vec' && want === 'v') score += 2;
@@ -518,6 +620,8 @@ export function parseStageScript(src: string): StageScript {
     };
     const fits = rows.map((r) => ({ r, score: fit(r) })).filter((x) => x.score > 0);
     const forms = rows.map((r) => `${r[0]}::${r[1]}(${r[4]})`).join(' / ');
+    if (!fits.length && raw.some((a) => a.kind === 'run' && a.bit))
+      fail(`bit の変数は true / false なので、bool の引数にだけ渡せます: ${forms}`, at);
     if (!fits.length) fail(`${shown} の引数が合いません: ${forms} (ScriptMessageParam は書きません)`, at);
     const best = Math.max(...fits.map((x) => x.score));
     let chosen = fits.filter((x) => x.score === best);
@@ -527,9 +631,10 @@ export function parseStageScript(src: string): StageScript {
     if (chosen.length > 1) fail(`${shown} のどれを呼ぶのか決まりません: ${forms}`, at);
     const r = chosen[0]!.r;
     let k = 0;
-    const args: ScriptArg[] = [...r[3]].map((want): ScriptArg => {
+    const args: ScriptArg[] = paramsOf(r).map(({ k: want, bool }): ScriptArg => {
       if (want === 'm') return { k: 'm' };
       const a = raw[k++]!;
+      if (a.kind === 'run') return { k: 'x', as: want === 'f' ? 'f' : bool ? 'b' : 'i', e: a.e };
       if (a.kind === 'vec') return { k: 'v', x: a.x, y: a.y, z: a.z };
       if (a.kind === 'who') return { k: want as 'c' | 'p', who: a.who };
       if (a.kind === 'own') return { k: 'own' };
@@ -538,9 +643,17 @@ export function parseStageScript(src: string): StageScript {
       return { k: want as 'i' | 'f', v: a.v };
     });
     const count = (w: string): number => args.filter((a) => a.k === w).length;
-    const words = (self ? 1 : 0) + args.filter((a) => a.k !== 'f').length;
-    if (count('v') > 2 || count('m') > 2 || count('c') > 1 || count('p') > 2 || words > 8 || count('f') > 8)
+    const words = (self ? 1 : 0) + args.filter((a) => !isFloatArg(a)).length;
+    if (
+      count('v') > 2 ||
+      count('m') > 2 ||
+      count('c') > 1 ||
+      count('p') > 2 ||
+      words > 8 ||
+      args.filter(isFloatArg).length > 8
+    )
       fail(`${shown} は引数が多く、スクリプトからは呼べません`, at);
+    if (count('x') > EXPR_ARGS) fail(`変数を使う引数は 1 つの呼び出しに ${EXPR_ARGS} 個までです`, at);
     return {
       name: `${r[0]}::${r[1]}`,
       sym: r[2],
@@ -671,7 +784,14 @@ export function parseStageScript(src: string): StageScript {
         const w = who();
         if (w.kind !== 'chara') fail(`${what}は数か obj(イベント番号) です`, t);
         bound.set(p.name, { kind: 'num', v: (w as { row: number }).row });
-      } else bound.set(p.name, { kind: 'num', v: num(what, -0x80000000, 0xffffffff) });
+      } else {
+        // a number, or one read from variables when the event runs
+        const e = expr(what);
+        if (e.v === null) bound.set(p.name, { kind: 'expr', e: e.e, whole: e.whole, bit: e.bit });
+        else if (!Number.isFinite(e.v) || e.v < -0x80000000 || e.v > 0xffffffff)
+          fail(`${what}は ${-0x80000000}〜${0xffffffff} です (${e.v})`, e.at);
+        else bound.set(p.name, { kind: 'num', v: e.v });
+      }
     });
     if (!eat(')')) count();
     if (calling.includes(d.name)) fail(`関数「${d.name}」は自分を (ほかの関数を通しても) 呼べません`, at);
@@ -754,38 +874,47 @@ export function parseStageScript(src: string): StageScript {
       case 'vanishEffect':
         return { op: 'vanishEffect', who: call(t.s, who)[0] };
     }
-    // `a = 1`, `a = b + 1`, `a += 1`, `a++` (the two signs of ++ / -- / += / -= written together)
+    // `a = 1`, `a = b * 2 + 1`, `a += 1`, `a++` (the two signs of ++ / -- / += / -= written together); a bit is
+    // true / false: `B = true`, `B = C`, `B = !C`
     const glued = (sign: string, after: string): boolean =>
       is(sign) && ts[i + 1]?.t === 'p' && ts[i + 1]!.s === after && ts[i + 1]!.pos === peek().pos + 1;
-    const step = ['+', '-'].find((s) => glued(s, s));
-    const compound = ['+', '-'].find((s) => glued(s, '='));
+    const step = ['+', '-'].find((s) => glued(s, s)) as '+' | '-' | undefined;
+    const compound = ['+', '-'].find((s) => glued(s, '=')) as '+' | '-' | undefined;
     if (step || compound || is('=')) {
       const v = vars.get(t.s);
       if (!v) return fail(`変数「${t.s}」はありません`, t);
-      const mask = v.kind === 'bit' ? 1 : 0xff;
-      const relative = (from: string, sign: string, by: number): ScriptNode => ({
-        op: 'set',
-        name: t.s,
-        value: (sign === '-' ? -by : by) & mask,
-        from,
-      });
+      const self: ScriptExpr = { k: 'var', name: t.s };
+      if (v.kind === 'bit') {
+        if (step || compound)
+          fail(`「${t.s}」は bit (true / false) の変数なので足し引きできません (切り替えは ${t.s} = !${t.s})`, t);
+        next();
+        const not = eat('!');
+        const r = expr('bit に入れる値');
+        if (r.v !== null) {
+          if (r.v !== 0 && r.v !== 1) fail('bit に入れる値は true / false です', r.at);
+          return { op: 'set', name: t.s, value: not ? 1 - r.v : r.v };
+        }
+        if (r.bit === null) fail('bit には true / false か、bit の変数 (!変数 も) を入れます', r.at);
+        return { op: 'set', name: t.s, expr: not ? { k: 'not', e: r.e } : r.e };
+      }
+      const byteValue = (what: string): ReturnType<typeof expr> => {
+        const r = expr(what);
+        if (r.bit !== null) fail(`bit の変数「${r.bit}」は true / false なので、byte には入れられません`, r.at);
+        return r;
+      };
       if (step) {
         i += 2;
-        return relative(t.s, step, 1);
+        return { op: 'set', name: t.s, expr: { k: step, l: self, r: { k: 'n', v: 1 } } };
       }
       if (compound) {
         i += 2;
-        return relative(t.s, compound, int('足し引きする値', 0, 255));
+        return { op: 'set', name: t.s, expr: { k: compound, l: self, r: byteValue('足し引きする値').e } };
       }
       next();
-      const src = peek();
-      if (src.t === 'id' && vars.has(src.s)) {
-        next();
-        if (!is('+') && !is('-')) return relative(src.s, '+', 0);
-        const sign = next().s;
-        return relative(src.s, sign, int('足し引きする値', 0, 255));
-      }
-      return { op: 'set', name: t.s, value: int('入れる値', 0, mask) };
+      const r = byteValue('入れる値');
+      if (r.v === null) return { op: 'set', name: t.s, expr: r.e };
+      if (!Number.isInteger(r.v) || r.v < 0 || r.v > 0xff) fail(`入れる値は 0〜255 の整数です (${r.v})`, r.at);
+      return { op: 'set', name: t.s, value: r.v };
     }
     return fail(
       is('(')
@@ -1417,6 +1546,11 @@ function assembleAll(lines: string[], base: number): { words: number[]; labels: 
 /** ScriptChara +0xB: the popup kind it showed (0xFF: none; see the popup statement). */
 const POPUP_KIND = 0xb;
 const FRAME = { size: 0xb0, smpA: 0x10, smpB: 0x18, obj: 0x20, obj2: 0x70, vec: 0x88, vec2: 0x98, tmp: 0xa8 } as const;
+/**
+ * Above the frame of the event (FRAME, or INTRO_FRAME for an intro): the values of the variables an expression reads
+ * (EXPR_VARS words), then the Script API arguments worked out from them (EXPR_ARGS words).
+ */
+const SLOTS_SIZE = 4 * (EXPR_VARS + EXPR_ARGS);
 
 const BRANCH_IF_NOT: Record<ScriptCmp, string> = {
   '==': 'bne',
@@ -1437,6 +1571,8 @@ interface Ctx {
   exit: string;
   breakTo: string | null;
   effectAt: number | null;
+  /** Where the expression slots are in the frame (SLOTS_SIZE). */
+  slots: number;
 }
 
 /** sN = value: from s16 / s17 when it is 0 / 1, else through `tmp` (set the integer arguments after it). */
@@ -1444,6 +1580,98 @@ function fmov(fn: Fn, s: string, value: number, tmp = 'r3'): void {
   if (value === 0) fn.op(`vmov.f32 ${s}, s16`);
   else if (value === 1) fn.op(`vmov.f32 ${s}, s17`);
   else fn.op(`ldr ${tmp}, ${fn.lit({ kind: 'value', value: fbits(value) })}`, `vmov ${s}, ${tmp}`);
+}
+
+/** The variables an expression reads, each read once into the frame's slots: their offsets by name. */
+function readVars(c: Ctx, e: ScriptExpr): Map<string, number> {
+  const at = new Map<string, number>();
+  for (const name of new Set(exprVars(e))) {
+    compileValue(c, { kind: 'var', name });
+    at.set(name, c.slots + 4 * at.size);
+    c.fn.op(`str r0, [sp, #${hx(at.get(name)!)}]`);
+  }
+  return at;
+}
+/** Whether an expression is worked out in integers: no number with a decimal point and no division. */
+const intExpr = (e: ScriptExpr): boolean =>
+  e.k === 'n'
+    ? Number.isInteger(e.v)
+    : e.k === 'var'
+      ? true
+      : 'e' in e
+        ? intExpr(e.e)
+        : e.k !== '/' && intExpr(e.l) && intExpr(e.r);
+const INT_REGS = ['r0', 'r1', 'r2', 'r3', 'ip', 'lr'] as const;
+/** s0 = the expression as a float (the variables read, s0〜s5 used). */
+function compileFloat(c: Ctx, e: ScriptExpr): void {
+  const { fn } = c;
+  const at = readVars(c, e);
+  const gen = (e: ScriptExpr, d: number): void => {
+    const s = `s${d}`;
+    switch (e.k) {
+      case 'n':
+        fmov(fn, s, e.v, 'r0');
+        return;
+      case 'var':
+        fn.op(`vldr ${s}, [sp, #${hx(at.get(e.name)!)}]`, `vcvt.f32.s32 ${s}, ${s}`);
+        return;
+      case 'neg':
+        gen(e.e, d);
+        fn.op(`vneg.f32 ${s}, ${s}`);
+        return;
+      case 'not':
+        // only of a bit (never in a sum): 1.0 - x
+        gen(e.e, d);
+        fn.op(`vsub.f32 ${s}, s17, ${s}`);
+        return;
+      default: {
+        gen(e.l, d);
+        gen(e.r, d + 1);
+        const op = { '+': 'vadd', '-': 'vsub', '*': 'vmul', '/': 'vdiv' }[e.k];
+        fn.op(`${op}.f32 ${s}, ${s}, s${d + 1}`);
+      }
+    }
+  };
+  gen(e, 0);
+}
+/**
+ * r0 = the expression as an integer: worked out in integers (r0, r1, r2, r3, ip, lr), or as a float and cut toward 0
+ * when it has a decimal or a division.
+ */
+function compileInt(c: Ctx, e: ScriptExpr): void {
+  const { fn } = c;
+  if (!intExpr(e)) {
+    compileFloat(c, e);
+    fn.op('vcvt.s32.f32 s0, s0', 'vmov r0, s0');
+    return;
+  }
+  const at = readVars(c, e);
+  const gen = (e: ScriptExpr, d: number): void => {
+    const r = INT_REGS[d]!;
+    switch (e.k) {
+      case 'n':
+        fn.load(r, e.v);
+        return;
+      case 'var':
+        fn.op(`ldr ${r}, [sp, #${hx(at.get(e.name)!)}]`);
+        return;
+      case 'neg':
+        gen(e.e, d);
+        fn.op(`rsb ${r}, ${r}, #0`);
+        return;
+      case 'not':
+        gen(e.e, d);
+        fn.op(`cmp ${r}, #0`, `moveq ${r}, #1`, `movne ${r}, #0`);
+        return;
+      default: {
+        gen(e.l, d);
+        gen(e.r, d + 1);
+        const r2 = INT_REGS[d + 1]!;
+        fn.op(e.k === '*' ? `mul ${r}, ${r}, ${r2}` : `${e.k === '+' ? 'add' : 'sub'} ${r}, ${r}, ${r2}`);
+      }
+    }
+  };
+  gen(e, 0);
 }
 
 /** r0 = the ChrObject* of the character. */
@@ -1514,7 +1742,22 @@ function compileCall(c: Ctx, call: ScriptCall): void {
   }
   const other = call.args.find((a) => a.k === 'c');
   const emit = (self: (() => void) | null, chara: (() => void) | null): void => {
-    // the characters passed as ChrObject* first: finding them calls the game
+    // the arguments read from variables first, kept in the frame's slots (reading them calls the game)
+    const runAt = new Map<ScriptArg, number>();
+    for (const a of call.args)
+      if (a.k === 'x') {
+        const at = c.slots + 4 * (EXPR_VARS + runAt.size);
+        runAt.set(a, at);
+        if (a.as === 'f') {
+          compileFloat(c, a.e);
+          fn.op(`vstr s0, [sp, #${hx(at)}]`);
+        } else {
+          compileInt(c, a.e);
+          if (a.as === 'b') fn.op('cmp r0, #0', 'movne r0, #1');
+          fn.op(`str r0, [sp, #${hx(at)}]`);
+        }
+      }
+    // the characters passed as ChrObject* next: finding them calls the game
     const chrAt = new Map<ScriptArg, number>();
     for (const a of call.args)
       if (a.k === 'p') {
@@ -1547,19 +1790,24 @@ function compileCall(c: Ctx, call: ScriptCall): void {
       else if (a.k === 'v' || a.k === 'm') fn.op(`add ${rd}, sp, #${hx(refAt.get(a)!)}`);
       else if (a.k === 'p') fn.op(`ldr ${rd}, [sp, #${hx(chrAt.get(a)!)}]`);
       else if (a.k === 'own') fn.op(`ldr ${rd}, [r4, #4]`); // the event's ID (EventScript +4)
+      else if (a.k === 'x') fn.op(`ldr ${rd}, [sp, #${hx(runAt.get(a)!)}]`);
       else if (a.k === 'c') {
         chara!();
         if (rd !== 'r0') fn.op(`mov ${rd}, r0`);
       }
     };
-    const words: (ScriptArg | null)[] = [...(self ? [null] : []), ...call.args.filter((a) => a.k !== 'f')];
+    const words: (ScriptArg | null)[] = [...(self ? [null] : []), ...call.args.filter((a) => !isFloatArg(a))];
     // the words beyond r3 on the stack, then the floats (through r3), then the registers: the character's object
     // first (it is found through r0), r0 last
     words.slice(4).forEach((a, k) => {
       word('r0', a!);
       fn.op(`str r0, [sp, #${hx(4 * k)}]`);
     });
-    call.args.filter((a) => a.k === 'f').forEach((a, k) => fmov(fn, `s${k}`, (a as { v: number }).v));
+    call.args
+      .filter(isFloatArg)
+      .forEach((a, k) =>
+        a.k === 'x' ? fn.op(`vldr s${k}, [sp, #${hx(runAt.get(a)!)}]`) : fmov(fn, `s${k}`, (a as { v: number }).v),
+      );
     const regs = words.slice(0, 4);
     const isChara = (k: number): number => Number(regs[k]?.k === 'c');
     const order = regs.map((_, k) => k).sort((x, y) => isChara(y) - isChara(x) || y - x);
@@ -1666,10 +1914,12 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
       }
       case 'set': {
         const x = c.vars.get(n.name)!;
-        if (n.from !== undefined) {
-          // r0 = the variable read (0〜255), r1 = it + value, wrapped to the variable's width
-          compileValue(c, { kind: 'var', name: n.from });
-          fn.op(`add r1, r0, #${hx(n.value & 0xff)}`, `and r1, r1, #${x.kind === 'bit' ? 1 : '0xff'}`);
+        if ('expr' in n) {
+          // worked out when the event runs: a byte wraps to 0〜255, a bit is whether it is not 0
+          compileInt(c, n.expr);
+          if (x.kind === 'bit') fn.op('cmp r0, #0', 'movne r0, #1');
+          else fn.op('and r0, r0, #0xff');
+          fn.op('mov r1, r0');
         } else fn.load('r1', n.value & 0xff);
         fn.load('r0', x.flag);
         fn.call(x.kind === 'byte' ? A.setByte : A.setBit);
@@ -2156,7 +2406,8 @@ export function compileStageScript(
     const x = new Fn(g, `${e.cls}_exec`);
     const exit = g.uniq(`${e.cls}_exit`);
     const camera = usesCamera(e.body);
-    const frame = e.intro ? INTRO_FRAME.size : FRAME.size;
+    const slots = e.intro ? INTRO_FRAME.size : FRAME.size;
+    const frame = slots + SLOTS_SIZE;
     x.op(
       'push {r4, r5, r6, r7, r8, lr}',
       'vpush {d8, d9}',
@@ -2196,7 +2447,16 @@ export function compileStageScript(
       x.call(A.fadeIn);
     } else if (e.intro) introBefore(x, g, e.cls, e.intro);
     compileNodes(
-      { fn: x, g, trigger: e.trigger, vars, exit, breakTo: null, effectAt: e.effect ? NEW_SIZE[e.shape] : null },
+      {
+        fn: x,
+        g,
+        trigger: e.trigger,
+        vars,
+        exit,
+        breakTo: null,
+        effectAt: e.effect ? NEW_SIZE[e.shape] : null,
+        slots,
+      },
       e.body,
     );
     x.at(exit);

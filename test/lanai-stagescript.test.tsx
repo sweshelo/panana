@@ -20,6 +20,8 @@ import {
   scriptDocFromSource,
   scriptDocSource,
   SCRIPT_API,
+  type ScriptArg,
+  type ScriptNode,
   ScriptError,
   SLOT_AREA,
   SLOT_LEAVE,
@@ -125,21 +127,28 @@ describe('RPG FREE! stage script: reading', () => {
     ]);
   });
 
-  test('assignments from a variable: a = a + 1, a += 1, a++ and their minus forms', () => {
+  test('assignments read when the event runs: a = a + 1, a += 1, a++, b = !c', () => {
     const s = parseStageScript(`
       var N: byte
       var M: byte
       var B: bit
-      on area(1, 1) { N = N + 1; N += 3; N++; N = M - 2; N -= 1; N--; N = M; B++; B = 1 }`);
+      var C: bit
+      on area(1, 1) { N = N + 1; N += 3; N++; N = M * 2 - 1; N -= M; N--; N = M; N = 7; B = C; B = !C; B = true }`);
+    const N = { k: 'var', name: 'N' } as const,
+      M = { k: 'var', name: 'M' } as const,
+      C = { k: 'var', name: 'C' } as const;
+    const one = { k: 'n', v: 1 } as const;
     expect(s.events[0]!.body).toEqual([
-      { op: 'set', name: 'N', value: 1, from: 'N' },
-      { op: 'set', name: 'N', value: 3, from: 'N' },
-      { op: 'set', name: 'N', value: 1, from: 'N' },
-      { op: 'set', name: 'N', value: 254, from: 'M' },
-      { op: 'set', name: 'N', value: 255, from: 'N' },
-      { op: 'set', name: 'N', value: 255, from: 'N' },
-      { op: 'set', name: 'N', value: 0, from: 'M' },
-      { op: 'set', name: 'B', value: 1, from: 'B' },
+      { op: 'set', name: 'N', expr: { k: '+', l: N, r: one } },
+      { op: 'set', name: 'N', expr: { k: '+', l: N, r: { k: 'n', v: 3 } } },
+      { op: 'set', name: 'N', expr: { k: '+', l: N, r: one } },
+      { op: 'set', name: 'N', expr: { k: '-', l: { k: '*', l: M, r: { k: 'n', v: 2 } }, r: one } },
+      { op: 'set', name: 'N', expr: { k: '-', l: N, r: M } },
+      { op: 'set', name: 'N', expr: { k: '-', l: N, r: one } },
+      { op: 'set', name: 'N', expr: M },
+      { op: 'set', name: 'N', value: 7 },
+      { op: 'set', name: 'B', expr: C },
+      { op: 'set', name: 'B', expr: { k: 'not', e: C } },
       { op: 'set', name: 'B', value: 1 },
     ]);
     const err = (src: string): string => {
@@ -150,9 +159,50 @@ describe('RPG FREE! stage script: reading', () => {
       }
       return '';
     };
-    expect(err('var N: byte\non area(1, 1) { N += 256 }')).toContain('0〜255');
-    expect(err('var N: byte\non area(1, 1) { X++ }')).toContain('変数「X」はありません');
-    expect(err('var N: byte\non area(1, 1) { N = X + 1 }')).toContain('入れる値');
+    const vars = 'var N: byte\nvar B: bit\n';
+    expect(err(`${vars}on area(1, 1) { N = 256 }`)).toContain('0〜255');
+    expect(err(`${vars}on area(1, 1) { X++ }`)).toContain('変数「X」はありません');
+    expect(err(`${vars}on area(1, 1) { N = X + 1 }`)).toContain('数か byte の変数');
+    // a bit is true / false: not a number
+    expect(err(`${vars}on area(1, 1) { B++ }`)).toContain('B = !B');
+    expect(err(`${vars}on area(1, 1) { N = B }`)).toContain('true / false');
+    expect(err(`${vars}on area(1, 1) { N = N + B }`)).toContain('計算には使えません');
+    expect(err(`${vars}on area(1, 1) { B = N }`)).toContain('bit には true / false か');
+  });
+
+  test('a byte variable is a number of a Script API call, a bit one is a bool', () => {
+    const s = parseStageScript(`
+      var X: byte
+      var B: bit
+      function face(d: num) { obj(26).RotateTo(d * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1) }
+      on area(1, 1) {
+        obj(26).RotateTo(X * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1)
+        face(X + 1)
+        ScriptSound.Play(0x70 + X, 0)
+        hero.SetVisible(B)
+      }`);
+    const [rotate, viaFn, play, visible] = s.events[0]!.body;
+    const args = (n: ScriptNode | undefined): ScriptArg[] => (n?.op === 'call' ? n.call.args : []);
+    expect(args(rotate)[0]).toMatchObject({ k: 'x', as: 'f' });
+    expect(args(viaFn)[0]).toMatchObject({ k: 'x', as: 'f' });
+    expect(args(play)[0]).toEqual({
+      k: 'x',
+      as: 'i',
+      e: { k: '+', l: { k: 'n', v: 0x70 }, r: { k: 'var', name: 'X' } },
+    });
+    expect(args(visible)[0]).toEqual({ k: 'x', as: 'b', e: { k: 'var', name: 'B' } });
+    const err = (body: string): string => {
+      try {
+        parseStageScript(`var X: byte\nvar B: bit\non area(1, 1) { ${body} }`);
+      } catch (e) {
+        return (e as ScriptError).message;
+      }
+      return '';
+    };
+    // a bit only where a bool is taken; a variable not where the number is needed when the script is built
+    expect(err('ScriptSound.Play(B, 0)')).toContain('bool の引数にだけ');
+    expect(err('obj(X).SetVisible(1)')).toContain('変数を使えません');
+    expect(err('obj(3).RotateTo(vec(X, 0, 0), 0.25, 0, 0, 0, 1)')).toContain('変数を使えません');
   });
 
   test('conditions: variables and the values of Script API calls', () => {
@@ -232,7 +282,7 @@ describe('RPG FREE! stage script: reading', () => {
     expect(err('on start(1) { ScriptMap.EnableEventCollision(selfRow, 0) }')).toContain('selfRow');
     expect(err('on area(1, 1) { self.SetVisible(0) }')).toContain('obj(イベント番号) で指してください');
     expect(err('on talk(1, 5) { break }')).toContain('switch の中でだけ');
-    expect(err('var A: bit\non area(1, 1) { A = 2 }')).toContain('0〜1');
+    expect(err('var A: bit\non area(1, 1) { A = 2 }')).toContain('true / false');
     expect(err('on talk(1, 5) {}\non area(1, 5) {}')).toContain('もうイベントが割り当てられています');
     expect(err('on talk(1, 5) { talk(1)')).toContain('「}」が足りません');
     expect(err('on talk(1, 5) { fight(1) }')).toContain('関数「fight」はありません');
@@ -279,23 +329,36 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(built.length).toBeGreaterThan(base.segments[CRO_TEXT]!.bytes!.length);
   });
 
-  test('an assignment from a variable reads it, adds and wraps before it is written', async () => {
+  test('expressions of variables: read when the event runs, worked out and passed', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
     const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
     const words = (src: string): number[] => {
-      const t = compileStageScript(base, parseStageScript(src)).cro.segments[CRO_TEXT]!.bytes!;
+      const intro = { map: 1, flag: STAGE_BIT_FLAGS.first, gate: null };
+      const t = compileStageScript(base, parseStageScript(src), [], { 1: intro }).cro.segments[CRO_TEXT]!.bytes!;
       const v = new DataView(t.buffer, t.byteOffset, t.byteLength);
       return Array.from({ length: t.length >> 2 }, (_, k) => v.getUint32(4 * k, true));
     };
-    const has = (src: string, line: string): boolean => words(src).includes(assembleLine(line, 0).words[0]!);
-    expect(has('var N: byte\non start(1) { N++ }', 'add r1, r0, #0x1')).toBe(true);
-    expect(has('var N: byte\non start(1) { N -= 2 }', 'add r1, r0, #0xfe')).toBe(true);
-    expect(has('var N: byte\non start(1) { N++ }', 'and r1, r1, #0xff')).toBe(true);
-    expect(has('var B: bit\non start(1) { B++ }', 'and r1, r1, #1')).toBe(true);
-    // the same code however it is written
-    expect(words('var N: byte\non start(1) { N++ }')).toEqual(words('var N: byte\non start(1) { N = N + 1 }'));
-    expect(words('var N: byte\non start(1) { N += 1 }')).toEqual(words('var N: byte\non start(1) { N = N + 1 }'));
+    const has = (src: string, ...lines: string[]): boolean => {
+      const w = words(src);
+      return lines.every((l) => w.includes(assembleLine(l, 0).words[0]!));
+    };
+    const vars = 'var N: byte\nvar B: bit\nvar C: bit\n';
+    // the frame grows by the slots; the variable is kept at the first one (0xB0)
+    expect(has(`${vars}on start(1) { N++ }`, 'sub sp, sp, #0xf0', 'str r0, [sp, #0xb0]', 'add r0, r0, r1')).toBe(true);
+    expect(has(`${vars}on start(1) { N++ }`, 'and r0, r0, #0xff')).toBe(true);
+    expect(words(`${vars}on start(1) { N++ }`)).toEqual(words(`${vars}on start(1) { N = N + 1 }`));
+    expect(words(`${vars}on start(1) { N += 1 }`)).toEqual(words(`${vars}on start(1) { N = N + 1 }`));
+    expect(has(`${vars}on start(1) { N = N * 3 }`, 'mul r0, r0, r1')).toBe(true);
+    expect(has(`${vars}on start(1) { B = !C }`, 'moveq r0, #1', 'movne r0, #0')).toBe(true);
+    // a float argument: worked out in s0, kept in the first argument slot (0xB0 + 4 * 8), then passed in s0
+    const rotate = `${vars}on area(1, 1) { obj(26).RotateTo(N * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1) }`;
+    expect(has(rotate, 'vcvt.f32.s32 s0, s0', 'vmul.f32 s0, s0, s1', 'vdiv.f32 s0, s0, s1')).toBe(true);
+    expect(has(rotate, 'vstr s0, [sp, #0xd0]', 'vldr s0, [sp, #0xd0]')).toBe(true);
+    // an integer argument through r0
+    expect(has(`${vars}on start(1) { ScriptSound.Play(0x70 + N, 0) }`, 'ldr r0, [sp, #0xd0]')).toBe(true);
+    // the intro's frame keeps the party: the slots go above it
+    expect(has('var N: byte\non intro(1) { N++ }', 'str r0, [sp, #0x348]')).toBe(true);
   });
 
   test('a library function builds the same code as its text written out in the script', async () => {

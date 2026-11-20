@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MOUSE } from 'three';
 import type { LanaiContent } from './contents';
-import { parseStageScript, type ScriptArg, type ScriptNode, type ScriptWho } from './eventScript';
+import { parseStageScript, scriptExprText, type ScriptArg, type ScriptNode, type ScriptWho } from './eventScript';
 import { LanaiEditState } from './mapedit';
 import type { LanaiMapInfo } from './maps';
 import { LanaiMapView } from './mapview';
@@ -27,6 +27,8 @@ const argText = (a: ScriptArg): string => {
       return 'selfRow';
     case 'm':
       return '';
+    case 'x':
+      return scriptExprText(a.e);
   }
 };
 /** A statement as the log shows it: the Script API call with its arguments. */
