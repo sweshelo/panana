@@ -24,7 +24,7 @@ import {
 } from '@codemirror/language';
 import { lintKeymap, setDiagnostics, type Diagnostic } from '@codemirror/lint';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
-import { Compartment, EditorState, StateEffect, type Range } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField, type Range } from '@codemirror/state';
 import {
   Decoration,
   drawSelection,
@@ -33,9 +33,11 @@ import {
   hoverTooltip,
   keymap,
   lineNumbers,
+  showTooltip,
   ViewPlugin,
   WidgetType,
   type DecorationSet,
+  type Tooltip,
   type ViewUpdate,
 } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
@@ -45,8 +47,10 @@ import {
   scriptFoldRange,
   scriptHoverInfo,
   scriptLineMarks,
+  scriptSignatureAt,
   scriptWordKind,
   type ScriptAssist,
+  type ScriptSignatureHelp,
   type ScriptWordKind,
 } from './scriptAssist';
 
@@ -69,6 +73,8 @@ export interface ScriptEditorHandle {
   setAssist(assist: ScriptAssist): void;
   setProblems(problems: ScriptProblem[]): void;
   setReadOnly(readOnly: boolean): void;
+  /** Writes `text` in place of the selection (at the cursor), puts the cursor after it and focuses the editor. */
+  insertAtCursor(text: string): void;
   destroy(): void;
 }
 
@@ -178,6 +184,7 @@ const THEME = EditorView.theme(
     '.cm-script-hover': { padding: '6px 9px', maxWidth: '36em', whiteSpace: 'pre-line' },
     '.cm-script-hover-signature': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
     '.cm-script-hover-about': { color: 'var(--muted)', marginTop: '4px' },
+    '.cm-script-signature-active': { fontWeight: 'bold', color: 'var(--accent)', textDecoration: 'underline' },
     '.cm-panels': { backgroundColor: 'var(--panel)', color: 'var(--text)' },
     '.cm-matchingBracket': { backgroundColor: 'rgba(76, 141, 255, 0.25)', outline: 'none' },
     '.cm-script-line': { color: 'var(--muted)', paddingLeft: '1em', fontStyle: 'italic' },
@@ -211,6 +218,70 @@ class LineText extends WidgetType {
 }
 
 const assistChanged = StateEffect.define<null>();
+
+/** The help of a call's arguments, as the editor shows it: each form, the argument being written in bold. */
+function signatureDom(help: ScriptSignatureHelp): HTMLElement {
+  const dom = document.createElement('div');
+  dom.className = 'cm-script-hover cm-script-signature';
+  for (const form of help.forms) {
+    const row = document.createElement('div');
+    row.className = 'cm-script-hover-signature';
+    row.append(`${form.head}(`);
+    form.params.forEach((p, k) => {
+      if (k) row.append(', ');
+      const span = document.createElement('span');
+      span.textContent = p;
+      if (k === help.arg) span.className = 'cm-script-signature-active';
+      row.append(span);
+    });
+    row.append(')');
+    if (help.arg >= form.params.length && form.params.length) row.append(` — 引数は ${form.params.length} 個`);
+    dom.append(row);
+  }
+  const abouts = [...new Set(help.forms.map((f) => f.about).filter(Boolean))];
+  if (abouts.length) {
+    const about = document.createElement('div');
+    about.className = 'cm-script-hover-about';
+    about.textContent = abouts.join('\n');
+    dom.append(about);
+  }
+  return dom;
+}
+
+/** Escape hides the help of the arguments until the text changes. */
+const hideSignature = StateEffect.define<null>();
+interface SignatureState {
+  tooltip: Tooltip | null;
+  hidden: boolean;
+}
+const signatureTooltip = (state: EditorState, hidden: boolean): Tooltip | null => {
+  const sel = state.selection.main;
+  if (hidden || !sel.empty) return null;
+  const doc = state.doc.toString();
+  const help = scriptSignatureAt(doc.slice(0, sel.head), doc);
+  if (!help) return null;
+  return { pos: sel.head, above: true, strictSide: false, arrow: false, create: () => ({ dom: signatureDom(help) }) };
+};
+/** The help of the call whose arguments the cursor is among (VSCode's signature help). */
+const signatureField = StateField.define<SignatureState>({
+  create: (state) => ({ tooltip: signatureTooltip(state, false), hidden: false }),
+  update(value, tr) {
+    const hidden = tr.effects.some((e) => e.is(hideSignature)) || (value.hidden && !tr.docChanged);
+    if (!tr.docChanged && !tr.selection && hidden === value.hidden) return value;
+    return { tooltip: signatureTooltip(tr.state, hidden), hidden };
+  },
+  provide: (f) => showTooltip.from(f, (v) => v.tooltip),
+});
+const signatureKeymap = keymap.of([
+  {
+    key: 'Escape',
+    run: (view) => {
+      if (!view.state.field(signatureField).tooltip) return false;
+      view.dispatch({ effects: hideSignature.of(null) });
+      return true;
+    },
+  },
+]);
 
 export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOptions): ScriptEditorHandle {
   let assist = options.assist;
@@ -360,6 +431,8 @@ export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOpti
           ...searchKeymap,
           indentWithTab,
         ]),
+        signatureField,
+        signatureKeymap,
         THEME,
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false' }),
@@ -396,6 +469,10 @@ export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOpti
       view.dispatch({
         effects: readOnly.reconfigure([EditorState.readOnly.of(value), EditorView.editable.of(!value)]),
       });
+    },
+    insertAtCursor(text) {
+      view.dispatch(view.state.replaceSelection(text), { scrollIntoView: true, userEvent: 'input' });
+      view.focus();
     },
     destroy() {
       view.destroy();

@@ -180,6 +180,147 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
   return null;
 }
 
+/** One form of the function whose arguments are being written, as the help shows it. */
+export interface ScriptSignatureForm {
+  /** What comes before the parenthesis ("ScriptSound.Play", "talk"). */
+  head: string;
+  /** The parameters, each as the help names it. */
+  params: string[];
+  /** What it does (with an example when there is one). */
+  about: string;
+}
+export interface ScriptSignatureHelp {
+  /** The argument being written (0-based). */
+  arg: number;
+  forms: ScriptSignatureForm[];
+}
+
+/** Calls that are a part of an argument, not a function to help with: inside them the outer call's help stays. */
+const ARG_CALLS = ['vec', 'obj'];
+const NOT_CALLS = ['if', 'switch', 'while', 'for', 'return', 'function'];
+
+/**
+ * The call whose arguments the cursor is among: the innermost open parenthesis before it (not vec(…) / obj(…), which
+ * are a part of an argument), the name before that parenthesis, the text before the name and the argument's number.
+ * Null outside a call, in a comment, and in a function's or a block's head.
+ */
+export function scriptCallAt(before: string): { name: string; beforeName: string; arg: number } | null {
+  if (before.lastIndexOf('/*') > before.lastIndexOf('*/')) return null;
+  if (before.slice(before.lastIndexOf('\n') + 1).includes('//')) return null;
+  const code = before.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
+  let depth = 0;
+  let commas = 0;
+  for (let k = code.length - 1; k >= 0; k--) {
+    const ch = code[k];
+    if (ch === ')' || ch === ']') depth++;
+    else if (ch === '[') depth--;
+    else if (ch === ',' && depth === 0) commas++;
+    else if ((ch === '{' || ch === '}' || ch === ';') && depth === 0) return null;
+    else if (ch === '(') {
+      if (depth > 0) {
+        depth--;
+        continue;
+      }
+      const m = /([A-Za-z_]\w*)\s*$/u.exec(code.slice(0, k));
+      if (!m) return null;
+      const name = m[1]!;
+      const beforeName = before.slice(0, m.index);
+      if (ARG_CALLS.includes(name) && !/\.\s*$/u.test(beforeName)) {
+        // the outer call counts this argument as one: start over outside it
+        commas = 0;
+        continue;
+      }
+      if (NOT_CALLS.includes(name) || /\bfunction\s+$/u.test(beforeName)) return null;
+      return { name, beforeName, arg: commas };
+    }
+  }
+  return null;
+}
+
+/** The parameters of `name(a: num, b: obj)` / `name(だれに, [音])`. */
+const formParams = (form: string): string[] => {
+  const inner = form.slice(form.indexOf('(') + 1, form.lastIndexOf(')')).trim();
+  return inner ? inner.split(',').map((p) => p.trim()) : [];
+};
+
+/**
+ * The help for the arguments being written: every form of the call around the cursor (the Script API's overloads, the
+ * library's and the language's functions and the script's own, whose `function name(…)` is looked for in `source`),
+ * with the argument the cursor is in. Null outside a call or for a name that is none of them.
+ */
+export function scriptSignatureAt(before: string, source = before): ScriptSignatureHelp | null {
+  const at = scriptCallAt(before);
+  if (!at) return null;
+  const { name, beforeName, arg } = at;
+  const member = /(?:([A-Za-z_]\w*)|obj\s*\([^()\n]*\))\s*\.\s*$/u.exec(beforeName);
+  const library = SCRIPT_LIBRARY.find((f) => f.name === name);
+  const code = source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
+  const own = new RegExp(`\\bfunction\\s+${name}\\s*\\(([^)]*)\\)`, 'u').exec(code);
+  const ownForm = (rest: boolean): ScriptSignatureForm[] => {
+    if (own) {
+      const params = formParams(`(${own[1]})`);
+      return [{ head: name, params: rest ? params.slice(1) : params, about: 'スクリプトの関数' }];
+    }
+    if (library) {
+      const params = formParams(libraryForm(library));
+      return [
+        {
+          head: name,
+          params: rest ? params.slice(1) : params,
+          about: rest ? `${library.about}\n(だれに. の物が 1 つ目の引数)` : library.about,
+        },
+      ];
+    }
+    return [];
+  };
+  if (member) {
+    const receiver = member[1];
+    if (!receiver || WHO.includes(receiver)) {
+      const forms = ownForm(true);
+      if (forms.length) return { arg, forms };
+    }
+    const classes =
+      receiver === 'hero'
+        ? ['ScriptPlayer', 'ScriptChara']
+        : receiver === 'self' || !receiver
+          ? ['ScriptChara']
+          : [receiver];
+    const rows = classes.flatMap((cls) => (CLASSES.get(cls) ?? []).filter((r) => r[1] === name));
+    if (!rows.length) return null;
+    const seen = new Set<string>();
+    const forms: ScriptSignatureForm[] = [];
+    for (const r of rows) {
+      const d = SCRIPT_API_DOCS[r[2]];
+      const kinds = [...r[3]].filter((c) => c !== 'm');
+      const params = kinds.map((c, k) => {
+        const what = d?.args?.[k];
+        return what ? `${what}: ${PARAM[c] ?? c}` : (PARAM[c] ?? c);
+      });
+      const key = `${r[0]}.${r[1]}(${params.join(', ')})`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      forms.push({
+        head: `${r[0]}.${r[1]}`,
+        params,
+        about: [
+          d ? `${d.about}${d.settled ? '' : ' (推定)'}` : '',
+          `戻り値: ${apiResultLabel(r[5])}`,
+          ...(d?.example ? [`例: ${d.example}`] : []),
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      });
+    }
+    return { arg, forms };
+  }
+  const forms = ownForm(false);
+  if (forms.length) return { arg, forms };
+  const builtin = BUILTINS.get(name);
+  if (builtin?.form.startsWith(`${name}(`))
+    return { arg, forms: [{ head: name, params: formParams(builtin.form), about: builtin.about }] };
+  return null;
+}
+
 /** The functions whose first argument is an event's row (the library's and the Script API's). */
 const ROW_CALLS = [
   'obj',

@@ -7,8 +7,10 @@ import {
   scriptBattleMarks,
   scriptFoldRange,
   scriptFunctionProblem,
+  scriptCallAt,
   scriptHoverInfo,
   scriptLineMarks,
+  scriptSignatureAt,
   scriptWordKind,
   type ScriptAssist,
 } from '../src/lanai/scriptAssist';
@@ -206,4 +208,51 @@ test('folding: the block a line opens and a later line closes', () => {
   expect(scriptFoldRange(text, ...line(5))).toBeNull();
   // a brace in a comment does not open a block
   expect(scriptFoldRange('// {\ntalk(1)\n}', 0, 4)).toBeNull();
+});
+
+describe('the help of the arguments being written (signature help)', () => {
+  test('the innermost open call and the argument the cursor is in', () => {
+    expect(scriptCallAt('talk(')).toMatchObject({ name: 'talk', arg: 0 });
+    expect(scriptCallAt('cameraLook(1, 2, ')).toMatchObject({ name: 'cameraLook', arg: 2 });
+    expect(scriptCallAt('f(a, g(b, ')).toMatchObject({ name: 'g', arg: 1 });
+    expect(scriptCallAt('f(a, g(b, c), ')).toMatchObject({ name: 'f', arg: 2 });
+    expect(scriptCallAt('talk(1)')).toBeNull();
+    expect(scriptCallAt('if (')).toBeNull();
+    expect(scriptCallAt('function f(a: num, ')).toBeNull();
+    expect(scriptCallAt('// talk(')).toBeNull();
+    expect(scriptCallAt('/* talk(')).toBeNull();
+    expect(scriptCallAt('talk(1) { ')).toBeNull();
+  });
+  test('vec(…) and obj(…) are a part of the outer call argument', () => {
+    expect(scriptCallAt('ScriptCamera.MoveEyeAndTarget(vec(1, 2, ')).toMatchObject({
+      name: 'MoveEyeAndTarget',
+      arg: 0,
+    });
+    expect(scriptCallAt('ScriptCamera.MoveEyeAndTarget(vec(1, 2, 3), vec(')).toMatchObject({ arg: 1 });
+    expect(scriptCallAt('camera(obj(3')).toMatchObject({ name: 'camera', arg: 0 });
+    expect(scriptCallAt('obj(3).open(')).toMatchObject({ name: 'open', beforeName: 'obj(3).', arg: 0 });
+  });
+  test('the forms of the library, the Script API and own functions', () => {
+    const talk = scriptSignatureAt('talk(')!;
+    expect(talk.forms[0]).toMatchObject({ head: 'talk', params: ['line: num'] });
+    const look = scriptSignatureAt('cameraLook(1, 2, ')!;
+    expect(look.arg).toBe(2);
+    expect(look.forms[0]!.params).toHaveLength(7);
+    // after the object, its first parameter is not written
+    const move = scriptSignatureAt('hero.move(')!;
+    expect(move.forms[0]!.params).toEqual(['x: num', 'y: num', 'z: num']);
+    const play = scriptSignatureAt('ScriptSound.Play(0x41, ')!;
+    expect(play.arg).toBe(1);
+    expect(play.forms[0]!.head).toBe('ScriptSound.Play');
+    const message = scriptSignatureAt('ScriptMenu.StartMessage(')!;
+    expect(message.forms[0]!.params[0]).toContain('行 ID');
+    const source = 'function greet(who: obj, line: num) {\n}\nfunction main() {\n  greet(self, ';
+    expect(scriptSignatureAt(source)).toMatchObject({
+      arg: 1,
+      forms: [{ head: 'greet', params: ['who: obj', 'line: num'] }],
+    });
+    // the script's own function declared after the call
+    expect(scriptSignatureAt('later(', 'later(\nfunction later(n: num) {}')!.forms[0]!.params).toEqual(['n: num']);
+    expect(scriptSignatureAt('unknownThing(')).toBeNull();
+  });
 });
