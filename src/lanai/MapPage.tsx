@@ -13,7 +13,6 @@ import { InfoTip } from '../ui/InfoTip';
 // EventObject table) and is saved with the session's edits (session.ts).
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { editorKey } from '../editor/controller';
-import { PlacedPickButton, type PlacedChoice } from '../editor/objectpick';
 import { HexInput, RawBytes } from '../editor/fields';
 import { kindName, ROT_ARROW } from '../editor/legend';
 import {
@@ -29,7 +28,7 @@ import { tileAt } from '../editor/model';
 import { Palette } from '../editor/palette';
 import { MapToolbox, TOOLS } from '../editor/tools';
 import { readField, writeField, type FieldDef } from '../game/tabledef';
-import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, recCellPos, type Rec } from '../game/sections';
+import { LANAI_ROT_CODEC, LETTER_DEFAULT, letterIndex, letterLabel, type Rec } from '../game/sections';
 import { romfsHref } from '../romfs/RomfsPage';
 import { NumberInput, useSticky } from '../ui/book';
 import { Dialog } from '../ui/Dialog';
@@ -41,7 +40,7 @@ import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
 import { EventScriptBinding } from './EventScriptBinding';
-import { LANAI_ACTION_EXTERNAL_DOOR, LANAI_ACTION_SHOP, LANAI_SPEAKER_NPC } from './eventParts';
+import { LANAI_ACTION_SHOP, LANAI_SPEAKER_NPC } from './eventParts';
 import { lanaiCenterOnAnchor, lanaiMapHref, lanaiShopHref, setLanaiCenterOnAnchor } from './hrefs';
 import { lanaiArrivals } from './mapLinks';
 import { encodeLanaiMessage, parseLanaiText } from './message';
@@ -801,7 +800,7 @@ function ChestPlacement({
   );
 }
 
-/** Choose the switch's script path before placement. */
+/** Choose which of the script's functions the switch runs before placement (none: given later at the record). */
 function SwitchPlacement({
   st,
   template,
@@ -814,49 +813,29 @@ function SwitchPlacement({
   onClose: () => void;
 }): ReactNode {
   const persistent = template.event?.switchTrigger === 'switch';
-  const [door, setDoor] = useState(0);
-  const doc = st.current;
-  const table = st.info ? st.maps.eventTable(st.info.dungeon) : undefined;
+  const [fn, setFn] = useState('');
   const archive = st.maps.content.archive.toUpperCase();
-  const enabled = st.maps.session.createdFiles.has(archive);
-  const choices: PlacedChoice[] =
-    doc && table
-      ? (doc.recs[3] ?? []).flatMap((r, index) => {
-          const event = lanaiRecEventRow(3, r.raw);
-          if (!event || event >= table.rows || table.u32(event, LANAI_EVENT_ACTIONS[0]) !== LANAI_ACTION_EXTERNAL_DOOR)
-            return [];
-          const [x, y] = recCellPos(r, LANAI_LAYOUTS[3]!);
-          return [
-            {
-              value: event,
-              name: `通路をふさぐ扉 #${index}`,
-              sub: `セル (${x.toFixed(1)}, ${y.toFixed(1)})`,
-              where: { doc, x, y },
-              model: null,
-              badge: '扉',
-            },
-          ];
-        })
-      : [];
+  const session = st.maps.session;
+  const enabled = session.createdFiles.has(archive);
+  // a function with parameters is called by others, not given to an event
+  const functions = (session.stageScripts.get(archive)?.doc.functions ?? []).filter((f) => !f.params);
   return (
     <Dialog title={`${persistent ? '保持スイッチ' : 'プッシュスイッチ'}を置く`} onClose={onClose}>
       <p className="small">{persistent ? '一度踏むと押したままになります。' : '踏むと押され、離れると戻ります。'}</p>
-      {persistent && (
-        <label className="field">
-          <span>自動で開く扉（任意）</span>
-          <PlacedPickButton
-            title="扉を選ぶ（選ばなくても配置できます）"
-            value={door}
-            choices={choices}
-            extra={[{ value: 0, label: '指定しない', sub: '配置後にスクリプトを編集できます' }]}
-            onChange={setDoor}
-          />
-        </label>
-      )}
+      <label className="field">
+        <span>踏んだときの関数</span>
+        <select aria-label="踏んだときの関数" value={fn} onChange={(e) => setFn(e.target.value)} disabled={!enabled}>
+          <option value="">なし (あとでレコードの「スクリプトの関数」で割り当てる)</option>
+          {functions.map((f) => (
+            <option key={f.name} value={f.name}>
+              {f.name}
+            </option>
+          ))}
+        </select>
+      </label>
       <p className="muted small">
-        {door
-          ? '選んだ扉を開く関数とスイッチへの割当を作ります。'
-          : '空の関数とスイッチへの割当を作ります。扉の配置前でも置けます。配置後にステージのスクリプトを編集してください。'}
+        選んだ関数をスイッチに割り当てます (関数は作りません)。扉を開くには、ステージのページの「スクリプトを編集」で
+        function openGate() {'{'} openDoor(3) {'}'} のような関数 (3 は扉のイベント番号) を書いて保存してください。
       </p>
       {!enabled && <p className="error">スイッチのスクリプトは新しく追加したステージで使えます。</p>}
       <div className="row">
@@ -864,15 +843,7 @@ function SwitchPlacement({
         <button
           className="primary"
           disabled={!enabled}
-          onClick={() =>
-            onReady({
-              ...template,
-              description: door
-                ? `${template.description ?? ''} 扉 #${door} を開きます。`.trim()
-                : template.description,
-              event: { ...template.event!, buttonDoor: door || undefined },
-            })
-          }
+          onClick={() => onReady({ ...template, event: { ...template.event!, scriptFn: fn || undefined } })}
         >
           この設定で置く
         </button>

@@ -88,17 +88,22 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect([...files.keys()].sort()).toEqual([`.crr/contents${String(c.index).padStart(4, '0')}.crr`, c.archive]);
   });
 
-  test('a persistent switch binds to its door and undo restores the stage script', async () => {
+  test('a persistent switch is given a function of the script (none is made) and undo restores the stage script', async () => {
     const { info } = start();
     const st = lanaiEditState(maps);
     st.open(info);
     const template = st.templates().find((t) => t.source === '新規保持スイッチ')!;
+    const had = s.stageScripts.get(c.archive.toUpperCase())!.doc;
+    s.setStageScriptDoc(c.archive, {
+      ...had,
+      functions: [...had.functions, { name: 'openGate', body: 'openDoor(1)' }],
+    });
     const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
     const count = st.current!.recs[5]?.length ?? 0;
     st.edit((doc) =>
       st.placeStamp(
         doc,
-        { type: 'template', t: { ...template, event: { ...template.event!, buttonDoor: 1 } } },
+        { type: 'template', t: { ...template, event: { ...template.event!, scriptFn: 'openGate' } } },
         5.5,
         5.5,
       ),
@@ -110,8 +115,9 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
       trigger: 'switch',
       group: info.dungeon,
       row,
-      fn: `openDoor${info.dungeon}_${row}`,
+      fn: 'openGate',
     });
+    expect(stored.doc.functions).toEqual(before.functions);
     expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
     const files = new Map<string, Uint8Array>();
     await buildStageScripts(s, files);
@@ -124,24 +130,22 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     st.undo();
   });
 
-  test('both switch types can be placed without a door and receive editable script functions', async () => {
+  test('both switch types can be placed without a function: the script is left as it is', async () => {
     const { info } = start();
     const st = lanaiEditState(maps);
     st.open(info);
     const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
-    for (const [source, trigger, x] of [
-      ['新規保持スイッチ', 'switch', 4],
-      ['新規プッシュスイッチ', 'button', 5],
+    for (const [source, x] of [
+      ['新規保持スイッチ', 4],
+      ['新規プッシュスイッチ', 5],
     ] as const) {
       const template = st.templates().find((t) => t.source === source)!;
       st.edit((doc) => st.placeStamp(doc, { type: 'template', t: template }, x, 5));
       const row = u32(st.current!.recs[5]!.at(-1)!.raw, 4);
       const stored = s.stageScripts.get(c.archive.toUpperCase())!;
-      const binding = stored.doc.bindings.find((b) => b.group === info.dungeon && b.row === row);
-      expect(binding?.trigger).toBe(trigger);
-      expect(stored.doc.functions.find((f) => f.name === binding?.fn)?.body).toBe('');
+      expect(stored.doc.bindings.find((b) => b.group === info.dungeon && b.row === row)).toBeUndefined();
+      expect(stored.doc).toEqual(before);
       expect(lanaiButtonDoor(maps, info.dungeon, row)).toBeNull();
-      expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
     }
     st.undo();
     st.undo();

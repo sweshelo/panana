@@ -12,7 +12,11 @@ import { assembleLine } from '../src/game/asm';
 import {
   compileStageScript,
   CRO_TEXT,
+  docWithCode,
+  mergeScriptCode,
   parseStageScript,
+  scriptDocCode,
+  ScriptDocError,
   scriptDocFromSource,
   scriptDocSource,
   SCRIPT_API,
@@ -37,6 +41,44 @@ import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 const B0 = STAGE_BYTE_FLAGS.first,
   T0 = STAGE_BIT_FLAGS.first;
+
+describe('RPG FREE! stage script: the editor text', () => {
+  const doc = scriptDocFromSource(
+    'var A: byte\nfunction a() {\n  A = 1\n}\nfunction b() {\n  A = 2\n}\non talk(1, 5) a\non start(1) b\non intro(1) {}\n',
+  );
+  test('the text has the variables and functions, not what they are given to', () => {
+    expect(scriptDocCode(doc)).toBe('var A: byte\nfunction a() {\n  A = 1\n}\nfunction b() {\n  A = 2\n}\n');
+    expect(scriptDocCode(undefined)).toBe('');
+  });
+  test('saving the text keeps what the functions are given to; a renamed function loses it', () => {
+    const kept = docWithCode(doc, 'var A: byte\nfunction a() { A = 3 }\nfunction b() {}');
+    expect(kept.dropped).toEqual([]);
+    expect(kept.doc.bindings).toEqual(doc.bindings);
+    expect(kept.doc.functions[0]!.body).toBe('A = 3');
+    const renamed = docWithCode(doc, 'var A: byte\nfunction a() {}\nfunction c() {}');
+    expect(renamed.dropped).toEqual([{ trigger: 'start', group: 1, row: 0, fn: 'b' }]);
+    // the game's opening alone names no function and stays
+    expect(renamed.doc.bindings.map((b) => b.fn)).toEqual(['a', '']);
+    expect(docWithCode(doc, 'function a(n: num) {}\nfunction b() {}').dropped.map((b) => b.fn)).toEqual(['a']);
+  });
+  test('the text cannot give a function to an event', () => {
+    expect(() => docWithCode(doc, 'function a() {}\non talk(1, 5) a')).toThrow(ScriptDocError);
+  });
+  test('a change made elsewhere comes into the functions the text left as they were', () => {
+    const base = scriptDocCode(doc);
+    const mine = base.replace('A = 2', 'A = 9');
+    const theirs = base.replace('A = 1', 'A = 7');
+    const m = mergeScriptCode(base, mine, theirs);
+    expect(m).toMatchObject({ conflicts: [], readable: true });
+    expect(m.text).toContain('A = 7');
+    expect(m.text).toContain('A = 9');
+    const both = mergeScriptCode(base, base.replace('A = 1', 'A = 5'), theirs);
+    expect(both.conflicts).toEqual(['関数 a']);
+    expect(both.text).toContain('A = 5');
+    const broken = mergeScriptCode(base, 'function a( {', theirs);
+    expect(broken).toEqual({ text: 'function a( {', conflicts: [], readable: false });
+  });
+});
 
 describe('RPG FREE! stage script: reading', () => {
   test('full source indents function bodies and preserves nested indentation after editing', () => {
@@ -412,12 +454,18 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     s.setStageScript(c.archive, SCRIPT);
     const html = renderToString(<LanaiStageScriptEditor session={s} content={c} />);
     expect(html).toContain('イベントのスクリプト');
-    expect(html).toContain(`#/stages/${index}/script`);
-    expect(html).not.toContain('反映済みのスクリプト (文字列)');
+    expect(html).toContain('スクリプトを編集');
+    // the stage's page no longer edits the text (no editor, and no link that opens another instance of the app)
+    expect(html).not.toContain(`#/stages/${index}/script`);
+    expect(html).not.toContain('スクリプトを反映');
     expect(html).toContain('stageKey');
+    expect(html).toContain('STATE');
     const source = renderToString(<LanaiStageSourcePage session={s} content={c} />);
     expect(source).toContain('aria-label="スクリプト全文"');
     expect(source).toContain('var STATE: byte');
+    // what the functions are given to is shown beside the text, not in it
+    expect(source).not.toContain('on talk(1, 5)');
+    expect(source).toContain('保存済み');
     expect(source).toContain('関数ドキュメント');
   });
 });

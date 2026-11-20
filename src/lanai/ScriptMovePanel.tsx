@@ -90,8 +90,9 @@ export function ScriptMovePanel({ view, stageHref }: { view: LanaiMapView; stage
           (キャラのレコード・同じ関数の前の move()) からの道筋です。数字は関数の中の move() の順番です。
         </p>
         <p className="muted small">
-          反映済みのスクリプトを表示・編集します。<a href={stageHref}>ステージのページ</a>
-          で編集中の未反映の本文は、反映するまでここに出ません。
+          保存済みのスクリプトを表示・編集します。スクリプトのエディタ (<a href={stageHref}>ステージのページ</a>
+          の「スクリプトを編集」)
+          で書きかけの本文は、保存するまでここに出ません。エディタはフォーカスが外れると保存します。
         </p>
       </details>
     </>

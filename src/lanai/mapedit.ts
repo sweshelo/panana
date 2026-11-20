@@ -58,7 +58,8 @@ import {
   type LanaiRecordModel,
 } from './mapObjects';
 import { lanaiChestFields, lanaiTreasureSlots, lanaiWriteTreasure } from './treasure';
-import { emptyScriptDoc, type ScriptDoc } from './eventScript';
+import type { ScriptDoc } from './eventScript';
+import { docBound } from './scriptDoc';
 
 /** The kind of the tiles the game leaves empty (map.md §6.3): no model, and not a problem. */
 export const LANAI_EMPTY_KIND = 33;
@@ -398,13 +399,14 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           const session = this.maps.session;
           const archive = this.maps.content.archive.toUpperCase();
           if (!session.createdFiles.has(archive)) throw new Error('スイッチのスクリプトは追加ステージで使えます');
+          // the function is written in the script editor: placing the switch only gives it one already there
           const stored = session.stageScripts.get(archive);
-          const script = structuredClone(stored?.doc ?? emptyScriptDoc());
-          const name =
-            ev.buttonDoor === undefined ? `switch${this.info.dungeon}_${row}` : `openDoor${this.info.dungeon}_${row}`;
-          script.functions.push({ name, body: ev.buttonDoor === undefined ? '' : `openDoor(${ev.buttonDoor})` });
-          script.bindings.push({ trigger: ev.switchTrigger, group: this.info.dungeon, row, fn: name });
-          session.setStageScriptDoc(archive, script, stored?.key);
+          if (ev.scriptFn && stored)
+            session.setStageScriptDoc(
+              archive,
+              docBound(stored.doc, { trigger: ev.switchTrigger, group: this.info.dungeon, row, fn: ev.scriptFn }),
+              stored.key,
+            );
         }
         if (ev.chest) {
           const events = this.maps.eventTable(this.info.dungeon)!;

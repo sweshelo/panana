@@ -967,6 +967,80 @@ export function scriptDocFromSource(src: string): ScriptDoc {
   return doc;
 }
 
+/** The text the script editor shows: the variables and functions, without what they are given to. */
+export const scriptDocCode = (doc: ScriptDoc | undefined): string =>
+  doc && (doc.vars.length || doc.functions.length) ? scriptDocSource({ ...doc, bindings: [] }).text : '';
+
+/**
+ * The document with its variables and functions read from the editor's text, keeping what `doc` gave to its functions.
+ * What was given to a function no longer there (or one now taking parameters) is `dropped`. The text cannot give a
+ * function to an event (`on …`): that is done on the map's and the stage's pages.
+ */
+export function docWithCode(doc: ScriptDoc | undefined, text: string): { doc: ScriptDoc; dropped: ScriptBinding[] } {
+  const code = text.trim() ? scriptDocFromSource(text) : emptyScriptDoc();
+  if (code.bindings.length)
+    throw new ScriptDocError(
+      'on … の行は書けません。割り当てはマップのページ (レコードの「スクリプトの関数」) とステージのページで行います',
+      null,
+      0,
+    );
+  const dropped: ScriptBinding[] = [];
+  const bindings = (doc?.bindings ?? []).filter((b) => {
+    const keep = b.fn === '' || code.functions.some((f) => f.name === b.fn && !f.params);
+    if (!keep) dropped.push(b);
+    return keep;
+  });
+  return { doc: { vars: code.vars, functions: code.functions, bindings }, dropped };
+}
+
+/**
+ * The editor's text `mine` (edited from `base`) after the script changed elsewhere to `theirs` (a move() dragged on the
+ * map's page): what `mine` left as it was takes the new text. `conflicts` names what both changed (`mine` is kept
+ * there); `readable` is false when one of the texts does not read (then `mine` is kept as it is).
+ */
+export function mergeScriptCode(
+  base: string,
+  mine: string,
+  theirs: string,
+): { text: string; conflicts: string[]; readable: boolean } {
+  const read = (s: string): ScriptDoc | null => {
+    try {
+      return s.trim() ? scriptDocFromSource(s) : emptyScriptDoc();
+    } catch {
+      return null;
+    }
+  };
+  const [b, m, t] = [read(base), read(mine), read(theirs)];
+  if (!b || !m || !t) return { text: mine, conflicts: [], readable: false };
+  const conflicts: string[] = [];
+  let taken = false;
+  const same = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
+  let vars = m.vars;
+  if (!same(t.vars, b.vars)) {
+    if (same(m.vars, b.vars)) [vars, taken] = [t.vars, true];
+    else if (!same(m.vars, t.vars)) conflicts.push('変数');
+  }
+  const functions = m.functions.map((f) => {
+    const was = b.functions.find((x) => x.name === f.name);
+    const now = t.functions.find((x) => x.name === f.name);
+    if (!was || !now || same(now, was)) return f;
+    if (same(f, was)) {
+      taken = true;
+      return now;
+    }
+    if (!same(f, now)) conflicts.push(`関数 ${f.name}`);
+    return f;
+  });
+  // a function added elsewhere comes in too
+  for (const f of t.functions)
+    if (!b.functions.some((x) => x.name === f.name) && !functions.some((x) => x.name === f.name)) {
+      functions.push(f);
+      taken = true;
+    }
+  if (!taken) return { text: mine, conflicts, readable: true };
+  return { text: scriptDocSource({ vars, functions, bindings: m.bindings }).text, conflicts, readable: true };
+}
+
 // ------------------------------------------------------------------------------------------------ the code
 export const CRO_TEXT = 1,
   CRO_RODATA = 2;

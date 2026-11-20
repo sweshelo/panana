@@ -47,7 +47,7 @@ export function EventScriptBinding({
     return (
       <p className="muted small">
         スクリプトの関数:
-        まだありません。ステージのページの「イベントのスクリプト」で関数を書いて反映すると、ここでこのレコードに割り当てられます。
+        まだありません。ステージのページの「スクリプトを編集」で関数を書いて保存すると、ここでこのレコードに割り当てられます。
       </p>
     );
   const bound = rowBinding(stored.doc, group, row);

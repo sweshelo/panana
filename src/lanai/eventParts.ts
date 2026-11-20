@@ -73,8 +73,8 @@ export interface NewEventRow {
   clears?: number;
   /** Which CRO button class and trigger to create when this part is placed. */
   switchTrigger?: 'switch' | 'button';
-  /** Optionally open this door's EventObject row from the generated switch function. */
-  buttonDoor?: number;
+  /** The script's function (without parameters) to give the switch when it is placed; none: given later. */
+  scriptFn?: string;
   destination?: { map: number; point: number };
   /**
    * Add a line to the group's talk table when placed and name it in the action's first argument: its text (the text
