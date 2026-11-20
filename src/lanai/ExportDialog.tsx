@@ -10,6 +10,7 @@ import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { download } from '../ui/download';
 import { LANAI_DELIVERABLE_TABLES, LANAI_DISTRIBUTION_LOCK, type LanaiSession } from './session';
+import { pushToUwapo, setUwapoUrl, uwapoUrl, UwapoPushError, type UwapoPushResult } from './uwapoPush';
 
 export function LanaiExportDialog({ session, onClose }: { session: LanaiSession; onClose: () => void }): ReactNode {
   const [error, setError] = useState('');
@@ -220,6 +221,91 @@ function DistributionBox({
           配信で欠落する変更だけを取り消す
         </button>
       </div>
+      <UwapoPush session={session} disabled={scripts > 0} />
     </fieldset>
+  );
+}
+
+/**
+ * Sends the distribution zip to a uwapo server on this PC, which publishes it and writes it into Azahar's SD: reopening
+ * the stage select in the game shows it (no harbor download).
+ */
+function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boolean }): ReactNode {
+  const [url, setUrl] = useState(uwapoUrl);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<UwapoPushResult | null>(null);
+  const [error, setError] = useState<{ message: string; conflicts?: unknown } | null>(null);
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await pushToUwapo(await session.distributionZip(), { url }));
+    } catch (e) {
+      setError({ message: (e as Error).message, conflicts: e instanceof UwapoPushError ? e.conflicts : undefined });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div>
+      <p className="muted small">
+        uwapo (lanai-custom-stages の web/) をこの PC で起動しておくと、配信用の zip を直接送れます。uwapo
+        は同じステージを入れ替えて公開し、Azahar の SD (sdmc/lanai-cs)
+        に書き込みます。ゲームではステージ選択を開き直すと反映されます (ステージの中にいるときは島に戻ってから)。
+      </p>
+      <div className="row">
+        <label>
+          uwapo の URL{' '}
+          <input
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setUwapoUrl(e.target.value.trim());
+            }}
+            placeholder="http://localhost:8787"
+          />
+        </label>
+        <button className="primary" disabled={disabled || busy || !url.trim()} onClick={send}>
+          {busy ? '送信中…' : 'Azahar に送る'}
+        </button>
+      </div>
+      {error && (
+        <div className="error">
+          {error.message}
+          {error.conflicts !== undefined && <pre className="small">{JSON.stringify(error.conflicts, null, 2)}</pre>}
+        </div>
+      )}
+      {result && (
+        <div className="small">
+          <p>
+            {`リビジョン ${result.revision} として公開しました。`}
+            {result.mirrored
+              ? `${result.mirrored} に書き込みました。ステージ選択を開き直してください。`
+              : result.mirrorError
+                ? ''
+                : 'SD への書き込みは無効です (uwapo の LANAI_SDMC)。港の「カスタム」でダウンロードしてください。'}
+          </p>
+          {result.mirrorError && <p className="error">{`SD への書き込みに失敗しました: ${result.mirrorError}`}</p>}
+          <ul>
+            {result.stages.map((s) => (
+              <li
+                key={s.id}
+              >{`${s.name || '(名前なし)'} (コンテンツ ${s.content}, ${s.id})${s.pushed ? ' ← 今回' : ''}`}</li>
+            ))}
+          </ul>
+          {result.replaced.length > 0 && (
+            <p className="muted">{`入れ替えた旧パッケージ: ${result.replaced.join('、')}`}</p>
+          )}
+          {result.warnings.length > 0 && (
+            <ul className="muted">
+              {result.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
