@@ -49,14 +49,16 @@ describe.skipIf(!hasLanai)('RPG FREE! character animations', () => {
     expect(lanaiAnimationIds(session).find((item) => item.id === 0x80000001)?.prefix).toBe('001_');
   });
 
-  test('short anim ID 0x3 resolves to the motion of monster #1191', async () => {
+  test('anim ID 0x80000003 resolves to the motion of monster #1191', async () => {
     const monster = lanaiMonsters(session)[1191]!;
     const design = lanaiMonsterDesign(session, monster.designRow)!;
     const loaded = (await lanaiMonsterModel(session, design)!.load())!;
     const animations = loaded.set.models.get(loaded.hash)!.animations;
-    const node = parseStageScript('function demo() { anim(chara(9), 0x3, 0) }').functions[0]!.body[0]!;
-    if (node.op !== 'anim') throw new Error('anim was not parsed');
-    const fullId = scriptRowId(node.id);
+    const node = parseStageScript('function demo() { obj(9).StartAnimation(0x80000003, 0, 1, 0) }').functions[0]!
+      .body[0]!;
+    const arg = node.op === 'call' ? node.call.args[0] : undefined;
+    if (arg?.k !== 'i') throw new Error('StartAnimation was not parsed');
+    const fullId = scriptRowId(arg.v);
     expect(fullId).toBe(0x80000003);
     const prefix = lanaiAnimationIds(session).find((item) => item.id === fullId)!.prefix;
     expect(lanaiAnimationName(animations, prefix)).toBe('003_E63_walk');

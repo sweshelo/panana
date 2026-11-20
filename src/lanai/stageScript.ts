@@ -144,7 +144,7 @@ export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
 export const triggerFitsRecord = (t: ScriptTrigger, rec: EventRecord): boolean =>
   recordTrigger(rec) === (t === 'defeat' ? 'area' : t === 'switch' ? 'button' : t);
 
-/** The rows of the characters a body names with chara(row). */
+/** The rows of the objects a body names with obj(row). */
 function charaRows(body: ScriptNode[]): number[] {
   const out: number[] = [];
   const who = (w: ScriptWho | null | undefined): void => void (w?.kind === 'chara' && out.push(w.row));
@@ -168,22 +168,20 @@ function charaRows(body: ScriptNode[]): number[] {
       for (const c of n.cases) out.push(...charaRows(c.body));
       out.push(...charaRows(n.default ?? []));
     } else if (n.op === 'call') value({ kind: 'call', call: n.call });
-    else if (n.op === 'face') {
-      who(n.who);
-      who(n.to);
-    } else if (n.op === 'doorMotion') out.push(n.row);
-    else if ('who' in n) who(n.who);
+    else if (n.op === 'vanishEffect') who(n.who);
   }
   return out;
 }
 
-/** The MonsterGroup values battle() names in a body, each once. */
+/** The MonsterGroup values ScriptMap.EncountBoss names in a body (its first argument), each once. */
 export function battleGroups(body: ScriptNode[]): number[] {
   const out: number[] = [];
   const walk = (list: ScriptNode[]): void => {
     for (const n of list) {
-      if (n.op === 'battle' && !out.includes(n.group)) out.push(n.group);
-      else if (n.op === 'if') {
+      const group = n.op === 'call' && n.call.name === 'ScriptMap::EncountBoss' ? n.call.args[0] : undefined;
+      if (group?.k === 'i') {
+        if (!out.includes(group.v)) out.push(group.v);
+      } else if (n.op === 'if') {
         walk(n.then);
         walk(n.else);
       } else if (n.op === 'switch') {
@@ -197,7 +195,7 @@ export function battleGroups(body: ScriptNode[]): number[] {
 }
 
 /**
- * The row of the content's MonsterGroup a battle() value names as the game looks it up (FUN_0031C038): a value below
+ * The row of the content's MonsterGroup an EncountBoss value names as the game looks it up (FUN_0031C038): a value below
  * 0x80000000 is a row number, else a row ID. -1 when there is no such row (the game would fight row 0, the empty one).
  */
 export function battleRow(t: LanaiTable | undefined, value: number): number {
@@ -228,16 +226,16 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
     for (const r of new Set(charaRows(e.body)))
       if (!records.get(r)?.length)
         notes.push(
-          `${what}: chara(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
+          `${what}: obj(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
         );
     for (const g of battleGroups(e.body)) {
       const mg = maps.monsterGroup;
       if (battleRow(mg, g) < 0)
         problems.push(
-          `${what}: battle(${g}) の群れがありません。引数は MonsterGroup の行番号 (0〜${(mg?.rows ?? 1) - 1}) です (行 ID ではありません。ないと空の群れ (行 0) と戦います)`,
+          `${what}: ScriptMap.EncountBoss(${g}, …) の群れがありません。引数は MonsterGroup の行番号 (0〜${(mg?.rows ?? 1) - 1}) です (行 ID ではありません。ないと空の群れ (行 0) と戦います)`,
         );
       else if (g === 0 || battleRow(mg, g) === 0)
-        notes.push(`${what}: battle(${g}) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
+        notes.push(`${what}: ScriptMap.EncountBoss(${g}, …) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
     }
     if (e.trigger === 'intro') {
       // one bit flag per intro after the script's bit variables: "played in this visit"

@@ -40,12 +40,12 @@ const B0 = STAGE_BYTE_FLAGS.first,
 
 describe('RPG FREE! stage script: reading', () => {
   test('full source indents function bodies and preserves nested indentation after editing', () => {
-    const source = `function scene() {\n  if (state(1) == 0) {\n    talk(0x60)\n  }\n}\non talk(1, 5) scene\n`;
+    const source = `function scene() {\n  if (ScriptFlag.GetScriptState(1) == 0) {\n    talk(0x80000060)\n  }\n}\non talk(1, 5) scene\n`;
     const doc = scriptDocFromSource(source);
-    expect(doc.functions[0]!.body).toBe('if (state(1) == 0) {\n  talk(0x60)\n}');
+    expect(doc.functions[0]!.body).toBe('if (ScriptFlag.GetScriptState(1) == 0) {\n  talk(0x80000060)\n}');
     expect(scriptDocSource(doc).text).toBe(source);
   });
-  test('the example of the editor reads: a variable, an event of a character, its statements', () => {
+  test('the example of the editor reads: a variable, an event of a character, its calls', () => {
     const s = parseStageScript(STAGE_SCRIPT_EXAMPLE);
     expect(s.vars).toEqual([{ name: 'STATE_A', kind: 'byte', reset: false, flag: B0 }]);
     expect(s.events.length).toBe(1);
@@ -54,31 +54,24 @@ describe('RPG FREE! stage script: reading', () => {
     expect(e.body.map((n) => n.op)).toEqual(['switch', 'if']);
     const sw = e.body[0]!;
     if (sw.op !== 'switch') throw new Error('switch');
+    // talk (the library's) is three calls: the mouth, the line, the mouth
     expect(sw.cases.map((c) => [c.value, c.body.map((n) => n.op)])).toEqual([
-      [0, ['talk']],
-      [1, ['talk']],
-      [2, ['talk', 'return']],
+      [0, ['call', 'call', 'call']],
+      [1, ['call', 'call', 'call']],
+      [2, ['call', 'call', 'call', 'return']],
     ]);
     const cond = e.body[1]!;
     if (cond.op !== 'if') throw new Error('if');
-    expect(cond.cond).toEqual({ value: { kind: 'ask', msg: 0x63 }, cmp: '!=', than: 0 });
-    expect(cond.then.map((n) => n.op)).toEqual(['popup', 'se', 'talk', 'set']);
-    expect(cond.else).toEqual([
-      { op: 'set', name: 'STATE_A', value: 1 },
-      { op: 'talk', msg: 0x65, auto: false, dialog: 0 },
+    expect(cond.cond).toMatchObject({ value: { kind: 'call', call: { name: 'ScriptMenu::SystemMessageYesNo' } } });
+    expect(cond.then.map((n) => (n.op === 'call' ? n.call.name : n.op))).toEqual([
+      'ScriptChara::SetPopup',
+      'ScriptSound::Play',
+      'ScriptChara::StartAnimation',
+      'ScriptMenu::StartMessage',
+      'ScriptChara::StartAnimation',
+      'set',
     ]);
-  });
-
-  test('a line names its window: the speaker of its row by default, bubble / window / 0〜2 in its place', () => {
-    const body = (src: string): unknown => parseStageScript(`on area(1, 1) { ${src} }`).events[0]!.body;
-    expect(body('talk(1); say(2, bubble); talk(3, window); say(4, 2)')).toEqual([
-      { op: 'talk', msg: 1, auto: false, dialog: 0 },
-      { op: 'talk', msg: 2, auto: true, dialog: 1 },
-      { op: 'talk', msg: 3, auto: false, dialog: 2 },
-      { op: 'talk', msg: 4, auto: true, dialog: 2 },
-    ]);
-    expect(() => body('talk(1, 3)')).toThrow('吹き出しの種類は 0〜2');
-    expect(() => body('talk(1, balloon)')).toThrow('bubble');
+    expect(cond.else[0]).toEqual({ op: 'set', name: 'STATE_A', value: 1 });
   });
 
   test('variables take flag numbers in the order they are declared; reset marks those of one visit', () => {
@@ -90,32 +83,31 @@ describe('RPG FREE! stage script: reading', () => {
     ]);
   });
 
-  test('conditions and the other statements', () => {
+  test('conditions: variables and the values of Script API calls', () => {
     const s = parseStageScript(`
       var N: byte
       var B: bit
       on area(2, 0x10) {
-        if (!B) { B = true } else if (N >= 3) { N = 0 } else { say(7) }
-        if (item(0xC9) < 2) { getItem(0xC9, 1); addItem(5, -1); addGold(-30) }
-        if (state(4) == 1) { openDoor(3); closeDoor(4); wait(0.5); disable(); collision(9, 1) }
+        if (!B) { B = true } else if (N >= 3) { N = 0 } else { ScriptMenu.StartMessageAuto(0x80000007, 0, 0, 0.2) }
+        if (ScriptFlag.GetItemNum(0x800000C9, 1) < 2) { ScriptMenu.ItemGet(0x800000C9, 1, 1); ScriptFlag.AddGold(-30) }
       }`);
-    const [a, b, c] = s.events[0]!.body;
-    if (a?.op !== 'if' || b?.op !== 'if' || c?.op !== 'if') throw new Error('if');
+    const [a, b] = s.events[0]!.body;
+    if (a?.op !== 'if' || b?.op !== 'if') throw new Error('if');
     expect(a.cond).toEqual({ value: { kind: 'var', name: 'B' }, cmp: '==', than: 0 });
     expect(a.then).toEqual([{ op: 'set', name: 'B', value: 1 }]);
     expect(a.else[0]).toMatchObject({ op: 'if', cond: { cmp: '>=', than: 3 } });
-    expect(b.cond).toEqual({ value: { kind: 'item', item: 0xc9 }, cmp: '<', than: 2 });
-    expect(b.then).toEqual([
-      { op: 'addItem', item: 0xc9, count: 1, show: true },
-      { op: 'addItem', item: 5, count: -1, show: false },
-      { op: 'addGold', amount: -30 },
-    ]);
-    // openDoor (the library's) is written out in place; the statements after it follow as they are
-    expect(c.then.slice(-4)).toEqual([
-      { op: 'door', row: 4, open: false },
-      { op: 'wait', seconds: 0.5 },
-      { op: 'collision', row: null, on: false },
-      { op: 'collision', row: 9, on: true },
+    expect(b.cond).toMatchObject({
+      value: { kind: 'call', call: { name: 'ScriptFlag::GetItemNum' } },
+      cmp: '<',
+      than: 2,
+    });
+    expect(b.then.map((n) => n.op === 'call' && n.call.args.filter((x) => x.k !== 'm'))).toEqual([
+      [
+        { k: 'i', v: 0x800000c9 },
+        { k: 'i', v: 1 },
+        { k: 'i', v: 1 },
+      ],
+      [{ k: 'i', v: -30 }],
     ]);
   });
 
@@ -125,8 +117,8 @@ describe('RPG FREE! stage script: reading', () => {
       var B: bit
       var C: bit
       on start(1) {
-        if (A || B && C) { wait(1) }
-        if ((A || B) && !C) { wait(2) }
+        if (A || B && C) { ScriptSystem.WaitTime(1) }
+        if ((A || B) && !C) { ScriptSystem.WaitTime(2) }
       }`);
     const [first, second] = script.events[0]!.body;
     if (first?.op !== 'if' || second?.op !== 'if') throw new Error('if');
@@ -145,11 +137,13 @@ describe('RPG FREE! stage script: reading', () => {
   });
 
   test('a defeated map monster has its own effect statement', () => {
-    const event = parseStageScript('on start(1) { if (monsters() == 0) { vanishMonster(9) } }').events[0]!;
+    const event = parseStageScript(
+      'on start(1) { if (ScriptMap.GetMonsterLimitCount() == 0) { vanishEffect(obj(9)) } }',
+    ).events[0]!;
     const branch = event.body[0]!;
     if (branch.op !== 'if') throw new Error('if');
-    expect(branch.then).toEqual([{ op: 'vanishMonster', row: 9 }]);
-    expect(() => parseStageScript('on start(1) { vanishMonster(-1) }')).toThrow();
+    expect(branch.then).toEqual([{ op: 'vanishEffect', who: { kind: 'chara', row: 9 } }]);
+    expect(() => parseStageScript('on start(1) { vanishEffect(obj(-1)) }')).toThrow();
   });
 
   test('a mistake is told with its line', () => {
@@ -163,18 +157,20 @@ describe('RPG FREE! stage script: reading', () => {
       return '';
     };
     expect(err('var A: byte\non talk(1, 5) {\n  X = 1\n}')).toBe('3 行目: 変数「X」はありません');
-    expect(err('on talk(1, 5) { disable() }')).toContain('範囲のイベントの中でだけ');
+    expect(err('on start(1) { ScriptMap.EnableEventCollision(selfRow, 0) }')).toContain('selfRow');
+    expect(err('on area(1, 1) { self.SetVisible(0) }')).toContain('obj(イベント番号) で指してください');
     expect(err('on talk(1, 5) { break }')).toContain('switch の中でだけ');
     expect(err('var A: bit\non area(1, 1) { A = 2 }')).toContain('0〜1');
     expect(err('on talk(1, 5) {}\non area(1, 5) {}')).toContain('もうイベントが割り当てられています');
     expect(err('on talk(1, 5) { talk(1)')).toContain('「}」が足りません');
-    expect(err('on talk(1, 5) { fight(1) }')).toContain('「fight」という文はありません');
+    expect(err('on talk(1, 5) { fight(1) }')).toContain('関数「fight」はありません');
+    expect(err('on talk(1, 5) { fight }')).toContain('「fight」という文はありません');
     expect(err('on talk(1, 5) { talk(1) } @')).toContain('使えない文字');
   });
 
   test('the result of an API function: an integer is compared, void and float are not values', () => {
     // read from the game's code (scriptApiTable.ts; lanai-custom-stages 3ds/research/script-returns.md)
-    const body = (cond: string): string => `on talk(1, 5) { if (${cond}) { wait(1) } }`;
+    const body = (cond: string): string => `on talk(1, 5) { if (${cond}) { ScriptSystem.WaitTime(1) } }`;
     expect(() => parseStageScript(body('ScriptCamera.IsAnimation() == 1'))).not.toThrow();
     expect(() => parseStageScript(body('ScriptMap.GetCurrentMapGroupID() == 1'))).not.toThrow();
     expect(() => parseStageScript(body('ScriptMap.ChangeMap(1, 2) == 1'))).toThrow('void');
@@ -195,43 +191,45 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     var STATE: byte
     var SEEN: bit reset
     on talk(1, 5) {
-      if (STATE == 0) { talk(1); STATE = 1 } else { talk(2) }
+      if (STATE == 0) { talk(0x80000001); STATE = 1 } else { talk(0x80000002) }
       SEEN = 1
     }
-    on start(1) { vanishMonster(5) }`;
+    on start(1) { vanish(5) }`;
 
   test('compound conditions compile into the stage CRO', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
     const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
     const script = parseStageScript(
-      'var A: bit; var B: bit; on start(1) { if (A || (B && item(1) >= 1)) { wait(1) } }',
+      'var A: bit; var B: bit; on start(1) { if (A || (B && ScriptFlag.GetItemNum(0x80000001, 1) >= 1)) { ScriptSystem.WaitTime(1) } }',
     );
     const built = compileStageScript(base, script).cro.segments[CRO_TEXT]!.bytes!;
     expect(built.length).toBeGreaterThan(base.segments[CRO_TEXT]!.bytes!.length);
   });
 
-  test('openDoor builds the same code as its parts written out (chara().camera / se / chara().open / jingle)', async () => {
+  test('a library function builds the same code as its text written out in the script', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
     const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
     const text = (body: string): Uint8Array =>
       compileStageScript(base, parseStageScript(`on button(1, 2) { ${body} }`)).cro.segments[CRO_TEXT]!.bytes!;
     const parts =
-      'chara(3).camera(1); wait(0.5); se(0x79); wait(1.5); se(0x7A); chara(3).open(); jingle(); wait(0.3); cameraBack(1)';
+      'camera(obj(3), 1); ScriptSystem.WaitTime(0.5); ScriptSound.Play(0x79, 0); ScriptSystem.WaitTime(1.5); ScriptSound.Play(0x7A, 0); obj(3).open(); jingle(0x41); ScriptSystem.WaitTime(0.3); cameraBack(1)';
     expect(text(parts)).toEqual(text('openDoor(3)'));
     // without the jingle the code is shorter
-    expect(text('se(0x50); chara(3).open()').length).toBeLessThan(text('openDoor(3)').length);
-    // the library's camera and party functions (Script API calls with the arguments put in) build
+    expect(text('ScriptSound.Play(0x50, 0); obj(3).open()').length).toBeLessThan(text('openDoor(3)').length);
+    // the library's camera, party and monster functions build
     for (const call of [
-      'cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5); cameraNormal(1.1)',
-      'partyLineUp(3750, 4150, 4); follow(1)',
-      'partyColumn(3750, 3030, 8); follow(1)',
+      'cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5); cameraBack(1.1)',
+      'partyLineUp(3750, 4150, 4); ScriptMap.SetUpdateFormation(1)',
+      'partyColumn(3750, 3030, 8); ScriptMap.SetUpdateFormation(1)',
+      'walk(hero, 250, 0, 750); turn(hero, 90); face(hero, obj(3))',
+      'vanish(9)',
     ])
       expect(text(call).length).toBeGreaterThan(text('').length);
   });
 
-  test('popup keeps its icon past the statement; a line passes its window to StartMessage', async () => {
+  test('the calls made as the game makes them: the popup kept, the camera held once, the window of a line', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
     const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
@@ -244,17 +242,27 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     };
     // ~ScriptChara takes the icon down unless its +0xB (the kind it showed) is 0xFF: the stack object's is set so
     const forget = 'strb r0, [sp, #0x2b]';
-    expect(count('on area(1, 1) { popup(chara(5), 6) }', forget)).toBe(count('on area(1, 1) {}', forget) + 1);
+    const popup = '.SetPopup(2, 6, 1, 1, 0, vec(0, 0, 0))';
+    expect(count(`on area(1, 1) { obj(5)${popup} }`, forget)).toBe(count('on area(1, 1) {}', forget) + 1);
     // the NPC's own ScriptChara (self) lives as long as the event, as the ROM's do
-    expect(count('on talk(1, 5) { popup(self, 6) }', forget)).toBe(count('on talk(1, 5) {}', forget));
+    expect(count(`on talk(1, 5) { self${popup} }`, forget)).toBe(count('on talk(1, 5) {}', forget));
+    // the camera is paused once an event (r8), however many times the script asks
+    const held = 'mov r8, #1';
+    expect(count('on area(1, 1) { camera(obj(3), 1); camera(hero, 1) }', held)).toBe(
+      count('on area(1, 1) {}', held) + 2,
+    );
+    expect(count('on area(1, 1) { cameraBack(1) }', 'mov r8, #0')).toBe(count('on area(1, 1) {}', 'mov r8, #0') + 1);
+    // the window of a line: StartMessageAuto's AppDialogType (r3)
     for (const [arg, line] of [
-      ['window', 'mov r3, #2'],
-      ['bubble', 'mov r3, #1'],
+      [2, 'mov r3, #2'],
+      [1, 'mov r3, #1'],
     ] as const)
-      expect(count(`on area(1, 1) { talk(1, ${arg}) }`, line)).toBe(count('on area(1, 1) { talk(1) }', line) + 1);
+      expect(count(`on area(1, 1) { ScriptMenu.StartMessageAuto(0x80000001, ${arg}, 0, 0.2) }`, line)).toBe(
+        count('on area(1, 1) { ScriptMenu.StartMessageAuto(0x80000001, 0, 0, 0.2) }', line) + 1,
+      );
   });
 
-  test('the icons of popup() are the 13 entries code.bin names (kind 2 of the popup object), each a BCH', async () => {
+  test('the icons of SetPopup are the 13 entries code.bin names (kind 2 of the popup object), each a BCH', async () => {
     const s = await open();
     const code = s.dump.code;
     expect(POPUP_ICONS.map((p) => p.hash)).toEqual(
@@ -369,10 +377,14 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(noted.notes.join()).not.toContain('の種類ではありません');
     const records = eventRecords(maps, 1);
     expect(records.get(5)!.map(recordTrigger)).toContain('talk');
-    const wrong = await checkStageScript(s, c, 'function f() { show(chara(5)); hide(chara(9999)) }\non button(1, 5) f');
+    const wrong = await checkStageScript(
+      s,
+      c,
+      'function f() { obj(5).SetVisible(1); obj(9999).SetVisible(0) }\non button(1, 5) f',
+    );
     expect(wrong.notes.join('\n')).toContain('「ボタンを踏んだとき (降りると戻る)」の種類ではありません');
-    expect(wrong.notes.join('\n')).toContain('chara(9999)');
-    expect(wrong.notes.join('\n')).not.toContain('chara(5) の');
+    expect(wrong.notes.join('\n')).toContain('obj(9999)');
+    expect(wrong.notes.join('\n')).not.toContain('obj(5) の');
     // scripts are for added stages
     expect(() => s.setStageScript(lanaiContents(s)[28]!.archive, 'on talk(1, 5) {}')).toThrow('追加したステージ');
   });

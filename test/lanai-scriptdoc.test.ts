@@ -3,7 +3,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   emptyScriptDoc,
-  expandParts,
   type ScriptNode,
   parseStageScript,
   scriptDocFromSource,
@@ -15,11 +14,8 @@ import {
   docBound,
   docUnbound,
   rowBinding,
-  SCRIPT_METHOD_CALLS,
-  SCRIPT_METHOD_WORDS,
   SCRIPT_SAMPLES,
   scriptLineRefs,
-  SCRIPT_WORD_CALLS,
   SCRIPT_WORDS,
   STAGE_SCRIPT_EXAMPLE,
   startBinding,
@@ -33,8 +29,8 @@ describe('RPG FREE! stage script: the document of the editor', () => {
   const doc: ScriptDoc = {
     ...emptyScriptDoc(),
     functions: [
-      { name: 'a', body: 'say(1)' },
-      { name: 'b', body: 'say(2)' },
+      { name: 'a', body: 'ScriptSystem.WaitTime(1)' },
+      { name: 'b', body: 'ScriptSystem.WaitTime(2)' },
     ],
   };
 
@@ -83,202 +79,198 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     const s = scriptOfDoc(b);
     expect(s.vars).toMatchObject([{ name: 'BOSS', kind: 'byte', reset: true }]);
     expect(s.events.map((e) => e.trigger)).toEqual(['talk', 'start']);
-    // popup(self, …) of the boss sample needs an event that has an owner
+    // talk / self.SetPopup of the boss sample need an event that has an owner
     expect(() => scriptOfDoc(docBound(boss!, { trigger: 'area', group: 1, row: 9, fn: 'boss_talk' }))).toThrow('self');
     expect(parseStageScript(STAGE_SCRIPT_EXAMPLE).events.length).toBe(1);
   });
 
-  test('the lines a text names: talk / say / ask, each once, comments left out', () => {
+  test('the lines a text names: talk and the Script API messages, each once, comments left out', () => {
     expect(
-      scriptLineRefs('talk(0x60)\nif (ask( 99 )) { say(0x60); talk(0X1a) } // talk(5)\n/* say(6) */ stalk(7)'),
-    ).toEqual([0x60, 99, 0x1a]);
-    expect(scriptLineRefs('wait(1)')).toEqual([]);
+      scriptLineRefs(
+        'talk(0x80000060)\nif (ScriptMenu.SystemMessageYesNo( 99 )) { ScriptMenu.StartMessageAuto(0x80000060, 0, 0, 0.2); talk(0X1a) } // talk(5)\n/* talk(6) */ stalk(7)',
+      ),
+    ).toEqual([0x80000060, 99, 0x1a]);
+    expect(scriptLineRefs('ScriptSystem.WaitTime(1)')).toEqual([]);
   });
 
-  test('the words of the help: each statement word is one the reader knows', () => {
+  test('the words of the help: each word of the language reads', () => {
     const body = (text: string): unknown => parseStageScript(`var V: byte\non talk(1, 1) { ${text} }`);
     const example: Record<string, string> = {
-      talk: 'talk(1)',
-      say: 'say(1)',
-      popup: 'popup(self, 1)',
-      popupEnd: 'popupEnd(hero)',
-      emotion: 'emotion(1)',
-      emotionEnd: 'emotionEnd()',
-      anim: 'anim(hero, 1, 2)',
-      waitAnim: 'waitAnim(chara(2))',
-      move: 'move(hero, 1, 2.5, -3)',
-      turn: 'turn(self, 90)',
-      face: 'face(self, hero)',
-      show: 'show(self)',
-      hide: 'hide(self)',
-      camera: 'camera(self, 1)',
-      cameraBack: 'cameraBack(1)',
-      fadeOut: 'fadeOut(0.5)',
-      fadeIn: 'fadeIn(0.5)',
-      follow: 'follow(0)',
-      se: 'se(1)',
-      wait: 'wait(1)',
-      addItem: 'addItem(1, 1)',
-      getItem: 'getItem(1, 1)',
-      addGold: 'addGold(-5)',
-      openDoor: 'openDoor(1)',
-      openDoorNow: 'openDoorNow(1)',
-      closeDoor: 'closeDoor(1)',
-      jingle: 'jingle()',
-      bgmPause: 'bgmPause(0.3)',
-      bgmResume: 'bgmResume(0.3)',
-      collision: 'collision(1, 0)',
-      remove: 'remove(1)',
-      vanishMonster: 'vanishMonster(1)',
-      battle: 'battle(1)',
-      stageName: 'stageName()',
+      vanishEffect: 'vanishEffect(obj(2))',
+      vec: 'ScriptMap.SetPartyPosition(vec(1, 0, -2 * 3), 4, 1, 100)',
+      selfRow: 'ScriptMap.EnableEventCollision(selfRow, 0)',
+      obj: 'obj(2).SetVisible(0)',
+      hero: 'hero.SetVisible(0)',
+      self: 'self.SetVisible(0)',
       return: 'return',
       if: 'if (V) {} else {}',
-      switch: 'switch (V) { case 1: say(1) default: say(2) }',
-      ask: 'if (ask(1)) {}',
-      item: 'if (item(1) >= 2) {}',
-      state: 'if (state(1) >= 2) {}',
-      monsters: 'if (monsters() == 0) {}',
+      switch: 'switch (V) { case 1: talk(1) default: talk(2) }',
     };
-    const words = SCRIPT_WORDS.map((x) => x.word).filter(
-      (x) => /^[a-z]/u.test(x) && !['hero', 'self', 'chara'].includes(x),
-    );
-    expect(words.filter((x) => x !== 'disable' && !(x in example))).toEqual([]);
+    const words = SCRIPT_WORDS.map((x) => x.word).filter((x) => /^[a-z]\w*$/iu.test(x));
+    expect(words.filter((x) => !(x in example))).toEqual([]);
     for (const x of Object.values(example)) expect(() => body(x)).not.toThrow();
-    expect(() => parseStageScript('on area(1, 1) { disable() }')).not.toThrow();
   });
 
-  test('the function editor accepts the monster effect statement', () => {
-    expect(scriptFunctionProblem([], 'vanishMonster(9)')).toBeNull();
+  test('the function editor accepts the library vanish and offers the rows', () => {
+    expect(scriptFunctionProblem([], 'vanish(9)')).toBeNull();
     expect(
-      scriptCompletions('vanishMonster(', { vars: [], lines: [], records: [{ row: 9, label: 'ボス' }] })?.options,
+      scriptCompletions('vanish(', { vars: [], lines: [], records: [{ row: 9, label: 'ボス' }] })?.options,
     ).toEqual([{ label: '9 ボス', apply: '9', type: 'constant' }]);
   });
 });
 
-describe('openDoor: opened as the game shows it (CRO 117 D01BossWin)', () => {
-  const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
-  test('openDoor is a library function: the camera, the sounds, the motion, the jingle and the camera back', () => {
-    const ops = expandParts(body('openDoor(3)\nse(1)')).map((n) =>
-      n.op === 'se'
-        ? `se ${n.id}`
-        : n.op === 'door'
-          ? `door ${n.row}`
-          : n.op === 'camera'
-            ? `camera ${n.who ? 'door' : 'back'}`
-            : n.op,
-    );
-    expect(ops).toEqual([
-      'camera door',
-      'wait',
-      `se ${0x79}`,
-      'wait',
-      `se ${0x7a}`,
-      'anim',
-      'waitAnim',
-      'door 3',
-      'bgm',
-      `se ${0x41}`,
-      'wait',
-      'bgm',
-      'wait',
-      'camera back',
-      'se 1',
+const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
+/** The Script API calls of a body, as `Class::Name(arguments)`. */
+const calls = (nodes: ScriptNode[]): string[] =>
+  nodes.map((n) =>
+    n.op === 'call'
+      ? `${n.call.name}(${n.call.args
+          .filter((a) => a.k !== 'm')
+          .map((a) =>
+            a.k === 'i' || a.k === 'f'
+              ? String(Math.round(a.v * 1e6) / 1e6)
+              : a.k === 'c' || a.k === 'p'
+                ? a.who.kind === 'chara'
+                  ? `obj(${a.who.row})`
+                  : a.who.kind
+                : a.k === 'v'
+                  ? `vec(${a.x}, ${a.y}, ${a.z})`
+                  : a.k,
+          )
+          .join(
+            ', ',
+          )})${n.call.self ? ` on ${n.call.self.kind === 'chara' ? `obj(${n.call.self.row})` : n.call.self.kind}` : ''}`
+      : n.op,
+  );
+
+describe('the language calls the Script API: no statements of its own but the flow and vanishEffect', () => {
+  test('openDoor is a library function of Script API calls (CRO 117 D01BossWin)', () => {
+    expect(calls(body('openDoor(3)'))).toEqual([
+      'ScriptCamera::PauseCameraUpdater()',
+      'ScriptCamera::MoveEyeAndTarget(obj(3), 1, vec(0, 0, 0), vec(0, 0, 0), 2)',
+      'ScriptCamera::WaitAnimation()',
+      'ScriptSystem::WaitTime(0.5)',
+      `ScriptSound::Play(${0x79}, 0)`,
+      'ScriptSystem::WaitTime(1.5)',
+      `ScriptSound::Play(${0x7a}, 0)`,
+      `ScriptChara::StartAnimation(${0x80000073}, 0, 1, 0) on obj(3)`,
+      'ScriptChara::WaitAnimation(62) on obj(3)',
+      'ScriptMap::SetDoorOpenFlag(3)',
+      'ScriptSound::PauseBGM(0.3)',
+      `ScriptSound::Play(${0x41}, 0)`,
+      'ScriptSystem::WaitTime(1)',
+      'ScriptSound::ReplayBGM(0.3)',
+      'ScriptSystem::WaitTime(0.3)',
+      'ScriptCamera::MoveFieldCamera(1, 2)',
+      'ScriptCamera::WaitAnimation()',
+      'ScriptCamera::ResumeCameraUpdater()',
     ]);
-    // its text, written in the script, does the same; the door can be written as chara(3)
-    const lib = SCRIPT_LIBRARY.find((f) => f.name === 'openDoor')!;
-    const inner = lib.source
-      .slice(lib.source.indexOf('{') + 1, lib.source.lastIndexOf('}'))
-      .replaceAll('door.', 'chara(3).');
-    expect(body(inner)).toEqual(body('openDoor(3)'));
-    expect(body('openDoor(chara(3))')).toEqual(body('openDoor(3)'));
+    // the door as obj(3), or the object before the dot
+    expect(body('openDoor(obj(3))')).toEqual(body('openDoor(3)'));
+    expect(body('obj(3).openDoor()')).toEqual(body('openDoor(3)'));
   });
   test('a function of the script takes the place of the library one of the same name', () => {
-    const s = parseStageScript('function openDoor(door: chara) {\n  door.open()\n}\non button(1, 2) { openDoor(3) }');
-    expect(s.events[0]!.body).toEqual([{ op: 'doorMotion', row: 3 }]);
-  });
-  test('the parts: open() without camera or sound, jingle with its sound, the BGM', () => {
-    expect(expandParts(body('chara(3).open()'))).toEqual([
-      { op: 'anim', who: { kind: 'chara', row: 3 }, id: 0x73, type: 0 },
-      { op: 'waitAnim', who: { kind: 'chara', row: 3 } },
-      { op: 'door', row: 3, open: true },
-    ]);
-    expect(expandParts(body('jingle(0x50)')).map((n) => (n.op === 'se' ? n.id : n.op))).toEqual([
-      'bgm',
-      0x50,
-      'wait',
-      'bgm',
-    ]);
-    expect(body('jingle()')).toEqual([{ op: 'jingle', id: 0x41 }]);
-    expect(body('bgmPause(0.3)\nbgmResume(1)')).toEqual([
-      { op: 'bgm', pause: true, seconds: 0.3 },
-      { op: 'bgm', pause: false, seconds: 1 },
+    const s = parseStageScript(
+      'function openDoor(door: num) {\n  obj(door).open()\n}\non button(1, 2) { openDoor(3) }',
+    );
+    expect(calls(s.events[0]!.body)).toEqual([
+      `ScriptChara::StartAnimation(${0x80000073}, 0, 1, 0) on obj(3)`,
+      'ScriptChara::WaitAnimation(62) on obj(3)',
+      'ScriptMap::SetDoorOpenFlag(3)',
     ]);
   });
-  test('the methods of a character are the statements of the same name', () => {
+  test('who.f(…) is f(who, …) for the functions whose first argument is an object or an event number', () => {
     const same: [string, string][] = [
-      ['hero.anim(0x79)', 'anim(hero, 0x79)'],
-      ['chara(2).anim(5, 1)', 'anim(chara(2), 5, 1)'],
-      ['self.waitAnim()', 'waitAnim(self)'],
+      ['obj(3).open()', 'open(3)'],
       ['hero.move(1, 2.5, -3)', 'move(hero, 1, 2.5, -3)'],
+      ['hero.walk(1, 2, 3)', 'walk(hero, 1, 2, 3)'],
       ['self.turn(90)', 'turn(self, 90)'],
       ['self.face(hero)', 'face(self, hero)'],
-      ['chara(4).show()', 'show(chara(4))'],
-      ['chara(4).hide()', 'hide(chara(4))'],
-      ['chara(4).camera(1)', 'camera(chara(4), 1)'],
-      ['hero.popup(2)', 'popup(hero, 2)'],
-      ['hero.popupEnd()', 'popupEnd(hero)'],
-      ['chara(3).close()', 'closeDoor(3)'],
-      ['chara(3).remove()', 'remove(3)'],
-      ['chara(3).vanishMonster()', 'vanishMonster(3)'],
+      ['obj(4).camera(1)', 'camera(obj(4), 1)'],
+      ['obj(9).vanish()', 'vanish(9)'],
     ];
     for (const [method, fn] of same) expect([method, body(method)]).toEqual([method, body(fn)]);
+    expect(() => body('hero.open()')).toThrow('obj(イベント番号).open');
+    expect(() => body('hero.nothing()')).toThrow('関数「nothing」はありません');
+    expect(() => body('hero.cameraBack()')).toThrow();
+    expect(() => body('if (hero.move(1, 2, 3)) {}')).toThrow('値を返しません');
+    expect(body('obj(3).StartAnimation(0x80000079, 0, 1, 0)')[0]!.op).toBe('call');
   });
-  test('a method of an event needs chara(), a method is no value, and Script API calls stay', () => {
-    expect(() => body('hero.open()')).toThrow('chara(イベント番号) にだけ');
-    expect(() => body('self.remove()')).toThrow('chara(イベント番号) にだけ');
-    expect(() => body('if (hero.anim(1)) {}')).toThrow('文として');
-    expect(body('chara(3).StartAnimation(0x80000079, 0, 1, 0)')[0]!.op).toBe('call');
-    expect(body('hero.SetVisible(0)')[0]!.op).toBe('call');
+  test('the words of the old language are gone', () => {
+    for (const old of ['say(1)', 'wait(1)', 'se(1)', 'popup(hero, 1)', 'anim(hero, 1)', 'battle(1)', 'disable()'])
+      expect(() => body(old)).toThrow('はありません');
+    expect(() => body('chara(3).SetVisible(0)')).toThrow();
+    expect(() => body('if (ask(1)) {}')).toThrow('値として使えません');
   });
-  test('openDoorNow and closeDoor stay as they are', () => {
-    const nodes = body('openDoorNow(3)\ncloseDoor(3)');
-    expect(expandParts(nodes)).toEqual(nodes);
-    expect(nodes).toEqual([
-      { op: 'door', row: 3, open: true },
-      { op: 'door', row: 3, open: false },
+  test('the hero calls the function of the party member first, others that of the character', () => {
+    expect(calls(body('hero.StartAnimation(0x80000003, 0, 1, 0)'))[0]).toStartWith('ScriptPlayer::StartAnimation');
+    expect(calls(body('obj(1).StartAnimation(0x80000003, 0, 1, 0)'))[0]).toStartWith('ScriptChara::StartAnimation');
+    expect(calls(body('hero.MoveTo(vec(1, 2, 3), 0, 0, 0, 0, 0)'))[0]).toStartWith('ScriptChara::MoveTo');
+  });
+  test('arguments are worked out when the script is built', () => {
+    expect(calls(body('ScriptSystem.WaitTime(1 + 2 * (3 - 1) / 4)'))).toEqual(['ScriptSystem::WaitTime(2)']);
+    expect(calls(body('turn(hero, 90)'))[0]).toBe(
+      `ScriptChara::RotateTo(${Math.round((Math.PI / 2) * 1e6) / 1e6}, 0.25, 0, 0, 0, 1) on hero`,
+    );
+    expect(calls(body('ScriptMap.SetPartyPosition(vec(-1, 0, 2 - 5), 4, 1, 100)'))[0]).toBe(
+      'ScriptMap::SetPartyPosition(vec(-1, 0, -3), 4, 1, 100)',
+    );
+    // a whole number fits an integer parameter, one with a point a float
+    expect(calls(body('ScriptSound.Play(0x7A, 0)'))).toEqual([`ScriptSound::Play(${0x7a}, 0)`]);
+    expect(() => body('ScriptSystem.WaitTime(1 / 0)')).toThrow('0 では割れません');
+    const s = parseStageScript('function at(x: num) { ScriptSystem.WaitTime(x * 2 + 0.5) }\non start(1) { at(3) }');
+    expect(calls(s.events[0]!.body)).toEqual(['ScriptSystem::WaitTime(6.5)']);
+  });
+  test('selfRow: the own number of the event, given by the game', () => {
+    const n = body('ScriptMap.EnableEventCollision(selfRow, 0)')[0]!;
+    expect(n.op === 'call' && n.call.args[0]).toEqual({ k: 'own' });
+    expect(() => parseStageScript('on start(1) { ScriptMap.EnableEventCollision(selfRow, 0) }')).toThrow('selfRow');
+    expect(() => body('ScriptMap.EnableEventCollision(selfRow + 1, 0)')).toThrow('selfRow');
+  });
+  test('vanishEffect: the one statement of the language', () => {
+    expect(body('vanishEffect(obj(9))')).toEqual([{ op: 'vanishEffect', who: { kind: 'chara', row: 9 } }]);
+    expect(calls(body('vanish(9)'))).toEqual(['if']);
+    const v = body('vanish(9)')[0]!;
+    expect(v.op === 'if' && calls(v.then)).toEqual([
+      'ScriptChara::CancelAutoAnimation() on obj(9)',
+      `ScriptChara::StartAnimation(${0x80000066}, 0, 1, 0) on obj(9)`,
+      'ScriptChara::SetBlendAnim(0) on obj(9)',
+      'ScriptChara::WaitAnimation(62) on obj(9)',
+      'ScriptChara::AlphaTo(0, 1, 2, 0, 0, 0) on obj(9)',
+      `ScriptSound::Play(${0xb8}, 0)`,
+      'vanishEffect',
+      'ScriptChara::WaitNodeAnimation() on obj(9)',
+      'ScriptMap::DeleteEventObject(9)',
     ]);
   });
 });
 
-const body = (src: string): ScriptNode[] => parseStageScript(`on button(1, 2) {\n${src}\n}`).events[0]!.body;
-
 describe('functions with parameters: written out where they are called', () => {
-  test('a character and a number put in; a door written as its event number', () => {
+  test('an object and a number put in; an object written as its event number', () => {
     const s = parseStageScript(
-      'function show_off(who: chara, motion: num) {\n  who.anim(motion)\n  waitAnim(who)\n}\n' +
-        'on talk(1, 5) { show_off(self, 0x79); show_off(4, 2) }',
+      'function show_off(who: obj, motion: num) {\n  who.StartAnimation(motion, 0, 1, 0)\n  who.WaitAnimation(0x3E)\n}\n' +
+        'on talk(1, 5) { show_off(self, 0x80000079); show_off(4, 0x80000002) }',
     );
     expect(s.functions[0]!.params).toEqual([
-      { name: 'who', kind: 'chara' },
+      { name: 'who', kind: 'obj' },
       { name: 'motion', kind: 'num' },
     ]);
     expect(s.functions[0]!.body).toEqual([]);
-    expect(s.events[0]!.body).toEqual([
-      { op: 'anim', who: { kind: 'self' }, id: 0x79, type: 0 },
-      { op: 'waitAnim', who: { kind: 'self' } },
-      { op: 'anim', who: { kind: 'chara', row: 4 }, id: 2, type: 0 },
-      { op: 'waitAnim', who: { kind: 'chara', row: 4 } },
+    expect(calls(s.events[0]!.body)).toEqual([
+      `ScriptChara::StartAnimation(${0x80000079}, 0, 1, 0) on self`,
+      'ScriptChara::WaitAnimation(62) on self',
+      `ScriptChara::StartAnimation(${0x80000002}, 0, 1, 0) on obj(4)`,
+      'ScriptChara::WaitAnimation(62) on obj(4)',
     ]);
   });
   test('a function without parameters can be called too, and a number goes into Script API calls and vec()', () => {
     const s = parseStageScript(
       'function at(x: num) { ScriptMap.SetPartyPosition(vec(x, 0, 30), 4, 1, 100) }\n' +
-        'function both() { at(10); wait(1) }\non start(1) { both() }',
+        'function both() { at(10); ScriptSystem.WaitTime(1) }\non start(1) { both() }',
     );
     const [call, wait] = s.events[0]!.body;
     expect(call?.op === 'call' && call.call.args[0]).toEqual({ k: 'v', x: 10, y: 0, z: 30 });
-    expect(wait).toEqual({ op: 'wait', seconds: 1 });
+    expect(calls([wait!])).toEqual(['ScriptSystem::WaitTime(1)']);
   });
   test('the mistakes', () => {
     const bad = (src: string): string => {
@@ -290,58 +282,67 @@ describe('functions with parameters: written out where they are called', () => {
       }
     };
     expect(bad('function f(a: num) { f(a) }')).toContain('自分を');
-    expect(bad('function f(a: num) { wait(a) }\non start(1) f')).toContain('イベントには割り当てられません');
-    expect(bad('function wait() {}')).toContain('組み込みの文');
+    expect(bad('function f(a: num) { ScriptSystem.WaitTime(a) }\non start(1) f')).toContain(
+      'イベントには割り当てられません',
+    );
+    expect(bad('function vanishEffect() {}')).toContain('組み込みの文');
     expect(bad('function f(a: num) {}\non start(1) { f() }')).toContain('引数は 1 個');
-    expect(bad('function f(a: thing) {}')).toContain('chara');
+    expect(bad('function f(a: thing) {}')).toContain('obj');
     expect(bad('function f(a: num, a: num) {}')).toContain('2 つ');
-    // a number where a character is wanted, and the other way
-    expect(bad('function f(a: num) { a.show() }')).not.toBe('');
-    expect(bad('function f(a: chara) { wait(a) }')).toContain('数');
+    // a number where an object is wanted, and the other way
+    expect(bad('function f(a: num) { a.SetVisible(0) }')).not.toBe('');
+    expect(bad('function f(a: obj) { ScriptSystem.WaitTime(a) }')).toContain('数');
+    expect(bad('on start(1) { openDoor(hero) }')).toContain('obj(イベント番号)');
     // a mistake inside a library function is told at the call
-    expect(bad('on start(1) {\n  wait(1)\n  openDoor(hero)\n}')).toMatch(/^3 行目: openDoor \(ライブラリ\) の中/u);
+    expect(bad('on start(1) {\n  ScriptSystem.WaitTime(1)\n  jingle(1.5)\n}')).toMatch(
+      /^3 行目: jingle \(ライブラリ\) の中/u,
+    );
   });
   test('the document keeps the parameters; a function can call another of the script', () => {
     const doc: ScriptDoc = {
       vars: [],
       functions: [
-        { name: 'helper', params: 'd: chara', body: 'd.show()' },
+        { name: 'helper', params: 'd: obj', body: 'd.SetVisible(1)' },
         { name: 'ev', body: 'helper(3)' },
       ],
       bindings: [{ trigger: 'talk', group: 1, row: 5, fn: 'ev' }],
     };
     expect(scriptDocFromSource(scriptDocSource(doc).text).functions).toEqual(doc.functions);
-    expect(scriptOfDoc(doc).events[0]!.body).toEqual([{ op: 'show', who: { kind: 'chara', row: 3 }, on: true }]);
+    expect(calls(scriptOfDoc(doc).events[0]!.body)).toEqual(['ScriptChara::SetVisible(1) on obj(3)']);
     expect(scriptFunctionProblem([], 'helper(3)', '', doc.functions, 'ev')).toBeNull();
-    expect(scriptFunctionProblem([], 'd.show()', 'd: chara', doc.functions, 'helper')).toBeNull();
+    expect(scriptFunctionProblem([], 'd.SetVisible(1)', 'd: obj', doc.functions, 'helper')).toBeNull();
     expect(scriptFunctionProblem([], 'nothing(3)', '', doc.functions, 'ev')).not.toBeNull();
   });
   test('every library function reads when called', () => {
-    const calls: Record<string, string> = {
-      openDoor: 'openDoor(3)',
+    const library: Record<string, string> = {
+      talk: 'talk(0x80000010)',
+      move: 'move(hero, 250, 0, 750)',
+      walk: 'walk(hero, 250, 0, 750)',
+      turn: 'turn(self, 90)',
+      face: 'face(self, hero)',
+      camera: 'camera(obj(4), 1.3)',
+      cameraBack: 'cameraBack(1)',
       cameraLook: 'cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5)',
-      cameraNormal: 'cameraNormal(1.1)',
+      open: 'open(3)',
+      jingle: 'jingle(0x41)',
+      openDoor: 'openDoor(3)',
+      vanish: 'vanish(9)',
       partyLineUp: 'partyLineUp(3750, 4150, 4)',
       partyColumn: 'partyColumn(3750, 3030, 8)',
     };
-    expect(SCRIPT_LIBRARY.map((f) => f.name).sort()).toEqual(Object.keys(calls).sort());
-    for (const [name, text] of Object.entries(calls)) expect([name, body(text).length > 0]).toEqual([name, true]);
+    expect(SCRIPT_LIBRARY.map((f) => f.name).sort()).toEqual(Object.keys(library).sort());
+    for (const [name, text] of Object.entries(library))
+      expect([name, parseStageScript(`on talk(1, 2) { ${text} }`).events[0]!.body.length > 0]).toEqual([name, true]);
   });
 });
 
-describe('what the words do: the Script API under each, and the API descriptions', () => {
-  test('every word of the help and every method names the calls under it', () => {
-    const words = SCRIPT_WORDS.filter((x) => x.kind !== 'flow' && x.kind !== 'who' && /^[a-z]/u.test(x.word)).map(
-      (x) => x.word,
-    );
-    expect(words.filter((x) => !SCRIPT_WORD_CALLS[x])).toEqual([]);
-    expect(SCRIPT_METHOD_WORDS.map((x) => x.word).filter((x) => !SCRIPT_METHOD_CALLS[x])).toEqual([]);
-  });
+describe('the API descriptions', () => {
   test('every description is of a function of the table, and the hover shows it', () => {
     const syms = new Set(SCRIPT_API_ROWS.map((r) => r[2]));
     expect(Object.keys(SCRIPT_API_DOCS).filter((k) => !syms.has(k))).toEqual([]);
     expect(scriptHoverInfo('ScriptCamera.', 'MoveFieldCamera')!.about).toContain('フィールド');
-    expect(scriptHoverInfo('', 'wait')!.about).toContain('中身: ScriptSystem::WaitTime');
+    expect(scriptHoverInfo('', 'vanishEffect')!.about).toContain('エフェクト');
     expect(scriptHoverInfo('', 'cameraLook')!.about).toContain('ライブラリ');
+    expect(scriptHoverInfo('obj(3).', 'open')!.about).toContain('扉');
   });
 });

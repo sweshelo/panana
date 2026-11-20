@@ -10,7 +10,7 @@ describe('scriptMoves', () => {
       'move(hero, 1750, 0, 2750)',
       '// move(hero, 1, 2, 3)',
       '/* move(self, 9, 9, 9) */',
-      'move( chara( 0x0C ) , -250.5 ,10, 0x1F4 )',
+      'move( obj( 0x0C ) , -250.5 ,10, 0x1F4 )',
       'move(self, 3, 3, 3)',
     ].join('\n');
     const m = scriptMoves(body);
@@ -21,22 +21,22 @@ describe('scriptMoves', () => {
     ]);
     // the spans are where the numbers are written
     expect(m[1]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['-250.5', '10', '0x1F4']);
-    // the 3 of self's x is not the 3 of a chara row before it
+    // the 3 of self's x is not the 3 of an obj row before it
     expect(m[2]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['3', '3', '3']);
   });
 
-  test('reads who.move(x, y, z) as well, in the order of the text', () => {
-    const body = 'chara(3).move(1, 2, 3)\nmove(hero, 4, 5, 6)\nself . move( -7 , 8, 0x10 )\nxhero.move(1, 1, 1)';
+  test('reads who.move(x, y, z) and walk as well, in the order of the text', () => {
+    const body = 'obj(3).move(1, 2, 3)\nwalk(hero, 4, 5, 6)\nself . walk( -7 , 8, 0x10 )\nxhero.move(1, 1, 1)';
     const m = scriptMoves(body);
     expect(m.map((x) => [x.who, x.x, x.y, x.z, x.line])).toEqual([
       [{ kind: 'chara', row: 3 }, 1, 2, 3, 1],
       [{ kind: 'hero' }, 4, 5, 6, 2],
       [{ kind: 'self' }, -7, 8, 16, 3],
     ]);
-    // the 3 of the chara row is not taken for a number
+    // the 3 of the obj row is not taken for a number
     expect(m[0]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['1', '2', '3']);
     expect(m[2]!.spans.map(([a, b]) => body.slice(a, b))).toEqual(['-7', '8', '0x10']);
-    expect(withScriptMove(body, 0, 250, 0, 750).split('\n')[0]).toBe('chara(3).move(250, 0, 750)');
+    expect(withScriptMove(body, 0, 250, 0, 750).split('\n')[0]).toBe('obj(3).move(250, 0, 750)');
   });
 
   test('a position written as a variable or vec() is not a point', () => {
@@ -44,12 +44,12 @@ describe('scriptMoves', () => {
   });
 
   test('writes a new position into the k-th move() only', () => {
-    const body = 'talk(0x10)\nmove(hero, 250, 5, 250)\nmove(chara(3), 1, 2, 3) // to the door\n';
+    const body = 'talk(0x10)\nmove(hero, 250, 5, 250)\nmove(obj(3), 1, 2, 3) // to the door\n';
     expect(withScriptMove(body, 1, 1000.004, 2, -750)).toBe(
-      'talk(0x10)\nmove(hero, 250, 5, 250)\nmove(chara(3), 1000, 2, -750) // to the door\n',
+      'talk(0x10)\nmove(hero, 250, 5, 250)\nmove(obj(3), 1000, 2, -750) // to the door\n',
     );
     expect(withScriptMove(body, 0, 12.5, 5, 0)).toBe(
-      'talk(0x10)\nmove(hero, 12.5, 5, 0)\nmove(chara(3), 1, 2, 3) // to the door\n',
+      'talk(0x10)\nmove(hero, 12.5, 5, 0)\nmove(obj(3), 1, 2, 3) // to the door\n',
     );
     expect(withScriptMove(body, 2, 0, 0, 0)).toBe(body);
     // the text still compiles

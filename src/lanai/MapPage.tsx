@@ -1711,7 +1711,7 @@ function RangeFields({
         </>
       )}
       <p className="muted small">
-        {`${range.note} 判定はパーティの位置 1 点が形の中にあるかどうかで、判定そのものには「入った・出た」の区別がありません (続けて起きるかはイベントの状態と disable() で決まります)。`}
+        {`${range.note} 判定はパーティの位置 1 点が形の中にあるかどうかで、判定そのものには「入った・出た」の区別がありません (続けて起きるかはイベントの状態と ScriptMap.EnableEventCollision(selfRow, 0) で決まります)。`}
       </p>
     </>
   );

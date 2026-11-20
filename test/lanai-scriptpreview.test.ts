@@ -1,44 +1,72 @@
 import { expect, test } from 'bun:test';
 import { parseStageScript } from '../src/lanai/eventScript';
-import { runPreviewNodes } from '../src/lanai/previewSequence';
+import { previewAction, runPreviewNodes } from '../src/lanai/previewSequence';
 
 const body = (source: string) => parseStageScript(`function demo() { ${source} }`).functions[0]!.body;
+
+test('the library and Script API calls the preview shows', () => {
+  expect(body('move(hero, 250, 0, 750)').map(previewAction)).toEqual([
+    { kind: 'move', who: { kind: 'hero' }, x: 250, y: 0, z: 750 },
+    { kind: 'none' },
+  ]);
+  const turn = previewAction(body('obj(3).turn(90)')[0]!);
+  expect(turn).toMatchObject({ kind: 'turn', who: { kind: 'chara', row: 3 } });
+  expect(typeof turn !== 'string' && turn.kind === 'turn' && Math.round(turn.degrees)).toBe(90);
+  expect(body('camera(obj(4), 1.5)').map(previewAction)).toEqual([
+    { kind: 'none' },
+    { kind: 'camera', who: { kind: 'chara', row: 4 }, seconds: 1.5 },
+    { kind: 'none' },
+  ]);
+  expect(previewAction(body('ScriptSystem.FadeOutWait(0.5, 2)')[0]!)).toEqual({
+    kind: 'fade',
+    out: true,
+    seconds: 0.5,
+  });
+  expect(previewAction(body('hero.StartAnimation(0x80000003, 0, 1, 0)')[0]!)).toEqual({
+    kind: 'anim',
+    who: { kind: 'hero' },
+    id: 0x80000003,
+  });
+  expect(previewAction(body('ScriptFlag.AddGold(5)')[0]!)).toContain('プレビューできません');
+});
 
 test('preview preserves source order and runs a sound', async () => {
   const seen: string[] = [];
   await runPreviewNodes(
-    body('move(hero, 250, 0, 250); wait(0.1); se(0x7A); turn(hero, 90)'),
+    body(
+      'hero.MoveTo(vec(250, 0, 250), 0, 0, 0, 0, 0); ScriptSystem.WaitTime(0.1); ScriptSound.Play(0x7A, 0); turn(hero, 90)',
+    ),
     () => true,
-    async (node) => {
-      seen.push(node.op);
+    async (action) => {
+      seen.push(action.kind);
     },
     () => {
       throw new Error('音の実行を省略してはいけません');
     },
   );
-  expect(seen).toEqual(['move', 'wait', 'se', 'turn']);
+  expect(seen).toEqual(['move', 'wait', 'se', 'turn', 'wait']);
 });
 
 test('preview cancellation and return prevent later actions', async () => {
   const seen: string[] = [];
   let live = true;
   await runPreviewNodes(
-    body('move(hero, 250, 0, 250); turn(hero, 90)'),
+    body('hero.SetVisible(0); turn(hero, 90)'),
     () => live,
-    async (node) => {
-      seen.push(node.op);
+    async (action) => {
+      seen.push(action.kind);
       live = false;
     },
     () => {},
   );
-  expect(seen).toEqual(['move']);
+  expect(seen).toEqual(['show']);
 
   seen.length = 0;
   await runPreviewNodes(
     body('return; turn(hero, 90)'),
     () => true,
-    async (node) => {
-      seen.push(node.op);
+    async (action) => {
+      seen.push(action.kind);
     },
     () => {},
   );
@@ -48,29 +76,29 @@ test('preview cancellation and return prevent later actions', async () => {
 test('preview skips a branch without guessing game state, then continues', async () => {
   const seen: string[] = [];
   await runPreviewNodes(
-    body('if (monsters() == 0) { turn(hero, 90) }; move(hero, 250, 0, 250)'),
+    body('if (ScriptMap.GetMonsterLimitCount() == 0) { turn(hero, 90) }; hero.SetVisible(1)'),
     () => true,
-    async (node) => {
-      seen.push(node.op);
+    async (action) => {
+      seen.push(action.kind);
     },
     (node, _index, reason) => {
       seen.push(`skip ${node.op}`);
       expect(reason).toContain('分岐全体を省略');
     },
   );
-  expect(seen).toEqual(['skip if', 'move']);
+  expect(seen).toEqual(['skip if', 'show']);
 });
 
 test('preview logs a failed visual action and continues', async () => {
   const seen: string[] = [];
   await runPreviewNodes(
-    body('anim(hero, 0x80000003); turn(hero, 90)'),
+    body('hero.StartAnimation(0x80000003, 0, 1, 0); hero.SetVisible(1)'),
     () => true,
-    async (node) => {
-      if (node.op === 'anim') throw new Error('モデルにモーションがありません');
-      seen.push(node.op);
+    async (action) => {
+      if (action.kind === 'anim') throw new Error('モデルにモーションがありません');
+      seen.push(action.kind);
     },
     (node, _index, reason) => seen.push(`skip ${node.op}: ${reason}`),
   );
-  expect(seen).toEqual(['skip anim: モデルにモーションがありません', 'turn']);
+  expect(seen).toEqual(['skip call: モデルにモーションがありません', 'show']);
 });

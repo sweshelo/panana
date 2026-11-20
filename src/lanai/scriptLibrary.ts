@@ -1,8 +1,11 @@
 // The library of a stage's event script (eventScript.ts): functions written in the script's own language, which every
-// script can call without writing them. A script's own function of the same name takes their place, so a library
-// function is changed by copying it into the script (the editor's help shows their text and copies it).
-// A function with arguments is written out where it is called (the arguments are numbers and characters known when
-// the script is built), so nothing of the game's state is passed at run time.
+// script can call without writing them. Each is several calls of the game's Script API in the order the shipped CROs
+// make them (a function of one call is not here: the script calls the Script API itself). A script's own function of
+// the same name takes their place, so a library function is changed by copying it into the script (the editor's help
+// shows their text and copies it). A function with arguments is written out where it is called (the arguments are
+// numbers and objects known when the script is built), so nothing of the game's state is passed at run time. A
+// function whose first argument is an object (obj) or an event's number (num) can also be written after the object:
+// `obj(3).open()` is `open(3)`, `hero.move(250, 0, 750)` is `move(hero, 250, 0, 750)`.
 
 export interface ScriptLibraryFunction {
   name: string;
@@ -14,56 +17,150 @@ export interface ScriptLibraryFunction {
 
 export const SCRIPT_LIBRARY: ScriptLibraryFunction[] = [
   {
-    name: 'openDoor',
+    name: 'talk',
     about:
-      '「外から開ける扉」(動作の型 17) を本家と同じ演出で開ける (CRO 117 D01BossWin のボス後の扉): カメラを扉へ → 解錠の音 → 開く音と扉のアニメ → ギミックの音 → カメラを戻す。扉はイベント番号 (openDoor(3)) か chara(3) で書く',
-    source: `function openDoor(door: chara) {
-  door.camera(1)
-  wait(0.5)
-  se(0x79)          // 解錠の音
-  wait(1.5)
-  se(0x7A)          // 開く音
-  door.open()       // 扉のアニメ → 終わるまで待つ → 開いた状態
-  jingle()          // BGM を止めてギミックの音
-  wait(0.3)
-  cameraBack(1)
+      '話しかけたときのイベントで、話している相手 (self) の口を動かしながら台詞を出す (行 ID は 0x800000NN)。ほかのイベントの台詞は ScriptMenu.StartMessageAuto(行 ID, 0, 0, 0.2) で出す。3 つ目の 0 は窓: 0 = 台詞の行の話者で決まる、1 = 会話の吹き出し、2 = システムのウィンドウ',
+    source: `function talk(line: num) {
+  self.StartAnimation(0x80000079, 0, 1, 0)   // 口を動かす
+  ScriptMenu.StartMessage(line, 0, 0, 0.2)   // 台詞 (読み終わるまで待つ)
+  self.StartAnimation(0x80000075, 0, 1, 0)   // 口を止める
+}`,
+  },
+  {
+    name: 'move',
+    about:
+      'その位置まで動かして、着くまで待つ (モーションは変えない。パーティを歩かせるのは walk)。x・z はマップの横・縦、y は高さ (床 = 0)。1 セル = 500 で、セル c の中心は 250 + 500 × c。マップのページの 2D・3D でドラッグして直せる',
+    source: `function move(who: obj, x: num, y: num, z: num) {
+  who.MoveTo(vec(x, y, z), 0, 0, 0, 0, 0)
+  who.WaitNodeAnimation()                    // 着くまで待つ
+}`,
+  },
+  {
+    name: 'walk',
+    about:
+      'パーティの電波人間 (hero など) を、歩くモーションでその位置まで動かし、着いたら立つモーションに戻す。位置は move と同じで、マップのページでドラッグして直せる',
+    source: `function walk(who: obj, x: num, y: num, z: num) {
+  who.StartAnimation(0x80000003, 0, 1, 0)    // 歩くモーション
+  move(who, x, y, z)
+  who.StartAnimation(0x80000001, 0, 1, 0)    // 立つモーション
+}`,
+  },
+  {
+    name: 'turn',
+    about: '向きを変える (度。0.25 秒で回り、回り終わるまで待つ)',
+    source: `function turn(who: obj, degrees: num) {
+  who.RotateTo(degrees * 3.14159265 / 180, 0.25, 0, 0, 0, 1)
+  ScriptSystem.WaitTime(0.25)
+}`,
+  },
+  {
+    name: 'face',
+    about: '相手のほうを向かせる (0.25 秒で回り、回り終わるまで待つ)',
+    source: `function face(who: obj, to: obj) {
+  who.RotateCharaTo(to, 0.25, 0, 0, 0)
+  ScriptSystem.WaitTime(0.25)
+}`,
+  },
+  {
+    name: 'camera',
+    about:
+      'カメラを、フィールドの自動追従を止めてそのキャラ・物へ sec 秒で向ける (本家 CRO 18 のボタン)。cameraBack(秒) で戻す (戻さなくてもイベントの終わりに戻る)',
+    source: `function camera(who: obj, sec: num) {
+  ScriptCamera.PauseCameraUpdater()          // 自動追従を止める (イベントで 1 回だけ)
+  ScriptCamera.MoveEyeAndTarget(who, sec, vec(0, 0, 0), vec(0, 0, 0), 2)
+  ScriptCamera.WaitAnimation()               // 動き終わるまで待つ
+}`,
+  },
+  {
+    name: 'cameraBack',
+    about:
+      'カメラをフィールドの通常の視点へ sec 秒で戻し、自動追従を再開する (本家 CRO 1 D01BossWin: MoveFieldCamera(1.1, 2))。camera や cameraLook のあとに呼ぶ',
+    source: `function cameraBack(sec: num) {
+  ScriptCamera.MoveFieldCamera(sec, 2)
+  ScriptCamera.WaitAnimation()
+  ScriptCamera.ResumeCameraUpdater()         // 自動追従を再開する
 }`,
   },
   {
     name: 'cameraLook',
     about:
-      'カメラを、眼の位置 (ex, ey, ez) から注視点 (tx, ty, tz) を見る位置へ sec 秒で動かす。ey を ty より低くするとローアングル (見上げ) になる (本家 CRO 124: cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5))。フィールドのカメラは +Z 側から −Z を見ている。終わりに cameraNormal で戻す',
+      'カメラを、眼の位置 (ex, ey, ez) から注視点 (tx, ty, tz) を見る位置へ sec 秒で動かす。ey を ty より低くするとローアングル (見上げ) になる (本家 CRO 124: cameraLook(3500, 254, 4738, 3500, 323, 2896, 1.5))。フィールドのカメラは +Z 側から −Z を見ている。終わりに cameraBack で戻す',
     source: `function cameraLook(ex: num, ey: num, ez: num, tx: num, ty: num, tz: num, sec: num) {
-  ScriptCamera.PauseCameraUpdater()   // フィールドの自動追従を止める
+  ScriptCamera.PauseCameraUpdater()          // 自動追従を止める
   ScriptCamera.MoveEyeAndTarget(vec(ex, ey, ez), vec(tx, ty, tz), sec, 0)
-  ScriptCamera.WaitAnimation()        // 動き終わるまで待つ
+  ScriptCamera.WaitAnimation()               // 動き終わるまで待つ
 }`,
   },
   {
-    name: 'cameraNormal',
+    name: 'open',
     about:
-      'カメラをフィールドの通常の視点へ sec 秒で戻し、自動追従を再開する (本家 CRO 1 D01BossWin: MoveFieldCamera(1.1, 2))。cameraLook や ScriptCamera を直接動かしたあとに呼ぶ (camera() のあとは cameraBack)',
-    source: `function cameraNormal(sec: num) {
-  ScriptCamera.MoveFieldCamera(sec, 2)
-  ScriptCamera.WaitAnimation()
-  ScriptCamera.ResumeCameraUpdater()  // フィールドの自動追従を再開する
+      '扉の開くアニメを再生し、終わるまで待って開いた状態にする。カメラ・音・ギミックの音は付かない (前に ScriptSound.Play(音, 0) を書く)。obj(3).open() とも書ける。演出なしで開けるだけなら ScriptMap.SetDoorOpenFlag(イベント番号)',
+    source: `function open(door: num) {
+  obj(door).StartAnimation(0x80000073, 0, 1, 0)   // 扉の開くモーション
+  obj(door).WaitAnimation(0x3E)                   // 終わるまで待つ
+  ScriptMap.SetDoorOpenFlag(door)                 // 開いた状態にする
+}`,
+  },
+  {
+    name: 'jingle',
+    about:
+      'BGM を止めて (0.3 秒) ギミックの音を鳴らし、1 秒後に BGM を戻す (0.3 秒)。音は SoundData の行番号 (openDoor は 0x41)',
+    source: `function jingle(sound: num) {
+  ScriptSound.PauseBGM(0.3)
+  ScriptSound.Play(sound, 0)
+  ScriptSystem.WaitTime(1)
+  ScriptSound.ReplayBGM(0.3)
+}`,
+  },
+  {
+    name: 'openDoor',
+    about:
+      '「外から開ける扉」(動作の型 17) を本家と同じ演出で開ける (CRO 117 D01BossWin のボス後の扉): カメラを扉へ → 解錠の音 → 開く音と扉のアニメ → ギミックの音 → カメラを戻す。扉はイベント番号 (openDoor(3)) か obj(3) で書く',
+    source: `function openDoor(door: num) {
+  camera(obj(door), 1)
+  ScriptSystem.WaitTime(0.5)
+  ScriptSound.Play(0x79, 0)        // 解錠の音
+  ScriptSystem.WaitTime(1.5)
+  ScriptSound.Play(0x7A, 0)        // 開く音
+  obj(door).open()                 // 扉のアニメ → 終わるまで待つ → 開いた状態
+  jingle(0x41)                     // BGM を止めてギミックの音
+  ScriptSystem.WaitTime(0.3)
+  cameraBack(1)
+}`,
+  },
+  {
+    name: 'vanish',
+    about:
+      'マップ上のモンスターを、本家のボス撃破後と同じ演出で消す (CRO 117 D01BossWin): 倒れるモーション → 透明にしながら消える音と光のエフェクト → イベントのキャラを消す。マップにいないときは何もしない',
+    source: `function vanish(monster: num) {
+  if (ScriptMap.GetMapChara(monster)) {               // マップにいるときだけ
+    obj(monster).CancelAutoAnimation()
+    obj(monster).StartAnimation(0x80000066, 0, 1, 0)  // 倒れるモーション
+    obj(monster).SetBlendAnim(0)
+    obj(monster).WaitAnimation(0x3E)
+    obj(monster).AlphaTo(0, 1, 2, 0, 0, 0)            // 1 秒で透明に
+    ScriptSound.Play(0xB8, 0)                         // 消える音
+    vanishEffect(obj(monster))                        // 光のエフェクト (組み込み)
+    obj(monster).WaitNodeAnimation()
+    ScriptMap.DeleteEventObject(monster)
+  }
 }`,
   },
   {
     name: 'partyLineUp',
     about:
-      '仲間の追従を止め、先頭の電波人間を (x, z) に置いて、残りを先頭の後ろに横へ広げて並べる (凸形)。dir は向き (1 = −Z、2 = −X、4 = +Z、8 = +X)。その場に一瞬で置かれるので fadeOut の間に呼ぶとよい。本家 CRO 18 D01BossWin: (3750, 4150, 4)、間隔 150。follow(1) で追従に戻す (推定を含む)',
+      '仲間の追従を止め、先頭の電波人間を (x, z) に置いて、残りを先頭の後ろに横へ広げて並べる (凸形)。dir は向き (1 = −Z、2 = −X、4 = +Z、8 = +X)。その場に一瞬で置かれるので暗転中に呼ぶとよい。本家 CRO 18 D01BossWin: (3750, 4150, 4)、間隔 150。ScriptMap.SetUpdateFormation(1) で追従に戻す (推定を含む)',
     source: `function partyLineUp(x: num, z: num, dir: num) {
-  follow(0)                                        // 仲間の追従を止める
+  ScriptMap.SetUpdateFormation(0)                  // 仲間の追従を止める
   ScriptMap.SetPartyConvexPosition(vec(x, 0, z), dir, 150)
 }`,
   },
   {
     name: 'partyColumn',
     about:
-      '仲間の追従を止め、先頭の電波人間を (x, z) に置いて、残りを dir の向き (1 = −Z、2 = −X、4 = +Z、8 = +X) へ 100 ずつ一直線に並べる。カメラから見て横一列にするには dir を 2 か 8 にする。一瞬で置かれる (本家 CRO 2 は暗転中に (3750, 3030, 4))。follow(1) で追従に戻す',
+      '仲間の追従を止め、先頭の電波人間を (x, z) に置いて、残りを dir の向き (1 = −Z、2 = −X、4 = +Z、8 = +X) へ 100 ずつ一直線に並べる。カメラから見て横一列にするには dir を 2 か 8 にする。一瞬で置かれる (本家 CRO 2 は暗転中に (3750, 3030, 4))。ScriptMap.SetUpdateFormation(1) で追従に戻す',
     source: `function partyColumn(x: num, z: num, dir: num) {
-  follow(0)                                        // 仲間の追従を止める
+  ScriptMap.SetUpdateFormation(0)                  // 仲間の追従を止める
   ScriptMap.SetPartyPosition(vec(x, 0, z), dir, 1, 100)
 }`,
   },

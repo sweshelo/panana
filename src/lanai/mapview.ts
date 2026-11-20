@@ -322,7 +322,7 @@ export class LanaiMapView {
   }
 
   private previewRecord(row: number): { section: number; index: number; x: number; z: number } | null {
-    // An EventObject row can have several records. For chara(), prefer the character over a linked door or range.
+    // An EventObject row can have several records. For obj(), prefer the character over a linked door or range.
     for (const section of [5, 3, 4, 8] as const)
       for (let index = 0; index < (this.doc.recs[section]?.length ?? 0); index++) {
         const rec = this.doc.recs[section]![index]!;

@@ -1,5 +1,5 @@
 // Placing records that start an event on an RPG FREE! map (src/lanai/eventParts.ts), the hit shape of a range
-// (rangeShape.ts), and the MonsterGroup value of battle() (stageScript.ts battleRow): with the ROM, a stage added from
+// (rangeShape.ts), and the MonsterGroup value of ScriptMap.EncountBoss (stageScript.ts battleRow): with the ROM, a stage added from
 // content 1, whose MonsterGroup row IDs are not its row numbers.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
@@ -282,7 +282,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
   });
 });
 
-describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
+describe.skipIf(!hasLanai)('RPG FREE! new event records and EncountBoss', () => {
   let s: LanaiSession;
   let c: LanaiContent;
   let maps: LanaiMaps;
@@ -502,7 +502,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
         rows.push(lanaiRecEventRow(k, st.current!.recs[k]![i]!.raw));
       });
     const g = info.dungeon;
-    const src = `function a() { se(0x8D) }\nfunction b() { se(0x8E) }\non switch(${g}, ${rows[0]}) a\non button(${g}, ${rows[1]}) b`;
+    const src = `function a() { ScriptSound.Play(0x8D, 0) }\nfunction b() { ScriptSound.Play(0x8E, 0) }\non switch(${g}, ${rows[0]}) a\non button(${g}, ${rows[1]}) b`;
     expect((await checkStageScript(s, c, src)).problems).toEqual([]);
     s.setStageScript(c.archive, src);
     const zip = unzipSync(await s.modZip());
@@ -523,18 +523,18 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     st.undo();
   });
 
-  test('battle() takes a MonsterGroup row number: content 1 has row IDs 0x80000000, 0x80000010 …', async () => {
+  test('EncountBoss takes a MonsterGroup row number: content 1 has row IDs 0x80000000, 0x80000010 …', async () => {
     const mg = maps.monsterGroup!;
     expect(mg.rowId(1)).not.toBe(0x80000001);
     expect(battleRow(mg, 5)).toBe(5);
     expect(battleRow(mg, mg.rowId(1))).toBe(1);
-    // the value the old build gave the game for battle(5): a row ID the table does not have → the empty row 0
+    // the value the old build gave the game for battle(5) (EncountBoss(0x80000005, 0)): a row ID the table does not have → the empty row 0
     expect(battleRow(mg, 0x80000005)).toBe(-1);
     expect(battleRow(mg, mg.rows)).toBe(-1);
-    const ok = await checkStageScript(s, c, `function f() { battle(5) }\non start(1) f`);
+    const ok = await checkStageScript(s, c, `function f() { ScriptMap.EncountBoss(5, 0) }\non start(1) f`);
     expect(ok.problems).toEqual([]);
-    const bad = await checkStageScript(s, c, `function f() { battle(${mg.rows}) }\non start(1) f`);
-    expect(bad.problems.join()).toContain(`battle(${mg.rows}) の群れがありません`);
+    const bad = await checkStageScript(s, c, `function f() { ScriptMap.EncountBoss(${mg.rows}, 0) }\non start(1) f`);
+    expect(bad.problems.join()).toContain(`ScriptMap.EncountBoss(${mg.rows}, …) の群れがありません`);
   });
 
   test('an added stage is removed, the newest first: its rows, archive, CRR and script', async () => {
@@ -542,7 +542,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     const before = { contents: rows('Contents'), msi: rows('MapStageIntegration'), msg: rows('MessageMapStage') };
     const index = await cloneLanaiContent(s, lanaiContents(s)[1]!, '消す島', { script: 'empty' });
     const added = lanaiContents(s)[index]!;
-    s.setStageScript(added.archive, 'function f() { wait(1) }\non start(1) f');
+    s.setStageScript(added.archive, 'function f() { ScriptSystem.WaitTime(1) }\non start(1) f');
     // the stage added before it is not the last any more
     expect(lanaiContentRemoveBlock(s, c)).toContain('最後に追加した');
     expect(lanaiContentRemoveBlock(s, lanaiContents(s)[1]!)).toContain('元からある');

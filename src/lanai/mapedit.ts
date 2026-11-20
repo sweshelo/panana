@@ -108,8 +108,9 @@ export function lanaiButtonDoor(maps: LanaiMaps, group: number, row: number): nu
     (b) => b.group === group && b.row === row && (b.trigger === 'switch' || b.trigger === 'button'),
   );
   const body = script?.functions.find((f) => f.name === binding?.fn)?.body;
-  const match = body?.match(/\bopenDoor\((\d+)\)/u);
-  return match ? Number(match[1]) : null;
+  // openDoor(3), openDoor(obj(3)) or obj(3).openDoor()
+  const match = body?.match(/\bopenDoor\(\s*(?:obj\(\s*)?(\d+)|\bobj\(\s*(\d+)\s*\)\s*\.\s*openDoor\(/u);
+  return match ? Number(match[1] ?? match[2]) : null;
 }
 
 /** What a section's record is, for the add panel and the checks. */

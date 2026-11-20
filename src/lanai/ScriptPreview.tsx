@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MOUSE } from 'three';
 import type { LanaiContent } from './contents';
-import { parseStageScript, type ScriptNode, type ScriptWho } from './eventScript';
+import { parseStageScript, type ScriptArg, type ScriptNode, type ScriptWho } from './eventScript';
 import { LanaiEditState } from './mapedit';
 import type { LanaiMapInfo } from './maps';
 import { LanaiMapView } from './mapview';
@@ -11,34 +11,34 @@ import { useAsync } from '../ui/useAsync';
 import { soundPlayer } from '../sound/player';
 import { requireAudible } from '../sound/render';
 
-const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `chara(${who.row})` : who.kind);
-const previewCommand = (node: ScriptNode): string => {
-  switch (node.op) {
-    case 'anim':
-      return `anim(${whoText(node.who)}, 0x${node.id.toString(16)}, ${node.type})`;
-    case 'waitAnim':
-      return `waitAnim(${whoText(node.who)})`;
-    case 'move':
-      return `move(${whoText(node.who)}, ${node.x}, ${node.y}, ${node.z})`;
-    case 'turn':
-      return `turn(${whoText(node.who)}, ${node.degrees})`;
-    case 'face':
-      return `face(${whoText(node.who)}, ${whoText(node.to)})`;
-    case 'show':
-      return `${node.on ? 'show' : 'hide'}(${whoText(node.who)})`;
-    case 'camera':
-      return `${node.who ? `camera(${whoText(node.who)}, ${node.seconds})` : `cameraBack(${node.seconds})`}`;
-    case 'fade':
-      return `fade${node.out ? 'Out' : 'In'}(${node.seconds})`;
-    case 'wait':
-      return `wait(${node.seconds})`;
-    case 'se':
-      return `se(0x${node.id.toString(16)})`;
-    case 'call':
-      return node.call.name;
-    default:
-      return node.op;
+const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `obj(${who.row})` : who.kind);
+const argText = (a: ScriptArg): string => {
+  switch (a.k) {
+    case 'i':
+      return Math.abs(a.v) >= 0x40 ? `0x${(a.v >>> 0).toString(16).toUpperCase()}` : String(a.v);
+    case 'f':
+      return String(Math.round(a.v * 1000) / 1000);
+    case 'v':
+      return `vec(${a.x}, ${a.y}, ${a.z})`;
+    case 'c':
+    case 'p':
+      return whoText(a.who);
+    case 'own':
+      return 'selfRow';
+    case 'm':
+      return '';
   }
+};
+/** A statement as the log shows it: the Script API call with its arguments. */
+const previewCommand = (node: ScriptNode): string => {
+  if (node.op !== 'call') return node.op;
+  const c = node.call;
+  const [cls, name] = c.name.split('::');
+  const args = c.args
+    .filter((a) => a.k !== 'm')
+    .map(argText)
+    .join(', ');
+  return `${c.self ? whoText(c.self) : cls}.${name}(${args})`;
 };
 
 interface PreviewLogLine {
@@ -140,77 +140,79 @@ export function ScriptPreviewControls({
       await runPreviewNodes(
         fn.body,
         alive,
-        async (node, index) => {
-          setStatus(`${index + 1} / ${fn.body.length}: ${node.op}`);
-          switch (node.op) {
+        async (action, node, index) => {
+          setStatus(`${index + 1} / ${fn.body.length}: ${previewCommand(node)}`);
+          switch (action.kind) {
             case 'anim': {
-              await ensure(node.who);
-              const seconds = view.previewMotion(node.who, node.id);
-              lastAnim.set(whoText(node.who), clock.performance.now() + seconds * 1000);
+              await ensure(action.who);
+              const seconds = view.previewMotion(action.who, action.id);
+              lastAnim.set(whoText(action.who), clock.performance.now() + seconds * 1000);
               break;
             }
             case 'waitAnim': {
-              const until = lastAnim.get(whoText(node.who));
-              if (until === undefined) throw new Error('対応する anim() を再生できなかったため省略しました。');
+              const until = lastAnim.get(whoText(action.who));
+              if (until === undefined) throw new Error('対応する StartAnimation を再生できなかったため省略しました。');
               const remaining = Math.max(0, until - clock.performance.now()) / 1000;
               await animate(remaining, () => {});
               break;
             }
             case 'move': {
-              await ensure(node.who);
-              const from = view.previewPosition(node.who);
-              const seconds = Math.min(10, Math.max(0.2, Math.hypot(node.x - from.x, node.z - from.z) / 500));
+              await ensure(action.who);
+              const from = view.previewPosition(action.who);
+              const seconds = Math.min(10, Math.max(0.2, Math.hypot(action.x - from.x, action.z - from.z) / 500));
               await animate(seconds, (t) =>
                 view.previewSetPosition(
-                  node.who,
-                  from.x + (node.x - from.x) * t,
-                  from.y + (node.y - from.y) * t,
-                  from.z + (node.z - from.z) * t,
+                  action.who,
+                  from.x + (action.x - from.x) * t,
+                  from.y + (action.y - from.y) * t,
+                  from.z + (action.z - from.z) * t,
                 ),
               );
               break;
             }
             case 'turn':
-              await ensure(node.who);
-              view.previewSetAngle(node.who, node.degrees);
+              await ensure(action.who);
+              view.previewSetAngle(action.who, action.degrees);
               await animate(0.4, () => {});
               break;
             case 'face': {
-              await ensure(node.who);
-              await ensure(node.to);
-              const a = view.previewPosition(node.who),
-                b = view.previewPosition(node.to);
-              view.previewSetAngle(node.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
+              await ensure(action.who);
+              await ensure(action.to);
+              const a = view.previewPosition(action.who),
+                b = view.previewPosition(action.to);
+              view.previewSetAngle(action.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
               break;
             }
             case 'show':
-              await ensure(node.who);
-              view.previewSetVisible(node.who, node.on);
+              await ensure(action.who);
+              view.previewSetVisible(action.who, action.on);
+              break;
+            case 'none':
               break;
             case 'camera':
-              if (node.who) {
-                await ensure(node.who);
-                view.previewFocus(node.who);
+              if (action.who) {
+                await ensure(action.who);
+                view.previewFocus(action.who);
               } else view.fit();
-              await animate(node.seconds, () => {});
+              await animate(action.seconds, () => {});
               break;
             case 'fade': {
-              const from = node.out ? 0 : 1,
-                to = node.out ? 1 : 0;
-              await animate(node.seconds, (t) => setFade(from + (to - from) * t));
+              const from = action.out ? 0 : 1,
+                to = action.out ? 1 : 0;
+              await animate(action.seconds, (t) => setFade(from + (to - from) * t));
               break;
             }
             case 'wait':
-              await animate(node.seconds, () => {});
+              await animate(action.seconds, () => {});
               break;
             case 'se': {
               const session = view.st.maps.session;
               const sounds = await session.sounds();
-              const index = sounds.index(node.id);
-              if (index === null) throw new Error(`SoundData 行 ${node.id} に音がありません。`);
+              const index = sounds.index(action.id);
+              if (index === null) throw new Error(`SoundData 行 ${action.id} に音がありません。`);
               await soundPlayer.play(
                 `preview:lanai:${index}`,
-                async () => requireAudible(await (await session.soundRendererFor(node.id)).render(index, 8, false)),
+                async () => requireAudible(await (await session.soundRendererFor(action.id)).render(index, 8, false)),
                 false,
               );
               if (soundPlayer.state.error) throw new Error(soundPlayer.state.error.message);
@@ -230,7 +232,7 @@ export function ScriptPreviewControls({
             ...previous,
             { text: `${index + 1}. ${previewCommand(node)} — ${reason}`, skipped: true },
           ]);
-          setStatus(`${index + 1} / ${fn.body.length}: ${node.op} を省略`);
+          setStatus(`${index + 1} / ${fn.body.length}: ${previewCommand(node)} を省略`);
         },
       );
       if (alive() && !returned)

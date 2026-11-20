@@ -1,4 +1,4 @@
-// The icons popup() can show (popupIcons.ts): each icon's texture, and the chosen one's model with its animation as the
+// The icons SetPopup can show (popupIcons.ts): each icon's texture, and the chosen one's model with its animation as the
 // game plays it over a character's head.
 import { useEffect, useState, type ReactNode } from 'react';
 import { bchBytesRef } from '../bch/models';
@@ -50,7 +50,7 @@ function Icons({ session }: { session: LanaiSession }): ReactNode {
       </div>
       {shown && !(shown instanceof Error) && shown.file.models[0] && (
         <>
-          <p className="small">{`popup(…, ${chosen}) ${POPUP_ICONS[chosen]!.label}: ゲームが頭の上に出す動き`}</p>
+          <p className="small">{`だれに.SetPopup(2, ${chosen}, 1, 1, 0, vec(0, 0, 0)) ${POPUP_ICONS[chosen]!.label}: ゲームが頭の上に出す動き`}</p>
           <ModelView model={bchBytesRef(shown.body)} name={`popup-${chosen}`} />
         </>
       )}
@@ -63,9 +63,9 @@ export function PopupIconList({ session }: { session: LanaiSession }): ReactNode
   const [open, setOpen] = useState(false);
   return (
     <details onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary className="small">{`popup() のアイコン (0〜${POPUP_ICONS.length - 1})`}</summary>
+      <summary className="small">{`SetPopup のアイコン (0〜${POPUP_ICONS.length - 1})`}</summary>
       <p className="muted small">
-        名前は絵柄から付けたものです。13 以上の番号は 0 の絵になります。消すときは popupEnd(だれに) を使います。
+        名前は絵柄から付けたものです。13 以上の番号は 0 の絵になります。消すときは だれに.FinishPopupIcon() を使います。
       </p>
       {open && <Icons session={session} />}
     </details>

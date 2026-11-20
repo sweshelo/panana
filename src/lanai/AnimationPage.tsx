@@ -136,7 +136,7 @@ function AnimationDetail({
           <p>
             <code>
               {entry.kind === 'npc'
-                ? 'chara(イベント番号).StartAnimation(アニメ ID, 種類, 1, 0)'
+                ? 'obj(イベント番号).StartAnimation(アニメ ID, 種類, 1, 0)'
                 : 'hero.StartAnimation(アニメ ID, 種類, 1, 0)'}
             </code>
           </p>
@@ -144,7 +144,7 @@ function AnimationDetail({
             例:{' '}
             <code>
               {entry.kind === 'npc'
-                ? 'chara(3).StartAnimation(0x80000079, 0, 1, 0)'
+                ? 'obj(3).StartAnimation(0x80000079, 0, 1, 0)'
                 : 'hero.StartAnimation(0x80000003, 0, 1, 0)'}
             </code>
           </p>

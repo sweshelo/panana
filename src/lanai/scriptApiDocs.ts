@@ -107,7 +107,7 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
     about:
       '眼と注視点を指定時間で動かす。キャラ版はキャラの座標を基準とし、GSvec 版は両座標を直接指定する。完了待ちは別に行う。',
     args: ['基準キャラ', '秒数', '眼の相対位置', '注視点の相対位置', '補間モード'],
-    example: 'ScriptCamera.MoveEyeAndTarget(chara(4), 1.3, vec(0, 0, 0), vec(0, 0, 0), 2)',
+    example: 'ScriptCamera.MoveEyeAndTarget(obj(4), 1.3, vec(0, 0, 0), vec(0, 0, 0), 2)',
     settled: false,
   },
   // ScriptCamera::MoveEyeAndTarget(const ScriptChara&, float, const GSvec&, const GSvec&, GSAnimMode)
@@ -311,13 +311,13 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
   _ZN11ScriptChara7AlphaToEff10GSAnimModebbf: {
     about: 'キャラの透明度を時間をかけて変化させる。',
     args: ['目標透明度', '変化時間 (秒)', 'GSAnimMode', '補間フラグ 1', '補間フラグ 2', '追加 float'],
-    example: 'chara(3).AlphaTo(0, 1, 2, 0, 0, 0)',
+    example: 'obj(3).AlphaTo(0, 1, 2, 0, 0, 0)',
     settled: false,
   },
   // ScriptChara::CancelAutoAnimation()
   _ZN11ScriptChara19CancelAutoAnimationEv: {
     about: 'キャラの自動アニメ更新を止める。',
-    example: 'chara(3).CancelAutoAnimation()',
+    example: 'obj(3).CancelAutoAnimation()',
     settled: true,
   },
   // ScriptChara::FinishPopupIcon()
@@ -337,7 +337,7 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
       '動作フラグ 2',
       '追加の float 値',
     ],
-    example: 'chara(3).MoveTo(vec(250, 0, 750), 0, 0, 0, 0, 0)',
+    example: 'obj(3).MoveTo(vec(250, 0, 750), 0, 0, 0, 0, 0)',
     settled: false,
   },
   // ScriptChara::RotateCharaTo(ChrObject*, float, GSAnimMode, bool, bool)
@@ -357,7 +357,7 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
   _ZN11ScriptChara8RotateToERK5GSvecf10GSAnimModebbb: {
     about: 'キャラの向きを指定ラジアンへ変える。開始後すぐ戻るので必要なら WaitTime で待つ。',
     args: ['向く位置 (GSvec)', '回転時間 (秒)', 'GSAnimMode', '回転フラグ 1', '回転フラグ 2', '回転フラグ 3'],
-    example: 'chara(3).RotateTo(vec(250, 0, 750), 0.25, 0, 0, 0, 1)',
+    example: 'obj(3).RotateTo(vec(250, 0, 750), 0.25, 0, 0, 0, 1)',
     settled: false,
   },
   // ScriptChara::RotateTo(float, float, GSAnimMode, bool, bool, bool)
@@ -371,7 +371,7 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
   _ZN11ScriptChara12SetBlendAnimEb: {
     about: 'キャラのアニメブレンドを有効化・無効化する。',
     args: ['有効 1 / 無効 0'],
-    example: 'chara(3).SetBlendAnim(0)',
+    example: 'obj(3).SetBlendAnim(0)',
     settled: false,
   },
   // ScriptChara::SetPopup(u8, u8, bool, s8, bool, const GSvec&)
@@ -392,34 +392,34 @@ export const SCRIPT_API_DOCS: Record<string, ScriptApiDoc> = {
   _ZN11ScriptChara6SetPosERK5GSvec: {
     about: 'キャラ位置を直接設定する。',
     args: ['新しい位置 (GSvec)'],
-    example: 'chara(3).SetPos(vec(250, 0, 750))',
+    example: 'obj(3).SetPos(vec(250, 0, 750))',
     settled: true,
   },
   // ScriptChara::SetVisible(bool)
   _ZN11ScriptChara10SetVisibleEb: {
     about: 'キャラの表示フラグを変更する。',
     args: ['表示 1 / 非表示 0'],
-    example: 'chara(3).SetVisible(1)',
+    example: 'obj(3).SetVisible(1)',
     settled: true,
   },
   // ScriptChara::StartAnimation(u32, GSAnimType, float, float)
   _ZN11ScriptChara14StartAnimationEj10GSAnimTypeff: {
     about: '指定 AnimData 行のモーションを開始する。開始後すぐ戻る。',
     args: ['AnimData の行 ID (上位 bit 付き)', 'GSAnimType (0 は既定)', '再生倍率 1.0', '開始オフセット 0.0'],
-    example: 'chara(3).StartAnimation(0x80000073, 0, 1, 0)',
+    example: 'obj(3).StartAnimation(0x80000073, 0, 1, 0)',
     settled: true,
   },
   // ScriptChara::WaitAnimation(u32)
   _ZN11ScriptChara13WaitAnimationEj: {
     about: '指定対象のアニメーション終了を待つ。CRO は引数 0x3E を定型で用いる。',
     args: ['待機対象コード (定型 0x3E、内部意味は未確定)'],
-    example: 'chara(3).WaitAnimation(0x3E)',
+    example: 'obj(3).WaitAnimation(0x3E)',
     settled: false,
   },
   // ScriptChara::WaitNodeAnimation()
   _ZN11ScriptChara17WaitNodeAnimationEv: {
     about: 'キャラのノード移動・補間が終わるまで待つ。',
-    example: 'chara(3).WaitNodeAnimation()',
+    example: 'obj(3).WaitNodeAnimation()',
     settled: true,
   },
   // ScriptFlag::AddGold(s32)

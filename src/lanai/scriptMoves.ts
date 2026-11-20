@@ -1,6 +1,6 @@
-// The move() statements of the stage's event script (eventScript.ts) as points on a map: where each sends whom, read
-// from the functions' text and written back into it when a point is dragged on the map's page (mapview.ts). The game
-// takes the position as a GSvec in world units: x and z are the ground (the map's columns and rows, a cell = 500, the
+// The move() / walk() calls (library functions) of the stage's event script (eventScript.ts) as points on a map:
+// where each sends whom, read from the functions' text and written back into it when a point is dragged on the map's
+// page (mapview.ts). The game takes the position as a GSvec in world units: x and z are the ground (the map's columns and rows, a cell = 500, the
 // middle of cell c = 250 + 500 × c), y is the height (0 = the floor). The ground is x / z as the game's own readers
 // use it (IntroCommon::GetActionBeforePos takes x, z; RPG3 FUN_004C7048(x, z) looks up the cell under a position).
 import { CELL } from '../game/sections';
@@ -8,7 +8,7 @@ import { triggerHasRow, type ScriptDoc } from './eventScript';
 
 export type ScriptMoveWho = { kind: 'hero' } | { kind: 'self' } | { kind: 'chara'; row: number };
 
-/** A move() in a function's text: whom it moves, where, and where its three numbers are written. */
+/** A move() or walk() in a function's text: whom it moves, where, and where its three numbers are written. */
 export interface ScriptMove {
   who: ScriptMoveWho;
   x: number;
@@ -20,11 +20,11 @@ export interface ScriptMove {
 }
 
 const NUM = String.raw`-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)`;
-const WHO = String.raw`hero|self|chara\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)`;
+const WHO = String.raw`hero|self|obj\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)`;
 const XYZ = String.raw`(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)`;
-/** move(who, x, y, z) and who.move(x, y, z): the character, then its row (chara), then x, y and z. */
-const MOVE_RE = new RegExp(String.raw`\bmove\s*\(\s*(${WHO})\s*,\s*${XYZ}`, 'gu');
-const METHOD_MOVE_RE = new RegExp(String.raw`(?<![\w.])(${WHO})\s*\.\s*move\s*\(\s*${XYZ}`, 'gu');
+/** move(who, x, y, z) and who.move(x, y, z), or walk: the object, then its row (obj), then x, y and z. */
+const MOVE_RE = new RegExp(String.raw`\b(?:move|walk)\s*\(\s*(${WHO})\s*,\s*${XYZ}`, 'gu');
+const METHOD_MOVE_RE = new RegExp(String.raw`(?<![\w.])(${WHO})\s*\.\s*(?:move|walk)\s*\(\s*${XYZ}`, 'gu');
 const num = (s: string): number => (s.startsWith('-') ? -Number(s.slice(1)) : Number(s));
 
 /** The moves (either form) of a function's text whose position is written as three numbers (not in comments). */
@@ -114,4 +114,4 @@ export function mapScriptMoves(doc: ScriptDoc, group: number, rows: ReadonlySet<
 
 /** The text of whom a move() moves. */
 export const moveWhoText = (w: ScriptMoveWho): string =>
-  w.kind === 'chara' ? `chara(${w.row})` : w.kind === 'hero' ? 'hero' : 'self';
+  w.kind === 'chara' ? `obj(${w.row})` : w.kind === 'hero' ? 'hero' : 'self';

@@ -28,10 +28,7 @@ import { PopupIconList } from './PopupIconList';
 import {
   docBound,
   docUnbound,
-  SCRIPT_METHOD_CALLS,
-  SCRIPT_METHOD_WORDS,
   SCRIPT_SAMPLES,
-  SCRIPT_WORD_CALLS,
   SCRIPT_WORDS,
   scriptLineRefs,
   introBinding,
@@ -125,7 +122,7 @@ const freshName = (stem: string, taken: string[]): string => {
 const bindingLabel = (b: ScriptBinding): string =>
   `MapGroup ${b.group}${triggerHasRow(b.trigger) ? ` のイベント ${b.row}` : ''} (${SCRIPT_TRIGGER_LABEL[b.trigger]})`;
 
-/** The lines of a group's talk table: the ID the script names each by (the row ID without its high bit) and its text. */
+/** The lines of a group's talk table: the ID the script names each by (the row ID, 0x800000NN) and its text. */
 export function talkLines(
   session: LanaiSession,
   maps: LanaiMaps,
@@ -135,7 +132,7 @@ export function talkLines(
   const message = t ? talkMessageOffset(t) : undefined;
   if (!t || message === undefined) return undefined;
   return Array.from({ length: t.rows }, (_, r) => ({
-    id: t.rowId(r) & 0x7fffffff,
+    id: (t.rowId(r) | 0x80000000) >>> 0,
     text: t.isString(r, message) ? session.plainAt(t, t.u32(r, message)).replace(/\s+/g, ' ').trim() : '',
   }));
 }
@@ -313,22 +310,23 @@ function TalkLines({ session, maps, group }: { session: LanaiSession; maps: Lana
   );
 }
 
-/** The content's MonsterGroup by row number: what battle() takes (not the row ID). */
+/** The content's MonsterGroup by row number: what ScriptMap.EncountBoss takes (not the row ID). */
 function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMaps }): ReactNode {
   const groups = useMemo(() => maps.monsterGroups(), [maps]);
   const mp = session.table('MonsterParameter');
-  if (!groups.length) return <p className="muted small">MonsterGroup の表がありません (battle() は使えません)。</p>;
+  if (!groups.length)
+    return <p className="muted small">MonsterGroup の表がありません (ScriptMap.EncountBoss は使えません)。</p>;
   const name = (id: number): string => {
     const r = mp?.find(id) ?? -1;
     return r < 0 ? hexId(id) : lanaiMonsterName(session, r);
   };
   return (
     <details>
-      <summary className="small">{`モンスターの群れ (MonsterGroup、${groups.length} 行): battle() に書く行番号`}</summary>
+      <summary className="small">{`モンスターの群れ (MonsterGroup、${groups.length} 行): ScriptMap.EncountBoss(行番号, 0) に書く行番号`}</summary>
       <table className="book-table">
         <thead>
           <tr>
-            <th>battle(行番号)</th>
+            <th>EncountBoss(行番号, 0)</th>
             <th>行 ID</th>
             <th>モンスター</th>
           </tr>
@@ -336,7 +334,7 @@ function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMap
         <tbody>
           {groups.map((g) => (
             <tr key={g.row}>
-              <td className="mono">{`battle(${g.row})`}</td>
+              <td className="mono">{`ScriptMap.EncountBoss(${g.row}, 0)`}</td>
               <td className="mono small">{hexId(g.id)}</td>
               <td className="small">{[...new Set(g.monsters)].map(name).join('、') || '(空)'}</td>
             </tr>
@@ -345,7 +343,7 @@ function BattleGroups({ session, maps }: { session: LanaiSession; maps: LanaiMap
       </table>
       <p className="muted small">
         行番号は表の上から 0, 1, 2… と数えた位置です。行 ID はその行が持つ別の識別値です。
-        この表では同じ群れを横一列に並べています。battle() には左の行番号を書きます。
+        この表では同じ群れを横一列に並べています。ScriptMap.EncountBoss の 1 つ目には左の行番号を書きます。
       </p>
     </details>
   );
@@ -365,8 +363,8 @@ export function ScriptApiList({ expanded = false }: { expanded?: boolean }): Rea
       <summary className="small">{`名前で呼べる Script API (${SCRIPT_API_ROWS.length} 個)`}</summary>
       <p className="muted small">
         ゲームの関数をそのまま呼びます: ScriptSound.Play(0x84, 0)。ScriptChara / ScriptPlayer
-        の関数はキャラに付けて書きます: hero.SetVisible(0)、chara(3).StartAnimation(0x8000006E, 0, 1, 0)。const
-        GSvec&amp; は vec(x, y, z)、キャラ (ScriptChara&amp; / ChrObject*) は hero / self / chara(イベント)、const
+        の関数は物に付けて書きます: hero.SetVisible(0)、obj(3).StartAnimation(0x8000006E, 0, 1, 0)。const GSvec&amp; は
+        vec(x, y, z)、キャラ (ScriptChara&amp; / ChrObject*) は hero / self / obj(イベント)、const
         ScriptMessageParam&amp; は書きません。引数の意味はゲームの解析によります
         (待つ関数は自分で呼ぶ必要があります)。「→」の後は戻り値の型です。if で比べられるのは整数を返す関数だけで、void
         と float は文として呼びます。
@@ -452,27 +450,6 @@ export function StageScriptDocs({ session, content }: { session: LanaiSession; c
             <tr key={x.form}>
               <td className="mono small">{x.form}</td>
               <td className="small">{x.about}</td>
-              <td className="mono small muted" title="中で呼ぶゲームの Script API">
-                {SCRIPT_WORD_CALLS[x.word] ?? ''}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <h3>キャラのメソッド</h3>
-      <p className="muted small">
-        だれに (hero / self / chara(イベント)) の後に .名前(…) と書きます。open() などイベント番号を使うものは
-        chara(イベント) にだけ書けます。大文字で始まる名前は Script API の呼び出しです。
-      </p>
-      <table className="book-table">
-        <tbody>
-          {SCRIPT_METHOD_WORDS.map((x) => (
-            <tr key={x.form}>
-              <td className="mono small">{x.form}</td>
-              <td className="small">{x.about}</td>
-              <td className="mono small muted" title="中で呼ぶゲームの Script API">
-                {SCRIPT_METHOD_CALLS[x.word] ?? ''}
-              </td>
             </tr>
           ))}
         </tbody>
@@ -480,13 +457,14 @@ export function StageScriptDocs({ session, content }: { session: LanaiSession; c
       <h3>ライブラリ</h3>
       <p className="muted small">
         スクリプトの言葉で書いた関数です。書かなくても呼べます。同じ名前の関数をスクリプトに書くと、そちらが使われます
-        (コピーして改造できます)。関数は引数を持てます: chara はキャラ (hero / self /
-        chara(イベント)、またはイベント番号だけ)、 num
-        は数。呼んだところに中身が展開されるので、引数には決まった値を書きます。
+        (コピーして改造できます)。中身はどれも Script API の呼び出しです。関数は引数を持てます: obj は物 (hero / self /
+        obj(イベント)、またはイベント番号だけ)、num は数 (obj(イベント)
+        を渡すとその番号)。呼んだところに中身が展開されるので、 引数には決まった値 (計算式も可) を書きます。1
+        つ目の引数が obj か num の関数は obj(3).open() のようにも書けます。
       </p>
       <ScriptLibraryList />
       <p className="muted small">
-        台詞は MapGroup の台詞の表の行 ID で指します。battle()
+        台詞は MapGroup の台詞の表の行 ID (0x800000NN) で指します。ScriptMap.EncountBoss(群れ, 0)
         のあとは戦闘に移り、勝つとマップの読み込みからやり直しになります。
       </p>
       <PopupIconList session={session} />
@@ -693,7 +671,7 @@ export function LanaiStageScriptEditor({
               <input
                 aria-label="関数の引数"
                 className="mono"
-                placeholder="引数なし (例: door: chara, sound: num)"
+                placeholder="引数なし (例: door: obj, sound: num)"
                 value={f.params}
                 onChange={(e) => setFn(f.id, { params: e.target.value })}
               />

@@ -2,35 +2,19 @@
 // itself: what kind a word is (its colour), what can be written at a place (completion), where a function's text is
 // wrong, which lines of talk it names and where a block folds. All from the tables the compiler reads
 // (eventScript.ts, scriptDoc.ts, scriptApiTable.ts), so the editor cannot fall behind the language.
-import {
-  parseStageScript,
-  scriptDocSource,
-  ScriptError,
-  SCRIPT_RESERVED,
-  SCRIPT_ROW_METHODS,
-  TALK_DIALOG,
-  TALK_DIALOG_LABEL,
-  type ScriptDoc,
-  type ScriptMethod,
-} from './eventScript';
+import { parseStageScript, scriptDocSource, ScriptError, SCRIPT_RESERVED, type ScriptDoc } from './eventScript';
 import { POPUP_ICONS } from './popupIcons';
 import { SCRIPT_API_DOCS } from './scriptApiDocs';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
-import {
-  SCRIPT_METHOD_CALLS,
-  SCRIPT_METHOD_WORDS,
-  SCRIPT_WORD_CALLS,
-  SCRIPT_WORDS,
-  type ScriptWord,
-} from './scriptDoc';
-import { libraryForm, SCRIPT_LIBRARY } from './scriptLibrary';
+import { callEnd, SCRIPT_LINE_CALLS, SCRIPT_WORDS, type ScriptWord } from './scriptDoc';
+import { libraryForm, SCRIPT_LIBRARY, type ScriptLibraryFunction } from './scriptLibrary';
+
+export { scriptLineMarks } from './scriptDoc';
 
 export type ScriptWordKind = 'keyword' | 'atom' | 'who' | 'builtin' | 'class';
 
-const ATOMS = ['true', 'false', 'bubble', 'window'];
-const WHO = ['hero', 'self', 'chara'];
-/** Words of the language that are not in SCRIPT_WORDS under their own name. */
-const MORE_BUILTINS = ['vec'];
+const ATOMS = ['true', 'false', 'selfRow'];
+const WHO = ['hero', 'self', 'obj'];
 /** The words of the help and the library's functions (the help shows those apart, with their text). */
 const BUILTINS = new Map<string, ScriptWord>([
   ...SCRIPT_WORDS.filter((w) => /^[A-Za-z_]\w*$/u.test(w.word)).map((w): [string, ScriptWord] => [w.word, w]),
@@ -41,24 +25,25 @@ const BUILTINS = new Map<string, ScriptWord>([
 ]);
 const CLASSES = new Map<string, ScriptApiRow[]>();
 for (const r of SCRIPT_API_ROWS) CLASSES.set(r[0], [...(CLASSES.get(r[0]) ?? []), r]);
-const OWN_METHODS = new Map(SCRIPT_METHOD_WORDS.map((w) => [w.word, w]));
-/** A word's about, with the Script API functions it calls under it. */
-const withCalls = (about: string, calls: string | undefined): string =>
-  calls
-    ? `${about}
-中身: ${calls}`
-    : about;
-/** The built-in methods of a character (`chara(N).` has all, `hero.` / `self.` those that take no event). */
-const ownMethods = (chara: boolean): ScriptCompletion[] =>
-  [...OWN_METHODS.values()]
-    .filter((w) => chara || !SCRIPT_ROW_METHODS.includes(w.word as ScriptMethod))
-    .map((w) => ({
-      label: w.word,
-      detail: w.form.slice(w.form.indexOf('.') + 1 + w.word.length),
-      info: w.about,
-      apply: `${w.word}(`,
+/** The kind of a library function's first parameter (`obj` / `num`), or null when it has none. */
+const firstParam = (f: ScriptLibraryFunction): string | null =>
+  /^\w+\s*\(\s*\w+\s*:\s*(\w+)/u.exec(libraryForm(f))?.[1] ?? null;
+/**
+ * The library's functions an object can be written before (`obj(3).open()`): those whose first parameter is an object,
+ * and (for obj(N)) an event's number.
+ */
+const ownMethods = (obj: boolean): ScriptCompletion[] =>
+  SCRIPT_LIBRARY.filter((f) => firstParam(f) === 'obj' || (obj && firstParam(f) === 'num')).map((f) => {
+    const form = libraryForm(f);
+    const rest = form.slice(form.indexOf('(') + 1).replace(/^\s*\w+\s*:\s*\w+\s*,?\s*/u, '');
+    return {
+      label: f.name,
+      detail: `(${rest}`,
+      info: `${f.about} (ライブラリの関数 ${form})`,
+      apply: `${f.name}(`,
       type: 'function' as const,
-    }));
+    };
+  });
 /** The classes whose functions are called on a character (`hero.` has both, the others ScriptChara). */
 const MEMBER_CLASSES = ['ScriptChara', 'ScriptPlayer'];
 
@@ -67,7 +52,7 @@ export function scriptWordKind(word: string): ScriptWordKind | null {
   if (ATOMS.includes(word)) return 'atom';
   if (WHO.includes(word)) return 'who';
   if (SCRIPT_RESERVED.includes(word)) return 'keyword';
-  if (BUILTINS.has(word) || MORE_BUILTINS.includes(word)) return 'builtin';
+  if (BUILTINS.has(word)) return 'builtin';
   if (CLASSES.has(word) && !MEMBER_CLASSES.includes(word)) return 'class';
   return null;
 }
@@ -80,7 +65,7 @@ export interface ScriptAssist {
   lines: { id: number; text: string }[];
   /** The events of that MapGroup's records: the row a statement names, and what the record is. */
   records: { row: number; label: string }[];
-  /** MonsterGroup rows: battle() uses row positions, while their IDs may differ. */
+  /** MonsterGroup rows: ScriptMap.EncountBoss takes row positions, while their IDs may differ. */
   groups?: { row: number; id: number; label: string }[];
 }
 export const NO_ASSIST: ScriptAssist = { vars: [], lines: [], records: [] };
@@ -150,15 +135,12 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
   if (!/^[A-Za-z_]\w*$/u.test(name)) return null;
   const line = before.slice(before.lastIndexOf('\n') + 1);
   if (line.includes('//') || before.lastIndexOf('/*') > before.lastIndexOf('*/')) return null;
-  const member = /(?:([A-Za-z_]\w*)|chara\s*\([^()\n]*\))\s*\.\s*$/u.exec(before);
+  const member = /(?:([A-Za-z_]\w*)|obj\s*\([^()\n]*\))\s*\.\s*$/u.exec(before);
   if (member) {
     const receiver = member[1];
-    const own = OWN_METHODS.get(name);
-    if (own && (!receiver || receiver === 'hero' || receiver === 'self'))
-      return {
-        signatures: [`${own.form} — Panana の組み込み`],
-        about: withCalls(own.about, SCRIPT_METHOD_CALLS[name]),
-      };
+    const own = SCRIPT_LIBRARY.find((f) => f.name === name);
+    if (own && (!receiver || WHO.includes(receiver)))
+      return { signatures: [`${libraryForm(own)} — ライブラリの関数 (だれに. の物が 1 つ目の引数)`], about: own.about };
     const classes =
       receiver === 'hero'
         ? ['ScriptPlayer', 'ScriptChara']
@@ -192,23 +174,32 @@ export function scriptHoverInfo(before: string, name: string): ScriptHoverInfo |
     const min = max - (params.includes('[') ? 1 : 0);
     return {
       signatures: [`${builtin.form} — 引数 ${min === max ? String(max) : `${min}〜${max}`} 個`],
-      about: withCalls(builtin.about, SCRIPT_WORD_CALLS[name]),
+      about: builtin.about,
     };
   }
-  if (name === 'vec') return { signatures: ['vec(x, y, z) — 引数 3 個'], about: 'Script API の位置を表す値' };
   return null;
 }
 
-/** The statements and values that name a line of talk, and those that name an event's row. */
-const LINE_CALLS = ['talk', 'say', 'ask'];
-const ROW_CALLS = ['chara', 'openDoor', 'openDoorNow', 'closeDoor', 'collision', 'remove', 'vanishMonster', 'state'];
+/** The functions whose first argument is an event's row (the library's and the Script API's). */
+const ROW_CALLS = [
+  'obj',
+  'openDoor',
+  'open',
+  'vanish',
+  'SetDoorOpenFlag',
+  'SetDoorCloseFlag',
+  'DeleteEventObject',
+  'EnableEventCollision',
+  'GetScriptState',
+  'GetMapChara',
+];
 
-/** Calls in code, excluding comments, whose argument is a MonsterGroup row position. */
+/** ScriptMap.EncountBoss calls in code, excluding comments: their first argument, a MonsterGroup row position. */
 export function scriptBattleMarks(source: string): { row: number; at: number }[] {
   const code = source.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
-  return [...code.matchAll(/\bbattle\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)/gu)].map((m) => ({
+  return [...code.matchAll(/\bEncountBoss\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*[,)]/gu)].map((m) => ({
     row: Number(m[1]),
-    at: m.index + m[0].length,
+    at: callEnd(code, m.index + m[0].length - 1),
   }));
 }
 
@@ -218,7 +209,7 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
   const line = before.slice(before.lastIndexOf('\n') + 1);
   if (/\/\//u.test(line)) return null;
 
-  // after "Class." / "hero." / "self." / "chara(…)."
+  // after "Class." / "hero." / "self." / "obj(…)."
   const dot = /(?:([A-Za-z_]\w*)|(\)))\s*\.\s*(\w*)$/u.exec(before);
   if (dot) {
     const from = before.length - dot[3]!.length;
@@ -233,7 +224,7 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
 
   // the line of a talk: the lines of the table, found by their text or their ID
   const call = /\b([A-Za-z_]\w*)\s*\(\s*([^(),\n]*)$/u.exec(before);
-  if (call && LINE_CALLS.includes(call[1]!)) {
+  if (call && SCRIPT_LINE_CALLS.includes(call[1]!)) {
     const typed = call[2]!.trim();
     const q = typed.toLowerCase();
     const options = assist.lines
@@ -248,33 +239,24 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
       .map((r) => ({ label: `${r.row} ${r.label}`, apply: String(r.row), type: 'constant' as const }));
     return options.length ? { from: before.length - call[2]!.length, options, filter: false } : null;
   }
-  // the second argument: the window of a line, the icon of a popup
-  const second = /\b(talk|say|popup)\s*\(\s*[^(),\n]*(?:\([^()\n]*\))?\s*,\s*(\w*)$/u.exec(before);
+  // the second argument of SetPopup: the icon
+  const second = /\bSetPopup\s*\(\s*[^(),\n]*,\s*(\w*)$/u.exec(before);
   if (second) {
-    const typed = second[2]!;
-    const options: ScriptCompletion[] =
-      second[1] === 'popup'
-        ? POPUP_ICONS.map((p) => ({
-            label: `${p.icon} ${p.label}`,
-            apply: String(p.icon),
-            type: 'constant' as const,
-          })).filter((o) => o.apply.startsWith(typed))
-        : (['bubble', 'window'] as const)
-            .filter((k) => k.startsWith(typed))
-            .map((k) => ({
-              label: k,
-              detail: ` ${TALK_DIALOG_LABEL[TALK_DIALOG[k]]}`,
-              type: 'constant' as const,
-            }));
+    const typed = second[1]!;
+    const options: ScriptCompletion[] = POPUP_ICONS.map((p) => ({
+      label: `${p.icon} ${p.label}`,
+      apply: String(p.icon),
+      type: 'constant' as const,
+    })).filter((o) => o.apply.startsWith(typed));
     return options.length ? { from: before.length - typed.length, options, filter: false } : null;
   }
-  if (call?.[1] === 'battle' && /^\d*$/u.test(call[2]!)) {
+  if (call?.[1] === 'EncountBoss' && /^\d*$/u.test(call[2]!)) {
     const options = (assist.groups ?? [])
       .filter((g) => String(g.row).startsWith(call[2]!))
       .map((g) => ({
         label: `群れ #${g.row} ${g.label}`,
         detail: `行番号 ${g.row} · 行 ID ${lineIdText(g.id)}`,
-        info: `battle(${g.row}) と書きます。MonsterGroup の行 ${g.row}、行 ID ${lineIdText(g.id)}。${g.label}`,
+        info: `ScriptMap.EncountBoss(${g.row}, 0) と書きます。MonsterGroup の行 ${g.row}、行 ID ${lineIdText(g.id)}。${g.label}`,
         apply: String(g.row),
         type: 'constant' as const,
       }));
@@ -301,14 +283,13 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
     ...['else', 'case', 'default', 'break', 'true', 'false']
       .filter((k) => !BUILTINS.has(k))
       .map((k) => ({ label: k, type: 'keyword' as const })),
-    { label: 'vec', detail: '(x, y, z)', info: 'Script API の引数に書く位置', apply: 'vec(', type: 'function' },
     ...assist.vars.map((v) => ({ label: v, detail: ' 変数', type: 'variable' as const })),
     ...[...CLASSES.keys()]
       .filter((c) => !MEMBER_CLASSES.includes(c))
       .map((c) => ({ label: c, detail: ' Script API', apply: `${c}.`, type: 'class' as const })),
   ];
-  // hero / self are words on their own (chara takes a row)
-  for (const o of options) if (o.label === 'hero' || o.label === 'self') o.apply = o.label;
+  // hero / self / selfRow are words on their own (obj takes a row)
+  for (const o of options) if (o.label === 'hero' || o.label === 'self' || o.label === 'selfRow') o.apply = o.label;
   return { from: before.length - word.length, options, filter: true };
 }
 
@@ -340,15 +321,6 @@ export function scriptFunctionProblem(
     if (e.line < b.first) return null;
     return { line: Math.max(1, Math.min(e.line - b.first + 1, b.lines)), message: e.text };
   }
-}
-
-/** The lines of talk a function's text names: the ID, and the place just after the call's closing parenthesis. */
-export function scriptLineMarks(body: string): { id: number; at: number }[] {
-  const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => ' '.repeat(c.length));
-  return [...code.matchAll(/\b(?:talk|say|ask)\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*(?:,\s*\w+\s*)?\)/gu)].map((m) => ({
-    id: Number(m[1]),
-    at: m.index + m[0].length,
-  }));
 }
 
 /** The block that opens on the line [from, to) of `text` and closes on a later line: what folding it hides. */

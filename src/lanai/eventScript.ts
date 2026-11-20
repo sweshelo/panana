@@ -7,14 +7,17 @@
 //   var MET: bit reset
 //   function greet() {         // one function = one event
 //     switch (STATE) {
-//       case 0: talk(0x60)
-//       case 1: talk(0x61)
-//       case 2: talk(0x62); return
+//       case 0: talk(0x80000060)                        // a function of the library (scriptLibrary.ts)
+//       case 1: ScriptMenu.StartMessageAuto(0x80000061, 0, 0, 0.2)   // a Script API function, called by name
 //     }
-//     if (ask(0x63)) { popup(hero, 11); se(0x7A); talk(0x64); STATE = 2 } else { STATE = 1; talk(0x65) }
+//     if (ScriptMenu.SystemMessageYesNo(0x80000063)) { hero.SetPopup(2, 11, 1, 1, 0, vec(0, 0, 0)); STATE = 2 }
 //   }
 //   on talk(1, 5) greet        // … of the character of EventObject row 5 of MapGroup 1
-//   on area(1, 1) { say(0x66); disable() }   // the event written in place: entering the range of row 1
+//   on area(1, 1) { ScriptMap.EnableEventCollision(selfRow, 0) }   // written in place: entering the range of row 1
+//
+// The language has no statements of its own beyond the flow (if / switch / return / break), the variables and
+// vanishEffect: what an event does is the game's Script API (scriptApiTable.ts), called by name, and the functions of
+// the script and of the library, written out where they are called (their arguments are known when it is built).
 //
 // What starts an event (`on`): talk (a character), area (a range), button (a button stepped on), start (the map of a
 // group begins), intro (the stage is entered: the game's opening — the party walks in through the start's gate, the
@@ -22,24 +25,21 @@
 // is kept by a range's row). The editor keeps the
 // variables, the functions and what they are given to apart (ScriptDoc) and writes this text from them.
 //
-// The rows named by `on` must have the action type 0x8000002D (a script) in the data. Lines are row IDs of the group's
-// talk table without the high bit (not row numbers). battle() ends the event: the game goes on at the map's start, not
-// after the statement (script-abi.md §7).
+// The rows named by `on` must have the action type 0x8000002D (a script) in the data. Lines are the row IDs of the
+// group's talk table as the game takes them (0x800000NN, not row numbers). ScriptMap.EncountBoss ends the event: the
+// game goes on at the map's start, not after the statement (script-abi.md §7).
 import { assembleLine, encodeImm } from '../game/asm';
 import { RELOC, croRegistrationHash, type Cro, type CroPatch, type CroReloc, type SegTag } from './cro';
 import { SCRIPT_API_ROWS, type ScriptApiRow } from './scriptApiTable';
 import { SCRIPT_LIBRARY } from './scriptLibrary';
 
 // ------------------------------------------------------------------------------------------------ the script
-/** A character an action is done to: the party's first, the event's own (talk / button), or the one of a row. */
+/**
+ * An object a call is made on: the party's first (hero), the event's own (self: talk / button) or the one of an
+ * EventObject row (obj(N): a character, a door, a chest, a monster …).
+ */
 export type ScriptWho = { kind: 'hero' } | { kind: 'self' } | { kind: 'chara'; row: number };
-export type ScriptValue =
-  | { kind: 'var'; name: string }
-  | { kind: 'ask'; msg: number }
-  | { kind: 'item'; item: number }
-  | { kind: 'state'; row: number }
-  | { kind: 'monsters' }
-  | { kind: 'call'; call: ScriptCall };
+export type ScriptValue = { kind: 'var'; name: string } | { kind: 'call'; call: ScriptCall };
 /** An argument of a Script API call, as the function's parameter takes it (scriptApiTable.ts). */
 export type ScriptArg =
   | { k: 'i'; v: number }
@@ -49,7 +49,9 @@ export type ScriptArg =
   | { k: 'm' }
   /** A character: as its script object (c) or as its ChrObject* (p). */
   | { k: 'c'; who: ScriptWho }
-  | { k: 'p'; who: ScriptWho };
+  | { k: 'p'; who: ScriptWho }
+  /** selfRow: the event's own row ID, as the game keeps it in the event's object (EventScript +4). */
+  | { k: 'own' };
 /** A Script API function called by its name: `ScriptSound.Play(0x84, 0)`, `hero.SetVisible(0)`. */
 export interface ScriptCall {
   /** "Class::Name" as told in messages, and the symbol of lanai.crs. */
@@ -75,61 +77,14 @@ export interface ScriptComparison {
 }
 export type ScriptCond = ScriptComparison | { op: 'and' | 'or'; left: ScriptCond; right: ScriptCond };
 export type ScriptNode =
-  /** dialog: the window the line opens in (StartMessage's AppDialogType, TalkDialog). */
-  | { op: 'talk'; msg: number; auto: boolean; dialog: TalkDialog }
   | { op: 'if'; cond: ScriptCond; then: ScriptNode[]; else: ScriptNode[] }
   | { op: 'switch'; value: ScriptValue; cases: { value: number; body: ScriptNode[] }[]; default: ScriptNode[] | null }
   | { op: 'set'; name: string; value: number }
-  | { op: 'popup'; who: ScriptWho; icon: number }
-  | { op: 'popupEnd'; who: ScriptWho }
-  /** The eyes of the party's first; null = as they were. */
-  | { op: 'emotion'; value: number | null }
-  | { op: 'anim'; who: ScriptWho; id: number; type: number }
-  | { op: 'waitAnim'; who: ScriptWho }
-  | { op: 'move'; who: ScriptWho; x: number; y: number; z: number }
-  | { op: 'turn'; who: ScriptWho; degrees: number }
-  | { op: 'face'; who: ScriptWho; to: ScriptWho }
-  | { op: 'show'; who: ScriptWho; on: boolean }
-  /** The camera to a character, or (null) back to the party. */
-  | { op: 'camera'; who: ScriptWho | null; seconds: number }
-  | { op: 'fade'; out: boolean; seconds: number }
-  | { op: 'follow'; on: boolean }
-  | { op: 'se'; id: number }
-  | { op: 'addItem'; item: number; count: number; show: boolean }
-  | { op: 'addGold'; amount: number }
-  /** A door opened or closed (its state alone: chara(row).open() also shows it opening). */
-  | { op: 'door'; row: number; open: boolean }
-  /** chara(row).open(): the door's opening motion, its end, then the door open (no camera, sound or jingle). */
-  | { op: 'doorMotion'; row: number }
-  /** The gimmick's jingle over the paused BGM (jingleNodes). */
-  | { op: 'jingle'; id: number }
-  /** The BGM paused (fading out) or played again. */
-  | { op: 'bgm'; pause: boolean; seconds: number }
-  | { op: 'wait'; seconds: number }
-  | { op: 'collision'; row: number | null; on: boolean }
-  | { op: 'remove'; row: number }
-  /** A defeated map monster fades out with the shipped boss effect, then its event object is deleted. */
-  | { op: 'vanishMonster'; row: number }
-  | { op: 'battle'; group: number }
-  | { op: 'stageName' }
   | { op: 'call'; call: ScriptCall }
+  /** The shipped boss's vanishing effect at a monster's shadow (by its size), kept by the event (vanishEffect). */
+  | { op: 'vanishEffect'; who: ScriptWho }
   | { op: 'break' }
   | { op: 'return' };
-
-/**
- * The window a line opens in: StartMessage's AppDialogType (code.bin 0x2E0920). 0 lets the line's row choose by its
- * speaker kind (talk table +0x08, read through the message source's vt+0x10, 0x45FB58): 0 opens the system's window
- * (that of signs), any other the talk balloon (0x2DF254). A type other than 0 opens the window it names instead
- * (OpenMessage(AppDialogType), 0x2DF2FC): 2 the system's window, any other the balloon. The ROM's CROs pass 0 (and
- * call OpenMessage(1) 4 times); 1 and 2 through StartMessage were read from the code, not yet seen in the game.
- */
-export type TalkDialog = 0 | 1 | 2;
-export const TALK_DIALOG = { row: 0, bubble: 1, window: 2 } as const satisfies Record<string, TalkDialog>;
-export const TALK_DIALOG_LABEL: Record<TalkDialog, string> = {
-  0: '台詞の行の話者で決まる (話者なし = システムのウィンドウ、ほか = 会話の吹き出し)',
-  1: '会話の吹き出し (NPC の台詞と同じ)',
-  2: 'システムのウィンドウ (看板と同じ)',
-};
 
 export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
@@ -211,13 +166,12 @@ function tokens(src: string): Token[] {
   const out: Token[] = [];
   let line = 1;
   const re =
-    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?))|([A-Za-z_]\w*)|(&&|\|\||==|!=|<=|>=|[(){},:;=<>!.])|(.)/gu;
+    /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\n)|([ \t\r]+)|(0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)|([A-Za-z_]\w*)|(&&|\|\||==|!=|<=|>=|[(){},:;=<>!.+\-*/])|(.)/gu;
   for (const m of src.matchAll(re)) {
     const pos = m.index;
     if (m[1]) line += m[1].split('\n').length - 1;
     else if (m[2]) line++;
-    else if (m[4])
-      out.push({ t: 'num', s: m[4], n: Number(m[4].startsWith('-') ? -Number(m[4].slice(1)) : m[4]), line, pos });
+    else if (m[4]) out.push({ t: 'num', s: m[4], n: Number(m[4]), line, pos });
     else if (m[5]) out.push({ t: 'id', s: m[5], n: 0, line, pos });
     else if (m[6]) out.push({ t: 'p', s: m[6], n: 0, line, pos });
     else if (m[7]) throw new ScriptError(`「${m[7]}」は使えない文字です`, line);
@@ -243,7 +197,8 @@ export const SCRIPT_RESERVED: readonly string[] = [
   'false',
   'hero',
   'self',
-  'chara',
+  'obj',
+  'selfRow',
   'byte',
   'bit',
   'reset',
@@ -255,10 +210,15 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
   const own = trigger === 'talk' || trigger === 'button' || trigger === 'switch';
   const who = (w: ScriptWho | null): string | null =>
     w && w.kind === 'self' && !own
-      ? `self (イベントの持ち主) は「${SCRIPT_TRIGGER_LABEL.talk}」・ボタンのイベントでだけ使えます。chara(イベント番号) で指してください`
+      ? `self (イベントの持ち主) は「${SCRIPT_TRIGGER_LABEL.talk}」・ボタンのイベントでだけ使えます。obj(イベント番号) で指してください`
       : null;
-  const called = (c: ScriptCall): string | null =>
-    c.args.reduce<string | null>((p, a) => p ?? (a.k === 'c' || a.k === 'p' ? who(a.who) : null), who(c.self));
+  const arg = (a: ScriptArg): string | null =>
+    a.k === 'c' || a.k === 'p'
+      ? who(a.who)
+      : a.k === 'own' && !triggerHasRow(trigger)
+        ? `selfRow (このイベントの番号) は「${SCRIPT_TRIGGER_LABEL[trigger]}」のイベントにはありません`
+        : null;
+  const called = (c: ScriptCall): string | null => c.args.reduce<string | null>((p, a) => p ?? arg(a), who(c.self));
   const valued = (v: ScriptValue): string | null => (v.kind === 'call' ? called(v.call) : null);
   const condition = (c: ScriptCond): string | null =>
     'op' in c ? (condition(c.left) ?? condition(c.right)) : valued(c.value);
@@ -276,21 +236,7 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
         for (const c of n.cases) p ??= eventProblem(trigger, c.body);
         p ??= n.default ? eventProblem(trigger, n.default) : null;
         break;
-      case 'collision':
-        if (n.row === null && trigger !== 'area' && trigger !== 'defeat')
-          p = `disable() は範囲のイベントの中でだけ使えます (自分の範囲を無効にする)。collision(イベント番号, 0) で指してください`;
-        break;
-      case 'face':
-        p = who(n.who) ?? who(n.to);
-        break;
-      case 'popup':
-      case 'popupEnd':
-      case 'anim':
-      case 'waitAnim':
-      case 'move':
-      case 'turn':
-      case 'show':
-      case 'camera':
+      case 'vanishEffect':
         p = who(n.who);
         break;
     }
@@ -309,41 +255,16 @@ for (const r of SCRIPT_API_ROWS) {
   if (!MEMBER_CLASSES.has(r[0])) API_CLASSES.add(r[0]);
 }
 
-/**
- * The built-in methods of a character (`hero.anim(…)`, `chara(3).open()`): each the statement of the same name with the
- * character first. Script API functions after the dot begin with a capital letter, so the two do not meet.
- */
-export const SCRIPT_METHODS = [
-  'anim',
-  'waitAnim',
-  'move',
-  'turn',
-  'face',
-  'show',
-  'hide',
-  'camera',
-  'popup',
-  'popupEnd',
-  'open',
-  'close',
-  'remove',
-  'vanishMonster',
-] as const;
-export type ScriptMethod = (typeof SCRIPT_METHODS)[number];
-export const isScriptMethod = (s: string): s is ScriptMethod => (SCRIPT_METHODS as readonly string[]).includes(s);
-/** The methods that take the event of chara(row) (a door, an object or a monster): not hero or self. */
-export const SCRIPT_ROW_METHODS: readonly ScriptMethod[] = ['open', 'close', 'remove', 'vanishMonster'];
-
-/** A parameter of a function: a character (hero / self / chara(N), or N alone) or a number. */
+/** A parameter of a function: an object (hero / self / obj(N), or N alone) or a number. */
 export interface ScriptParam {
   name: string;
-  kind: 'chara' | 'num';
+  kind: 'obj' | 'num';
 }
 /** What a parameter stands for where the function is written out. */
-type ScriptBound = { kind: 'chara'; who: ScriptWho } | { kind: 'num'; v: number };
+type ScriptBound = { kind: 'obj'; who: ScriptWho } | { kind: 'num'; v: number };
 /** What a function's body is read with where it is written (its mistakes told there, before any call). */
 const PARAM_STAND_IN: Record<ScriptParam['kind'], ScriptBound> = {
-  chara: { kind: 'chara', who: { kind: 'chara', row: 1 } },
+  obj: { kind: 'obj', who: { kind: 'chara', row: 1 } },
   num: { kind: 'num', v: 1 },
 };
 /** A function a body can call: its parameters, and where its body (the "{") is in the tokens it was read from. */
@@ -355,50 +276,11 @@ interface FnDef {
   library: boolean;
 }
 /**
- * The words the language's own statements and values are called by (not openDoor: a library function, which a
- * function of the script's can take the place of). A function cannot be named so.
+ * The words of the language's own statements, which a function cannot be named: vanishEffect (the one thing the
+ * Script API cannot say: the event keeps the effect until it is destroyed) and vec(…) of the arguments. All else is
+ * a Script API function called by name, or a function of the script or of the library (scriptLibrary.ts).
  */
-export const SCRIPT_STATEMENTS: readonly string[] = [
-  'talk',
-  'say',
-  'ask',
-  'popup',
-  'popupEnd',
-  'emotion',
-  'emotionEnd',
-  'anim',
-  'waitAnim',
-  'move',
-  'turn',
-  'face',
-  'show',
-  'hide',
-  'camera',
-  'cameraBack',
-  'fadeOut',
-  'fadeIn',
-  'follow',
-  'se',
-  'addItem',
-  'getItem',
-  'addGold',
-  'openDoorNow',
-  'closeDoor',
-  'jingle',
-  'bgmPause',
-  'bgmResume',
-  'wait',
-  'disable',
-  'collision',
-  'remove',
-  'vanishMonster',
-  'battle',
-  'stageName',
-  'item',
-  'state',
-  'monsters',
-  'vec',
-];
+export const SCRIPT_STATEMENTS: readonly string[] = ['vanishEffect', 'vec'];
 /** The functions written in tokens (at the top, outside any braces), found before the bodies are read. */
 function fnDefs(ts: Token[], library: boolean): FnDef[] {
   const out: FnDef[] = [];
@@ -412,7 +294,7 @@ function fnDefs(ts: Token[], library: boolean): FnDef[] {
       let j = k + 3;
       while (ts[j] && ts[j]!.t !== 'end' && ts[j]!.s !== ')') {
         const kind = ts[j + 2]?.s;
-        if (ts[j]!.t === 'id' && ts[j + 1]?.s === ':' && (kind === 'chara' || kind === 'num')) {
+        if (ts[j]!.t === 'id' && ts[j + 1]?.s === ':' && (kind === 'obj' || kind === 'num')) {
           params.push({ name: ts[j]!.s, kind });
           j += 3;
         } else j++;
@@ -433,9 +315,9 @@ export function parseStageScript(src: string): StageScript {
     const b = t.t === 'id' ? env.get(t.s) : undefined;
     return b?.kind === 'num' ? b.v : undefined;
   };
-  const charaParam = (s: string): ScriptWho | undefined => {
+  const objParam = (s: string): ScriptWho | undefined => {
     const b = env.get(s);
-    return b?.kind === 'chara' ? b.who : undefined;
+    return b?.kind === 'obj' ? b.who : undefined;
   };
   const peek = (): Token => ts[i]!;
   const next = (): Token => ts[i++]!;
@@ -447,20 +329,70 @@ export function parseStageScript(src: string): StageScript {
   const need = (s: string): void => {
     if (!eat(s)) fail(`「${s}」が要ります (「${peek().s || '終わり'}」がありました)`);
   };
+  /**
+   * A number worked out when the script is built: numbers, true / false, num parameters, + - * / and ( ). `whole`: no
+   * number with a decimal point went into it and it came out whole (an integer argument of the Script API).
+   */
+  const expr = (what: string): { v: number; whole: boolean; at: Token } => {
+    const at = peek();
+    let decimal = false;
+    const factor = (): number => {
+      const t = next();
+      if (t.t === 'p' && t.s === '(') {
+        const v = sum();
+        need(')');
+        return v;
+      }
+      if (t.t === 'p' && t.s === '-') return -factor();
+      if (t.t === 'num') {
+        if (t.s.includes('.')) decimal = true;
+        return t.n;
+      }
+      if (t.t === 'id' && (t.s === 'true' || t.s === 'false')) return Number(t.s === 'true');
+      const p = numParam(t);
+      if (p !== undefined) {
+        if (!Number.isInteger(p)) decimal = true;
+        return p;
+      }
+      if (t.t === 'id' && t.s === 'selfRow')
+        fail(
+          'selfRow はゲームが実行時に決める値なので、Script API の引数にそのまま書きます (計算や関数の引数には使えません)',
+          t,
+        );
+      return fail(`${what}は数で書きます`, t);
+    };
+    const product = (): number => {
+      let v = factor();
+      for (;;) {
+        if (eat('*')) v *= factor();
+        else if (is('/')) {
+          const t = next();
+          const d = factor();
+          if (d === 0) fail('0 では割れません', t);
+          v /= d;
+        } else return v;
+      }
+    };
+    const sum = (): number => {
+      let v = product();
+      for (;;) {
+        if (eat('+')) v += product();
+        else if (eat('-')) v -= product();
+        else return v;
+      }
+    };
+    const v = sum();
+    return { v, whole: !decimal && Number.isInteger(v), at };
+  };
   const int = (what: string, min: number, max: number): number => {
-    const t = next();
-    const p = numParam(t);
-    const bool = t.t === 'id' && (t.s === 'true' || t.s === 'false');
-    const v = p ?? (bool ? Number(t.s === 'true') : t.n);
-    if ((p === undefined && t.t !== 'num' && !bool) || !Number.isInteger(v)) fail(`${what}は整数で書きます`, t);
-    if (v < min || v > max) fail(`${what}は ${min}〜${max} です`, t);
+    const { v, at } = expr(what);
+    if (!Number.isInteger(v)) fail(`${what}は整数です (${v})`, at);
+    if (v < min || v > max) fail(`${what}は ${min}〜${max} です (${v})`, at);
     return v;
   };
   const num = (what: string, min: number, max: number): number => {
-    const t = next();
-    const v = numParam(t) ?? (t.t === 'num' ? t.n : NaN);
-    if (!Number.isFinite(v)) fail(`${what}は数で書きます`, t);
-    if (v < min || v > max) fail(`${what}は ${min}〜${max} です`, t);
+    const { v, at } = expr(what);
+    if (!Number.isFinite(v) || v < min || v > max) fail(`${what}は ${min}〜${max} です (${v})`, at);
     return v;
   };
   const vars = new Map<string, ScriptVar>();
@@ -474,24 +406,21 @@ export function parseStageScript(src: string): StageScript {
 
   const u32 = (what: string): number => int(what, 0, 0xffffffff);
   const row = (what = 'イベント番号'): number => u32(what);
-  const seconds = (what: string, positive = false): number => {
-    const t = peek();
-    const v = num(`${what}の秒数`, 0, 600);
-    if (positive && !(v > 0)) fail(`${what}の秒数は 0 より大きく 600 までです`, t);
-    return v;
-  };
+  const WHO_WORDS = ['hero', 'self', 'obj'];
+  /** A word that names an object: hero, self, obj or a parameter that is one. */
+  const isWhoWord = (s: string): boolean => WHO_WORDS.includes(s) || objParam(s) !== undefined;
   const who = (): ScriptWho => {
     const t = next();
     if (t.t === 'id' && (t.s === 'hero' || t.s === 'self')) return { kind: t.s };
-    const p = t.t === 'id' ? charaParam(t.s) : undefined;
+    const p = t.t === 'id' ? objParam(t.s) : undefined;
     if (p) return p;
-    if (t.t === 'id' && t.s === 'chara') {
+    if (t.t === 'id' && t.s === 'obj') {
       need('(');
-      const r = row('キャラのイベント番号');
+      const r = row('obj のイベント番号');
       need(')');
       return { kind: 'chara', row: r };
     }
-    return fail('だれに: hero (先頭の電波人間) / self (イベントの持ち主) / chara(イベント番号) が要ります', t);
+    return fail('hero (先頭の電波人間) / self (イベントの持ち主) / obj(イベント番号) が要ります', t);
   };
   /** The arguments of a call: each reader takes one, commas between. */
   const call = <T extends unknown[]>(name: string, ...read: { [K in keyof T]: () => T[K] }): T => {
@@ -507,79 +436,35 @@ export function parseStageScript(src: string): StageScript {
     return out as T;
   };
 
-  const WHO_WORDS = ['hero', 'self', 'chara'];
-  /** A word that names a character: hero, self, chara or a parameter that is one. */
-  const isWhoWord = (s: string): boolean => WHO_WORDS.includes(s) || charaParam(s) !== undefined;
-  /** A built-in method after `who.` (SCRIPT_METHODS): the statement of that name with the character first. */
-  const method = (w: ScriptWho, m: Token, name: ScriptMethod): ScriptNode => {
-    const rowOf = (): number =>
-      w.kind === 'chara' ? w.row : fail(`.${name}() は chara(イベント番号) にだけ書けます`, m);
-    switch (name) {
-      case 'anim': {
-        need('(');
-        const id = u32('アニメの番号');
-        const type = eat(',') ? int('アニメの種類', 0, 2) : 0;
-        if (!eat(')')) fail('.anim の引数は (アニメ[, 種類]) です');
-        return { op: 'anim', who: w, id, type };
-      }
-      case 'waitAnim':
-        call(name);
-        return { op: 'waitAnim', who: w };
-      case 'move': {
-        const pos = (): number => num('位置', -1e6, 1e6);
-        const [x, y, z] = call(name, pos, pos, pos);
-        return { op: 'move', who: w, x, y, z };
-      }
-      case 'turn':
-        return { op: 'turn', who: w, degrees: call(name, () => num('向き (度)', -3600, 3600))[0] };
-      case 'face':
-        return { op: 'face', who: w, to: call(name, who)[0] };
-      case 'show':
-      case 'hide':
-        call(name);
-        return { op: 'show', who: w, on: name === 'show' };
-      case 'camera':
-        return { op: 'camera', who: w, seconds: call(name, () => seconds('カメラ'))[0] };
-      case 'popup':
-        return { op: 'popup', who: w, icon: call(name, () => int('アイコン', 0, 255))[0] };
-      case 'popupEnd':
-        call(name);
-        return { op: 'popupEnd', who: w };
-      case 'open':
-      case 'close':
-      case 'remove':
-      case 'vanishMonster': {
-        const r = rowOf();
-        call(name);
-        if (name === 'open') return { op: 'doorMotion', row: r };
-        if (name === 'close') return { op: 'door', row: r, open: false };
-        return { op: name, row: r };
-      }
-    }
-  };
-  /** A built-in method statement beginning at the token just read, or null (the tokens left as they were). */
-  const methodAt = (t: Token): ScriptNode | null => {
+  /**
+   * `who.name(…)` with a name in lower case, the object's token just read: the function `name` (the script's or the
+   * library's) with the object as its first argument. Null (the tokens left as they were) when it is not one.
+   */
+  const methodAt = (t: Token): ScriptNode[] | null => {
     if (t.t !== 'id' || !isWhoWord(t.s)) return null;
     const at = i;
     i--;
     const w = who();
     const m = ts[i + 1];
-    if (is('.') && m?.t === 'id' && isScriptMethod(m.s)) {
+    if (is('.') && m?.t === 'id' && /^[a-z_]/u.test(m.s)) {
       i += 2;
-      return method(w, m, m.s);
+      const d = defs.get(m.s);
+      if (!d || env.has(m.s)) return fail(`関数「${m.s}」はありません (大文字で始まる名前は Script API の関数です)`, m);
+      if (!d.params.length) return fail(`${m.s} は引数がないので、${m.s}() と書きます`, m);
+      return expandCall(d, m, w);
     }
     i = at;
     return null;
   };
   /**
    * A Script API function called by name, the token before the dot read: `Class.Name(args)` or `who.Name(args)`.
-   * The arguments are numbers, vec(x, y, z) and characters; the function is the one of that name they fit.
+   * The arguments are numbers, vec(x, y, z), objects and selfRow; the function is the one of that name they fit.
    */
   const apiCall = (cls: string | null, self: ScriptWho | null, at: Token): ScriptCall => {
     need('.');
     const fn = next();
     if (fn.t !== 'id') fail('関数の名前が要ります', fn);
-    if (self && isScriptMethod(fn.s)) fail(`.${fn.s}(…) は値を返しません。文として書きます`, fn);
+    if (self && defs.has(fn.s)) fail(`${fn.s}(…) は値を返しません。文として書きます`, fn);
     const classes = cls ? [cls] : self!.kind === 'hero' ? ['ScriptPlayer', 'ScriptChara'] : ['ScriptChara'];
     const rows = classes.flatMap((c) => API_INDEX.get(`${c}.${fn.s}`) ?? []);
     const shown = `${cls ?? classes[classes.length - 1]}::${fn.s}`;
@@ -587,7 +472,8 @@ export function parseStageScript(src: string): StageScript {
     type Raw =
       | { kind: 'num'; v: number; whole: boolean }
       | { kind: 'vec'; x: number; y: number; z: number }
-      | { kind: 'who'; who: ScriptWho };
+      | { kind: 'who'; who: ScriptWho }
+      | { kind: 'own' };
     const raw: Raw[] = [];
     need('(');
     while (!eat(')')) {
@@ -598,14 +484,14 @@ export function parseStageScript(src: string): StageScript {
         const pos = (): number => num('vec の値', -1e9, 1e9);
         const [x, y, z] = call('vec', pos, pos, pos);
         raw.push({ kind: 'vec', x, y, z });
+      } else if (t.t === 'id' && t.s === 'selfRow' && !['+', '-', '*', '/'].includes(ts[i + 1]?.s ?? '')) {
+        next();
+        raw.push({ kind: 'own' });
       } else if (t.t === 'id' && isWhoWord(t.s)) raw.push({ kind: 'who', who: who() });
-      else if (t.t === 'id' && (t.s === 'true' || t.s === 'false'))
-        raw.push({ kind: 'num', v: Number(next().s === 'true'), whole: true });
-      else if (t.t === 'num') raw.push({ kind: 'num', v: next().n, whole: !t.s.includes('.') });
-      else if (numParam(t) !== undefined) {
-        const v = numParam(next())!;
-        raw.push({ kind: 'num', v, whole: Number.isInteger(v) });
-      } else fail(`${shown} の引数は、数・vec(x, y, z)・キャラ (hero / self / chara(イベント番号)) で書きます`, t);
+      else {
+        const e = expr(`${shown} の引数 (数・vec(x, y, z)・hero / self / obj(イベント番号)・selfRow) `);
+        raw.push({ kind: 'num', v: e.v, whole: e.whole });
+      }
     }
     /** How well the arguments fit a function's parameters (0: they do not). */
     const fit = (r: ScriptApiRow): number => {
@@ -617,6 +503,7 @@ export function parseStageScript(src: string): StageScript {
           want = params[k]!;
         if (a.kind === 'num' && want === 'i' && a.whole) score += 2;
         else if (a.kind === 'num' && want === 'f') score += a.whole ? 1 : 2;
+        else if (a.kind === 'own' && want === 'i') score += 2;
         else if (a.kind === 'vec' && want === 'v') score += 2;
         else if (a.kind === 'who' && want === 'p') score += 2;
         else if (a.kind === 'who' && want === 'c') score += 1;
@@ -628,7 +515,10 @@ export function parseStageScript(src: string): StageScript {
     const forms = rows.map((r) => `${r[0]}::${r[1]}(${r[4]})`).join(' / ');
     if (!fits.length) fail(`${shown} の引数が合いません: ${forms} (ScriptMessageParam は書きません)`, at);
     const best = Math.max(...fits.map((x) => x.score));
-    const chosen = fits.filter((x) => x.score === best);
+    let chosen = fits.filter((x) => x.score === best);
+    // the hero's: ScriptPlayer's before ScriptChara's of the same form (its StartAnimation, as the game's CROs call)
+    const first = classes.find((c) => chosen.some((x) => x.r[0] === c));
+    chosen = chosen.filter((x) => x.r[0] === first);
     if (chosen.length > 1) fail(`${shown} のどれを呼ぶのか決まりません: ${forms}`, at);
     const r = chosen[0]!.r;
     let k = 0;
@@ -637,6 +527,7 @@ export function parseStageScript(src: string): StageScript {
       const a = raw[k++]!;
       if (a.kind === 'vec') return { k: 'v', x: a.x, y: a.y, z: a.z };
       if (a.kind === 'who') return { k: want as 'c' | 'p', who: a.who };
+      if (a.kind === 'own') return { k: 'own' };
       if (want === 'i' && (a.v < -0x80000000 || a.v > 0xffffffff))
         fail(`${shown} の整数の引数は 32 ビットに収まる値です`, at);
       return { k: want as 'i' | 'f', v: a.v };
@@ -655,7 +546,7 @@ export function parseStageScript(src: string): StageScript {
       result: r[5],
     };
   };
-  /** A call that begins at the token just read (a class's name or a character), or null. */
+  /** A call that begins at the token just read (a class's name or an object), or null. */
   const apiCallAt = (t: Token): ScriptCall | null => {
     if (t.t !== 'id') return null;
     if (API_CLASSES.has(t.s) && is('.')) return apiCall(t.s, null, t);
@@ -663,14 +554,14 @@ export function parseStageScript(src: string): StageScript {
       i--;
       const w = who();
       if (is('.')) return apiCall(null, w, t);
-      return fail('キャラの後には .関数(…) が要ります (例: hero.SetVisible(0))', t);
+      return fail('hero / self / obj(…) の後には .関数(…) が要ります (例: hero.SetVisible(0))', t);
     }
     return null;
   };
 
   const value = (): ScriptValue => {
     const t = next();
-    if (t.t !== 'id') fail('変数か ask(…) / item(…) / state(…) / monsters() が要ります', t);
+    if (t.t !== 'id') fail('変数か Script API の呼び出しが要ります', t);
     const api = apiCallAt(t);
     if (api) {
       // read from the game's code (script-returns.md); an unsettled void ("void?") is left to the author
@@ -679,16 +570,13 @@ export function parseStageScript(src: string): StageScript {
         fail(`${api.name} は小数 (float) を返します。スクリプトの条件では整数しか比べられません`, t);
       return { kind: 'call', call: api };
     }
-    if (is('(')) {
-      if (t.s === 'ask') return { kind: 'ask', msg: call('ask', () => u32('台詞の行 ID'))[0] };
-      if (t.s === 'item') return { kind: 'item', item: call('item', () => u32('アイテム ID'))[0] };
-      if (t.s === 'state') return { kind: 'state', row: call('state', () => row())[0] };
-      if (t.s === 'monsters') {
-        call('monsters');
-        return { kind: 'monsters' };
-      }
-      fail(`「${t.s}」は値として使えません (ask / item / state / monsters)`, t);
-    }
+    if (is('('))
+      fail(
+        defs.has(t.s)
+          ? `関数「${t.s}」は値を返しません`
+          : `「${t.s}」は値として使えません (変数か、Script API の呼び出しを書きます)`,
+        t,
+      );
     if (!vars.has(t.s)) fail(`変数「${t.s}」はありません`, t);
     return { kind: 'var', name: t.s };
   };
@@ -733,7 +621,7 @@ export function parseStageScript(src: string): StageScript {
     const close = next();
     return { body: out, from: open.pos + 1, to: close.pos };
   };
-  /** The parameters of a function: `name: chara` (a character) or `name: num` (a number), commas between. */
+  /** The parameters of a function: `name: obj` (an object) or `name: num` (a number), commas between. */
   const params = (): ScriptParam[] => {
     need('(');
     const out: ScriptParam[] = [];
@@ -744,30 +632,43 @@ export function parseStageScript(src: string): StageScript {
       if (vars.has(n.s)) fail(`「${n.s}」は変数の名前です`, n);
       need(':');
       const k = next();
-      if (k.t !== 'id' || (k.s !== 'chara' && k.s !== 'num'))
-        fail('引数の種類は chara (キャラ・イベント番号) か num (数) です', k);
+      if (k.t !== 'id' || (k.s !== 'obj' && k.s !== 'num'))
+        fail('引数の種類は obj (hero / self / obj(イベント番号)、またはイベント番号) か num (数) です', k);
       out.push({ name: n.s, kind: k.s as ScriptParam['kind'] });
     }
     return out;
   };
-  /** A call of a function (the script's or the library's): its body written out here, the arguments put in. */
-  const expandCall = (d: FnDef, at: Token): ScriptNode[] => {
+  /**
+   * A call of a function (the script's or the library's): its body written out here, the arguments put in.
+   * `receiver`: the object before the dot (`obj(3).open()`), its first argument.
+   */
+  const expandCall = (d: FnDef, at: Token, receiver?: ScriptWho): ScriptNode[] => {
     need('(');
     const bound = new Map<string, ScriptBound>();
+    const written = d.params.length - (receiver ? 1 : 0);
+    const count = (): never => fail(`${d.name} の引数は ${written} 個です`);
     d.params.forEach((p, k) => {
-      if ((k && !eat(',')) || is(')')) fail(`${d.name} の引数は ${d.params.length} 個です`);
-      bound.set(
-        p.name,
-        p.kind === 'num'
-          ? { kind: 'num', v: num(`${d.name} の引数 ${p.name} `, -1e9, 1e9) }
-          : // a character: hero / self / chara(N), or the event's number alone
-            {
-              kind: 'chara',
-              who: peek().t === 'num' ? { kind: 'chara', row: row(`${d.name} の引数 ${p.name} `) } : who(),
-            },
-      );
+      const what = `${d.name} の引数 ${p.name} `;
+      if (k === 0 && receiver) {
+        if (p.kind === 'obj') bound.set(p.name, { kind: 'obj', who: receiver });
+        else if (receiver.kind === 'chara') bound.set(p.name, { kind: 'num', v: receiver.row });
+        else fail(`${what}は数なので、obj(イベント番号).${d.name}(…) とだけ書けます`, at);
+        return;
+      }
+      if ((k > (receiver ? 1 : 0) && !eat(',')) || is(')')) count();
+      const t = peek();
+      const isObj = t.t === 'id' && isWhoWord(t.s);
+      if (p.kind === 'obj')
+        // an object: hero / self / obj(N), or the event's number alone
+        bound.set(p.name, { kind: 'obj', who: isObj ? who() : { kind: 'chara', row: row(what) } });
+      else if (isObj) {
+        // a number given obj(N): its event's number
+        const w = who();
+        if (w.kind !== 'chara') fail(`${what}は数か obj(イベント番号) です`, t);
+        bound.set(p.name, { kind: 'num', v: (w as { row: number }).row });
+      } else bound.set(p.name, { kind: 'num', v: num(what, -0x80000000, 0xffffffff) });
     });
-    if (!eat(')')) fail(`${d.name} の引数は ${d.params.length} 個です`);
+    if (!eat(')')) count();
     if (calling.includes(d.name)) fail(`関数「${d.name}」は自分を (ほかの関数を通しても) 呼べません`, at);
     if (calling.length >= 16) fail('関数の呼び出しが深すぎます', at);
     const save = { ts, i, env };
@@ -798,8 +699,8 @@ export function parseStageScript(src: string): StageScript {
     if (t.t !== 'id') fail(`文が要ります (「${t.s}」がありました)`, t);
     const def = defs.get(t.s);
     if (def && is('(') && !env.has(t.s)) return expandCall(def, t);
-    const own = methodAt(t);
-    if (own) return own;
+    const method = methodAt(t);
+    if (method) return method;
     const api = apiCallAt(t);
     if (api) return { op: 'call', call: api };
     switch (t.s) {
@@ -845,131 +746,20 @@ export function parseStageScript(src: string): StageScript {
       case 'break':
         if (!ctx.inSwitch) fail('break は switch の中でだけ使えます', t);
         return { op: 'break' };
-      case 'talk':
-      case 'say': {
-        // talk(line[, bubble | window | 0〜2])
-        need('(');
-        const msg = u32('台詞の行 ID');
-        let dialog: TalkDialog = TALK_DIALOG.row;
-        if (eat(',')) {
-          const d = peek();
-          if (d.t === 'id' && (d.s === 'bubble' || d.s === 'window')) {
-            next();
-            dialog = TALK_DIALOG[d.s];
-          } else if (d.t === 'num') dialog = int('吹き出しの種類', 0, 2) as TalkDialog;
-          else fail(`${t.s} の 2 つ目は吹き出しの種類です: bubble (会話の吹き出し) / window (システムのウィンドウ)`, d);
-        }
-        if (!eat(')')) fail(`${t.s} の引数は (台詞の行 ID[, bubble / window]) です`);
-        return { op: 'talk', msg, auto: t.s === 'say', dialog };
-      }
-      case 'popup': {
-        // popup(icon) is popup(hero, icon)
-        need('(');
-        const w: ScriptWho = peek().t === 'num' ? { kind: 'hero' } : who();
-        if (peek().t !== 'num') need(',');
-        const icon = int('アイコン', 0, 255);
-        if (!eat(')')) fail('popup の引数は (だれに, アイコン) です');
-        return { op: 'popup', who: w, icon };
-      }
-      case 'popupEnd':
-        return { op: 'popupEnd', who: call(t.s, who)[0] };
-      case 'emotion':
-        return { op: 'emotion', value: call(t.s, () => int('表情', 0, 255))[0] };
-      case 'emotionEnd':
-        call(t.s);
-        return { op: 'emotion', value: null };
-      case 'anim': {
-        need('(');
-        const w = who();
-        need(',');
-        const id = u32('アニメの番号');
-        const type = eat(',') ? int('アニメの種類', 0, 2) : 0;
-        if (!eat(')')) fail('anim の引数は (だれに, アニメ[, 種類]) です');
-        return { op: 'anim', who: w, id, type };
-      }
-      case 'waitAnim':
-        return { op: 'waitAnim', who: call(t.s, who)[0] };
-      case 'move': {
-        const pos = (): number => num('位置', -1e6, 1e6);
-        const [w, x, y, z] = call(t.s, who, pos, pos, pos);
-        return { op: 'move', who: w, x, y, z };
-      }
-      case 'turn': {
-        const [w, degrees] = call(t.s, who, () => num('向き (度)', -3600, 3600));
-        return { op: 'turn', who: w, degrees };
-      }
-      case 'face': {
-        const [w, to] = call(t.s, who, who);
-        return { op: 'face', who: w, to };
-      }
-      case 'show':
-      case 'hide':
-        return { op: 'show', who: call(t.s, who)[0], on: t.s === 'show' };
-      case 'camera': {
-        const [w, s] = call(t.s, who, () => seconds('カメラ'));
-        return { op: 'camera', who: w, seconds: s };
-      }
-      case 'cameraBack':
-        return { op: 'camera', who: null, seconds: call(t.s, () => seconds('カメラ'))[0] };
-      case 'fadeOut':
-      case 'fadeIn':
-        return { op: 'fade', out: t.s === 'fadeOut', seconds: call(t.s, () => seconds('フェード'))[0] };
-      case 'follow':
-        return { op: 'follow', on: !!call(t.s, () => int('ついてくる (0 / 1)', 0, 1))[0] };
-      case 'se':
-        return { op: 'se', id: call(t.s, () => int('音 (SoundData の行)', 0, 0xffff))[0] };
-      case 'addItem':
-      case 'getItem': {
-        const [item, count] = call(
-          t.s,
-          () => u32('アイテム ID'),
-          () => int('個数', -9999, 9999),
-        );
-        return { op: 'addItem', item, count, show: t.s === 'getItem' };
-      }
-      case 'addGold':
-        return { op: 'addGold', amount: call(t.s, () => int('お金', -99999999, 99999999))[0] };
-      case 'openDoorNow':
-      case 'closeDoor':
-        return { op: 'door', row: call(t.s, () => row('扉のイベント番号'))[0], open: t.s !== 'closeDoor' };
-      case 'jingle': {
-        need('(');
-        const id = is(')') ? DOOR_SHOW.jingle : int('音 (SoundData の行)', 0, 0xffff);
-        if (!eat(')')) fail('jingle の引数は ([音]) です');
-        return { op: 'jingle', id };
-      }
-      case 'bgmPause':
-      case 'bgmResume':
-        return { op: 'bgm', pause: t.s === 'bgmPause', seconds: call(t.s, () => seconds('BGM'))[0] };
-      case 'wait':
-        return { op: 'wait', seconds: call(t.s, () => seconds('wait ', true))[0] };
-      case 'disable':
-        call(t.s);
-        return { op: 'collision', row: null, on: false };
-      case 'collision': {
-        const [r, on] = call(
-          t.s,
-          () => row('範囲のイベント番号'),
-          () => int('有効 (0 / 1)', 0, 1),
-        );
-        return { op: 'collision', row: r, on: !!on };
-      }
-      case 'remove':
-        return { op: 'remove', row: call(t.s, () => row())[0] };
-      case 'vanishMonster':
-        return { op: 'vanishMonster', row: call(t.s, () => row('モンスターのイベント番号'))[0] };
-      case 'battle':
-        return { op: 'battle', group: call(t.s, () => u32('モンスターの群れ (MonsterGroup の行)'))[0] };
-      case 'stageName':
-        call(t.s);
-        return { op: 'stageName' };
+      case 'vanishEffect':
+        return { op: 'vanishEffect', who: call(t.s, who)[0] };
     }
     if (eat('=')) {
       const v = vars.get(t.s);
       if (!v) return fail(`変数「${t.s}」はありません`, t);
       return { op: 'set', name: t.s, value: int('入れる値', 0, v.kind === 'bit' ? 1 : 255) };
     }
-    return fail(`「${t.s}」という文はありません`, t);
+    return fail(
+      is('(')
+        ? `関数「${t.s}」はありません (Script API はクラス名から書きます: 例 ScriptSound.Play(0x7A, 0))`
+        : `「${t.s}」という文はありません`,
+      t,
+    );
   };
 
   const name = (what: string): Token => {
@@ -1359,22 +1149,15 @@ export const INTRO_DIR: Record<number, 1 | 2 | 4 | 8> = { 1: 4, 4: 1, 2: 8, 8: 2
 const INTRO_FRAME = { players: 0xb0, from: 0x330, to: 0x33c, size: 0x348 } as const;
 const PLAYER_SIZE = 0x50,
   PLAYERS = 8;
-/** The animations of a character that talks: its mouth moves while the line is shown (script-abi.md §1). */
-const ANIM_TALK = 0x80000079,
-  ANIM_WAIT = 0x80000075;
 /** The party's: standing and walking (ScriptPlayer::StartAnimation, script-abi.md §3 B). */
 const PLAYER_WAIT = 0x80000001,
   PLAYER_WALK = 0x80000003;
 /** ScriptChara::WaitAnimation's argument in every shipped call. */
 const WAIT_ANIM_ARG = 0x3e;
-/** GSDisplay of the fades (both screens in the shipped calls) and GSAnimMode of the camera's moves. */
-const FADE_DISPLAY = 2,
-  CAMERA_MODE = 2;
-/** How long a turn takes (RotateTo's most used time is 0.5; this is the second). */
-const TURN_SECONDS = 0.25;
+/** GSDisplay of the fades (both screens in the shipped calls). */
+const FADE_DISPLAY = 2;
 const F0 = 0x00000000,
-  F1 = 0x3f800000,
-  F02 = 0x3e4ccccd; // 0.0f, 1.0f, 0.2f
+  F1 = 0x3f800000; // 0.0f, 1.0f
 const fbits = (v: number): number => new Uint32Array(new Float32Array([v]).buffer)[0]!;
 
 type PoolWord =
@@ -1522,7 +1305,7 @@ function assembleAll(lines: string[], base: number): { words: number[]; labels: 
  *   [sp+0x20..0x6F] a ScriptPlayer (0x50) or ScriptChara (0x18) of the character a statement acts on
  *   [sp+0x70..0x87] a second ScriptChara (the one face() turns to)    [sp+0x88..0x97] a GSvec
  *   [sp+0x98..0xA7] a second GSvec and [sp+0xA8..0xAF] two ChrObject* of a Script API call's arguments
- * r4 = this, r5 = 0, r6 = 0x80000079, r7 = 0x80000075, r8 = the camera is held; s16 = 0.0, s17 = 1.0, s18 = 0.2.
+ * r4 = this, r5 = 0, r8 = the camera is held (ScriptCamera::PauseCameraUpdater); s16 = 0.0, s17 = 1.0.
  */
 /** ScriptChara +0xB: the popup kind it showed (0xFF: none; see the popup statement). */
 const POPUP_KIND = 0xb;
@@ -1548,16 +1331,6 @@ interface Ctx {
   breakTo: string | null;
   effectAt: number | null;
 }
-
-function zeroSmps(fn: Fn): void {
-  fn.op(
-    `str r5, [sp, #${hx(FRAME.smpA)}]`,
-    `str r5, [sp, #${hx(FRAME.smpA + 4)}]`,
-    `str r5, [sp, #${hx(FRAME.smpB)}]`,
-    `str r5, [sp, #${hx(FRAME.smpB + 4)}]`,
-  );
-}
-const smpArgs = (fn: Fn): void => fn.op(`add r1, sp, #${hx(FRAME.smpA)}`, `add r2, sp, #${hx(FRAME.smpB)}`);
 
 /** sN = value: from s16 / s17 when it is 0 / 1, else through `tmp` (set the integer arguments after it). */
 function fmov(fn: Fn, s: string, value: number, tmp = 'r3'): void {
@@ -1608,26 +1381,6 @@ function compileValue(c: Ctx, v: ScriptValue): void {
       fn.op('and r0, r0, #0xff');
       break;
     }
-    case 'state':
-      fn.load('r0', v.row);
-      fn.call(A.getState);
-      fn.op('and r0, r0, #0xff');
-      break;
-    case 'item':
-      fn.load('r0', scriptRowId(v.item));
-      fn.op('mov r1, #1');
-      fn.call(A.getItem);
-      break;
-    case 'ask':
-      zeroSmps(fn);
-      fn.load('r0', scriptRowId(v.msg));
-      smpArgs(fn);
-      fn.call(A.yesNo);
-      fn.op('cmp r0, #0', 'movne r0, #1');
-      break;
-    case 'monsters':
-      fn.call(A.monsters);
-      break;
     case 'call':
       compileCall(c, v.call);
       if (v.call.byte) fn.op('and r0, r0, #0xff');
@@ -1637,10 +1390,21 @@ function compileValue(c: Ctx, v: ScriptValue): void {
 
 /**
  * A Script API function called with its arguments laid as AAPCS-VFP has them: `this` and the integers and pointers
- * in r0-r3 then on the stack, the floats in s0 on; r0 = what it returns.
+ * in r0-r3 then on the stack, the floats in s0 on; r0 = what it returns. A few functions are called as the game's
+ * CROs call them around them (the camera held, the popup kept, the battle ending the event).
  */
 function compileCall(c: Ctx, call: ScriptCall): void {
-  const { fn } = c;
+  const { fn, g } = c;
+  if (call.sym === A.camPause) {
+    // r8 = the camera is held: paused once, and given back when the event ends (compileStageScript) unless the script
+    // resumed it (as CRO 18's button pauses it once)
+    const skip = g.uniq(`${fn.name}_cam`);
+    fn.op('cmp r8, #0', `bne ${skip}`);
+    fn.call(call.sym);
+    fn.op('mov r8, #1');
+    fn.at(skip);
+    return;
+  }
   const other = call.args.find((a) => a.k === 'c');
   const emit = (self: (() => void) | null, chara: (() => void) | null): void => {
     // the characters passed as ChrObject* first: finding them calls the game
@@ -1675,6 +1439,7 @@ function compileCall(c: Ctx, call: ScriptCall): void {
       if (a.k === 'i') fn.load(rd, a.v);
       else if (a.k === 'v' || a.k === 'm') fn.op(`add ${rd}, sp, #${hx(refAt.get(a)!)}`);
       else if (a.k === 'p') fn.op(`ldr ${rd}, [sp, #${hx(chrAt.get(a)!)}]`);
+      else if (a.k === 'own') fn.op(`ldr ${rd}, [r4, #4]`); // the event's ID (EventScript +4)
       else if (a.k === 'c') {
         chara!();
         if (rd !== 'r0') fn.op(`mov ${rd}, r0`);
@@ -1699,70 +1464,40 @@ function compileCall(c: Ctx, call: ScriptCall): void {
     fn.call(call.sym);
   };
   const withSelf = (chara: (() => void) | null): void => {
-    if (call.self) withChara(c, call.self, FRAME.obj, call.player, (ref) => emit(ref, chara));
+    if (call.self)
+      withChara(c, call.self, FRAME.obj, call.player, (ref) => {
+        emit(ref, chara);
+        // SetPopup keeps the kind it showed at +0xB (0xFF from the ctor, 0x2E2750) and ~ScriptChara takes the icon
+        // down when it is not 0xFF (0x2FFD74 → 0x2D51B0): the ROM's CROs keep their ScriptChara for the whole event
+        // (an NPC's at this+0xC), ours lives for the call, so the icon would go as it came. FinishPopupIcon does not
+        // read +0xB.
+        if (call.sym === A.popup && call.self!.kind !== 'self')
+          fn.op('mov r0, #0xff', `strb r0, [sp, #${hx(FRAME.obj + POPUP_KIND)}]`);
+      });
     else emit(null, chara);
   };
   if (other && other.k === 'c') withChara(c, other.who, FRAME.obj2, false, (ref) => withSelf(ref));
   else withSelf(null);
+  if (call.sym === A.camResume) fn.op('mov r8, #0');
+  // EncountBoss asks for the battle and returns; the event ends here (script-abi.md §7). The group is looked up in the
+  // content's MonsterGroup (master +0x1068, an _ENCOUNT table) by FUN_0031C038: a value below 0x80000000 is a row
+  // number (what the boss range 0C passes: 0x2E281C ldrh), else a row ID. The row IDs are not the row numbers
+  // (content 1: 0x80000000, 0x80000010, 0x80000011 …), and a value not there gives row 0, the empty group.
+  if (call.sym === A.encount) fn.op(`b ${c.exit}`);
 }
 
-/**
- * The door after the boss of content 1 as the game opens it (CRO 117 D01BossWin, code 0xF34〜0x1048, then
- * SetDoorOpenFlag in its CtrlFlag): the door's motion 0x80000073 (chara(row).open()) and the gimmick's jingle 0x41
- * over the BGM paused for 0.3 s (jingle()). The whole show is the library's openDoor (scriptLibrary.ts).
- */
-export const DOOR_SHOW = {
-  motion: 0x73,
-  bgmFade: 0.3,
-  jingle: 0x41,
-  jingleWait: 1,
-} as const;
-
-/** chara(row).open(): the door's opening motion, its end, then the door open (DOOR_SHOW, without camera or sound). */
-export const doorMotionNodes = (row: number): ScriptNode[] => {
-  const door: ScriptWho = { kind: 'chara', row };
-  return [
-    { op: 'anim', who: door, id: DOOR_SHOW.motion, type: 0 },
-    { op: 'waitAnim', who: door },
-    { op: 'door', row, open: true },
-  ];
-};
-/** jingle(id): the BGM paused, the jingle, 1 s, the BGM again (DOOR_SHOW). */
-export const jingleNodes = (id: number = DOOR_SHOW.jingle): ScriptNode[] => [
-  { op: 'bgm', pause: true, seconds: DOOR_SHOW.bgmFade },
-  { op: 'se', id },
-  { op: 'wait', seconds: DOOR_SHOW.jingleWait },
-  { op: 'bgm', pause: false, seconds: DOOR_SHOW.bgmFade },
-];
-
-/** The nodes with the parts that are several calls of the game (chara(row).open(), jingle()) written out. */
-export function expandParts(nodes: ScriptNode[]): ScriptNode[] {
-  return nodes.flatMap((n) =>
-    n.op === 'doorMotion' ? doorMotionNodes(n.row) : n.op === 'jingle' ? jingleNodes(n.id) : [n],
-  );
-}
-
-const usesCamera = (nodes: ScriptNode[]): boolean =>
+/** Whether a body (its branches too) has a node of a kind. */
+const has = (nodes: ScriptNode[], is: (n: ScriptNode) => boolean): boolean =>
   nodes.some(
     (n) =>
-      n.op === 'camera' ||
-      (n.op === 'if' && (usesCamera(n.then) || usesCamera(n.else))) ||
-      (n.op === 'switch' && (n.cases.some((k) => usesCamera(k.body)) || usesCamera(n.default ?? []))),
+      is(n) ||
+      (n.op === 'if' && (has(n.then, is) || has(n.else, is))) ||
+      (n.op === 'switch' && (n.cases.some((k) => has(k.body, is)) || has(n.default ?? [], is))),
   );
-const usesVanish = (nodes: ScriptNode[]): boolean =>
-  nodes.some(
-    (n) =>
-      n.op === 'vanishMonster' ||
-      (n.op === 'if' && (usesVanish(n.then) || usesVanish(n.else))) ||
-      (n.op === 'switch' && (n.cases.some((k) => usesVanish(k.body)) || usesVanish(n.default ?? []))),
-  );
-const fadesIn = (nodes: ScriptNode[]): boolean =>
-  nodes.some(
-    (n) =>
-      (n.op === 'fade' && !n.out) ||
-      (n.op === 'if' && (fadesIn(n.then) || fadesIn(n.else))) ||
-      (n.op === 'switch' && (n.cases.some((k) => fadesIn(k.body)) || fadesIn(n.default ?? []))),
-  );
+const calls = (n: ScriptNode, ...syms: string[]): boolean => n.op === 'call' && syms.includes(n.call.sym);
+const usesCamera = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.camPause));
+const usesVanish = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'vanishEffect');
+const fadesIn = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.fadeIn, A.fadeInNow));
 
 /** Branch to exactly one target; a skipped side never evaluates its calls. */
 function compileCondition(c: Ctx, condition: ScriptCond, whenTrue: string, whenFalse: string): void {
@@ -1785,39 +1520,11 @@ function compileCondition(c: Ctx, condition: ScriptCond, whenTrue: string, whenF
   fn.op(`${BRANCH_IF_NOT[condition.cmp]} ${whenFalse}`, `b ${whenTrue}`);
 }
 
-function compileNodes(c: Ctx, written: ScriptNode[]): void {
+function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
   const { fn, g } = c;
-  const nodes = expandParts(written);
-  const mouth = (reg: string): void => {
-    fn.op('add r0, r4, #0xc', `mov r1, ${reg}`, 'mov r2, #0', 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
-    fn.call(A.anim);
-  };
-  /** StartAnimation(id, type, 1.0, 0.0) of the object `ref` writes to r0. */
-  const startAnim = (ref: () => void, id: number, type: number, player: boolean): void => {
-    ref();
-    fn.load('r1', id);
-    fn.op(`mov r2, #${type}`, 'vmov.f32 s0, s17', 'vmov.f32 s1, s16');
-    fn.call(player ? A.playerAnim : A.anim);
-  };
-  const waitSeconds = (seconds: number): void => {
-    fmov(fn, 's0', seconds, 'r0');
-    fn.call(A.waitTime);
-  };
   for (const n of nodes) {
     fn.flushIfFar();
     switch (n.op) {
-      case 'talk': {
-        const moves = c.trigger === 'talk' && !n.auto;
-        if (moves) mouth('r6');
-        zeroSmps(fn);
-        fn.op('str r5, [sp]'); // the 5th argument: bool = 0
-        fn.load('r0', scriptRowId(n.msg));
-        smpArgs(fn);
-        fn.op(`mov r3, #${n.dialog}`, 'vmov.f32 s0, s18');
-        fn.call(moves ? A.msg : A.msgAuto);
-        if (moves) mouth('r7');
-        break;
-      }
       case 'if': {
         const yes = g.uniq(`${fn.name}_then`),
           other = g.uniq(`${fn.name}_else`),
@@ -1857,197 +1564,16 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
         fn.call(x.kind === 'byte' ? A.setByte : A.setBit);
         break;
       }
-      case 'popup':
-        // ScriptChara c(chr); c.SetPopup(2, icon, 1, 1, 0, GSVEC_ZERO); c.+0xB = 0xFF; ~c
-        // SetPopup keeps the kind it showed at +0xB (0xFF from the ctor, 0x2E2750) and ~ScriptChara takes the icon
-        // down when it is not 0xFF (0x2FFD74 → 0x2D51B0): the ROM's CROs keep their ScriptChara for the whole event
-        // (an NPC's at this+0xC), ours lives for the statement, so the icon would go as it came. The hero's survived
-        // only by the dtor's own test for the party (0x2FFD8C). popupEnd() (FinishPopupIcon) does not read +0xB.
-        withChara(c, n.who, FRAME.obj, false, (ref) => {
-          fn.op(
-            'mov r0, #1',
-            'str r0, [sp]',
-            'str r5, [sp, #4]',
-            `ldr r0, ${fn.lit({ kind: 'imp', name: A.gsvecZero, addend: 0 })}`,
-            'str r0, [sp, #8]',
-          );
-          ref();
-          fn.op('mov r1, #2');
-          fn.load('r2', n.icon);
-          fn.op('mov r3, #1');
-          fn.call(A.popup);
-          if (n.who.kind !== 'self') fn.op('mov r0, #0xff', `strb r0, [sp, #${hx(FRAME.obj + POPUP_KIND)}]`);
-        });
-        break;
-      case 'popupEnd':
-        withChara(c, n.who, FRAME.obj, false, (ref) => {
-          ref();
-          fn.call(A.popupEnd);
-        });
-        break;
-      case 'emotion':
-        withChara(c, { kind: 'hero' }, FRAME.obj, true, (ref) => {
-          ref();
-          if (n.value === null) fn.call(A.restoreEmotion);
-          else {
-            fn.load('r1', n.value);
-            fn.op('vmov.f32 s0, s16');
-            fn.call(A.setEmotion);
-          }
-        });
-        break;
-      case 'anim': {
-        const player = n.who.kind === 'hero';
-        withChara(c, n.who, FRAME.obj, player, (ref) => startAnim(ref, scriptRowId(n.id), n.type, player));
-        break;
-      }
-      case 'waitAnim':
-        withChara(c, n.who, FRAME.obj, false, (ref) => {
-          ref();
-          fn.load('r1', WAIT_ANIM_ARG);
-          fn.call(A.waitAnimation);
-        });
-        break;
-      case 'move': {
-        // MoveTo(pos, 0, 0, 0, 0, 0) then WaitNodeAnimation; the party's first walks (script-abi.md §3 B)
-        const player = n.who.kind === 'hero';
-        [n.x, n.y, n.z].forEach((v, k) => {
-          fn.load('r0', fbits(v));
-          fn.op(`str r0, [sp, #${hx(FRAME.vec + 4 * k)}]`);
-        });
-        fn.op(`str r5, [sp, #${hx(FRAME.vec + 12)}]`);
-        withChara(c, n.who, FRAME.obj, player, (ref) => {
-          if (player) startAnim(ref, PLAYER_WALK, 0, true);
-          fn.op('str r5, [sp]');
-          ref();
-          fn.op(`add r1, sp, #${hx(FRAME.vec)}`, 'mov r2, #0', 'mov r3, #0', 'vmov.f32 s0, s16', 'vmov.f32 s1, s16');
-          fn.call(A.moveTo);
-          ref();
-          fn.call(A.waitNode);
-          if (player) startAnim(ref, PLAYER_WAIT, 0, true);
-        });
-        break;
-      }
-      case 'turn':
-        // RotateTo(angle, seconds, 0, 0, 0, 1), then the time it takes
-        withChara(c, n.who, FRAME.obj, false, (ref) => {
-          fn.op('mov r0, #1', 'str r0, [sp]');
-          fmov(fn, 's0', (n.degrees * Math.PI) / 180);
-          fmov(fn, 's1', TURN_SECONDS);
-          ref();
-          fn.op('mov r1, #0', 'mov r2, #0', 'mov r3, #0');
-          fn.call(A.rotateTo);
-        });
-        waitSeconds(TURN_SECONDS);
-        break;
-      case 'face':
-        // who.RotateCharaTo(to, seconds, 0, 0, 0)
-        withChara(c, n.to, FRAME.obj2, false, (to) =>
-          withChara(c, n.who, FRAME.obj, false, (ref) => {
-            fn.op('str r5, [sp]');
-            fmov(fn, 's0', TURN_SECONDS);
-            to();
-            fn.op('mov r1, r0');
-            ref();
-            fn.op('mov r2, #0', 'mov r3, #0');
-            fn.call(A.rotateCharaTo);
-          }),
-        );
-        waitSeconds(TURN_SECONDS);
-        break;
-      case 'show':
-        withChara(c, n.who, FRAME.obj, false, (ref) => {
-          ref();
-          fn.op(`mov r1, #${n.on ? 1 : 0}`);
-          fn.call(A.setVisible);
-        });
-        break;
-      case 'camera': {
-        const skip = g.uniq(`${fn.name}_cam`);
-        if (n.who) {
-          // PauseCameraUpdater (once); MoveEyeAndTarget(chr, seconds, ZERO, ZERO, 2); WaitAnimation (CRO 18's button)
-          fn.op('cmp r8, #0', `bne ${skip}`);
-          fn.call(A.camPause);
-          fn.op('mov r8, #1');
-          fn.at(skip);
-          chrOf(c, n.who);
-          fmov(fn, 's0', n.seconds);
-          fn.op(`ldr r1, ${fn.lit({ kind: 'imp', name: A.gsvecZero, addend: 0 })}`, 'mov r2, r1');
-          fn.load('r3', CAMERA_MODE);
-          fn.call(A.camTo);
-          fn.call(A.camWait);
-        } else {
-          // MoveFieldCamera(seconds, 2); WaitAnimation; ResumeCameraUpdater — nothing when the camera is not held
-          fn.op('cmp r8, #0', `beq ${skip}`);
-          fmov(fn, 's0', n.seconds);
-          fn.load('r0', CAMERA_MODE);
-          fn.call(A.camField);
-          fn.call(A.camWait);
-          fn.call(A.camResume);
-          fn.op('mov r8, #0');
-          fn.at(skip);
-        }
-        break;
-      }
-      case 'fade':
-        fmov(fn, 's0', n.seconds);
-        fn.load('r0', FADE_DISPLAY);
-        fn.call(n.out ? A.fadeOut : A.fadeIn);
-        break;
-      case 'follow':
-        fn.op(`mov r0, #${n.on ? 1 : 0}`);
-        fn.call(A.formation);
-        break;
-      case 'se':
-        fn.load('r0', n.id);
-        fn.op('vmov.f32 s0, s16');
-        fn.call(A.play);
-        break;
-      case 'addItem':
-        fn.load('r0', scriptRowId(n.item));
-        fn.load('r1', n.count);
-        if (n.show) fn.op('mov r2, #1');
-        fn.call(n.show ? A.itemGet : A.addItem);
-        break;
-      case 'addGold':
-        fn.load('r0', n.amount);
-        fn.call(A.addGold);
-        break;
-      case 'door':
-        fn.load('r0', n.row);
-        fn.call(n.open ? A.doorOpen : A.doorClose);
-        break;
-      case 'bgm':
-        fmov(fn, 's0', n.seconds, 'r0');
-        fn.call(n.pause ? A.pauseBgm : A.replayBgm);
-        break;
-      case 'wait':
-        waitSeconds(n.seconds);
-        break;
-      case 'collision':
-        if (n.row === null) fn.op('ldr r0, [r4, #4]');
-        else fn.load('r0', n.row);
-        fn.op(`mov r1, #${n.on ? 1 : 0}`);
-        fn.call(A.collision);
-        break;
-      case 'remove':
-        fn.load('r0', n.row);
-        fn.call(A.deleteObject);
-        break;
-      case 'vanishMonster': {
-        // contents0001 D01BossWin (+0x94c/+0x9b8): keep ScriptEffect on the event until its destructor.
+      case 'vanishEffect': {
+        // contents0001 D01BossWin (+0x94c/+0x9b8): the effect by the monster's size (small 0xC1, large 0xC2, none for
+        // the others) at its shadow; the event keeps the ScriptEffect until its destructor (effectAt). Nothing when
+        // the object is not on the map.
         const at = c.effectAt!;
         const small = g.uniq(`${fn.name}_vanish_small`),
-          large = g.uniq(`${fn.name}_vanish_large`),
-          created = g.uniq(`${fn.name}_vanish_created`),
-          noEffect = g.uniq(`${fn.name}_vanish_no_effect`),
+          make = g.uniq(`${fn.name}_vanish_make`),
           done = g.uniq(`${fn.name}_vanish_done`);
-        fn.load('r0', n.row);
-        fn.call(A.mapChara);
-        fn.op('cmp r0, #0', `beq ${done}`, `str r0, [sp, #${hx(FRAME.tmp)}]`, 'mov r1, r0');
-        fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
-        fn.call(A.charaCtor);
-        fn.op(`ldr r0, [sp, #${hx(FRAME.tmp)}]`);
+        chrOf(c, n.who);
+        fn.op('cmp r0, #0', `beq ${done}`, `str r0, [sp, #${hx(FRAME.tmp)}]`);
         fn.call(A.monsterSize);
         fn.op(
           'cmp r0, #1',
@@ -2058,67 +1584,28 @@ function compileNodes(c: Ctx, written: ScriptNode[]): void {
           'cmpne r0, #8',
           'cmpne r0, #0xa',
           'cmpne r0, #0x10',
-          `beq ${large}`,
-          'mov r0, #0',
-          `str r0, [sp, #${hx(FRAME.tmp + 4)}]`,
-          `b ${created}`,
+          `bne ${done}`,
         );
+        fn.load('r1', 0xc2);
+        fn.op(`b ${make}`);
         fn.at(small);
         fn.load('r1', 0xc1);
-        fn.op(`b ${created}_make`);
-        fn.at(large);
-        fn.load('r1', 0xc2);
-        fn.at(`${created}_make`);
+        fn.at(make);
         fn.op(`add r0, r4, #${hx(at)}`, 'mov r2, #3');
         fn.call(A.effectCreate);
-        fn.op('mov r0, #1', `str r0, [sp, #${hx(FRAME.tmp + 4)}]`);
-        fn.at(created);
-        const ref = (): void => fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
-        ref();
-        fn.call(A.cancelAutoAnim);
-        startAnim(ref, 0x80000066, 0, false);
-        ref();
-        fn.op('mov r1, #0');
-        fn.call(A.blendAnim);
-        ref();
-        fn.load('r1', WAIT_ANIM_ARG);
-        fn.call(A.waitAnimation);
-        ref();
-        fn.op('vmov.f32 s0, s16', 'vmov.f32 s1, s17', 'vmov.f32 s2, s16', 'mov r1, #2', 'mov r2, #0', 'mov r3, #0');
-        fn.call(A.alphaTo);
-        fn.load('r0', 0xb8);
-        fn.op('vmov.f32 s0, s16');
-        fn.call(A.play);
-        fn.op(`ldr r0, [sp, #${hx(FRAME.tmp + 4)}]`, 'cmp r0, #0', `beq ${noEffect}`);
-        ref();
+        fn.op(`ldr r1, [sp, #${hx(FRAME.tmp)}]`, `add r0, sp, #${hx(FRAME.obj)}`);
+        fn.call(A.charaCtor);
+        fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
         fn.call(A.shadowPos);
         fn.op('mov r1, r0', `add r0, r4, #${hx(at)}`);
         fn.call(A.setPos);
+        fn.op(`add r0, sp, #${hx(FRAME.obj)}`);
+        fn.call(A.charaDtor);
         fn.op(`add r0, r4, #${hx(at)}`, 'vmov.f32 s0, s17');
         fn.call(A.effectStart);
-        fn.at(noEffect);
-        ref();
-        fn.call(A.waitNode);
-        fn.load('r0', n.row);
-        fn.call(A.deleteObject);
-        ref();
-        fn.call(A.charaDtor);
         fn.at(done);
         break;
       }
-      case 'battle':
-        // EncountBoss asks for the battle and returns; the event ends here (script-abi.md §7). The group is looked up
-        // in the content's MonsterGroup (master +0x1068, an _ENCOUNT table) by FUN_0031C038: a value below 0x80000000
-        // is a row number (what the boss range 0C passes: 0x2E281C ldrh), else a row ID. The row IDs are not the row
-        // numbers (content 1: 0x80000000, 0x80000010, 0x80000011 …), and a value not there gives row 0, the empty group.
-        fn.load('r0', n.group);
-        fn.op('mov r1, #0');
-        fn.call(A.encount);
-        fn.op(`b ${c.exit}`);
-        break;
-      case 'stageName':
-        fn.call(A.stageName);
-        break;
       case 'call':
         compileCall(c, n.call);
         break;
@@ -2567,12 +2054,8 @@ export function compileStageScript(
       'mov r5, #0',
       'mov r8, #0',
     );
-    x.op(`vldr s16, ${x.flit(F0)}`, `vldr s17, ${x.flit(F1)}`, `vldr s18, ${x.flit(F02)}`);
+    x.op(`vldr s16, ${x.flit(F0)}`, `vldr s17, ${x.flit(F1)}`);
     if (e.trigger === 'talk') {
-      x.op(
-        `ldr r6, ${x.lit({ kind: 'value', value: ANIM_TALK })}`,
-        `ldr r7, ${x.lit({ kind: 'value', value: ANIM_WAIT })}`,
-      );
       x.op('mov r0, r4');
       x.call(A.turnNpc);
       x.op('mov r0, r4');

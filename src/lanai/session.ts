@@ -321,16 +321,18 @@ export class LanaiSession {
 
   /**
    * Sets (or with null / an empty document removes) the event script of an added stage: its variables, functions and
-   * what the functions are given to. Throws a ScriptDocError when it does not read.
+   * what the functions are given to. Throws a ScriptDocError when it does not read, unless `check` is false (a saved
+   * script, kept as it was when the language has changed since: the editor tells its mistakes and the MOD is not
+   * written until they are put right).
    */
-  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string): void {
+  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string, check = true): void {
     const name = archive.toUpperCase();
     if (!doc || scriptDocIsEmpty(doc)) {
       this.stageScripts.delete(name);
       return;
     }
     if (!this.createdFiles.has(name)) throw new Error('イベントのスクリプトは追加したステージにだけ書けます');
-    scriptOfDoc(doc);
+    if (check) scriptOfDoc(doc);
     this.stageScripts.set(name, {
       key: key ?? this.stageScripts.get(name)?.key ?? crypto.randomUUID(),
       doc: structuredClone(doc),
@@ -662,7 +664,7 @@ export class LanaiSession {
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
     for (const [archive, key, script] of saved.stageScripts ?? []) {
       if (typeof script === 'string') this.setStageScript(archive, script, key);
-      else this.setStageScriptDoc(archive, script, key);
+      else this.setStageScriptDoc(archive, script, key, false);
     }
     for (const [archive, hash, body] of saved.layouts ?? []) await this.setLayout(archive, hash, body);
     this.dropCap = !!saved.dropCap;
