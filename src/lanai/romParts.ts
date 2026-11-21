@@ -131,7 +131,7 @@ export function romArgIsLocal(action: number, arg: number): boolean {
   const info = LANAI_ACTIONS[action];
   if (!info) return false;
   if (info.talk?.includes(arg)) return true;
-  if (info.pick?.[arg] === 'monsterGroupRow') return true;
+  if (info.pick?.[arg] === 'monsterGroupRow' || info.pick?.[arg] === 'shop') return true;
   const label = info.args?.[arg] ?? '';
   return /行き先|イベント番号|TreasureGroup|MonsterGroup|キャラ \(区画 5/u.test(label);
 }

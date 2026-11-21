@@ -89,7 +89,14 @@ import {
   talkMessageOffset,
 } from './actions';
 import { LanaiMapBattlePanel } from './BattleParts';
-import { ContentSelect, MonsterGroupLine, MonsterGroupRowSelect, MonsterGroupSelect, TreasureEditor } from './MapParts';
+import {
+  ContentSelect,
+  MonsterGroupLine,
+  MonsterGroupRowSelect,
+  MonsterGroupSelect,
+  ShopSelect,
+  TreasureEditor,
+} from './MapParts';
 import { LanaiNamesDialog, LanaiNewGroupDialog, LanaiNewMapDialog } from './MapEditDialogs';
 import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
@@ -939,6 +946,7 @@ function TalkPlacement({
 }): ReactNode {
   const shop = !!template.event?.shop;
   const [text, setText] = useState(template.event?.talk?.text || (shop ? 'いらっしゃいませ。' : ''));
+  const [shopRow, setShopRow] = useState(typeof template.event?.shop === 'number' ? template.event.shop : 0);
   const talk = st.info ? st.maps.talkTable(st.info.dungeon) : undefined;
   let error = '';
   try {
@@ -965,10 +973,16 @@ function TalkPlacement({
           : 'この MapGroup には台詞の表がありません。'}
       </p>
       {shop && (
-        <p className="small">
-          話しかけると台詞のあと、このステージのショップ (Shop の行 0、推定) が開きます。品揃えは{' '}
-          <a href={lanaiShopHref(st.maps.content.index, 0)}>ショップのページ</a>で編集します。
-        </p>
+        <>
+          <label className="field">
+            <span>開く店</span>
+            <ShopSelect maps={st.maps} value={shopRow} onChange={setShopRow} />
+          </label>
+          <p className="small">
+            話しかけると台詞のあと、選んだ店 (このステージの Shop の行) が開きます。店の追加と品揃えは{' '}
+            <a href={lanaiShopHref(st.maps.content.index, shopRow)}>ショップのページ</a>で編集します。
+          </p>
+        </>
       )}
       {error && <p className="error">{error}</p>}
       <div className="row">
@@ -980,7 +994,11 @@ function TalkPlacement({
             onReady({
               ...template,
               description: `${template.description ?? ''} 台詞: ${text.trim().split('\n')[0]!}`.trim(),
-              event: { ...template.event!, talk: { ...template.event!.talk!, text } },
+              event: {
+                ...template.event!,
+                talk: { ...template.event!.talk!, text },
+                ...(shop ? { shop: shopRow } : {}),
+              },
             })
           }
         >
@@ -1574,8 +1592,8 @@ function RecFields({
       {ev > 0 && events && ev < events.rows && <h4>動作・報酬</h4>}
       {hasRow && primaryAction === LANAI_ACTION_SHOP && (
         <p className="small">
-          台詞のあと、このステージのショップ (Shop の行 0、推定) を開きます。{' '}
-          <a href={lanaiShopHref(content, 0)}>→ 品揃えをショップのページで編集</a>
+          台詞のあと、このステージの店 (下の動作の引数 2 で選ぶ Shop の行) を開きます。{' '}
+          <a href={lanaiShopHref(content)}>→ ショップのページ</a>
         </p>
       )}
       {ev > 0 && events && ev < events.rows && <TreasureEditor st={st} event={ev} />}
@@ -1927,6 +1945,8 @@ function ActionFields({
             <span>{`引数 ${i + 1}: ${label}`}</span>
             {pick === 'monsterGroupRow' && st.maps.monsterGroup ? (
               <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
+            ) : pick === 'shop' ? (
+              <ShopSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
             ) : pick === 'content' ? (
               <ContentSelect
                 maps={st.maps}

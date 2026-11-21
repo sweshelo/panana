@@ -422,6 +422,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
           }
           if (ev.chest === 'goal') events.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.clears ?? this.maps.content.index);
         }
+        // the clerk opens the Shop row chosen when placed (its second argument)
+        if (typeof ev.shop === 'number')
+          this.maps.eventTable(this.info.dungeon)!.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.shop);
       } else this.copyEventRow(section, raw);
     }
     const rec: Rec = { raw, x: 0, y: 0 };

@@ -9,6 +9,10 @@ import type { PickerChoice } from '../ui/GridPicker';
 import { hex8 } from '../util/bytes';
 import { LANAI_ACTION_GOAL_CHEST } from './actions';
 import { contentTitle } from './contents';
+import { lanaiShopHref } from './hrefs';
+import { lanaiShops } from './shops';
+import { useAsync } from '../ui/useAsync';
+import { useLanaiRevision } from './MonsterEditor';
 import { useLanaiContents } from './useContents';
 import type { LanaiEditState } from './mapedit';
 import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './maps';
@@ -295,6 +299,48 @@ export function ContentSelect({
       )}
     </>
   );
+}
+
+/**
+ * The shop a clerk opens (its second argument): the Shop rows of this content, by row number. A row ID is shown as the
+ * row it names; a value no row has opens row 0.
+ */
+export function ShopSelect({
+  maps,
+  value,
+  onChange,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactNode {
+  const revision = useLanaiRevision(maps.session);
+  const shops = useAsync(() => lanaiShops(maps.session, maps.content), [maps]);
+  const content = maps.content.index;
+  if (!shops || shops instanceof Error)
+    return <HexSelectFallback value={value} text={shops ? shops.message : '店の表を読み込み中…'} />;
+  void revision;
+  const opened = shops.shopOf(value);
+  const known = value === opened || value >>> 0 >= 0x80000000;
+  return (
+    <>
+      <select value={known ? opened : value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+        {!known && <option value={value}>{`${value} (Shop の表にない → 店 0)`}</option>}
+        {shops.shops.map((s) => (
+          <option key={s.row} value={s.row}>
+            {`店 ${s.row} (${shops.rows(s.row).length} 品)`}
+          </option>
+        ))}
+      </select>
+      <a className="small" href={lanaiShopHref(content, opened)}>
+        品揃え
+      </a>
+    </>
+  );
+}
+
+function HexSelectFallback({ value, text }: { value: number; text: string }): ReactNode {
+  return <span className="muted small">{`${hex8(value).toUpperCase()} — ${text}`}</span>;
 }
 
 // ---- chests

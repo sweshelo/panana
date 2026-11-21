@@ -85,8 +85,8 @@ export interface NewEventRow {
   lines?: { stage: number; arg: number; text: string; speaker: number }[];
   /** Start from these bytes of an EventObject row (romParts.ts romEventRow) instead of row 0; `action` is its first. */
   from?: Uint8Array;
-  /** The part opens the content's shop (the dialog and the inspector link to its stock). */
-  shop?: boolean;
+  /** The part opens a shop of the content: the Shop row it opens (0 when only marked; the dialog chooses it). */
+  shop?: number | true;
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */
   chara?: NewChara;
 }

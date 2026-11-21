@@ -1,7 +1,8 @@
 // RPG FREE!'s shops (#/shops/<content>[.<Shop row>]): the shops of one content (its Shop and ShopItem tables, shops.ts)
 // in the shop book shared with RPG2 / RPG3 (ui/ShopBook): the stock as item boards with their photos, reordered by
-// dragging, picked from the item photos, the most one can buy per row; and the clerks (EventObject rows of type 店の人)
-// with the maps that place them, linked to the map page with the record selected and to their lines.
+// dragging, picked from the item photos, the most one can buy per row; and the clerks (EventObject rows of type 店の人 /
+// 範囲に入ると店, whose second argument names the shop) with the maps that place them, linked to the map page with the
+// record selected and to their lines. A shop can be added to a content (a Shop row and an empty stock) and removed again.
 import { useMemo, useState, type ReactNode } from 'react';
 import { EditedMark, NumberInput, useSticky } from '../ui/book';
 import { GridPicker } from '../ui/GridPicker';
@@ -20,7 +21,8 @@ import { useLanaiRevision } from './MonsterEditor';
 import { lanaiItemIcon, LanaiItemPicker } from './pickers';
 import type { LanaiSession } from './session';
 import {
-  LANAI_CLERK_SHOP,
+  LANAI_SHOP_ARG,
+  LANAI_SHOP_SAVE_SHOPS,
   LANAI_SHOP_SLOTS,
   lanaiClerks,
   lanaiInSlotPool,
@@ -92,7 +94,9 @@ function conditionText(b: Uint8Array): string {
   }
 }
 const CLERK_HELP =
-  '動作の型 0x80000032 (店の人) の EventObject の行。台詞のあと店を開きます。どの店を開くかは引数になく、このコンテンツの Shop の行 0 と推定しています (店の人がいるコンテンツは、どれも店が 1 つだけ。naauao lanai/shops.md §4)。';
+  '動作の型 0x80000032 (店の人) と 0x80000033 (範囲に入ると店) の EventObject の行。台詞のあと、引数 2 が名指す店 (このコンテンツの Shop の行番号か行 ID。ない行は行 0) を開きます。マップのページの「動作・報酬」の引数 2 で店を選べます。';
+const ADD_HELP =
+  'このステージに店を足します (Shop の行 0 を写した行と、品のない品揃え)。開くには、マップに店の人を置き、その引数 2 でこの店を選びます。足した店は最後のものから消せます (ROM にある店は消せません)。';
 
 export function LanaiShopPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const slot = /^slot\.([0-9a-f]+)$/i.exec(arg ?? '');
@@ -164,7 +168,24 @@ function ShopList({
   const items = useMemo(() => new Map(lanaiItems(session).map((it) => [it.id, it])), [session, revision]);
   const data = session.need('ItemData');
   const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
-  const clerks = useMemo(() => (maps && !(maps instanceof Error) ? lanaiClerks(maps) : null), [maps]);
+  const clerks = useMemo(
+    () => (maps && !(maps instanceof Error) ? lanaiClerks(maps, shops) : null),
+    [maps, shops, revision],
+  );
+  const addShop = (): void => {
+    const row = shops.addShop(0);
+    session.edited();
+    location.hash = lanaiShopHref(content.index, row);
+  };
+  const removeShop = (shop: number): void => {
+    // the clerks that opened it open shop 0 again
+    if (maps && !(maps instanceof Error))
+      for (const c of clerks ?? [])
+        if (c.shop === shop) maps.eventTable(c.group)!.setU32(c.event, c.action + LANAI_SHOP_ARG, 0);
+    shops.removeShop(shop);
+    session.edited();
+    location.hash = lanaiShopHref(content.index, Math.max(0, shop - 1));
+  };
   // the random slots offered in the item picker (a kind; the pick is its negative)
   // (kinds with no candidate are left out: a slot of one draws nothing; the search also finds a slot by its items' names)
   const slotChoices = useMemo(
@@ -186,7 +207,10 @@ function ShopList({
       }),
     [session, revision],
   );
-  const book: ShopBookShop[] = shops.shops.map((s) => ({ id: s.row, label: `店 ${s.row}` }));
+  const book: ShopBookShop[] = shops.shops.map((s) => ({
+    id: s.row,
+    label: `店 ${s.row}${shops.added(s.row) ? ' (追加)' : ''}`,
+  }));
   const setRow = (shop: number, i: number, f: (b: Uint8Array) => void): void => {
     const rows = shops.rows(shop).map((r, j) => {
       if (j !== i) return r;
@@ -313,7 +337,15 @@ function ShopList({
       shops={book}
       arg={arg}
       href={(id) => lanaiShopHref(content.index, id)}
-      side={side}
+      side={
+        <>
+          {side}
+          <div className="row">
+            <button onClick={addShop}>＋ 店を追加</button>
+            <InfoTip text={ADD_HELP} />
+          </div>
+        </>
+      }
       rows={(s) => shops.rows(s.id)}
       original={(s) => shops.originalRows(s.id)}
       same={(a, b) => a.item === b.item && a.bytes.every((x, i) => x === b.bytes[i])}
@@ -377,7 +409,7 @@ function ShopList({
         />
       )}
       sub={(s) => {
-        const n = s.id === LANAI_CLERK_SHOP ? (clerks?.length ?? 0) : 0;
+        const n = clerks?.filter((c) => c.shop === s.id).length ?? 0;
         return `${shops.rows(s.id).length} 品${n ? `・店の人 ${n}` : ''}`;
       }}
       warnings={(s, rows) => {
@@ -409,6 +441,12 @@ function ShopList({
           w.push('共通の上限が 99 を超えています (99 個買ったあとは残りが減らず、実質無制限です)。');
         if (rows.some((r) => r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_SHARED_COUNTER]! >= 200))
           w.push('共通の上限の番号が 200 以上の行は、買った数が記録されません (店に入るたびに上限まで買えます)。');
+        if (s.id >= LANAI_SHOP_SAVE_SHOPS && rows.some((r) => !r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_LIMIT]))
+          w.push(
+            s.id === LANAI_SHOP_SAVE_SHOPS
+              ? `店 ${s.id} の「買える数」は買った数がセーブに記録されません (記録は店 0〜${LANAI_SHOP_SAVE_SHOPS - 1} だけ)。共通の上限を使ってください。`
+              : `店 ${s.id} の「買える数」は、買った数を店 ${s.id % LANAI_SHOP_SAVE_SHOPS} と同じ場所に記録します (セーブの記録は店 0〜${LANAI_SHOP_SAVE_SHOPS - 1} だけ)。共通の上限を使ってください。`,
+          );
         if (rows.some((r, i) => i >= 50 && !r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_LIMIT]))
           w.push(
             '51 番目より後ろの品の「買える数」は数えられないので、買えなくなります (共通の上限を使ってください)。',
@@ -429,7 +467,7 @@ function ShopList({
         <Clerks
           session={session}
           maps={maps}
-          clerks={s.id === LANAI_CLERK_SHOP ? clerks : []}
+          clerks={clerks && clerks.filter((c) => c.shop === s.id)}
           content={content}
           multi={shops.shops.length > 1}
         />
@@ -447,6 +485,14 @@ function ShopList({
         return (
           <>
             {kinds.length > 0 && <SlotPools session={session} kinds={kinds} rows={shops.rows(s.id)} />}
+            {shops.added(s.id) && s.id === shops.shops.length - 1 && (
+              <div className="row">
+                <button className="danger" onClick={() => removeShop(s.id)}>
+                  {`店 ${s.id} を消す`}
+                </button>
+                <span className="muted small">この店を開く店の人は店 0 を開くようになります。</span>
+              </div>
+            )}
             <div className="muted small mono">{`部屋 ${hex8(t.u32(s.id, 4)).toUpperCase()} / カメラ ${hex8(t.u32(s.id, 8)).toUpperCase()}・+0x0C ${t.u32(s.id, 0x0c)}・+0x10 ${hex8(t.u32(s.id, 0x10)).toUpperCase()}・+0x18 ${t.u8(s.id, 0x18)}・高さ ${t.u8(s.id, 0x19)} (未解析の欄は naauao lanai/shops.md §3)`}</div>
           </>
         );
@@ -494,15 +540,10 @@ function Clerks({
       <>
         {head}
         <p className="muted small">
-          {multi
-            ? 'このコンテンツには店が複数あり、店の人 (型 0x32) はいません。島の店などは CRO のスクリプトやメニューから開くと推定しています。'
-            : 'この店を開く店の人 (型 0x32) は、このコンテンツのマップにいません。'}{' '}
-          {!multi && (
-            <>
-              <a href={lanaiMapHref(content.index)}>マップのページ</a>
-              のパーツ「店の人（話しかけるとショップ）」で置けます。
-            </>
-          )}
+          この店を開く店の人 (型 0x32 / 0x33) は、このコンテンツのマップにいません。
+          {multi && ' 島の店・釣り具の店などは CRO のスクリプトやメニューから開きます。'}{' '}
+          <a href={lanaiMapHref(content.index)}>マップのページ</a>
+          のパーツ「店の人」を置き、開く店にこの店を選ぶと開けます。
         </p>
       </>
     );
