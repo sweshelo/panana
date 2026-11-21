@@ -146,7 +146,9 @@ export abstract class MapEditState<S = unknown, T = unknown> {
     if (!this.brush.auto) return this.brush;
     const profile = this.autoProfile;
     if (!this.current || !profile) return undefined;
-    const tile = autoTiles(this.current.tiles, new Set([cellKey(x, y)]), profile).find((t) => t.x === x && t.y === y);
+    const tile = autoTiles(this.current.tiles, { cells: new Set([cellKey(x, y)]), steps: new Set() }, profile).find(
+      (t) => t.x === x && t.y === y,
+    );
     return tile && { ...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT) };
   }
 

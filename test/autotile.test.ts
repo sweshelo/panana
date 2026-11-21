@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { autoTiles, cellKey, turnMask, type AutoCell } from '../src/editor/autotile';
+import {
+  autoErase,
+  autoTiles,
+  cellKey,
+  edgeKey,
+  islands,
+  strokeAlong,
+  turnMask,
+  type AutoCell,
+  type AutoStroke,
+} from '../src/editor/autotile';
 import { KAHARA_AUTO } from '../src/game/autotile';
 import { Controller } from '../src/editor/controller';
 import { MapEditState } from '../src/editor/model';
@@ -7,9 +17,27 @@ import { LAYOUTS, type MapDoc, type Rec, type Tile } from '../src/game/sections'
 
 const keys = (points: number[][]): Set<string> => new Set(points.map(([x, y]) => cellKey(x!, y!)));
 const square = (n: number): number[][] => Array.from({ length: n * n }, (_, i) => [i % n, Math.floor(i / n)]);
-const solve = (points: number[][], base: AutoCell[] = []): AutoCell[] => autoTiles(base, keys(points), KAHARA_AUTO);
+/** A drag walking through the points in order. */
+const path = (points: number[][]): AutoStroke => strokeAlong(points.map(([x, y]) => [x!, y!] as const));
+/** A drag scrubbing over the points: every pair of neighbouring points is walked across. */
+const fill = (points: number[][]): AutoStroke => {
+  const cells = keys(points);
+  const steps = new Set<string>();
+  for (const [x, y] of points) {
+    if (cells.has(cellKey(x! + 1, y!))) steps.add(edgeKey(x!, y!, 1));
+    if (cells.has(cellKey(x!, y! + 1))) steps.add(edgeKey(x!, y!, 2));
+  }
+  return { cells, steps };
+};
+const solve = (points: number[][], base: AutoCell[] = []): AutoCell[] => autoTiles(base, path(points), KAHARA_AUTO);
+const solveFill = (points: number[][], base: AutoCell[] = []): AutoCell[] => autoTiles(base, fill(points), KAHARA_AUTO);
 const at = (tiles: AutoCell[], x: number, y: number): AutoCell => tiles.find((t) => t.x === x && t.y === y)!;
-const room = (): AutoCell[] => solve(square(3));
+const room = (): AutoCell[] => solveFill(square(3));
+const overlayAll = (base: AutoCell[], updates: AutoCell[]): AutoCell[] => [
+  ...new Map([...base, ...updates].map((t) => [cellKey(t.x, t.y), t])).values(),
+];
+const moved = (tiles: AutoCell[], dx: number, dy: number): AutoCell[] =>
+  tiles.map((t) => ({ ...t, x: t.x + dx, y: t.y + dy }));
 
 describe('automatic terrain topology', () => {
   test('isolated, straight, bend, T and crossing', () => {
@@ -26,8 +54,8 @@ describe('automatic terrain topology', () => {
       ],
       [
         [
-          [1, 1],
           [2, 1],
+          [1, 1],
           [1, 2],
         ],
         2,
@@ -38,6 +66,7 @@ describe('automatic terrain topology', () => {
           [0, 1],
           [1, 1],
           [2, 1],
+          [1, 1],
           [1, 2],
         ],
         3,
@@ -48,7 +77,9 @@ describe('automatic terrain topology', () => {
           [0, 1],
           [1, 1],
           [2, 1],
+          [1, 1],
           [1, 0],
+          [1, 1],
           [1, 2],
         ],
         0,
@@ -76,10 +107,13 @@ describe('automatic terrain topology', () => {
       expect(at(tiles, x!, y!)).toMatchObject({ kind: 14, rot });
   });
   test('concave and opposite concave corners use 8 and 13', () => {
-    expect(at(solve(square(3).filter(([x, y]) => !(x === 2 && y === 0))), 1, 1)).toMatchObject({ kind: 8, rot: 0 });
-    expect(at(solve(square(3).filter(([x, y]) => !(x === 0 && y === 0) && !(x === 2 && y === 2))), 1, 1)).toMatchObject(
-      { kind: 13, rot: 0 },
-    );
+    expect(at(solveFill(square(3).filter(([x, y]) => !(x === 2 && y === 0))), 1, 1)).toMatchObject({
+      kind: 8,
+      rot: 0,
+    });
+    expect(
+      at(solveFill(square(3).filter(([x, y]) => !(x === 0 && y === 0) && !(x === 2 && y === 2))), 1, 1),
+    ).toMatchObject({ kind: 13, rot: 0 });
   });
   test('corridors entering all four sides turn edges into entrances', () => {
     for (const [x, y, ox, oy, rot] of [
@@ -96,7 +130,7 @@ describe('automatic terrain topology', () => {
         room(),
       );
       expect(at(tiles, x!, y!)).toMatchObject({ kind: 9, rot });
-      expect(at(tiles, 1, 1).kind).toBe(5);
+      expect(at(tiles, 1, 1)).toBeUndefined();
     }
   });
   test('corner connections use 10, 11 and 12', () => {
@@ -107,25 +141,28 @@ describe('automatic terrain topology', () => {
       [
         [
           [2, -1],
+          [2, 0],
           [3, 0],
         ],
         10,
         0,
       ],
     ] as const) {
-      expect(at(solve([...extra.map((p) => [...p]), [2, 0]], room()), 2, 0)).toMatchObject({ kind, rot });
+      const points = extra.map((p) => [...p]);
+      expect(at(solve(points.length > 1 ? points : [...points, [2, 0]], room()), 2, 0)).toMatchObject({ kind, rot });
     }
   });
   test('order independent and remote/special tiles are preserved', () => {
-    const points = square(4);
+    const points = square(4).map(([x, y]) => [y! % 2 ? 3 - x! : x!, y!]);
     const canonical = (ts: AutoCell[]) => ts.sort((a, b) => a.y - b.y || a.x - b.x);
-    expect(canonical(solve(points))).toEqual(canonical(solve([...points].reverse())));
+    expect(canonical(solve(points))).toEqual(canonical(solve([...points].reverse(), [])));
+    expect(canonical(solve(points))).toEqual(canonical(solveFill(points)));
     const special = { x: 8, y: 8, kind: 42, rot: 3 };
     expect(solve([[0, 0]], [special])).not.toContainEqual(special);
   });
   test('a different vocabulary reuses the same solver', () => {
     const profile = { isolated: 101, parts: KAHARA_AUTO.parts.map((p) => ({ ...p, kind: p.kind + 100 })) };
-    const tiles = autoTiles([], keys(square(3)), profile);
+    const tiles = autoTiles([], fill(square(3)), profile);
     expect(at(tiles, 1, 1).kind).toBe(105);
     expect(turnMask(14, 1)).toBe(13);
   });
@@ -273,7 +310,7 @@ describe('gesture start distinguishes corridors from room expansion', () => {
       [2, 3],
       [2, 4],
     ]) {
-      expect(at(tiles, x!, y!)).toEqual(at(base(), x!, y!));
+      expect(at(tiles, x!, y!)).toBeUndefined();
     }
   });
   test('the same line can expand the room when its start is on existing room floor', () => {
@@ -295,6 +332,7 @@ describe('gesture start distinguishes corridors from room expansion', () => {
         [1, 2],
         [1, 3],
         [1, 4],
+        [1, 3],
         [2, 3],
       ],
       base(),
@@ -314,18 +352,20 @@ describe('gesture start distinguishes corridors from room expansion', () => {
       base(),
     );
     expect(at(tiles, 1, 2)).toMatchObject({ kind: 14, rot: 1 });
-    expect(at(tiles, 2, 2)).toEqual(at(base(), 2, 2));
+    expect(at(tiles, 2, 2)).toBeUndefined();
   });
   test('start intent is stable when other points are revisited or reordered', () => {
-    const points = keys([
+    const points = path([
       [1, 3],
       [2, 3],
+      [1, 3],
       [1, 2],
       [1, 4],
     ]);
+    const reversed = { cells: new Set([...points.cells].reverse()), steps: new Set([...points.steps].reverse()) };
     const canonical = (ts: AutoCell[]) => ts.sort((a, b) => a.y - b.y || a.x - b.x);
     expect(canonical(autoTiles(base(), points, KAHARA_AUTO, '1,3'))).toEqual(
-      canonical(autoTiles(base(), new Set([...points].reverse()), KAHARA_AUTO, '1,3')),
+      canonical(autoTiles(base(), reversed, KAHARA_AUTO, '1,3')),
     );
     expect(at(autoTiles(base(), points, KAHARA_AUTO, '2,3'), 1, 3).kind).toBe(7);
     expect(at(autoTiles(base(), points, KAHARA_AUTO, '1,3'), 1, 3).kind).toBe(3);
@@ -429,7 +469,7 @@ describe('room variation policy', () => {
     expect([0, 2, 6]).toContain(normalVariant([6, 2], 0.95));
   });
   test('only one central floor varies; edges and corners vary but corridors and entrances do not', () => {
-    const base = solve(square(5));
+    const base = solveFill(square(5));
     const tiles = [
       ...new Map(
         [
@@ -460,16 +500,16 @@ describe('room variation policy', () => {
     }
   });
   test('even-sized and irregular rooms choose one available central floor, independently per room', () => {
-    const even = solve(square(4));
+    const even = solveFill(square(4));
     expect([...roomCenters(even, KAHARA_AUTO)]).toEqual(['1,1']);
     const both = [...even, ...room().map((t) => ({ ...t, x: t.x + 7 }))];
     expect([...roomCenters(both, KAHARA_AUTO)].sort()).toEqual(['1,1', '8,1']);
-    expect(roomCenters(solve(square(2)), KAHARA_AUTO).size).toBe(0);
+    expect(roomCenters(solveFill(square(2)), KAHARA_AUTO).size).toBe(0);
   });
   test('disabled variations use defaults and never draw random samples', () => {
     let calls = 0;
     const letters = roomVariantLetters(
-      solve(square(5)),
+      solveFill(square(5)),
       KAHARA_AUTO,
       () => [0, 1, 2],
       false,
@@ -571,4 +611,163 @@ test('room-to-room entrances use default variants through the controller in all 
   } finally {
     random.mockRestore();
   }
+});
+
+describe('islands join only where the drag explicitly crosses', () => {
+  const rooms = () => [...room(), ...moved(room(), 3, 0)];
+  test('a line drawn alongside two touching rooms joins neither them nor itself to them', () => {
+    const base = rooms();
+    const updates = solve(
+      [
+        [0, 3],
+        [5, 3],
+      ],
+      base,
+    );
+    expect(updates.map((t) => t.y)).toEqual([3, 3, 3, 3, 3, 3]);
+    const groups = islands(overlayAll(base, updates), KAHARA_AUTO);
+    expect(new Set([groups.get('1,1'), groups.get('4,1'), groups.get('2,3')]).size).toBe(3);
+  });
+  test('painting the seam of two touching rooms two squares wide merges them into one room', () => {
+    const top = room(),
+      bottom = moved(room(), 0, 3),
+      left = moved(room(), -3, 2);
+    const base = [...top, ...bottom, ...left];
+    const updates = solve(
+      [
+        [0, 2],
+        [2, 2],
+        [2, 3],
+        [0, 3],
+      ],
+      base,
+    );
+    const tiles = overlayAll(base, updates);
+    const groups = roomGroups(tiles, KAHARA_AUTO);
+    expect(groups.get('1,0')).toBe(groups.get('1,5'));
+    expect(updates.some((t) => t.kind === 9 || t.kind === 1)).toBe(false);
+    expect(at(tiles, 1, 2).kind).toBe(5);
+    expect(at(tiles, 0, 2)).toMatchObject({ kind: 7, rot: 3 });
+    for (const tile of left) expect(at(updates, tile.x, tile.y)).toBeUndefined();
+    expect(groups.get('-2,3')).not.toBe(groups.get('1,1'));
+  });
+  test('a single line across the seam makes one doorway', () => {
+    const base = [...room(), ...moved(room(), 0, 3)];
+    const updates = solve(
+      [
+        [1, 2],
+        [1, 3],
+      ],
+      base,
+    );
+    expect(updates).toHaveLength(2);
+    expect(at(updates, 1, 2)).toMatchObject({ kind: 9, rot: 2 });
+    expect(at(updates, 1, 3)).toMatchObject({ kind: 9, rot: 0 });
+  });
+  test('a new room diagonal to an inner corner leaves the corner as it is', () => {
+    const base = solveFill(square(3).filter(([x, y]) => !(x === 2 && y === 0)));
+    expect(at(base, 1, 1)).toMatchObject({ kind: 8, rot: 0 });
+    const updates = solveFill(
+      square(3).map(([x, y]) => [x! + 2, y! - 3]),
+      base,
+    );
+    expect(updates.every((t) => t.y < 0)).toBe(true);
+    const updatesTouching = solveFill(
+      square(3).map(([x, y]) => [x! + 2, y! - 2]),
+      base,
+    );
+    for (const [x, y] of [
+      [1, 1],
+      [1, 0],
+      [2, 1],
+    ])
+      expect(at(updatesTouching, x!, y!)).toBeUndefined();
+  });
+  test('a drag begun on an empty square beside a corridor end stays apart; begun on the end, it extends it', () => {
+    const corridor = solve([
+      [0, 0],
+      [2, 0],
+    ]);
+    const apart = solve(
+      [
+        [3, 0],
+        [5, 0],
+      ],
+      corridor,
+    );
+    expect(at(apart, 2, 0)).toBeUndefined();
+    expect(at(apart, 3, 0)).toMatchObject({ kind: 4, rot: 0 });
+    const joined = solve(
+      [
+        [2, 0],
+        [5, 0],
+      ],
+      corridor,
+    );
+    expect(at(joined, 2, 0)).toMatchObject({ kind: 1, rot: 0 });
+    expect(at(joined, 3, 0)).toMatchObject({ kind: 1, rot: 0 });
+  });
+  test('a diagonal jump of the brush walks across, then down', () => {
+    const stroke = path([
+      [0, 0],
+      [1, 1],
+    ]);
+    expect([...stroke.cells]).toEqual(['0,0', '1,0', '1,1']);
+    expect([...stroke.steps]).toEqual([edgeKey(0, 0, 1), edgeKey(1, 0, 2)]);
+  });
+});
+
+describe('automatic eraser', () => {
+  const without = (tiles: AutoCell[], erased: number[][]) => {
+    const gone = keys(erased);
+    const updates = autoErase(tiles, gone, KAHARA_AUTO);
+    return overlayAll(tiles, updates).filter((t) => !gone.has(cellKey(t.x, t.y)));
+  };
+  const shape = (tiles: AutoCell[]) => tiles.map((t) => `${t.x},${t.y}:${t.kind}/${t.rot}`).sort();
+  test('erasing squares gives the terrain painted without them', () => {
+    for (const erased of [
+      [[2, 0]],
+      [[2, 1]],
+      [[1, 1]],
+      [
+        [2, 0],
+        [2, 1],
+        [2, 2],
+      ],
+      [
+        [0, 0],
+        [1, 0],
+        [2, 0],
+      ],
+    ]) {
+      const rest = square(3).filter(([x, y]) => !erased.some(([a, b]) => a === x && b === y));
+      expect(shape(without(room(), erased))).toEqual(shape(solveFill(rest)));
+    }
+  });
+  test('erasing leaves other islands untouched', () => {
+    const other = moved(room(), 3, 0);
+    const updates = autoErase([...room(), ...other], keys([[2, 1]]), KAHARA_AUTO);
+    expect(updates.every((t) => t.x < 3)).toBe(true);
+  });
+});
+
+test('the eraser tool erases automatically; Delete removes exactly the selected squares', () => {
+  const st = new State();
+  st.current = doc();
+  st.current.tiles = room().map((t) => ({ ...t, rotHi: 0, pad: 0, letter: 0x61 }));
+  const ctl = new Controller(st);
+  st.setTool('erase');
+  ctl.down(2, 0, { button: 0, shiftKey: false });
+  ctl.move(2, 2);
+  ctl.up();
+  expect(st.current.tiles).toHaveLength(6);
+  expect(at(st.current.tiles, 1, 1)).toMatchObject({ kind: 7, rot: 1 });
+  st.undo();
+  expect(st.current!.tiles).toHaveLength(9);
+  st.setTool('select');
+  st.select({ type: 'tiles', cells: [[2, 1]] });
+  ctl.deleteSelection();
+  expect(st.current!.tiles).toHaveLength(8);
+  expect(at(st.current!.tiles, 1, 1)).toMatchObject({ kind: 5 });
+  expect(at(st.current!.tiles, 2, 0)).toMatchObject({ kind: 14, rot: 1 });
 });

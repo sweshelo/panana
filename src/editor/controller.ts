@@ -2,7 +2,17 @@
 // coordinates (floating point, cell (x, y) spans [x, x+1) x [y, y+1)) and call these handlers.
 import { WORLD_SNAP, letterByte, letterIndex, recCellPos, setRecCellPos, type MapDoc } from '../game/sections';
 import { inGrid, removeTile, setTile, tileAt, type MapEditState, type Selection } from './model';
-import { autoTiles, cellKey, partOf, roomGroups, type AutoCell, type AutoProfile } from './autotile';
+import {
+  autoErase,
+  autoTiles,
+  cellKey,
+  partOf,
+  roomGroups,
+  strokeTo,
+  type AutoCell,
+  type AutoProfile,
+  type AutoStroke,
+} from './autotile';
 import { roomCenters, roomVariantLetters } from './autotile-variants';
 import type { Tile } from '../game/sections';
 import { placeRec, recPositions, snapPoint, snapsIn, snapValue, type SnapGuide, type SnapResult } from './snap';
@@ -14,11 +24,19 @@ export interface PointerInfo {
   tol?: number;
 }
 
-interface AutoStroke {
+/** An erase drag with the automatic eraser: the erased squares count as never painted (see autoErase). */
+interface AutoErase {
+  doc: MapDoc;
+  base: Tile[];
+  erased: Set<string>;
+  profile: AutoProfile;
+}
+
+interface AutoGesture {
   doc: MapDoc;
   start: string;
   base: Tile[];
-  cells: Set<string>;
+  stroke: AutoStroke;
   profile: AutoProfile;
   randomVariants: boolean;
   samples: Map<string, number>;
@@ -45,8 +63,8 @@ export class Controller {
         x0: number;
         y0: number;
       }
-    | { kind: 'paint'; last: string; auto?: AutoStroke }
-    | { kind: 'erase'; last: string }
+    | { kind: 'paint'; last: string; auto?: AutoGesture }
+    | { kind: 'erase'; last: string; auto?: AutoErase }
     | { kind: 'rect'; x0: number; y0: number }
     | { kind: 'room'; on: boolean; last: string } = null;
 
@@ -139,11 +157,11 @@ export class Controller {
         if (st.brush.auto && !st.autoProfile) return;
         st.checkpoint();
         if (st.brush.auto && st.autoProfile) {
-          const auto: AutoStroke = {
+          const auto: AutoGesture = {
             doc,
             start: cellKey(x, y),
             base: doc.tiles.map((t) => ({ ...t })),
-            cells: new Set([cellKey(x, y)]),
+            stroke: { cells: new Set([cellKey(x, y)]), steps: new Set() },
             profile: st.autoProfile,
             randomVariants: st.autoRandomVariants,
             samples: new Map(),
@@ -157,8 +175,19 @@ export class Controller {
         return;
       case 'erase':
         st.checkpoint();
-        st.touch((d) => removeTile(d, x, y));
-        this.drag = { kind: 'erase', last: `${x},${y}` };
+        if (st.autoProfile) {
+          const auto: AutoErase = {
+            doc,
+            base: doc.tiles.map((t) => ({ ...t })),
+            erased: new Set([cellKey(x, y)]),
+            profile: st.autoProfile,
+          };
+          this.drag = { kind: 'erase', last: cellKey(x, y), auto };
+          this.eraseAuto(auto);
+        } else {
+          st.touch((d) => removeTile(d, x, y));
+          this.drag = { kind: 'erase', last: cellKey(x, y) };
+        }
         return;
       case 'rect':
         this.drag = { kind: 'rect', x0: x, y0: y };
@@ -254,14 +283,19 @@ export class Controller {
         const [px, py] = d.last.split(',').map(Number) as [number, number];
         d.last = key;
         if (d.auto) {
-          const steps = Math.max(Math.abs(x - px), Math.abs(y - py));
-          for (let i = 1; i <= steps; i++)
-            d.auto.cells.add(cellKey(Math.round(px + ((x - px) * i) / steps), Math.round(py + ((y - py) * i) / steps)));
+          strokeTo(d.auto.stroke, [px, py], [x, y]);
           this.paintAuto(d.auto);
         } else st.touch((doc) => setTile(doc, x, y, st.brush));
         return;
       case 'erase':
         if (key === d.last) return;
+        if (d.auto) {
+          const path = { cells: d.auto.erased, steps: new Set<string>() };
+          strokeTo(path, d.last.split(',').map(Number) as [number, number], [x, y]);
+          d.last = key;
+          this.eraseAuto(d.auto);
+          return;
+        }
         d.last = key;
         st.touch((doc) => removeTile(doc, x, y));
         return;
@@ -276,20 +310,40 @@ export class Controller {
     }
   }
 
-  private paintAuto(auto: AutoStroke): void {
+  /** Erase as if the squares had never been painted: the tiles around them close their sides to the gap. Each move
+   * resolves the whole drag against the terrain before it, so the result does not depend on the drag's order. */
+  private eraseAuto(auto: AutoErase): void {
+    if (this.st.current !== auto.doc) {
+      this.drag = null;
+      return;
+    }
+    this.st.touch((doc) => {
+      const updates = new Map(autoErase(auto.base, auto.erased, auto.profile).map((t) => [cellKey(t.x, t.y), t]));
+      doc.tiles = auto.base
+        .filter((tile) => !auto.erased.has(cellKey(tile.x, tile.y)))
+        .map((tile) => {
+          const update = updates.get(cellKey(tile.x, tile.y));
+          if (!update) return { ...tile };
+          const letter = update.kind === tile.kind ? tile.letter : this.st.autoLetter(update.kind, letterByte(0));
+          return { ...tile, kind: update.kind, rot: update.rot, letter };
+        });
+    });
+  }
+
+  private paintAuto(auto: AutoGesture): void {
     // Opening a map or undoing during a captured gesture must not replay an old stroke into it.
     if (this.st.current !== auto.doc) {
       this.drag = null;
       return;
     }
     this.st.touch((doc) => {
-      const updates = autoTiles(auto.base, auto.cells, auto.profile, auto.start);
+      const updates = autoTiles(auto.base, auto.stroke, auto.profile, auto.start);
       const originals = new Map(auto.base.map((tile) => [cellKey(tile.x, tile.y), tile]));
       const resolved = new Map<string, AutoCell>(originals);
       for (const tile of updates) resolved.set(cellKey(tile.x, tile.y), tile);
       const terrain = [...resolved.values()];
       const groups = roomGroups(terrain, auto.profile);
-      const changed = new Set(auto.cells);
+      const changed = new Set(auto.stroke.cells);
       for (const tile of updates) {
         const key = cellKey(tile.x, tile.y),
           original = originals.get(key);
@@ -330,7 +384,7 @@ export class Controller {
         const roomTouched = touchedRooms.has(groups.get(key)!);
         if (!updatedKeys.has(key) && !(role === 'floor' && roomTouched)) continue;
         let preferred = letterByte(variants.get(key) ?? 0);
-        if (original && !auto.cells.has(key)) {
+        if (original && !auto.stroke.cells.has(key)) {
           // Do not reroll unchanged decoration, nor alter unrelated existing manual variants.
           const keepFloor = role === 'floor' && centers.has(key) && previousCenters.has(key) && auto.randomVariants;
           const keepEdge = role && role !== 'floor' && !changed.has(key);
