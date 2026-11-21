@@ -20,7 +20,13 @@ import {
   lanaiObjectScale,
   lanaiRecordLook,
 } from '../src/lanai/mapObjects';
-import { lanaiDenpaCustomLook, lanaiDenpaCustomModel, lanaiDenpaCustomName } from '../src/lanai/animationModels';
+import {
+  lanaiAntennaAtlas,
+  lanaiDenpaColors,
+  lanaiDenpaCustomLook,
+  lanaiDenpaCustomModel,
+  lanaiDenpaCustomName,
+} from '../src/lanai/animationModels';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -222,6 +228,41 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect([look.appearance.face, look.appearance.hair, look.appearance.eye, look.appearance.mouth]).toEqual([
       9, 4, 43, 38,
     ]);
+    // the party of content 16 (a screenshot of the game, 2015): all level 220; the antenna is the last level reached
+    const sk = s.need('SkillData');
+    const antennas = [11, 12, 13, 14, 15, 16, 17, 18].map((row) =>
+      s.plain(sk, lanaiDenpaCustomLook(s, row).antennaSkill, 'name'),
+    );
+    expect(antennas).toEqual([
+      'じごくのごうか', // 火 (71 of 10 / 31 / 71 / 251 / 401)
+      'ならくのそこ', // 闇
+      'マグニチュード12', // 土
+      'みんなかんぜんふっかつ', // 蘇生
+      'みんなわざアップ',
+      'みんなムキムキ', // 強化
+      'みんなたたり', // 耐性降下
+      'みんなぜんぶかいふく', // 回復
+    ]);
+    // every skill with an icon (+0x11 & 0x3F) takes the icon atlas 75F22000 (はるお showed ねむらせる's sheet when
+    // SkillData +0x10 & 3 picked it); the models with their own look take the sheet 33945C00
+    expect(lanaiAntennaAtlas(s, lanaiDenpaCustomLook(s, 12).antennaSkill)).toBe(0x75f22000);
+    expect(lanaiAntennaAtlas(s, lanaiDenpaCustomLook(s, 11).antennaSkill)).toBe(0x75f22000);
+    let icons = 0;
+    for (let row = 0; row < sk.rows; row++) {
+      if (!(sk.u8(row, 0x11) & 0x3f)) continue;
+      icons++;
+      expect(lanaiAntennaAtlas(s, row)).toBe(0x75f22000);
+    }
+    expect(icons).toBeGreaterThan(150);
+    const sleep = [...Array(sk.rows).keys()].find((row) => s.plain(sk, row, 'name') === 'ねむらせる')!;
+    expect(lanaiAntennaAtlas(s, sleep)).toBe(0x33945c00);
+    // かしたろう is red all over (あか, no pattern)
+    expect(look.colors).toEqual([6, 6]);
+    expect(look.pattern).toBe(0);
+    // the same two colours drop the pattern; a pattern turns a second colour 0 / 2 into black (3)
+    expect(lanaiDenpaColors(4, 9, 9)).toEqual({ pattern: 0, colors: [9, 9] });
+    expect(lanaiDenpaColors(4, 9, 0)).toEqual({ pattern: 4, colors: [9, 3] });
+    expect(lanaiDenpaColors(0, 9, 2)).toEqual({ pattern: 0, colors: [9, 9] });
 
     const customs = new Set<number>();
     for (const maps of all) {
