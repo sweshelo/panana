@@ -9,7 +9,7 @@ import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels
 import type { ModelRef } from '../pages/modelview';
 import { f32, hex8, u16, u32 } from '../util/bytes';
 import { attachDenpaEquipment, lanaiDenpaEquipment } from './denpaEquipment';
-import type { LanaiItem } from './items';
+import { textureOnlyKind, type LanaiItem } from './items';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef } from './mapObjects';
 import type { LanaiSession } from './session';
@@ -333,8 +333,14 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   const animations = motionFiles.flat();
   const seen = new Set<string>();
   const [main, second] = look.colors.map((row) => colorOf(session, row));
+  // The body's combiners give black (c2), + tex × c0, + (1 − tex) × c1: a pattern (a grey mask) mixes the main and
+  // the second colour. Clothes are a coloured picture in its place, shown as it is (as on the items' page) with c0
+  // white and c1 black; the person's colours there turned dark clothes light and the other way round.
+  const clothed = look.equipment.some((it) => textureOnlyKind(it.kind));
+  const white = [1, 1, 1, 1],
+    black = [0, 0, 0, 1];
   // constants 0 / 1 / 2 = main, second, black; the sample keeps the model's own
-  const tint = main ? [main, second ?? main, [0, 0, 0, 1]] : [];
+  const tint = clothed ? [white, black, black] : main ? [main, second ?? main, black] : [];
   const model: CgfxModel = {
     name,
     meshes: [],
