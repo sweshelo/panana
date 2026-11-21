@@ -294,33 +294,31 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     const names = kashitarou.materials.map((m) => m.name);
     for (const part of ['M_equ_neck_070', 'M_equ_hand_007', 'M_equ_foot_037', 'M_equ_back_105'])
       expect(names).toContain(part);
-    // clothes show their picture as it is: the body's c0 / c1 are white / black (tex × c0 + (1 − tex) × c1); without
-    // clothes they are the person's colours
+    // the body's c0 / c1 (tex × c0 + (1 − tex) × c1) are the person's colours, clothes or not (not drawn on the map)
     const bodyColors = (m: typeof kashitarou) => {
       const body = m.materials.find((x) => x.name === 'Body')!;
       return [0, 1].map((c) => body.tev![body.tevConstants!.indexOf(c)]!.color);
     };
-    expect(bodyColors(kashitarou)).toEqual([
-      [1, 1, 1, 1],
-      [0, 0, 0, 1],
-    ]);
-    const dc = s.need('DenpaCustom');
-    const bare = [...Array(dc.rows).keys()].find(
-      (row) => row > 0 && !lanaiDenpaEquipment(s, dc.row(row)).some((it) => it.kind >= 0xd0),
-    )!;
-    const bareLook = lanaiDenpaCustomLook(s, bare);
     const cd = s.need('ColorData');
-    const bareModel = (await lanaiDenpaCustomModel(s, bare).load())!.set.models.get(0)!;
-    expect(bodyColors(bareModel)[0]).toEqual([...[6, 7, 8].map((o) => cd.u8(bareLook.colors[0], o) / 255), 1]);
+    const rgb = (row: number) => [...[6, 7, 8].map((o) => cd.u8(row, o) / 255), 1];
+    expect(bodyColors(kashitarou)).toEqual([rgb(6), rgb(6)]);
+    // しんたろう: あお / みずいろ on the marble (pattern 6), in his アロハ
+    const shintarou = lanaiDenpaCustomLook(s, 14);
+    expect([shintarou.pattern, ...shintarou.colors]).toEqual([6, 21, 9]);
+    expect(bodyColors((await lanaiDenpaCustomModel(s, 14).load())!.set.models.get(0)!)).toEqual([rgb(21), rgb(9)]);
+    // しょう: くろ with the second レア, no pattern: black all over and rare (the screenshot's shining black)
+    const shou = lanaiDenpaCustomLook(s, 16);
+    expect([shou.pattern, ...shou.colors, shou.rare]).toEqual([0, 3, 3, true]);
     // かしたろう is red all over (あか, no pattern)
     expect(look.colors).toEqual([6, 6]);
     expect(look.pattern).toBe(0);
     // the same two colours drop the pattern; a pattern turns a second colour 0 / 2 into black (3)
-    expect(lanaiDenpaColors(4, 9, 9)).toEqual({ pattern: 0, colors: [9, 9] });
-    expect(lanaiDenpaColors(4, 9, 0)).toEqual({ pattern: 4, colors: [9, 3] });
-    expect(lanaiDenpaColors(0, 9, 2)).toEqual({ pattern: 0, colors: [9, 9] });
-    // レア (ColorData 2, +4 = 0x1000) is only ever a second colour; the one person who shows it (#169 ゆう, pattern 5,
-    // no clothes) has black there
+    expect(lanaiDenpaColors(4, 9, 9)).toEqual({ pattern: 0, colors: [9, 9], rare: false });
+    expect(lanaiDenpaColors(4, 9, 0)).toEqual({ pattern: 4, colors: [9, 3], rare: false });
+    expect(lanaiDenpaColors(4, 9, 2)).toEqual({ pattern: 4, colors: [9, 3], rare: false });
+    expect(lanaiDenpaColors(0, 9, 2)).toEqual({ pattern: 0, colors: [9, 9], rare: true });
+    expect(lanaiDenpaColors(0, 9, 21)).toEqual({ pattern: 0, colors: [9, 9], rare: false });
+    // レア (ColorData 2, +4 = 0x1000) is only ever a second colour; with a pattern (#169 ゆう, pattern 5) it is black
     expect(lanaiDenpaCustomLook(s, 169).colors).toEqual([28, 3]);
 
     const customs = new Set<number>();

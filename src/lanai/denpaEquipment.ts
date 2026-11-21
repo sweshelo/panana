@@ -10,7 +10,7 @@
 //   head, hip, tail; their models are made at the bone's origin.
 // - Glasses (0x82) are no part: equipInfo_face +0x00 bits 0〜4 pick a cell of the face's Megane (0x2D3418 → 0x26CE7C).
 // - Clothes (0xD1 / 0xD2) are no part: a hum_base texture in place of the body's pattern, the body's constants white
-//   and black (0x2D3C18〜0x2D3C5C; animationModels.ts).
+//   and black (0x2D3C18〜0x2D3C5C); not drawn on the map (animationModels.ts).
 import * as THREE from 'three';
 import { parseBch } from '../bch/bch';
 import type { CgfxModel, CgfxTexture } from '../cgfx/cgfx';
@@ -116,30 +116,25 @@ function attachByName(
 
 /**
  * Put `items` on a Denpa person assembled from hum_body_01 (its bones keep their names in `target`); `headRoot` is the
- * bone of the head model's root. Returns the textures the parts use and the clothes' texture (null: none worn).
- * Glasses are not put on here (lanaiDenpaGlasses gives the face's cell).
+ * bone of the head model's root. Returns the textures the parts use. Glasses (lanaiDenpaGlasses gives the face's
+ * cell) and clothes are not put on here.
  */
 export async function attachDenpaEquipment(
   session: LanaiSession,
   target: CgfxModel,
   items: readonly LanaiItem[],
   headRoot: number,
-): Promise<{ textures: CgfxTexture[]; clothes: CgfxTexture | null }> {
+): Promise<CgfxTexture[]> {
   const textures: CgfxTexture[] = [];
-  let clothes: CgfxTexture | null = null;
   const byName = new Map<string, number>();
   target.bones.forEach((b, i) => {
     if (!b.name.includes('/') && !byName.has(b.name)) byName.set(b.name, i);
   });
-  const worn = items.filter((it) => it.kind !== LANAI_GLASSES && it.archive && it.model);
+  const worn = items.filter((it) => it.kind !== LANAI_GLASSES && !textureOnlyKind(it.kind) && it.archive && it.model);
   const files = await Promise.all(worn.map((it) => lanaiItemBody(session, it).then((b) => (b ? parseBch(b) : null))));
   worn.forEach((it, i) => {
     const f = files[i];
     if (!f) return;
-    if (textureOnlyKind(it.kind)) {
-      clothes = f.textures[0] ?? clothes;
-      return;
-    }
     const part = f.models[0];
     if (!part || !part.meshes.length) return;
     textures.push(...f.textures);
@@ -155,5 +150,5 @@ export async function attachDenpaEquipment(
     // not in the code; an assumption)
     if (head) for (const m of target.meshes.slice(from)) m.drawOrder = Math.max(m.drawOrder, 40);
   });
-  return { textures, clothes };
+  return textures;
 }

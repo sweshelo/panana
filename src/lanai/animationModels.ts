@@ -9,7 +9,7 @@ import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels
 import type { ModelRef } from '../pages/modelview';
 import { f32, hex8, u16, u32 } from '../util/bytes';
 import { attachDenpaEquipment, lanaiDenpaEquipment, lanaiDenpaGlasses } from './denpaEquipment';
-import { textureOnlyKind, type LanaiItem } from './items';
+import type { LanaiItem } from './items';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef } from './mapObjects';
 import type { LanaiSession } from './session';
@@ -126,6 +126,8 @@ export interface LanaiDenpaLook {
   pattern: number;
   /** ColorData rows of the body's main and second colours, as the game resolves them (-1: the model's own). */
   colors: [number, number];
+  /** One colour with the second レア: the field adds the moving proctex_mud02 to the head and body (not drawn yet). */
+  rare: boolean;
   /** SkillData row whose antenna is on the head (-1: none drawn). */
   antennaSkill: number;
   /** The items worn (DenpaCustom +0x18〜+0x2C; denpaEquipment.ts). */
@@ -133,20 +135,23 @@ export interface LanaiDenpaLook {
 }
 
 /**
- * The body's pattern and colours as the field resolves DenpaCustom +0x0C / +0x10 / +0x14 (0x2DABBC〜0x2DAC10, 0x2D3C8C;
- * Codex 2026-11-21): the same two colours drop the pattern; with a pattern a second colour 0 / 2 is 3 (black), without
- * one a second colour 2 is 0; a second colour 0 is the main one.
+ * The body's pattern and colours as the field resolves DenpaCustom +0x0C / +0x10 / +0x14 (0x2DABBC〜0x2DAC14, 0x2D3C8C,
+ * 0x45DB54; roms/tmpmap/clothes-flag-analysis.md): the same two colours drop the pattern; with a pattern a second colour
+ * 0 / 2 (レア) is 3 (black); without one the body is the main colour on both constants, and a second colour レア (the
+ * one ColorData row whose +4 is 0x1000) makes it rare.
  */
 export function lanaiDenpaColors(
   pattern: number,
   main: number,
   sub: number,
-): { pattern: number; colors: [number, number] } {
+): { pattern: number; colors: [number, number]; rare: boolean } {
   if (main === sub) pattern = 0;
-  if (pattern && (sub === 0 || sub === 2)) sub = 3;
-  else if (!pattern && sub === 2) sub = 0;
-  return { pattern, colors: [main, sub > 0 ? sub : main] };
+  if (pattern) return { pattern, colors: [main, sub === 0 || sub === COLOR_RARE ? 3 : sub], rare: false };
+  return { pattern, colors: [main, main], rare: sub === COLOR_RARE };
 }
+
+/** ColorData row of レア (+4 = 0x1000, white): a glow, never a constant colour. */
+const COLOR_RARE = 2;
 
 /** SkillData row 0 (アンテナなし, AntennaGroup 0) and 1 (アンテナのねっこ, below the first level of a group). */
 const SKILL_NONE = 0,
@@ -190,6 +195,7 @@ const SAMPLE_LOOK: LanaiDenpaLook = {
   bodyRow: 0,
   pattern: 0,
   colors: [-1, -1],
+  rare: false,
   antennaSkill: -1,
   equipment: [],
 };
@@ -337,13 +343,12 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   const seen = new Set<string>();
   const [main, second] = look.colors.map((row) => colorOf(session, row));
   // The body's combiners give black (c2), + tex × c0, + (1 − tex) × c1: a pattern (a grey mask) mixes the main and
-  // the second colour. Clothes are a coloured picture in its place, shown as it is (as on the items' page) with c0
-  // white and c1 black; the person's colours there turned dark clothes light and the other way round.
-  const clothed = look.equipment.some((it) => textureOnlyKind(it.kind));
-  const white = [1, 1, 1, 1],
-    black = [0, 0, 0, 1];
-  // constants 0 / 1 / 2 = main, second, black; the sample keeps the model's own
-  const tint = clothed ? [white, black, black] : main ? [main, second ?? main, black] : [];
+  // the second colour. Constants 0 / 1 / 2 = main, second, black; the sample keeps the model's own. Clothes (a
+  // picture in the pattern's place with c0 white and c1 black, 0x2D3D38) are not drawn on the map: the party of
+  // content 16 shows the patterns and colours of their rows though all of them have clothes (a screenshot of the
+  // game, 2015), and the code that builds them has two ways (build flags 0x30F / 0x230F, the latter with no
+  // equipment) not yet told apart.
+  const tint = main ? [main, second ?? main, [0, 0, 0, 1]] : [];
   const model: CgfxModel = {
     name,
     meshes: [],
@@ -383,10 +388,8 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
     textures: new Map(),
     errors: [],
   };
-  for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? []), ...worn.textures])
+  for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? []), ...worn])
     set.textures.set(texture.name, texture);
-  // clothes take the place of the pattern (both are hum_base)
-  if (worn.clothes) set.textures.set('hum_base', { ...worn.clothes, name: 'hum_base' });
   return set;
 }
 
