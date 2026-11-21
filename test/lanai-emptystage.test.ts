@@ -9,7 +9,15 @@ import { lanaiButtonDoor, lanaiEditState, lanaiValidateAll } from '../src/lanai/
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { buildStageScripts, checkStageScript } from '../src/lanai/stageScript';
-import { lanaiTilesets, mapDataTileset, setLanaiTileset, tilesetGaps, tilesetTable } from '../src/lanai/tilesets';
+import {
+  lanaiTilesets,
+  mapDataTileset,
+  setLanaiTileset,
+  tilesetGaps,
+  tilesetTable,
+  tilesetTextureDiffers,
+} from '../src/lanai/tilesets';
+import { lanaiTileModels } from '../src/lanai/mapModels';
 import { addLanaiMapData } from '../src/lanai/mapadd';
 import { openImages } from '../src/rom/dump';
 import { u32 } from '../src/util/bytes';
@@ -260,6 +268,50 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     const m2 = await lanaiMaps(s2, c2);
     const i2 = m2.map(info.hash)!;
     expect(m2.tileSource(i2, m2.doc(i2)).partsName).toBe('MapPartsRelic');
+  });
+
+  test("a tileset's texture is the one its models name (Relic: 6D3A9800, not 2B84B000's stone walls)", async () => {
+    const all = await lanaiTilesets(s);
+    expect(u32(all.find((t) => t.name === 'Relic')!.resource, 4)).toBe(0x6d3a9800);
+    for (const ts of all) {
+      const set = await lanaiTileModels(
+        s,
+        {
+          mapData: -1,
+          tileset: 0,
+          partsName: '',
+          resource: 0,
+          textureArchive: u32(ts.resource, 0),
+          textureEntry: u32(ts.resource, 4),
+        },
+        [ts.floor!],
+      );
+      const names = set.models.get(ts.floor!.entry)!.materials.flatMap((m) => m.textures.filter((t) => t !== null));
+      // Boutique's only texture (content 97) lacks its floor's bg_floor_01 in the ROM too
+      const missing = names.filter((n) => !set.textures.has(n) && !(ts.name === 'Boutique' && n === 'bg_floor_01'));
+      expect({ ts: ts.name, missing }).toEqual({ ts: ts.name, missing: [] });
+    }
+  });
+
+  test('a new texture row keeps the battle field of the map; a wrong texture is fixed by picking the tileset again', async () => {
+    const { info, doc } = start();
+    const row = maps.mapDataRow(info, doc);
+    const md = maps.contentTable('MapData')!,
+      mr = maps.contentTable('MapResource')!;
+    const all = await lanaiTilesets(s);
+    const relic = all.find((t) => t.name === 'Relic')!;
+    const field = mr.u32(md.row(row)[0x0b]!, 0x10);
+    await setLanaiTileset(s, maps, row, relic);
+    expect(mr.u32(md.row(row)[0x0b]!, 0x10)).toBe(field);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(false);
+    // a stage saved with the stone-wall texture
+    const wrong = mr.addRow(md.row(row)[0x0b]!);
+    mr.setU32(wrong, 4, 0x2b84b000);
+    md.setBits(row, 0x08, 24, 8, wrong);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(true);
+    await setLanaiTileset(s, maps, row, relic);
+    expect(mr.u32(md.row(row)[0x0b]!, 4)).toBe(0x6d3a9800);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(false);
   });
 
   test('the open map hears of another tileset: its source is read again and the views are told', async () => {
