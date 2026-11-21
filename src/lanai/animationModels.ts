@@ -8,7 +8,7 @@ import type { TilesetModels } from '../cgfx/tileset';
 import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels';
 import type { ModelRef } from '../pages/modelview';
 import { f32, hex8, u16, u32 } from '../util/bytes';
-import { attachDenpaEquipment, lanaiDenpaEquipment } from './denpaEquipment';
+import { attachDenpaEquipment, lanaiDenpaEquipment, lanaiDenpaGlasses } from './denpaEquipment';
 import { textureOnlyKind, type LanaiItem } from './items';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef } from './mapObjects';
@@ -197,7 +197,8 @@ const SAMPLE_LOOK: LanaiDenpaLook = {
 /**
  * A DenpaCustom row's look: +0x0C / +0x10 / +0x14 the pattern and the two colours (row IDs), +0x38 the level, +0x3A the
  * AntennaGroup row, +0x41 the head, +0x43 the body (BodyData), +0x44 the face, +0x45 the hair (zero-based), +0x46 /
- * +0x47 the skin and hair colours, +0x48〜+0x4C brow / eye / nose / mouth / cheek (one-based but the hair). No glasses.
+ * +0x47 the skin and hair colours, +0x48〜+0x4C brow / eye / nose / mouth / cheek (one-based but the hair). The glasses
+ * are a cell of the face that the worn glasses pick (denpaEquipment.ts).
  */
 export function lanaiDenpaCustomLook(session: LanaiSession, row: number): LanaiDenpaLook {
   const t = session.need('DenpaCustom');
@@ -211,6 +212,7 @@ export function lanaiDenpaCustomLook(session: LanaiSession, row: number): LanaiD
   );
   // a level of 0 or below is taken at run time (the save); the preview shows the first level
   const level = Math.min(999, Math.max(1, (u16(r, 0x38) << 16) >> 16));
+  const equipment = lanaiDenpaEquipment(session, r);
   return {
     appearance: {
       antennaGroup: u16(r, 0x3a),
@@ -227,13 +229,14 @@ export function lanaiDenpaCustomLook(session: LanaiSession, row: number): LanaiD
       nose: one(0x4a),
       mouth: one(0x4b),
       cheek: one(0x4c),
-      glasses: 0,
+      // glasses are a cell of the face (denpaEquipment.ts)
+      glasses: lanaiDenpaGlasses(session, equipment),
     },
     headRow: one(0x41),
     bodyRow: one(0x43),
     ...body,
     antennaSkill: lanaiAntennaSkill(session, u16(r, 0x3a), level),
-    equipment: lanaiDenpaEquipment(session, r),
+    equipment,
   };
 }
 

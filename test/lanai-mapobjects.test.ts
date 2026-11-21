@@ -27,7 +27,8 @@ import {
   lanaiDenpaCustomModel,
   lanaiDenpaCustomName,
 } from '../src/lanai/animationModels';
-import { lanaiDenpaEquipment } from '../src/lanai/denpaEquipment';
+import { LANAI_GLASSES, lanaiDenpaEquipment, lanaiDenpaGlasses } from '../src/lanai/denpaEquipment';
+import { lanaiItems } from '../src/lanai/items';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -268,6 +269,27 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     ]);
     expect(worn(13)).toContain('ドラゴンのうろこ');
     expect(worn(18)).toEqual(['サングラス', 'ジュエリーネックレス', 'パイレーツブーツ', 'てんしのはね', 'APプリント']);
+    // glasses (0x82) are no model but a cell of the face: equipInfo_face +0x00 & 31, the 23 glasses 1〜23
+    const glasses = lanaiItems(s).filter((it) => it.kind === LANAI_GLASSES);
+    expect(glasses.map((it) => lanaiDenpaGlasses(s, [it])).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 23 }, (_, i) => i + 1),
+    );
+    const sanako = lanaiDenpaCustomLook(s, 18);
+    expect(sanako.appearance.glasses).toBe(
+      lanaiDenpaGlasses(
+        s,
+        glasses.filter((it) => it.name === 'サングラス'),
+      ),
+    );
+    expect(sanako.appearance.glasses).toBeGreaterThan(0);
+    const sanakoModel = (await lanaiDenpaCustomModel(s, 18).load())!.set.models.get(0)!;
+    expect(sanakoModel.materials.some((m) => m.name.startsWith('M_equ_face'))).toBe(false);
+    // はるお's おおきめサングラス is a head item (0x81): a model on the head
+    expect(
+      (await lanaiDenpaCustomModel(s, 12).load())!.set.models
+        .get(0)!
+        .materials.some((m) => m.name === 'M_equ_face_048'),
+    ).toBe(true);
     const kashitarou = (await lanaiDenpaCustomModel(s, 11).load())!.set.models.get(0)!;
     const names = kashitarou.materials.map((m) => m.name);
     for (const part of ['M_equ_neck_070', 'M_equ_hand_007', 'M_equ_foot_037', 'M_equ_back_105'])
