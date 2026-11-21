@@ -95,6 +95,7 @@ import { lanaiMessageSource } from './MessageSource';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiTable } from './table';
 import { LANAI_CHARA_KIND, lanaiCharaKind, lanaiObjectRef, type LanaiRecordLook } from './mapObjects';
+import { lanaiDenpaCustomName } from './animationModels';
 import { lanaiMonsters } from './monsters';
 import { lanaiItemName } from './monsterBook';
 import { LanaiItemPicker } from './pickers';
@@ -1287,7 +1288,9 @@ function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook |
       ? `MapObject #${m.row}${name ? ` ${name}` : ''}`
       : m.type === 'monster'
         ? `MonsterDesign #${m.design}${designNames(view.maps.session, m.design)}${name ? ` ${name}` : ''}`
-        : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
+        : m.type === 'denpa'
+          ? `DenpaCustom #${m.custom} ${lanaiDenpaCustomName(view.maps.session, m.custom)} (アンテナは表示しません)`
+          : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
   return (
     <p className="muted small">
       {look.chara !== undefined && `MapChara #${look.chara}${kind ? ` (${kind})` : ''}・`}

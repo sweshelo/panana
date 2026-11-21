@@ -12,11 +12,14 @@ import {
   LANAI_CHARA_KIND,
   LANAI_CHARA_MONSTER,
   LANAI_CHARA_NPC,
+  LANAI_EO_CHARA_SELECT,
   lanaiCharaKind,
-  lanaiCharaObject,
+  lanaiCharaModel,
+  lanaiCharaTables,
   lanaiObjectRef,
   type LanaiRecordModel,
 } from './mapObjects';
+import { lanaiDenpaCustomName } from './animationModels';
 import type { LanaiMapView } from './mapview';
 import { lanaiMonsters } from './monsters';
 import { LanaiMonsterPicker } from './pickers';
@@ -84,21 +87,29 @@ function ObjectModelPicker({
 function charaLabel(st: LanaiEditState, mc: LanaiTable | undefined, row: number): string {
   const kind = lanaiCharaKind(mc, row);
   if (kind < 0) return `#${row} (表にない行)`;
-  const model = lanaiCharaObject(mc, row);
-  const name =
-    kind === LANAI_CHARA_MONSTER
-      ? (lanaiMonsters(st.maps.session).find((m) => m.designRow === model && m.name)?.name ?? '') +
-        ` (MonsterDesign #${model})`
-      : `MapObject #${model}`;
+  const model = charaModel(st, mc, row, 0);
+  const name = !model
+    ? 'モデルなし'
+    : model.type === 'monster'
+      ? (lanaiMonsters(st.maps.session).find((m) => m.designRow === model.design && m.name)?.name ?? '') +
+        ` (MonsterDesign #${model.design})`
+      : model.type === 'denpa'
+        ? `${lanaiDenpaCustomName(st.maps.session, model.custom)} (DenpaCustom #${model.custom})`
+        : model.type === 'object'
+          ? `MapObject #${model.row}`
+          : '';
   return `#${row} ${LANAI_CHARA_KIND[kind] ?? `種類 ${kind}`}: ${name}${row >= (mc?.originalRows ?? 0) ? ' (追加した行)' : ''}`;
 }
 
-function charaModel(mc: LanaiTable | undefined, row: number): LanaiRecordModel | null {
-  const model = lanaiCharaObject(mc, row);
-  if (!model) return null;
-  return lanaiCharaKind(mc, row) === LANAI_CHARA_MONSTER
-    ? { type: 'monster', design: model }
-    : { type: 'object', row: model };
+/** The model of a MapChara row as the game picks it for an event whose +0x5C is `select`. */
+function charaModel(
+  st: LanaiEditState,
+  mc: LanaiTable | undefined,
+  row: number,
+  select: number,
+): LanaiRecordModel | null {
+  const session = st.maps.session;
+  return lanaiCharaModel({ ...lanaiCharaTables(session), mapChara: mc }, row, select);
 }
 
 /** The look of a record's event (EventObject row `row`). Circle ranges keep their radius there (RangeFields). */
@@ -157,7 +168,7 @@ export function LookField({
     <div className="field">
       <span>キャラの見た目</span>
       <div className="row">
-        {photo(view, charaModel(mc, look))}
+        {photo(view, charaModel(st, mc, look, events.u16(row, LANAI_EO_CHARA_SELECT)))}
         <select aria-label="キャラの見た目" value={look} onChange={(e) => setLook(Number(e.target.value))}>
           {look === 0 && <option value={0}>0 (なし)</option>}
           {Array.from({ length: Math.max(0, (mc?.rows ?? 0) - 1) }, (_, i) => i + 1).map((r) => (

@@ -6,7 +6,8 @@ import type { ModelRef } from '../pages/modelview';
 import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, LANAI_LAYOUTS, type LanaiMaps } from './maps';
 import { LANAI_ACTION_NONE, lanaiActionName } from './actions';
 import { lanaiRecEventRow, type LanaiEditState } from './mapedit';
-import { lanaiObjectRef, lanaiRecordLook } from './mapObjects';
+import { lanaiCharaTables, lanaiObjectRef, lanaiRecordLook } from './mapObjects';
+import { lanaiDenpaCustomModel } from './animationModels';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiMonsterDesign } from './monsters';
 import { lanaiMonsterModel } from './monsterModels';
@@ -27,7 +28,7 @@ export function lanaiEventChoices(maps: LanaiMaps, group: number): PlacedChoice[
         if (!row) return;
         const [x, y] = recCellPos(rec, LANAI_LAYOUTS[section]!);
         const look = lanaiRecordLook(section, rec.raw, {
-          mapObject: maps.session.table('MapObject'),
+          ...lanaiCharaTables(maps.session),
           mapChara: maps.contentTable('MapChara'),
           events,
           indoor: isIndoor(doc),
@@ -40,6 +41,8 @@ export function lanaiEventChoices(maps: LanaiMaps, group: number): PlacedChoice[
               key: `lanai/object/${ref.archive}/${ref.entry}`,
               load: async () => ({ set: await lanaiObjectModels(maps.session, ref), hash: ref.entry }),
             };
+        } else if (look?.model?.type === 'denpa') {
+          model = lanaiDenpaCustomModel(maps.session, look.model.custom);
         } else if (look?.model?.type === 'monster') {
           const design = lanaiMonsterDesign(maps.session, look.model.design);
           if (design) model = lanaiMonsterModel(maps.session, design);

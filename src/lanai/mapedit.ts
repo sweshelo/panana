@@ -47,6 +47,7 @@ import {
 import { romEventRow, type LanaiRomPart } from './romParts';
 import { lanaiMonsters } from './monsters';
 import {
+  LANAI_CHARA_DENPA,
   LANAI_CHARA_MONSTER,
   LANAI_GOAL_CHEST,
   LANAI_REPAIR_FIELD,
@@ -585,7 +586,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         model =
           p.chara.kind === LANAI_CHARA_MONSTER
             ? { type: 'monster', design: p.chara.model }
-            : { type: 'object', row: p.chara.model };
+            : p.chara.kind === LANAI_CHARA_DENPA
+              ? { type: 'denpa', custom: p.chara.model }
+              : { type: 'object', row: p.chara.model };
       else if (lookKind === 'object' && look && lanaiObjectRef(this.maps.session.table('MapObject'), look))
         model = { type: 'object', row: look };
       let event: NewEventRow | undefined;

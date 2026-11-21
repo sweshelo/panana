@@ -236,6 +236,7 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
   // constant assignment at +0xC0, polygon offset at +0xC4, fragment shader commands at +0xC8.
   const units: TexUnit[] = [];
   let tev: TevStage[] | null = null;
+  let tevConstants: (number | undefined)[] | undefined;
   let tevBuffer: CgfxMaterial['tevBuffer'] = { color: [0, 0, 0, 0], updateRgb: 0, updateA: 0 };
   let blendFunc: CgfxMaterial['blendFunc'] = null;
   let alphaFunc: CgfxMaterial['alphaFunc'] = null;
@@ -266,6 +267,7 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
     const constants = Array.from({ length: 6 }, (_, i) => rgba(r.u32(p + 0x6c + i * 4)));
     const assign = r.u32(p + 0xc0);
     const bases = [0xc0, 0xc8, 0xd0, 0xd8, 0xf0, 0xf8];
+    tevConstants = bases.map((_, k) => (((assign >> (k * 4)) & 15) < 6 ? (assign >> (k * 4)) & 15 : undefined));
     tev = bases.map((base, k) => {
       const src = fs.regs.get(base) ?? 0x0f0f0f0f;
       const opr = fs.regs.get(base + 1) ?? 0;
@@ -338,6 +340,7 @@ function readMaterial(r: Reader, o: number, v21: boolean): CgfxMaterial {
     },
     units,
     tev,
+    tevConstants,
     tevBuffer,
     blendFunc,
     alphaFunc,

@@ -35,6 +35,8 @@ export interface CgfxMaterial {
   units: TexUnit[];
   /** Texture combiner stages 0..5 (null when the material has no fragment shader). */
   tev: TevStage[] | null;
+  /** BCH: which of the material's constant colours (0-5) each stage takes (undefined: the stage's own colour). */
+  tevConstants?: (number | undefined)[];
   /** Combiner buffer (source 0x0D): initial colour (0xFD) and the stages 0..3 that update it (0xE0). */
   tevBuffer: { color: number[]; updateRgb: number; updateA: number };
   /** GPUREG_COLOR_OPERATION / BLEND_FUNC (0x100 / 0x101), BLEND_COLOR (0x103). */

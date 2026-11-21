@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { lanaiRange, type LanaiRange, type LanaiRangeShape } from './rangeShape';
 import { AnimatedModel, animationKey } from '../cgfx/player';
-import { lanaiAnimationIds, lanaiAnimationName, lanaiDenpaModel } from './animationModels';
+import { lanaiAnimationIds, lanaiAnimationName, lanaiDenpaCustomModel, lanaiDenpaModel } from './animationModels';
 import { scriptRowId, type ScriptWho } from './eventScript';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
@@ -39,6 +39,7 @@ import { lanaiObjectModels, lanaiTileModels } from './mapModels';
 import { PartThumbnails } from '../editor/part-thumbnails';
 import {
   LANAI_EFFECT_NAMES,
+  lanaiCharaTables,
   lanaiObjectRef,
   lanaiObjectScale,
   lanaiRecordLook,
@@ -663,7 +664,7 @@ export class LanaiMapView {
   partLook(section: number, raw: Uint8Array): LanaiRecordLook | null {
     const maps = this.maps;
     return lanaiRecordLook(section, raw, {
-      mapObject: maps.session.table('MapObject'),
+      ...lanaiCharaTables(maps.session),
       mapChara: maps.contentTable('MapChara'),
       events: maps.eventTable(this.info.dungeon),
       indoor: isIndoor(this.doc),
@@ -684,7 +685,9 @@ export class LanaiMapView {
   private modelKey(m: LanaiRecordModel): string {
     return m.type === 'monster'
       ? `m${m.design}`
-      : `o${m.row}${m.type === 'object' && m.material ? `/${m.material}` : ''}`;
+      : m.type === 'denpa'
+        ? `d${m.custom}`
+        : `o${m.row}${m.type === 'object' && m.material ? `/${m.material}` : ''}`;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -717,6 +720,8 @@ export class LanaiMapView {
       if (!ref) return null;
       const set = await lanaiObjectModels(session, ref);
       got = set.models.size ? { set, hash: ref.entry } : null;
+    } else if (m.type === 'denpa') {
+      got = await lanaiDenpaCustomModel(session, m.custom).load();
     } else if (m.type === 'monster') {
       const d = lanaiMonsterDesign(session, m.design);
       const ref = d && lanaiMonsterModel(session, d);

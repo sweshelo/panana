@@ -14,10 +14,13 @@ import {
   LANAI_EFFECT_REPAIR_POINT,
   LANAI_GOAL_CHEST,
   LANAI_REPAIR_POINT,
+  lanaiCharaModel,
+  lanaiCharaTables,
   lanaiObjectRef,
   lanaiObjectScale,
   lanaiRecordLook,
 } from '../src/lanai/mapObjects';
+import { lanaiDenpaCustomLook, lanaiDenpaCustomModel, lanaiDenpaCustomName } from '../src/lanai/animationModels';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -51,18 +54,23 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
   };
 
   test('the records of every map name MapObject rows; characters are npc_ models, chests trebox', async () => {
-    const mapObject = s.table('MapObject');
     const rows = new Map<string, Set<number>>();
     const designs = new Set<number>(),
       effects = new Map<string, Set<number>>();
     let charas = 0,
-      charaModels = 0;
+      charaModels = 0,
+      denpas = 0;
     for (const maps of all) {
       const mapChara = maps.contentTable('MapChara');
       for (const info of maps.maps) {
         if (info.world) continue;
         const doc = maps.doc(info);
-        const ctx = { mapObject, mapChara, events: maps.eventTable(info.dungeon), indoor: isIndoor(doc) };
+        const ctx = {
+          ...lanaiCharaTables(s),
+          mapChara,
+          events: maps.eventTable(info.dungeon),
+          indoor: isIndoor(doc),
+        };
         for (const k of [2, 3, 4, 5]) {
           for (const r of doc.recs[k] ?? []) {
             const look = lanaiRecordLook(k, r.raw, ctx);
@@ -79,6 +87,10 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
               effects.set(`s${k}`, (effects.get(`s${k}`) ?? new Set()).add(look.model.row));
               continue;
             }
+            if (look.model.type === 'denpa') {
+              denpas++;
+              continue;
+            }
             const key = k === 5 && look.chara !== undefined ? 'chara' : `s${k}`;
             rows.set(key, (rows.get(key) ?? new Set()).add(look.model.row));
           }
@@ -90,6 +102,8 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect(charas).toBeGreaterThan(900);
     // about 1 in 10 characters has no MapChara row (EventObject +0x5A = 0): 89% of them have a model
     expect(charaModels / charas).toBeGreaterThan(0.85);
+    // the Denpa people (MapChara kind 3: DenpaCustom rows; 141 placements, Codex 2026-11-21)
+    expect(denpas).toBeGreaterThan(130);
     const names = async (key: string): Promise<string[]> => Promise.all([...rows.get(key)!].map(modelName));
     expect((await names('chara')).filter((n) => /^npc_/i.test(n)).length).toBeGreaterThan(20);
     expect((await names('s4')).filter((n) => n.startsWith('gimk_05_trebox')).length).toBeGreaterThanOrEqual(3);
@@ -184,6 +198,47 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect(chests).toBeGreaterThan(50);
     expect(warps).toBeGreaterThan(30);
   });
+
+  // FUN_0023CFAC: EventObject +0x5C picks the MapChara field, the kind what it names (Codex, 2026-11-21)
+  test('MapChara kind 3 is a DenpaCustom row and kind 2 a MonsterParameter row; every Denpa person is built', async () => {
+    const ctxOf = (content: number) => {
+      const maps = all.find((m) => m.content.index === content)!;
+      return {
+        mapChara: maps.contentTable('MapChara'),
+        ...lanaiCharaTables(s),
+      };
+    };
+    expect(lanaiCharaModel(ctxOf(16), 7)).toEqual({ type: 'denpa', custom: 11 });
+    expect(lanaiDenpaCustomName(s, 11)).toBe('かしたろう');
+    expect(lanaiCharaModel(ctxOf(17), 1)).toEqual({ type: 'denpa', custom: 4 });
+    expect(lanaiDenpaCustomName(s, 4)).toBe('あかり');
+    // +0x10 = 0x8000026D → MonsterParameter 348 あんこくのつかい → MonsterDesign 108
+    expect(lanaiCharaModel(ctxOf(58), 18, 1)).toEqual({ type: 'monster', design: 108 });
+    expect(lanaiCharaModel(ctxOf(58), 18, 0)).toBeNull();
+
+    // かしたろう: head 29, body 5, face 10, hair 4, eye 44, mouth 39 (one-based in the row but the hair)
+    const look = lanaiDenpaCustomLook(s, 11);
+    expect([look.headRow, look.bodyRow]).toEqual([28, 4]);
+    expect([look.appearance.face, look.appearance.hair, look.appearance.eye, look.appearance.mouth]).toEqual([
+      9, 4, 43, 38,
+    ]);
+
+    const customs = new Set<number>();
+    for (const maps of all) {
+      const mc = maps.contentTable('MapChara');
+      for (let r = 1; r < (mc?.rows ?? 0); r++) {
+        const m = lanaiCharaModel({ mapObject: undefined, mapChara: mc }, r);
+        if (m?.type === 'denpa') customs.add(m.custom);
+      }
+    }
+    expect(customs.size).toBeGreaterThan(80);
+    for (const custom of customs) {
+      const { set, hash } = (await lanaiDenpaCustomModel(s, custom).load())!;
+      const model = set.models.get(hash)!;
+      expect(model.meshes.length).toBeGreaterThan(5);
+      expect(model.animations.some((a) => a.name === '001_N_Stay')).toBe(true);
+    }
+  }, 300000);
 
   test('NPCs are scaled by MapObject +0x1C', () => {
     const mo = s.table('MapObject')!;
