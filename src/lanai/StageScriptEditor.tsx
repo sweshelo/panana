@@ -20,7 +20,9 @@ import { lanaiMonsterName } from './monsterBook';
 import { useLanaiRevision } from './MonsterEditor';
 import { SCRIPT_API_ROWS } from './scriptApiTable';
 import { libraryForm, SCRIPT_LIBRARY, type ScriptLibraryFunction } from './scriptLibrary';
-import { apiAbout, apiResultLabel, lineIdText } from './scriptAssist';
+import { apiAbout, apiResultLabel, lineIdText, type ScriptAssist } from './scriptAssist';
+import { scriptLineCall } from './ScriptLineDialog';
+import { talkGroups } from './talk';
 import { PopupIconList } from './PopupIconList';
 import { docBound, docUnbound, SCRIPT_WORDS, introBinding, startBinding } from './scriptDoc';
 import type { LanaiSession } from './session';
@@ -62,14 +64,61 @@ export function talkLines(
   }));
 }
 
+/** What the script editor knows of a MapGroup: its lines of talk and the content's MonsterGroup rows. */
+export function stageScriptAssist(
+  session: LanaiSession,
+  maps: LanaiMaps,
+  group: number | undefined,
+  vars: string[],
+): ScriptAssist {
+  const mp = session.table('MonsterParameter');
+  const monster = (id: number): string => {
+    const r = mp?.find(id) ?? -1;
+    return r < 0 ? hexId(id) : lanaiMonsterName(session, r);
+  };
+  return {
+    vars,
+    lines: (group === undefined ? undefined : talkLines(session, maps, group)) ?? [],
+    records: [],
+    groups: maps.monsterGroups().map((g) => ({
+      row: g.row,
+      id: g.id,
+      label: [...new Set(g.monsters)].map(monster).join('、') || '(空)',
+    })),
+  };
+}
+
+/** The first rows of the sets of eight tones of a group's talk table (shown with StartMessageAuto). */
+const setFirsts = (maps: LanaiMaps, group: number): Set<number> => {
+  const t = maps.talkTable(group);
+  if (!t) return new Set();
+  return new Set(
+    talkGroups({ archive: '', entry: 0, index: 0, file: null, table: t })
+      .filter((g) => g.kind === 'set')
+      .map((g) => g.rows[0]!),
+  );
+};
+
 /** The lines of a group's talk table with the IDs the script names them by. */
-function TalkLines({ session, maps, group }: { session: LanaiSession; maps: LanaiMaps; group: number }): ReactNode {
+function TalkLines({
+  session,
+  maps,
+  group,
+  onInsert,
+}: {
+  session: LanaiSession;
+  maps: LanaiMaps;
+  group: number;
+  /** Writes a call at the editor's cursor. */
+  onInsert?: (text: string) => void;
+}): ReactNode {
   const [filter, setFilter] = useState('');
   const lines = useMemo(() => talkLines(session, maps, group), [session, maps, group]);
   const t = maps.talkTable(group);
   if (!t || !lines) return <p className="muted small">{`MapGroup ${group}: 台詞の表がありません。`}</p>;
   const q = filter.trim();
   const shown = q ? lines.filter((l) => l.text.includes(q)) : lines;
+  const sets = onInsert ? setFirsts(maps, group) : new Set<number>();
   return (
     <details>
       <summary className="small">{`MapGroup ${group} の台詞 (${t.name}、${t.rows} 行): 本文から行 ID を探す`}</summary>
@@ -84,15 +133,31 @@ function TalkLines({ session, maps, group }: { session: LanaiSession; maps: Lana
           <tr>
             <th>行 ID</th>
             <th>台詞</th>
+            {onInsert && <th />}
           </tr>
         </thead>
         <tbody>
-          {shown.map((l) => (
-            <tr key={l.id}>
-              <td className="mono">{lineIdText(l.id)}</td>
-              <td className="small">{l.text}</td>
-            </tr>
-          ))}
+          {shown.map((l) => {
+            const row = t.find(l.id);
+            const call = scriptLineCall(sets.has(row) ? 'tones' : 'talk', l.id);
+            return (
+              <tr key={l.id}>
+                <td className="mono">{lineIdText(l.id)}</td>
+                <td className="small">{l.text}</td>
+                {onInsert && (
+                  <td>
+                    <button
+                      className="small"
+                      title={`カーソルの位置に ${call} を書きます`}
+                      onClick={() => onInsert(call)}
+                    >
+                      挿入
+                    </button>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </details>
@@ -224,11 +289,14 @@ export function StageScriptDocs({
   session,
   content,
   onAdd,
+  onInsert,
 }: {
   session: LanaiSession;
   content: LanaiContent;
   /** Puts a library function into the script (the editor's text). */
   onAdd?: (f: ScriptLibraryFunction) => void;
+  /** Writes a call at the editor's cursor. */
+  onInsert?: (text: string) => void;
 }): ReactNode {
   const [maps, setMaps] = useState<LanaiMaps | null>(null);
   useEffect(() => {
@@ -268,7 +336,7 @@ export function StageScriptDocs({
       <PopupIconList session={session} />
       <ScriptApiList expanded />
       {maps && <BattleGroups session={session} maps={maps} />}
-      {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} />)}
+      {maps && groups.map((g) => <TalkLines key={g} session={session} maps={maps} group={g} onInsert={onInsert} />)}
     </>
   );
 }

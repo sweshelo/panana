@@ -78,6 +78,12 @@ interface LoadedModel {
   pose: THREE.Object3D | null;
 }
 
+/** The label of an event's number above it (the preview's #N): a sprite of a canvas, kept by its look. */
+interface IdLabel {
+  sprite: THREE.Sprite;
+  key: string;
+}
+
 interface PreviewActor {
   group: THREE.Object3D;
   motion: AnimatedModel | null;
@@ -118,6 +124,15 @@ export class LanaiMapView {
   showLinks = true;
   /** Draw the destinations of the script's move() statements (scriptMoves.ts), which can be dragged. */
   showMoves = true;
+  /** Whether the event numbers (#N) are shown above the records in 3D. */
+  showIds = false;
+  /** Events marked among the numbers (the ones the previewed function names). */
+  private idMarks = new Set<number>();
+  /** The event the preview is acting on now (null: none). */
+  private idActive: number | null = null;
+  private readonly idGroup = new THREE.Group();
+  private readonly idLabels = new Map<number, IdLabel>();
+  private readonly idTextures = new Map<string, THREE.CanvasTexture>();
   /** The move() picked on the map (its numbers are shown on the page); null: none. */
   activeMove: LanaiMoveRef | null = null;
   /** The move() being dragged and where it is now, in world units (written to the script when the button is let go). */
@@ -177,7 +192,14 @@ export class LanaiMapView {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d', 30, hostWindow);
-    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group, this.moveGroup, this.previewGroup);
+    this.scene.scene.add(
+      this.tileLayer.group,
+      this.markers,
+      this.overlay.group,
+      this.moveGroup,
+      this.previewGroup,
+      this.idGroup,
+    );
     // a move() point under the pointer is dragged instead of what the editor's tools do there
     const pointer = (tol: () => number, canvas: HTMLCanvasElement) => ({
       /** Whether the press picked a move() point (the editor's tools then get nothing). */
@@ -261,6 +283,9 @@ export class LanaiMapView {
 
   dispose(): void {
     this.clearPreview();
+    this.clearIds();
+    for (const t of this.idTextures.values()) t.dispose();
+    this.idTextures.clear();
     this.partImages.dispose();
     this.disposed = true;
     this.unsubscribe();
@@ -387,6 +412,7 @@ export class LanaiMapView {
       this.previewGroup.add(group);
       this.previewActors.set(key, { group, motion, factory, started: 0, frames: 0, fallback });
       if (row !== null) for (const visual of this.recordVisuals.get(row) ?? []) visual.visible = false;
+      this.syncIds();
       this.scene.draw();
     } catch (e) {
       factory?.dispose();
@@ -403,6 +429,7 @@ export class LanaiMapView {
   previewSetPosition(who: ScriptWho, x: number, y: number, z: number): void {
     const actor = this.previewActors.get(this.previewKey(who))!;
     actor.group.position.set(x, y, z);
+    this.syncIds();
     this.scene.draw();
   }
 
@@ -491,6 +518,8 @@ export class LanaiMapView {
     this.previewActors.clear();
     for (const visuals of this.recordVisuals.values()) for (const visual of visuals) visual.visible = true;
     this.previewSelf = null;
+    this.idActive = null;
+    this.syncIds();
     if (this.previewCamera) {
       this.scene.camera.position.copy(this.previewCamera.position);
       this.scene.controls.target.copy(this.previewCamera.target);
@@ -768,7 +797,137 @@ export class LanaiMapView {
     }
     this.overlay.sync(doc, sel, layers.room);
     this.syncMoves();
+    this.syncIds();
     this.scene.draw();
+  }
+
+  // ---- the event numbers (#N) above the records
+
+  /** Shows or hides the numbers, and which are marked (the events a function names) and acted on now. */
+  setIds(show: boolean, marks: Set<number> = this.idMarks, active: number | null = this.idActive): void {
+    this.showIds = show;
+    this.idMarks = marks;
+    this.idActive = active;
+    this.syncIds();
+    if (!this.disposed) this.scene.draw();
+  }
+
+  /** The events of this map by number: their first record (point sections) and where it stands. */
+  eventRecords(): Map<number, { section: number; index: number; x: number; z: number }> {
+    const out = new Map<number, { section: number; index: number; x: number; z: number }>();
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash) return out;
+    for (const section of [5, 3, 4, 8] as const)
+      (doc.recs[section] ?? []).forEach((rec, index) => {
+        const row = lanaiRecEventRow(section, rec.raw);
+        if (out.has(row)) return;
+        const [x, z] = recCellPos(rec, LANAI_LAYOUTS[section]!);
+        out.set(row, { section, index, x: cellToWorld(x), z: cellToWorld(z) });
+      });
+    return out;
+  }
+
+  /** What an event is, as the preview names it: its section's record and model. */
+  eventLabel(row: number): string {
+    const rec = this.eventRecords().get(row);
+    if (!rec) return `イベント ${row}`;
+    const look = this.look(rec.section, rec.index);
+    const name = look?.model ? this.modelName(look.model) : '';
+    return `イベント ${row} (区画 ${rec.section}${name ? ` · ${name}` : ''})`;
+  }
+
+  /** The event whose number is under a point of the canvas (client coordinates), or null. */
+  pickId(clientX: number, clientY: number): number | null {
+    if (!this.showIds || !this.idLabels.size) return null;
+    const box = this.scene.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - box.left) / box.width) * 2 - 1,
+      -((clientY - box.top) / box.height) * 2 + 1,
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.scene.camera);
+    const hits = ray.intersectObjects([...this.idLabels.values()].map((l) => l.sprite));
+    const hit = hits[0]?.object;
+    if (!hit) return null;
+    for (const [row, l] of this.idLabels) if (l.sprite === hit) return row;
+    return null;
+  }
+
+  private clearIds(): void {
+    for (const l of this.idLabels.values()) {
+      this.idGroup.remove(l.sprite);
+      l.sprite.material.dispose();
+    }
+    this.idLabels.clear();
+  }
+
+  private idTexture(text: string, color: string, style: 'normal' | 'mark' | 'active'): THREE.CanvasTexture {
+    const key = `${text}/${color}/${style}`;
+    let t = this.idTextures.get(key);
+    if (t) return t;
+    const c = this.scene.canvas.ownerDocument.createElement('canvas');
+    c.width = 128;
+    c.height = 64;
+    const g = c.getContext('2d')!;
+    g.font = 'bold 34px ui-monospace, Menlo, Consolas, monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const w = Math.min(124, g.measureText(text).width + 22);
+    g.fillStyle = style === 'active' ? '#fff1d6' : style === 'mark' ? '#ffd23f' : 'rgba(10, 14, 22, 0.78)';
+    g.strokeStyle = color;
+    g.lineWidth = 5;
+    g.beginPath();
+    g.roundRect((128 - w) / 2, 6, w, 52, 12);
+    g.fill();
+    g.stroke();
+    g.fillStyle = style === 'normal' ? '#ffffff' : '#111111';
+    g.fillText(text, 64, 33);
+    t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this.idTextures.set(key, t);
+    return t;
+  }
+
+  /** The numbers above the records (and the preview's actors standing in for them). */
+  private syncIds(): void {
+    if (!this.showIds) {
+      if (this.idLabels.size) this.clearIds();
+      return;
+    }
+    const records = this.eventRecords();
+    for (const [row, l] of this.idLabels)
+      if (!records.has(row)) {
+        this.idGroup.remove(l.sprite);
+        l.sprite.material.dispose();
+        this.idLabels.delete(row);
+      }
+    for (const [row, rec] of records) {
+      const style = row === this.idActive ? 'active' : this.idMarks.has(row) ? 'mark' : 'normal';
+      const color = SECTION_COLORS[rec.section] ?? '#ffffff';
+      const key = `${row}/${color}/${style}`;
+      let l = this.idLabels.get(row);
+      if (!l || l.key !== key) {
+        if (l) {
+          this.idGroup.remove(l.sprite);
+          l.sprite.material.dispose();
+        }
+        const material = new THREE.SpriteMaterial({
+          map: this.idTexture(`#${row}`, color, style),
+          depthTest: false,
+          transparent: true,
+        });
+        const sprite = new THREE.Sprite(material);
+        sprite.renderOrder = 10;
+        l = { sprite, key };
+        this.idGroup.add(sprite);
+        this.idLabels.set(row, l);
+      }
+      const actor = this.previewActors.get(`chara:${row}`);
+      const at = actor ? actor.group.position : new THREE.Vector3(rec.x, 0, rec.z);
+      const scale = style === 'normal' ? 1 : 1.3;
+      l.sprite.scale.set(260 * scale, 130 * scale, 1);
+      l.sprite.position.set(at.x, 420, at.z);
+    }
   }
 
   // ---- move() of the script

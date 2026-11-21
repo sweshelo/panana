@@ -16,7 +16,7 @@ import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
 import { lanaiCharaRowBytes } from './mapObjects';
 import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiText } from './message';
-import { talkColumns, TALK_SPEAKER } from './talk';
+import { setTalkVoice, talkColumns, talkVoice, TALK_SPEAKER, TALK_TONES } from './talk';
 import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -590,6 +590,16 @@ export class LanaiMaps {
     return lanaiAppendTalkRow(t, encodeLanaiMessage(parseLanaiText(text)), speaker);
   }
 
+  /**
+   * Append the eight tones of a line of the lead 電波人間 to a group's talk table (speaker kinds 1〜8 in a row, what
+   * StartMessageAuto picks from) and return the first row, whose ID the script names. `texts` are the tones 1〜8.
+   */
+  addTalkSet(group: number, texts: string[]): number {
+    const t = this.talkTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の台詞の表がありません`);
+    return lanaiAppendTalkSet(t, texts);
+  }
+
   /** The lines an edit added to a group's talk table (an undo point of the map page; the ROM's rows are not in it). */
   talkRows(group: number): LanaiTalkRows | null {
     const t = this.talkTable(group);
@@ -600,6 +610,7 @@ export class LanaiMaps {
       added.push({
         speaker: t.u8(r, TALK_SPEAKER),
         message: t.isString(r, cols.message) ? lanaiMessageBytes(t.data, t.u32(r, cols.message)).slice() : null,
+        voice: talkVoice({ table: t }, r),
       });
     return { group, rows: t.rows, added };
   }
@@ -616,7 +627,8 @@ export class LanaiMaps {
     for (let r = t.rows; r < saved.rows; r++) {
       const row = saved.added[r - t.originalRows];
       if (!row?.message) break;
-      lanaiAppendTalkRow(t, row.message, row.speaker);
+      const added = lanaiAppendTalkRow(t, row.message, row.speaker);
+      if (row.voice) setTalkVoice({ table: t }, added, row.voice);
     }
   }
 
@@ -889,7 +901,7 @@ export interface LanaiTalkRows {
   /** Rows of the table then. */
   rows: number;
   /** The rows after the ROM's: the speaker kind and the message's bytes (null: the field is not a string). */
-  added: { speaker: number; message: Uint8Array | null }[];
+  added: { speaker: number; message: Uint8Array | null; voice?: string }[];
 }
 
 /** Appends a row with the message `bytes` (encoded, with its terminator) to a talk table; returns its row. */
@@ -904,6 +916,18 @@ export function lanaiAppendTalkRow(t: LanaiTable, bytes: Uint8Array, speaker: nu
   t.setString(row, cols.message, bytes);
   if (cols.voice >= 0 && t.isString(row, cols.voice)) t.setString(row, cols.voice, new Uint8Array(2));
   return row;
+}
+
+/**
+ * Appends the eight tones of a line (speaker kinds 1〜8 in a row: StartMessageAuto adds the lead's personality to the
+ * first row's place) with the texts `texts` (the text form of message.ts, tones 1〜8); returns the first row.
+ */
+export function lanaiAppendTalkSet(t: LanaiTable, texts: string[]): number {
+  if (texts.length !== TALK_TONES) throw new Error(`性格違いの組は ${TALK_TONES} 行です`);
+  const bytes = texts.map((x) => encodeLanaiMessage(parseLanaiText(x)));
+  const first = lanaiAppendTalkRow(t, bytes[0]!, 1);
+  for (let k = 1; k < TALK_TONES; k++) lanaiAppendTalkRow(t, bytes[k]!, k + 1);
+  return first;
 }
 
 /** A copy of a table's rows (an undo point). */

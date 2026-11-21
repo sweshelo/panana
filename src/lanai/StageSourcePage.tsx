@@ -1,8 +1,10 @@
 // The script editor of an added stage: the only place its variables and functions are written. What the functions are
 // given to is set on the map's page (the record's "スクリプトの関数") and on the stage's page, so it is not in this
 // text. The text is saved when the editor loses the focus (or with the button); a move() dragged on the map's page
-// comes in function by function.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// comes in function by function. The lines of talk the editor shows and adds (ScriptLineDialog.tsx) are of the MapGroup
+// of the map the preview shows.
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useAsync } from '../ui/useAsync';
 import { contentTitle, type LanaiContent } from './contents';
 import {
   docWithCode,
@@ -12,14 +14,25 @@ import {
   scriptDocSource,
   type ScriptBinding,
 } from './eventScript';
-import { ScriptCodeEditor } from './ScriptCodeEditor';
+import { ScriptCodeEditor, type ScriptCodeInsert } from './ScriptCodeEditor';
+import { ScriptLineDialog } from './ScriptLineDialog';
+import type { LanaiMapInfo } from './maps';
 import { SCRIPT_SAMPLES, type ScriptSample } from './scriptDoc';
-import { bindingLabel, StageScriptDocs } from './StageScriptEditor';
+import { bindingLabel, StageScriptDocs, stageScriptAssist } from './StageScriptEditor';
 import type { ScriptLibraryFunction } from './scriptLibrary';
 import type { LanaiSession } from './session';
 import { checkStageScript } from './stageScript';
 import { useLanaiRevision } from './MonsterEditor';
 import { StagePreviewScene } from './ScriptPreview';
+
+/** The names of the variables a text declares ([] when it does not read). */
+function declaredVars(text: string): string[] {
+  try {
+    return scriptDocFromSource(text).vars.map((v) => v.name);
+  } catch {
+    return [];
+  }
+}
 
 /** The names of the functions and variables a text declares ([] when it does not read). */
 function declaredNames(text: string): string[] {
@@ -43,7 +56,7 @@ export function LanaiStageSourcePage({
   hostWindow?: Window;
 }): ReactNode {
   const activeWindow = hostWindow ?? (typeof window === 'undefined' ? undefined : window);
-  useLanaiRevision(session);
+  const revision = useLanaiRevision(session);
   const archive = content?.archive.toUpperCase() ?? '';
   const stored = session.stageScripts.get(archive);
   const applied = scriptDocCode(stored?.doc);
@@ -55,6 +68,22 @@ export function LanaiStageSourcePage({
   const [dropping, setDropping] = useState<ScriptBinding[]>([]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const insertRef = useRef<ScriptCodeInsert | null>(null);
+  const loaded = useAsync(
+    async () => (content ? (await import('./maps')).lanaiMaps(session, content) : null),
+    [session, content],
+  );
+  const maps = loaded && !(loaded instanceof Error) ? loaded : null;
+  /** The map the preview shows: its MapGroup's lines are the ones the editor names. */
+  const [map, setMap] = useState<LanaiMapInfo | undefined>(undefined);
+  const group = map?.dungeon;
+  const [adding, setAdding] = useState(false);
+  // the names as one string: the help is made again only when they change
+  const vars = declaredVars(source).join(' ');
+  const assist = useMemo(
+    () => (maps ? stageScriptAssist(session, maps, group, vars ? vars.split(' ') : []) : undefined),
+    [session, maps, group, vars, revision],
+  );
   // The script changed elsewhere: a text not edited here takes it; an edited one takes what it left as it was.
   // (What is given to the functions is not in the text: a change of that alone changes nothing here.)
   if (seen !== applied) {
@@ -187,6 +216,8 @@ export function LanaiStageSourcePage({
             value={source}
             onChange={setSource}
             onBlur={() => void latestSave.current(false)}
+            assist={assist}
+            insertRef={insertRef}
           />
           {error && (
             <pre className="error" role="alert">
@@ -199,6 +230,13 @@ export function LanaiStageSourcePage({
             </p>
           )}
           <div className="row">
+            <button
+              disabled={!maps || group === undefined || !maps.talkTable(group)}
+              title="台詞の表に新しい台詞を足し、それを出す呼び出しをカーソルの位置に書きます (MapGroup は演出プレビューのマップのもの)"
+              onClick={() => setAdding(true)}
+            >
+              {`＋ 台詞を追加${group === undefined ? '' : ` (MapGroup ${group})`}`}
+            </button>
             {SCRIPT_SAMPLES.map((s) => (
               <button key={s.name} onClick={() => addSample(s)}>{`例: ${s.name}`}</button>
             ))}
@@ -222,10 +260,33 @@ export function LanaiStageSourcePage({
           </p>
         </section>
         <aside className="stage-source-docs" aria-label="関数ドキュメント">
-          <StagePreviewScene session={session} content={content} source={source} />
-          <StageScriptDocs session={session} content={content} onAdd={addLibrary} />
+          <StagePreviewScene
+            session={session}
+            content={content}
+            source={source}
+            onMap={setMap}
+            onInsert={(text) => insertRef.current?.insert(text)}
+          />
+          <StageScriptDocs
+            session={session}
+            content={content}
+            onAdd={addLibrary}
+            onInsert={(text) => insertRef.current?.insert(text)}
+          />
         </aside>
       </div>
+      {adding && maps && group !== undefined && (
+        <ScriptLineDialog
+          session={session}
+          maps={maps}
+          group={group}
+          onInsert={(call) => {
+            insertRef.current?.insert(call);
+            setNote(`MapGroup ${group} の台詞の表に足して、${call} を書きました。保存すると反映されます`);
+          }}
+          onClose={() => setAdding(false)}
+        />
+      )}
     </main>
   );
 }

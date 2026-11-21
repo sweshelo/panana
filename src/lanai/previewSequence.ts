@@ -106,3 +106,37 @@ export async function runPreviewNodes(
     if (action.kind === 'return') return;
   }
 }
+
+/** Script API functions whose first argument is an event's number (not an object). */
+const ROW_ARG_CALLS = [
+  'SetDoorOpenFlag',
+  'SetDoorCloseFlag',
+  'DeleteEventObject',
+  'EnableEventCollision',
+  'GetScriptState',
+  'GetMapChara',
+];
+
+/**
+ * The events a function's statements name: obj(N) anywhere (receivers, arguments, conditions), self as `self`, and
+ * the event numbers of the calls that take one. The preview marks them on the map.
+ */
+export function previewReferencedRows(nodes: readonly ScriptNode[], self: number | null): Set<number> {
+  const out = new Set<number>();
+  const seen = new Set<unknown>();
+  const visit = (v: unknown): void => {
+    if (!v || typeof v !== 'object' || seen.has(v)) return;
+    seen.add(v);
+    if (Array.isArray(v)) return v.forEach(visit);
+    const o = v as Record<string, unknown>;
+    if (o.kind === 'chara' && typeof o.row === 'number') out.add(o.row);
+    if (o.kind === 'self' && self !== null) out.add(self);
+    if (typeof o.name === 'string' && Array.isArray(o.args) && ROW_ARG_CALLS.includes(o.name.split('::')[1] ?? '')) {
+      const first = (o.args as ScriptArg[]).find((a) => a.k !== 'm');
+      if (first?.k === 'i') out.add(first.v);
+    }
+    for (const x of Object.values(o)) visit(x);
+  };
+  visit(nodes);
+  return out;
+}

@@ -63,14 +63,19 @@ describe('RPG FREE! stage script: the document of the editor', () => {
   });
 
   test('the samples read, and their functions can be given as the sample says', () => {
-    expect(SCRIPT_SAMPLES.length).toBe(2);
+    expect(SCRIPT_SAMPLES.length).toBe(4);
     for (const s of SCRIPT_SAMPLES) {
       const d = scriptDocFromSource(s.source);
       expect(d.bindings).toEqual([]);
       expect(d.functions.length).toBe(s.give.length);
       for (const g of s.give) expect(d.functions.map((f) => f.name)).toContain(g.split(' ')[0]!);
     }
-    const [door, boss] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    const [door, boss, look, level] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    // the camera samples build for any event (no self)
+    expect(scriptOfDoc(docBound(look!, { trigger: 'area', group: 1, row: 4, fn: 'look_at' })).events.length).toBe(1);
+    expect(scriptOfDoc(docBound(level!, { trigger: 'area', group: 1, row: 4, fn: 'look_level' })).events.length).toBe(
+      1,
+    );
     expect(
       scriptOfDoc(docBound(door!, { trigger: 'button', group: 1, row: 7, fn: 'open_door' })).events[0]!.trigger,
     ).toBe('button');

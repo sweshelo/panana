@@ -5,7 +5,7 @@ import { parseStageScript, scriptExprText, type ScriptArg, type ScriptNode, type
 import { LanaiEditState } from './mapedit';
 import type { LanaiMapInfo } from './maps';
 import { LanaiMapView } from './mapview';
-import { runPreviewNodes } from './previewSequence';
+import { previewReferencedRows, runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
 import { soundPlayer } from '../sound/player';
@@ -76,6 +76,14 @@ export function ScriptPreviewControls({
   const fn = script.value?.functions.find((f) => f.name === functionName);
   const binding = script.value?.events.find((e) => e.fn === functionName && e.group === view.info.dungeon);
   const self = binding && binding.trigger !== 'start' && binding.trigger !== 'intro' ? binding.row : null;
+  // the events the function names are marked among the numbers
+  useEffect(() => {
+    view.setIds(view.showIds, previewReferencedRows(fn?.body ?? [], self), null);
+    return () => view.setIds(view.showIds, new Set(), null);
+  }, [view, fn, self]);
+  /** The event the statement acts on (its number is lit while it runs). */
+  const rowOf = (who: ScriptWho | null | undefined): number | null =>
+    !who || who.kind === 'hero' ? null : who.kind === 'self' ? self : who.row;
   useEffect(() => {
     view.scene.canvas.style.filter = `brightness(${1 - fade})`;
     return () => {
@@ -144,6 +152,7 @@ export function ScriptPreviewControls({
         alive,
         async (action, node, index) => {
           setStatus(`${index + 1} / ${fn.body.length}: ${previewCommand(node)}`);
+          view.setIds(view.showIds, undefined, 'who' in action ? rowOf(action.who) : null);
           switch (action.kind) {
             case 'anim': {
               await ensure(action.who);
@@ -297,11 +306,19 @@ export function StagePreviewScene({
   session,
   content,
   source,
+  onMap,
+  onInsert,
 }: {
   session: LanaiSession;
   content: LanaiContent;
   source: string;
+  /** Told the map shown (its MapGroup is the one the editor's lines of talk are of). */
+  onMap?: (info: LanaiMapInfo | undefined) => void;
+  /** Writes a text at the editor's cursor (obj(N) of a picked event). */
+  onInsert?: (text: string) => void;
 }): ReactNode {
+  const [showIds, setShowIds] = useState(true);
+  const [picked, setPicked] = useState<number | null>(null);
   const loaded = useAsync(() => import('./maps').then((m) => m.lanaiMaps(session, content)), [session, content]);
   const maps = loaded && !(loaded instanceof Error) ? loaded : null;
   const [name, setName] = useState('');
@@ -309,6 +326,9 @@ export function StagePreviewScene({
   const host = useRef<HTMLDivElement>(null);
   const options = maps?.maps.filter((m) => !m.world) ?? [];
   const info = options.find((m) => m.name === name) ?? options[0];
+  const latestOnMap = useRef(onMap);
+  latestOnMap.current = onMap;
+  useEffect(() => latestOnMap.current?.(info), [info]);
   useEffect(() => {
     if (!maps || !info || !host.current) return;
     const container = host.current;
@@ -332,7 +352,20 @@ export function StagePreviewScene({
     next.scene.canvas.addEventListener('mousedown', preventMiddleDrag, { capture: true });
     next.scene.canvas.addEventListener('auxclick', preventMiddleDrag);
     container.append(next.scene.canvas);
+    // a click (not a drag) on a number picks its event
+    let down: [number, number] | null = null;
+    const press = (event: PointerEvent): void => {
+      down = [event.clientX, event.clientY];
+    };
+    const release = (event: PointerEvent): void => {
+      if (!down || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) return;
+      const row = next.pickId(event.clientX, event.clientY);
+      if (row !== null) setPicked(row);
+    };
+    next.scene.canvas.addEventListener('pointerdown', press);
+    next.scene.canvas.addEventListener('pointerup', release);
     setView(next);
+    setPicked(null);
     const frame = hostWindow.requestAnimationFrame(() => {
       next.scene.resizeToCanvas();
       next.fit();
@@ -343,12 +376,15 @@ export function StagePreviewScene({
       next.scene.canvas.removeEventListener('pointerdown', preventMiddleDrag, true);
       next.scene.canvas.removeEventListener('mousedown', preventMiddleDrag, true);
       next.scene.canvas.removeEventListener('auxclick', preventMiddleDrag);
+      next.scene.canvas.removeEventListener('pointerdown', press);
+      next.scene.canvas.removeEventListener('pointerup', release);
       next.scene.canvas.remove();
       next.dispose();
       state.dispose();
       setView(null);
     };
   }, [maps, info]);
+  useEffect(() => view?.setIds(showIds), [view, showIds]);
   return (
     <section className="stage-preview" aria-label="演出プレビュー">
       <div className="row">
@@ -367,6 +403,30 @@ export function StagePreviewScene({
       {loaded instanceof Error && <p className="error small">{loaded.message}</p>}
       {!loaded && <p className="muted small">マップを読み込み中…</p>}
       <div className="stage-preview-canvas" ref={host} />
+      {view && (
+        <div className="row small">
+          <label>
+            <input type="checkbox" checked={showIds} onChange={(e) => setShowIds(e.target.checked)} />
+            イベント番号 (#N) を表示
+          </label>
+          <span className="muted">
+            黄色は選んだ関数が使うイベント、白は再生中に動かしているもの。番号をクリックすると obj(番号) を書けます。
+          </span>
+        </div>
+      )}
+      {view && picked !== null && (
+        <div className="row small">
+          <span>{view.eventLabel(picked)}</span>
+          {onInsert && (
+            <button className="small" onClick={() => onInsert(`obj(${picked})`)}>
+              {`obj(${picked}) をカーソルの位置に書く`}
+            </button>
+          )}
+          <button className="small" onClick={() => setPicked(null)}>
+            閉じる
+          </button>
+        </div>
+      )}
       {view && <p className="muted small">ドラッグで回転、ホイールで拡大・縮小できます。</p>}
       {view && <ScriptPreviewControls key={info?.hash} view={view} source={source} />}
     </section>

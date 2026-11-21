@@ -182,6 +182,34 @@ function after_battle() {
 }
 `,
   },
+  {
+    name: 'カメラを物・キャラへ向ける',
+    about:
+      'カメラを、指定した物・キャラのほうへ 1.5 秒かけて動かし、少し見せてからフィールドの視点へ戻します。5 のところに、向けたい物のイベント番号を書きます (自分なら self、先頭の電波人間なら hero)。中の 3 行はライブラリの camera(obj(5), 1.5) と同じなので、1 行で書いてもかまいません。',
+    give: ['look_at → 好きなレコード (話しかけたとき・ボタンを踏んだときなど)'],
+    source: `function look_at() {
+  ScriptCamera.PauseCameraUpdater()   // ① フィールドの自動追従を止める (イベントで 1 回)
+  // ② obj(5) へ 1.5 秒で向ける。vec(0, 0, 0) 2 つと最後の 2 は本家と同じ値のままでよい
+  ScriptCamera.MoveEyeAndTarget(obj(5), 1.5, vec(0, 0, 0), vec(0, 0, 0), 2)
+  ScriptCamera.WaitAnimation()        // ③ カメラが動き終わるまで待つ
+  ScriptSystem.WaitTime(1)            // 1 秒見せる
+  cameraBack(1)                       // ④ 1 秒でフィールドの視点へ戻し、自動追従を再開する
+}
+`,
+  },
+  {
+    name: 'カメラを水平にする',
+    about:
+      '眼 (カメラの位置) と注視点 (見る場所) の高さ y を同じにすると、カメラは水平になります (眼を低くすると見上げ、高くすると見下ろし)。ライブラリの cameraLook(眼 x, 眼 y, 眼 z, 注視点 x, 注視点 y, 注視点 z, 秒) で 1.5 秒かけて動かします。例はセル (7, 5) の中心 (x = 250 + 500 × 7、z = 250 + 500 × 5) を高さ 300 で、+Z 側に 1800 離れて見ます (距離と高さは本家 CRO 124 の値に近い)。フィールドのカメラは +Z 側から −Z を見ているので、眼の z を注視点より大きくすると、いつもと同じ向きのまま水平になります。',
+    give: ['look_level → 好きなレコード (話しかけたとき・ボタンを踏んだときなど)'],
+    source: `function look_level() {
+  // 注視点: (3750, 300, 2750)  眼: (3750, 300, 4550) … 高さ 300 がそろっているので水平
+  cameraLook(3750, 300, 4550, 3750, 300, 2750, 1.5)
+  ScriptSystem.WaitTime(1)   // 1 秒見せる
+  cameraBack(1)              // フィールドの視点へ戻す
+}
+`,
+  },
 ];
 
 /** The Script API functions (and the library's talk) whose first argument is a line of talk. */

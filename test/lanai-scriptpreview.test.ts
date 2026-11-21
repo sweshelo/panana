@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseStageScript } from '../src/lanai/eventScript';
-import { previewAction, runPreviewNodes } from '../src/lanai/previewSequence';
+import { previewAction, previewReferencedRows, runPreviewNodes } from '../src/lanai/previewSequence';
 
 const body = (source: string) => parseStageScript(`function demo() { ${source} }`).functions[0]!.body;
 
@@ -101,4 +101,17 @@ test('preview logs a failed visual action and continues', async () => {
     (node, _index, reason) => seen.push(`skip ${node.op}: ${reason}`),
   );
   expect(seen).toEqual(['skip call: モデルにモーションがありません', 'show']);
+});
+
+test('the events a function names are found for the preview to mark', () => {
+  const rows = (source: string, self: number | null = null) =>
+    [...previewReferencedRows(body(source), self)].sort((a, b) => a - b);
+  // obj(N) as the receiver, as an argument, and after the library's functions are written out
+  expect(rows('face(obj(3), hero); camera(obj(7), 1)')).toEqual([3, 7]);
+  // the event numbers of the calls that take one, and inside a condition's branches
+  expect(rows('openDoor(5); if (ScriptMap.GetMapChara(9)) { ScriptMap.DeleteEventObject(9) }')).toEqual([5, 9]);
+  // self is the event the function is given to
+  expect(rows('talk(0x80000001)', 12)).toEqual([12]);
+  expect(rows('talk(0x80000001)')).toEqual([]);
+  expect(rows('hero.SetVisible(false)')).toEqual([]);
 });
