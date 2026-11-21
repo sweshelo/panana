@@ -362,6 +362,49 @@ export function lanaiClerks(maps: LanaiMaps, shops?: LanaiContentShops | null): 
   return out;
 }
 
+/**
+ * The numbers of the shared limits (ShopItem +0x28): the save keeps one count per number for the whole game (FlagData
+ * 0x9A, 200 values, indexed by +0x28 alone: FUN_002AEED4 reads it at 0x002AEF18, the purchase writes it at 0x0045F0A8),
+ * so the rows of one number share it across shops and contents. A number of 200 or more is not kept.
+ */
+export const LANAI_SHARED_COUNTERS = 200;
+
+/** A row of a shop that has a shared limit (+0x27) or a number of one (+0x28). */
+export interface LanaiSharedCounterUse {
+  counter: number;
+  limit: number;
+  content: number;
+  shop: number;
+  /** Place in the shop's stock. */
+  index: number;
+  item: number;
+}
+
+/** The rows of the contents' shops with a shared limit or its number (by number, then content, shop and place). */
+export async function lanaiSharedCounterUses(
+  session: LanaiSession,
+  contents: LanaiContent[],
+): Promise<LanaiSharedCounterUse[]> {
+  const out: LanaiSharedCounterUse[] = [];
+  for (const c of contents) {
+    const s = await lanaiShops(session, c);
+    for (const sh of s?.shops ?? [])
+      s!.rows(sh.row).forEach((r, index) => {
+        const counter = r.bytes[SHOP_SHARED_COUNTER]!;
+        const limit = r.bytes[SHOP_SHARED_LIMIT]!;
+        if (counter || limit) out.push({ counter, limit, content: c.index, shop: sh.row, index, item: r.item });
+      });
+  }
+  return out.sort((a, b) => a.counter - b.counter || a.content - b.content || a.shop - b.shop || a.index - b.index);
+}
+
+/** The lowest number (1〜199) no row of `uses` has (-1: none left). */
+export function lanaiFreeSharedCounter(uses: LanaiSharedCounterUse[]): number {
+  const used = new Set(uses.map((u) => u.counter));
+  for (let n = 1; n < LANAI_SHARED_COUNTERS; n++) if (!used.has(n)) return n;
+  return -1;
+}
+
 /** The random slots the save keeps (FlagData 0x97: 100 values; number 0 is no slot). */
 export const LANAI_SHOP_SLOTS = 99;
 

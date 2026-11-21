@@ -11,6 +11,8 @@ import { lanaiItems } from '../src/lanai/items';
 import {
   LanaiContentShops,
   lanaiClerks,
+  lanaiFreeSharedCounter,
+  lanaiSharedCounterUses,
   lanaiInSlotPool,
   lanaiSetSlotPool,
   lanaiShopRowBytes,
@@ -239,6 +241,25 @@ describe.skipIf(!hasLanai)('RPG FREE! shops (ROM)', () => {
     const clerks = lanaiClerks(await lanaiMaps(session, c), shops);
     expect(new Set(clerks.map((k) => k.type))).toEqual(new Set([0x80000033]));
     expect([...new Set(clerks.map((k) => k.shop))].sort((a, b) => a - b)).toEqual([...Array(36).keys()]);
+  }, 300000);
+
+  test('shared limits: 219 rows of 51 numbers in contents 0 and 97 (+ one number without a limit), none across contents', async () => {
+    const uses = await lanaiSharedCounterUses(session, lanaiContents(session));
+    const limited = uses.filter((u) => u.limit);
+    expect(limited.length).toBe(219);
+    expect(new Set(limited.map((u) => u.counter)).size).toBe(51);
+    expect(new Set(uses.map((u) => u.content))).toEqual(new Set([0, 97]));
+    expect(uses.filter((u) => !u.limit).map((u) => [u.content, u.shop, u.counter])).toEqual([[0, 3, 6]]);
+    // one number is shared by the rows of several shops of content 97 (124: the seeds of shops 12 and 13 …)
+    const n124 = uses.filter((u) => u.counter === 124);
+    expect(new Set(n124.map((u) => u.content))).toEqual(new Set([97]));
+    expect(n124.map((u) => u.shop)).toEqual(expect.arrayContaining([12, 13]));
+    const byNumber = new Map<number, Set<number>>();
+    for (const u of uses) byNumber.set(u.counter, (byNumber.get(u.counter) ?? new Set()).add(u.content));
+    for (const cs of byNumber.values()) expect(cs.size).toBe(1);
+    expect(lanaiFreeSharedCounter(uses)).toBe(7);
+    const html = renderToString(<LanaiShopPage session={session} arg="shared.124" />);
+    expect(html).toContain('共通の上限の番号');
   }, 300000);
 
   test('content 0, shop 2: 35 random slots (+0x00 a kind, +0x25 the slot), each drawing from items of its kind', async () => {
