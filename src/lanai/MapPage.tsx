@@ -95,6 +95,9 @@ import {
   MonsterGroupRowSelect,
   MonsterGroupSelect,
   ShopSelect,
+  DoorConsumeSelect,
+  DoorItemSelect,
+  DoorSoundSelect,
   TreasureEditor,
 } from './MapParts';
 import { LanaiNamesDialog, LanaiNewGroupDialog, LanaiNewMapDialog } from './MapEditDialogs';
@@ -1947,6 +1950,18 @@ function ActionFields({
               <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
             ) : pick === 'shop' ? (
               <ShopSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
+            ) : pick === 'key' || pick === 'idol' ? (
+              <DoorItemSelect
+                maps={st.maps}
+                value={arg(i)}
+                which={pick}
+                allowNone={pick === 'key'}
+                onChange={(v) => setArg(i, v)}
+              />
+            ) : pick === 'consume' ? (
+              <DoorConsumeSelect value={arg(i)} onChange={(v) => setArg(i, v)} />
+            ) : pick === 'doorSound' ? (
+              <DoorSoundSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
             ) : pick === 'content' ? (
               <ContentSelect
                 maps={st.maps}

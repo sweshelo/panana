@@ -2490,9 +2490,21 @@ export function compileStageScript(
       d0.tail(A.del);
       // CtrlFlag: played in this visit
       const ctrl = new Fn(g, `${e.cls}_ctrl`);
-      ctrl.load('r0', e.intro.flag);
-      ctrl.op('mov r1, #1');
-      ctrl.tail(A.setBit);
+      if (e.intro.gate?.door) {
+        // and closes the gate again (D01Intro vt+0x10, CRO 28 0x1260: SetScriptBitFlag(0xB1, 1); SetDoorCloseFlag(1)):
+        // arriving at the start point leaves its door open (state and collision), the close animation is only a look
+        ctrl.op('push {r4, lr}');
+        ctrl.load('r0', e.intro.flag);
+        ctrl.op('mov r1, #1');
+        ctrl.call(A.setBit);
+        ctrl.load('r0', e.intro.gate.door);
+        ctrl.op('pop {r4, lr}');
+        ctrl.tail(A.doorClose);
+      } else {
+        ctrl.load('r0', e.intro.flag);
+        ctrl.op('mov r1, #1');
+        ctrl.tail(A.setBit);
+      }
       fns.push(ctrl);
       if (e.intro.gate?.door) {
         // the door stands open: ScriptChara(GetMapChara(door)).StartAnimation(0x8000006E, 0, 1.0, 0.0)

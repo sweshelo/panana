@@ -20,7 +20,7 @@ import {
 import { lanaiTileModels } from '../src/lanai/mapModels';
 import { addLanaiMapData } from '../src/lanai/mapadd';
 import { openImages } from '../src/rom/dump';
-import { u32 } from '../src/util/bytes';
+import { hex8, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
@@ -342,5 +342,20 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     await restored.restore(s.saved());
     const romAgain = await lanaiMaps(restored, lanaiContents(restored)[28]!);
     expect(mapDataTileset(romAgain, row)).toBe(next.entry);
+  });
+
+  test('a door opened only from outside that an exit leads to is flagged (it stands open on arrival)', () => {
+    const { info, doc, rec } = start();
+    const key = `arrivaldoor/${hex8(u32(rec.raw, 0))}`;
+    expect(lanaiValidateAll(maps, info, doc).some((i) => i.key === key)).toBe(false);
+    // another exit of the map leading to the gate's point
+    const row = maps.addNewEventRow(1, 0x80000016, 0);
+    const events = maps.eventTable(1)!;
+    events.setU32(row, 0x14, info.hash);
+    events.setU32(row, 0x18, u32(rec.raw, 0));
+    const raw = rec.raw.slice();
+    raw.set([0x78, 0x56, 0x34, 0x12, row & 0xff, row >> 8, 0, 0], 0);
+    const withExit = { ...doc, recs: { ...doc.recs, 3: [...doc.recs[3]!, { ...rec, raw }] } };
+    expect(lanaiValidateAll(maps, info, withExit).some((i) => i.key === key)).toBe(true);
   });
 });

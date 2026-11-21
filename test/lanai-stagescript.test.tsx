@@ -361,6 +361,19 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(has('var N: byte\non intro(1) { N++ }', 'str r0, [sp, #0x348]')).toBe(true);
   });
 
+  test("an intro with a gate closes the gate's door again when its flag is set (D01Intro's CtrlFlag)", async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const imports = (door: number): string[] => {
+      const intro = { map: 1, flag: STAGE_BIT_FLAGS.first, gate: { x: 5, z: 11, dir: 4 as const, door } };
+      const cro = compileStageScript(base, parseStageScript('on intro(1) {}'), [], { 1: intro }).cro;
+      return cro.namedImports.map((x) => x.name);
+    };
+    expect(imports(1)).toContain(SCRIPT_API.doorClose);
+    expect(imports(0)).not.toContain(SCRIPT_API.doorClose);
+  });
+
   test('a library function builds the same code as its text written out in the script', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;

@@ -19,6 +19,8 @@ import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './ma
 import { lanaiItemName } from './monsterBook';
 import { lanaiMonsters } from './monsters';
 import { lanaiItemEntry, LanaiItemPicker, lanaiMonsterIcon } from './pickers';
+import { lanaiItems } from './items';
+import { SoundButton } from '../ui/SoundPicker';
 import {
   LANAI_CHEST_ACTIONS,
   LANAI_TREASURE_BATTLE,
@@ -675,5 +677,131 @@ function TreasureStage({
         />
       )}
     </div>
+  );
+}
+
+// ---- Doors (actions 0x15 / 0x16 / 0x19 / 0x1C / 0x38 / 0x39 / 0x3B / 0x3C: roms survey 2026-11-21)
+
+/** ItemDataCore +0x32 of the items a door takes: keys (かぎ) and the idols of 0x3B / 0x3C (あかし). */
+export const LANAI_DOOR_ITEM_KIND = { key: 0x16, idol: 0x27 } as const;
+
+/**
+ * The key (or idol) of a door: 0 = none (a key door opens without one; the confirming doors 0x38 / 0x39 then stay
+ * shut), else an ItemData row number as the shipped doors have it (JudgeOpen 0x18F618 passes the value to GetItemNum
+ * untouched: below 0x80000000 a row number, else a row ID). The list has the items of the kind; any other item can be
+ * picked from the item picker.
+ */
+export function DoorItemSelect({
+  maps,
+  value,
+  which,
+  allowNone,
+  onChange,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  which: keyof typeof LANAI_DOOR_ITEM_KIND;
+  allowNone: boolean;
+  onChange: (v: number) => void;
+}): ReactNode {
+  const session = maps.session;
+  useLanaiRevision(session);
+  const [picking, setPicking] = useState(false);
+  const items = lanaiItems(session).filter((it) => it.kind === LANAI_DOOR_ITEM_KIND[which]);
+  const listed = (value === 0 && allowNone) || items.some((it) => it.row === value);
+  return (
+    <>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value) >>> 0)}>
+        {allowNone && <option value={0}>{which === 'key' ? '0: 鍵なし' : '0: なし'}</option>}
+        {!listed && (
+          <option value={value}>
+            {value
+              ? `${hex8(value)
+                  .toUpperCase()
+                  .replace(/^0+(?=.)/, '')}: ${lanaiItemName(session, value)}`
+              : '0: なし (この扉では開きません)'}
+          </option>
+        )}
+        {items.map((it) => (
+          <option key={it.row} value={it.row}>{`${it.row.toString(16).toUpperCase()}: ${it.name}`}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="small"
+        onClick={() => setPicking(true)}
+        title="鍵・あかし以外のアイテムも選べます"
+      >
+        ほかのアイテム…
+      </button>
+      {picking && (
+        <LanaiItemPicker
+          session={session}
+          current={value}
+          title={which === 'key' ? '扉の鍵にするアイテム' : 'はめる像にするアイテム'}
+          onPick={(row) => {
+            setPicking(false);
+            onChange(row);
+          }}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** Whether the door's key is used up when it opens (only 1 is used in the data; any value but 0 counts). */
+export function DoorConsumeSelect({ value, onChange }: { value: number; onChange: (v: number) => void }): ReactNode {
+  return (
+    <select value={value ? 1 : 0} onChange={(e) => onChange(Number(e.target.value))}>
+      <option value={0}>0: 減らない</option>
+      <option value={1}>1: 開けると 1 個減る</option>
+    </select>
+  );
+}
+
+/** The sounds the shipped doors open with (SoundData rows): 0x7A 32 times, 0x8C 50 times. */
+export const LANAI_DOOR_SOUNDS = [0x7a, 0x8c] as const;
+
+/**
+ * The sound a door opens with (a SoundData row, kept as u16 by the factories). 0 is no sound for the backdoor, the
+ * door "standing open" for 0x19 / 0x1A / 0x1B, and is played as row 0 by 0x15.
+ */
+export function DoorSoundSelect({
+  maps,
+  value,
+  onChange,
+}: {
+  maps: LanaiMaps;
+  value: number;
+  onChange: (v: number) => void;
+}): ReactNode {
+  const session = maps.session;
+  const revision = useLanaiRevision(session);
+  const sounds = useAsync(() => session.sounds(), [session, revision]);
+  const rows = session.table('SoundData')?.rows ?? 0;
+  const outside = rows > 0 && (value & 0xffff) >= rows;
+  return (
+    <>
+      {sounds && !(sounds instanceof Error) ? (
+        <SoundButton
+          game={session}
+          sounds={sounds}
+          value={value}
+          kind="se"
+          max={0xffff}
+          title="扉が開く音を選ぶ"
+          onChange={onChange}
+        />
+      ) : (
+        <HexSelectFallback value={value} text={sounds ? sounds.message : '音の一覧を読み込み中…'} />
+      )}
+      {LANAI_DOOR_SOUNDS.filter((s) => s !== value).map((s) => (
+        <button key={s} type="button" className="small" onClick={() => onChange(s)}>
+          {`0x${s.toString(16).toUpperCase()} にする`}
+        </button>
+      ))}
+      {outside && <span className="muted small">{`SoundData は ${rows} 件なので、範囲の外です`}</span>}
+    </>
   );
 }

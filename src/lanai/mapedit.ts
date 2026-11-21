@@ -12,7 +12,13 @@ import type { AutoProfile } from '../editor/autotile';
 import { LANAI_AUTO } from '../game/autotile';
 import { LANAI_ROT_CODEC, letterIndex, recCellPos, setRecCellPos, type MapDoc, type Rec } from '../game/sections';
 import { f32, hex8, u32, w32, wf32 } from '../util/bytes';
-import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_NONE, LANAI_ACTIONS, LANAI_DESTINATION_ACTIONS } from './actions';
+import {
+  LANAI_ACTION_GOAL_CHEST,
+  LANAI_ACTION_NONE,
+  LANAI_ACTION_OUTSIDE_DOOR,
+  LANAI_ACTIONS,
+  LANAI_DESTINATION_ACTIONS,
+} from './actions';
 import {
   LANAI_EVENT_SECTIONS,
   LANAI_FACING_OFFSET,
@@ -822,6 +828,18 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
             key: `clear/${i}`,
           });
       });
+  // where the exits of the content's maps lead ("map/point"): the doors one arrives at
+  const arrivals = new Set<string>();
+  if (table)
+    for (const m of maps.maps) {
+      const t = m.world ? null : maps.eventTable(m.dungeon);
+      if (!t) continue;
+      for (const r of (m.hash === info.hash ? doc : maps.doc(m)).recs[3] ?? []) {
+        const ev = lanaiRecEventRow(3, r.raw);
+        if (ev && ev < t.rows && LANAI_DESTINATION_ACTIONS.includes(t.u32(ev, LANAI_EVENT_ACTIONS[0])))
+          arrivals.add(`${t.u32(ev, LANAI_EVENT_ACTIONS[0] + 4)}/${t.u32(ev, LANAI_EVENT_ACTIONS[0] + 8)}`);
+      }
+    }
   if (table)
     for (const k of [3, 5] as const)
       (doc.recs[k] ?? []).forEach((r, i) => {
@@ -846,6 +864,35 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
               key: `destination/${i}/${hash}/${point}`,
             });
         }
+        // a door's opening sound: a SoundData row (the factories keep it as u16)
+        const soundArg = Object.entries(LANAI_ACTIONS[action]?.pick ?? {}).find(([, p]) => p === 'doorSound')?.[0];
+        const soundRows = maps.session.table('SoundData')?.rows ?? 0;
+        if (k === 3 && soundArg !== undefined && soundRows) {
+          const sound = table.u32(ev, LANAI_EVENT_ACTIONS[0] + 4 + Number(soundArg) * 4) & 0xffff;
+          if (sound >= soundRows)
+            out.push({
+              level: 'warn',
+              msg: `出入口 #${i}: 開く音 0x${sound.toString(16).toUpperCase()} は SoundData (${soundRows} 件) の外です`,
+              target: rec(k, i),
+              key: `doorsound/${i}/${sound}`,
+            });
+        }
+        // a door one arrives at stands open (its state and collision): the map's load opens the record whose point is
+        // the exit one came through (kinds 0x0C〜0x12, 0x21D7FC → 0x413E98). A door opened only from outside then
+        // stays open; the shipped stages close their start gate again in the intro (D01Intro: SetDoorCloseFlag)
+        if (
+          k === 3 &&
+          action === LANAI_ACTION_OUTSIDE_DOOR &&
+          r.raw[0x15]! >= 0x0c &&
+          r.raw[0x15]! <= 0x12 &&
+          arrivals.has(`${info.hash}/${u32(r.raw, 0)}`)
+        )
+          out.push({
+            level: 'warn',
+            msg: `扉 #${i}: ほかの出入口の行き先 (到着地点) なので、ここに着くと開いたままになり通り抜けられます。戻れる扉にするなら動作を「鍵つきの扉 (行き先あり)」に、閉じた扉にするなら行き先を別の地点にしてください`,
+            target: rec(k, i),
+            key: `arrivaldoor/${hex8(u32(r.raw, 0))}`,
+          });
         if (
           k === 5 &&
           [4, 5, 6].includes(u32(r.raw, 0)) &&
@@ -896,6 +943,14 @@ export function lanaiValidateAll(maps: LanaiMaps, info: LanaiMapInfo, doc: MapDo
           key: `evslotshare/${slot}/${rows.join(',')}`,
         });
   }
+
+  // the group's start (MapGroup +0x14 / +0x18): a point of its first map
+  if (group && group.firstMap === info.hash && !(doc.recs[3] ?? []).some((r) => u32(r.raw, 0) === group.firstPoint))
+    out.push({
+      level: 'warn',
+      msg: `このマップは MapGroup の最初のマップですが、最初の地点 ${hex8(group.firstPoint).toUpperCase()} がこのマップの出入口にありません (グループの始まりに使う地点を、この出入口のどれかにしてください)`,
+      key: `firstpoint/${hex8(group.firstPoint)}`,
+    });
 
   // section 3: point IDs are what the exits of other maps lead to (EventObject +0x18)
   const ids = new Map<number, number>();
