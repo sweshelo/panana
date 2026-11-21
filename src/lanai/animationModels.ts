@@ -8,6 +8,8 @@ import type { TilesetModels } from '../cgfx/tileset';
 import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels';
 import type { ModelRef } from '../pages/modelview';
 import { f32, hex8, u16, u32 } from '../util/bytes';
+import { attachDenpaEquipment, lanaiDenpaEquipment } from './denpaEquipment';
+import type { LanaiItem } from './items';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef } from './mapObjects';
 import type { LanaiSession } from './session';
@@ -126,6 +128,8 @@ export interface LanaiDenpaLook {
   colors: [number, number];
   /** SkillData row whose antenna is on the head (-1: none drawn). */
   antennaSkill: number;
+  /** The items worn (DenpaCustom +0x18〜+0x2C; denpaEquipment.ts). */
+  equipment: LanaiItem[];
 }
 
 /**
@@ -187,6 +191,7 @@ const SAMPLE_LOOK: LanaiDenpaLook = {
   pattern: 0,
   colors: [-1, -1],
   antennaSkill: -1,
+  equipment: [],
 };
 
 /**
@@ -228,6 +233,7 @@ export function lanaiDenpaCustomLook(session: LanaiSession, row: number): LanaiD
     bodyRow: one(0x43),
     ...body,
     antennaSkill: lanaiAntennaSkill(session, u16(r, 0x3a), level),
+    equipment: lanaiDenpaEquipment(session, r),
   };
 }
 
@@ -299,7 +305,7 @@ async function antennaPart(
 /**
  * A Denpa person from ROM parts as the field builds it (0x1B62B8〜): hum_body_01 of F0F40000 (sized by BodyData) with
  * the BodyPattern texture and the colours on its constants 0 (main) / 1 (second) / 2 (black) (0x26CC2C), the HeadData
- * head, hum_N_face_01 with the face atlas and the antenna on the head's ante bone. Not shown: the equipment.
+ * head, hum_N_face_01 with the face atlas, the antenna on the head's ante bone and the equipment (denpaEquipment.ts).
  */
 async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: string): Promise<TilesetModels> {
   const heads = session.need('HeadData');
@@ -361,14 +367,17 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
     const s = antenna.scale / scale;
     attach(model, antenna.model, headOffset + anteBone, [s, s, s]);
   }
+  const worn = await attachDenpaEquipment(session, model, look.equipment, headOffset);
   const set: TilesetModels = {
     models: new Map([[0, model]]),
     paths: new Map([[0, model.name]]),
     textures: new Map(),
     errors: [],
   };
-  for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? [])])
+  for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? []), ...worn.textures])
     set.textures.set(texture.name, texture);
+  // clothes take the place of the pattern (both are hum_base)
+  if (worn.clothes) set.textures.set('hum_base', { ...worn.clothes, name: 'hum_base' });
   return set;
 }
 

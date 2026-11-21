@@ -27,6 +27,7 @@ import {
   lanaiDenpaCustomModel,
   lanaiDenpaCustomName,
 } from '../src/lanai/animationModels';
+import { lanaiDenpaEquipment } from '../src/lanai/denpaEquipment';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
 import { lanaiChestFields } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
@@ -256,6 +257,21 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect(icons).toBeGreaterThan(150);
     const sleep = [...Array(sk.rows).keys()].find((row) => s.plain(sk, row, 'name') === 'ねむらせる')!;
     expect(lanaiAntennaAtlas(s, sleep)).toBe(0x33945c00);
+    // the equipment of the screenshot: かしたろう's geta and big gloves, りゅう's dragon scales, さなこ's wings
+    const worn = (row: number) => lanaiDenpaEquipment(s, s.need('DenpaCustom').row(row)).map((it) => it.name);
+    expect(worn(11)).toEqual([
+      'くろドラゴンのかざり',
+      'クリティカルグラブ',
+      'げた',
+      'チャンピオンベルト',
+      'ナンバーワン',
+    ]);
+    expect(worn(13)).toContain('ドラゴンのうろこ');
+    expect(worn(18)).toEqual(['サングラス', 'ジュエリーネックレス', 'パイレーツブーツ', 'てんしのはね', 'APプリント']);
+    const kashitarou = (await lanaiDenpaCustomModel(s, 11).load())!.set.models.get(0)!;
+    const names = kashitarou.materials.map((m) => m.name);
+    for (const part of ['M_equ_neck_070', 'M_equ_hand_007', 'M_equ_foot_037', 'M_equ_back_105'])
+      expect(names).toContain(part);
     // かしたろう is red all over (あか, no pattern)
     expect(look.colors).toEqual([6, 6]);
     expect(look.pattern).toBe(0);

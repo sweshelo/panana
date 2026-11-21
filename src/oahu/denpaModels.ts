@@ -160,7 +160,7 @@ export function faceMaterials(face: CgfxModel, a: DenpaAppearance): CgfxMaterial
   });
 }
 
-function boneWorld(bones: CgfxBone[]): THREE.Matrix4[] {
+export function boneWorld(bones: CgfxBone[]): THREE.Matrix4[] {
   const out: THREE.Matrix4[] = [];
   for (const b of bones) {
     const local = new THREE.Matrix4().compose(
