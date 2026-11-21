@@ -2,7 +2,7 @@
 import { findEntry, entryBlob, unpackEntry } from '../archive/gsarc';
 import { zipEntryName } from '../archive/zip';
 import { bchAnimations, parseBch, unwrapBch } from '../bch/bch';
-import type { CgfxModel, CgfxTexture } from '../cgfx/cgfx';
+import type { CgfxMaterial, CgfxModel, CgfxTexture } from '../cgfx/cgfx';
 import type { CgfxAnimation } from '../cgfx/anim';
 import type { TilesetModels } from '../cgfx/tileset';
 import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels';
@@ -342,12 +342,9 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   const animations = motionFiles.flat();
   const seen = new Set<string>();
   const [main, second] = look.colors.map((row) => colorOf(session, row));
-  // The body's combiners give black (c2), + tex × c0, + (1 − tex) × c1: a pattern (a grey mask) mixes the main and
-  // the second colour. Constants 0 / 1 / 2 = main, second, black; the sample keeps the model's own. Clothes (a
-  // picture in the pattern's place with c0 white and c1 black, 0x2D3D38) are not drawn on the map: the party of
-  // content 16 shows the patterns and colours of their rows though all of them have clothes (a screenshot of the
-  // game, 2015), and the code that builds them has two ways (build flags 0x30F / 0x230F, the latter with no
-  // equipment) not yet told apart.
+  // The Body materials of the body and of the head (hum_base) combine black (c2), + tex × c0, + (1 − tex) × c1: a
+  // pattern (a grey mask) mixes the main and the second colour. Constants 0 / 1 / 2 = main, second, black on both
+  // (0x2D3C8C〜0x2D3D08); the sample keeps the model's own (red and yellow).
   const tint = main ? [main, second ?? main, [0, 0, 0, 1]] : [];
   const model: CgfxModel = {
     name,
@@ -356,22 +353,13 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
     bones: [{ name: 'denpa', parent: -1, scale: [width, height, width], rotation: [0, 0, 0], translation: [0, 0, 0] }],
     animations: animations.filter((a) => (seen.has(a.name) ? false : (seen.add(a.name), true))),
   };
-  const materials = body.materials.map((m) => ({
-    ...m,
-    tev:
-      m.tev?.map((t, k) => {
-        const constant = m.tevConstants?.[k];
-        const c = constant === undefined ? null : tint[constant];
-        return c ? { ...t, color: c } : t;
-      }) ?? null,
-  }));
-  attach(model, { ...body, materials }, 0);
+  attach(model, { ...body, materials: tinted(body.materials, tint) }, 0);
   body.bones.forEach((bone, index) => {
     model.bones[index + 1]!.name = bone.name;
   });
   const headBone = model.bones.findIndex((bone) => bone.name === 'head');
   if (headBone < 0) throw new Error('体に head ボーンがありません');
-  const headOffset = attach(model, head, headBone, [scale / width, scale / height, scale / width]);
+  const headOffset = attach(model, { ...head, materials: tinted(head.materials, tint) }, headBone, [scale / width, scale / height, scale / width]);
   const faceBone = head.bones.findIndex((bone) => bone.name === 'm_Face');
   if (faceBone < 0) throw new Error('頭に m_Face ボーンがありません');
   attach(model, { ...face, materials: faceMaterials(face, look.appearance) }, headOffset + faceBone);
@@ -391,6 +379,19 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? []), ...worn])
     set.textures.set(texture.name, texture);
   return set;
+}
+
+/** `materials` with the constants their stages take (tevConstants) set from `tint` (constant n → tint[n]). */
+function tinted(materials: CgfxMaterial[], tint: readonly number[][]): CgfxMaterial[] {
+  return materials.map((m) => ({
+    ...m,
+    tev:
+      m.tev?.map((t, k) => {
+        const constant = m.tevConstants?.[k];
+        const c = constant === undefined ? null : tint[constant];
+        return c ? { ...t, color: c } : t;
+      }) ?? null,
+  }));
 }
 
 const denpaSets = new WeakMap<LanaiSession, { revision: number; sets: Map<number, Promise<TilesetModels>> }>();

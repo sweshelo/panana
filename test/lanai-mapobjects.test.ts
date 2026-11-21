@@ -295,9 +295,13 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     for (const part of ['M_equ_neck_070', 'M_equ_hand_007', 'M_equ_foot_037', 'M_equ_back_105'])
       expect(names).toContain(part);
     // the body's c0 / c1 (tex × c0 + (1 − tex) × c1) are the person's colours, clothes or not (not drawn on the map)
+    // the head's Body material (hum_base too) takes the same colours as the body's
     const bodyColors = (m: typeof kashitarou) => {
-      const body = m.materials.find((x) => x.name === 'Body')!;
-      return [0, 1].map((c) => body.tev![body.tevConstants!.indexOf(c)]!.color);
+      const bodies = m.materials.filter((x) => x.name === 'Body');
+      expect(bodies).toHaveLength(2);
+      const colors = bodies.map((body) => [0, 1].map((c) => body.tev![body.tevConstants!.indexOf(c)]!.color));
+      expect(colors[1]).toEqual(colors[0]!);
+      return colors[0]!;
     };
     const cd = s.need('ColorData');
     const rgb = (row: number) => [...[6, 7, 8].map((o) => cd.u8(row, o) / 255), 1];
