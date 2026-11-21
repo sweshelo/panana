@@ -294,22 +294,46 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     const names = kashitarou.materials.map((m) => m.name);
     for (const part of ['M_equ_neck_070', 'M_equ_hand_007', 'M_equ_foot_037', 'M_equ_back_105'])
       expect(names).toContain(part);
-    // the body's c0 / c1 (tex × c0 + (1 − tex) × c1) are the person's colours, clothes or not (not drawn on the map)
-    // the head's Body material (hum_base too) takes the same colours as the body's
+    // the Body materials of the body and the head (both hum_base): c0 / c1 (tex × c0 + (1 − tex) × c1) are the person's
+    // colours; clothes take the body's place only, shown as they are with white / black there
     const bodyColors = (m: typeof kashitarou) => {
       const bodies = m.materials.filter((x) => x.name === 'Body');
       expect(bodies).toHaveLength(2);
-      const colors = bodies.map((body) => [0, 1].map((c) => body.tev![body.tevConstants!.indexOf(c)]!.color));
-      expect(colors[1]).toEqual(colors[0]!);
-      return colors[0]!;
+      return bodies.map((body) => ({
+        texture: body.units[0]!.name,
+        colors: [0, 1].map((c) => body.tev![body.tevConstants!.indexOf(c)]!.color),
+      }));
     };
     const cd = s.need('ColorData');
     const rgb = (row: number) => [...[6, 7, 8].map((o) => cd.u8(row, o) / 255), 1];
-    expect(bodyColors(kashitarou)).toEqual([rgb(6), rgb(6)]);
-    // しんたろう: あお / みずいろ on the marble (pattern 6), in his アロハ
+    const white = [1, 1, 1, 1],
+      black = [0, 0, 0, 1];
+    // かしたろう in ナンバーワン: the clothes on the body, the head red
+    const kashitarouSet = (await lanaiDenpaCustomModel(s, 11).load())!.set;
+    expect(bodyColors(kashitarou)).toEqual([
+      { texture: 'hum_base/clothes', colors: [white, black] },
+      { texture: 'hum_base', colors: [rgb(6), rgb(6)] },
+    ]);
+    expect(kashitarouSet.textures.get('hum_base/clothes')).toBeDefined();
+    expect(kashitarouSet.textures.get('hum_base')).toBeDefined();
+    // a person without clothes has the pattern and the colours on both
+    const dc = s.need('DenpaCustom');
+    const bare = [...Array(dc.rows).keys()].find(
+      (row) => row > 0 && !lanaiDenpaEquipment(s, dc.row(row)).some((it) => it.kind >= 0xd0),
+    )!;
+    const bareLook = lanaiDenpaCustomLook(s, bare);
+    const bareColors = [rgb(bareLook.colors[0]), rgb(bareLook.colors[1])];
+    expect(bodyColors((await lanaiDenpaCustomModel(s, bare).load())!.set.models.get(0)!)).toEqual([
+      { texture: 'hum_base', colors: bareColors },
+      { texture: 'hum_base', colors: bareColors },
+    ]);
+    // しんたろう: あお / みずいろ on the marble (pattern 6) on the head, in his アロハ
     const shintarou = lanaiDenpaCustomLook(s, 14);
     expect([shintarou.pattern, ...shintarou.colors]).toEqual([6, 21, 9]);
-    expect(bodyColors((await lanaiDenpaCustomModel(s, 14).load())!.set.models.get(0)!)).toEqual([rgb(21), rgb(9)]);
+    expect(bodyColors((await lanaiDenpaCustomModel(s, 14).load())!.set.models.get(0)!)[1]!.colors).toEqual([
+      rgb(21),
+      rgb(9),
+    ]);
     // しょう: くろ with the second レア, no pattern: black all over and rare (the screenshot's shining black)
     const shou = lanaiDenpaCustomLook(s, 16);
     expect([shou.pattern, ...shou.colors, shou.rare]).toEqual([0, 3, 3, true]);

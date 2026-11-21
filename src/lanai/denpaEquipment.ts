@@ -10,7 +10,7 @@
 //   head, hip, tail; their models are made at the bone's origin.
 // - Glasses (0x82) are no part: equipInfo_face +0x00 bits 0〜4 pick a cell of the face's Megane (0x2D3418 → 0x26CE7C).
 // - Clothes (0xD1 / 0xD2) are no part: a hum_base texture in place of the body's pattern, the body's constants white
-//   and black (0x2D3C18〜0x2D3C5C); not drawn on the map (animationModels.ts).
+//   and black (0x2D3C18〜0x2D3C5C), on the body only (lanaiDenpaClothes; animationModels.ts).
 import * as THREE from 'three';
 import { parseBch } from '../bch/bch';
 import type { CgfxModel, CgfxTexture } from '../cgfx/cgfx';
@@ -45,6 +45,16 @@ export function lanaiDenpaGlasses(session: LanaiSession, items: readonly LanaiIt
   const it = items.find((i) => i.kind === LANAI_GLASSES);
   const ref = it && lanaiEquipRow(session, it);
   return ref ? ref.table.u32(ref.row, 0) & 31 : 0;
+}
+
+/** The texture of the clothes (0xD1 / 0xD2) among `items`, null when none are worn. */
+export async function lanaiDenpaClothes(
+  session: LanaiSession,
+  items: readonly LanaiItem[],
+): Promise<CgfxTexture | null> {
+  const it = items.find((i) => textureOnlyKind(i.kind) && i.archive && i.model);
+  const body = it ? await lanaiItemBody(session, it) : null;
+  return body ? (parseBch(body).textures[0] ?? null) : null;
 }
 
 /** Bones a part follows by name, by item kind (the tables at 0x447B00〜0x447BC8), and the kind's base bone. */

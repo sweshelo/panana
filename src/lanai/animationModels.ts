@@ -8,7 +8,7 @@ import type { TilesetModels } from '../cgfx/tileset';
 import { attach, faceMaterials, type DenpaAppearance } from '../oahu/denpaModels';
 import type { ModelRef } from '../pages/modelview';
 import { f32, hex8, u16, u32 } from '../util/bytes';
-import { attachDenpaEquipment, lanaiDenpaEquipment, lanaiDenpaGlasses } from './denpaEquipment';
+import { attachDenpaEquipment, lanaiDenpaClothes, lanaiDenpaEquipment, lanaiDenpaGlasses } from './denpaEquipment';
 import type { LanaiItem } from './items';
 import { lanaiObjectModels } from './mapModels';
 import { lanaiObjectRef } from './mapObjects';
@@ -321,7 +321,7 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   const headRow = look.headRow >= 0 && look.headRow < heads.rows && heads.u32(look.headRow, 4) ? look.headRow : 0;
   const patterns = session.need('BodyPattern');
   const pattern = look.pattern < patterns.rows ? patterns.u32(look.pattern, 0) : 0;
-  const [bodyFile, headFile, faceFile, faceTex, bodyTex, motionFiles, antenna] = await Promise.all([
+  const [bodyFile, headFile, faceFile, faceTex, bodyTex, motionFiles, antenna, clothes] = await Promise.all([
     bch(session, 'F0F40000', 0x679f6c00), // hum_body_01 (the field's; 96EB0000 has another constant assignment)
     bch(session, hex8(heads.u32(headRow, 0)), heads.u32(headRow, 4)), // hum_head_NN
     bch(session, '96EB0000', 0xa038b800), // hum_N_face_01
@@ -329,6 +329,7 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
     bch(session, '2135000A', pattern || 0x63829400), // body_ptn_NN (its texture is hum_base)
     Promise.all([0x6f8f7000, 0x1ed24400, 0xdf937000, 0x6ce89400].map((id) => motionBch(session, id))),
     antennaPart(session, look.antennaSkill),
+    lanaiDenpaClothes(session, look.equipment),
   ]);
   const body = bodyFile.models[0],
     head = headFile.models[0],
@@ -344,8 +345,17 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   const [main, second] = look.colors.map((row) => colorOf(session, row));
   // The Body materials of the body and of the head (hum_base) combine black (c2), + tex × c0, + (1 − tex) × c1: a
   // pattern (a grey mask) mixes the main and the second colour. Constants 0 / 1 / 2 = main, second, black on both
-  // (0x2D3C8C〜0x2D3D08); the sample keeps the model's own (red and yellow).
-  const tint = main ? [main, second ?? main, [0, 0, 0, 1]] : [];
+  // (0x2D3C8C〜0x2D3D08); the sample keeps the model's own (red and yellow). Clothes (0x2D3D38〜0x2D3DE8) are a
+  // picture in the pattern's place on the body only, shown as it is: the body's constants stay white / black / black
+  // (0x2D3C18〜0x2D3C5C) and the head keeps the pattern and the person's colours.
+  const black = [0, 0, 0, 1];
+  const tint = main ? [main, second ?? main, black] : [];
+  const bodyMaterials = clothes
+    ? tinted(body.materials, [[1, 1, 1, 1], black, black]).map((m) => ({
+        ...m,
+        units: m.units.map((u) => (u.name === 'hum_base' ? { ...u, name: CLOTHES_TEXTURE } : u)),
+      }))
+    : tinted(body.materials, tint);
   const model: CgfxModel = {
     name,
     meshes: [],
@@ -353,13 +363,17 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
     bones: [{ name: 'denpa', parent: -1, scale: [width, height, width], rotation: [0, 0, 0], translation: [0, 0, 0] }],
     animations: animations.filter((a) => (seen.has(a.name) ? false : (seen.add(a.name), true))),
   };
-  attach(model, { ...body, materials: tinted(body.materials, tint) }, 0);
+  attach(model, { ...body, materials: bodyMaterials }, 0);
   body.bones.forEach((bone, index) => {
     model.bones[index + 1]!.name = bone.name;
   });
   const headBone = model.bones.findIndex((bone) => bone.name === 'head');
   if (headBone < 0) throw new Error('体に head ボーンがありません');
-  const headOffset = attach(model, { ...head, materials: tinted(head.materials, tint) }, headBone, [scale / width, scale / height, scale / width]);
+  const headOffset = attach(model, { ...head, materials: tinted(head.materials, tint) }, headBone, [
+    scale / width,
+    scale / height,
+    scale / width,
+  ]);
   const faceBone = head.bones.findIndex((bone) => bone.name === 'm_Face');
   if (faceBone < 0) throw new Error('頭に m_Face ボーンがありません');
   attach(model, { ...face, materials: faceMaterials(face, look.appearance) }, headOffset + faceBone);
@@ -378,8 +392,12 @@ async function denpaSet(session: LanaiSession, look: LanaiDenpaLook, name: strin
   };
   for (const texture of [...faceTex.textures, ...bodyTex.textures, ...(antenna?.textures ?? []), ...worn])
     set.textures.set(texture.name, texture);
+  if (clothes) set.textures.set(CLOTHES_TEXTURE, { ...clothes, name: CLOTHES_TEXTURE });
   return set;
 }
+
+/** The name the clothes' texture (hum_base in its BCH) takes beside the pattern, which the head keeps. */
+const CLOTHES_TEXTURE = 'hum_base/clothes';
 
 /** `materials` with the constants their stages take (tevConstants) set from `tint` (constant n → tint[n]). */
 function tinted(materials: CgfxMaterial[], tint: readonly number[][]): CgfxMaterial[] {

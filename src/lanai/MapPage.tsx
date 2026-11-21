@@ -1307,7 +1307,7 @@ function ModelLine({ view, look }: { view: LanaiMapView; look: LanaiRecordLook |
       : m.type === 'monster'
         ? `MonsterDesign #${m.design}${designNames(view.maps.session, m.design)}${name ? ` ${name}` : ''}`
         : m.type === 'denpa'
-          ? `DenpaCustom #${m.custom} ${lanaiDenpaCustomName(view.maps.session, m.custom)} (服とレアの光は表示しません)`
+          ? `DenpaCustom #${m.custom} ${lanaiDenpaCustomName(view.maps.session, m.custom)} (レアの光は表示しません)`
           : `なし (エフェクト EffectData #0x${m.row.toString(16).toUpperCase()}${name ? ` ${name}` : ''} を置く)`;
   return (
     <p className="muted small">
