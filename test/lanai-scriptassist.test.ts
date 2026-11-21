@@ -10,6 +10,7 @@ import {
   scriptCallAt,
   scriptHoverInfo,
   scriptLineMarks,
+  scriptOwnNames,
   scriptSignatureAt,
   scriptWordKind,
   type ScriptAssist,
@@ -72,6 +73,45 @@ describe('completion', () => {
     expect(r.options.find((o) => o.label === 'return')!.apply).toBe('return');
     expect(labels('B')).toContain('BOSS');
     expect(r.options.find((o) => o.label === 'ScriptSound')!.apply).toBe('ScriptSound.');
+  });
+  test("the script's own names, from a text being written", () => {
+    // a name half written: the text does not compile, its names are still read
+    const text = [
+      'var STATE: byte // var NOT',
+      'var MET: bit reset',
+      'function greet(who: obj, n: num) {',
+      '  ST',
+      '}',
+      'function later() {',
+      '  if (',
+    ].join('\n');
+    const own = scriptOwnNames(text);
+    expect(own.vars).toEqual(['STATE', 'MET']);
+    expect(own.functions).toEqual([
+      {
+        name: 'greet',
+        params: [
+          { name: 'who', kind: 'obj' },
+          { name: 'n', kind: 'num' },
+        ],
+      },
+      { name: 'later', params: [] },
+    ]);
+    const mine: ScriptAssist = { ...assist, ...own };
+    const of = (before: string): string[] => scriptCompletions(before, mine)?.options.map((o) => o.label) ?? [];
+    expect(of('function a() {\n  ST')).toContain('STATE');
+    const greet = scriptCompletions('  gr', mine)!.options.find((o) => o.label === 'greet')!;
+    expect([greet.apply, greet.detail, greet.type]).toEqual(['greet(', '(who: obj, n: num)', 'function']);
+    // the parameters of the function the cursor is in, not of one closed before it
+    const head = 'function greet(who: obj, n: num) {\n';
+    expect(of(`${head}  if (n`)).toContain('n');
+    expect(of(`${head}  w`)).toContain('who');
+    expect(of(`${head}}\nfunction b() {\n  w`)).not.toContain('who');
+    // a function whose first parameter is an object, after an object
+    const after = scriptCompletions('hero.gr', mine)!.options.find((o) => o.label === 'greet')!;
+    expect(after.detail).toBe('(n: num)');
+    expect(of('obj(3).')).toContain('greet');
+    expect(of('hero.')).not.toContain('later');
   });
   test('nothing without a word unless asked, nothing in a comment or after a number', () => {
     expect(scriptCompletions('talk(0x80000010)\n', assist)).toBeNull();

@@ -67,7 +67,65 @@ export interface ScriptAssist {
   records: { row: number; label: string }[];
   /** MonsterGroup rows: ScriptMap.EncountBoss takes row positions, while their IDs may differ. */
   groups?: { row: number; id: number; label: string }[];
+  /** The script's own functions. */
+  functions?: ScriptOwnFunction[];
 }
+
+/** A function the script declares: its name and its parameters (`kind` as written: obj / num, or '' if not yet). */
+export interface ScriptOwnFunction {
+  name: string;
+  params: { name: string; kind: string }[];
+}
+/** The text with its comments blanked (same length, so places stay). */
+const blankComments = (text: string): string =>
+  text.replace(/\/\/[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/gu, (c) => c.replace(/[^\n]/gu, ' '));
+const readParams = (text: string): ScriptOwnFunction['params'] =>
+  text
+    .split(',')
+    .map((p) => /^\s*([A-Za-z_]\w*)\s*(?::\s*(\w*))?/u.exec(p))
+    .filter((m): m is RegExpExecArray => !!m && !SCRIPT_RESERVED.includes(m[1]!))
+    .map((m) => ({ name: m[1]!, kind: m[2] ?? '' }));
+/**
+ * The variables and functions a script's text declares, read by their words alone: a text being written (which the
+ * compiler does not read until it is whole) still names them.
+ */
+export function scriptOwnNames(source: string): { vars: string[]; functions: ScriptOwnFunction[] } {
+  const code = blankComments(source);
+  const vars = [...code.matchAll(/\bvar\s+([A-Za-z_]\w*)/gu)].map((m) => m[1]!);
+  const functions: ScriptOwnFunction[] = [];
+  for (const m of code.matchAll(/\bfunction\s+([A-Za-z_]\w*)\s*(?:\(([^)]*)\)?)?/gu))
+    if (!functions.some((f) => f.name === m[1])) functions.push({ name: m[1]!, params: readParams(m[2] ?? '') });
+  const name = (n: string): boolean => !SCRIPT_RESERVED.includes(n);
+  return { vars: [...new Set(vars)].filter(name), functions: functions.filter((f) => name(f.name)) };
+}
+/** The parameters of the function the end of `before` is in the body of ([] outside a function). */
+function enclosingParams(before: string): ScriptOwnFunction['params'] {
+  const code = blankComments(before);
+  const heads = [...code.matchAll(/\bfunction\s+[A-Za-z_]\w*\s*\(([^)]*)\)\s*\{/gu)];
+  const last = heads[heads.length - 1];
+  if (!last) return [];
+  let depth = 0;
+  for (const ch of code.slice(last.index! + last[0].length - 1)) {
+    if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return [];
+  }
+  return readParams(last[1]!);
+}
+const ownFunctionCompletion = (f: ScriptOwnFunction, rest: boolean): ScriptCompletion => {
+  const ps = (rest ? f.params.slice(1) : f.params).map((p) => (p.kind ? `${p.name}: ${p.kind}` : p.name));
+  return {
+    label: f.name,
+    detail: `(${ps.join(', ')})`,
+    info: 'スクリプトの関数',
+    apply: `${f.name}(`,
+    type: 'function',
+  };
+};
+/** The script's functions an object can be written before, as the library's (ownMethods). */
+const ownFunctionMethods = (assist: ScriptAssist, obj: boolean): ScriptCompletion[] =>
+  (assist.functions ?? [])
+    .filter((f) => f.params[0]?.kind === 'obj' || (obj && f.params[0]?.kind === 'num'))
+    .map((f) => ownFunctionCompletion(f, true));
 export const NO_ASSIST: ScriptAssist = { vars: [], lines: [], records: [] };
 
 export interface ScriptCompletion {
@@ -355,10 +413,11 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
   if (dot) {
     const from = before.length - dot[3]!.length;
     const left = dot[1];
+    const own = (obj: boolean): ScriptCompletion[] => [...ownFunctionMethods(assist, obj), ...ownMethods(obj)];
     if (left === 'hero')
-      return { from, options: [...ownMethods(false), ...methods(['ScriptPlayer', 'ScriptChara'])], filter: true };
-    if (left === 'self') return { from, options: [...ownMethods(false), ...methods(['ScriptChara'])], filter: true };
-    if (dot[2]) return { from, options: [...ownMethods(true), ...methods(['ScriptChara'])], filter: true };
+      return { from, options: [...own(false), ...methods(['ScriptPlayer', 'ScriptChara'])], filter: true };
+    if (left === 'self') return { from, options: [...own(false), ...methods(['ScriptChara'])], filter: true };
+    if (dot[2]) return { from, options: [...own(true), ...methods(['ScriptChara'])], filter: true };
     if (left && CLASSES.has(left)) return { from, options: methods([left]), filter: true };
     return null;
   }
@@ -424,7 +483,13 @@ export function scriptCompletions(before: string, assist: ScriptAssist, explicit
     ...['else', 'case', 'default', 'break', 'true', 'false']
       .filter((k) => !BUILTINS.has(k))
       .map((k) => ({ label: k, type: 'keyword' as const })),
+    ...enclosingParams(before).map((p) => ({
+      label: p.name,
+      detail: p.kind ? ` 引数 (${p.kind})` : ' 引数',
+      type: 'variable' as const,
+    })),
     ...assist.vars.map((v) => ({ label: v, detail: ' 変数', type: 'variable' as const })),
+    ...(assist.functions ?? []).map((f) => ownFunctionCompletion(f, false)),
     ...[...CLASSES.keys()]
       .filter((c) => !MEMBER_CLASSES.includes(c))
       .map((c) => ({ label: c, detail: ' Script API', apply: `${c}.`, type: 'class' as const })),

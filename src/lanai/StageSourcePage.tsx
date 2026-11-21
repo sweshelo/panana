@@ -17,6 +17,7 @@ import {
 import { ScriptCodeEditor, type ScriptCodeInsert } from './ScriptCodeEditor';
 import { ScriptLineDialog } from './ScriptLineDialog';
 import type { LanaiMapInfo } from './maps';
+import { NO_ASSIST, scriptOwnNames, type ScriptAssist } from './scriptAssist';
 import { SCRIPT_SAMPLES, type ScriptSample } from './scriptDoc';
 import { bindingLabel, StageScriptDocs, stageScriptAssist } from './StageScriptEditor';
 import type { ScriptLibraryFunction } from './scriptLibrary';
@@ -24,15 +25,6 @@ import type { LanaiSession } from './session';
 import { checkStageScript } from './stageScript';
 import { useLanaiRevision } from './MonsterEditor';
 import { StagePreviewScene } from './ScriptPreview';
-
-/** The names of the variables a text declares ([] when it does not read). */
-function declaredVars(text: string): string[] {
-  try {
-    return scriptDocFromSource(text).vars.map((v) => v.name);
-  } catch {
-    return [];
-  }
-}
 
 /** The names of the functions and variables a text declares ([] when it does not read). */
 function declaredNames(text: string): string[] {
@@ -79,10 +71,15 @@ export function LanaiStageSourcePage({
   const group = map?.dungeon;
   const [adding, setAdding] = useState(false);
   // the names as one string: the help is made again only when they change
-  const vars = declaredVars(source).join(' ');
-  const assist = useMemo(
-    () => (maps ? stageScriptAssist(session, maps, group, vars ? vars.split(' ') : []) : undefined),
-    [session, maps, group, vars, revision],
+  // (read by their words: the text being written does not compile, and the names must not go while it is)
+  const names = JSON.stringify(scriptOwnNames(source));
+  const stage = useMemo(
+    () => (maps ? stageScriptAssist(session, maps, group, []) : NO_ASSIST),
+    [session, maps, group, revision],
+  );
+  const assist = useMemo<ScriptAssist>(
+    () => ({ ...stage, ...(JSON.parse(names) as Pick<ScriptAssist, 'vars' | 'functions'>) }),
+    [stage, names],
   );
   // The script changed elsewhere: a text not edited here takes it; an edited one takes what it left as it was.
   // (What is given to the functions is not in the text: a change of that alone changes nothing here.)
