@@ -455,6 +455,31 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(err('on talk(1, 5) { event.Nothing() }')).toContain('TurnNpcRecover');
     // ScriptMonsterCtrl: the monster's size and level from its object
     expect(err('var N: byte\non area(1, 1) { N = ScriptMonsterCtrl.GetMonsterSize(obj(9)) }')).toBe('');
+    // ScriptMonster around a character of the map for the call (as content 7 +0x2AA4), destroyed with ~ScriptChara
+    const label = 'on area(1, 1) { obj(9).SetForceFollowRotate(true)\n obj(9).SetMapLabel(3) }';
+    expect(imports(label)).toEqual(
+      expect.arrayContaining(['_ZN13ScriptMonsterC1EP9ChrObject', '_ZN13ScriptMonster11SetMapLabelEt']),
+    );
+    expect(imports('on area(1, 1) { obj(9).SetScale(vec(1, 1, 1)) }')).not.toContain(
+      '_ZN13ScriptMonsterC1EP9ChrObject',
+    );
+    expect(err('on area(1, 1) { obj(9).CreateMonster(1, 2) }')).toContain('作り直す');
+    expect(err('on area(1, 1) { hero.SetMapLabel(3) }')).not.toBe('');
+    // effects the event keeps: made in its factory after vanishEffect's, destroyed (last first) with it
+    const fx =
+      'on area(1, 1) { effect a\n effect b\n a.CreateEffect(0xc1, 3)\n a.SetPos(hero.GetPos())\n a.StartEffect(1)\n b.CreateEffect(0xc2, 3)\n b.StopEmission()\n vanishEffect(obj(2)) }';
+    expect(imports(fx)).toEqual(
+      expect.arrayContaining([
+        '_ZN12ScriptEffectC1Ev',
+        '_ZN12ScriptEffect12CreateEffectEj9GSLayerID',
+        '_ZN12ScriptEffect12StopEmissionEv',
+        '_ZN11ScriptChara6SetPosERK5GSvec',
+      ]),
+    );
+    expect(has(fx, 'add r0, r4, #0x58', 'add r0, r4, #0xa4')).toBe(true);
+    expect(err('on area(1, 1) { effect a }\non area(1, 2) { a.StartEffect(1) }')).not.toBe('');
+    expect(err('on area(1, 1) { effect a\n effect a }')).toContain('ほかの名前');
+    expect(err('on area(1, 1) { effect a\n a.SetMapLabel(1) }')).not.toBe('');
     // a function's locals are its own
     expect(err('function f() { let a = 1 }\non area(1, 1) { f()\n ScriptSystem.WaitTime(a) }')).not.toBe('');
   });

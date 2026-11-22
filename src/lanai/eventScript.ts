@@ -50,7 +50,9 @@ export type ScriptWho =
   | { kind: 'self' }
   | { kind: 'chara'; row: number }
   /** The party's member of a `for … in party` loop: `index` is the loop's local (the member's number). */
-  | { kind: 'party'; index: string };
+  | { kind: 'party'; index: string }
+  /** An effect the event keeps (`effect NAME`): a ScriptEffect in the event's object, `id` its declaration's. */
+  | { kind: 'effect'; id: string };
 export type ScriptValue = { kind: 'var'; name: string } | { kind: 'call'; call: ScriptCall };
 /** An argument of a Script API call, as the function's parameter takes it (scriptApiTable.ts). */
 export type ScriptArg =
@@ -224,9 +226,12 @@ export interface ScriptCall {
   /** "Class::Name" as told in messages, and the symbol of lanai.crs. */
   name: string;
   sym: string;
-  /** The character whose member function it is (null: a static function); `player`: of ScriptPlayer. */
+  /**
+   * The character whose member function it is (null: a static function); `of`: the script object it is called on
+   * (ScriptChara, ScriptPlayer, or ScriptMonster made around the character for the call; an effect is its own).
+   */
   self: ScriptWho | null;
-  player: boolean;
+  of: 'chara' | 'player' | 'monster';
   args: ScriptArg[];
   /** The result is one byte (the bits above it are not defined). */
   byte: boolean;
@@ -279,7 +284,9 @@ export type ScriptNode =
    */
   | { op: 'party'; index: string; body: ScriptNode[] }
   /** A call of the event's own object (`event.TurnNpcRecover()`): NpcCommon / NpcCommonTurn of a talk event. */
-  | { op: 'event'; name: string; sym: string };
+  | { op: 'event'; name: string; sym: string }
+  /** `effect NAME`: the event keeps a ScriptEffect (made with the event, destroyed with it); nothing when it runs. */
+  | { op: 'effect'; id: string };
 
 export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
@@ -392,6 +399,7 @@ export const SCRIPT_RESERVED: readonly string[] = [
   'in',
   'party',
   'event',
+  'effect',
   'function',
   'true',
   'false',
@@ -454,7 +462,7 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
 
 /** The Script API functions by "Class.Name" (several when overloaded), and the classes whose functions are static. */
 const API_INDEX = new Map<string, ScriptApiRow[]>();
-const MEMBER_CLASSES = new Set(['ScriptChara', 'ScriptPlayer']);
+const MEMBER_CLASSES = new Set(['ScriptChara', 'ScriptPlayer', 'ScriptMonster', 'ScriptEffect']);
 const API_CLASSES = new Set<string>();
 for (const r of SCRIPT_API_ROWS) {
   const key = `${r[0]}.${r[1]}`;
@@ -834,13 +842,19 @@ export function parseStageScript(src: string): StageScript {
     const fn = next();
     if (fn.t !== 'id') fail('関数の名前が要ります', fn);
     if (self && defs.has(fn.s)) fail(`${fn.s}(…) は値を返しません。文として書きます`, fn);
+    // the party's: ScriptPlayer's first; an effect: ScriptEffect's; the others (an NPC, a monster on the map) are
+    // ScriptMonster's too (made around the character for the call, as the CROs do: content 7 +0x2AA4)
     const classes = cls
       ? [cls]
       : self!.kind === 'hero' || self!.kind === 'party'
         ? ['ScriptPlayer', 'ScriptChara']
-        : ['ScriptChara'];
+        : self!.kind === 'effect'
+          ? ['ScriptEffect', 'ScriptChara']
+          : ['ScriptChara', 'ScriptMonster'];
     const rows = classes.flatMap((c) => API_INDEX.get(`${c}.${fn.s}`) ?? []);
-    const shown = `${cls ?? classes[classes.length - 1]}::${fn.s}`;
+    const shown = `${cls ?? (self!.kind === 'effect' ? 'ScriptEffect' : 'ScriptChara')}::${fn.s}`;
+    if (!cls && MONSTER_OWNED.includes(fn.s) && rows.every((r) => r[0] === 'ScriptMonster'))
+      fail(`ScriptMonster::${fn.s} はモンスターを作り直す関数で、マップのキャラには使えません`, fn);
     if (!rows.length) fail(`${shown} という Script API はありません (またはスクリプトから呼べない引数を持ちます)`, fn);
     type Raw =
       | { kind: 'num'; v: number; whole: boolean }
@@ -953,7 +967,7 @@ export function parseStageScript(src: string): StageScript {
       name: `${r[0]}::${r[1]}`,
       sym: r[2],
       self,
-      player: r[0] === 'ScriptPlayer',
+      of: r[0] === 'ScriptPlayer' ? 'player' : r[0] === 'ScriptMonster' ? 'monster' : 'chara',
       args,
       byte: /^(bool|u8)/u.test(r[5]),
       result: r[5],
@@ -1206,6 +1220,23 @@ export function parseStageScript(src: string): StageScript {
           env = save;
         }
       }
+      case 'effect': {
+        // effect NAME: a ScriptEffect the event keeps (its object's), used as NAME.CreateEffect(…) / NAME.SetPos(…) …
+        const n = name('effect の名前');
+        if (
+          vars.has(n.s) ||
+          env.has(n.s) ||
+          locals.has(n.s) ||
+          defs.has(n.s) ||
+          isWhoWord(n.s) ||
+          API_CLASSES.has(n.s) ||
+          SCRIPT_STATEMENTS.includes(n.s)
+        )
+          fail(`「${n.s}」はほかの名前に使われています`, n);
+        const id = `${n.s}#${++localCount}`;
+        env = new Map(env).set(n.s, { kind: 'obj', who: { kind: 'effect', id } });
+        return { op: 'effect', id };
+      }
       case 'event': {
         // a function of the event's own object (a talk event: NpcCommonTurn)
         need('.');
@@ -1374,6 +1405,8 @@ export function parseStageScript(src: string): StageScript {
       locals = new Map();
       if (is('{')) {
         Object.assign(event, block({ inSwitch: false }));
+        // its effects (effect NAME) are its own
+        env = new Map();
         locals = new Map();
       } else {
         const at = next();
@@ -1627,6 +1660,12 @@ export const EVENT_METHODS: Readonly<Record<string, string>> = {
   RecoverHeroCamera: '_ZN9NpcCommon17RecoverHeroCameraEv',
 };
 
+/**
+ * ScriptMonster's functions that make the character anew (a monster of its own): the CROs call them on a ScriptMonster
+ * the event keeps, not on one made around a character of the map for a call.
+ */
+const MONSTER_OWNED = ['CreateChara', 'CreateMonster', 'CreateMonsterParameter', 'SetChara'];
+
 /** Names of lanai.crs the code imports (script-abi.md, out/script-abi/signatures.tsv). */
 export const SCRIPT_API = {
   group: '_ZN9ScriptMap20GetCurrentMapGroupIDEv',
@@ -1706,6 +1745,7 @@ export const SCRIPT_API = {
   shadowPos: '_ZNK11ScriptChara12GetShadowPosEv',
   monsterSize: '_ZN17ScriptMonsterCtrl14GetMonsterSizeEP9ChrObject',
   effectCtor: '_ZN12ScriptEffectC1Ev',
+  monsterCtor: '_ZN13ScriptMonsterC1EP9ChrObject',
   effectCreate: '_ZN12ScriptEffect12CreateEffectEj9GSLayerID',
   effectStart: '_ZN12ScriptEffect11StartEffectEf',
   gsvecZero: 'GSVEC_ZERO',
@@ -1984,7 +2024,8 @@ interface Ctx {
   vars: Map<string, ScriptVar>;
   exit: string;
   breakTo: string | null;
-  effectAt: number | null;
+  /** The event's effects: id → where it is in the event's object. */
+  effects: Map<string, number>;
   /** The frame offset of each local of the event. */
   locals: Map<string, number>;
   /** The scratch: the next free byte and the end (taken as a stack: what is taken is given back after its use). */
@@ -2252,19 +2293,35 @@ function chrOf(c: Ctx, who: ScriptWho): void {
   else if (who.kind === 'party') {
     fn.op(`ldr r0, [sp, #${hx(c.locals.get(who.index)!)}]`);
     fn.call(A.player);
-  } else {
+  } else if (who.kind === 'effect') fn.op(`ldr r0, [r4, #${hx(c.effects.get(who.id)! + 4)}]`);
+  else {
     fn.load('r0', who.row);
     fn.call(A.mapChara);
   }
 }
 
+/** rd = r4 (the event's object) + off. */
+function memberAddr(fn: Fn, rd: string, off: number): void {
+  if (encodeImm(off) !== null) fn.op(`add ${rd}, r4, #${hx(off)}`);
+  else {
+    fn.load(rd, off);
+    fn.op(`add ${rd}, r4, ${rd}`);
+  }
+}
+
 /**
- * A script object of the character around `use`, whose argument writes `r0 = the object`: the event's own ScriptChara,
- * or one made in the frame and destroyed after (`player`: a ScriptPlayer, for what only the party's have).
+ * A script object of the character around `use`, whose argument writes `r0 = the object`: the event's own ScriptChara
+ * or effect, or one made in the frame and destroyed after (`player`: a ScriptPlayer, for what only the party's have;
+ * `monster`: a ScriptMonster, 0x58 bytes: past FRAME.obj into obj2, which no call of ScriptMonster's uses, as none takes
+ * a ScriptChara&). The CROs destroy theirs with ~ScriptChara (content 7 +0x2AEC).
  */
-function withChara(c: Ctx, who: ScriptWho, at: number, player: boolean, use: (ref: () => void) => void): void {
+function withChara(c: Ctx, who: ScriptWho, at: number, of: ScriptCall['of'], use: (ref: () => void) => void): void {
   const { fn } = c;
-  if (who.kind === 'self' && !player) {
+  if (who.kind === 'effect') {
+    use(() => memberAddr(fn, 'r0', c.effects.get(who.id)!));
+    return;
+  }
+  if (who.kind === 'self' && of === 'chara') {
     use(() => fn.op('add r0, r4, #0xc'));
     return;
   }
@@ -2272,10 +2329,10 @@ function withChara(c: Ctx, who: ScriptWho, at: number, player: boolean, use: (re
   chrOf(c, who);
   fn.op('mov r1, r0');
   ref();
-  fn.call(player ? A.playerCtor : A.charaCtor);
+  fn.call(of === 'player' ? A.playerCtor : of === 'monster' ? A.monsterCtor : A.charaCtor);
   use(ref);
   ref();
-  fn.call(player ? A.playerDtor : A.charaDtor);
+  fn.call(of === 'player' ? A.playerDtor : A.charaDtor);
 }
 
 /** r0 = the value. */
@@ -2400,7 +2457,7 @@ function compileCall(c: Ctx, call: ScriptCall): void {
   };
   const withSelf = (chara: (() => void) | null): void => {
     if (call.self)
-      withChara(c, call.self, FRAME.obj, call.player, (ref) => {
+      withChara(c, call.self, FRAME.obj, call.of, (ref) => {
         emit(ref, chara);
         // SetPopup keeps the kind it showed at +0xB (0xFF from the ctor, 0x2E2750) and ~ScriptChara takes the icon
         // down when it is not 0xFF (0x2FFD74 → 0x2D51B0): the ROM's CROs keep their ScriptChara for the whole event
@@ -2411,7 +2468,7 @@ function compileCall(c: Ctx, call: ScriptCall): void {
       });
     else emit(null, chara);
   };
-  if (other && other.k === 'c') withChara(c, other.who, FRAME.obj2, false, (ref) => withSelf(ref));
+  if (other && other.k === 'c') withChara(c, other.who, FRAME.obj2, 'chara', (ref) => withSelf(ref));
   else withSelf(null);
   release(c, mark);
   if (call.sym === A.camResume) fn.op('mov r8, #0');
@@ -2439,7 +2496,34 @@ const has = (nodes: ScriptNode[], is: (n: ScriptNode) => boolean): boolean =>
 const calls = (n: ScriptNode, ...syms: string[]): boolean => n.op === 'call' && syms.includes(n.call.sym);
 const usesCamera = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.camPause));
 const usesVanish = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'vanishEffect');
+/** The id of vanishEffect's ScriptEffect among an event's effects. */
+const VANISH = '#vanish';
+/** The effects an event keeps (its object's ScriptEffect members, in order): vanishEffect's, then `effect NAME`'s. */
+function effectsOf(nodes: ScriptNode[]): string[] {
+  const out: string[] = usesVanish(nodes) ? [VANISH] : [];
+  const walk = (ns: ScriptNode[]): void => {
+    for (const n of ns) {
+      if (n.op === 'effect') out.push(n.id);
+      for (const b of scriptBodies(n)) walk(b);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+/** The size of a ScriptEffect (a ScriptChara's: the CROs lay them 0x4C apart). */
+const EFFECT_SIZE = 0x4c;
 const fadesIn = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.fadeIn, A.fadeInNow));
+
+/** In a factory, r0 = the new event: its `count` effects made from `at` on (r0 kept; r4 is the event after). */
+function makeEffects(f: Fn, at: number, count: number): void {
+  if (!count) return;
+  f.op('mov r4, r0');
+  for (let k = 0; k < count; k++) {
+    memberAddr(f, 'r0', at + EFFECT_SIZE * k);
+    f.call(A.effectCtor);
+  }
+  f.op('mov r0, r4');
+}
 
 /** Branch to exactly one target; a skipped side never evaluates its calls. */
 function compileCondition(c: Ctx, condition: ScriptCond, whenTrue: string, whenFalse: string): void {
@@ -2546,6 +2630,9 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.op('mov r0, r4');
         fn.call(n.sym);
         break;
+      case 'effect':
+        // made with the event (its factory) and destroyed with it
+        break;
       case 'local': {
         // worked out in the scratch, then put in the local (the expression may read the local itself)
         const at = c.locals.get(n.name)!;
@@ -2565,9 +2652,9 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
       }
       case 'vanishEffect': {
         // contents0001 D01BossWin (+0x94c/+0x9b8): the effect by the monster's size (small 0xC1, large 0xC2, none for
-        // the others) at its shadow; the event keeps the ScriptEffect until its destructor (effectAt). Nothing when
+        // the others) at its shadow; the event keeps the ScriptEffect until its destructor (effects). Nothing when
         // the object is not on the map.
-        const at = c.effectAt!;
+        const at = c.effects.get(VANISH)!;
         const small = g.uniq(`${fn.name}_vanish_small`),
           make = g.uniq(`${fn.name}_vanish_make`),
           done = g.uniq(`${fn.name}_vanish_done`);
@@ -2811,7 +2898,7 @@ export function compileStageScript(
     ...e,
     cls: `PnEvent${k}`,
     shape: SHAPE[e.trigger],
-    effect: usesVanish(e.body),
+    effects: effectsOf(e.body),
     intro: e.trigger === 'intro' ? intros[e.group] : undefined,
   }));
   for (const e of events) {
@@ -2953,23 +3040,19 @@ export function compileStageScript(
         f.load('r0', e.intro.flag);
         f.call(A.getBit);
         f.op('tst r0, #0xff', 'movne r0, #0', `bne ${after ? `${after.cls}_make` : ret}`);
-        f.load('r0', NEW_SIZE.intro + (e.effect ? 0x4c : 0));
+        f.load('r0', NEW_SIZE.intro + EFFECT_SIZE * e.effects.length);
         f.call(A.new);
         f.op('cmp r0, #0', `beq ${ret}`);
         f.load('r1', e.intro.map);
         f.call(A.introCtor);
         f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]');
-        if (e.effect) {
-          f.op('mov r4, r0', `add r0, r0, #${hx(NEW_SIZE.intro)}`);
-          f.call(A.effectCtor);
-          f.op('mov r0, r4');
-        }
+        makeEffects(f, NEW_SIZE.intro, e.effects.length);
         // the gate's door stands open until the party is in (D01Intro's factory: StartAnimation(0x8000006E))
         if (e.intro.gate?.door) f.op('mov r4, r0', `bl ${e.cls}_open`, 'mov r0, r4');
         f.op(`b ${ret}`);
         continue;
       }
-      f.load('r0', NEW_SIZE[shape] + (e.effect ? 0x4c : 0));
+      f.load('r0', NEW_SIZE[shape] + EFFECT_SIZE * e.effects.length);
       f.call(A.new);
       f.op('cmp r0, #0', `beq ${ret}`);
       if (shape === 'npc') {
@@ -2996,11 +3079,7 @@ export function compileStageScript(
         else f.op('mov r1, r4');
         f.call(A.esCtor);
       }
-      if (e.effect) {
-        f.op('mov r4, r0', `add r0, r0, #${hx(NEW_SIZE[shape])}`);
-        f.call(A.effectCtor);
-        f.op('mov r0, r4');
-      }
+      makeEffects(f, NEW_SIZE[shape], e.effects.length);
       f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]', `b ${ret}`);
     }
     fns.push(f);
@@ -3105,7 +3184,7 @@ export function compileStageScript(
         vars,
         exit,
         breakTo: null,
-        effectAt: e.effect ? NEW_SIZE[e.shape] : null,
+        effects: new Map(e.effects.map((id, k) => [id, NEW_SIZE[e.shape] + EFFECT_SIZE * k])),
         locals,
         scr: { top: localsEnd, end: frame },
       },
@@ -3126,10 +3205,14 @@ export function compileStageScript(
 
     const d1 = new Fn(g, `${e.cls}_d1`),
       d0 = new Fn(g, `${e.cls}_d0`);
-    if (e.effect) {
+    if (e.effects.length) {
+      // the effects, last made first (ScriptEffect has no destructor of its own: ~ScriptChara, as the CROs')
       for (const d of [d1, d0]) {
-        d.op('push {r4, lr}', 'mov r4, r0', `add r0, r0, #${hx(NEW_SIZE[e.shape])}`);
-        d.call(A.charaDtor);
+        d.op('push {r4, lr}', 'mov r4, r0');
+        for (let k = e.effects.length - 1; k >= 0; k--) {
+          memberAddr(d, 'r0', NEW_SIZE[e.shape] + EFFECT_SIZE * k);
+          d.call(A.charaDtor);
+        }
         d.op('mov r0, r4', 'pop {r4, lr}');
       }
     }

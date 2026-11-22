@@ -92,7 +92,7 @@ const readParams = (text: string): ScriptOwnFunction['params'] =>
 export function scriptOwnNames(source: string): { vars: string[]; functions: ScriptOwnFunction[] } {
   const code = blankComments(source);
   // the stage's variables and the locals (let) written anywhere: their names are offered wherever they are
-  const vars = [...code.matchAll(/\b(?:var|let)\s+([A-Za-z_]\w*)/gu)].map((m) => m[1]!);
+  const vars = [...code.matchAll(/\b(?:var|let|effect)\s+([A-Za-z_]\w*)/gu)].map((m) => m[1]!);
   const functions: ScriptOwnFunction[] = [];
   for (const m of code.matchAll(/\bfunction\s+([A-Za-z_]\w*)\s*(?:\(([^)]*)\)?)?/gu))
     if (!functions.some((f) => f.name === m[1])) functions.push({ name: m[1]!, params: readParams(m[2] ?? '') });

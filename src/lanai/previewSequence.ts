@@ -18,7 +18,9 @@ export type PreviewAction =
   | { kind: 'return' };
 
 const numberOf = (a: ScriptArg | undefined): number | null => (a && (a.k === 'i' || a.k === 'f') ? a.v : null);
-const whoOf = (a: ScriptArg | undefined): ScriptWho | null => (a && (a.k === 'c' || a.k === 'p') ? a.who : null);
+// an effect the event keeps is not shown in the preview
+const whoOf = (a: ScriptArg | undefined): ScriptWho | null =>
+  a && (a.k === 'c' || a.k === 'p') && a.who.kind !== 'effect' ? a.who : null;
 /** The arguments as the author wrote them (without the ScriptMessageParams). */
 const written = (c: ScriptCall): ScriptArg[] => c.args.filter((a) => a.k !== 'm');
 
@@ -26,7 +28,7 @@ const written = (c: ScriptCall): ScriptArg[] => c.args.filter((a) => a.k !== 'm'
 function callAction(c: ScriptCall): PreviewAction | null {
   const [a, b] = written(c);
   const [n0, n1] = [numberOf(a), numberOf(b)];
-  const self = c.self;
+  const self = c.self?.kind === 'effect' ? null : c.self;
   switch (c.name) {
     case 'ScriptChara::StartAnimation':
     case 'ScriptPlayer::StartAnimation':

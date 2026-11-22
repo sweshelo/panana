@@ -104,9 +104,18 @@ export const SCRIPT_WORDS: ScriptWord[] = [
     'event.関数()',
     '話しかけたときのイベント自身の関数 (NpcCommon): event.TurnNpcRecover() (相手の向きを元に戻す)、event.ZoomHeroCamera() / event.RecoverHeroCamera() (主人公へのカメラ寄り・戻し)、event.TurnNpc() / event.TurnHero() (向かい合う。イベントの始めに自動で呼ぶ)',
   ),
+  w(
+    'statement',
+    'effect 名前',
+    'イベントが持つエフェクト (ScriptEffect)。イベントと一緒に作られ、マップを出るまで残る (同じイベントをもう一度実行しても同じもの)。名前.CreateEffect(番号, 3) で作り、名前.SetPos(位置)、名前.StartEffect(1)、名前.StartAnimation(…)、名前.StopEmission() で動かす。そのイベントの中でだけ使える',
+  ),
   w('who', 'hero', '先頭の電波人間'),
   w('who', 'self', 'イベントの持ち主 (話しかけた相手・踏んだボタン)'),
-  w('who', 'obj(イベント)', 'そのイベントの物 (キャラ・扉・宝箱・モンスター・ボタンなど)'),
+  w(
+    'who',
+    'obj(イベント)',
+    'そのイベントの物 (キャラ・扉・宝箱・モンスター・ボタンなど)。モンスターには ScriptMonster の関数も呼べる: obj(9).SetMapLabel(3)、obj(9).SetForceFollowRotate(true)',
+  ),
   w(
     'value',
     'selfRow',
