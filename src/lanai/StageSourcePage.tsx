@@ -16,6 +16,7 @@ import {
 } from './eventScript';
 import { ScriptCodeEditor, type ScriptCodeInsert } from './ScriptCodeEditor';
 import { ScriptLineDialog } from './ScriptLineDialog';
+import { CroEventDialog } from './CroEventDialog';
 import type { LanaiMapInfo } from './maps';
 import { NO_ASSIST, scriptOwnNames, type ScriptAssist } from './scriptAssist';
 import { SCRIPT_SAMPLES, type ScriptSample } from './scriptDoc';
@@ -70,6 +71,7 @@ export function LanaiStageSourcePage({
   const [map, setMap] = useState<LanaiMapInfo | undefined>(undefined);
   const group = map?.dungeon;
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   // the names as one string: the help is made again only when they change
   // (read by their words: the text being written does not compile, and the names must not go while it is)
   const names = JSON.stringify(scriptOwnNames(source));
@@ -234,6 +236,12 @@ export function LanaiStageSourcePage({
             >
               {`＋ 台詞を追加${group === undefined ? '' : ` (MapGroup ${group})`}`}
             </button>
+            <button
+              title="元のステージのイベント (CRO) をスクリプトに戻した雛形を、関数として末尾に足します"
+              onClick={() => setImporting(true)}
+            >
+              既存のイベントから挿入
+            </button>
             {SCRIPT_SAMPLES.map((s) => (
               <button key={s.name} onClick={() => addSample(s)}>{`例: ${s.name}`}</button>
             ))}
@@ -272,6 +280,23 @@ export function LanaiStageSourcePage({
           />
         </aside>
       </div>
+      {importing && (
+        <CroEventDialog
+          session={session}
+          initial={content.index}
+          onInsert={(text, names) =>
+            append(
+              `${names.join('、')} を末尾に足しました。行 ID・台詞・マップは元のステージのものです。割り当てはマップのページで行います`,
+              // the variables the script has already (an earlier insert of the same content) are not declared again
+              text
+                .split('\n')
+                .filter((l) => !declaredNames(source).includes(/^var (\w+)/u.exec(l)?.[1] ?? ''))
+                .join('\n'),
+            )
+          }
+          onClose={() => setImporting(false)}
+        />
+      )}
       {adding && maps && group !== undefined && (
         <ScriptLineDialog
           session={session}

@@ -23,6 +23,7 @@ import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
 import { LanaiStageThumbnail } from './StageThumbnail';
 import { lanaiContentRemoveBlock, removeLanaiContent } from './stageEdit';
+import { CroScriptSection } from './CroScriptView';
 import { LanaiStageContents } from './StageContents';
 import { LanaiStageSourcePage } from './StageSourcePage';
 
@@ -288,8 +289,10 @@ function ContentDetail({
               <LanaiStageStartEditor session={session} content={c} stage={st} archive={read} />
             </div>
           ))}
-          {session.createdFiles.has(c.archive.toUpperCase()) && (
+          {session.createdFiles.has(c.archive.toUpperCase()) ? (
             <LanaiStageScriptEditor session={session} content={c} />
+          ) : (
+            <CroScriptSection session={session} content={c} />
           )}
           <ContentArchiveView session={session} c={c} a={read} />
         </>
