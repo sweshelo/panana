@@ -282,7 +282,7 @@ describe('RPG FREE! stage script: reading', () => {
     expect(err('var A: byte\non talk(1, 5) {\n  X = 1\n}')).toBe('3 行目: 変数「X」はありません');
     expect(err('on start(1) { ScriptMap.EnableEventCollision(selfRow, 0) }')).toContain('selfRow');
     expect(err('on area(1, 1) { self.SetVisible(0) }')).toContain('obj(イベント番号) で指してください');
-    expect(err('on talk(1, 5) { break }')).toContain('switch の中でだけ');
+    expect(err('on talk(1, 5) { break }')).toContain('switch と for の中でだけ');
     expect(err('var A: bit\non area(1, 1) { A = 2 }')).toContain('true / false');
     expect(err('on talk(1, 5) {}\non area(1, 5) {}')).toContain('もうイベントが割り当てられています');
     expect(err('on talk(1, 5) { talk(1)')).toContain('「}」が足りません');
@@ -433,6 +433,28 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(err('on area(1, 1) { if (hero.GetRotateY()) {} }')).toContain('比べて');
     expect(err('on area(1, 1) { let p = hero.GetPos() * hero.GetPos() }')).toContain('位置');
     expect(err('on area(1, 1) { let p = ScriptMap.SetDoorOpenFlag(1) }')).toContain('値を返しません');
+    // the party walked as the CROs do (GetPlayerNum each time, GetPlayer(i) as a ScriptPlayer); break leaves it
+    const party =
+      'on area(1, 1) { for p in party { p.StartAnimation(0x80000001, 0, 1, 0)\n p.SetVisible(0)\n break } }';
+    expect(imports(party)).toEqual(
+      expect.arrayContaining([
+        '_ZN9ScriptMap12GetPlayerNumEv',
+        '_ZN9ScriptMap9GetPlayerEi',
+        '_ZN12ScriptPlayerC1EP9ChrObject',
+      ]),
+    );
+    expect(has(party, 'cmp r1, r0', 'str r5, [sp, #0xb0]', 'add r0, r0, #1')).toBe(true);
+    expect(() => build('on area(1, 1) { for p in party { p.walk(250, 0, 750)\n turn(p, 90) } }')).not.toThrow();
+    expect(err('on area(1, 1) { for p in hero {} }')).toContain('party');
+    expect(err('on area(1, 1) { break }')).toContain('for');
+    // the talk event's own object
+    expect(imports('on talk(1, 5) { event.TurnNpcRecover()\n event.ZoomHeroCamera() }')).toEqual(
+      expect.arrayContaining(['_ZN13NpcCommonTurn14TurnNpcRecoverEv', '_ZN9NpcCommon14ZoomHeroCameraEv']),
+    );
+    expect(err('on area(1, 1) { event.TurnNpcRecover() }')).toContain('話しかけた');
+    expect(err('on talk(1, 5) { event.Nothing() }')).toContain('TurnNpcRecover');
+    // ScriptMonsterCtrl: the monster's size and level from its object
+    expect(err('var N: byte\non area(1, 1) { N = ScriptMonsterCtrl.GetMonsterSize(obj(9)) }')).toBe('');
     // a function's locals are its own
     expect(err('function f() { let a = 1 }\non area(1, 1) { f()\n ScriptSystem.WaitTime(a) }')).not.toBe('');
   });

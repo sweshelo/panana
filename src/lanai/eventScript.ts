@@ -45,7 +45,12 @@ import { SCRIPT_LIBRARY } from './scriptLibrary';
  * An object a call is made on: the party's first (hero), the event's own (self: talk / button) or the one of an
  * EventObject row (obj(N): a character, a door, a chest, a monster …).
  */
-export type ScriptWho = { kind: 'hero' } | { kind: 'self' } | { kind: 'chara'; row: number };
+export type ScriptWho =
+  | { kind: 'hero' }
+  | { kind: 'self' }
+  | { kind: 'chara'; row: number }
+  /** The party's member of a `for … in party` loop: `index` is the loop's local (the member's number). */
+  | { kind: 'party'; index: string };
 export type ScriptValue = { kind: 'var'; name: string } | { kind: 'call'; call: ScriptCall };
 /** An argument of a Script API call, as the function's parameter takes it (scriptApiTable.ts). */
 export type ScriptArg =
@@ -122,6 +127,14 @@ export const VEC_RESULT: ReadonlySet<string> = new Set([
   '_ZNK11ScriptChara6GetPosEv',
   '_ZNK11ScriptChara12GetShadowPosEv',
 ]);
+
+/** The bodies a statement runs (its branches, its loop's body). */
+export function scriptBodies(n: ScriptNode): ScriptNode[][] {
+  if (n.op === 'if') return [n.then, n.else];
+  if (n.op === 'switch') return [...n.cases.map((k) => k.body), n.default ?? []];
+  if (n.op === 'party') return [n.body];
+  return [];
+}
 
 /** The Script API calls an expression makes (its own, not those of the calls' arguments). */
 export function exprCalls(e: ScriptExpr): ScriptCall[] {
@@ -259,7 +272,14 @@ export type ScriptNode =
   /** The shipped boss's vanishing effect at a monster's shadow (by its size), kept by the event (vanishEffect). */
   | { op: 'vanishEffect'; who: ScriptWho }
   | { op: 'break' }
-  | { op: 'return' };
+  | { op: 'return' }
+  /**
+   * `for p in party { … }`: the body for each member of the party (ScriptMap::GetPlayer(i), i < GetPlayerNum()), as
+   * the shipped CROs walk their ScriptPlayer[8]. `index` is the local that counts them (the members are `party`).
+   */
+  | { op: 'party'; index: string; body: ScriptNode[] }
+  /** A call of the event's own object (`event.TurnNpcRecover()`): NpcCommon / NpcCommonTurn of a talk event. */
+  | { op: 'event'; name: string; sym: string };
 
 export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
@@ -368,6 +388,10 @@ export const SCRIPT_RESERVED: readonly string[] = [
   'on',
   'var',
   'let',
+  'for',
+  'in',
+  'party',
+  'event',
   'function',
   'true',
   'false',
@@ -410,6 +434,15 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
         break;
       case 'vanishEffect':
         p = who(n.who);
+        break;
+      case 'party':
+        p = eventProblem(trigger, n.body);
+        break;
+      case 'event':
+        p =
+          trigger === 'talk'
+            ? null
+            : `event.${n.name}() は「${SCRIPT_TRIGGER_LABEL.talk}」のイベントでだけ使えます (話しかけた相手のイベントの関数です)`;
         break;
       default:
         p = each(nodeCalls(n));
@@ -801,7 +834,11 @@ export function parseStageScript(src: string): StageScript {
     const fn = next();
     if (fn.t !== 'id') fail('関数の名前が要ります', fn);
     if (self && defs.has(fn.s)) fail(`${fn.s}(…) は値を返しません。文として書きます`, fn);
-    const classes = cls ? [cls] : self!.kind === 'hero' ? ['ScriptPlayer', 'ScriptChara'] : ['ScriptChara'];
+    const classes = cls
+      ? [cls]
+      : self!.kind === 'hero' || self!.kind === 'party'
+        ? ['ScriptPlayer', 'ScriptChara']
+        : ['ScriptChara'];
     const rows = classes.flatMap((c) => API_INDEX.get(`${c}.${fn.s}`) ?? []);
     const shown = `${cls ?? classes[classes.length - 1]}::${fn.s}`;
     if (!rows.length) fail(`${shown} という Script API はありません (またはスクリプトから呼べない引数を持ちます)`, fn);
@@ -1000,6 +1037,8 @@ export function parseStageScript(src: string): StageScript {
 
   interface Ctx {
     inSwitch: boolean;
+    /** In a `for` loop: break leaves the loop (inside a switch in it, the switch). */
+    inLoop?: boolean;
   }
   /** The statements between braces, with where the text between them is. */
   const block = (ctx: Ctx): { body: ScriptNode[]; from: number; to: number } => {
@@ -1145,10 +1184,38 @@ export function parseStageScript(src: string): StageScript {
       case 'return':
         return { op: 'return' };
       case 'break':
-        if (!ctx.inSwitch) fail('break は switch の中でだけ使えます', t);
+        if (!ctx.inSwitch && !ctx.inLoop) fail('break は switch と for の中でだけ使えます', t);
         return { op: 'break' };
       case 'vanishEffect':
         return { op: 'vanishEffect', who: call(t.s, who)[0] };
+      case 'for': {
+        // for p in party { … }: p is each member of the party in turn (an object, as hero is)
+        const n = name('for の変数');
+        if (vars.has(n.s) || env.has(n.s) || locals.has(n.s) || defs.has(n.s))
+          fail(`「${n.s}」はほかの名前に使われています`, n);
+        const kw = next();
+        if (kw.t !== 'id' || kw.s !== 'in') fail('for 名前 in party { … } と書きます', kw);
+        const what = next();
+        if (what.t !== 'id' || what.s !== 'party') fail('for で回せるのは party (パーティの電波人間) だけです', what);
+        const index = `${n.s}#${++localCount}`;
+        const save = env;
+        env = new Map(env).set(n.s, { kind: 'obj', who: { kind: 'party', index } });
+        try {
+          return { op: 'party', index, body: block({ ...ctx, inLoop: true }).body };
+        } finally {
+          env = save;
+        }
+      }
+      case 'event': {
+        // a function of the event's own object (a talk event: NpcCommonTurn)
+        need('.');
+        const f = next();
+        const sym = EVENT_METHODS[f.s];
+        if (f.t !== 'id' || !sym)
+          fail(`event の関数は ${Object.keys(EVENT_METHODS).join(' / ')} です (話しかけたときのイベントだけ)`, f);
+        call(`event.${f.s}`);
+        return { op: 'event', name: f.s, sym: sym! };
+      }
       case 'let': {
         // a local of the event: a number (a float) or a position, kept while it runs
         const n = name('let の変数');
@@ -1546,6 +1613,19 @@ export const SLOT_AREA = 0,
   SLOT_TALK = 8,
   SLOT_DEFEAT = 24,
   SLOT_LEAVE = 27;
+
+/**
+ * The functions of a talk event's own object (`event.Name()`), by name: NpcCommonTurn derives from NpcCommon
+ * (event-dispatch.md §3.1). The shipped CROs call them on `this` (calls.tsv: TurnNpcRecover 78, ZoomHeroCamera 59,
+ * RecoverHeroCamera 17; TurnNpc / TurnHero 245 / 248, which every talk event of ours already calls first).
+ */
+export const EVENT_METHODS: Readonly<Record<string, string>> = {
+  TurnNpc: '_ZN13NpcCommonTurn7TurnNpcEv',
+  TurnHero: '_ZN9NpcCommon8TurnHeroEv',
+  TurnNpcRecover: '_ZN13NpcCommonTurn14TurnNpcRecoverEv',
+  ZoomHeroCamera: '_ZN9NpcCommon14ZoomHeroCameraEv',
+  RecoverHeroCamera: '_ZN9NpcCommon17RecoverHeroCameraEv',
+};
 
 /** Names of lanai.crs the code imports (script-abi.md, out/script-abi/signatures.tsv). */
 export const SCRIPT_API = {
@@ -2169,7 +2249,10 @@ function chrOf(c: Ctx, who: ScriptWho): void {
   const { fn } = c;
   if (who.kind === 'hero') fn.call(A.hero);
   else if (who.kind === 'self') fn.op('ldr r0, [r4, #0x10]'); // the event's ScriptChara (+0xC): its ChrObject* (+4)
-  else {
+  else if (who.kind === 'party') {
+    fn.op(`ldr r0, [sp, #${hx(c.locals.get(who.index)!)}]`);
+    fn.call(A.player);
+  } else {
     fn.load('r0', who.row);
     fn.call(A.mapChara);
   }
@@ -2343,25 +2426,16 @@ function compileCall(c: Ctx, call: ScriptCall): void {
 function localsOf(nodes: ScriptNode[], out = new Map<string, 'num' | 'vec'>()): Map<string, 'num' | 'vec'> {
   for (const n of nodes) {
     if (n.op === 'local' && !out.has(n.name)) out.set(n.name, n.kind);
-    else if (n.op === 'if') {
-      localsOf(n.then, out);
-      localsOf(n.else, out);
-    } else if (n.op === 'switch') {
-      for (const k of n.cases) localsOf(k.body, out);
-      localsOf(n.default ?? [], out);
-    }
+    // a loop's count: a word of the frame (an integer, the size of a number)
+    if (n.op === 'party') out.set(n.index, 'num');
+    for (const b of scriptBodies(n)) localsOf(b, out);
   }
   return out;
 }
 
 /** Whether a body (its branches too) has a node of a kind. */
 const has = (nodes: ScriptNode[], is: (n: ScriptNode) => boolean): boolean =>
-  nodes.some(
-    (n) =>
-      is(n) ||
-      (n.op === 'if' && (has(n.then, is) || has(n.else, is))) ||
-      (n.op === 'switch' && (n.cases.some((k) => has(k.body, is)) || has(n.default ?? [], is))),
-  );
+  nodes.some((n) => is(n) || scriptBodies(n).some((b) => has(b, is)));
 const calls = (n: ScriptNode, ...syms: string[]): boolean => n.op === 'call' && syms.includes(n.call.sym);
 const usesCamera = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.camPause));
 const usesVanish = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'vanishEffect');
@@ -2452,6 +2526,26 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.call(x.kind === 'byte' ? A.setByte : A.setBit);
         break;
       }
+      case 'party': {
+        // as the CROs' `for (i = 0; i < GetPlayerNum(); i++) p[i].SetChara(GetPlayer(i))`: the count read each time
+        const at = c.locals.get(n.index)!;
+        const loop = g.uniq(`${fn.name}_party`),
+          end = g.uniq(`${fn.name}_party_end`),
+          step = g.uniq(`${fn.name}_party_next`);
+        fn.op(`str r5, [sp, #${hx(at)}]`);
+        fn.at(loop);
+        fn.call(A.playerNum);
+        fn.op(`ldr r1, [sp, #${hx(at)}]`, 'cmp r1, r0', `bhs ${end}`);
+        compileNodes({ ...c, breakTo: end }, n.body);
+        fn.at(step);
+        fn.op(`ldr r0, [sp, #${hx(at)}]`, 'add r0, r0, #1', `str r0, [sp, #${hx(at)}]`, `b ${loop}`);
+        fn.at(end);
+        break;
+      }
+      case 'event':
+        fn.op('mov r0, r4');
+        fn.call(n.sym);
+        break;
       case 'local': {
         // worked out in the scratch, then put in the local (the expression may read the local itself)
         const at = c.locals.get(n.name)!;

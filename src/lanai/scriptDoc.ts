@@ -94,6 +94,16 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   ),
   w('flow', 'switch (値) { case 値: … default: … }', '値で分ける。case は下へ続かない (break は書かなくてよい)'),
   w('flow', 'return', 'イベントをそこで終える (関数の中に書いても、呼んだイベントごと終わる)'),
+  w(
+    'flow',
+    'for 名前 in party { … }',
+    'パーティの電波人間 1 人ずつに同じことをする (先頭から、ScriptMap.GetPlayerNum() 人まで)。名前は hero と同じように使える: for p in party { p.StartAnimation(0x80000001, 0, 1, 0) }。break でループを抜ける',
+  ),
+  w(
+    'statement',
+    'event.関数()',
+    '話しかけたときのイベント自身の関数 (NpcCommon): event.TurnNpcRecover() (相手の向きを元に戻す)、event.ZoomHeroCamera() / event.RecoverHeroCamera() (主人公へのカメラ寄り・戻し)、event.TurnNpc() / event.TurnHero() (向かい合う。イベントの始めに自動で呼ぶ)',
+  ),
   w('who', 'hero', '先頭の電波人間'),
   w('who', 'self', 'イベントの持ち主 (話しかけた相手・踏んだボタン)'),
   w('who', 'obj(イベント)', 'そのイベントの物 (キャラ・扉・宝箱・モンスター・ボタンなど)'),

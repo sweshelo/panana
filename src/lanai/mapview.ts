@@ -341,7 +341,8 @@ export class LanaiMapView {
   }
 
   private previewKey(who: ScriptWho): string {
-    if (who.kind === 'hero') return 'hero';
+    // a member of the party (a for … in party loop) is shown as the leader
+    if (who.kind === 'hero' || who.kind === 'party') return 'hero';
     const row = who.kind === 'self' ? this.previewSelf : who.row;
     if (row === null) throw new Error('self の対象イベントがありません。関数をマップのイベントに割り当ててください。');
     return `chara:${row}`;

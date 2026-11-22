@@ -11,6 +11,7 @@ import {
   compileStageScript,
   INTRO_DIR,
   nodeCalls,
+  scriptBodies,
   parseStageScript,
   STAGE_BIT_FLAGS,
   STAGE_BYTE_FLAGS,
@@ -153,11 +154,8 @@ function charaRows(body: ScriptNode[]): number[] {
       who(c.self);
       for (const a of c.args) if (a.k === 'c' || a.k === 'p') who(a.who);
     }
-    if (n.op === 'if') out.push(...charaRows(n.then), ...charaRows(n.else));
-    else if (n.op === 'switch') {
-      for (const c of n.cases) out.push(...charaRows(c.body));
-      out.push(...charaRows(n.default ?? []));
-    } else if (n.op === 'vanishEffect') who(n.who);
+    for (const b of scriptBodies(n)) out.push(...charaRows(b));
+    if (n.op === 'vanishEffect') who(n.who);
   }
   return out;
 }
@@ -170,13 +168,7 @@ export function battleGroups(body: ScriptNode[]): number[] {
       const group = n.op === 'call' && n.call.name === 'ScriptMap::EncountBoss' ? n.call.args[0] : undefined;
       if (group?.k === 'i') {
         if (!out.includes(group.v)) out.push(group.v);
-      } else if (n.op === 'if') {
-        walk(n.then);
-        walk(n.else);
-      } else if (n.op === 'switch') {
-        for (const c of n.cases) walk(c.body);
-        walk(n.default ?? []);
-      }
+      } else for (const b of scriptBodies(n)) walk(b);
     }
   };
   walk(body);

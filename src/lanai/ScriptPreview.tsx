@@ -18,7 +18,8 @@ import { useAsync } from '../ui/useAsync';
 import { soundPlayer } from '../sound/player';
 import { requireAudible } from '../sound/render';
 
-const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `obj(${who.row})` : who.kind);
+const whoText = (who: ScriptWho): string =>
+  who.kind === 'chara' ? `obj(${who.row})` : who.kind === 'party' ? 'party' : who.kind;
 const argText = (a: ScriptArg): string => {
   switch (a.k) {
     case 'i':
@@ -92,7 +93,7 @@ export function ScriptPreviewControls({
   }, [view, fn, self]);
   /** The event the statement acts on (its number is lit while it runs). */
   const rowOf = (who: ScriptWho | null | undefined): number | null =>
-    !who || who.kind === 'hero' ? null : who.kind === 'self' ? self : who.row;
+    !who || who.kind === 'hero' || who.kind === 'party' ? null : who.kind === 'self' ? self : who.row;
   useEffect(() => {
     view.scene.canvas.style.filter = `brightness(${1 - fade})`;
     return () => {

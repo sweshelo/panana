@@ -309,6 +309,8 @@ export const SCRIPT_API_ROWS: ScriptApiRow[] = [
   ["ScriptMenu", "SystemMessageYesNo", "_ZN10ScriptMenu18SystemMessageYesNoEjjRK18ScriptMessageParamS2_", "iimm", "u32, u32, const ScriptMessageParam&, const ScriptMessageParam&", "bool"],
   ["ScriptMenu", "UpdateMessage", "_ZN10ScriptMenu13UpdateMessageEv", "", "", "bool?"],
   ["ScriptMenu", "UseStaminaYesNo", "_ZN10ScriptMenu15UseStaminaYesNoEjtRK18ScriptMessageParamS2_", "iimm", "u32, u16, const ScriptMessageParam&, const ScriptMessageParam&", "bool"],
+  ["ScriptMonsterCtrl", "GetMonsterLevel", "_ZN17ScriptMonsterCtrl15GetMonsterLevelEP9ChrObjectj", "pi", "ChrObject*, u32", "u32"],
+  ["ScriptMonsterCtrl", "GetMonsterSize", "_ZN17ScriptMonsterCtrl14GetMonsterSizeEP9ChrObject", "p", "ChrObject*", "u32"],
   ["ScriptPlayer", "AlphaTo", "_ZN12ScriptPlayer7AlphaToEff10GSAnimModebbf", "ffiiif", "float, float, GSAnimMode, bool, bool, float", "void?"],
   ["ScriptPlayer", "ChangeColiseumPlayer", "_ZN12ScriptPlayer20ChangeColiseumPlayerEhj9GSDisplay", "iii", "u8, u32, GSDisplay", "void"],
   ["ScriptPlayer", "CreatePlayer", "_ZN12ScriptPlayer12CreatePlayerEij9GSDisplay", "iii", "s32, u32, GSDisplay", "u32?"],
