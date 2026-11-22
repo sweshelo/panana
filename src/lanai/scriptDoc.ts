@@ -75,12 +75,22 @@ export const SCRIPT_WORDS: ScriptWord[] = [
   w(
     'statement',
     '引数に変数 (Script API・関数)',
-    'byte の変数は数の引数 (整数・小数) に式ごと書ける: obj(3).RotateTo(N * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1)、関数の num 引数にも。bit の変数は bool の引数にだけ: hero.SetVisible(B)。obj(…)・vec(…)・case・比べる値には使えない (作るときに決まる数)',
+    'byte の変数・let の変数・値を返す Script API は数の引数 (整数・小数) に式ごと書ける: obj(3).RotateTo(N * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1)、関数の num 引数にも。bit の変数は bool の引数にだけ: hero.SetVisible(B)。obj(…)・case には使えない (作るときに決まる数)',
+  ),
+  w(
+    'statement',
+    'let 名前 = 値',
+    'イベントの中だけの変数 (保存されない)。数 (小数) か位置 (vec) を入れる: let p = obj(2).GetPos()、let a = ScriptMath.GetDirectionRotY(hero.GetPos() - p)。2 回目からは 名前 = 値 (数は += ++ も、位置は += -= も)。関数の中の let はその関数だけのもの',
+  ),
+  w(
+    'value',
+    '位置の計算',
+    '位置は足し引き (p + vec(0, 100, 0)、hero.GetPos() - p) と、数との掛け算・割り算 (d * 0.5) ができる。p.x / p.y / p.z で 1 つの数を取り出す。位置を返す Script API: GetPos、GetShadowPos',
   ),
   w(
     'flow',
     'if (条件) { … } else { … }',
-    '条件: 名前、!名前、名前 == 値 (!= < <= > >=)、値を返す Script API (例: ScriptMenu.SystemMessageYesNo(0x80000063)、ScriptFlag.GetItemNum(0x80000005, 1) >= 2)。&& / || / ( ) で組み合わせます (&& を先に評価)',
+    '条件: 名前、!名前、名前 == 値 (!= < <= > >=)、値を返す Script API (例: ScriptMenu.SystemMessageYesNo(0x80000063)、ScriptFlag.GetItemNum(0x80000005, 1) >= 2)。let の変数・小数を返す関数・計算は比べて書く (小数で比べる): d.x * d.x + d.z * d.z < 300 * 300。&& / || / ( ) で組み合わせます (&& を先に評価)',
   ),
   w('flow', 'switch (値) { case 値: … default: … }', '値で分ける。case は下へ続かない (break は書かなくてよい)'),
   w('flow', 'return', 'イベントをそこで終える (関数の中に書いても、呼んだイベントごと終わる)'),
@@ -92,7 +102,7 @@ export const SCRIPT_WORDS: ScriptWord[] = [
     'selfRow',
     'このイベントの番号 (ゲームが実行時に渡す)。Script API の引数にそのまま書く: ScriptMap.EnableEventCollision(selfRow, 0) で自分の範囲を無効にする',
   ),
-  w('value', 'vec(x, y, z)', 'Script API の位置の引数 (GSvec)'),
+  w('value', 'vec(x, y, z)', 'Script API の位置の引数 (GSvec)。x・y・z には変数や計算も書ける'),
   w(
     'value',
     '計算式',

@@ -162,7 +162,7 @@ describe('RPG FREE! stage script: reading', () => {
     const vars = 'var N: byte\nvar B: bit\n';
     expect(err(`${vars}on area(1, 1) { N = 256 }`)).toContain('0〜255');
     expect(err(`${vars}on area(1, 1) { X++ }`)).toContain('変数「X」はありません');
-    expect(err(`${vars}on area(1, 1) { N = X + 1 }`)).toContain('数か byte の変数');
+    expect(err(`${vars}on area(1, 1) { N = X + 1 }`)).toContain('数・変数・位置 (vec) で書きます');
     // a bit is true / false: not a number
     expect(err(`${vars}on area(1, 1) { B++ }`)).toContain('B = !B');
     expect(err(`${vars}on area(1, 1) { N = B }`)).toContain('true / false');
@@ -202,7 +202,8 @@ describe('RPG FREE! stage script: reading', () => {
     // a bit only where a bool is taken; a variable not where the number is needed when the script is built
     expect(err('ScriptSound.Play(B, 0)')).toContain('bool の引数にだけ');
     expect(err('obj(X).SetVisible(1)')).toContain('変数を使えません');
-    expect(err('obj(3).RotateTo(vec(X, 0, 0), 0.25, 0, 0, 0, 1)')).toContain('変数を使えません');
+    // a position of variables is worked out when the event runs (a vec of numbers is laid when the script is built)
+    expect(err('obj(3).SetPos(vec(X, 0, 0))')).toBe('');
   });
 
   test('conditions: variables and the values of Script API calls', () => {
@@ -290,13 +291,16 @@ describe('RPG FREE! stage script: reading', () => {
     expect(err('on talk(1, 5) { talk(1) } @')).toContain('使えない文字');
   });
 
-  test('the result of an API function: an integer is compared, void and float are not values', () => {
+  test('the result of an API function: an integer is compared as a byte, a float as a float, void is not a value', () => {
     // read from the game's code (scriptApiTable.ts; lanai-custom-stages 3ds/research/script-returns.md)
     const body = (cond: string): string => `on talk(1, 5) { if (${cond}) { ScriptSystem.WaitTime(1) } }`;
     expect(() => parseStageScript(body('ScriptCamera.IsAnimation() == 1'))).not.toThrow();
     expect(() => parseStageScript(body('ScriptMap.GetCurrentMapGroupID() == 1'))).not.toThrow();
     expect(() => parseStageScript(body('ScriptMap.ChangeMap(1, 2) == 1'))).toThrow('void');
-    expect(() => parseStageScript(body('ScriptCamera.GetTargetDistance() == 1'))).toThrow('float');
+    expect(() => parseStageScript(body('ScriptCamera.GetTargetDistance() == 1'))).not.toThrow();
+    const far = parseStageScript(body('ScriptCamera.GetTargetDistance() > 1')).events[0]!.body[0]!;
+    expect(far.op === 'if' && 'l' in far.cond).toBe(true);
+    expect(() => parseStageScript(body('ScriptCamera.GetTargetDistance()'))).toThrow('比べて');
     // as statements they are called as before
     expect(() => parseStageScript('on talk(1, 5) { ScriptMap.ChangeMap(1, 2) }')).not.toThrow();
   });
@@ -344,21 +348,93 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
       return lines.every((l) => w.includes(assembleLine(l, 0).words[0]!));
     };
     const vars = 'var N: byte\nvar B: bit\nvar C: bit\n';
-    // the frame grows by the slots; the variable is kept at the first one (0xB0)
-    expect(has(`${vars}on start(1) { N++ }`, 'sub sp, sp, #0xf0', 'str r0, [sp, #0xb0]', 'add r0, r0, r1')).toBe(true);
+    // the frame grows by the scratch; the variable is kept at its first word (0xB0)
+    expect(has(`${vars}on start(1) { N++ }`, 'sub sp, sp, #0x1f0', 'str r0, [sp, #0xb0]', 'add r0, r0, r1')).toBe(true);
     expect(has(`${vars}on start(1) { N++ }`, 'and r0, r0, #0xff')).toBe(true);
     expect(words(`${vars}on start(1) { N++ }`)).toEqual(words(`${vars}on start(1) { N = N + 1 }`));
     expect(words(`${vars}on start(1) { N += 1 }`)).toEqual(words(`${vars}on start(1) { N = N + 1 }`));
     expect(has(`${vars}on start(1) { N = N * 3 }`, 'mul r0, r0, r1')).toBe(true);
     expect(has(`${vars}on start(1) { B = !C }`, 'moveq r0, #1', 'movne r0, #0')).toBe(true);
-    // a float argument: worked out in s0, kept in the first argument slot (0xB0 + 4 * 8), then passed in s0
+    // a float argument: worked out in s0, kept in the scratch's first word (the variable it reads above it), then
+    // passed in s0
     const rotate = `${vars}on area(1, 1) { obj(26).RotateTo(N * 90 * 3.14159265 / 180, 0.5, 0, 0, 0, 1) }`;
     expect(has(rotate, 'vcvt.f32.s32 s0, s0', 'vmul.f32 s0, s0, s1', 'vdiv.f32 s0, s0, s1')).toBe(true);
-    expect(has(rotate, 'vstr s0, [sp, #0xd0]', 'vldr s0, [sp, #0xd0]')).toBe(true);
+    expect(has(rotate, 'str r0, [sp, #0xb4]', 'vstr s0, [sp, #0xb0]', 'vldr s0, [sp, #0xb0]')).toBe(true);
     // an integer argument through r0
-    expect(has(`${vars}on start(1) { ScriptSound.Play(0x70 + N, 0) }`, 'ldr r0, [sp, #0xd0]')).toBe(true);
+    expect(has(`${vars}on start(1) { ScriptSound.Play(0x70 + N, 0) }`, 'ldr r0, [sp, #0xb0]')).toBe(true);
     // the intro's frame keeps the party: the slots go above it
     expect(has('var N: byte\non intro(1) { N++ }', 'str r0, [sp, #0x348]')).toBe(true);
+  });
+
+  test('locals and positions: let, GetPos, vec sums, .x, results in expressions, float comparisons', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const build = (src: string) => {
+      const intro = { map: 1, flag: STAGE_BIT_FLAGS.first, gate: null };
+      return compileStageScript(base, parseStageScript(src), [], { 1: intro });
+    };
+    const words = (src: string): number[] => {
+      const t = build(src).cro.segments[CRO_TEXT]!.bytes!;
+      const v = new DataView(t.buffer, t.byteOffset, t.byteLength);
+      return Array.from({ length: t.length >> 2 }, (_, k) => v.getUint32(4 * k, true));
+    };
+    const has = (src: string, ...lines: string[]): boolean => {
+      const w = words(src);
+      return lines.every((l) => w.includes(assembleLine(l, 0).words[0]!));
+    };
+    const imports = (src: string): string[] => build(src).cro.namedImports.map((x) => x.name);
+    // CRO 108 D01001F01Static001: face the hero (VECSubtract → GetDirectionRotY → GetRotateTime → RotateTo)
+    const look = `on area(1, 1) {
+  let p = obj(2).GetPos()
+  let a = ScriptMath.GetDirectionRotY(hero.GetPos() - p)
+  obj(2).RotateTo(a, ScriptMath.GetRotateTime(obj(2).GetRotateY(), a, 0.5), 0, 0, 0, 1)
+}`;
+    expect(imports(look)).toEqual(
+      expect.arrayContaining([
+        '_ZNK11ScriptChara6GetPosEv',
+        '_ZN10ScriptMath16GetDirectionRotYERK5GSvec',
+        '_ZN10ScriptMath13GetRotateTimeEfff',
+        '_ZN11ScriptChara10GetRotateYEv',
+      ]),
+    );
+    // locals sit above the frame (p at 0xB0, a at 0xC0), GetPos's x, y, z copied from the pointer it returns
+    expect(has(look, 'vldr s0, [r0]', 'vldr s1, [r0, #4]', 'vldr s2, [r0, #8]', 'vstr s0, [sp, #0xc0]')).toBe(true);
+    expect(has(look, 'vsub.f32 s0, s0, s3', 'vsub.f32 s2, s2, s5')).toBe(true);
+    // a float comparison: vcmp, the flags moved, the branch of the opposite
+    const near =
+      'var N: byte\non area(1, 1) { let d = hero.GetPos() - obj(2).GetPos()\n if (d.x * d.x + d.z * d.z < 90000) { N = 1 } }';
+    expect(has(near, 'vcmp.f32 s0, s1', 'vmrs APSR_nzcv, fpscr', 'vmul.f32 s0, s0, s1')).toBe(true);
+    // a byte variable compared with a number stays an integer comparison (as before)
+    expect(words('var N: byte\non start(1) { if (N > 2) { N = 0 } }')).not.toContain(
+      assembleLine('vmrs APSR_nzcv, fpscr', 0).words[0]!,
+    );
+    // a local counted, a position moved, one times a number
+    expect(() =>
+      build(
+        'on area(1, 1) { let t = 0\n t++\n t += 2 * t\n let q = obj(2).GetPos() + vec(0, 100, t)\n q -= vec(1, 0, 0)\n obj(3).SetPos(q * 0.5) }',
+      ),
+    ).not.toThrow();
+    // the intro's locals go above its frame (0x348): beyond vldr's reach from sp (0x3FC) they are reached through ip
+    const many = Array.from({ length: 12 }, (_, k) => `let p${k} = hero.GetPos()`).join('\n');
+    const intro = `on intro(1) {\n${many}\n hero.SetPos(p11) }`;
+    expect(has(intro, 'str r0, [sp, #0x348]')).toBe(false);
+    expect(has(intro, 'add ip, sp, ip')).toBe(true);
+    // what the language refuses
+    const err = (src: string): string => {
+      try {
+        parseStageScript(src);
+        return '';
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+    expect(err('on area(1, 1) { let a = 1\n let a = 2 }')).toContain('2 つあります');
+    expect(err('on area(1, 1) { if (hero.GetRotateY()) {} }')).toContain('比べて');
+    expect(err('on area(1, 1) { let p = hero.GetPos() * hero.GetPos() }')).toContain('位置');
+    expect(err('on area(1, 1) { let p = ScriptMap.SetDoorOpenFlag(1) }')).toContain('値を返しません');
+    // a function's locals are its own
+    expect(err('function f() { let a = 1 }\non area(1, 1) { f()\n ScriptSystem.WaitTime(a) }')).not.toBe('');
   });
 
   test("an intro with a gate closes the gate's door again when its flag is set (D01Intro's CtrlFlag)", async () => {

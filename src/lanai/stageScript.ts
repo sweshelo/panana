@@ -10,6 +10,7 @@ import { buildCro, parseCro } from './cro';
 import {
   compileStageScript,
   INTRO_DIR,
+  nodeCalls,
   parseStageScript,
   STAGE_BIT_FLAGS,
   STAGE_BYTE_FLAGS,
@@ -20,7 +21,6 @@ import {
   type LeaveReset,
   type ScriptNode,
   type ScriptTrigger,
-  type ScriptValue,
   type ScriptWho,
   type StageScript,
 } from './eventScript';
@@ -148,27 +148,16 @@ export const triggerFitsRecord = (t: ScriptTrigger, rec: EventRecord): boolean =
 function charaRows(body: ScriptNode[]): number[] {
   const out: number[] = [];
   const who = (w: ScriptWho | null | undefined): void => void (w?.kind === 'chara' && out.push(w.row));
-  const value = (v: ScriptValue): void => {
-    if (v.kind !== 'call') return;
-    who(v.call.self);
-    for (const a of v.call.args) if (a.k === 'c' || a.k === 'p') who(a.who);
-  };
-  const condition = (c: Extract<ScriptNode, { op: 'if' }>['cond']): void => {
-    if ('op' in c) {
-      condition(c.left);
-      condition(c.right);
-    } else value(c.value);
-  };
   for (const n of body) {
-    if (n.op === 'if') {
-      condition(n.cond);
-      out.push(...charaRows(n.then), ...charaRows(n.else));
-    } else if (n.op === 'switch') {
-      value(n.value);
+    for (const c of nodeCalls(n)) {
+      who(c.self);
+      for (const a of c.args) if (a.k === 'c' || a.k === 'p') who(a.who);
+    }
+    if (n.op === 'if') out.push(...charaRows(n.then), ...charaRows(n.else));
+    else if (n.op === 'switch') {
       for (const c of n.cases) out.push(...charaRows(c.body));
       out.push(...charaRows(n.default ?? []));
-    } else if (n.op === 'call') value({ kind: 'call', call: n.call });
-    else if (n.op === 'vanishEffect') who(n.who);
+    } else if (n.op === 'vanishEffect') who(n.who);
   }
   return out;
 }
