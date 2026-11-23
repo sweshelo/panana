@@ -5,7 +5,7 @@ import {
   lanaiAnimationIds,
   lanaiAnimationName,
   lanaiDenpaModel,
-  lanaiNpcModel,
+  lanaiObjectModelRef,
   lanaiNpcModels,
 } from '../src/lanai/animationModels';
 import { parseStageScript, scriptRowId } from '../src/lanai/eventScript';
@@ -27,7 +27,7 @@ describe.skipIf(!hasLanai)('RPG FREE! character animations', () => {
   test('NPC BCH motions map to the AnimData IDs used by scripts', async () => {
     const npcs = await lanaiNpcModels(session);
     expect(npcs.length).toBeGreaterThan(100);
-    const ref = lanaiNpcModel(session, npcs[0]!.row)!;
+    const ref = lanaiObjectModelRef(session, npcs[0]!.row)!;
     const { set, hash } = (await ref.load())!;
     const names = set.models.get(hash)!.animations.map((motion) => motion.name);
     expect(names).toContain('000_NPC01_wait');

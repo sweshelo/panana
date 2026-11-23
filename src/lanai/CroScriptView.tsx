@@ -81,7 +81,9 @@ export function CroScriptPage({ session, content }: { session: LanaiSession; con
             </label>
           </div>
           {d.events.length ? (
-            <ScriptCodeEditor value={text} onChange={() => {}} label="スクリプト (閲覧)" readOnly />
+            <div className="stage-source-view">
+              <ScriptCodeEditor value={text} onChange={() => {}} label="スクリプト (閲覧)" readOnly />
+            </div>
           ) : (
             <p className="muted small">このコンテンツの CRO にはイベントがありません。</p>
           )}

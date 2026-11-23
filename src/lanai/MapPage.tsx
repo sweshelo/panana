@@ -50,6 +50,8 @@ import { LANAI_RANGE_PROP_KIND, lanaiRange } from './rangeShape';
 import {
   lanaiButtonDoor,
   lanaiEditState,
+  lanaiKindParts,
+  lanaiPlaceLink,
   lanaiRecEventRow,
   lanaiRecLabel,
   lanaiValidate,
@@ -114,7 +116,8 @@ import { LanaiMapView } from './mapview';
 import { ScriptMovePanel } from './ScriptMovePanel';
 import { ScriptPreviewControls } from './ScriptPreview';
 import type { LanaiSession } from './session';
-import { lanaiRomParts, type LanaiRomPart } from './romParts';
+import { lanaiRomCatalog, type LanaiRomCatalog } from './romParts';
+import { lanaiObjectInfo, type LanaiObjectInfo } from './objectClasses';
 import { LanaiEventSelect } from './EventSelect';
 import { EventConditionFields } from './EventConditionFields';
 import { DestinationFields, lanaiDestinationPoints } from './DestinationFields';
@@ -135,11 +138,11 @@ const noop = (): void => {};
 
 /** Re-render on every change of the content's maps (edits, reverts, sections put back). */
 /** The ROM's kinds of records (romParts.ts), read in the background; empty until they are. */
-function useRomParts(session: LanaiSession): readonly LanaiRomPart[] {
-  const [parts, setParts] = useState<readonly LanaiRomPart[]>(NO_ROM_PARTS);
+function useRomParts(session: LanaiSession): LanaiRomCatalog {
+  const [parts, setParts] = useState<LanaiRomCatalog>(NO_ROM_PARTS);
   useEffect(() => {
     let live = true;
-    lanaiRomParts(session).then(
+    lanaiRomCatalog(session).then(
       (p) => live && setParts(p),
       () => undefined,
     );
@@ -149,7 +152,24 @@ function useRomParts(session: LanaiSession): readonly LanaiRomPart[] {
   }, [session]);
   return parts;
 }
-const NO_ROM_PARTS: readonly LanaiRomPart[] = [];
+const NO_ROM_PARTS: LanaiRomCatalog = { parts: [], props: new Map() };
+
+/** What each MapObject row is for (objectClasses.ts), read in the background; empty until it is. */
+function useObjectInfo(session: LanaiSession): ReadonlyMap<number, LanaiObjectInfo> {
+  const [info, setInfo] = useState<ReadonlyMap<number, LanaiObjectInfo>>(NO_OBJECT_INFO);
+  useEffect(() => {
+    let live = true;
+    lanaiObjectInfo(session).then(
+      (i) => live && setInfo(i),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [session]);
+  return info;
+}
+const NO_OBJECT_INFO: ReadonlyMap<number, LanaiObjectInfo> = new Map();
 
 function useMaps(maps: LanaiMaps | null): number {
   return useSyncExternalStore(
@@ -1012,6 +1032,63 @@ function TalkPlacement({
   );
 }
 
+/**
+ * A kind whose records do different things: which one is placed, each with the maps of the ROM that use it; the
+ * chosen one's own dialog (destination, lines, shop) follows.
+ */
+function ActionPlacement({
+  template,
+  onReady,
+  onClose,
+}: {
+  template: ReturnType<LanaiEditState['templates']>[number];
+  onReady: (t: typeof template) => void;
+  onClose: () => void;
+}): ReactNode {
+  const actions = template.actions ?? [];
+  const [chosen, setChosen] = useState(() =>
+    actions.reduce((best, c, i) => (c.count > actions[best]!.count ? i : best), 0),
+  );
+  return (
+    <Dialog title={`${template.label}を置く`} onClose={onClose}>
+      <fieldset className="field action-choices">
+        <legend>動作</legend>
+        {actions.map((c, i) => (
+          <div key={`${c.label}/${i}`} className="action-choice">
+            <label className="row">
+              <input type="radio" name="part-action" checked={chosen === i} onChange={() => setChosen(i)} />
+              <span>
+                {c.label}{' '}
+                <span className="muted small">
+                  {c.count ? `ROM で ${c.count} 件` : '新規'}
+                  {c.description ? ` · ${c.description}` : ''}
+                </span>
+              </span>
+            </label>
+            {c.places.length > 0 && (
+              <details className="small">
+                <summary>使用例</summary>
+                {c.places.map((p) => (
+                  <a key={p.href} href={p.href} onClick={onClose}>
+                    {p.label}
+                  </a>
+                ))}
+              </details>
+            )}
+          </div>
+        ))}
+      </fieldset>
+      <p className="muted small">動作と見た目は、置いた後にインスペクタで変えられます。</p>
+      <div className="row">
+        <button onClick={onClose}>キャンセル</button>
+        <button className="primary" disabled={!actions[chosen]} onClick={() => onReady(actions[chosen]!.template)}>
+          次へ
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 /** Adding records: props (section 2) and copies of the group's records; copying and removing the selected one. */
 function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): ReactNode {
   const [chest, setChest] = useState<{
@@ -1030,9 +1107,28 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
     template: ReturnType<LanaiEditState['templates']>[number];
     choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
   } | null>(null);
+  const [actionPart, setActionPart] = useState<{
+    template: ReturnType<LanaiEditState['templates']>[number];
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void;
+  } | null>(null);
+  const prepare = (
+    template: ReturnType<LanaiEditState['templates']>[number],
+    choose: (ready: ReturnType<LanaiEditState['templates']>[number]) => void,
+  ): void => {
+    if (template.actions) setActionPart({ template, choose });
+    else if (template.event?.chest) setChest({ template, choose });
+    else if (template.event?.switchTrigger) setSwitchPart({ template, choose });
+    else if (template.event?.destination) setExitPart({ template, choose });
+    else if (template.event?.talk) setTalkPart({ template, choose });
+    else choose(template);
+  };
   const revision = useMaps(st.maps);
-  const romParts = useRomParts(st.maps.session);
-  const templates = useMemo(() => [...st.templates(), ...st.romTemplates(romParts)], [st, st.info, revision, romParts]);
+  const rom = useRomParts(st.maps.session);
+  const objectInfo = useObjectInfo(st.maps.session);
+  const templates = useMemo(
+    () => lanaiKindParts(st.templates(), st.romTemplates(rom.parts)),
+    [st, st.info, revision, rom],
+  );
   const props = useMemo(() => st.props(), [st, st.info, revision]);
   const objects = st.maps.session.table('MapObject');
   const all = useMemo(
@@ -1052,15 +1148,29 @@ function AddPanel({ st, view }: { st: LanaiEditState; view: LanaiMapView }): Rea
         directions={FACING_LABELS}
         modelForProp={(row) => ({ type: 'object' as const, row })}
         modelForTemplate={(t) => t.model ?? view.partLook(t.section, t.raw)?.model ?? null}
-        help="パーツを選んでマップをクリックすると配置できます。ROM 由来のパーツは種類ごとに分類し、3D 外観が違うものは別の候補にしました。新規・設定付きは配置時に行き先や台詞などを設定できます。既存ギミックはこのステージから設定を複製します。装飾にはゲーム中の動作がありません。Esc で選択に戻ります。"
-        prepareTemplate={(template, choose) => {
-          if (template.event?.chest) setChest({ template, choose });
-          else if (template.event?.switchTrigger) setSwitchPart({ template, choose });
-          else if (template.event?.destination) setExitPart({ template, choose });
-          else if (template.event?.talk) setTalkPart({ template, choose });
-          else choose(template);
-        }}
+        propInfo={(row) => objectInfo.get(row)}
+        modelLink={(model) =>
+          model?.type === 'object' && model.row
+            ? { label: `モデルとアニメを見る (MapObject #${model.row})`, href: `#/models/${model.row}` }
+            : model?.type === 'denpa'
+              ? { label: 'モデルとアニメを見る (電波人間)', href: '#/models/denpa' }
+              : undefined
+        }
+        propPlaces={(row) => (rom.parts.length ? (rom.props.get(row) ?? []).map(lanaiPlaceLink) : undefined)}
+        help="パーツを選んでマップをクリックすると配置できます。パーツは区画と種別ごとに 1 つで、動作が複数ある種別は置くときに選びます (使用例つき)。外観・動作は置いた後にインスペクタで変えられます。装飾にはゲーム中の動作がありません。右クリックで使用例のマップとモデルを開けます。Esc で選択に戻ります。"
+        prepareTemplate={prepare}
       />
+      {actionPart && (
+        <ActionPlacement
+          template={actionPart.template}
+          onReady={(ready) => {
+            const { choose } = actionPart;
+            setActionPart(null);
+            prepare(ready, choose);
+          }}
+          onClose={() => setActionPart(null)}
+        />
+      )}
       {chest && (
         <ChestPlacement
           st={st}

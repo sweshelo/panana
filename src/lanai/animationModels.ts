@@ -54,7 +54,8 @@ export function lanaiNpcModels(session: LanaiSession): Promise<LanaiNpcModel[]> 
   return cached.promise;
 }
 
-export function lanaiNpcModel(session: LanaiSession, row: number): ModelRef | null {
+/** Any MapObject row's model (the NPCs', the props'). */
+export function lanaiObjectModelRef(session: LanaiSession, row: number): ModelRef | null {
   const ref = lanaiObjectRef(session.table('MapObject'), row);
   return ref
     ? {

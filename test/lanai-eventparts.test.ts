@@ -27,7 +27,8 @@ import {
 import { LANAI_FLOOR_ROWS, lanaiCharaRowBytes, lanaiLevelDoorNumber, lanaiRecordLook } from '../src/lanai/mapObjects';
 import { lanaiMapHref } from '../src/lanai/hrefs';
 import { lanaiArrivals, lanaiDestinationPlace } from '../src/lanai/mapLinks';
-import { LANAI_EXISTING_CATEGORY, lanaiEditState, lanaiRecEventRow, lanaiRecLabel } from '../src/lanai/mapedit';
+import { lanaiEditState, lanaiKindParts, lanaiRecEventRow, lanaiRecLabel } from '../src/lanai/mapedit';
+import { lanaiRecKind } from '../src/lanai/romParts';
 import {
   LANAI_EVENT_LEVEL,
   LANAI_FLOOR_POISON,
@@ -199,7 +200,9 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     expect(poison!.section).toBe(1);
     expect([...poison!.raw]).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, LANAI_FLOOR_POISON, 0, 0]);
     expect(lanaiRecLabel(1, poison!.raw)).toBe('毒床');
-    expect(lanaiFloorKindLabel(2)).toBe('床のギミック 2');
+    expect(lanaiFloorKindLabel(0)).toBe('ダメージ床');
+    expect(lanaiFloorKindLabel(2)).toBe('凍った床 (すべらない)');
+    expect(lanaiFloorKindLabel(4)).toBe('床のギミック 4');
     expect(lanaiFloorKindLabel(3)).toBe('凍った床');
     expect(lanaiFloorParts().map((p) => p.raw[0x0d])).toEqual([1, 3]);
     // the models the game places for the floors (FUN_0021C534), shown as their thumbnails
@@ -297,16 +300,28 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and EncountBoss', () => 
     maps = await lanaiMaps(s, c);
   }, 300000);
 
-  test('the records copied from the stage are one category; the warps show their models', () => {
+  test('the picker has one part per section and kind; what a kind does is chosen when placed', () => {
     const st = lanaiEditState(maps);
     st.open(maps.mapByName('D01001B01')!);
     const all = st.templates();
-    const copied = all.filter((t) => !t.event && !t.source.startsWith('新規'));
-    expect(copied.length).toBeGreaterThan(0);
-    expect(copied.every((t) => t.category === LANAI_EXISTING_CATEGORY)).toBe(true);
+    // only records made from nothing: the stage's own records are not copied
+    expect(all.every((t) => t.source.startsWith('新規'))).toBe(true);
     // no badge in place of the model: the picker draws the 3D model of the look
     expect(all.filter((t) => t.section === 3 && [2, 4].includes(t.raw[0x15]!)).every((t) => !t.iconLabel)).toBe(true);
-    expect(all.find((t) => t.source === '新規毒床')?.category).toBe('新規・設定付き');
+    const parts = lanaiKindParts(all, []);
+    const kinds = parts.map((t) => `${t.section}/${lanaiRecKind(t.section, t.raw)}`);
+    expect(new Set(kinds).size).toBe(kinds.length);
+    expect(
+      parts.every(
+        (t) => t.category === `区画 ${t.section}` && t.pickerName === `種別 ${lanaiRecKind(t.section, t.raw)}`,
+      ),
+    ).toBe(true);
+    const npc = parts.find((t) => t.section === 5 && lanaiRecKind(5, t.raw) === 0)!;
+    expect(npc.actions!.map((c) => c.label)).toEqual(['スクリプト', '話す NPC', '店の人']);
+    const switches = parts.find((t) => t.section === 5 && lanaiRecKind(5, t.raw) === 4)!;
+    expect(switches.actions!.map((c) => c.label)).toEqual(['保持スイッチ', 'プッシュスイッチ']);
+    // a kind with one thing to do places it at once
+    expect(parts.find((t) => t.section === 1 && lanaiRecKind(1, t.raw) === 1)!.actions).toBeUndefined();
   });
 
   test('a sign, a talking NPC and a clerk add a line to the talk table; undo and redo keep it', () => {

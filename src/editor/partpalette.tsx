@@ -116,7 +116,62 @@ export interface PartChoice {
   tooltip?: string;
   keywords?: string;
   unavailable?: string | null;
+  /** Maps that use the part (the right-click menu); `placesTotal` is how many there are when the list is cut short. */
+  places?: readonly PartPlace[];
+  placesTotal?: number;
+  /** Other pages about the part, listed first in the right-click menu (its model). */
+  links?: readonly PartPlace[];
 }
+
+/** A record of a map that uses a part: the right-click menu of the picker links to it. */
+export interface PartPlace {
+  label: string;
+  href: string;
+}
+
+/** The right-click menu of a choice: the maps that use it, each a link that closes the picker. */
+function PlacesMenu({
+  choice,
+  x,
+  y,
+  onDone,
+}: {
+  choice: PartChoice;
+  x: number;
+  y: number;
+  onDone: () => void;
+}): ReactNode {
+  const places = choice.places ?? [];
+  const total = choice.placesTotal ?? places.length;
+  return (
+    <div
+      className="part-places-menu"
+      role="menu"
+      aria-label={`${choice.name} の使用例`}
+      style={{
+        left: Math.max(0, Math.min(x, window.innerWidth - 300)),
+        top: Math.max(0, Math.min(y, window.innerHeight - 340)),
+      }}
+    >
+      {choice.links?.map((link) => (
+        <a key={link.href} role="menuitem" href={link.href} onClick={onDone}>
+          {link.label}
+        </a>
+      ))}
+      <div className="muted small">
+        {places.length
+          ? `使用例 ${total} 件${total > places.length ? ` (先頭 ${places.length} 件)` : ''}`
+          : 'ROM のマップでは使われていません'}
+      </div>
+      {places.map((place) => (
+        <a key={place.href} role="menuitem" href={place.href} onClick={onDone}>
+          {place.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /** Stable string keys keep asynchronously added templates separate from object row numbers. */
 export function PartPicker({
   title = 'パーツを選ぶ',
@@ -153,6 +208,23 @@ export function PartPicker({
     };
   });
   const selected = choices.findIndex((choice) => choice.key === current);
+  const [menu, setMenu] = useState<{ choice: PartChoice; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event): void => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+      if (e.target instanceof Element && e.target.closest('.part-places-menu')) return;
+      // Escape closes the menu, not the picker
+      if (e instanceof KeyboardEvent) e.preventDefault();
+      setMenu(null);
+    };
+    window.addEventListener('pointerdown', close, true);
+    window.addEventListener('keydown', close, true);
+    return () => {
+      window.removeEventListener('pointerdown', close, true);
+      window.removeEventListener('keydown', close, true);
+    };
+  }, [menu]);
   return (
     <GridPicker
       title={title}
@@ -162,11 +234,31 @@ export function PartPicker({
       cellClassName="part-choice"
       current={selected < 0 ? undefined : selected + 1}
       placeholder="名前・種類・番号で絞り込み"
-      controls={controls}
+      controls={
+        <>
+          {controls}
+          {/* inside the modal dialog: an element outside it would be inert */}
+          {menu && (
+            <PlacesMenu
+              {...menu}
+              onDone={() => {
+                setMenu(null);
+                onClose();
+              }}
+            />
+          )}
+        </>
+      }
       onClose={onClose}
       onPick={(id) => {
         const choice = choices[id - 1];
         if (choice) onPick(choice.key);
+      }}
+      onContext={(id, at) => {
+        const choice = choices[id - 1];
+        if (!choice?.places && !choice?.links) return false;
+        setMenu({ choice, ...at });
+        return true;
       }}
     />
   );

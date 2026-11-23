@@ -27,6 +27,7 @@ import {
   LANAI_POINT_SECTIONS,
   lanaiEventSlot,
   lanaiExitCategory,
+  lanaiIsBuildingExit,
   lanaiExitKind,
   lanaiExitLabel,
   lanaiExitNote,
@@ -50,7 +51,9 @@ import {
   lanaiLookKind,
   type NewEventRow,
 } from './eventParts';
-import { romEventRow, type LanaiRomPart } from './romParts';
+import { lanaiMergedRomParts, lanaiRecKind, romEventRow, type LanaiRomPart, type LanaiRomPlace } from './romParts';
+import { lanaiMapHref } from './hrefs';
+import type { PartPlace } from '../editor/partpalette';
 import { lanaiMonsters } from './monsters';
 import {
   LANAI_CHARA_DENPA,
@@ -75,14 +78,14 @@ const EVENT_FIELD = 4;
 /** Section 3 +0x15 = 100: a door on a wall (it has no point of its own). */
 const WALL_DOOR = 100;
 
-/** The add panel's category of the records copied from the stage's own maps. */
-export const LANAI_EXISTING_CATEGORY = '既存ギミック';
-/** A record of the group's maps to copy (it keeps its EventObject row). */
+/** A record to place: a new one (eventParts.ts) or one like a sample of the ROM (romTemplates). */
 export interface LanaiTemplate {
   section: number;
   raw: Uint8Array;
   label: string;
-  /** Map it is copied from. */
+  /** The picker's name in place of `label` (recordparts.tsx PartTemplate). */
+  pickerName?: string;
+  /** Where it comes from: "新規…" for a new record, the ROM sample's map. */
   source: string;
   /** A new record (eventParts.ts): the EventObject row it gets instead of a copy of the row its raw names. */
   event?: NewEventRow;
@@ -95,7 +98,95 @@ export interface LanaiTemplate {
   keywords?: string;
   subtitle?: string;
   choiceKey?: string;
+  /** What it does, as the placing dialog's choice names it (a ROM part's action). */
+  actionLabel?: string;
+  /** Maps that place a record like it (the picker's right-click menu) and how many there are. */
+  places?: readonly PartPlace[];
+  placesTotal?: number;
+  /** One part for a kind whose records do different things: the placing dialog picks one of these. */
+  actions?: readonly LanaiActionChoice[];
 }
+
+/** One of the things a kind's records do, as the placing dialog lists it. */
+export interface LanaiActionChoice {
+  label: string;
+  description?: string;
+  template: LanaiTemplate;
+  /** How many records of the ROM do it, and some of them. */
+  count: number;
+  places: readonly PartPlace[];
+}
+
+/** The action a template's record gets (-1: no EventObject row). */
+const templateAction = (t: LanaiTemplate): number => (t.event ? t.event.action >>> 0 : -1);
+
+/**
+ * One part per section and kind, the picker's only choices (a kind's records look alike; what they do is chosen when
+ * placed and changed after). Its choices are the new records of the kind (eventParts.ts: they set up what the ROM's
+ * samples cannot, the content's shop, an empty line, a script) and the ROM's actions no new record does; a new
+ * record takes the ROM's examples of its action. The part's picture is the most placed choice's.
+ */
+export function lanaiKindParts(fresh: readonly LanaiTemplate[], rom: readonly LanaiTemplate[]): LanaiTemplate[] {
+  const groups = new Map<string, { section: number; kind: number; choices: LanaiActionChoice[] }>();
+  const group = (t: LanaiTemplate) => {
+    const kind = lanaiRecKind(t.section, t.raw);
+    const key = `${t.section}/${kind}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { section: t.section, kind, choices: [] }));
+    return g;
+  };
+  for (const t of fresh)
+    group(t).choices.push({
+      label: t.actionLabel ?? t.label,
+      description: t.description,
+      template: t,
+      count: 0,
+      places: [],
+    });
+  for (const t of rom) {
+    const g = group(t);
+    const action = templateAction(t);
+    const places = t.places ?? [];
+    const count = t.placesTotal ?? places.length;
+    const same = g.choices.filter((c) => !c.template.source.startsWith('ROM') && templateAction(c.template) === action);
+    if (same.length) {
+      for (const c of same) Object.assign(c, { count: c.count + count, places: [...c.places, ...places] });
+      continue;
+    }
+    g.choices.push({ label: t.actionLabel ?? t.label, description: t.description, template: t, count, places });
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.section - b.section || a.kind - b.kind)
+    .map(({ section, kind, choices }) => {
+      const face = choices.reduce((best, c) => (c.count > best.count ? c : best), choices[0]!);
+      const places = choices.flatMap((c) =>
+        c.places.map((p) => (choices.length > 1 ? { ...p, label: `[${c.label}] ${p.label}` } : p)),
+      );
+      const base = choices.length > 1 ? face.template : choices[0]!.template;
+      return {
+        ...base,
+        label: choices.length > 1 ? lanaiRecLabel(section, base.raw) : base.label,
+        pickerName: `種別 ${kind}`,
+        subtitle: '',
+        category: `区画 ${section}`,
+        choiceKey: `kind/${section}/${kind}`,
+        description:
+          choices.length > 1
+            ? `置くときに選ぶ動作: ${choices.map((c) => c.label).join('・')}。`
+            : (base.description ?? ''),
+        keywords: `${choices.map((c) => `${c.label} ${c.template.keywords ?? ''}`).join(' ')} 区画 ${section} 種別 ${kind}`,
+        places,
+        placesTotal: choices.reduce((n, c) => n + c.count, 0),
+        ...(choices.length > 1 ? { actions: choices } : {}),
+      };
+    });
+}
+
+/** A record of a map as a link of the picker's right-click menu. */
+export const lanaiPlaceLink = (p: LanaiRomPlace): PartPlace => ({
+  label: `${p.content}: ${p.map} (${p.section === 2 ? '置物' : `区画 ${p.section}`} の ${p.index + 1} 番目)`,
+  href: lanaiMapHref(p.content, p.map, { section: p.section, index: p.index }),
+});
 
 export type LanaiStamp =
   /** A prop (section 2): MapObject row (+0x00) and facing (turn 0..3). */
@@ -120,6 +211,20 @@ export function lanaiButtonDoor(maps: LanaiMaps, group: number, row: number): nu
   const match = body?.match(/\bopenDoor\(\s*(?:obj\(\s*)?(\d+)|\bobj\(\s*(\d+)\s*\)\s*\.\s*openDoor\(/u);
   return match ? Number(match[1] ?? match[2]) : null;
 }
+
+/**
+ * Section 5 kinds the ROM places besides the characters, switches, signs and recovery (roms/tmpmap/parts-npc-findings.md,
+ * 2026-11-23): 9 the raft (default MapObject #114 gimk_17_raft_01; one ship #115), 10 the raft's gate (#117
+ * gimk_raftgate, 61 records, none with an action), 14 an object of any look (EventObject +0x5A, 25 looks: rocks,
+ * statues, lights) that does nothing (141) or runs the stage's script (43) or is read like a book (2), 15 the symbol
+ * (#387 obj_symbol07, 2 records). What 9 / 10 / 15 do in the game is a guess from their looks.
+ */
+const LANAI_DEVICE_KINDS: Record<number, string> = {
+  9: '筏',
+  10: '筏の門',
+  14: '動作付きの置物',
+  15: 'シンボル',
+};
 
 /** What a section's record is, for the add panel and the checks. */
 export function lanaiRecLabel(section: number, raw: Uint8Array): string {
@@ -147,7 +252,7 @@ export function lanaiRecLabel(section: number, raw: Uint8Array): string {
                   ? '回復ポイント'
                   : u32(raw, 0) === LANAI_REPAIR_FIELD
                     ? '回復の場'
-                    : `装置 #${u32(raw, 0)}`;
+                    : (LANAI_DEVICE_KINDS[u32(raw, 0)] ?? `装置 #${u32(raw, 0)}`);
     case 8:
       return u32(raw, 0) >= 100 ? `範囲の置物 #${u32(raw, 0)}` : `イベント範囲 #${u32(raw, 0)}`;
     case 9:
@@ -486,69 +591,17 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     this.emit('doc');
   }
 
-  /** Records of the group's maps to copy: the first of each kind (section, kind and EventObject action type). */
+  /**
+   * The records made from nothing (a button, a character, a range, a floor), each with an EventObject row of its own
+   * when it has one. The picker merges them with the ROM's parts (lanaiKindParts).
+   */
   templates(): LanaiTemplate[] {
     const info = this.info;
     if (!info) return [];
-    const table = this.maps.eventTable(info.dungeon);
-    const out = new Map<string, LanaiTemplate>();
-    const maps = this.maps.maps.filter((m) => m.dungeon === info.dungeon && !m.world);
-    for (const k of [3, 4, 5, 8, 1, 9])
-      for (const m of maps)
-        for (const r of this.maps.doc(m).recs[k] ?? []) {
-          const ev = lanaiRecEventRow(k, r.raw);
-          // EventObject +0x10: the action type's row ID (map.md §7)
-          const action = ev && table && ev < table.rows ? table.u32(ev, 0x10) : -1;
-          const kind = k === 3 ? lanaiExitKind(r.raw) : k === 1 ? r.raw[0x0d]! : u32(r.raw, 0);
-          const key = `${k}/${kind}/${action}`;
-          if (out.has(key)) continue;
-          const goal = k === 4 && kind === LANAI_GOAL_CHEST;
-          const label =
-            k === 3 && kind === LANAI_DOOR_KIND
-              ? action === 0x80000017
-                ? '通路をふさぐ扉'
-                : action === 0x80000015
-                  ? '触れると開く扉'
-                  : action === 0x80000016
-                    ? '触れて開き、場所を移動する扉'
-                    : action === 0x80000018
-                      ? '外から開くと移動できる扉'
-                      : action === 0x8000002d
-                        ? 'スクリプト付きの扉'
-                        : '扉'
-              : k === 3 && kind === 4 && action === 0x80000012
-                ? 'ワープゲート'
-                : k === 3 && kind === 2 && action === 0x80000014
-                  ? 'ワープホール'
-                  : k === 5 && [4, 5, 6].includes(kind)
-                    ? 'スイッチ'
-                    : k === 4
-                      ? goal
-                        ? 'クリア宝箱'
-                        : '通常の宝箱'
-                      : lanaiRecLabel(k, r.raw);
-          out.set(key, {
-            section: k,
-            raw: r.raw.slice(),
-            label,
-            source: m.name,
-            description: `このステージの ${m.name} から動作と設定を複製します。${action >= 0 && LANAI_ACTIONS[action] ? `動作: ${LANAI_ACTIONS[action]!.name}。` : ''}`,
-            // what the stage already has, in one category (the parts made from nothing have the categories by purpose)
-            category: LANAI_EXISTING_CATEGORY,
-          });
-        }
-    // records made from nothing (a button, a character, a range), each with an EventObject row of its own
-    const fresh = table
+    const fresh = this.maps.eventTable(info.dungeon)
       ? lanaiEventParts(this.maps.session.table('MapObject'), this.maps.contentTable('MapChara'), this.partDefaults())
       : [];
-    return [
-      ...fresh.map((part) => ({
-        ...part,
-        category: ['スイッチ', '宝箱・ゴール'].includes(part.category) ? part.category : '新規・設定付き',
-      })),
-      ...lanaiFloorParts().map((part) => ({ ...part, category: '新規・設定付き' })),
-      ...out.values(),
-    ];
+    return [...fresh, ...lanaiFloorParts()];
   }
 
   /**
@@ -561,9 +614,8 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     const content = this.maps.content.index;
     const hasEvents = !!this.maps.eventTable(this.info.dungeon);
     const out: LanaiTemplate[] = [];
-    for (const p of [...parts].sort(
-      (a, b) => a.section - b.section || a.kind - b.kind || a.action - b.action || a.look - b.look,
-    )) {
+    for (const p of lanaiMergedRomParts(parts)) {
+      const building = p.section === 3 && lanaiIsBuildingExit(p.kind);
       const raw = p.raw.slice();
       // the sample's row number means nothing here: the new row is given when placed
       if ((LANAI_EVENT_SECTIONS as readonly number[]).includes(p.section)) w32(raw, EVENT_FIELD, 0);
@@ -577,7 +629,11 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         : 'イベントなし';
       const recordName = lanaiRecLabel(p.section, raw);
       const generic = /^出入口 #\d+$|^装置 #\d+$/u.test(recordName);
-      const name = generic && from && action !== LANAI_ACTION_NONE ? what.split(/[（(]/u)[0]!.trim() : recordName;
+      const name = building
+        ? '建物の入口'
+        : generic && from && action !== LANAI_ACTION_NONE
+          ? what.split(/[（(]/u)[0]!.trim()
+          : recordName;
       const appearance = p.section === 3 ? p.look || lanaiExitDefaultRow(p.kind) : 0;
       const description = [
         p.section === 3 ? lanaiExitNote(p.kind) : '',
@@ -585,6 +641,9 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         `区画 ${p.section}、種類 ${p.kind}。`,
         appearance ? `外観: MapObject #${appearance}。` : '',
         from ? '元ステージ固有の参照は配置先で設定してください。' : '',
+        p.variants > 1
+          ? `外観 ${p.variants} 種類をまとめました。外観は置いた後にインスペクタの「モデルを選ぶ」で変えます。`
+          : '',
       ]
         .filter(Boolean)
         .join('');
@@ -618,15 +677,20 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
         section: p.section,
         raw,
         label: name,
+        actionLabel: what,
         description,
-        subtitle: appearance
-          ? `外観 #${appearance}${what !== name && what !== 'イベントなし' ? ` · ${what}` : ''}`
-          : what === name
-            ? `種類 ${p.kind}`
-            : what,
+        subtitle: building
+          ? what
+          : appearance
+            ? `外観 #${appearance}${what !== name && what !== 'イベントなし' ? ` · ${what}` : ''}`
+            : what === name
+              ? `種類 ${p.kind}`
+              : what,
         keywords: `区画 ${p.section} 種類 ${p.kind} ${what}`,
         choiceKey: `rom/${p.section}/${p.kind}/${p.action}/${p.look}`,
         source: `ROM ${p.source}、${p.count} 件`,
+        places: p.places.map(lanaiPlaceLink),
+        placesTotal: p.count,
         category: lanaiRomPartCategory(p.section, p.kind, action),
         ...(event ? { event } : {}),
         ...(model !== undefined ? { model } : {}),

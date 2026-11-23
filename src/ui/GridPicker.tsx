@@ -42,11 +42,13 @@ function GridCell({
   entry: e,
   current,
   onPick,
+  onContext,
   className = '',
 }: {
   entry: GridEntry;
   current?: number;
   onPick: (id: number) => void;
+  onContext?: (id: number, at: { x: number; y: number }) => boolean;
   className?: string;
 }): ReactNode {
   const tooltipId = useInfoTooltipId();
@@ -58,6 +60,12 @@ function GridCell({
       data-tooltip-id={e.tooltip ? tooltipId : undefined}
       data-tooltip-content={e.tooltip}
       onClick={() => onPick(e.id)}
+      onContextMenu={
+        onContext &&
+        ((ev) => {
+          if (onContext(e.id, { x: ev.clientX, y: ev.clientY })) ev.preventDefault();
+        })
+      }
     >
       {e.icon}
       <span>{e.name}</span>
@@ -84,6 +92,7 @@ export function GridPicker({
   wide = false,
   cellClassName,
   onPick,
+  onContext,
   onClose,
 }: {
   title: string;
@@ -103,6 +112,8 @@ export function GridPicker({
   wide?: boolean;
   cellClassName?: string;
   onPick: (id: number) => void;
+  /** A right click on an entry; true when it showed something of its own (the browser's menu is not shown). */
+  onContext?: (id: number, at: { x: number; y: number }) => boolean;
   onClose: () => void;
 }): ReactNode {
   const [query, setQuery] = useState('');
@@ -183,7 +194,14 @@ export function GridPicker({
             )}
             <div className={`monster-grid${wide ? ' wide' : ''}`}>
               {s.list.map((e) => (
-                <GridCell key={`${i}:${e.id}`} entry={e} current={current} onPick={onPick} className={cellClassName} />
+                <GridCell
+                  key={`${i}:${e.id}`}
+                  entry={e}
+                  current={current}
+                  onPick={onPick}
+                  onContext={onContext}
+                  className={cellClassName}
+                />
               ))}
             </div>
           </section>

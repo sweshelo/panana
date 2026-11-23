@@ -40,7 +40,46 @@ export interface LanaiRomPart {
   /** How many records of the ROM are of this combination, and where the sample is ("12: D01001F01"). */
   count: number;
   source: string;
+  /** Where the ROM places records of this combination (the first PLACE_LIMIT of them), to look at one in use. */
+  places: LanaiRomPlace[];
 }
+
+/**
+ * The catalog with one part per section, kind and action: the records that differ only in their look (EventObject
+ * +0x5A, chosen after placing with LookField) are one part, whose sample is the most placed look's. `variants` says how
+ * many looks were merged.
+ */
+export function lanaiMergedRomParts(parts: readonly LanaiRomPart[]): (LanaiRomPart & { variants: number })[] {
+  const groups = new Map<string, LanaiRomPart[]>();
+  for (const p of parts) {
+    const key = romPartKey(p.section, p.kind, p.action);
+    groups.set(key, [...(groups.get(key) ?? []), p]);
+  }
+  return [...groups.values()]
+    .map((list) => {
+      const sample = list.reduce((best, p) => (p.count > best.count ? p : best), list[0]!);
+      const places = [sample, ...list.filter((p) => p !== sample)].flatMap((p) => p.places).slice(0, PLACE_LIMIT);
+      return { ...sample, places, count: list.reduce((n, p) => n + p.count, 0), variants: list.length };
+    })
+    .sort((a, b) => a.section - b.section || a.kind - b.kind || (a.action >>> 0) - (b.action >>> 0));
+}
+
+/** A record of a shipped content's map, for the map page's link (lanaiMapHref). */
+export interface LanaiRomPlace {
+  content: number;
+  map: string;
+  section: number;
+  index: number;
+}
+
+/** The ROM's parts and, for the props (section 2), where each MapObject row is placed. */
+export interface LanaiRomCatalog {
+  parts: LanaiRomPart[];
+  props: Map<number, LanaiRomPlace[]>;
+}
+
+/** How many places a part keeps (the menu lists them; the count says how many there are). */
+const PLACE_LIMIT = 30;
 
 export const romPartKey = (section: number, kind: number, action: number, look?: number): string =>
   `${section}/${kind}/${action >>> 0}${look === undefined ? '' : `/${look}`}`;
@@ -49,10 +88,10 @@ export const romPartKey = (section: number, kind: number, action: number, look?:
 export const lanaiRecKind = (section: number, raw: Uint8Array): number =>
   section === 3 ? lanaiExitKind(raw) : section === 1 ? raw[0x0d]! : u32(raw, 0);
 
-const cache = new WeakMap<LanaiSession, Promise<LanaiRomPart[]>>();
+const cache = new WeakMap<LanaiSession, Promise<LanaiRomCatalog>>();
 
 /** The catalog (read once per session, from the contents of the ROM; the stages added in the editor are not read). */
-export function lanaiRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
+export function lanaiRomCatalog(session: LanaiSession): Promise<LanaiRomCatalog> {
   let p = cache.get(session);
   if (!p) {
     p = readRomParts(session);
@@ -62,8 +101,12 @@ export function lanaiRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
   return p;
 }
 
-async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
+export const lanaiRomParts = (session: LanaiSession): Promise<LanaiRomPart[]> =>
+  lanaiRomCatalog(session).then((c) => c.parts);
+
+async function readRomParts(session: LanaiSession): Promise<LanaiRomCatalog> {
   const out = new Map<string, LanaiRomPart>();
+  const props = new Map<number, LanaiRomPlace[]>();
   for (const c of lanaiContents(session)) {
     if (session.createdFiles.has(c.archive.toUpperCase())) continue;
     let maps;
@@ -79,8 +122,15 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
       const talk = maps.talkTable(m.dungeon);
       const message = talk ? talkColumns({ table: talk })?.message : undefined;
       const doc = maps.doc(m);
+      (doc.recs[2] ?? []).forEach((r, index) => {
+        const row = u32(r.raw, 0);
+        const list = props.get(row) ?? [];
+        if (list.length < PLACE_LIMIT) list.push({ content: c.index, map: m.name, section: 2, index });
+        props.set(row, list);
+      });
       for (const section of ROM_PART_SECTIONS)
-        for (const r of doc.recs[section] ?? []) {
+        for (const [index, r] of (doc.recs[section] ?? []).entries()) {
+          const place = { content: c.index, map: m.name, section, index };
           const ev = HAS_EVENT.includes(section) ? u32(r.raw, EVENT_FIELD) : 0;
           const has = !!ev && !!events && ev < events.rows;
           const action = has ? events!.u32(ev, LANAI_EVENT_ACTIONS[0]) : -1;
@@ -93,6 +143,7 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
           const seen = out.get(key);
           if (seen) {
             seen.count++;
+            if (seen.places.length < PLACE_LIMIT) seen.places.push(place);
             continue;
           }
           const lines: LanaiRomPart['lines'] = [];
@@ -119,11 +170,12 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomPart[]> {
             chara: model ? { kind: charaKind, model } : null,
             count: 1,
             source: `${c.index}: ${m.name}`,
+            places: [place],
           });
         }
     }
   }
-  return [...out.values()];
+  return { parts: [...out.values()], props };
 }
 
 /** Whether an argument of an action names something of the sample's content (cleared in the copy). */

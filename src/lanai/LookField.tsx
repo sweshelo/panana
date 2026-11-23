@@ -16,9 +16,11 @@ import {
   lanaiCharaKind,
   lanaiCharaModel,
   lanaiCharaTables,
+  lanaiExitDefaultRow,
   lanaiObjectRef,
   type LanaiRecordModel,
 } from './mapObjects';
+import { lanaiExitKind, lanaiIsBuildingExit } from './maps';
 import { lanaiDenpaCustomName } from './animationModels';
 import type { LanaiMapView } from './mapview';
 import { lanaiMonsters } from './monsters';
@@ -112,6 +114,107 @@ function charaModel(
   return lanaiCharaModel({ ...lanaiCharaTables(session), mapChara: mc }, row, select);
 }
 
+/**
+ * MapChara +0x0C / +0x1C / +0x28 (the look EventObject +0x5C selects): the low 10 bits are how far the character
+ * walks about; 0 stands still. The placing code (Update 0x23D04C〜0x23D18C) gives the actor its wandering only when
+ * the value is positive (roms/tmpmap/parts-npc-findings.md). The shipped rows use 0, 75, 110, 150 and 250.
+ */
+const CHARA_MOVE = [0x0c, 0x1c, 0x28] as const;
+const WANDER_MASK = 0x3ff;
+const WANDER_VALUES = [0, 75, 110, 150, 250];
+
+function WanderField({
+  st,
+  mc,
+  chara,
+  select,
+}: {
+  st: LanaiEditState;
+  mc: LanaiTable;
+  chara: number;
+  select: number;
+}): ReactNode {
+  const offset = CHARA_MOVE[select] ?? CHARA_MOVE[0];
+  const raw = mc.u32(chara, offset);
+  const value = raw & WANDER_MASK;
+  const set = (v: number): void =>
+    st.editTables(() => mc.setU32(chara, offset, ((raw & ~WANDER_MASK) | (v & WANDER_MASK)) >>> 0));
+  return (
+    <label className="field">
+      <span>歩き回り</span>
+      <select aria-label="歩き回り" value={value} onChange={(e) => set(Number(e.target.value))}>
+        {[...new Set([...WANDER_VALUES, value])]
+          .sort((a, b) => a - b)
+          .map((v) => (
+            <option key={v} value={v}>
+              {v ? `歩き回る (範囲 ${v})` : 'その場に立つ'}
+            </option>
+          ))}
+      </select>
+      <span className="muted small">
+        MapChara #{chara} の値です。同じ行を見た目に使うほかのキャラも同じ動きになります。範囲は出荷データの値 (75〜250)
+        から選びます。
+      </span>
+    </label>
+  );
+}
+
+/** The building kinds (exit +0x15, 28〜69 but 68) with a model of their own (lanaiExitDefaultRow). */
+const BUILDING_KINDS = Array.from({ length: 42 }, (_, i) => 28 + i).filter(
+  (k) => lanaiIsBuildingExit(k) && lanaiExitDefaultRow(k) > 0,
+);
+
+/**
+ * A building's entrance: the kind (+0x15) is the building's look (its default model), the action stays. Choosing one
+ * clears the event's own look (+0x5A) so that the kind's model shows.
+ */
+function BuildingField({
+  st,
+  view,
+  rec,
+  row,
+}: {
+  st: LanaiEditState;
+  view: LanaiMapView;
+  rec: Rec;
+  row: number;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const kind = lanaiExitKind(rec.raw);
+  const choices: PartChoice[] = BUILDING_KINDS.map((k) => ({
+    key: String(k),
+    name: `建物 ${k}`,
+    category: '建物',
+    sub: `MapObject #${lanaiExitDefaultRow(k)}`,
+    icon: photo(view, { type: 'object', row: lanaiExitDefaultRow(k) }),
+  }));
+  return (
+    <div className="field">
+      <span>建物の見た目 (種類)</span>
+      <div className="row">
+        {lanaiExitDefaultRow(kind) > 0 && photo(view, { type: 'object', row: lanaiExitDefaultRow(kind) })}
+        <span className="small">{`種類 ${kind}`}</span>
+        <button onClick={() => setOpen(true)}>建物を選ぶ…</button>
+      </div>
+      {open && (
+        <PartPicker
+          title="建物の見た目を選ぶ"
+          choices={choices}
+          current={String(kind)}
+          onClose={() => setOpen(false)}
+          onPick={(key) => {
+            setOpen(false);
+            st.edit(() => {
+              rec.raw[0x15] = Number(key);
+            });
+            st.setEventField(row, (t) => t.setU16(row, EO_LOOK, 0));
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The look of a record's event (EventObject row `row`). Circle ranges keep their radius there (RangeFields). */
 export function LookField({
   st,
@@ -137,25 +240,30 @@ export function LookField({
   const setLook = (v: number): void => st.setEventField(row, (t) => t.setU16(row, EO_LOOK, v));
   if (kind === 'object')
     return (
-      <div className="field">
-        <span>見た目のモデル</span>
-        <div className="row">
-          {photo(view, look ? { type: 'object', row: look } : null)}
-          <span className="small">{look ? `MapObject #${look}` : '0 (種類の既定のモデル)'}</span>
-          <button onClick={() => setPick('object')}>モデルを選ぶ…</button>
-        </div>
-        {pick === 'object' && (
-          <ObjectModelPicker
-            st={st}
-            view={view}
-            title="見た目のモデルを選ぶ"
-            current={look}
-            zero="0 = 種類の既定のモデル"
-            onPick={setLook}
-            onClose={() => setPick(null)}
-          />
+      <>
+        {section === 3 && lanaiIsBuildingExit(lanaiExitKind(rec.raw)) && (
+          <BuildingField st={st} view={view} rec={rec} row={row} />
         )}
-      </div>
+        <div className="field">
+          <span>見た目のモデル</span>
+          <div className="row">
+            {photo(view, look ? { type: 'object', row: look } : null)}
+            <span className="small">{look ? `MapObject #${look}` : '0 (種類の既定のモデル)'}</span>
+            <button onClick={() => setPick('object')}>モデルを選ぶ…</button>
+          </div>
+          {pick === 'object' && (
+            <ObjectModelPicker
+              st={st}
+              view={view}
+              title="見た目のモデルを選ぶ"
+              current={look}
+              zero="0 = 種類の既定のモデル"
+              onPick={setLook}
+              onClose={() => setPick(null)}
+            />
+          )}
+        </div>
+      </>
     );
   const mc = st.maps.contentTable('MapChara');
   /** Make a MapChara row and give it to the event, in one undo point. */
@@ -179,6 +287,9 @@ export function LookField({
           {look > 0 && look >= (mc?.rows ?? 0) && <option value={look}>{`#${look} (表にない行)`}</option>}
         </select>
       </div>
+      {mc && look > 0 && look < mc.rows && (
+        <WanderField st={st} mc={mc} chara={look} select={events.u16(row, LANAI_EO_CHARA_SELECT)} />
+      )}
       <div className="row">
         <button disabled={!mc} onClick={() => setPick('npc')}>
           NPC を新しく作る…

@@ -283,7 +283,7 @@ h3 {
 }
 .shell[data-page='map'] .page-map,
 .shell[data-page='monsters'] .page-monsters,
-.shell[data-page='animations'] .page-animations,
+.shell[data-page='models'] .page-models,
 .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups,
 .shell[data-page='actions'] .page-actions,
@@ -3163,6 +3163,46 @@ label.edited-label {
   font-weight: 600;
 }
 
+.part-places-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.part-places-menu > div {
+  padding: 2px 12px 6px;
+}
+.part-places-menu > a {
+  padding: 4px 12px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+}
+.part-places-menu > a:hover,
+.part-places-menu > a:focus {
+  background: var(--accent);
+  color: #fff;
+}
+.action-choices {
+  max-height: 60vh;
+  overflow: auto;
+}
+.action-choice > details {
+  margin: 0 0 6px 24px;
+}
+.action-choice > details > a {
+  display: block;
+  padding: 2px 0;
+}
 .part-number-picker {
   margin: 0 0 8px;
   font-size: 12px;
@@ -3380,6 +3420,22 @@ dialog.stage-editor > .picker-head h2 {
 }
 .stage-source-code textarea {
   min-height: 65vh;
+}
+/* 閲覧: the editor takes the rest of the page's height and scrolls inside */
+.stage-source-view {
+  flex: 1;
+  min-height: 0;
+}
+.stage-source-view .script-code,
+.stage-source-view .script-code > div,
+.stage-source-view .cm-editor {
+  height: 100%;
+}
+.stage-source-view .cm-scroller {
+  max-height: none;
+}
+.stage-source-view textarea {
+  height: 100%;
 }
 .stage-source-docs h3 {
   margin-top: 0;

@@ -102,6 +102,8 @@ export interface LanaiEventPart {
   category: string;
   iconLabel?: string;
   description?: string;
+  /** What it does, when the label names the thing (the placing dialog's choice). */
+  actionLabel?: string;
 }
 
 /** A new record that has no EventObject row (a floor gimmick). */
@@ -263,6 +265,7 @@ export function lanaiEventParts(
       label: monster ? 'モンスター' : 'NPC',
       description: '話しかけるとスクリプトを実行します。見た目は配置後に選べます。',
       source: `新規キャラ ${kind}`,
+      actionLabel: 'スクリプト',
       category: '人物・敵',
       event: { action: LANAI_ACTION_SCRIPT, look: row, chara: row ? undefined : { kind, model } },
       model: monster ? { type: 'monster', design: model } : { type: 'object', row: model },

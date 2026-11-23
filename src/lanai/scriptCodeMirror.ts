@@ -283,6 +283,27 @@ const signatureKeymap = keymap.of([
   },
 ]);
 
+/**
+ * Runs `make` with the observers of the window `parent` is in. A page opened with window.open (the script tabs) is
+ * rendered by this window's code, and CodeMirror makes its IntersectionObserver / ResizeObserver from the globals: one
+ * of this window never sees the other tab's elements, so the editor takes itself for hidden and does not draw the
+ * lines scrolled into view.
+ */
+function withObserversOf<T>(parent: HTMLElement, make: () => T): T {
+  const win = parent.ownerDocument.defaultView as (Window & typeof globalThis) | null;
+  if (!win || win === globalThis.window) return make();
+  const g = globalThis as { IntersectionObserver?: unknown; ResizeObserver?: unknown };
+  const saved = { IntersectionObserver: g.IntersectionObserver, ResizeObserver: g.ResizeObserver };
+  g.IntersectionObserver = win.IntersectionObserver;
+  g.ResizeObserver = win.ResizeObserver;
+  try {
+    return make();
+  } finally {
+    g.IntersectionObserver = saved.IntersectionObserver;
+    g.ResizeObserver = saved.ResizeObserver;
+  }
+}
+
 export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOptions): ScriptEditorHandle {
   let assist = options.assist;
   let problems = options.problems;
@@ -374,75 +395,79 @@ export function mountScriptEditor(parent: HTMLElement, options: ScriptEditorOpti
       };
     });
 
-  const view = new EditorView({
+  const view = withObserversOf(
     parent,
-    state: EditorState.create({
-      doc: options.value,
-      extensions: [
-        lineNumbers(),
-        foldGutter(),
-        history(),
-        drawSelection(),
-        highlightActiveLine(),
-        highlightSelectionMatches(),
-        search({ top: true }),
-        indentUnit.of('  '),
-        EditorState.tabSize.of(2),
-        language,
-        syntaxHighlighting(STYLE),
-        indentOnInput(),
-        bracketMatching(),
-        closeBrackets(),
-        foldService.of((state, from, to) => scriptFoldRange(state.doc.toString(), from, to)),
-        autocompletion({ override: [complete], icons: false }),
-        hoverTooltip((view, pos) => {
-          const word = view.state.wordAt(pos);
-          if (!word) return null;
-          const info = scriptHoverInfo(view.state.sliceDoc(0, word.from), view.state.sliceDoc(word.from, word.to));
-          if (!info) return null;
-          return {
-            pos: word.from,
-            end: word.to,
-            create: () => {
-              const dom = document.createElement('div');
-              dom.className = 'cm-script-hover';
-              for (const signature of info.signatures) {
-                const row = document.createElement('div');
-                row.className = 'cm-script-hover-signature';
-                row.textContent = signature;
-                dom.append(row);
-              }
-              const about = document.createElement('div');
-              about.className = 'cm-script-hover-about';
-              about.textContent = info.about;
-              dom.append(about);
-              return { dom };
-            },
-          };
+    () =>
+      new EditorView({
+        parent,
+        state: EditorState.create({
+          doc: options.value,
+          extensions: [
+            lineNumbers(),
+            foldGutter(),
+            history(),
+            drawSelection(),
+            highlightActiveLine(),
+            highlightSelectionMatches(),
+            search({ top: true }),
+            indentUnit.of('  '),
+            EditorState.tabSize.of(2),
+            language,
+            syntaxHighlighting(STYLE),
+            indentOnInput(),
+            bracketMatching(),
+            closeBrackets(),
+            foldService.of((state, from, to) => scriptFoldRange(state.doc.toString(), from, to)),
+            autocompletion({ override: [complete], icons: false }),
+            hoverTooltip((view, pos) => {
+              const word = view.state.wordAt(pos);
+              if (!word) return null;
+              const info = scriptHoverInfo(view.state.sliceDoc(0, word.from), view.state.sliceDoc(word.from, word.to));
+              if (!info) return null;
+              return {
+                pos: word.from,
+                end: word.to,
+                create: () => {
+                  const dom = document.createElement('div');
+                  dom.className = 'cm-script-hover';
+                  for (const signature of info.signatures) {
+                    const row = document.createElement('div');
+                    row.className = 'cm-script-hover-signature';
+                    row.textContent = signature;
+                    dom.append(row);
+                  }
+                  const about = document.createElement('div');
+                  about.className = 'cm-script-hover-about';
+                  about.textContent = info.about;
+                  dom.append(about);
+                  return { dom };
+                },
+              };
+            }),
+            lineTextPlugin,
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...historyKeymap,
+              ...foldKeymap,
+              ...completionKeymap,
+              ...lintKeymap,
+              ...searchKeymap,
+              indentWithTab,
+            ]),
+            signatureField,
+            signatureKeymap,
+            THEME,
+            EditorView.lineWrapping,
+            EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false' }),
+            readOnly.of([EditorState.readOnly.of(options.readOnly), EditorView.editable.of(!options.readOnly)]),
+            EditorView.updateListener.of((u) => {
+              if (u.docChanged && !telling) options.onChange(u.state.doc.toString());
+            }),
+          ],
         }),
-        lineTextPlugin,
-        keymap.of([
-          ...closeBracketsKeymap,
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...foldKeymap,
-          ...completionKeymap,
-          ...lintKeymap,
-          ...searchKeymap,
-          indentWithTab,
-        ]),
-        signatureField,
-        signatureKeymap,
-        THEME,
-        EditorView.lineWrapping,
-        EditorView.contentAttributes.of({ 'aria-label': options.label, spellcheck: 'false' }),
-        readOnly.of([EditorState.readOnly.of(options.readOnly), EditorView.editable.of(!options.readOnly)]),
-        EditorView.updateListener.of((u) => {
-          if (u.docChanged && !telling) options.onChange(u.state.doc.toString());
-        }),
-      ],
-    }),
-  });
+      }),
+  );
   const showProblems = (): void => view.dispatch(setDiagnostics(view.state, diagnostics(view.state)));
   showProblems();
 

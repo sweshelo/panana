@@ -231,7 +231,7 @@ export class ModelViewer {
     }
     const hasMotions = !!f?.factory.set.models
       .get(f.hash)
-      ?.animations.some((a) => a.kind === 'skeletal' && a.skeletal.length);
+      ?.animations.some((a) => (a.kind === 'skeletal' ? a.skeletal.length : a.material.length) > 0);
     const animated = f && hasMotions ? new AnimatedModel(f.factory, f.hash) : null;
     const m = animated?.group ?? f?.factory.instance(f.hash) ?? null;
     if (!f || !m) {
@@ -264,14 +264,14 @@ export class ModelViewer {
     this.el.classList.add('animated');
     clear(this.motionSelect);
     this.motionSelect.append(h('option', { value: '' }, '静止姿勢'));
-    const motions = animated.motions;
+    const motions = animated.allMotions;
     for (const a of motions) {
       const hint = this.motionHints[animationKey(a.name)];
       this.motionSelect.append(
         h('option', { value: a.name, title: hint ?? '' }, motionLabel(a.name) + (hint ? ` (${hint})` : '')),
       );
     }
-    const first = motions.find((a) => animationKey(a.name) === '001_') ?? motions[0];
+    const first = motions.find((a) => animationKey(a.name) === '001_') ?? animated.motions[0];
     this.motionSelect.value = first?.name ?? '';
     this.selectMotion(first?.name ?? null);
   }

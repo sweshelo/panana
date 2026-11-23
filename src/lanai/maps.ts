@@ -128,7 +128,7 @@ export const LANAI_EXIT_KIND: Record<number, string> = {
   100: '壁の扉',
 };
 /** Kinds 28〜69 (but 68): a building's door, each kind with its own default model (twn_bill*). */
-const isBuildingExit = (k: number): boolean => k >= 28 && k <= 69 && k !== 68;
+export const lanaiIsBuildingExit = (k: number): boolean => k >= 28 && k <= 69 && k !== 68;
 /** What the ROM tells of a kind (the add panel's tooltip); the certainty is said where it is a guess. */
 export const LANAI_EXIT_NOTE: Record<number, string> = {
   0: '同じステージの別のマップへ移る門。',
@@ -146,7 +146,7 @@ export const LANAI_EXIT_NOTE: Record<number, string> = {
   68: '崖を降りる地点。降りた先は「落下の到着点」。',
 };
 export const lanaiExitNote = (k: number): string =>
-  LANAI_EXIT_NOTE[k] ?? (isBuildingExit(k) ? '建物の扉。種類ごとに建物の見た目が違う。' : '');
+  LANAI_EXIT_NOTE[k] ?? (lanaiIsBuildingExit(k) ? '建物の扉。種類ごとに建物の見た目が違う。' : '');
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 /** The exit kind (+0x15) of the level door (MapObject #49 gimk_03_gate_06 when the row has no look). */
 export const LANAI_LEVEL_DOOR_KIND = 16;
@@ -158,21 +158,26 @@ export const LANAI_LEVEL_DOOR_KIND = 16;
 export const LANAI_EVENT_LEVEL = 0x5c;
 /**
  * Section 1 +0x0D: the kind of a floor gimmick (0〜3 in the ROM). Kind 1 is the poison floor and kind 3 the frozen
- * (slippery) floor, both seen in the game by the user; 0 and 2 are not known yet.
+ * (slippery) floor, both seen in the game by the user. Update FUN_0021C534 @0x21C588 picks the model: 0 MapObject #90
+ * gimk_08_damg5_01, 1 #89 gimk_07_damg3_01, 2 / 3 #113 gimk_16_frozen_3; 0 and 1 both set the hazard flag (+0x5476,
+ * @0x21C738), so 0 is a damage floor of another model (how much it takes is not known); only 3 sets the cell's
+ * slippery bit (+0x0A bit 1, @0x21C784), so 2 is a frozen floor that does not slide (roms/tmpmap/kinds-gaps-findings.md).
  */
 export const LANAI_FLOOR_KIND = 0x0d;
 export const LANAI_FLOOR_POISON = 1;
 export const LANAI_FLOOR_ICE = 3;
 export const LANAI_FLOOR_KINDS: Record<number, string> = {
+  0: 'ダメージ床',
   [LANAI_FLOOR_POISON]: '毒床',
+  2: '凍った床 (すべらない)',
   [LANAI_FLOOR_ICE]: '凍った床',
 };
 export const lanaiFloorKindLabel = (kind: number): string => LANAI_FLOOR_KINDS[kind] ?? `床のギミック ${kind}`;
 export const lanaiExitLabel = (k: number): string =>
-  LANAI_EXIT_KIND[k] ?? (isBuildingExit(k) ? `建物の入口 ${k}` : `種類 ${k}`);
+  LANAI_EXIT_KIND[k] ?? (lanaiIsBuildingExit(k) ? `建物の入口 ${k}` : `種類 ${k}`);
 /** The add panel's group of an exit kind: a building's door, a door, or a way out (arrival points too). */
 export const lanaiExitCategory = (k: number): '建物' | '扉' | '出入口・移動' =>
-  isBuildingExit(k) ? '建物' : (k >= 12 && k <= 19) || k === 100 ? '扉' : '出入口・移動';
+  lanaiIsBuildingExit(k) ? '建物' : (k >= 12 && k <= 19) || k === 100 ? '扉' : '出入口・移動';
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
 /**
