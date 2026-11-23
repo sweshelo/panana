@@ -3,6 +3,7 @@
 // their shading into the vertex colours.
 import * as THREE from 'three';
 import type { CgfxMaterial, CgfxMesh, CgfxModel, CgfxTexture } from './cgfx';
+import { procTexLut, procTexPhase } from './proctex';
 import { tevMaterial } from './tev';
 import type { TilesetModels } from './tileset';
 
@@ -59,14 +60,20 @@ export class ModelFactory {
     return tex;
   }
 
-  private material(m: CgfxMaterial | undefined, hasColor: boolean): THREE.Material {
+  private material(m: CgfxMaterial | undefined, hasColor: boolean, proctex: boolean): THREE.Material {
     if (m?.tev && m.units) {
       const maps = m.units.map((u) =>
         u.name && this.set.textures.has(u.name)
           ? this.rawTexture(this.set.textures.get(u.name)!, u.wrapS, u.wrapT)
           : null,
       );
-      return this.register(tevMaterial(m, { maps }, this.clipping));
+      const pt = proctex && this.set.proctex ? { p: this.set.proctex.p, lut: this.procTexLut() } : undefined;
+      const mat = tevMaterial(m, { maps, proctex: pt }, this.clipping);
+      if (pt) {
+        mat.userData.proctex = true;
+        this.procMaterials.push(mat);
+      }
+      return this.register(mat);
     }
     const texName = m?.textures.find((t) => t && this.set.textures.has(t));
     const tex = m && texName ? this.texture(this.set.textures.get(texName)!, m) : null;
@@ -94,6 +101,41 @@ export class ModelFactory {
     return this.register(mat);
   }
 
+  private ptLut: THREE.DataTexture | null = null;
+  private readonly procMaterials: THREE.ShaderMaterial[] = [];
+
+  private procTexLut(): THREE.DataTexture {
+    return (this.ptLut ??= procTexLut(this.set.proctex!.p));
+  }
+
+  /** Some materials move with time (a procedural texture's noise): the view keeps drawing and calls tick. */
+  get animated(): boolean {
+    return this.procMaterials.length > 0;
+  }
+
+  /** Moves the procedural textures to `seconds` after the map was entered (the game counts 1/60 s ticks). */
+  tick(seconds: number): void {
+    const p = this.set.proctex?.p;
+    if (!p) return;
+    const [u, v] = procTexPhase(p, Math.floor(seconds * 60));
+    for (const m of this.procMaterials) (m.uniforms.ptPhase!.value as THREE.Vector2).set(u, v);
+  }
+
+  /**
+   * Places the procedural texture of an instance on the field grid: column, row and the tile's angle (quarter turns),
+   * so the noise runs on across tiles (the per-tile UV matrix of 0x233228).
+   */
+  placeOnGrid(obj: THREE.Object3D, column: number, row: number, quarterTurns: number): void {
+    obj.traverse((o) => {
+      if (!(o instanceof THREE.Mesh) || !(o.material as THREE.Material).userData.proctex) return;
+      const mat = o.material as THREE.ShaderMaterial;
+      o.onBeforeRender = () => {
+        (mat.uniforms.ptTile!.value as THREE.Vector3).set(column, row, (quarterTurns * Math.PI) / 2);
+        mat.uniformsNeedUpdate = true;
+      };
+    });
+  }
+
   private register(mat: THREE.Material): THREE.Material {
     this.materials.push(mat);
     if (/ceil/i.test(mat.name)) {
@@ -112,7 +154,7 @@ export class ModelFactory {
     const model = this.set.models.get(hash);
     if (!model) return null;
     const parts: { mesh: THREE.Mesh; src: CgfxMesh }[] = [];
-    const group = this.build(model, parts);
+    const group = this.build(model, parts, hash);
     for (const { mesh } of parts) {
       const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
       mesh.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos.array as Float32Array), 3));
@@ -121,7 +163,8 @@ export class ModelFactory {
     return { model, group, parts };
   }
 
-  private build(model: CgfxModel, parts?: { mesh: THREE.Mesh; src: CgfxMesh }[]): THREE.Group {
+  private build(model: CgfxModel, parts?: { mesh: THREE.Mesh; src: CgfxMesh }[], hash?: number): THREE.Group {
+    const proctex = hash !== undefined && !!this.set.proctex?.models.has(hash);
     const g = new THREE.Group();
     g.name = model.name;
     const mats = new Map<string, THREE.Material>();
@@ -158,7 +201,7 @@ export class ModelFactory {
       const key = `${me.material}/${!!me.colors}`;
       let mat = mats.get(key);
       if (!mat) {
-        mat = this.material(model.materials[me.material], !!me.colors);
+        mat = this.material(model.materials[me.material], !!me.colors, proctex);
         mats.set(key, mat);
       }
       const mesh = new THREE.Mesh(geo, mat);
@@ -176,7 +219,7 @@ export class ModelFactory {
     if (!t) {
       const m = this.set.models.get(hash);
       if (!m) return null;
-      t = this.build(m);
+      t = this.build(m, undefined, hash);
       this.templates.set(hash, t);
     }
     return t.clone();
@@ -200,6 +243,7 @@ export class ModelFactory {
     for (const m of this.materials) m.dispose();
     for (const t of this.textures.values()) t.dispose();
     for (const t of this.rawTextures.values()) t.dispose();
+    this.ptLut?.dispose();
   }
 }
 

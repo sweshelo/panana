@@ -300,6 +300,7 @@ export class LanaiMapView {
     this.moveMat.dispose();
     this.moveMatActive.dispose();
     this.moveLineMat.dispose();
+    this.scene.setTicker(null);
     this.factory?.dispose();
     for (const f of this.objects.values()) f?.factory.dispose();
     this.effectGeo.dispose();
@@ -651,6 +652,16 @@ export class LanaiMapView {
       this.factory?.dispose();
       this.factory = new ModelFactory(set);
       this.factory.setCeilingVisible(false);
+      const factory = this.factory;
+      let start = -1;
+      this.scene.setTicker(
+        set.proctex
+          ? (seconds) => {
+              if (start < 0) start = seconds;
+              factory.tick(seconds - start);
+            }
+          : null,
+      );
       this.tileLayer.clear();
       this.status = set.errors.length ? `モデルの一部を読めませんでした: ${set.errors.slice(0, 3).join(' / ')}` : '';
     } catch (err) {
@@ -762,6 +773,7 @@ export class LanaiMapView {
           if (!m)
             return t.kind === LANAI_EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
           m.rotation.y = (-t.rot * Math.PI) / 2;
+          f!.placeOnGrid(m, t.x, t.y, t.rot);
           return m;
         },
       })),

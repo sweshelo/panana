@@ -2,6 +2,7 @@
 import { findEntry, parseArchive, unpackEntry, type Archive } from '../archive/gsarc';
 import { hex8 } from '../util/bytes';
 import { parseCgfx, unwrapT8, type CgfxModel, type CgfxTexture } from './cgfx';
+import type { ProcTex } from './proctex';
 
 export interface TilesetModels {
   /** Model archive entry hash -> model. */
@@ -10,6 +11,8 @@ export interface TilesetModels {
   paths: Map<number, string>;
   textures: Map<string, CgfxTexture>;
   errors: string[];
+  /** A procedural texture the field puts on every material of some models (lanai CaveC: proctex_mud03). */
+  proctex?: { p: ProcTex; models: Set<number> };
 }
 
 export function buildTileset(
