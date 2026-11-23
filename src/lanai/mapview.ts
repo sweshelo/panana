@@ -80,6 +80,10 @@ interface LoadedModel {
 }
 
 /** The label of an event's number above it (the preview's #N): a sprite of a canvas, kept by its look. */
+/** How near (world units) the event numbers of two records must be to go one above the other, and the gap. */
+const ID_STACK_REACH = 150;
+const ID_STACK_GAP = 16;
+
 interface IdLabel {
   sprite: THREE.Sprite;
   key: string;
@@ -908,7 +912,9 @@ export class LanaiMapView {
         l.sprite.material.dispose();
         this.idLabels.delete(row);
       }
-    for (const [row, rec] of records) {
+    // labels of events standing at one point go up one above another (the smaller number lowest)
+    const placed: { x: number; z: number; top: number }[] = [];
+    for (const [row, rec] of [...records].sort((a, b) => a[0] - b[0])) {
       const style = row === this.idActive ? 'active' : this.idMarks.has(row) ? 'mark' : 'normal';
       const color = SECTION_COLORS[rec.section] ?? '#ffffff';
       const key = `${row}/${color}/${style}`;
@@ -933,7 +939,11 @@ export class LanaiMapView {
       const at = actor ? actor.group.position : new THREE.Vector3(rec.x, 0, rec.z);
       const scale = style === 'normal' ? 1 : 1.3;
       l.sprite.scale.set(260 * scale, 130 * scale, 1);
-      l.sprite.position.set(at.x, 420, at.z);
+      const h = 130 * scale;
+      const below = placed.filter((p) => Math.hypot(p.x - at.x, p.z - at.z) < ID_STACK_REACH);
+      const bottom = below.length ? Math.max(...below.map((p) => p.top)) + ID_STACK_GAP : 420 - h / 2;
+      l.sprite.position.set(at.x, bottom + h / 2, at.z);
+      placed.push({ x: at.x, z: at.z, top: bottom + h });
     }
   }
 
