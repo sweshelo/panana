@@ -133,6 +133,8 @@ export function MapStatus({ st, view }: { st: MapEditState; view: MapPageView })
   if (hv) parts.push(`セル (${hv[0]}, ${hv[1]})`);
   parts.push(`ツール: ${st.tool}`);
   if (st.clip) parts.push(`コピー ${st.clip.w}×${st.clip.h}`);
+  const stack = view.ctl.stackHint();
+  if (stack) parts.push(stack);
   if (view.status) parts.push(view.status);
   if (view.errorMsg) parts.push(`⚠ ${view.errorMsg}`);
   if (!view.status && !view.errorMsg)

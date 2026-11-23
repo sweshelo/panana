@@ -15,6 +15,7 @@ import {
 } from './autotile';
 import { roomCenters, roomVariantLetters } from './autotile-variants';
 import type { Tile } from '../game/sections';
+import { showStackPicker, type StackCandidate } from './stackpick';
 import { placeRec, recPositions, snapPoint, snapsIn, snapValue, type SnapGuide, type SnapResult } from './snap';
 
 /** What the views tell the controller with a pointer move: Alt (snapping off while held) and the alignment reach. */
@@ -22,6 +23,16 @@ export interface PointerInfo {
   altKey?: boolean;
   /** How near (in cells) another record's x / y must be to align with it (the 2D view: a few pixels). */
   tol?: number;
+}
+
+/** What the controller reads of a press (a PointerEvent from the views; tests pass the first two). */
+export interface PressInfo {
+  shiftKey: boolean;
+  button: number;
+  clientX?: number;
+  clientY?: number;
+  timeStamp?: number;
+  target?: EventTarget | null;
 }
 
 /** An erase drag with the automatic eraser: the erased squares count as never painted (see autoErase). */
@@ -81,6 +92,13 @@ export class Controller {
   }
   private tol = 0.15;
   private free = false;
+  /** How many things the select tool could pick under the pointer (the status bar tells of the double click). */
+  stackHere = 0;
+  /** The last press of the select tool (a second one near it soon after is a double click). */
+  private lastPress: { cx: number; cy: number; t: number } | null = null;
+  /** A double click found several things at one point: let the user pick one (client coordinates of the click). */
+  onStack: (items: StackCandidate[], x: number, y: number, doc?: Document) => void = (items, x, y, doc) =>
+    showStackPicker(this.st, items, x, y, doc);
 
   constructor(readonly st: MapEditState) {
     this.layers = { tiles: true, sections: Object.fromEntries(st.pointSections.map((k) => [k, k !== 9])), room: true };
@@ -88,23 +106,49 @@ export class Controller {
 
   /** Record under a point (cell coords), searching the visible point layers. */
   hitRec(cx: number, cy: number, radius = 0.3): { section: number; index: number } | null {
+    const h = this.hitRecs(cx, cy, radius)[0];
+    return h ? { section: h.section, index: h.index } : null;
+  }
+
+  /** Every record within `radius` of a point (cell coords), nearest first, in the visible point layers. */
+  hitRecs(cx: number, cy: number, radius = 0.3): { section: number; index: number; d: number }[] {
     const doc = this.st.current;
-    if (!doc) return null;
-    let best: { section: number; index: number } | null = null;
-    let bestD = radius;
+    if (!doc) return [];
+    const hits: { section: number; index: number; d: number }[] = [];
     for (const k of this.st.pointSections) {
       if (!this.layers.sections[k]) continue;
       const L = this.st.layouts[k]!;
       (doc.recs[k] ?? []).forEach((r, i) => {
         const [px, py] = recCellPos(r, L);
         const d = Math.hypot(px - cx, py - cy);
-        if (d < bestD) {
-          bestD = d;
-          best = { section: k, index: i };
-        }
+        if (d < radius) hits.push({ section: k, index: i, d });
       });
     }
-    return best;
+    return hits.sort((a, b) => a.d - b.d);
+  }
+
+  /** What a click with the select tool could pick at a point: the records there (nearest first), then the tile. */
+  stackAt(cx: number, cy: number): StackCandidate[] {
+    const st = this.st;
+    const doc = st.current;
+    if (!doc) return [];
+    const items: StackCandidate[] = this.hitRecs(cx, cy).map(({ section, index }) => {
+      const rec = doc.recs[section]![index]!;
+      const [px, py] = recCellPos(rec, st.layouts[section]!);
+      const label = st.recordLabel(section, rec);
+      return {
+        sel: { type: 'rec', section, index },
+        label,
+        title: `${label}
+${st.layouts[section]?.label ?? `区画 ${section}`} #${index}  (${px.toFixed(2)}, ${py.toFixed(2)})`,
+        section,
+      };
+    });
+    const x = Math.floor(cx),
+      y = Math.floor(cy);
+    if (this.layers.tiles && tileAt(doc, x, y))
+      items.push({ sel: { type: 'tiles', cells: [[x, y]] }, label: '地形', title: `地形のマス (${x}, ${y})` });
+    return items;
   }
 
   /**
@@ -124,7 +168,7 @@ export class Controller {
     return null;
   }
 
-  down(cx: number, cy: number, e: { shiftKey: boolean; button: number }): void {
+  down(cx: number, cy: number, e: PressInfo): void {
     const st = this.st;
     const doc = st.current;
     if (!doc || e.button !== 0) return;
@@ -132,6 +176,7 @@ export class Controller {
     const y = Math.floor(cy);
     switch (st.tool) {
       case 'select': {
+        if (this.doublePress(cx, cy, e)) return;
         const hit = this.hitRec(cx, cy);
         if (hit) {
           const r = doc.recs[hit.section]![hit.index]!;
@@ -226,6 +271,24 @@ export class Controller {
   }
 
   /**
+   * A second press of the select tool near the first one soon after (a double click, from a pointer with client
+   * coordinates): with more than one thing there, open the picker instead of selecting the nearest again.
+   */
+  private doublePress(cx: number, cy: number, e: PressInfo): boolean {
+    if (e.clientX === undefined || e.clientY === undefined || e.shiftKey) return false;
+    const t = e.timeStamp ?? performance.now();
+    const last = this.lastPress;
+    this.lastPress = { cx, cy, t };
+    if (!last || t - last.t > 400 || Math.hypot(cx - last.cx, cy - last.cy) > 0.3) return false;
+    const items = this.stackAt(cx, cy);
+    if (items.length < 2) return false;
+    this.lastPress = null;
+    this.drag = null;
+    this.onStack(items, e.clientX, e.clientY, (e.target as Node | null | undefined)?.ownerDocument ?? undefined);
+    return true;
+  }
+
+  /**
    * Snap a point for a record: the grid of the snap settings and the other records of the visible layers (Alt held:
    * neither). `except`: the record being moved.
    */
@@ -247,6 +310,10 @@ export class Controller {
     this.hover = [x, y];
     const st = this.st;
     const d = this.drag;
+    const stack = st.tool === 'select' && !d ? this.stackAt(cx, cy).length : 0;
+    const stackChanged = stack !== this.stackHere;
+    this.stackHere = stack;
+    if (stackChanged) this.onHover();
     if (st.tool === 'place' && !d && st.stamp) {
       const at = this.snapAt(cx, cy);
       const was = this.placePoint;
@@ -406,8 +473,14 @@ export class Controller {
     if (had) this.onHover();
   }
 
+  /** The status bar's hint while several things are stacked under the pointer (null otherwise). */
+  stackHint(): string | null {
+    return this.stackHere >= 2 ? `ここに ${this.stackHere} 件重なっています: ダブルクリックで選ぶ` : null;
+  }
+
   leave(): void {
     this.hover = null;
+    this.stackHere = 0;
     this.placePoint = null;
     if (!this.drag) this.snapGuides = [];
     this.onHover();

@@ -10,8 +10,11 @@ import { JUMP_TABLE } from '../game/jumppoints';
 import {
   EVENT_SECTIONS,
   LAYOUTS,
+  P3,
+  P7,
   POINT_SECTIONS,
   loadDoc,
+  pointKindLabel,
   recEventRow,
   sectionBytes,
   type MapDoc,
@@ -265,6 +268,12 @@ export class EditorState extends MapEditState<Stamp, KaharaTables> {
 
   duplicateRecord(doc: MapDoc, section: number, rec: Rec): Rec {
     return duplicateRecord(this.placeContext(doc), section, rec);
+  }
+
+  override recordLabel(section: number, rec: Rec): string {
+    if (section === 3) return pointKindLabel(P3.kind(rec.raw));
+    if (section === 7) return P7.visible(rec.raw) ? '壁の扉' : '壁の出口 (見えない)';
+    return super.recordLabel(section, rec);
   }
 
   /** Doors on walls (section 7): facing +0x16 (0..3). */

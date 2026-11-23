@@ -3531,3 +3531,43 @@ dialog.stage-editor > .picker-head h2 {
 .move-coord input {
   width: 5.5em;
 }
+
+/* The picker of things stacked at one point (double click with the select tool, src/editor/stackpick.ts). */
+.stack-picker {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  max-width: min(480px, calc(100vw - 8px));
+  flex-wrap: wrap;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+.stack-picker button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 72px;
+  padding: 4px 2px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.stack-picker button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stack-picker button:hover,
+.stack-picker button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}

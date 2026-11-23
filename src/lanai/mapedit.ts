@@ -417,6 +417,10 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
     if (info) this.maps.setDoc(info, doc);
   }
 
+  override recordLabel(section: number, rec: Rec): string {
+    return lanaiRecLabel(section, rec.raw);
+  }
+
   /** Props (+0x10), exits (+0x14), chests (+0x14) and characters (+0x1C) face one of 4 ways (1 / 2 / 4 / 8). */
   override canRotate(section: number): boolean {
     return section >= 2 && section <= 5;

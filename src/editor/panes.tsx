@@ -231,6 +231,8 @@ function StatusBar({ editor }: { editor: MapEditor }): ReactNode {
   if (hv) parts.push(`セル (${hv[0]}, ${hv[1]})`);
   parts.push(`ツール: ${st.tool}`);
   if (st.clip) parts.push(`コピー ${st.clip.w}×${st.clip.h}`);
+  const stack = editor.ctl.stackHint();
+  if (stack) parts.push(stack);
   if (editor.statusMsg) parts.push(editor.statusMsg);
   if (editor.errorMsg) parts.push(`⚠ ${editor.errorMsg}`);
   return <div className="status">{parts.join('   ')}</div>;
