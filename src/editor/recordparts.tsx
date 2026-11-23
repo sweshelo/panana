@@ -212,12 +212,14 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       '地点',
       'その他',
     ];
-    // a category not in the list (an adapter's own) goes first
-    choices.sort(
-      (a, b) =>
-        (order.indexOf(a.category) < 0 ? order.length : order.indexOf(a.category)) -
-        (order.indexOf(b.category) < 0 ? order.length : order.indexOf(b.category)),
-    );
+    // the parts with a gimmick (「区画 n」, by section) first, then the list's; a category not in it goes last
+    const rank = (category: string): number => {
+      const section = /^区画 (\d+)$/u.exec(category);
+      if (section) return -1000 + Number(section[1]);
+      const i = order.indexOf(category);
+      return i < 0 ? order.length : i;
+    };
+    choices.sort((a, b) => rank(a.category) - rank(b.category));
     if (status) choices.push({ key: 'status', name: status, category: '読み込み状況', unavailable: status });
   }
   return (
