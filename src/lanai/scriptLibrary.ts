@@ -147,6 +147,28 @@ export const SCRIPT_LIBRARY: ScriptLibraryFunction[] = [
 }`,
   },
   {
+    name: 'giveItem',
+    about:
+      'NPC などからアイテムを授かる: 本体の演出 (RareItemDirection) で、カメラを寄せて先頭の電波人間を正面に向け、仲間を消し、頭上にアイテムを光らせて出し、持ち物に加えて「手に入れた」と言い、カメラと仲間を戻す。アイテムは行 ID (0x800000D8 など)。持ち物に加えるのも演出がするので、ScriptFlag.AddItemNum は書かない',
+    source: `function giveItem(item: num) {
+  rareItem(item, 1, 1, 1, 1, 1)   // アイテム, 数, 前置き, 後片付け, 仲間を消す, 隊列に戻す
+}`,
+  },
+  {
+    name: 'chestItem',
+    about:
+      '宝箱からアイテムを取り出す: 本家の宝箱 (動作 0x10、code.bin 0x1F2750) と同じ順で、宝箱のほうを向いて開けるモーション → 開ける音 → 宝箱が開く → 光る音 → giveItem と同じ演出。本家にある、アイテムが箱からせり上がる動きと開く光 (EffectData 0x14 fx_bg_trebox_op) は付かない。宝箱はイベント番号',
+    source: `function chestItem(chest: num, item: num) {
+  face(hero, obj(chest))                          // 宝箱のほうを向く
+  hero.StartAnimation(0x8000004A, 0, 1, 0)        // 開けるモーション
+  ScriptSound.Play(0x7C, 0)                       // 開ける音
+  obj(chest).StartAnimation(0x8000006F, 0, 1, 0)  // 宝箱が開く
+  obj(chest).WaitAnimation(0x3E)
+  ScriptSound.Play(0x80, 0)                       // 光る音
+  rareItem(item, 1, 1, 1, 1, 1)
+}`,
+  },
+  {
     name: 'partyLineUp',
     about:
       '仲間の追従を止め、先頭の電波人間を (x, z) に置いて、残りを先頭の後ろに横へ広げて並べる (凸形)。dir は向き (1 = −Z、2 = −X、4 = +Z、8 = +X)。その場に一瞬で置かれるので暗転中に呼ぶとよい。本家 CRO 18 D01BossWin: (3750, 4150, 4)、間隔 150。ScriptMap.SetUpdateFormation(1) で追従に戻す (推定を含む)',

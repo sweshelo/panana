@@ -187,6 +187,28 @@ function constantsOf(v: CroView, start: number): number[] {
   return [...out];
 }
 
+/** The values the code just after a call compares its result with (`cmp r0, #4`, `ldr r1, =hash; cmp r0, r1`). */
+function comparedAfter(v: CroView, off: number): number[] {
+  const out: number[] = [];
+  const lits = new Map<string, number>();
+  for (let o = off; o < off + 0x18 && o + 4 <= v.segs[TEXT]!.length; o += 4) {
+    const i = v.insn(o);
+    const ld = /^ldr (r\d+), \[pc/u.exec(i.text);
+    if (ld && i.literal !== undefined && !v.ptr(TEXT, i.literal)) lits.set(ld[1]!, v.u32(TEXT, i.literal));
+    const imm = /^cmp r0, #(0x[0-9a-f]+|\d+)$/iu.exec(i.text);
+    if (imm) out.push(Number(imm[1]) >>> 0);
+    const reg = /^cmp r0, (r\d+)$/u.exec(i.text);
+    if (reg && lits.has(reg[1]!)) out.push(lits.get(reg[1]!)!);
+    // a compare after a conditional branch is of the same value (CRO 73: cmp r0, #3; beq …; cmp r0, #0x1d); a call
+    // or a jump ends what is compared
+    if (/^(b|bl|bx|blx) /u.test(i.text) || /^pop .*pc/u.test(i.text) || /^mov r0,/u.test(i.text)) break;
+  }
+  return out;
+}
+
+/** The group of a binding made whatever the group is (the factories try 0 first: no group has it). */
+export const ANY_GROUP = 0;
+
 export interface CroBinding {
   trigger: ScriptTrigger;
   group: number;
@@ -198,6 +220,8 @@ export interface CroBinding {
 }
 /** The objects the factories made, by class: what their constructors put in the members (ID of a monster …). */
 const members = new Map<string, Uint8Array[]>();
+/** The effects the constructors made, by class: offset of the ScriptEffect in the object → [EffectData row, layer]. */
+const factoryEffects = new Map<string, Map<number, [number, number]>>();
 
 /** The reads a factory makes besides the group: flags, the floor … (results it is run with). */
 const GUARD_READS: Record<string, string> = {
@@ -229,13 +253,22 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
     const consts = constantsOf(v, entry - img.at(TEXT, 0));
     const groups = [...new Set([0, ...consts.filter((c) => c < 0x400)])];
     const rows = trigger === 'start' ? [0] : [...new Set(consts)];
-    const run = (group: number, row: number, values: number[]): { made: Ref | null; reads: string[] } => {
+    const run = (
+      group: number,
+      row: number,
+      values: number[],
+    ): { made: Ref | null; reads: string[]; hints: number[][] } => {
       const reads: string[] = [];
+      /** For each read, what the code after it compares the result with. */
+      const hints: number[][] = [];
       let n = 0;
+      /** The effects the constructors made: (the ScriptEffect's address, the EffectData row, the layer). */
+      const fx: [number, number, number][] = [];
       const stubs = new Map<number, Stub>();
       for (const [fake, sym] of img.syms)
         stubs.set(fake, (m) => {
           if (sym === A.group) return group;
+          if (sym === A.effectCreate) fx.push([m.r[0]!, m.r[1]!, m.r[2]!]);
           if (sym === A.new || sym === '_Znwj') return m.alloc(m.r[0]! || 4);
           if (isCtor(sym)) return m.r[0]!;
           const kind = GUARD_READS[sym];
@@ -246,7 +279,14 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
             const what = kind
               ? `${kind}:${m.r[0]!}`
               : `${row![0]}.${row![1]}(${row![3].startsWith('i') ? m.r[0]! : ''})`;
+            // the same read again (CRO 7 asks for the map twice) gives what it gave
+            const again = reads.indexOf(what);
+            if (again >= 0) {
+              hints[again]!.push(...comparedAfter(v, m.r[14]! - img.at(TEXT, 0)));
+              return values[again] ?? 0;
+            }
             reads.push(what);
+            hints.push(comparedAfter(v, m.r[14]! - img.at(TEXT, 0)));
             return values[n++] ?? 0;
           }
           return 0;
@@ -256,14 +296,21 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
       try {
         r0 = trigger === 'start' ? m.run(entry, []) : m.run(entry, [row, 0x20000000, 0, 0]);
       } catch {
-        return { made: null, reads };
+        return { made: null, reads, hints };
       }
-      if (!r0) return { made: null, reads };
+      if (!r0) return { made: null, reads, hints };
       const vt = img.refOf(m.read(r0, 4));
       const obj = new Uint8Array(0x200);
       for (let k = 0; k < obj.length; k++) obj[k] = m.rb(r0 + k);
-      if (vt) members.set(classAt(vt).name, [...(members.get(classAt(vt).name) ?? []), obj]);
-      return { made: vt, reads };
+      if (vt) {
+        const name = classAt(vt).name;
+        members.set(name, [...(members.get(name) ?? []), obj]);
+        // the effects in the object (the events' objects are under 0x1000 B; past it, another object's)
+        const own = factoryEffects.get(name) ?? new Map<number, [number, number]>();
+        for (const [at, effect, layer] of fx) if (at >= r0 && at < r0 + 0x1000) own.set(at - r0, [effect, layer]);
+        factoryEffects.set(name, own);
+      }
+      return { made: vt, reads, hints };
     };
     for (const group of groups)
       for (const row of rows) {
@@ -274,16 +321,22 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
           const r = run(group, row, prefix);
           found.push({ cls: r.made ? classAt(r.made).name : null, reads: r.reads, values: prefix });
           decided = Math.max(decided, prefix.length);
-          if (depth > 3 || found.length > 16) return;
+          if (depth > 4 || found.length > 40) return;
           for (let k = prefix.length; k < Math.min(r.reads.length, prefix.length + 3); k++) {
             const base = [...prefix, ...Array<number>(k - prefix.length).fill(0)];
             const kind = r.reads[k]!.split(':')[0];
+            // a byte flag's steps are small (a boss: 2 = fought, 3 = its win played; CRO 51's D01BossWin is made at 2)
             const alts =
               kind === 'bit'
                 ? [1]
                 : kind === 'state'
                   ? [1, 2, 3]
-                  : [1, ...consts.filter((c) => c > 1 && c < 0x100).slice(0, 6)];
+                  : kind === 'byte'
+                    ? [...new Set([1, 2, 3, ...consts.filter((c) => c > 3 && c < 0x100).slice(0, 4)])]
+                    : // what a function returns (the floor, the map …): what the code compares it with, else small ones
+                      r.hints[k]!.length
+                      ? [...new Set(r.hints[k]!.filter((c) => c !== 0))]
+                      : [1, 2, 3, 4];
             for (const a of alts) explore([...base, a], depth + 1);
           }
         };
@@ -293,10 +346,25 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
         // made whatever the reads give: no condition; else the reads decided on, with their values (0 when not set)
         const always = found.every((f) => f.cls === made[0]!.cls);
         const seen = new Set<string>();
+        const val = (f: { values: number[] }, k: number): number => f.values[k] ?? 0;
+        /** The runs that differ from `f` in the value of the read `k` alone. */
+        const others = (f: (typeof found)[number], k: number): typeof found =>
+          found.filter(
+            (g) =>
+              g.reads[k] === f.reads[k] &&
+              val(g, k) !== val(f, k) &&
+              Array.from({ length: decided }, (_, j) => j).every((j) => j === k || val(g, j) === val(f, j)),
+          );
         for (const f of made) {
+          // a read is a condition when another value of it alone makes another class (or nothing); one whose other
+          // values were all tried and make the same class is not (CRO 73's S01BossWin reads two bytes it ignores)
           const when = always
             ? []
-            : f.reads.slice(0, decided).map((x, k) => `${readText(x)} == ${hexText(f.values[k] ?? 0)}`);
+            : f.reads.slice(0, decided).flatMap((x, k) => {
+                const alt = others(f, k);
+                const matters = alt.length ? alt.some((g) => g.cls !== f.cls) : val(f, k) !== 0;
+                return matters ? [`${readText(x)} == ${hexText(val(f, k))}`] : [];
+              });
           const k = `${f.cls}|${when.join(',')}`;
           if (seen.has(k)) continue;
           seen.add(k);
@@ -304,11 +372,13 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
         }
       }
   }
-  // a class made for any row of a group (the factory did not compare the row) is not a binding of a row
-  return out.filter(
-    (b, _, all) =>
-      b.trigger === 'start' ||
-      all.filter((x) => x.trigger === b.trigger && x.group === b.group && x.cls === b.cls).length < 40,
+  // a class made for any row of a group (the factory did not compare the row) is not a binding of a row; one made at
+  // group 0, which no map has, is made at the start of any group's map (CRO 71's TimerStartCommon, CRO 73's
+  // ScriptColosseumMenu): kept once, as group 0
+  return out.filter((b, _, all) =>
+    b.trigger === 'start'
+      ? b.group === ANY_GROUP || !all.some((x) => x.trigger === 'start' && x.cls === b.cls && x.group === ANY_GROUP)
+      : all.filter((x) => x.trigger === b.trigger && x.group === b.group && x.cls === b.cls).length < 40,
   );
 }
 
@@ -521,6 +591,14 @@ class FunctionDecompiler {
   }
   /** Members the body wrote before reading them. */
   private wrote = new Map<number, Sym>();
+  /** The event's ScriptEffect members the body calls: name → offset in the event's object. */
+  readonly usedEffects = new Map<string, number>();
+  /** The name of the ScriptEffect member at `off` of the event's object (`fx74`), as the body uses it. */
+  private effectName(off: number): string {
+    const n = `fx${off.toString(16)}`;
+    this.usedEffects.set(n, off);
+    return n;
+  }
 
   private note(what: string, list: Stmt[]): void {
     this.notes.push(what);
@@ -1142,6 +1220,21 @@ class FunctionDecompiler {
     const r = st.r;
     const arg = (k: number): Sym =>
       k < 4 ? r[k]! : (st.stack.get((r[13] as { off: number }).off + 4 * (k - 4)) ?? this.fresh('スタックの引数'));
+    // the game's rare item direction, an object of the event: rareItem(item, num, intro, restore, party, formation)
+    if (sym === A.rareStart || sym === A.rareStartNum) {
+      const num = sym === A.rareStartNum;
+      const vals = [1, 2, 3, 4, 5, 6].map((k) =>
+        num ? arg(k) : k === 2 ? ({ k: 'n', v: 1 } as Sym) : arg(k - (k > 2 ? 1 : 0)),
+      );
+      const texts = vals.map((x, k) => (k === 0 ? this.intText(x, out) : x.k === 'n' ? hexText(x.v) : null));
+      const flagsOk = texts.slice(2).every((t) => t === '0' || t === '1');
+      if (r[0]!.k !== 'this' || texts.some((t) => t === null) || !flagsOk) {
+        this.note(`rareItem(${texts.map((t) => t ?? '?').join(', ')}) (アイテム・数・0 / 1 のどれかが決まらない)`, out);
+        return;
+      }
+      out.push({ k: 'text', text: `rareItem(${texts.join(', ')})` });
+      return;
+    }
     // objects of the script: made around a character, the party's array, destructors
     if (sym === A.charaCtor || sym === A.playerCtor || sym === A.monsterCtor) {
       const c = r[1]!;
@@ -1254,7 +1347,8 @@ class FunctionDecompiler {
     const missing: string[] = [];
     let who: string | null = null;
     if (member) {
-      who = this.whoOf(r[0]!);
+      // a ScriptEffect member of the event (its constructor's, or one the body makes): `effect fxNN`
+      who = cls === 'ScriptEffect' && r[0]!.k === 'this' ? this.effectName(r[0]!.off) : this.whoOf(r[0]!);
       if (!who) missing.push('相手');
     }
     const decimal = (OVERLOADS.get(`${cls}.${name}`)?.length ?? 1) > 1;
@@ -1294,7 +1388,9 @@ class FunctionDecompiler {
     const player = who === 'hero' || /^p\d*$/u.test(who ?? '');
     if (
       member &&
-      ((cls === 'ScriptPlayer' && !player) || (cls === 'ScriptMonster' && player) || cls === 'ScriptEffect')
+      ((cls === 'ScriptPlayer' && !player) ||
+        (cls === 'ScriptMonster' && player) ||
+        (cls === 'ScriptEffect' && !this.usedEffects.has(who ?? '')))
     )
       missing.push(`${cls} の関数を ${who} に呼ぶ書き方`);
     if (args.some((a) => /selfRow/u.test(a) && a !== 'selfRow')) missing.push('selfRow の計算');
@@ -1832,6 +1928,7 @@ export function decompileContentCro(bytes: Uint8Array): CroDecompiled {
     return c;
   };
   members.clear();
+  factoryEffects.clear();
   const bindings = runFactories(v, img, classAt);
   // classes no factory makes (made by another event, by the stage's own code): kept by their vtables in the data
   const byName = new Map<string, CroClass>();
@@ -1845,6 +1942,8 @@ export function decompileContentCro(bytes: Uint8Array): CroDecompiled {
     const notes: string[] = [];
     const flags = new Map<string, FlagUse>();
     let body: Stmt[] = [];
+    /** The ScriptEffect members the functions call (name → offset in the event's object). */
+    const usedFx = new Map<string, number>();
     if (execSlot && 'fn' in execSlot) {
       const d = new FunctionDecompiler(v, c, flags, execSlot.fn, agreed(name));
       try {
@@ -1855,6 +1954,7 @@ export function decompileContentCro(bytes: Uint8Array): CroDecompiled {
         notes.push(`本体を読めなかった (${(e as Error).message})`);
         body.push({ k: 'note', text: notes[notes.length - 1]! });
       }
+      d.usedEffects.forEach((o, n) => usedFx.set(n, o));
     } else notes.push(`本体はゲームの ${c.base} のまま (CRO にはない)`);
     const ctrl = c.slots[4];
     if (ctrl && 'fn' in ctrl) {
@@ -1872,11 +1972,41 @@ export function decompileContentCro(bytes: Uint8Array): CroDecompiled {
       }
       notes.push(...d.notes.map((n) => `CtrlFlag: ${n}`));
       if (!d.notes.length) notes.push('CtrlFlag を本体の末尾に移した');
+      d.usedEffects.forEach((o, n) => usedFx.set(n, o));
     }
+    // the preparation when the map is read (vt+0x8): the language has no place for it, so it is written as comments
+    // before the body (what it does to the map's things: hides them, puts them away, makes the effects …)
     const prep = c.slots[2];
-    if (prep && 'fn' in prep && !isEmptyFn(v, prep.fn)) notes.push('マップを読み込んだときの準備 (vt+0x8) がある');
+    let prepLines: string[] = [];
+    if (prep && 'fn' in prep && !isEmptyFn(v, prep.fn)) {
+      notes.push('マップを読み込んだときの準備 (vt+0x8) がある');
+      const d = new FunctionDecompiler(v, c, flags, prep.fn, agreed(name));
+      let pre: Stmt[];
+      try {
+        pre = tidy(fold(d.decompile()), c.base);
+      } catch (e) {
+        pre = [{ k: 'note', text: `準備を読めなかった (${(e as Error).message})` }];
+      }
+      d.usedEffects.forEach((o, n) => usedFx.set(n, o));
+      prepLines = [
+        '  // マップを読み込んだときの準備 (vt+0x8)。言語に書く所がないので、コメントにした:',
+        ...render(pre, 0).map((l) => `  // ${l}`),
+      ];
+    }
     body = tidy(fold(body), c.base);
-    const lines = render(body, 1);
+    // the effects: declared, and made as the constructor made them (when the functions do not make them)
+    const made = factoryEffects.get(name) ?? new Map<number, [number, number]>();
+    const fxLines: string[] = [];
+    const callsText = render(body, 0).join('\n');
+    for (const [n, off] of [...usedFx].sort((a, b) => a[1] - b[1])) {
+      fxLines.push(`  effect ${n}`);
+      const m = made.get(off);
+      if (m && !callsText.includes(`${n}.CreateEffect(`))
+        fxLines.push(
+          `  ${n}.CreateEffect(${hexText(m[0])}, ${m[1]})   // コンストラクタで作る (EffectData の行 ${hexText(m[0])})`,
+        );
+    }
+    const lines = [...fxLines, ...prepLines, ...render(body, 1)];
     const head = [
       ...(notes.filter((n) => !/^CtrlFlag を本体/u.test(n)).length ? [] : []),
       ...own.map(

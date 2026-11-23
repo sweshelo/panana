@@ -515,6 +515,7 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
       'partyColumn(3750, 3030, 8); ScriptMap.SetUpdateFormation(1)',
       'walk(hero, 250, 0, 750); turn(hero, 90); face(hero, obj(3))',
       'vanish(9)',
+      'giveItem(0x800000D8); chestItem(3, 0x800000D2)',
     ])
       expect(text(call).length).toBeGreaterThan(text('').length);
   });

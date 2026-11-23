@@ -5,7 +5,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { contentTitle, lanaiContents } from './contents';
-import { decompileContentCro, decompiledSource, type CroEventSource } from './croDecompile';
+import { ANY_GROUP, decompileContentCro, decompiledSource, type CroEventSource } from './croDecompile';
 import { SCRIPT_TRIGGER_LABEL } from './eventScript';
 import type { LanaiSession } from './session';
 import { contentScript } from './stageEdit';
@@ -16,7 +16,7 @@ const bindingText = (e: CroEventSource): string =>
         ...new Set(
           e.bindings.map(
             (b) =>
-              `${SCRIPT_TRIGGER_LABEL[b.trigger]} (MapGroup ${b.group}${b.row ? `, 0x${b.row.toString(16)}` : ''})`,
+              `${SCRIPT_TRIGGER_LABEL[b.trigger]} (${b.group === ANY_GROUP ? 'どの MapGroup でも' : `MapGroup ${b.group}`}${b.row ? `, 0x${b.row.toString(16)}` : ''})`,
           ),
         ),
       ].join('、')

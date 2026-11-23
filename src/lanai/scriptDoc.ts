@@ -132,6 +132,11 @@ export const SCRIPT_WORDS: ScriptWord[] = [
     'vanishEffect(だれに)',
     'モンスターの大きさに合った、本家のボス撃破後の光のエフェクトをその足元に出す (ライブラリの vanish が使う)。エフェクトはイベントが持ち、イベントの終わりに消える。マップにいなければ何もしない。中身: ScriptMap::GetMapChara / ScriptMonsterCtrl::GetMonsterSize / ScriptEffect::CreateEffect / ScriptChara::GetShadowPos / SetPos / ScriptEffect::StartEffect',
   ),
+  w(
+    'statement',
+    'rareItem(アイテム, 数, 前置き, 後片付け, 仲間を消す, 隊列に戻す)',
+    '本体のレアアイテムの演出 (RareItemDirection::StartItem / StartItemNum): 先頭の電波人間の頭上にアイテムを光らせて出し、持ち物に加えて「手に入れた」と言い、しまうまで待つ。数は 1〜9999。あとの 4 つは 0 / 1: 前置き = カメラを保存して寄せ、先頭を正面に向ける。後片付け = カメラ・表情・モーション・カメラの追従を戻す。仲間を消す = ほかの電波人間を消し、後片付けで戻す。隊列に戻す = 後片付けの最後に隊列の追従を再開する。演出はイベントが持ち、イベントの終わりに消える。ライブラリの giveItem / chestItem が使う。本家の CRO 3・12 は自分で先頭を構えさせてから (0, 0, 1, 1) で呼ぶ',
+  ),
 ];
 
 export interface ScriptSample {

@@ -1,8 +1,16 @@
 // The shipped CROs' events written back as stage script (src/lanai/croDecompile.ts, STATE #17).
 import { describe, expect, test } from 'bun:test';
 import { lanaiContents } from '../src/lanai/contents';
-import { parseCro } from '../src/lanai/cro';
-import { decompileContentCro, decompiledSource, floatText, fold, render, type Stmt } from '../src/lanai/croDecompile';
+import { buildCro, parseCro } from '../src/lanai/cro';
+import {
+  ANY_GROUP,
+  decompileContentCro,
+  decompiledSource,
+  floatText,
+  fold,
+  render,
+  type Stmt,
+} from '../src/lanai/croDecompile';
 import { compileStageScript, parseStageScript } from '../src/lanai/eventScript';
 import { LanaiSession } from '../src/lanai/session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT } from '../src/lanai/stageEdit';
@@ -80,6 +88,61 @@ describe.skipIf(!hasLanai)('RPG FREE! CRO decompile (ROM)', () => {
       ...clean.map((e) => `on talk(1, ${e.bindings[0]!.row}) ${e.cls}`),
     ].join('\n');
     expect(compileStageScript(base, parseStageScript(src)).cro.segments.length).toBeGreaterThan(0);
+  }, 60000);
+
+  test("the game's rare item direction and the effects an event keeps come back as they were written", async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const built = compileStageScript(
+      base,
+      parseStageScript(
+        [
+          'on talk(1, 5) { giveItem(0x800000D8) }',
+          'on area(1, 2) { effect fx; fx.CreateEffect(0x32, 3); fx.StartEffect(0.5); rareItem(0x80000021, 3, 0, 1, 1, 0) }',
+        ].join('\n'),
+      ),
+    );
+    const d = decompileContentCro(buildCro(built.cro));
+    const text = (row: number): string => d.events.find((e) => e.bindings.some((b) => b.row === row))!.text;
+    expect(text(5)).toContain('rareItem(0x800000D8, 1, 1, 1, 1, 1)');
+    expect(text(2)).toContain('rareItem(0x80000021, 3, 0, 1, 1, 0)');
+    expect(text(2)).toContain('fxc.StartEffect(0.5)');
+  }, 60000);
+
+  test("the shipped events: a constructor's effects, a map's preparation, a start made at a value of a flag", async () => {
+    const s = await open();
+    const read = async (n: number) => {
+      const c = lanaiContents(s).find((x) => x.index === n)!;
+      return decompileContentCro((await contentScript(s, c, await s.archive(c.archive))).body);
+    };
+    // content 3: the boss's vanishing light is made by the event's constructor (EffectData 0xC2 fx_enm_dead_02)
+    const c3 = await read(3);
+    const win = c3.events.find((e) => e.cls === 'D02Boss2Win')!;
+    expect(win.text).toContain('fx74.CreateEffect(194, 3)');
+    expect(win.text).toContain('fx74.StartEffect(1)');
+    expect(win.bindings.map((b) => b.when)).toEqual([['bit_40 == 1', 'byte_76 == 2']]);
+    // content 51: the win is made once its byte flag is 2 (not among the constants the factory compares with)
+    const c51 = await read(51);
+    expect(c51.events.find((e) => e.cls === 'D01BossWin')!.bindings.map((b) => b.when)).toEqual([
+      ['bit_117 == 1', 'byte_118 == 2'],
+    ]);
+    // content 73: the floor and the map the start factory compares, back from the battle's floor (4)
+    const c73 = await read(73);
+    expect(c73.events.find((e) => e.cls === 'S01BossWin')!.bindings.map((b) => b.when)).toEqual([
+      [
+        'ScriptSystem.GetCurrentFloorID() == 3',
+        'bit_0x149 == 1',
+        'ScriptMap.GetCurrentMapID() == 0xDEF07D44',
+        'ScriptSystem.GetPrevFloorID(1) == 4',
+      ],
+    ]);
+    // made at any group's start: kept once, as group 0
+    expect(c73.events.find((e) => e.cls === 'ScriptColosseumMenu')!.bindings.map((b) => b.group)).toEqual([ANY_GROUP]);
+    // the preparation when the map is read is written as comments before the body
+    expect(c51.events.find((e) => e.cls === 'D01BossEvent')!.text).toContain(
+      '// マップを読み込んだときの準備 (vt+0x8)',
+    );
   }, 60000);
 
   test('content 1: the answer of a question picks the line in both ways (the rest written in each)', async () => {

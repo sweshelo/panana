@@ -102,6 +102,7 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     const body = (text: string): unknown => parseStageScript(`var V: byte\non talk(1, 1) { ${text} }`);
     const example: Record<string, string> = {
       vanishEffect: 'vanishEffect(obj(2))',
+      rareItem: 'rareItem(0x800000D8, 1, 1, 1, 1, 1)',
       vec: 'ScriptMap.SetPartyPosition(vec(1, 0, -2 * 3), 4, 1, 100)',
       selfRow: 'ScriptMap.EnableEventCollision(selfRow, 0)',
       obj: 'obj(2).SetVisible(0)',
@@ -236,6 +237,25 @@ describe('the language calls the Script API: no statements of its own but the fl
     expect(() => parseStageScript('on start(1) { ScriptMap.EnableEventCollision(selfRow, 0) }')).toThrow('selfRow');
     expect(() => body('ScriptMap.EnableEventCollision(selfRow + 1, 0)')).toThrow('selfRow');
   });
+  test("rareItem: the game's direction of a rare item; the library gives one from someone or from a chest", () => {
+    expect(body('rareItem(0x800000D8, 2, 1, 0, 1, 0)')).toEqual([
+      { op: 'rareItem', item: 0x800000d8, num: 2, intro: true, restore: false, party: true, formation: false },
+    ]);
+    expect(() => body('rareItem(0x800000D8, 1, 2, 0, 0, 0)')).toThrow('0〜1');
+    expect(() => body('rareItem(0x800000D8, 0, 1, 1, 1, 1)')).toThrow('1〜9999');
+    expect(body('giveItem(0x800000D8)')).toEqual(body('rareItem(0x800000D8, 1, 1, 1, 1, 1)'));
+    // the chest's order of code.bin 0x1F2750: turn to it, the pose, its sound, it opens, the light's sound, the item
+    expect(calls(body('chestItem(6, 0x800000D2)'))).toEqual([
+      'ScriptChara::RotateCharaTo(obj(6), 0.25, 0, 0, 0) on hero',
+      'ScriptSystem::WaitTime(0.25)',
+      `ScriptPlayer::StartAnimation(${0x8000004a}, 0, 1, 0) on hero`,
+      `ScriptSound::Play(${0x7c}, 0)`,
+      `ScriptChara::StartAnimation(${0x8000006f}, 0, 1, 0) on obj(6)`,
+      'ScriptChara::WaitAnimation(62) on obj(6)',
+      `ScriptSound::Play(${0x80}, 0)`,
+      'rareItem',
+    ]);
+  });
   test('vanishEffect: the one statement of the language', () => {
     expect(body('vanishEffect(obj(9))')).toEqual([{ op: 'vanishEffect', who: { kind: 'chara', row: 9 } }]);
     expect(calls(body('vanish(9)'))).toEqual(['if']);
@@ -336,6 +356,8 @@ describe('functions with parameters: written out where they are called', () => {
       jingle: 'jingle(0x41)',
       openDoor: 'openDoor(3)',
       vanish: 'vanish(9)',
+      giveItem: 'giveItem(0x800000D8)',
+      chestItem: 'chestItem(3, 0x800000D2)',
       partyLineUp: 'partyLineUp(3750, 4150, 4)',
       partyColumn: 'partyColumn(3750, 3030, 8)',
     };

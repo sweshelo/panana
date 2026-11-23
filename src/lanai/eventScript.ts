@@ -276,6 +276,22 @@ export type ScriptNode =
   | { op: 'local'; name: string; kind: 'vec'; e: ScriptVecExpr }
   /** The shipped boss's vanishing effect at a monster's shadow (by its size), kept by the event (vanishEffect). */
   | { op: 'vanishEffect'; who: ScriptWho }
+  /**
+   * `rareItem(item, num, intro, restore, party, formation)`: the game's RareItemDirection (kept by the event) shows the
+   * item over the leader with its light, adds it and says so (ScriptMenu::ItemGet). intro: the camera saved and drawn
+   * in, the leader turned to it; restore: the camera, the leader's face and motion and the camera's following back
+   * after; party: the others faded out (and in again with restore); formation: the formation followed again (with
+   * restore). Read from the Update's code: StartItem 0x22DDFC → StartItemNum 0x22D7C0 (setup 0x2AAA40, end 0x2AA834).
+   */
+  | {
+      op: 'rareItem';
+      item: number;
+      num: number;
+      intro: boolean;
+      restore: boolean;
+      party: boolean;
+      formation: boolean;
+    }
   | { op: 'break' }
   | { op: 'return' }
   /**
@@ -508,11 +524,12 @@ interface FnDef {
   library: boolean;
 }
 /**
- * The words of the language's own statements, which a function cannot be named: vanishEffect (the one thing the
- * Script API cannot say: the event keeps the effect until it is destroyed) and vec(…) of the arguments. All else is
+ * The words of the language's own statements, which a function cannot be named: vanishEffect and rareItem (what the
+ * Script API cannot say: the event keeps the effect, the item's direction, until it is destroyed) and vec(…) of the
+ * arguments. All else is
  * a Script API function called by name, or a function of the script or of the library (scriptLibrary.ts).
  */
-export const SCRIPT_STATEMENTS: readonly string[] = ['vanishEffect', 'vec'];
+export const SCRIPT_STATEMENTS: readonly string[] = ['vanishEffect', 'rareItem', 'vec'];
 /** The functions written in tokens (at the top, outside any braces), found before the bodies are read. */
 function fnDefs(ts: Token[], library: boolean): FnDef[] {
   const out: FnDef[] = [];
@@ -1202,6 +1219,21 @@ export function parseStageScript(src: string): StageScript {
         return { op: 'break' };
       case 'vanishEffect':
         return { op: 'vanishEffect', who: call(t.s, who)[0] };
+      case 'rareItem': {
+        const flag = (what: string) => (): boolean => int(what, 0, 1) === 1;
+        const [item, num, intro, restore, party, formation] = call<
+          [number, number, boolean, boolean, boolean, boolean]
+        >(
+          t.s,
+          () => u32('アイテムの行 ID'),
+          () => int('数', 1, 9999),
+          flag('前置き (カメラ・正面を向く)'),
+          flag('後片付け (カメラ・表情を戻す)'),
+          flag('仲間を消す'),
+          flag('隊列の追従に戻す'),
+        );
+        return { op: 'rareItem', item, num, intro, restore, party, formation };
+      }
       case 'for': {
         // for p in party { … }: p is each member of the party in turn (an object, as hero is)
         const n = name('for の変数');
@@ -1748,6 +1780,10 @@ export const SCRIPT_API = {
   monsterCtor: '_ZN13ScriptMonsterC1EP9ChrObject',
   effectCreate: '_ZN12ScriptEffect12CreateEffectEj9GSLayerID',
   effectStart: '_ZN12ScriptEffect11StartEffectEf',
+  rareCtor: '_ZN17RareItemDirectionC1Ev',
+  rareDtor: '_ZN17RareItemDirectionD1Ev',
+  rareStart: '_ZN17RareItemDirection9StartItemEjbbbb',
+  rareStartNum: '_ZN17RareItemDirection12StartItemNumEjibbbb',
   gsvecZero: 'GSVEC_ZERO',
   play: '_ZN11ScriptSound4PlayEtf',
   pauseBgm: '_ZN11ScriptSound8PauseBGMEf',
@@ -2026,6 +2062,8 @@ interface Ctx {
   breakTo: string | null;
   /** The event's effects: id → where it is in the event's object. */
   effects: Map<string, number>;
+  /** Where the event's RareItemDirection is in its object (rareItem), or null when it has none. */
+  rare: number | null;
   /** The frame offset of each local of the event. */
   locals: Map<string, number>;
   /** The scratch: the next free byte and the end (taken as a stack: what is taken is given back after its use). */
@@ -2512,7 +2550,26 @@ function effectsOf(nodes: ScriptNode[]): string[] {
 }
 /** The size of a ScriptEffect (a ScriptChara's: the CROs lay them 0x4C apart). */
 const EFFECT_SIZE = 0x4c;
+/**
+ * The size of a RareItemDirection: its constructor (0x22DE2C) writes up to +0x374 (its ScriptPlayer[8] from +0xF4,
+ * 0x50 each, then a word), which its destructor reads back.
+ */
+const RARE_SIZE = 0x378;
+const usesRare = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'rareItem');
+/** The bytes of an event's object: the game's class, its effects, then its RareItemDirection (rareItem). */
+const objectSize = (e: { shape: Shape; effects: string[]; rare: boolean }): number =>
+  NEW_SIZE[e.shape] + EFFECT_SIZE * e.effects.length + (e.rare ? RARE_SIZE : 0);
+/** Where an event's RareItemDirection is: after its effects. */
+const rareAt = (e: { shape: Shape; effects: string[] }): number => NEW_SIZE[e.shape] + EFFECT_SIZE * e.effects.length;
 const fadesIn = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.fadeIn, A.fadeInNow));
+
+/** In a factory, r0 = the new event: its RareItemDirection made at `at` (r0 kept; r4 is the event after). */
+function makeRare(f: Fn, at: number): void {
+  f.op('mov r4, r0');
+  memberAddr(f, 'r0', at);
+  f.call(A.rareCtor);
+  f.op('mov r0, r4');
+}
 
 /** In a factory, r0 = the new event: its `count` effects made from `at` on (r0 kept; r4 is the event after). */
 function makeEffects(f: Fn, at: number, count: number): void {
@@ -2690,6 +2747,24 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.op(`add r0, r4, #${hx(at)}`, 'vmov.f32 s0, s17');
         fn.call(A.effectStart);
         fn.at(done);
+        break;
+      }
+      case 'rareItem': {
+        // StartItem(item, intro, restore, party, formation) = StartItemNum(item, 1, …) (0x22DDFC); waits until the
+        // item is put away (CRO 3 D01001B01's StartItem(…, 0, 0, 1, 1) after its own pose of the leader)
+        const b = (x: boolean): string => (x ? '1' : '0');
+        memberAddr(fn, 'r0', c.rare!);
+        fn.load('r1', n.item);
+        if (n.num === 1) {
+          fn.op(`mov r2, #${b(n.intro)}`, `mov r3, #${b(n.restore)}`, `mov r12, #${b(n.party)}`);
+          fn.op('str r12, [sp]', `mov r12, #${b(n.formation)}`, 'str r12, [sp, #4]');
+          fn.call(A.rareStart);
+        } else {
+          fn.load('r2', n.num);
+          fn.op(`mov r3, #${b(n.intro)}`, `mov r12, #${b(n.restore)}`, 'str r12, [sp]');
+          fn.op(`mov r12, #${b(n.party)}`, 'str r12, [sp, #4]', `mov r12, #${b(n.formation)}`, 'str r12, [sp, #8]');
+          fn.call(A.rareStartNum);
+        }
         break;
       }
       case 'call':
@@ -2899,6 +2974,7 @@ export function compileStageScript(
     cls: `PnEvent${k}`,
     shape: SHAPE[e.trigger],
     effects: effectsOf(e.body),
+    rare: usesRare(e.body),
     intro: e.trigger === 'intro' ? intros[e.group] : undefined,
   }));
   for (const e of events) {
@@ -3040,19 +3116,20 @@ export function compileStageScript(
         f.load('r0', e.intro.flag);
         f.call(A.getBit);
         f.op('tst r0, #0xff', 'movne r0, #0', `bne ${after ? `${after.cls}_make` : ret}`);
-        f.load('r0', NEW_SIZE.intro + EFFECT_SIZE * e.effects.length);
+        f.load('r0', objectSize(e));
         f.call(A.new);
         f.op('cmp r0, #0', `beq ${ret}`);
         f.load('r1', e.intro.map);
         f.call(A.introCtor);
         f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]');
         makeEffects(f, NEW_SIZE.intro, e.effects.length);
+        if (e.rare) makeRare(f, rareAt(e));
         // the gate's door stands open until the party is in (D01Intro's factory: StartAnimation(0x8000006E))
         if (e.intro.gate?.door) f.op('mov r4, r0', `bl ${e.cls}_open`, 'mov r0, r4');
         f.op(`b ${ret}`);
         continue;
       }
-      f.load('r0', NEW_SIZE[shape] + EFFECT_SIZE * e.effects.length);
+      f.load('r0', objectSize(e));
       f.call(A.new);
       f.op('cmp r0, #0', `beq ${ret}`);
       if (shape === 'npc') {
@@ -3080,6 +3157,7 @@ export function compileStageScript(
         f.call(A.esCtor);
       }
       makeEffects(f, NEW_SIZE[shape], e.effects.length);
+      if (e.rare) makeRare(f, rareAt(e));
       f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]', `b ${ret}`);
     }
     fns.push(f);
@@ -3185,6 +3263,7 @@ export function compileStageScript(
         exit,
         breakTo: null,
         effects: new Map(e.effects.map((id, k) => [id, NEW_SIZE[e.shape] + EFFECT_SIZE * k])),
+        rare: e.rare ? rareAt(e) : null,
         locals,
         scr: { top: localsEnd, end: frame },
       },
@@ -3205,10 +3284,15 @@ export function compileStageScript(
 
     const d1 = new Fn(g, `${e.cls}_d1`),
       d0 = new Fn(g, `${e.cls}_d0`);
-    if (e.effects.length) {
-      // the effects, last made first (ScriptEffect has no destructor of its own: ~ScriptChara, as the CROs')
+    if (e.effects.length || e.rare) {
+      // the RareItemDirection (made last), then the effects, last made first (ScriptEffect has no destructor of its
+      // own: ~ScriptChara, as the CROs')
       for (const d of [d1, d0]) {
         d.op('push {r4, lr}', 'mov r4, r0');
+        if (e.rare) {
+          memberAddr(d, 'r0', rareAt(e));
+          d.call(A.rareDtor);
+        }
         for (let k = e.effects.length - 1; k >= 0; k--) {
           memberAddr(d, 'r0', NEW_SIZE[e.shape] + EFFECT_SIZE * k);
           d.call(A.charaDtor);
