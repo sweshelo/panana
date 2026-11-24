@@ -126,6 +126,7 @@ describe('RPG FREE! stage script: the document of the editor', () => {
       for: 'for p in party { p.SetVisible(0) }',
       event: 'event.TurnNpcRecover()',
       effect: 'effect fx\n fx.CreateEffect(0xc1, 3)\n fx.SetPos(self.GetPos())\n fx.StartEffect(1)',
+      state: 'if (state == 0) { state = 2 }\n state(3) = state(3) + 1',
       let: 'let p = obj(2).GetPos() + vec(0, V, 0)\n let a = p.y * 2\n a += 1\n if (a > 3) { obj(2).SetPos(p) }',
     };
     const words = SCRIPT_WORDS.map((x) => x.word).filter((x) => /^[a-z]\w*$/iu.test(x));

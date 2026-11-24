@@ -18,6 +18,7 @@ import {
   SCRIPT_TRIGGER_LABEL,
   stageScriptCrr,
   triggerHasRow,
+  usesOwnState,
   type IntroSpec,
   type LeaveReset,
   type ScriptNode,
@@ -26,7 +27,7 @@ import {
   type StageScript,
 } from './eventScript';
 import { lanaiRecEventRow } from './mapedit';
-import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, lanaiMaps, type LanaiMaps } from './maps';
+import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, lanaiEventSlot, lanaiMaps, type LanaiMaps } from './maps';
 import type { LanaiTable } from './table';
 import type { LanaiSession } from './session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT, lanaiCrrName } from './stageEdit';
@@ -203,6 +204,19 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
       continue;
     }
     const records = eventRecords(maps, e.group);
+    // the states the body reads or writes are kept in the rows' slots: a slot beyond the group's count is not kept
+    const stateRows = new Set(
+      [...JSON.stringify(e.body).matchAll(/"name":"state\((\d+)\)"/gu)].map((m) => Number(m[1])),
+    );
+    if (triggerHasRow(e.trigger) && usesOwnState(e.body)) stateRows.add(e.row);
+    for (const r of stateRows) {
+      const slot = r < t.rows ? lanaiEventSlot(t, r) : -1;
+      if (slot < 0) problems.push(`${what}: state のイベント ${r} がありません (${t.name} は ${t.rows} 行)`);
+      else if (slot >= maps.groups[e.group]!.stateCount)
+        problems.push(
+          `${what}: イベント ${r} の状態の枠 ${slot} が MapGroup ${e.group} の枠の数 ${maps.groups[e.group]!.stateCount} 以上なので、state を読み書きできません (いつも 0)`,
+        );
+    }
     // the characters the body names: a row no character's record has gives the game nothing to act on
     for (const r of new Set(charaRows(e.body)))
       if (!records.get(r)?.length)

@@ -395,8 +395,35 @@ function tokens(src: string): Token[] {
     else if (m[7]) throw new ScriptError(`「${m[7]}」は使えない文字です`, line);
   }
   out.push({ t: 'end', s: '', n: 0, line, pos: src.length });
+  // `state(N)`, an event's state, is read as one name (a byte variable of the game: scriptState)
+  for (let k = 0; k + 3 < out.length; k++) {
+    const [a, b, c, d] = [out[k]!, out[k + 1]!, out[k + 2]!, out[k + 3]!];
+    if (a.t === 'id' && a.s === SCRIPT_STATE && b.s === '(' && c.t === 'num' && d.s === ')' && Number.isInteger(c.n))
+      out.splice(k, 4, { ...a, s: `${SCRIPT_STATE}(${c.n})` });
+  }
   return out;
 }
+
+/** The name of the event's own state (`state`), and `state(N)` of row N of the map group's events. */
+export const SCRIPT_STATE = 'state';
+/**
+ * Whether a name is an event's state: `state` (the event's own row) or `state(N)`. It reads and writes as a byte
+ * variable, the game's ScriptFlag::Get / SetScriptState of the row in the map group the hero is in: saved with the game,
+ * in the slot of the row (EventObject +0x58) the stage owns. The row's three actions go by it (0 the first, 1 the
+ * second, 2 / 3 the third), and conditions 12 / 13 compare it.
+ */
+export function scriptStateRow(name: string): number | 'own' | null {
+  if (name === SCRIPT_STATE) return 'own';
+  const m = /^state\((\d+)\)$/u.exec(name);
+  return m ? Number(m[1]) : null;
+}
+const stateVar = (name: string): ScriptVar | undefined =>
+  scriptStateRow(name) === null ? undefined : { name, kind: 'byte', reset: false, flag: -1 };
+/** Whether a body reads or writes `state` (its own row's), or writes it. */
+const stateUse = (body: ScriptNode[], write: boolean): boolean =>
+  JSON.stringify(body).includes(write ? '"op":"set","name":"state"' : '"name":"state"');
+export const writesOwnState = (body: ScriptNode[]): boolean => stateUse(body, true);
+export const usesOwnState = (body: ScriptNode[]): boolean => stateUse(body, false);
 
 const CMPS: readonly string[] = ['==', '!=', '<', '<=', '>', '>='];
 /** Words a variable or a function cannot be named. */
@@ -431,6 +458,8 @@ export const isScriptName = (s: string): boolean => /^[A-Za-z_]\w*$/u.test(s) &&
 
 /** What a body cannot do under a trigger (the object the game makes for it has no such thing), or null. */
 export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string | null {
+  if (!triggerHasRow(trigger) && usesOwnState(body))
+    return `state (このイベントの状態) は「${SCRIPT_TRIGGER_LABEL[trigger]}」のイベントにはありません。state(イベント番号) で書きます`;
   const own = trigger === 'talk' || trigger === 'button' || trigger === 'switch';
   const who = (w: ScriptWho | null): string | null =>
     w && w.kind === 'self' && !own
@@ -686,7 +715,7 @@ export function parseStageScript(src: string): StageScript {
         decimal = true;
         return N({ k: 'local', name: l.id });
       }
-      const x = t.t === 'id' && !b ? vars.get(t.s) : undefined;
+      const x = t.t === 'id' && !b ? (vars.get(t.s) ?? stateVar(t.s)) : undefined;
       if (x) {
         if (x.kind === 'bit') bit ??= { name: x.name, at: t };
         return N({ k: 'var', name: x.name });
@@ -1021,7 +1050,7 @@ export function parseStageScript(src: string): StageScript {
           : `「${t.s}」は値として使えません (変数か、Script API の呼び出しを書きます)`,
         t,
       );
-    if (!vars.has(t.s)) fail(`変数「${t.s}」はありません`, t);
+    if (!vars.has(t.s) && !stateVar(t.s)) fail(`変数「${t.s}」はありません`, t);
     return { kind: 'var', name: t.s };
   };
   const conditionAtom = (): ScriptCond => {
@@ -1335,7 +1364,7 @@ export function parseStageScript(src: string): StageScript {
       return { op: 'local', name: local.id, kind: 'num', e: compound ? { k: compound, l: self, r: r.e } : r.e };
     }
     if (step || compound || is('=')) {
-      const v = vars.get(t.s);
+      const v = vars.get(t.s) ?? stateVar(t.s);
       if (!v) return fail(`変数「${t.s}」はありません`, t);
       const self: ScriptExpr = { k: 'var', name: t.s };
       if (v.kind === 'bit') {
@@ -1393,6 +1422,7 @@ export function parseStageScript(src: string): StageScript {
     if (t.t === 'id' && t.s === 'var') {
       const n = name('変数');
       if (vars.has(n.s)) fail(`変数「${n.s}」は 2 つあります`, n);
+      if (n.s === SCRIPT_STATE) fail('state はイベントの状態の名前なので、変数の名前にできません', n);
       need(':');
       const kind = next();
       if (kind.t !== 'id' || (kind.s !== 'byte' && kind.s !== 'bit')) fail('変数の種類は byte か bit です', kind);
@@ -2373,11 +2403,24 @@ function withChara(c: Ctx, who: ScriptWho, at: number, of: ScriptCall['of'], use
   fn.call(of === 'player' ? A.playerDtor : A.charaDtor);
 }
 
+/** A register = the row ID whose state is read or written: the event's own (EventScript +4, r4 = this) or row N. */
+function stateRow(c: Ctx, reg: string, row: number | 'own'): void {
+  if (row === 'own') c.fn.op(`ldr ${reg}, [r4, #4]`);
+  else c.fn.load(reg, row);
+}
+
 /** r0 = the value. */
 function compileValue(c: Ctx, v: ScriptValue): void {
   const { fn } = c;
   switch (v.kind) {
     case 'var': {
+      const row = scriptStateRow(v.name);
+      if (row !== null) {
+        stateRow(c, 'r0', row);
+        fn.call(A.getState);
+        fn.op('and r0, r0, #0xff');
+        break;
+      }
       const x = c.vars.get(v.name)!;
       fn.load('r0', x.flag);
       fn.call(x.kind === 'byte' ? A.getByte : A.getBit);
@@ -2655,7 +2698,8 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         break;
       }
       case 'set': {
-        const x = c.vars.get(n.name)!;
+        const row = scriptStateRow(n.name);
+        const x = c.vars.get(n.name) ?? stateVar(n.name)!;
         if ('expr' in n) {
           // worked out when the event runs: a byte wraps to 0〜255, a bit is whether it is not 0
           compileInt(c, n.expr);
@@ -2663,6 +2707,11 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
           else fn.op('and r0, r0, #0xff');
           fn.op('mov r1, r0');
         } else fn.load('r1', n.value & 0xff);
+        if (row !== null) {
+          stateRow(c, 'r0', row);
+          fn.call(A.setState);
+          break;
+        }
         fn.load('r0', x.flag);
         fn.call(x.kind === 'byte' ? A.setByte : A.setBit);
         break;
@@ -3019,6 +3068,8 @@ export function compileStageScript(
     // "played in this visit" for the intro (D01Intro's CtrlFlag: SetScriptBitFlag(0xB1, 1))
     if (e.shape === 'intro') put({ kind: 'text', label: `${e.cls}_ctrl` });
     else if (e.trigger === 'start') put({ kind: 'text', label: 'pn_prepare' });
+    // an event that writes its own state keeps what it wrote: the game's CtrlFlag would move it on after Execute
+    else if (writesOwnState(e.body)) put({ kind: 'text', label: 'pn_prepare' });
     else if (e.trigger === 'defeat') put({ kind: 'text', label: 'pn_done' });
     else put({ kind: 'imp', name: e.shape === 'button' ? A.buttonCtrl : A.ctrl, addend: 0 });
     if (e.trigger === 'switch') put({ kind: 'imp', name: A.keepMenu, addend: 0 });

@@ -13,7 +13,7 @@ export { scriptLineMarks } from './scriptDoc';
 
 export type ScriptWordKind = 'keyword' | 'atom' | 'who' | 'builtin' | 'class';
 
-const ATOMS = ['true', 'false', 'selfRow'];
+const ATOMS = ['true', 'false', 'selfRow', 'state'];
 const WHO = ['hero', 'self', 'obj'];
 /** The words of the help and the library's functions (the help shows those apart, with their text). */
 const BUILTINS = new Map<string, ScriptWord>([

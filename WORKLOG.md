@@ -148,3 +148,226 @@
 - スクリプト編集画面: 演出プレビューのマップの MapGroup の台詞・群れをエディタに渡し（注記・補完）、「＋ 台詞を追加」（`ScriptLineDialog.tsx`: 相手の台詞 = talk()、先頭の電波人間の 8 口調 = StartMessageAuto、主人公専用・システム = StartMessage）でカーソルの位置に呼び出しを書く。台詞の一覧に「挿入」。
 - 演出プレビュー: `mapview.ts` に 3D のイベント番号のラベル（区画の色、使うイベントは黄色、再生中のものは白、プレビューのキャラに追従）とクリックの判定。`previewSequence.ts` の `previewReferencedRows`。プレビューに表示の切り替えと「obj(N) をカーソルの位置に書く」。2D のマップの番号は未対応。
 - 検証: 型チェック、本番ビルド、対象テスト（scriptassist 21・talk 11・scriptpreview 6、talk の ROM テスト 2 件を含む）が通過。1 つ目のコミットは Lefthook（整形・lint・型・全テスト）が通過。2 つ目以降は Lefthook が通ったあと gpg の署名がパスフレーズ待ちで失敗し、未コミット。画面操作と実機は未確認。
+- 2・3 のコミット: `611d1b6`（Lefthook 通過。gpg の署名はユーザーがパスフレーズを入力）。
+
+## マップの電波人間のモデル (計画 playful-juggling-sparrow)
+
+- 原因: `lanaiRecordLook` が MapChara +0x2C を常に MapObject の行として読み、MapChara 種類 3（電波人間、+0x2C = DenpaCustom の行）が扉・門のモデルになっていた。演出プレビューの `obj(N)`、マップの 3D 表示、見た目の欄、イベント選択が同じ誤り。
+- ROM 解析 (Codex): `roms/tmpmap/denpa-npc-analysis.md`（コミットしない）。`FUN_0023CFAC` が EO +0x5C (0/1/2) で MapChara +0x2C u16 / +0x10 u32 / +0x2E u16 を選び、種類 0 MapObject、1 MonsterDesign、2 MonsterParameter（+0x00 bit20..29 が MonsterDesign。電波人間ではない、11 行・15 配置）、3 DenpaCustom（96 行・141 配置、セーブ参照なし、無効は行 0 マネキン）。値は表の行番号か行 ID（+0x10 は ID。EO +0x5C=1 は NPC 8・ボス 8 件）。DenpaCustom (0x50) の外観: +0x0C/+0x10/+0x14 模様・主色・副色、+0x38 レベル、+0x3A AntennaGroup、+0x41 頭、+0x43 体 (BodyData)、+0x44〜+0x4C 顔・髪・肌色・髪色・眉・目・鼻・口・頬（髪以外 1 起点）。
+- 実装: `mapObjects.ts` の `lanaiCharaModel` / `lanaiCharaTables`、`{ type: 'denpa', custom }`。`animationModels.ts` の `lanaiDenpaCustomLook` / `lanaiDenpaCustomModel`（見本 `lanaiDenpaModel` も同じ組立て）: HeadData の頭、BodyData の大きさ、顔アトラス（RPG3 の `faceMaterials`）、BodyPattern のテクスチャ、ColorData の 2 色を体の材質の定数色 1 / 2 に。BCH の材質に段ごとの定数色の番号 `tevConstants` を足した（TevStage に入れると移植テストの材質比較が崩れるため材質の任意欄）。アンテナと特殊色（ColorData +4 = 0x1000）は未対応。
+- 検証: 型チェック・全テスト 832 件通過。ROM のテストでコンテンツ 16 MapChara 7 → DenpaCustom 11 かしたろう、58 の 18 (EO +0x5C=1) → MonsterDesign 108、地図の電波人間 80 行以上が組み上がる。画面と実機は未確認。コミット `1733024`。
+
+## 1 ステージに複数のショップ (a5462df) / STATE #7 共通の上限 (32bcea6)
+
+ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/shops.md §4 の「店の人は行 0 を開く・引数に店の番号はない」は誤りで、1 店のステージで引数が 0 だっただけ。submodule の訂正は未実施。
+
+- 店の選び方 (確定): 型 0x32 店の人 / 0x33 範囲に入ると店 は、動作の引数 2 (型 +0x08) を店の選択子として渡す。`FUN_0031C038` が 0x80000000 未満を Shop の行番号、以上を行 ID として探し、ないときは行 0 (`0x474734` / `0x45B4B0`、`0x24A2DC`)。コンテンツ 97 は型 0x33 × 36 件が行 0〜35 を開く (テストで確認)。24 は CRO から `ShopCommon::CallShop` (`0x19341C`)、0 は CRO のメニュー (8 行と入口の対応は未確認)。店を開く Script API はない。
+- 買える数 (+0x26) の記録 (確定): 店の番号は `0x1325DC` が求めた Shop の行。0x99 は店 0〜9 だけ。行 10 は記録されず、11 以上は 10 で割った余りの店と共有。
+- 共通の上限 (確定): 保存値 0x9A はセーブ全体で 1 つの 200 要素の配列。読み `0x002AEF18–30`、書き `0x0045F0A8–C8` とも添字は +0x28 だけ。同じ番号なら店・ステージをまたいで共有。ROM の +0x27 ≠ 0 は 219 行・51 番号 (コンテンツ 0 と 97 だけ、コンテンツをまたぐ重複なし)。+0x27 = 0 で番号がある行はコンテンツ 0・店 3 の番号 6 の 1 行。リセットは `0x00246D40` (配信で店の品が変わったとき、その品の枠) と全保存値の初期化 `0x0043DE40` (推定: 新しいセーブ)。
+- 実装 a5462df: `LanaiContentShops.addShop` / `removeShop` / `shopOf`、`lanaiClerks(maps, shops)` が 0x33 も拾い、開く店を解決。ショップのページに「＋ 店を追加」・追加した店の削除・店ごとの店の人・行 10 以上の警告。マップのインスペクタの引数 2 と「店の人」を置くダイアログで店を選ぶ (`ShopSelect`)。ROM パーツの店の人は引数 2 を 0 に。
+- 実装 32bcea6: `#/shops/shared` (番号ごとの行と空き番号)、共通の上限の欄に「空き」と →、ほかのステージと同じ番号を使うと警告。説明文を確定した内容に。
+- 検証: `bun test test/lanai-shops.test.tsx` 14 件通過 (ローカル ROM で ROM のテストも実行)。コミット時の Lefthook 通過。画面と実機は未確認。
+
+## マップの電波人間のアンテナと体色 (STATE 14-1)
+
+- 照合: コンテンツ 16 のパーティの画面写真 (MapChara 7〜14 = DenpaCustom #11〜#18、全員 Lv220) で、体色・アンテナの属性・装備 (DenpaCustom +0x18〜+0x34 = ItemData の行 ID、+0x10 は持ち物) が一致。
+- ROM 解析 (Codex): `roms/tmpmap/antenna-analysis.md`。段階は AntennaGroup +0x22 (u16 × 6) を先頭から比べ、最後に到達した +0x04+4k のスキル (未到達は SkillData 1 アンテナのねっこ、グループ 0 は行 0 なし、0x2B69CC)。モデルは SkillData +0x15 → AntennaModel +4 (E50D0000)。アトラスは AntennaModel +0 & 3 (0x340 → 75F22000 のアイコン集 ETC1A4、0x341 → 33945C00 の専用モデルの絵 ETC1 でアルファなし。Codex は SkillData +0x10 & 3 と読んだが誤り: アイコンを持つ 190 件中 173 件が 1 で、はるお・かしたろうが不透明な別の絵 (ねむらせる) になっていた。+0x10 & 3 はスキルの種類と見られる)、アイコンは +0x11 & 0x3F (1 起点、8 × 8 を列ごとに上から)、倍率は +0x10 bit 2..5 (0.8/1/1.2/1.4/1.6)。頭の ante ボーンに、頭の倍率を打ち消して付ける。
+- 体色の訂正: フィールドの体は F0F40000/679F6C00 で、定数色 0 = 主色、1 = 副色、2 = 黒 (96EB0000 版は割り当てが違う)。同じ 2 色なら模様なし、模様ありで副色 0 / 2 は黒 (3)、模様なしで副色 2 は 0、副色 0 は主色。
+- 実装: `animationModels.ts` の `lanaiDenpaColors` / `lanaiAntennaSkill` / `antennaPart`。テスト: 8 人のアンテナが画像の属性どおり (じごくのごうか・ならくのそこ・マグニチュード12・みんなかんぜんふっかつ・みんなわざアップ・みんなムキムキ・みんなたたり・みんなぜんぶかいふく)。地図の電波人間がすべて組み上がる。
+- アンテナのコミット `255db6d`。
+
+## マップの電波人間の装備 (STATE 14-2)
+
+- Codex は利用枠の上限で途中終了（分布のスクリプト `roms/tmpmap/equip-distribution.ts` だけ残った）。以降はデータと BCH から推定し、コードでの裏付けは未了。
+- 枠 (DenpaCustom、全 209 行の ItemDataCore +0x32 の分布): +0x18 頭・めがね、+0x1C 首、+0x20 グラブ・うでわ、+0x24 足、+0x28 背中 (ぶき・スカート・マント・しっぽ・はね・だいこ)、+0x2C ふく。+0x10 は持ち物 (回復・ランプなど)。
+- 付け方 (BCH から): 体のボーン名 (spine, L_hand, R_heel, L_wing, manteau1 …) を 2 本以上持つ、または頂点がその 1 本の位置にある装備は体の座標で作られており、名前で体のボーンにスキンする (グラブ・足・首・マント・はね・うでわ)。ほかは付け先の原点で作られている: 頭・めがね (equ_face_*) は頭のモデルの根元、ぶき・だいこなどは shoulder_back、スカート・うきわは hip、しっぽは tail、首は spine。ふく (0xD1 / 0xD2) は hum_base のテクスチャで体の模様を置き換える。頭の装備は顔の絵 (描く順 1〜30、深度を書かない) の後に描く (40)。
+- 不具合と修正: `lanaiItems()` は ItemDataCore のない行を飛ばすので、配列の添字は ItemData の行ではない。添字で引いて別の装備 (ダウンジャケットなど) が付いていたのを、行番号で引くよう直した。
+- 検証: 簡易ソフトウェア描画 (scratchpad の denpa-render.png) で、かしたろうのグローブ・げた・ベルト・胸の飾り、りゅうのグラブ・じゅず・あくまのはね、さなこのはね・ネックレス・ブーツが画像と同じ部位に付くことを確認。全テスト 835 件通過。
+- 装備のコミット `79242e6`。
+- 服の色の反転: 体の材質の TEV は c2 (黒) → + tex × c0 → + (1 − tex) × c1 で、模様 (白黒のマスク) で主色と副色を混ぜる。服 (0xD1 / 0xD2) はカラーの絵 (ETC1) なので、人の体色を入れると混ざり、主色が暗く副色が明るい人では明暗が反転していた。服を着ているときは c0 = 白、c1 = 黒 (色 = tex、/items ページの表示と同じ) にした。ゲームが服のときに入れる定数色はコードで未確認 (ColorData 2 = 白 / 3 = 暗い灰の可能性あり)。
+- 服の色のコミット `3116cdb` (レアの色のテストも同梱)。
+- 体色の特殊値: ColorData +4 は色の系統のビット (1 黒、2 赤 … 0x800 銀、0x1000 レア)。レア (行 2) は副色にだけ使われ (23 か所)、服なしで見えるのは #169 ゆう (模様 5) だけで、規則どおり黒 (3) になる。
+
+## 装備の付け方のコードでの裏付け (Sonnet のサブエージェント、roms/tmpmap/equip-code-analysis.md)
+
+- 組立て 0x1B6440〜0x1B64E4 が欄ごとに装備を作る。名前追従 (0x4479F0 → 0x3DE744) は種類ごとの決まった名前だけ: 首 root/hip/spine/L_arm/R_arm/head/scarf (基点 head)、グラブ spine/L_elbow/L_hand/R_elbow/R_hand (基点 Root)、うでわ L_hand/R_hand、足 hip/L_foot/L_knee/L_heel/R_foot/R_knee/R_heel (基点 hip)、マント・はね root/hip/tail/spine/L_arm/R_arm/head/manteau1〜3/L_wing/R_wing (基点 spine)。
+- 1 本のボーンに固定 (0x3018CC): 頭 0x81 → head、ぶき 0xC3 → shoulder_back、だいこ 0xC4 → head (推定の shoulder_back は誤り)、スカート 0xC5 → hip、しっぽ 0xC6 → tail。うでわは R_hand 固定ではなく名前追従。
+- めがね 0x82 はモデルを作らない: equipInfo_face +0x00 の bit 0〜4 (23 個が 1〜23、docs/lanai/equipment.md §1) で顔の Megane のマスを選ぶ (0x2D3418 → 0x26CE7C)。顔のアトラスで列 14 行 1〜15・列 15 行 0〜7 の 23 個で、RPG3 の denpaFaceUv('Megane') と同じ並び (報告の x/y は逆の表記)。
+- 服: 白・黒・黒で確定 (0x2D3C18〜0x2D3C5C、服ありは体への色の再適用を飛ばす)。
+- 未確認: 頭の装備を顔の絵の後に描く (drawOrder 40) のはコードに根拠なし (仮定)、固定の付け方 (モード 7) の拡大・回転の扱い。
+- 実装: `denpaEquipment.ts` を書き直し (FOLLOW の表、rigidBone、lanaiDenpaGlasses)。テストに 23 個のめがねの番号、さなこのサングラスが顔のマスでモデルなし、はるおのおおきめサングラス (0x81) がモデル。
+- 装備の付け方の修正のコミット `7746c01`。
+- 体色の修正: 画像の 8 人は服でなく行の模様・色で写っているため、マップでは服を描かない。色の規則をコード (0x2DABE0, 0x45DB54) どおりに直し、模様なし・副色レアを rare とした (光る手続きテクスチャは未実装)。解析は roms/tmpmap/clothes-flag-analysis.md。コミット `1f6e3fe`。
+- 頭の色: 頭のモデルの Body 材質 (hum_base) にも本人の主色・副色を入れる (既定の赤・黄が出ていた)。コミット `79c4c58`。
+- 服: 体の Body 材質だけを服のテクスチャ (hum_base/clothes) にし体の定数を白・黒・黒に、頭は模様と本人の色のまま (1f6e3fe の「服を描かない」は誤りで、これで置き換え)。コミット `28d0563`。
+
+## STATE #8 サムネイルの反映 (調査、2026-11-21)
+
+- 症状 (配信用 zip、追加したステージ): 一覧で最初にホバーすると絵が出ず、直前のステージの絵が残る。確認画面では絵の両端にノイズが出てちらつく。
+- Panana の書出しは正常 (既存テスト)。ROM の走査では、ほぼ全コンテンツが Stage_symbol01.arc (578F1C00) を自分のアーカイブに持ち、名前の衝突ではない (roms/tmpmap/scan-symbol.ts)。
+- 0x31F108 (アーカイブのハッシュ→パス) の BL 呼出しは 7 箇所で、lanai-custom-stages の置換対象と同じ。stage_archive_path は state->active (stage_activate 後) のときだけ SD へ読み替えるので、選ぶ前の絵の読込みは ROM の場所で失敗する、と推定 (確度 中、呼出し元は vtable 経由で未特定)。スロット表は一覧の表示前に埋まる (stage_catalog_load)。詳細は roms/tmpmap/stage-symbol-analysis.md。
+- Codex は利用上限のため、agy (Claude/GPT) も試したが、確認なしの実行ができず、解析はサブエージェントで行った。
+- 修正は lanai-custom-stages 99304a5 で入れた。選ぶ前でも、受け取ったステージのアーカイブを SD に読み替える。ARM のテスト 14 件が通った。ゲーム内では未確認。Panana のコードは変更していない。
+
+## STATE #15 タイルセットのテクスチャ (2026-11-21)
+
+- 症状: カスタムステージの新しい MapData に Relic を割り当てると、タイルが白飛びする。
+- 原因: `lanaiTilesets` は MapResource の行全体をキーにして数えていた。Relic には 2 つのテクスチャがある。`3DC60000/6D3A9800` は bg_kabrickfloor などで、モデル bgpt_09_relic が参照する。12 行あるが、+0x10 (戦闘背景) が違うため票が割れていた。`2B84B000` は bg_wall_stone_* で、10 行がすべて同じバイト列だった。結果として後者が選ばれ、テクスチャ名が解決できなかった。
+- 修正 (コミット `b0ca085`): テクスチャ (+0x00/+0x04) ごとに行を数える。床のモデルのマテリアルのテクスチャ名を最も多く持つものを選び、同点なら行数で決める。新しい MapResource 行の +0x10 は、マップが元の行で使っていた値を保つ。同じタイルセットを選び直したとき、テクスチャが違えば再適用する (`tilesetTextureDiffers`)。
+- テスト (ROM あり、13 件が通過): Relic は 6D3A9800。全タイルセットで床のテクスチャ名が解決できる。例外は Boutique の bg_floor_01 で、ROM でも欠けている。
+- CaveC: 床の M_ground は、段 0 で頂点色 × caveC_pro (tex0)、段 1 で段 0 のアルファにより bg_ground_01 と補間する。GSC にもテクスチャ BCH にもマテリアルアニメはない。caveC_pro は実行時に proctex_files の pctxbin へ差し替えると推定 (未確認)。Codex は利用上限で、agy は確認なしの実行の権限が拒否されたため、解析は未着手。
+
+## チップ自動配置の接続ロジック (6e353e1、2026-11-21)
+
+- 症状: 隣り合う部屋の横に線を引くと部屋同士が通路でつながる。触れ合う 2 部屋の継ぎ目を塗ると 1 マスごとに出入口ができ、隣の別の部屋ともつながる。新しい部屋が斜めにできると、既存の内角 (8) が床 (5) に置き換わる。
+- 原因: 「隣が埋まっているか」で接続を決め、ストロークの 8 近傍を作り直していた。内角は「斜めのマスが部屋か」で判定していた。
+- 変更 (`src/editor/autotile.ts`): 地形を辺のグラフ (閉 / narrow / wide) として扱う。ドラッグは通った辺だけを開く (補間は 4 連結)。部屋の床は 2×2 で成立する。別の部屋は塗った場合だけ 2×2 に含め、継ぎ目を 2 マス幅で塗ると合体し、1 本線なら出入口が 1 つになる。形が変わらないタイルは返さない。内角は斜めのマスが両隣と wide でつながっているかで決める。`islands`・`edgeGraph`・`cellShape`・`partFor` を追加。
+- 自動消しゴム (`autoErase`): 消しゴムツールで、消したマスを最初からなかったものとして扱う。2×2 の床が欠けた wide の辺は narrow になる (消した後の形を塗ったときと同じ結果)。Delete キーは選択したマスだけを消す (従来どおり)。
+- ミニマップ (`src/editor/minimap.ts`): 置かれたタイル自身の形を 3×3 の区画で描く。端のマスは 2/3、角は 4/9、通路は中央の 1/3。隣が開き返さない開口は赤で示す。
+- テスト: autotile / minimap に再現テストを追加。全体で 847 件が通過、25 件がスキップ (ROM なしのため。スキップは ROM 検証の成功ではない)。実画面 (3D 表示との見比べ) は未確認。
+
+## スクリプトエディタで自作の変数・関数を補完 (822a207、2026-11-21)
+
+- 症状: 自分で定義した変数や関数が補完されない。
+- 原因: 変数の候補は全文を `scriptDocFromSource` で厳密に読んで作っていた。名前を打ちかけた時点で全文は読めないので候補が空になっていた。自作の関数と関数の引数は、そもそも候補に入っていなかった (引数のヒントだけが正規表現で関数を探していた)。
+- 変更: `scriptOwnNames` (`src/lanai/scriptAssist.ts`) が、コメントを除いた本文から `var` と `function 名前(引数)` を単語として拾う。`ScriptAssist.functions` を追加した。単語の位置で自作の関数を候補にし、`名前(` を挿入する。カーソルがある関数の引数も候補にする。1 つ目の引数が obj の関数は `hero.` / `self.` / `obj(n).` の後にも出す (num の関数は `obj(n).` の後だけ)。`StageSourcePage.tsx` はマップの読み込み前からこれらの名前を渡す。
+- テスト: `test/lanai-scriptassist.test.ts` に 1 件を追加 (22 件が通過)。型チェックと全テストも通過した。エディタ画面での操作は未確認。
+- ScriptState (イベントの状態) の調査結果は会話でだけ報告した。実装はまだしていない。本体の CtrlFlag が実行後に状態を 0→1 に進めるので、作者が状態を管理するには何もしない CtrlFlag を出すかどうかを決める必要がある。0〜3 より大きい値と、マップを出入りしたときに状態が残るかは Azahar で確かめていない。
+
+## STATE #15 CaveC のプロシージャルテクスチャの解析 (2026-11-22)
+
+- 解析: Codex がファイル形式を解き、途中で利用上限に達した。続きはサブエージェントで行った。資料は roms/tmpmap/cavec-proctex-analysis.md、cavec-proctex-format-notes.md、cavec-mud03-proctex-dump.json。アドレスは update のコード。
+- 選び方: タイルの読み込み (0x1E10C0) が 0x2BEAF8 を呼ぶ。MapParts のアーカイブが 0xD17B0000 (CaveC の全パーツ。ほかのタイルセットにはない) のとき、名前の表 0x4EB52C の +0x14 = `rom:/proctex_files/proctex_mud03.pctxbin` を全マテリアルに付ける。テクスチャ名の `_pro` では決まらない。
+- 描画: コールバック 0x234040 が TEV の段 0 を Modulate(頂点色, Texture3) に書き換える。proctex は texcoord0 で引く PICA のテクスチャ 3 なので、caveC_pro は使われない (置き場だけ)。段 1 (bg_ground_01 との補間) はそのまま。タイルごとの UV 行列 (0x233228) は u' = 2(u + 列)、v' = 2(v − 行) で、ノイズはタイルをまたいで続く。
+- アニメ: 0x233364 (場面の更新ごと、0x42ABA0 から呼ぶ) で、ノイズの位相 U/V だけを変える。mud03 はモード 1 で、位相 = P0·sin(2π·fmod(n·step, P0)/P0)。n は 1/60 秒単位。U = 3.5·sin(2πt/29.2 s)、V = 1.5·sin(2πt/12.5 s)。
+- mud03: 合成 5 (U²+V²)、mirrored clamp、linear、bias 0.5、LUT 幅 128・offset 0。ノイズの振幅 2/1、周波数 0.35/0.30。色の LUT は紫のランプで、アルファ 0.914。
+- Kahara: 0x2F1B68 が、引数 0 が 8 で ID が 0xA5CCD17B のとき mud03 を選ぶ (名前の表 0x55FF00)。
+- 未解決: コールバックが tex1 の行列も書き換えるか、レジストリのスロット 0x21 のフック、pctxbin の 0x163C〜0x1648、壁にも見た目の効果があるか (実機)。
+
+## STATE #17 出荷 CRO のイベントの逆変換: 調査 (2026-11-22、82fcff4)
+
+- 資料: notes/lanai-cro-decompile.md (ステージ済み)。集計スクリプトは roms/tmpmap/decomp/scan.ts と q.ts、出力は同じ場所の functions.tsv・factories.tsv・slots.tsv・summary.txt。
+- 集計: イベント系のクラスは 808、仮想関数は 1727 本。Execute 系 794 本のうち、そのまま言語で書ける形は 226 本。欠落が多いのは、ベクトル値 (GetPos と VEC 演算)、数値の局所変数、メンバー変数 (588 本)、ScriptMonster・ScriptEffect、TurnNpc / TurnHero。枠 3 は 125 本中 99 本が、フラグで返すクラスを選んでいる。
+- Codex は、まず標準入力待ちで止まった (`< /dev/null` で解消)。そのあと利用上限に達した。agy は auto mode に拒否されたので、集計は自分で書いた。
+- 最初のコミットは GPG の署名で失敗した。gpg-agent が動いていなかったので、Gpg4win の gpgconf で起動してからコミットした。
+
+## STATE #17 言語の拡張: 局所変数・位置・呼出しの値 (2026-11-22、f16e104)
+
+- 目的: 出荷 CRO を逆変換するとき、頻出の形をそのまま書けるようにする。言語で書けない呼出しの上位は GetPos (1161)、VECSubtract (451)、GetShadowPos (112)、VECAdd (111) で、位置と局所変数が最も多く欠けていた。
+- API 表: 生成器 (lanai-custom-stages 3ds/research/script-api-table.ts) は、シグネチャが `)` で終わるものだけを関数としていた。そのため `) const` の const メンバーをデータとみなし、件数にも出さずに落としていた。正規表現を直し、GetPos・GetShadowPos・GetChara・GetAnimDataID など 10 件を表に足した (lanai-custom-stages 側の修正は未コミット)。
+- 言語 (eventScript.ts):
+  - `let 名前 = 値` で局所変数を宣言する。数 (float) か位置 (vec) を持ち、保存はされない。代入は `=`、数は `+= ++`、位置は `+= -=`。関数の中の let はその関数だけのもので、展開のたびに `p#3` のような一意の名前になる。
+  - 位置は vec(式, 式, 式)、局所変数、GetPos / GetShadowPos (const GSvec* を返す: VEC_RESULT) で書く。位置どうしの足し引き、数との掛け算・割り算、`.x / .y / .z` ができる。
+  - 値を返す Script API を式・引数の中に書ける (入れ子も可)。void とポインターは不可。
+  - byte 変数か整数の戻り値を定数と比べる条件は、従来どおり整数で比べる。それ以外 (局所変数、float の戻り値、計算) は vcmp で小数として比べる (ScriptNumComparison)。
+- コード生成:
+  - フレームは「既存のフレーム + 局所変数 (最大 0x100) + スクラッチ 0x140」。スクラッチは take / release でスタックとして使う。
+  - 呼出しで計算する引数は、呼出し先の ScriptChara を作る前に評価する。入れ子の呼出しが FRAME.obj を壊さないため。
+  - vldr / vstr が 0x3FC より先に届かないときは ip 経由にする (入場の演出はフレームが 0x348 あるため)。
+  - `sub sp` の即値に表せないサイズは 8 ずつ切り上げる。
+- 影響: 通常イベントのフレームは 0xF0 → 0x1F0 に増えた。1 つの式が読む変数のスロットの位置が変わった (既存テストの期待値を直した)。
+- ほか: ヘルプ (scriptDoc.ts) に let と位置の計算を足した。補完が let の名前も出す。eventProblem・charaRows は式の中の呼出しも見る (nodeCalls / callsIn)。
+- テスト: test/lanai-stagescript.test.tsx に、局所変数・位置・小数の比較のコンパイル (ROM) と、拒否する書き方のテストを追加した。全テスト 851 件が通過、25 件は ROM がないためスキップ。小数の計算は命令の有無で確かめただけで、ARM の実行器は VFP を実行しないため実行結果は見ていない。実機 (Azahar) でも未確認。
+
+## STATE #17 言語の拡張 2: 隊列のループ・event・ScriptMonsterCtrl (2026-11-22、d975c3d、署名なし)
+
+- `for p in party { … }`: パーティの電波人間 1 人ずつに本体を実行する。出荷 CRO の ScriptPlayer[8] ループ (461 本) と同じく、毎回 GetPlayerNum と比べ、GetPlayer(i) を ScriptPlayer にして呼ぶ。配列は持たず、呼出しのたびに作って壊す。p は hero と同じに使え、ライブラリ関数 (walk・turn) にも渡せる。break でループを抜ける。数え上げの変数はフレームの局所変数を 1 語使う。ScriptWho に `party`、ScriptNode に `party` を足した。走査は scriptBodies に寄せた。
+- `event.関数()`: 話しかけたときのイベント自身 (NpcCommonTurn) の関数を呼ぶ。TurnNpcRecover (出荷 78)、ZoomHeroCamera (59)、RecoverHeroCamera (17)、TurnNpc / TurnHero。話しかけ以外のイベントでは eventProblem がエラーにする。
+- API 表: 生成器の静的クラスに ScriptMonsterCtrl を足し、GetMonsterSize / GetMonsterLevel(ChrObject*, u32) が呼べるようになった (lanai-custom-stages 側は未コミット)。
+- 予約語に for / in / party / event を足した。ヘルプにも書いた。プレビューは party の電波人間を先頭として扱う。
+- テスト: 隊列ループの import と命令、event、ScriptMonsterCtrl、拒否する書き方を追加した。全テストが通過 (ROM がない 25 件はスキップ)。実機では未確認。
+- 残り: ScriptMonster (603 呼出し)、ScriptEffect (1106)。大きさと寿命 (イベントが持ち続けるか) を調べる必要がある。
+
+## STATE #17 言語の拡張 3: ScriptMonster・ScriptEffect (2026-11-22、f03f541、署名なし)
+
+- 出荷 CRO の使い方 (lanai-custom-stages out/script-abi/calls.tsv): ScriptMonster(ChrObject*) は 367 回のうち大半がスタック上 (sp+0x288 / sp-60) で、マップのキャラ (GetMapChara / GetChara) を包んで関数を呼び、~ScriptChara で壊す (content 7 +0x2AA4: SetForceFollowRotate → GetMonsterLevel → SetMapLabel)。大きさ 0x58 (後ろのメンバーが +0x58)。ScriptEffect() 381 回はイベントのメンバーとしてコンストラクターで作る (隣が +0x4C、大きさ 0x4C)。どちらも専用のデストラクターは公開されておらず ~ScriptChara。ScriptEffect には ScriptChara::SetPos を呼んでいる。
+- obj(N) / self の関数: ScriptChara に無い名前は ScriptMonster の関数として、呼出しのたびに FRAME.obj に ScriptMonster を作って呼ぶ (0x58 なので obj2 にかかるが、ScriptMonster の関数は ScriptChara& を取らない)。CreateChara / CreateMonster / CreateMonsterParameter / SetChara (作り直す関数) はエラー。hero / party では呼べない。ScriptCall.player を of ('chara' | 'player' | 'monster') に変えた。
+- `effect 名前`: イベントのオブジェクトに ScriptEffect を足す (new のサイズ + 0x4C ずつ、ファクトリで作り、デストラクターで後ろから ~ScriptChara)。vanishEffect の分が先頭。名前.CreateEffect / SetPos / StartEffect / StartAnimation / StopEmission と ScriptChara の関数が呼べる。名前はその on の中だけ (on ごとに env を空にするようにした)。プレビューはエフェクトを飛ばす。
+- API 表: 生成器のメンバークラスに ScriptMonster / ScriptEffect を足して再生成 (390 関数、lanai-custom-stages 側は未コミット)。
+- テスト: ScriptMonster の import、作り直す関数の拒否、effect のオフセット (0x58 / 0xA4)、別の on からは見えないこと。全テストが通過 (852、ROM がない 25 件はスキップ)。実機では未確認。
+
+## STATE #17 出荷 CRO のイベントの逆変換 1〜5 (2026-11-22、ca46a8f)
+
+- 実装: `src/lanai/croDecompile.ts` (`decompileContentCro` / `decompiledSource`)。UI は `CroEventDialog.tsx` と、スクリプト編集画面の「既存のイベントから挿入」(選んだクラスの関数と、使うフラグの var を末尾に足す。既にある var は足さない)。出荷ステージ (自作でないもの) のページには「スクリプトを閲覧 ↗」を置いた (`CroScriptView.tsx`)。別タブで CRO を戻したスクリプトを読み取り専用のエディタに出す (イベントごとに絞れる)。出荷ステージの CRO はスクリプトから作り直さないので、編集・反映はない。
+- 1 ファクトリ: CRO の各セグメントを平らに並べ、内部の再配置を当て、import は偽のアドレスのスタブにして `game/arm.ts` で実行する。グループと行 ID の候補は、ファクトリ (と呼ぶ CRO 内の関数) の比較・リテラルの定数。フラグなど値を返す呼出しは 0 → 1・定数の順で木のように試し、結果のクラスが変わるときだけ「生成の条件」を注記に出す。作ったオブジェクトのメンバー (基底クラスより後ろ) で、どのオブジェクトでも同じ値は本体の定数として読む (+0x74 のモンスターの行など)。退場時の export 27 を実行し、0 にするフラグは `reset`。
+- 2 本体: Execute (IntroCommon は vt+0x18) と CtrlFlag (vt+0x10、本体の末尾に足す) を記号実行する。基本ブロック → 後支配木で if / else、ジャンプ表で switch、後ろ向きの辺でループ。GetPlayer / GetPlayerNum を呼ぶループは `for p in party`、ほかのループは 1 回分をコメントにする。合流で分岐ごとに違う値 (台詞の行 ID など) が残るときは、合流後を両方の枝に書く (24 回まで)。ScriptChara / ScriptPlayer / ScriptMonster の ctor と SetChara で相手 (obj(N) / hero / self / p) を覚える。ScriptPlayer[8] の [0] は hero。VECAdd / VECSubtract / VECScale は `let vN = …`、VECSquareMag は成分の積の和。言語の制約 (同じ引数の形のオーバーロード、ScriptPlayer の関数を obj に、selfRow の計算、引数の数の上限) に当たる呼出しは注記にする。
+- 3 畳み込み: ライブラリ関数の本文をテンプレートにして照合 (talk / open / jingle / camera / cameraBack / move / walk / openDoor / partyLineUp …。turn / face / vanish は除く)。話しかけの先頭の TurnNpc / TurnHero は外す (コンパイラが書く)。
+- 4 フラグ: `bit_0xNN` / `byte_0xNN` として宣言し、元の番号を注記に残す。行 ID・台詞・マップは元のまま。
+- 集計 (lanai-custom-stages の out/script-abi/cro 127 本、`roms/tmpmap/decomp/run.ts`): 567 イベント (ファクトリが作るクラス 555)、パーサーを通るもの 563、未対応のないもの 45、Execute だけなら 58。完了条件の 226 には届いていない。多い未対応: 配列のループ、blx、OpenMessage の呼び分け、メンバーへの書き込み、準備 (vt+0x8)。1 CRO あたり約 0.2 秒。
+- テスト: `test/lanai-crodecompile.test.ts` 5 件 (ROM 2 件を実行: コンテンツ 65 の talk の割り当てと畳み込み、全イベントの文が読めること、未対応のない talk をコンパイルできること。コンテンツ 1 の Yes/No で台詞が分かれる形)。画面での確認と実機は未実施。
+
+## STATE #19・#20 閲覧タブとパーツの選び方 (2026-11-23、0619ace)
+
+- 閲覧タブ: エディタを縦いっぱいに。window.open のタブで CodeMirror が親ウィンドウの IntersectionObserver を使い、スクロール先を描かなかった → 作る間だけタブの Observer を使う (`scriptCodeMirror.ts withObserversOf`)。
+- Codex 調査 (roms/tmpmap/parts-npc-findings.md): 歩き回りは EventObject +0x5C が選ぶ MapChara +0x0C / +0x1C / +0x28 の下位 10 bit (0 = 立つ、出荷値 75〜250)。Update 0x23D04C〜0x23D18C。アクションは無関係。NPC・話す・店の人はアクション (と台詞・Shop 行) だけの差。区画 5 の装置は 9 筏 (17 件)・10 筏の門 (61)・14 汎用の置物 (186、25 外観)・15 シンボル (2)。
+- Codex 調査 (roms/tmpmap/parts-props-findings.md、mapobject-classes.json): MapObject +0x20 f32 = 不透明度 (409〜442 と 447〜480 が同じ BCH で 1.0 / 0.4、0x23D134)。+0x24 下位 16 bit = 付属エフェクト (0x23 松明の炎、0x24 かがり火、行 520 / 530 が炎あり / なし)。建物の入口の 2 候補は動作 0x80000017 / 0x80000019 の違い。種類 4 の 2 候補は外観 44 / 735。
+- 実装: 右クリックの使用例メニュー (romParts の places、PartPicker)、NPC の役割ダイアログ (`lanaiPurposeParts`・`RolePlacement`)、「新規・設定付き」廃止、歩き回り (`LookField WanderField`)、建物を選ぶ (`BuildingField`)、外観違いの統合 (`lanaiMergedRomParts`)、置物の分類 (`objectClasses.ts`)。
+- テスト: 全体 858 pass / 25 skip / 1 fail → 失敗は外観統合の意図した変更で、テストを直して lanai-mapedit 14 pass。新規 test/lanai-objectclasses.test.ts 2 pass (ROM あり)。画面・実機の確認はまだ。
+- 追加 (ユーザー指摘「同じアイコンの選択肢を出さない」): picker を (区画, 種別) ごとに 1 つに (`mapedit.ts lanaiKindParts`)。新規・既存ギミックの選択肢を廃止し、動作は置くときの `ActionPlacement` で選ぶ (新規レコードが同じ動作の ROM 候補を吸収し、件数と使用例を引き継ぐ)。`lanaiMergedRomParts` は (区画, 種別, 動作) で統合、見本は最多の外観。建物の入口は種別ごと。
+- /animations → /models (`ModelPage.tsx`、`lanaiObjectModelRef`、`AnimatedModel.allMotions` でマテリアルのみのアニメも選べる)。右クリックメニューに「モデルとアニメを見る」。置物 #540 は置物・移動 (`objectClasses.ts ROW_CATEGORIES`)。
+- Codex 調査 (roms/tmpmap/kinds-gaps-findings.md): 区画 1 +0x0D は FUN_0021C534 @0x21C588 で 0→#90 damg5、1→#89 damg3、2/3→#113 frozen。0/1 は危険床フラグ +0x5476 (@0x21C738)、3 だけセル +0x0A bit1 (滑る、@0x21C784)。→ 0「ダメージ床」、2「凍った床 (すべらない)」。区画 3 は FUN_004334F8 のジャンプ表が 0〜69 全てに分岐を持ち、歯抜けは出荷マップで未使用な番号 (9 はワープ、20〜69 に船・建物の既定行)。100 は壁の扉の別経路。同じ種別でも外観 (+0x5A) と動作 (+0x10) は独立 (種別 4: 外観 0/735 = 59/16 件)。
+- テスト: 全体 858 pass / 25 skip / 1 fail (shell の CSS 規則が animations のまま) → 修正後、該当テストと lanai 系 60 + 22 pass。画面の確認はまだ。
+- 並び順: 「区画 1〜9」(ギミックあり) を先頭に、続けて 装飾・置物・移動〜の順 (`recordparts.tsx rank`、59c41b8)。それまでは一覧にないカテゴリ (区画 n) がコメントに反して末尾だった。
+
+## 重なったオブジェクトの選択 (2026-11-23、25631c1・cae154d)
+
+- 選択ツールで同じ場所をダブルクリック (400ms・0.3 マス以内) → 半径 0.3 のレコード (近い順) と地形のマスをアイコンの列で出す (`src/editor/stackpick.ts`、`Controller.hitRecs / stackAt / doublePress`)。ホバーで仮選択、クリックで確定、Esc・外側のクリックで元の選択に戻す。1 件ならふつうの選択。クリックしたキャンバスの document に出す (別タブの表示)。
+- 名前は `MapEditState.recordLabel` (既定は区画名、lanai は `lanaiRecLabel`、RPG2 は区画 3 の種類・区画 7 の扉)。
+- 左下のステータスに「ここに N 件重なっています: ダブルクリックで選ぶ」(`Controller.stackHint`、RPG2 / lanai / oahu / honolulu)。
+- 演出プレビューのイベント番号: 水平 150 以内の番号を番号の小さい順に上へ積む (`lanai/mapview.ts syncIds`)。
+- テスト: test/stackpick.test.ts 4 pass、typecheck 通過。画面での確認はまだ。
+
+## STATE #15 CaveC のプロシージャルテクスチャの実装 (2026-11-23)
+
+- `src/cgfx/proctex.ts`: pctxbin の読み込み (`parsePctx`)、位相 (`procTexPhase`: モード 1 は sin、ほかは歩幅を足し、周波数 × 位相 ≥ 16 で 0 に戻す)、LUT のテクスチャ (256×4 float)、GLSL (`procTexGlsl`: Azahar と同じ順で、ノイズ → shift → clamp → 合成 → RGB/α マップ → 色 LUT)。
+- `tev.ts`: 色の元 6 = t3。proctex があれば段 0 を Modulate(頂点色, t3) にする。頂点シェーダでタイルの UV を回し、`s(R(uv) + 列)`・`s(R(v) − 行)` にする。
+- `three.ts` (ModelFactory): `set.proctex.models` のモデルは全マテリアルに proctex を付ける。`tick(秒)` で位相を進める。`placeOnGrid` は onBeforeRender で列・行・向きを uniform に入れる。`mapModels.ts`: アーカイブ D17B0000 のパーツには `proctex_files/proctex_mud03.pctxbin` を読む。`MapScene.setTicker` で、動く間は描画を続ける。
+- 確認: パースの値が解析と一致した。WebGL2 (Edge、node + playwright-core を scratchpad に入れた) で、TEV と proctex のシェーダのコンパイルが通った。proctex だけの画像は紫の泥のうねりになり、時間で模様が変わった (roms/tmpmap/proctex-glsl-check.ts)。test/lanai-proctex.test.ts は 2 件通過。マップの画面ではまだ見ていない。
+- 他のタイルセットのマップを CaveC にしたときの崩れ (roms/tmpmap/cavec-tile-usage.ts): ROM の CaveC のマップは種類 0〜14 と文字 z だけを使い、部屋の床 (種類 5) は 87 枚すべて向き 0。ゲームは CaveC の全パーツの全マテリアルに proctex を付け (0xFFFF)、UV をタイルの向きで回す。そのため (1) 向きのある床ではノイズの流れる向きが変わり、(2) CaveC のマップが使わない装飾 (種類 15 以降、文字 a〜d) にも模様が乗る。どちらもゲームの仕様どおりで、Panana の描画もこれを再現する。
+
+## STATE #15 CaveC の継ぎ目・装飾・Kahara (2026-11-24)
+
+- 継ぎ目: タイルは 1/4 回転ごとに rotation.y = −90° 回るのに、proctex の UV も同じ向きに回していたため、回転が打ち消されず 2 倍になっていた。`placeOnGrid` の角度を −向き×90° にし、どの向きでも u = +x・v = −z になった (roms/tmpmap/cavec-uv-check.ts で全パーツを当てはめた)。
+- 装飾: `caveC_pro` を参照するのは文字 z のパーツだけで、装飾 (文字 1 以降) のマテリアルは持たない。proctex は段 0 が `*_pro` のマテリアルだけに付ける (ゲームの 0xFFFF の上書きが装飾でどう見えるかは未確認)。
+- Kahara: タイルセット 11 のモデルのアーカイブは A5CCD17B で、0x2F1B68 の比較値と一致。`loadTilesetModels` がこのアーカイブに proctex_mud03 を付け、マップエディタの 3D ビューで並べ・動かす。
+- 確認: test/lanai-proctex.test.ts 3 件 (回転ごとの UV と世界座標の一致を追加)、test/kahara-proctex.test.ts 1 件が ROM ありで通過。ユーザーが画面で Lanai の見た目を確認 (OK)。
+- コミット: 6464e2a。
+- コミット: fa32c31。
+
+## STATE #17 ボス勝利の start・コンストラクタのエフェクト・アイテムを授かる演出 (2026-11-23、c330e19)
+
+- 調査 (ボス戦の流れ): 動作 0x0C の引数は (MonsterGroup の行, byte フラグ, ボスの EO 行)。戦闘前にフラグを 2、勝って再構築した start 枠が `== 2` で BossWin を作り 3 にする。枠 27 で戻す。エフェクト: EffectData 0x14 fx_bg_trebox_op (宝箱)、0x22 warpzone_goal、0x32 fx_bg_shrine_birth、0xC1〜0xC3 fx_enm_dead_01〜03。
+- `croDecompile.ts`: 呼出し直後の `cmp r0, #imm` / `ldr; cmp` の値を代替値に試す。同じ読み出しは同じ値を返す。値を変えても作るクラスが変わらない読み出しは条件から外す。どのグループでも作るクラスは `ANY_GROUP` (0) の 1 件に。クラスと契機の組 555 → 669、重複した条件行 2868 → 257。ファクトリの `CreateEffect` を `effect fxNN` + `fxNN.CreateEffect(行, 層)` として本体の前に、準備 (vt+0x8) はコメントで出す。ScriptEffect の相手不明の注記 446 → 34。
+- `eventScript.ts`: `rareItem(アイテム, 数, 前置き, 後片付け, 仲間を消す, 隊列に戻す)`。RareItemDirection (0x378) をイベントに持たせ、StartItem / StartItemNum を呼ぶ (ItemGet で所持数と台詞も演出がする)。`scriptLibrary.ts`: giveItem (NPC から)、chestItem (本体の宝箱 0x1F2750 の順。せり上がりと光 0x14 はなし)。
+- テスト: 全体 868 pass / 25 skip / 0 fail、typecheck 通過。実機は未確認。
+
+## ステージ全体を初期値に戻す・/stages の編集済みの印 (2026-11-24、416145e)
+
+- 原因: uwapo (lanai-custom-stages web/stage-files.ts) は ZIP 内の ContentsDef を持つアーカイブを全て配信対象とし、CRR がなければ「コンテンツ N の CRR がありません」で止める。`denpa-free-stage(2).zip` の 5EFC0000 (コンテンツ 1、D01) は mapdb が ROM と同じで、MapChara・D01_EventObject・d01_msg に 1 行ずつ追加 (NPC 1 体分) が残っていた。/maps の「元に戻す」(LanaiMaps.revert) はマップの区画だけ戻し、置いたときに表へ足した行は残る。
+- `session.ts`: `changedArchives()` (表・追加した表・mapdb・マップ表・ステージ画像が変わったアーカイブ)、`revertArchive()`。
+- `stageEdit.ts`: `lanaiChangedContents()` (アーカイブ + MapStageIntegration の行 + その MessageMapStage の行)、`revertLanaiContent()` (追加したステージは不可)。
+- `StagePage.tsx`: 左リストに ● (追加したステージには出さない)。詳細に「ステージ全体を初期値に戻す」(確認ダイアログ、変更がなければ無効。追加したステージは従来の削除ボタン)。
+- テスト: test/lanai-stagerevert.test.ts 1 件通過 (ROM あり)。commit hook の lint・typecheck・全テストは通過。
+
+## STATE #18 の下準備: フラグを変数から選ぶ・条件スクリプトの廃止 (2026-11-24、未コミット: GPG 署名がタイムアウト、ステージ済み)
+
+- `src/lanai/FlagSelect.tsx`: `scriptVarFlags` (変数の種類ごとに宣言順で 12000〜 / 24000〜)、`lanaiStageFlags` (開いているコンテンツのスクリプト)、`FlagSelect` (byte / bit の変数を名前で選ぶ、末尾に「手動」。ネイティブの <option> には input を入れられないので、手動のときだけ同じ枠の右に番号の欄を出す)。
+- 出る・消える条件 (`EventConditionFields.conditionFlagKind`: 3 / 4 = bit、5〜7・0x30〜0x38 = byte) とボス戦 (actions.ts の pick `byteFlag`、0x0C の引数 2) に使う。
+- 条件スクリプト: `ConditionEditor` から組み合わせの UI を外し、`EventConditionFields`・`StageEditor` の作成処理を消した。0x72 の既存の条件は保持して書き出しも従来どおり (session.conditionScripts は残す)。
+- 調査 (#18 本体): Codex は利用上限、agy は auto mode が拒否したため未着手。
+- テスト: test/lanai-flagselect.test.ts 2 pass、typecheck 通過、commit hook (lint・typecheck・全テスト) 通過。画面での確認はまだ。
+
+## STATE #18 先行: スクリプトでイベントの状態を読み書きする (2026-11-24、未コミット: GPG 署名がタイムアウト。上の変更はステージ済み、こちらは未ステージ)
+
+- 根拠: ../lanai-custom-stages/3ds/research/event-actions.md §0 (状態で段 1〜3 を選ぶ、既定の CtrlFlag 0x2C1DC0 が 0→1→2→3 と進める)、lanai/map.md §7.2 (状態の枠 = EO +0x58、MapGroup +0x28 / +0x2A、セーブのキー 3)。既存の生成コードの `GetScriptState(行)` / `SetScriptState(行, 値)` (r0 = 行 ID、主人公がいる MapGroup) と同じ呼び方。
+- `eventScript.ts`: トークナイザが `state ( 数 )` を 1 語 `state(N)` にまとめる。`scriptStateRow`・`stateVar` (byte の疑似変数、script.vars には入らない)。読み (`compileValue`) と書き (`set`) で `ldr r0, [r4, #4]` (自分の行) か行番号を入れて Get/SetScriptState。`writesOwnState` のイベントは vtable +0x10 を `pn_prepare` (bx lr) に (倒したとき `defeat` は従来の pn_done のまま)。`eventProblem`: start / intro での `state` はエラー。`var state` は不可。
+- `stageScript.ts`: 読み書きする行の状態の枠が MapGroup +0x2A 以上 (いつも 0) か、行がないとき problems。状態の枠はもともとステージの持ち物 (owned の state) としてマニフェストに入る。
+- ヘルプ (`scriptDoc.ts`: state / state(イベント))・補完 (ATOMS)。
+- テスト: test/lanai-scriptstate.test.ts 3 pass (ROM で CRO を作る 1 件を含む)、全体 873 pass / 25 skip / 1 fail → ヘルプの例を足して解消 (lanai-scriptdoc 20 pass)、typecheck・lint 通過。format:check は AGENTS.md (ユーザーの未コミットの変更) だけが不合格。実機は未確認。
+
+## スクリプトのサンプル (2026-11-24、79a1958)
+
+- スクリプト編集 (`StageSourcePage.tsx`) の「例: …」挿入ボタンを廃止し、左の欄を「スクリプト」「サンプルを見る」のタブにした。サンプルは選んで説明・割り当て・読み取り専用のコードを見る (挿入しない)。スクリプトの欄は隠すだけで、編集中の状態は残る。
+- `scriptDoc.ts SCRIPT_SAMPLES` の先頭に 3 本: モンスターとの会話 (暗転 → partyLineUp → 水平カメラ shoot で話者を正面から → say で話者を切り替え → 暗転して戻す)、ボタンで隠れたワープを出す (マップが始まるときに SetPos(20000, 0, 20000) で外へ、ボタンで SetScaleA(0) → 元の位置 → ScaleTo。content 107 と同じ)、範囲で主人公が話して無効になる (EnableEventCollision(selfRow, 0) + bit を消える条件に)。サンプルは補助の関数 (引数付き) を持てる。
+- テスト: 全体 875 pass / 25 skip / 0 fail。サンプルを割り当てどおりに CRO までビルド (ROM)。画面・実機は未確認。
+- 作業ツリーにある別作業の変更 (FlagSelect・state) は含めず、一時 index で自分の差分だけをコミットした。
