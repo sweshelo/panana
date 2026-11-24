@@ -38,6 +38,7 @@ import { cloneLanaiContent, contentScript, lanaiCrrName, LANAI_EMPTY_SCRIPT_CONT
 import { checkStageScript, eventRecords, LANAI_STAGE_MANIFEST, recordTrigger } from '../src/lanai/stageScript';
 import { LanaiStageScriptEditor, STAGE_SCRIPT_EXAMPLE } from '../src/lanai/StageScriptEditor';
 import { LanaiStageSourcePage } from '../src/lanai/StageSourcePage';
+import { docBound, SCRIPT_SAMPLES } from '../src/lanai/scriptDoc';
 import { openImages } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
@@ -520,6 +521,28 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
       expect(text(call).length).toBeGreaterThan(text('').length);
   });
 
+  test('the samples build as their notes give them', async () => {
+    const s = await open();
+    const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
+    const base = parseCro((await contentScript(s, empty, await s.archive(empty.archive))).body);
+    const given: Record<string, ['talk' | 'start' | 'button' | 'area', number]> = {
+      monster_talk: ['talk', 9],
+      hide_warp: ['start', 0],
+      open_warp: ['button', 7],
+      hero_speaks: ['area', 4],
+    };
+    for (const sample of SCRIPT_SAMPLES.slice(0, 3)) {
+      let doc = scriptDocFromSource(sample.source);
+      for (const g of sample.give) {
+        const fn = g.split(' ')[0]!;
+        const [trigger, row] = given[fn]!;
+        doc = docBound(doc, { trigger, group: 1, row, fn });
+      }
+      const built = compileStageScript(base, parseStageScript(scriptDocSource(doc).text));
+      expect([sample.name, built.cro.segments.length > 0]).toEqual([sample.name, true]);
+    }
+  }, 60000);
+
   test('the calls made as the game makes them: the popup kept, the camera held once, the window of a line', async () => {
     const s = await open();
     const empty = lanaiContents(s)[LANAI_EMPTY_SCRIPT_CONTENT]!;
@@ -716,5 +739,8 @@ describe.skipIf(!hasLanai)('RPG FREE! stage script: into the MOD (ROM)', () => {
     expect(source).not.toContain('on talk(1, 5)');
     expect(source).toContain('保存済み');
     expect(source).toContain('関数ドキュメント');
+    // the samples are read in a tab of their own: no button puts one into the text
+    expect(source).toContain('サンプルを見る');
+    expect(source).not.toContain('例: ボタンを押したら扉が開く');
   });
 });

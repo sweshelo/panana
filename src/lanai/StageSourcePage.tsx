@@ -19,7 +19,7 @@ import { ScriptLineDialog } from './ScriptLineDialog';
 import { CroEventDialog } from './CroEventDialog';
 import type { LanaiMapInfo } from './maps';
 import { NO_ASSIST, scriptOwnNames, type ScriptAssist } from './scriptAssist';
-import { SCRIPT_SAMPLES, type ScriptSample } from './scriptDoc';
+import { SCRIPT_SAMPLES } from './scriptDoc';
 import { bindingLabel, StageScriptDocs, stageScriptAssist } from './StageScriptEditor';
 import type { ScriptLibraryFunction } from './scriptLibrary';
 import type { LanaiSession } from './session';
@@ -72,6 +72,10 @@ export function LanaiStageSourcePage({
   const group = map?.dungeon;
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  /** The tab the code column shows: the script, or one of the samples to read (not inserted). */
+  const [tab, setTab] = useState<'code' | 'samples'>('code');
+  const [sampleAt, setSampleAt] = useState(0);
+  const sample = SCRIPT_SAMPLES[sampleAt] ?? SCRIPT_SAMPLES[0]!;
   // the names as one string: the help is made again only when they change
   // (read by their words: the text being written does not compile, and the names must not go while it is)
   const names = JSON.stringify(scriptOwnNames(source));
@@ -168,8 +172,6 @@ export function LanaiStageSourcePage({
     setSource(withAppended(source, more));
     setNote(what);
   };
-  const addSample = (s: ScriptSample): void =>
-    append(`例「${s.name}」を末尾に足しました。${s.about} 割り当て: ${s.give.join('、')}。`, s.source);
   const addLibrary = (f: ScriptLibraryFunction): void =>
     append(`「${f.name}」を末尾に足しました。保存すると、ライブラリの代わりにこちらが使われます`, f.source);
   const bindings = stored?.doc.bindings ?? [];
@@ -210,59 +212,83 @@ export function LanaiStageSourcePage({
       </header>
       <div className="stage-source-columns">
         <section className="stage-source-code" aria-label="スクリプト全文">
-          <ScriptCodeEditor
-            label="スクリプト全文"
-            value={source}
-            onChange={setSource}
-            onBlur={() => void latestSave.current(false)}
-            assist={assist}
-            insertRef={insertRef}
-          />
-          {error && (
-            <pre className="error" role="alert">
-              {error}
-            </pre>
-          )}
-          {dropping.length > 0 && (
-            <p className="error small">
-              {`保存すると次の割り当てが外れるため、自動では保存しません (「保存」で確かめて保存します): ${dropping.map((b) => `${bindingLabel(b)} → ${b.fn}`).join('、')}`}
-            </p>
-          )}
-          <div className="row">
-            <button
-              disabled={!maps || group === undefined || !maps.talkTable(group)}
-              title="台詞の表に新しい台詞を足し、それを出す呼び出しをカーソルの位置に書きます (MapGroup は演出プレビューのマップのもの)"
-              onClick={() => setAdding(true)}
-            >
-              {`＋ 台詞を追加${group === undefined ? '' : ` (MapGroup ${group})`}`}
+          <div className="stage-source-tabs" role="tablist">
+            <button role="tab" aria-selected={tab === 'code'} onClick={() => setTab('code')}>
+              スクリプト
             </button>
-            <button
-              title="元のステージのイベント (CRO) をスクリプトに戻した雛形を、関数として末尾に足します"
-              onClick={() => setImporting(true)}
-            >
-              既存のイベントから挿入
+            <button role="tab" aria-selected={tab === 'samples'} onClick={() => setTab('samples')}>
+              サンプルを見る
             </button>
-            {SCRIPT_SAMPLES.map((s) => (
-              <button key={s.name} onClick={() => addSample(s)}>{`例: ${s.name}`}</button>
-            ))}
           </div>
-          {note && <p className="muted small">{note}</p>}
-          <h3>割り当て</h3>
-          {bindings.length ? (
-            <ul className="small">
-              {bindings.map((b) => (
-                <li key={`${b.trigger}:${b.group}:${b.row}`}>
-                  {`${bindingLabel(b)} → `}
-                  <span className="mono">{b.fn || '(ゲームと同じ演出だけ)'}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="muted small">まだありません。</p>
+          {tab === 'samples' && (
+            <div className="stage-source-samples" role="tabpanel" aria-label="サンプル">
+              <select aria-label="サンプル" value={sampleAt} onChange={(e) => setSampleAt(Number(e.target.value))}>
+                {SCRIPT_SAMPLES.map((s, i) => (
+                  <option key={s.name} value={i}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+              <p className="small">{sample.about}</p>
+              <p className="small">{`割り当て: ${sample.give.join('、')}`}</p>
+              <p className="muted small">
+                サンプルは読むためのもので、スクリプトには足しません。使うときは必要なところを写し、番号を自分のステージのものに直してください。
+              </p>
+              <ScriptCodeEditor key={sample.name} label="サンプル" value={sample.source} onChange={() => {}} readOnly />
+            </div>
           )}
-          <p className="muted small">
-            割り当ては、マップのページのレコードの「スクリプトの関数」と、ステージのページの「ステージに入ったとき」「マップが始まるとき」で変えます。関数の名前を変えると、その関数の割り当ては外れます。
-          </p>
+          <div className="stage-source-tab" role="tabpanel" aria-label="スクリプト" hidden={tab !== 'code'}>
+            <ScriptCodeEditor
+              label="スクリプト全文"
+              value={source}
+              onChange={setSource}
+              onBlur={() => void latestSave.current(false)}
+              assist={assist}
+              insertRef={insertRef}
+            />
+            {error && (
+              <pre className="error" role="alert">
+                {error}
+              </pre>
+            )}
+            {dropping.length > 0 && (
+              <p className="error small">
+                {`保存すると次の割り当てが外れるため、自動では保存しません (「保存」で確かめて保存します): ${dropping.map((b) => `${bindingLabel(b)} → ${b.fn}`).join('、')}`}
+              </p>
+            )}
+            <div className="row">
+              <button
+                disabled={!maps || group === undefined || !maps.talkTable(group)}
+                title="台詞の表に新しい台詞を足し、それを出す呼び出しをカーソルの位置に書きます (MapGroup は演出プレビューのマップのもの)"
+                onClick={() => setAdding(true)}
+              >
+                {`＋ 台詞を追加${group === undefined ? '' : ` (MapGroup ${group})`}`}
+              </button>
+              <button
+                title="元のステージのイベント (CRO) をスクリプトに戻した雛形を、関数として末尾に足します"
+                onClick={() => setImporting(true)}
+              >
+                既存のイベントから挿入
+              </button>
+            </div>
+            {note && <p className="muted small">{note}</p>}
+            <h3>割り当て</h3>
+            {bindings.length ? (
+              <ul className="small">
+                {bindings.map((b) => (
+                  <li key={`${b.trigger}:${b.group}:${b.row}`}>
+                    {`${bindingLabel(b)} → `}
+                    <span className="mono">{b.fn || '(ゲームと同じ演出だけ)'}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted small">まだありません。</p>
+            )}
+            <p className="muted small">
+              割り当ては、マップのページのレコードの「スクリプトの関数」と、ステージのページの「ステージに入ったとき」「マップが始まるとき」で変えます。関数の名前を変えると、その関数の割り当ては外れます。
+            </p>
+          </div>
         </section>
         <aside className="stage-source-docs" aria-label="関数ドキュメント">
           <StagePreviewScene

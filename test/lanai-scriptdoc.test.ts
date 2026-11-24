@@ -63,14 +63,26 @@ describe('RPG FREE! stage script: the document of the editor', () => {
   });
 
   test('the samples read, and their functions can be given as the sample says', () => {
-    expect(SCRIPT_SAMPLES.length).toBe(4);
+    expect(SCRIPT_SAMPLES.length).toBe(7);
     for (const s of SCRIPT_SAMPLES) {
       const d = scriptDocFromSource(s.source);
       expect(d.bindings).toEqual([]);
-      expect(d.functions.length).toBe(s.give.length);
-      for (const g of s.give) expect(d.functions.map((f) => f.name)).toContain(g.split(' ')[0]!);
+      // what is given takes no parameters; the others are helpers it calls
+      for (const g of s.give) expect(d.functions.find((f) => f.name === g.split(' ')[0])?.params ?? '').toBe('');
+      expect(d.functions.filter((f) => !f.params).length).toBe(s.give.length);
     }
-    const [door, boss, look, level] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    const [monster, warp, area, door, boss, look, level] = SCRIPT_SAMPLES.map((s) => scriptDocFromSource(s.source));
+    // the monster's talk: a talk event of its own (self), the helpers written out where they are called
+    expect(
+      scriptOfDoc(docBound(monster!, { trigger: 'talk', group: 1, row: 9, fn: 'monster_talk' })).events.length,
+    ).toBe(1);
+    let w = docBound(warp!, { trigger: 'start', group: 1, row: 0, fn: 'hide_warp' });
+    w = docBound(w, { trigger: 'button', group: 1, row: 7, fn: 'open_warp' });
+    expect(scriptOfDoc(w).events.map((e) => e.trigger)).toEqual(['start', 'button']);
+    expect(scriptOfDoc(w).vars).toMatchObject([{ name: 'WARP_OPEN', kind: 'bit' }]);
+    expect(scriptOfDoc(docBound(area!, { trigger: 'area', group: 1, row: 4, fn: 'hero_speaks' })).events.length).toBe(
+      1,
+    );
     // the camera samples build for any event (no self)
     expect(scriptOfDoc(docBound(look!, { trigger: 'area', group: 1, row: 4, fn: 'look_at' })).events.length).toBe(1);
     expect(scriptOfDoc(docBound(level!, { trigger: 'area', group: 1, row: 4, fn: 'look_level' })).events.length).toBe(

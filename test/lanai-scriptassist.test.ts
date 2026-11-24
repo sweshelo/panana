@@ -211,7 +211,11 @@ describe('where a text is wrong', () => {
   test('the samples are right', () => {
     for (const s of SCRIPT_SAMPLES) {
       const doc = scriptDocFromSource(s.source);
-      for (const f of doc.functions) expect([f.name, scriptFunctionProblem(doc.vars, f.body)]).toEqual([f.name, null]);
+      for (const f of doc.functions)
+        expect([f.name, scriptFunctionProblem(doc.vars, f.body, f.params ?? '', doc.functions, f.name)]).toEqual([
+          f.name,
+          null,
+        ]);
     }
   });
   test('the line is counted in the text', () => {

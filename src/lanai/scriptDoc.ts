@@ -173,6 +173,101 @@ on talk(1, 5) {
 
 export const SCRIPT_SAMPLES: ScriptSample[] = [
   {
+    name: 'モンスターとの会話',
+    about:
+      '話しかけたモンスターと主人公が、カメラを切り替えながら話します。暗転中に、主人公をモンスターの手前 (+Z 側) に置いて仲間を凸形に並べ (ライブラリの partyLineUp)、モンスターを主人公へ向けます。カメラは眼と注視点の高さをそろえて水平にし、話す人を正面から写します (shoot)。台詞のたびに、口を動かす相手を say で選びます。終わりにもう一度暗転して、カメラと仲間の追従を戻します。台詞の行 ID は自分のステージのものに、主人公とモンスターの距離 (800)・カメラの距離 (500) と高さ (120) は相手の大きさに合わせて直してください。主人公と仲間はモンスターの南 (+Z 側) に並ぶので、そこが歩ける床になるようにモンスターを置いてください。',
+    give: ['monster_talk → モンスターのレコード (話しかけたとき)'],
+    source: `// 話しかけたモンスター (self) と主人公 (hero) が、カメラを切り替えながら話す
+function monster_talk() {
+  let m = self.GetPos()                      // モンスターの位置
+  ScriptSystem.FadeOutWait(0.3, 2)           // 暗転
+  // 主人公をモンスターの 800 手前 (+Z 側) に置き、仲間をその後ろに凸形に並べる (1 = −Z を向く)
+  partyLineUp(m.x, m.z + 800, 1)
+  self.RotateCharaTo(hero, 0, 0, 0, 0)       // モンスターを主人公へ向ける (暗転中なので一瞬で)
+  ScriptCamera.PauseCameraUpdater()          // フィールドの自動追従を止める
+  shoot(self, 500, 0)                        // モンスターを正面 (+Z 側) から
+  ScriptSystem.FadeInWait(0.3, 2)
+
+  say(self, 0x80000030)                      // モンスター
+  shoot(hero, -500, 0.5)                     // 主人公を正面 (−Z 側) から
+  say(hero, 0x80000031)                      // 主人公
+  shoot(self, 500, 0.5)
+  say(self, 0x80000032)                      // モンスター
+
+  ScriptSystem.FadeOutWait(0.3, 2)           // 暗転してから戻す
+  ScriptCamera.MoveFieldCamera(0, 2)         // カメラをフィールドの視点へ
+  ScriptCamera.WaitAnimation()
+  ScriptCamera.ResumeCameraUpdater()         // 自動追従を再開する
+  ScriptMap.SetUpdateFormation(1)            // 仲間の追従を再開する (隊列に戻る)
+  ScriptSystem.FadeInWait(0.3, 2)
+}
+
+// カメラを水平にして who を正面から写す: who から z 方向に dz 離れた、高さ 120 の眼から、同じ高さの who を見る
+// (眼と注視点の高さがそろうと水平)。sec 秒で動かす
+function shoot(who: obj, dz: num, sec: num) {
+  let p = who.GetPos()
+  ScriptCamera.MoveEyeAndTarget(vec(p.x, 120, p.z + dz), vec(p.x, 120, p.z), sec, 2)
+  ScriptCamera.WaitAnimation()
+}
+
+// who の口を動かしながら台詞を出す (ライブラリの talk の、話す人を選べる形)
+function say(who: obj, line: num) {
+  who.StartAnimation(0x80000079, 0, 1, 0)    // 口を動かす
+  ScriptMenu.StartMessage(line, 0, 0, 0.2)   // 台詞 (読み終わるまで待つ)
+  who.StartAnimation(0x80000075, 0, 1, 0)    // 口を止める
+}
+`,
+  },
+  {
+    name: 'ボタンを押すと隠れていたワープが開く',
+    about:
+      '区画 3 の出入口 (ワープ) は、見えなくしても大きさを 0 にしても踏めてしまうので、本家 (content 107 のボタン) と同じく、まだ開いていない間は位置ごとマップの外 (20000, 0, 20000) へ移して隠します。隠すのは「マップが始まるとき」の関数で、マップを読み直すたびに WARP_OPEN を見て置き直します (移した位置は保存されないため)。ボタンを踏むと、大きさ 0 にして本来の位置へ戻し、カメラを向けて 0.5 秒で広げます。17 はワープのイベント番号、(3750, 0, 2750) はマップのページで見たワープの位置に直してください。戦闘の後など、マップが作り直されるのを待ってよいときは、スクリプトを使わずにワープの「出る条件」にフラグを書くほうが簡単です。',
+    give: ['hide_warp → ステージのページの「マップが始まるとき」', 'open_warp → ボタンのレコード (ボタンを踏んだとき)'],
+    source: `var WARP_OPEN: bit   // ワープが開いたか (セーブに残る)
+
+// マップが始まるとき: まだ開いていなければ、ワープを遠くへ移して隠す。
+// 区画 3 の出入口は、見えなくしても大きさを 0 にしても踏めるので、位置ごと外へ出す (本家 content 107 の準備と同じ)
+function hide_warp() {
+  if (WARP_OPEN == 0) {
+    obj(17).SetPos(vec(20000, 0, 20000))   // 17 = ワープのイベント番号
+    obj(17).RecoverCollision()             // 移した位置で当たりを置き直す
+  }
+}
+
+// ボタンを踏んだとき: ワープを元の位置に戻し、大きさ 0 から広げて出す
+function open_warp() {
+  if (WARP_OPEN == 1) { return }           // もう開いている
+  WARP_OPEN = 1
+  obj(17).SetScaleA(0)                     // 大きさ 0 にしてから
+  obj(17).SetPos(vec(3750, 0, 2750))       // 本来の位置 (マップのページのワープの位置) に戻す
+  obj(17).RecoverCollision()
+  camera(obj(17), 1)                       // カメラをワープへ
+  ScriptSound.Play(180, 0)                 // 出る音 (本家 content 107 と同じ)
+  obj(17).ScaleTo(vec(1, 1, 1), 0.5, 0, 0, 0)   // 0.5 秒で元の大きさへ
+  obj(17).WaitNodeAnimation()              // 広がり終わるまで待つ
+  ScriptSystem.WaitTime(0.5)
+  cameraBack(1)
+}
+`,
+  },
+  {
+    name: '領域に立ち入ると主人公が話し、イベントが無効になる',
+    about:
+      '範囲 (区画 7) に入ると主人公が台詞を言い、その範囲を無効にします。EnableEventCollision(selfRow, 0) はすぐ効きますが、マップを読み直すと元に戻ります。そこで SPOKE を立てておき、範囲のレコードの「消える条件」を「フラグが立っている: SPOKE」にすると、次からは範囲そのものが出ません。台詞の行 ID は自分のステージのものに直してください。',
+    give: ['hero_speaks → 範囲のレコード (範囲に入ったとき)'],
+    source: `var SPOKE: bit   // もう話したか (セーブに残る)
+
+// 範囲に入ったとき: 主人公が話し、この範囲を無効にする
+function hero_speaks() {
+  ScriptMap.EnableEventCollision(selfRow, 0)   // この範囲をすぐ無効に (マップを読み直すと戻る)
+  SPOKE = 1                                    // 戻ったあとは、範囲の「消える条件」で消す
+  hero.StartAnimation(0x80000079, 0, 1, 0)     // 口を動かす
+  ScriptMenu.StartMessage(0x80000040, 0, 0, 0.2)
+  hero.StartAnimation(0x80000075, 0, 1, 0)     // 口を止める
+}
+`,
+  },
+  {
     name: 'ボタンを押したら扉が開く',
     about:
       'ボタン (区画 5 の種類 4〜6) を踏むと、扉を開けます (カメラ・解錠の音・扉のアニメはライブラリの openDoor がする。音を替えたいときはライブラリから追加して改造)。扉は「外から開ける扉」(動作の型 17) にして、イベント番号を 3 のところに書きます。2 つ以上の扉は openDoor を続けて書くと 1 つずつ (毎回ギミックの音とカメラの戻りつきで) 開きます。',

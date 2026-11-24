@@ -3571,3 +3571,26 @@ dialog.stage-editor > .picker-head h2 {
   border-color: var(--accent);
   outline: none;
 }
+/* the script editor's tabs: the script, and the samples to read (StageSourcePage) */
+.stage-source-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.stage-source-tabs > button {
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  margin-bottom: -1px;
+}
+.stage-source-tabs > button[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  font-weight: 600;
+}
+.stage-source-samples > select {
+  max-width: 100%;
+  margin-bottom: 4px;
+}
