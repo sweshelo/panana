@@ -120,6 +120,7 @@ import { lanaiRomCatalog, type LanaiRomCatalog } from './romParts';
 import { lanaiObjectInfo, type LanaiObjectInfo } from './objectClasses';
 import { LanaiEventSelect } from './EventSelect';
 import { EventConditionFields } from './EventConditionFields';
+import { FlagSelect } from './FlagSelect';
 import { DestinationFields, lanaiDestinationPoints } from './DestinationFields';
 import { LanaiTilesetField } from './TilesetField';
 
@@ -2058,6 +2059,15 @@ function ActionFields({
             <span>{`引数 ${i + 1}: ${label}`}</span>
             {pick === 'monsterGroupRow' && st.maps.monsterGroup ? (
               <MonsterGroupRowSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
+            ) : pick === 'byteFlag' ? (
+              <FlagSelect
+                key={`${row}:${offset}:${i}`}
+                maps={st.maps}
+                kind="byte"
+                value={arg(i)}
+                label={label}
+                onChange={(v) => setArg(i, v)}
+              />
             ) : pick === 'shop' ? (
               <ShopSelect maps={st.maps} value={arg(i)} onChange={(v) => setArg(i, v)} />
             ) : pick === 'key' || pick === 'idol' ? (

@@ -4,7 +4,11 @@ import { LANAI_CONDITIONS, lanaiConditionLabel } from './conditions';
 import { ContentSelect } from './MapParts';
 import type { LanaiEditState } from './mapedit';
 import { LanaiEventSelect } from './EventSelect';
-import { LanaiConditionEditor } from './ConditionEditor';
+import { FlagSelect } from './FlagSelect';
+
+/** Which conditions name a flag in their first value: 3 / 4 a bit flag (0x51), 5〜7 and 0x30〜0x38 a byte flag (0x52). */
+export const conditionFlagKind = (kind: number): 'byte' | 'bit' | undefined =>
+  kind === 3 || kind === 4 ? 'bit' : (kind >= 5 && kind <= 7) || (kind >= 0x30 && kind <= 0x38) ? 'byte' : undefined;
 
 export function EventConditionFields({
   st,
@@ -21,6 +25,7 @@ export function EventConditionFields({
   const offset = field === 0x5f ? 0 : 8;
   const first = table.u32(event, offset);
   const second = table.u32(event, offset + 4);
+  const flagKind = conditionFlagKind(kind);
   const set = (o: number, value: number): void => st.setEventField(event, (t) => t.setU32(event, o, value));
   return (
     <div className="event-box">
@@ -46,6 +51,16 @@ export function EventConditionFields({
             <ContentSelect maps={st.maps} value={first} allowNone={false} checking onChange={(v) => set(offset, v)} />
           ) : kind === 12 || kind === 13 ? (
             <LanaiEventSelect st={st} value={first} allowNone={false} references onChange={(v) => set(offset, v)} />
+          ) : flagKind ? (
+            <FlagSelect
+              key={`${event}:${field}:${flagKind}`}
+              maps={st.maps}
+              kind={flagKind}
+              value={first}
+              max={spec.firstMax}
+              label={spec.first}
+              onChange={(v) => set(offset, v)}
+            />
           ) : (
             <NumberInput value={first} min={0} max={spec.firstMax ?? 0xffffffff} onCommit={(v) => set(offset, v)} />
           )}
@@ -62,22 +77,13 @@ export function EventConditionFields({
           />
         </label>
       )}
-      {kind !== 0 && kind !== 0x72 && !spec && (
-        <p className="muted small">意味が未確定の条件です。現在の種類と値を保持します。</p>
+      {kind !== 0 && !spec && (
+        <p className="muted small">
+          {kind === 0x72
+            ? `条件スクリプト #${first} (以前の版で作った組み合わせ)。そのまま保持します。新しくは作れません。`
+            : '意味が未確定の条件です。現在の種類と値を保持します。'}
+        </p>
       )}
-      <LanaiConditionEditor
-        key={`${st.info!.dungeon}:${event}:${field}`}
-        session={st.maps.session}
-        value={{ kind, v1: first, v2: second }}
-        scriptOnly
-        onChange={(c) =>
-          st.setEventField(event, (t) => {
-            t.setU8(event, field, c.kind);
-            t.setU32(event, offset, c.v1);
-            t.setU32(event, offset + 4, c.v2);
-          })
-        }
-      />
     </div>
   );
 }

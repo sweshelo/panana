@@ -429,6 +429,19 @@ aside.right {
   color: var(--muted);
   font-size: 11px;
 }
+/* a flag number: the script's variables by name, then 手動 with its box in the same frame (FlagSelect) */
+.flag-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.flag-select > select {
+  flex: 1;
+  min-width: 0;
+}
+.flag-select > input {
+  width: 80px;
+}
 .field input.hex {
   width: 110px;
   font-family: ui-monospace, Consolas, monospace;

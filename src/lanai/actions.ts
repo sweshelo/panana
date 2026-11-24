@@ -25,7 +25,7 @@ export interface LanaiActionInfo {
   args?: Record<number, string>;
   note?: string;
   /** Arguments picked from a list instead of typed: a MonsterGroup row number of the content, or a content number. */
-  pick?: Record<number, 'monsterGroupRow' | 'content' | 'shop' | 'key' | 'idol' | 'consume' | 'doorSound'>;
+  pick?: Record<number, 'monsterGroupRow' | 'content' | 'shop' | 'key' | 'idol' | 'consume' | 'doorSound' | 'byteFlag'>;
   /** Whether a record can be given this type to say lines from data (no script needed). */
   talking?: boolean;
 }
@@ -69,7 +69,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '敵の見た目を置くキャラ 2 (イベント番号、推定)',
       4: '敵の見た目を置くキャラ 3 (イベント番号、推定)',
     },
-    pick: { 0: 'monsterGroupRow' },
+    pick: { 0: 'monsterGroupRow', 1: 'byteFlag' },
     note: '区画 8 の範囲。入ると引数 1 の群れと戦い、勝つと引数 2 の番号の数値フラグ (ScriptByteFlag、0x52) に 2 が入る (ビットのフラグではない。CollisionEncountCommon)',
   },
   0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の番号' } },

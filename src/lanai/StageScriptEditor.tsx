@@ -441,7 +441,7 @@ export function LanaiStageScriptEditor({
         <p className="muted small">ありません。</p>
       )}
       <p className="muted small">
-        {`番号は書いた順に決まります (数値 ${STAGE_BYTE_FLAGS.first}〜、フラグ ${STAGE_BIT_FLAGS.first}〜)。出る条件・消える条件やボス戦 (動作の型 0C の引数 2) には、この番号を書きます。配布したあとで変数を足すときは末尾に足してください (途中に足したり消したりすると番号がずれます)。`}
+        {`番号は書いた順に決まります (数値 ${STAGE_BYTE_FLAGS.first}〜、フラグ ${STAGE_BIT_FLAGS.first}〜)。出る条件・消える条件やボス戦 (動作の型 0C の引数 2) では、マップのページのプルダウンで変数の名前から選べます (番号を書くときは「手動」)。配布したあとで変数を足すときは末尾に足してください (途中に足したり消したりすると番号がずれます)。`}
       </p>
 
       <h4>関数</h4>
