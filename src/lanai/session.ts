@@ -584,6 +584,44 @@ export class LanaiSession {
     );
   }
 
+  /**
+   * The root archives (besides the master and the language archives) whose tables, map database, map table or stage
+   * images differ from what was read. An archive is only read when it is edited or its saved edits are put back, so
+   * one not read has none.
+   */
+  changedArchives(): Set<string> {
+    const out = new Set<string>();
+    for (const t of this.others) if (t.added || t.table.changed) out.add(t.archive);
+    for (const r of this.mapDbsRead.values())
+      if (
+        r.db.changedHashes().length ||
+        r.db.addedHashes().length ||
+        (r.table && !equalBytes(r.table.data, r.table.original))
+      )
+        out.add(r.archive);
+    for (const l of this.layouts.values()) out.add(l.archive);
+    return out;
+  }
+
+  /**
+   * Puts one root archive back as it was read: its tables (added rows dropped, added tables taken out), its map
+   * database and map table, and its stage images. Not for an added stage's archive (removeFile takes it out whole).
+   * Call edited() after.
+   */
+  revertArchive(archive: string): void {
+    const key = archive.toUpperCase();
+    for (const t of this.addedTables().filter((t) => t.archive === key)) this.removeTable(t);
+    for (const t of this.others) if (t.archive === key) t.table.revert();
+    const r = this.mapDbsRead.get(key);
+    if (r) {
+      for (const h of r.db.addedHashes()) r.db.remove(h);
+      for (const h of r.db.changedHashes()) r.db.revert(h);
+      if (r.table) r.table.data = r.table.original;
+      this.mapsReset(key);
+    }
+    for (const [k, l] of this.layouts) if (l.archive === key) this.layouts.delete(k);
+  }
+
   /** Puts every table and every map back as it was read. */
   revertAll(): void {
     for (const t of this.addedTables()) this.removeTable(t);

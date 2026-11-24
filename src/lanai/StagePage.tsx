@@ -4,7 +4,7 @@
 // and its talks (naauao lanai/contents.md).
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { romfsHref } from '../romfs/RomfsPage';
-import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
+import { Count, EditedMark, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
 import { useAsync } from '../ui/useAsync';
 import { hex8 } from '../util/bytes';
 import { contentTitle, lanaiContents, readContent, type ContentArchive, type LanaiContent } from './contents';
@@ -22,7 +22,7 @@ import type { LanaiSession, LanaiTableRef } from './session';
 import { isTalkTable } from './talk';
 import { talksHref } from './TalkPage';
 import { LanaiStageThumbnail } from './StageThumbnail';
-import { lanaiContentRemoveBlock, removeLanaiContent } from './stageEdit';
+import { lanaiChangedContents, lanaiContentRemoveBlock, removeLanaiContent, revertLanaiContent } from './stageEdit';
 import { CroScriptSection } from './CroScriptView';
 import { LanaiStageContents } from './StageContents';
 import { LanaiStageSourcePage } from './StageSourcePage';
@@ -56,6 +56,8 @@ function LanaiStageSourceRoute({ session, arg }: { session: LanaiSession; arg: s
 function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const revision = useLanaiRevision(session);
   const contents = useMemo(() => lanaiContents(session), [session, revision]);
+  // the ROM's contents with edits (an added stage is all edits: no mark)
+  const changed = useMemo(() => lanaiChangedContents(session, contents), [session, contents]);
   const index = useSticky<number>(
     arg === undefined || !/^\d+$/.test(arg) ? undefined : Number(arg),
     (i) => i < contents.length,
@@ -121,7 +123,12 @@ function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: stri
                   onClick={() => (location.hash = `#/stages/${x.index}`)}
                 >
                   <td className="num muted">{x.index}</td>
-                  <td className="nowrap">{contentTitle(x)}</td>
+                  <td className="nowrap">
+                    {changed.has(x.index) && !session.createdFiles.has(x.archive.toUpperCase()) && (
+                      <EditedMark title="ROM から変更したステージ" text="● " />
+                    )}
+                    {contentTitle(x)}
+                  </td>
                   <td className="num muted nowrap">{staminaText(x)}</td>
                   <td className="msg-cell">{x.stages.find((st) => st.mission)?.mission ?? ''}</td>
                 </tr>
@@ -131,10 +138,62 @@ function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: stri
         </div>
       </div>
       <div className="book-detail" ref={detail}>
-        {c && <ContentDetail key={c.index} session={session} c={c} revision={revision} />}
+        {c && (
+          <ContentDetail key={c.index} session={session} c={c} revision={revision} changed={changed.has(c.index)} />
+        )}
       </div>
       {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
     </div>
+  );
+}
+
+/** Put a content of the ROM back as it is in the ROM (stageEdit.ts revertLanaiContent), after asking. */
+function RevertContentButton({
+  session,
+  c,
+  changed,
+}: {
+  session: LanaiSession;
+  c: LanaiContent;
+  changed: boolean;
+}): ReactNode {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      <button
+        className="danger"
+        disabled={!changed}
+        title={
+          changed
+            ? 'このステージのアーカイブ (表・マップ・ステージ画像) と、ステージの行・名前を ROM の状態に戻します'
+            : 'このステージは ROM から変更されていません'
+        }
+        onClick={() => {
+          const what = `「${contentTitle(c)}」(コンテンツ ${c.index})`;
+          if (
+            !confirm(
+              `${what} の変更をすべて元に戻しますか?
+
+アーカイブの表 (追加した NPC・イベントの行やセリフを含む)、マップ、ステージ画像、ステージの行 (MapStageIntegration) と名前・ミッション (MessageMapStage) が ROM の状態に戻ります。この操作は取り消せません。`,
+            )
+          )
+            return;
+          try {
+            revertLanaiContent(session, c);
+            setError(null);
+          } catch (e) {
+            setError((e as Error).message);
+          }
+        }}
+      >
+        ステージ全体を初期値に戻す
+      </button>
+      {error && (
+        <span className="error" role="alert">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -175,10 +234,12 @@ function ContentDetail({
   session,
   c,
   revision,
+  changed,
 }: {
   session: LanaiSession;
   c: LanaiContent;
   revision: number;
+  changed: boolean;
 }): ReactNode {
   const msg = session.need('MessageMapStage');
   const [editing, setEditing] = useState<LanaiContent['stages'][number] | null>(null);
@@ -205,7 +266,11 @@ function ContentDetail({
         >
           ＋ コンテンツを複製して追加
         </button>
-        {session.createdFiles.has(c.archive) && <RemoveContentButton session={session} c={c} />}
+        {session.createdFiles.has(c.archive.toUpperCase()) ? (
+          <RemoveContentButton session={session} c={c} />
+        ) : (
+          <RevertContentButton session={session} c={c} changed={changed} />
+        )}
       </div>
       <h3>ステージ (MapStageIntegration)</h3>
       {!c.stages.length ? (

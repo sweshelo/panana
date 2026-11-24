@@ -1,12 +1,13 @@
 import { findEntry, parseArchive, rebuildArchive, unpackEntry, type Archive } from '../archive/gsarc';
 import { sha256 } from './codes';
 import { encodeLanaiMessage, parseLanaiText } from './message';
-import { hex8, w32, equalBytes } from '../util/bytes';
+import { hex8, u32, w32, equalBytes } from '../util/bytes';
 import { readSarc } from '../layout/sarc';
 import { readBflim, replaceBflimImage } from '../layout/bflim';
 import { CRO_COMMON_HOOKS, croHooks, lanaiContents, type LanaiContent, type LanaiStage } from './contents';
 import { lanaiMaps } from './maps';
 import type { LanaiSession } from './session';
+import type { LanaiTable } from './table';
 import type { LanaiCondition } from './conditions';
 
 /** Corresponding local MapStage row, matched by message ID; integration has 12 inserted bytes at +0x34. */
@@ -290,6 +291,52 @@ export function lanaiContentRemoveBlock(s: LanaiSession, c: LanaiContent): strin
  * Remove an added content (the undo of cloneLanaiContent): its stage rows (and their name rows of MessageMapStage when
  * they are the last and no other stage uses them), its Contents row, its archive and CRR, and its event script.
  */
+/** Whether row `r` of a table differs from what was read (its bytes or a string written into it). */
+const rowEdited = (t: LanaiTable, r: number): boolean =>
+  t.rowChanged(r) || t.changedStrings().some(([row]) => row === r);
+
+/**
+ * The contents with edits: their archive (tables, maps, stage images: LanaiSession.changedArchives), their stages'
+ * MapStageIntegration rows (by the content they were read with and the one they name now) and those rows' names
+ * (MessageMapStage).
+ */
+export function lanaiChangedContents(s: LanaiSession, contents: LanaiContent[]): Set<number> {
+  const out = new Set<number>();
+  const archives = s.changedArchives();
+  for (const c of contents) if (archives.has(c.archive.toUpperCase())) out.add(c.index);
+  const msi = s.need('MapStageIntegration');
+  for (const r of msi.changedRows()) {
+    out.add(msi.u32(r, 0x34));
+    const was = msi.originalRow(r);
+    if (was) out.add(u32(was, 0x34));
+  }
+  const msg = s.need('MessageMapStage');
+  const names = new Set([...msg.changedRows(), ...msg.changedStrings().map(([r]) => r)].map((r) => msg.rowId(r)));
+  if (names.size) for (let r = 0; r < msi.rows; r++) if (names.has(msi.u32(r, 0x0c))) out.add(msi.u32(r, 0x34));
+  return out;
+}
+
+/**
+ * Puts a content of the ROM back as it was read: its archive (LanaiSession.revertArchive), its stages' rows of
+ * MapStageIntegration (those read with this content) and their MessageMapStage rows. Rows other edits added (a stage
+ * of an added content) stay. Not for an added content: removeLanaiContent takes it out.
+ */
+export function revertLanaiContent(s: LanaiSession, c: LanaiContent): void {
+  const archive = c.archive.toUpperCase();
+  if (s.createdFiles.has(archive)) throw new Error('追加したステージは元に戻せません (削除してください)');
+  s.revertArchive(archive);
+  const msi = s.need('MapStageIntegration');
+  const msg = s.need('MessageMapStage');
+  for (let r = 0; r < msi.rows; r++) {
+    const was = msi.originalRow(r);
+    if (!was || u32(was, 0x34) !== c.index) continue;
+    if (rowEdited(msi, r)) msi.revertRow(r);
+    const m = msg.find(u32(was, 0x0c));
+    if (m >= 0 && msg.originalRow(m) && rowEdited(msg, m)) msg.revertRow(m);
+  }
+  s.edited();
+}
+
 export function removeLanaiContent(s: LanaiSession, c: LanaiContent): void {
   const block = lanaiContentRemoveBlock(s, c);
   if (block) throw new Error(block);
