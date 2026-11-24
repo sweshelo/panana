@@ -94,6 +94,15 @@ export class View3D {
       f.clipping = [this.clipPlane];
       f.setCeilingVisible(this.showCeiling);
     }
+    let start = -1;
+    this.view.setTicker(
+      f?.animated
+        ? (seconds) => {
+            if (start < 0) start = seconds;
+            f.tick(seconds - start);
+          }
+        : null,
+    );
     this.sync();
   }
 
@@ -138,12 +147,13 @@ export class View3D {
     this.draw();
   }
 
-  private tileObject(kind: number, rot: number, letter: number): THREE.Object3D {
+  private tileObject(x: number, y: number, kind: number, rot: number, letter: number): THREE.Object3D {
     const f = this.factory;
     const hash = f ? this.src.partModel(kind, letterIndex(letter)) : 0;
     const model = f && hash ? f.instance(hash) : null;
     if (model) {
       model.rotation.y = (-rot * Math.PI) / 2;
+      f!.placeOnGrid(model, x, y, rot);
       return model;
     }
     return this.fallback.make(kindColor(kind), rot);
@@ -157,7 +167,7 @@ export class View3D {
             x: t.x,
             y: t.y,
             sig: `${t.kind}/${t.rot}/${t.letter}/${ts}`,
-            make: () => this.tileObject(t.kind, t.rot, t.letter),
+            make: () => this.tileObject(t.x, t.y, t.kind, t.rot, t.letter),
           }))
         : [],
     );
@@ -461,7 +471,7 @@ export class View3D {
       addRect(hv[0], hv[1], hv[0], hv[1], 0xffffff);
       const brush = this.st.tool === 'paint' ? this.st.brushAt(hv[0], hv[1]) : undefined;
       if (brush) {
-        const ghost = this.tileObject(brush.kind, brush.rot, brush.letter);
+        const ghost = this.tileObject(hv[0], hv[1], brush.kind, brush.rot, brush.letter);
         ghost.position.set((hv[0] + 0.5) * CELL, 1, (hv[1] + 0.5) * CELL);
         ghost.traverse((o) => {
           if (o instanceof THREE.Mesh) {

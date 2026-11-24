@@ -5,6 +5,7 @@ import { procTexPhase } from '../src/cgfx/proctex';
 import { ModelFactory } from '../src/cgfx/three';
 import { LANAI_PROCTEX_FILE, lanaiProcTex, lanaiTileModels } from '../src/lanai/mapModels';
 import { LanaiSession } from '../src/lanai/session';
+import { CELL } from '../src/game/sections';
 import { openImages } from '../src/rom/dump';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
@@ -67,7 +68,7 @@ describe.skipIf(!hasLanai)('RPG FREE! CaveC procedural texture', () => {
           undefined as never,
         );
     });
-    expect((mats[0]!.uniforms.ptTile!.value as THREE.Vector3).toArray()).toEqual([3, 4, Math.PI / 2]);
+    expect((mats[0]!.uniforms.ptTile!.value as THREE.Vector3).toArray()).toEqual([3, 4, -Math.PI / 2]);
     f.tick(750 / 4 / 60);
     expect((mats[0]!.uniforms.ptPhase!.value as THREE.Vector2).y).toBeCloseTo(1.5, 4);
     f.dispose();
@@ -76,5 +77,41 @@ describe.skipIf(!hasLanai)('RPG FREE! CaveC procedural texture', () => {
       { archive: 0x4da30000, entry: 0x1109e400 },
     ]);
     expect(relic.proctex).toBeUndefined();
+  });
+});
+
+describe.skipIf(!hasLanai)('RPG FREE! CaveC procedural texture on the grid', () => {
+  test('every quarter turn maps the floor UV to the same world axes (u = +x, v = −z), so tiles join', async () => {
+    const dump = await openImages(
+      [Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)],
+      (f) => (f as unknown as { name: string }).name,
+    );
+    const s = await LanaiSession.open(dump, { fresh: true });
+    const set = await lanaiTileModels(s, source(0x3dc60000, 0x4dfba400), [CAVEC_FLOOR]);
+    const f = new ModelFactory(set);
+    for (let rot = 0; rot < 4; rot++) {
+      const o = f.instance(CAVEC_FLOOR.entry)!;
+      o.rotation.y = (-rot * Math.PI) / 2;
+      o.updateMatrixWorld(true);
+      f.placeOnGrid(o, 0, 0, rot);
+      o.traverse((m) => {
+        if (!(m instanceof THREE.Mesh) || !(m.material as THREE.ShaderMaterial).userData.proctex) return;
+        m.onBeforeRender(...([] as unknown as Parameters<THREE.Mesh['onBeforeRender']>));
+        const a = ((m.material as THREE.ShaderMaterial).uniforms.ptTile!.value as THREE.Vector3).z;
+        const pos = m.geometry.attributes.position!,
+          uv = m.geometry.attributes.uv!;
+        const v = new THREE.Vector3();
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+          const cx = uv.getX(i) - 0.5,
+            cy = uv.getY(i) - 0.5;
+          const ru = Math.cos(a) * cx - Math.sin(a) * cy,
+            rv = Math.sin(a) * cx + Math.cos(a) * cy;
+          expect(ru).toBeCloseTo(v.x / CELL, 3);
+          expect(rv).toBeCloseTo(-v.z / CELL, 3);
+        }
+      });
+    }
+    f.dispose();
   });
 });

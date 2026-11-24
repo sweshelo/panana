@@ -67,7 +67,12 @@ export class ModelFactory {
           ? this.rawTexture(this.set.textures.get(u.name)!, u.wrapS, u.wrapT)
           : null,
       );
-      const pt = proctex && this.set.proctex ? { p: this.set.proctex.p, lut: this.procTexLut() } : undefined;
+      // The field rewrites stage 0 of every material, but only the materials made for it sample the `*_pro`
+      // placeholder there (caveC_pro); the decorations of the tileset keep their own look here.
+      const pt =
+        proctex && this.set.proctex && /_pro$/.test(m.units[0]?.name ?? '')
+          ? { p: this.set.proctex.p, lut: this.procTexLut() }
+          : undefined;
       const mat = tevMaterial(m, { maps, proctex: pt }, this.clipping);
       if (pt) {
         mat.userData.proctex = true;
@@ -108,9 +113,9 @@ export class ModelFactory {
     return (this.ptLut ??= procTexLut(this.set.proctex!.p));
   }
 
-  /** Some materials move with time (a procedural texture's noise): the view keeps drawing and calls tick. */
+  /** Some materials (will) move with time (a procedural texture's noise): the view keeps drawing and calls tick. */
   get animated(): boolean {
-    return this.procMaterials.length > 0;
+    return !!this.set.proctex;
   }
 
   /** Moves the procedural textures to `seconds` after the map was entered (the game counts 1/60 s ticks). */
@@ -123,14 +128,15 @@ export class ModelFactory {
 
   /**
    * Places the procedural texture of an instance on the field grid: column, row and the tile's angle (quarter turns),
-   * so the noise runs on across tiles (the per-tile UV matrix of 0x233228).
+   * so the noise runs on across tiles (the per-tile UV matrix of 0x233228). The model turns by −90° a quarter turn
+   * (rotation.y), so its UV turns back by the opposite angle: every turn then maps u to +x and v to −z.
    */
   placeOnGrid(obj: THREE.Object3D, column: number, row: number, quarterTurns: number): void {
     obj.traverse((o) => {
       if (!(o instanceof THREE.Mesh) || !(o.material as THREE.Material).userData.proctex) return;
       const mat = o.material as THREE.ShaderMaterial;
       o.onBeforeRender = () => {
-        (mat.uniforms.ptTile!.value as THREE.Vector3).set(column, row, (quarterTurns * Math.PI) / 2);
+        (mat.uniforms.ptTile!.value as THREE.Vector3).set(column, row, (-quarterTurns * Math.PI) / 2);
         mat.uniformsNeedUpdate = true;
       };
     });

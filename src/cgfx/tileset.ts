@@ -11,7 +11,7 @@ export interface TilesetModels {
   paths: Map<number, string>;
   textures: Map<string, CgfxTexture>;
   errors: string[];
-  /** A procedural texture the field puts on every material of some models (lanai CaveC: proctex_mud03). */
+  /** A procedural texture the field puts on some models' `*_pro` materials (CaveC / RPG2 tileset 11: proctex_mud03). */
   proctex?: { p: ProcTex; models: Set<number> };
 }
 

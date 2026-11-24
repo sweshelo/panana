@@ -3,6 +3,7 @@ import type { Game } from '../game/game';
 import type { MapRef } from '../game/master';
 import { hex8 } from '../util/bytes';
 import { idbGet, idbSet } from '../util/idb';
+import { parsePctx, type ProcTex } from './proctex';
 import type { TilesetModels } from './tileset';
 import type { WorkerRequest } from './worker';
 
@@ -33,9 +34,27 @@ function run<T>(req: Body<WorkerRequest>, transfer: ArrayBuffer[]): Promise<T> {
 
 const memory = new Map<string, Promise<TilesetModels>>();
 
-/** Tile models of a map, for its own tileset or `tileset`. */
-export function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Promise<TilesetModels> {
-  return loadTileset(game, game.tilesetSource(map, tileset));
+/**
+ * The field gives every model of this archive (tileset 11, the cave that is CaveC in RPG FREE!) the procedural texture
+ * proctex_mud03 as texture 3 (kahara 0x2F1B68; roms/tmpmap/cavec-proctex-analysis.md §5).
+ */
+export const KAHARA_PROCTEX_ARCHIVE = 'A5CCD17B';
+export const KAHARA_PROCTEX_FILE = 'proctex_files/proctex_mud03.pctxbin';
+const procTexFiles = new WeakMap<object, Promise<ProcTex>>();
+
+/** Tile models of a map, for its own tileset or `tileset` (with the field's procedural texture, if any). */
+export async function loadTilesetModels(game: Game, map: MapRef, tileset?: number): Promise<TilesetModels> {
+  const src = game.tilesetSource(map, tileset);
+  const set = await loadTileset(game, src);
+  if (src.modelArchive !== KAHARA_PROCTEX_ARCHIVE) return set;
+  let p = procTexFiles.get(game.dump);
+  if (!p) {
+    p = game.dump.readRomfs(KAHARA_PROCTEX_FILE).then(parsePctx);
+    p.catch(() => procTexFiles.delete(game.dump));
+    procTexFiles.set(game.dump, p);
+  }
+  const pt = await p.catch(() => null);
+  return pt ? { ...set, proctex: { p: pt, models: new Set(set.models.keys()) } } : set;
 }
 
 /**
