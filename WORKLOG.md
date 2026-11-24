@@ -371,3 +371,10 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - `scriptDoc.ts SCRIPT_SAMPLES` の先頭に 3 本: モンスターとの会話 (暗転 → partyLineUp → 水平カメラ shoot で話者を正面から → say で話者を切り替え → 暗転して戻す)、ボタンで隠れたワープを出す (マップが始まるときに SetPos(20000, 0, 20000) で外へ、ボタンで SetScaleA(0) → 元の位置 → ScaleTo。content 107 と同じ)、範囲で主人公が話して無効になる (EnableEventCollision(selfRow, 0) + bit を消える条件に)。サンプルは補助の関数 (引数付き) を持てる。
 - テスト: 全体 875 pass / 25 skip / 0 fail。サンプルを割り当てどおりに CRO までビルド (ROM)。画面・実機は未確認。
 - 作業ツリーにある別作業の変更 (FlagSelect・state) は含めず、一時 index で自分の差分だけをコミットした。
+
+## スクリプトのページの座標・ワープのサンプルの修正 (2026-11-24)
+
+- 未コミットだった state の読み書き・FlagSelect・AGENTS の変更を `75362f8` でコミット。
+- `cb25b73`: /maps の MOVE (ScriptMovePanel・2D/3D の点・レイヤーの切り替え) を /maps から外し、スクリプトのページの演出プレビュー (`StagePreviewScene` の `onSource`) に移した。`mapview.moveText` がエディタの本文 (保存前) を読み書きし、`sourceScriptMoves` (parseStageScript の関数の from/to で全文の行・位置に直す)、`withMoveAt`。`movePointer`: 3D で点をつかんだときだけ OrbitControls を止める。`scriptMoves` は `who.SetPos(vec(x, y, z))` も読む。割り当ては保存済みのもの。イベント番号のクリックは「obj(N) をカーソルの位置に書く」をやめ、`eventPosition` (マス・ROM の値と単位・スクリプトの vec) を表示。ワープのサンプルの効果音を 717 に。テスト: scriptmoves (SetPos・本文から読む・書き戻す) 追加、Lefthook 通過。画面は未確認。
+- ミニマップの解析 (サブエージェント。Codex は上限、agy は auto mode が拒否): `roms/tmpmap/minimap-analysis.md`。アイコンはマップ読込み時 (0x21D744) に出る条件を通った実体をリストに登録し、ミニマップがその現在位置のセルに 1 度だけ作る (0x1F7668 / 0x1F841C)。SetPos で動かない。種類 2/3 は毎フレーム IsVisible か IsEnabled が真なら表示 (0x1F6338) → SetVisible(0) と SetViewActive(0) の両方で消える。種類 4 は連動しない。探索済みのセルだけ。出る条件を後から立てても読み直すまで実体もアイコンも生まれない。いずれもコード上の確定、実機は未確認。
+- ワープのサンプル: 隠す間は SetVisible(0)・SetViewActive(0) (+ 従来どおり外へ移して踏めなくする)、ボタンで 1 に戻す。lanai-scriptdoc 20 pass (サンプルを CRO までビルド)。
