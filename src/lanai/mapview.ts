@@ -1053,7 +1053,9 @@ export class LanaiMapView {
               ? cells.get(f.rows[0]!)
               : undefined;
         const at: [number, number] = [worldToCell(move.x), worldToCell(move.z)];
-        out.push({ fn: f.fn, k, move, from: last.get(who) ?? start ?? null, label: `${f.fn} #${k + 1} ${who}` });
+        // the object's event number: obj(N) names it, self is the event the function is given to
+        const whoLabel = move.who.kind === 'self' && f.rows.length ? `self = obj(${f.rows.join(', ')})` : who;
+        out.push({ fn: f.fn, k, move, from: last.get(who) ?? start ?? null, label: `${f.fn} #${k + 1} ${whoLabel}` });
         last.set(who, at);
       });
     }
@@ -1161,8 +1163,42 @@ export class LanaiMapView {
   }
 
   private clearMoveGroup(): void {
-    for (const o of this.moveGroup.children) if (o instanceof THREE.Line) o.geometry.dispose();
+    for (const o of this.moveGroup.children)
+      if (o instanceof THREE.Line) o.geometry.dispose();
+      else if (o instanceof THREE.Sprite) {
+        o.material.map?.dispose();
+        o.material.dispose();
+      }
     this.moveGroup.clear();
+  }
+
+  /** A move() point's label in 3D: the function, its number in it and whom it moves (with the event number). */
+  private moveLabel(text: string, active: boolean): THREE.Sprite {
+    const c = this.scene.canvas.ownerDocument.createElement('canvas');
+    const font = 'bold 30px ui-monospace, Menlo, Consolas, monospace';
+    let g = c.getContext('2d')!;
+    g.font = font;
+    c.width = Math.ceil(g.measureText(text).width) + 28;
+    c.height = 52;
+    g = c.getContext('2d')!;
+    g.font = font;
+    g.fillStyle = active ? '#fff1d6' : 'rgba(10, 14, 22, 0.8)';
+    g.strokeStyle = MOVE_COLOR;
+    g.lineWidth = 4;
+    g.beginPath();
+    g.roundRect(2, 2, c.width - 4, c.height - 4, 10);
+    g.fill();
+    g.stroke();
+    g.fillStyle = active ? '#111111' : '#ffe0b3';
+    g.textBaseline = 'middle';
+    g.fillText(text, 14, c.height / 2 + 1);
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, depthTest: false, transparent: true }));
+    sprite.renderOrder = 11;
+    const h = active ? 120 : 100;
+    sprite.scale.set((h * c.width) / c.height, h, 1);
+    return sprite;
   }
 
   private syncMoves(): void {
@@ -1175,6 +1211,9 @@ export class LanaiMapView {
       m.position.set(p.move.x, p.move.y, p.move.z);
       if (active) m.scale.setScalar(1.3);
       this.moveGroup.add(m);
+      const label = this.moveLabel(active ? `${p.label} (${p.move.x}, ${p.move.y}, ${p.move.z})` : p.label, active);
+      label.position.set(p.move.x, p.move.y + (active ? 260 : 220), p.move.z);
+      this.moveGroup.add(label);
       if (!p.from) continue;
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([

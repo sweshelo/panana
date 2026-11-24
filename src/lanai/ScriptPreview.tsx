@@ -16,7 +16,6 @@ import { previewReferencedRows, runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
 import { UNIT_LABEL } from '../game/sections';
-import { ScriptMovePanel } from './ScriptMovePanel';
 import { coordText } from './scriptMoves';
 import { soundPlayer } from '../sound/player';
 import { requireAudible } from '../sound/render';
@@ -476,9 +475,14 @@ export function StagePreviewScene({
           )}
         </div>
       )}
-      {view && <p className="muted small">ドラッグで回転、ホイールで拡大・縮小できます。</p>}
+      {view && (
+        <p className="muted small">
+          ドラッグで回転、ホイールで拡大・縮小できます。
+          {onSource &&
+            ' 橙の円錐はこのマップで実行される関数の move() / walk() / SetPos(vec(…)) の位置 (関数名・順番・対象のイベント番号)。ドラッグするとエディタの本文の x・z を書き換えます (50 単位。Alt で 1 単位)。'}
+        </p>
+      )}
       {view && <ScriptPreviewControls key={info?.hash} view={view} source={source} />}
-      {view && onSource && <ScriptMovePanel view={view} />}
     </section>
   );
 }
