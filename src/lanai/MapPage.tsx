@@ -113,7 +113,6 @@ import { lanaiItemName } from './monsterBook';
 import { LanaiItemPicker } from './pickers';
 import { LANAI_TREASURE_GOLD, LANAI_TREASURE_ITEM, type LanaiTreasureSlot } from './treasure';
 import { LanaiMapView } from './mapview';
-import { ScriptMovePanel } from './ScriptMovePanel';
 import { ScriptPreviewControls } from './ScriptPreview';
 import type { LanaiSession } from './session';
 import { lanaiRomCatalog, type LanaiRomCatalog } from './romParts';
@@ -485,13 +484,6 @@ function MapDetail({
                   set={(v) => (view.showLinks = v)}
                   color="#e58cff"
                 />
-                <LayerBox
-                  view={view}
-                  label="スクリプトの move() の行き先 (ドラッグで編集)"
-                  checked={view.showMoves}
-                  set={(v) => (view.showMoves = v)}
-                  color="#ffb347"
-                />
                 <label
                   className="layer"
                   title="オブジェクトへのリンク (URL の @区画.番号) を開いたとき、対象を 2D・3D の画面の中心に移します"
@@ -544,7 +536,6 @@ function MapDetail({
                   source={session.stageScripts.get(content.archive.toUpperCase())?.source ?? ''}
                   onStart={() => setMode('split')}
                 />
-                <ScriptMovePanel view={view} stageHref={lanaiStageHref(content.index)} />
               </>
             )}
             <h3>検証</h3>

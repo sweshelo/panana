@@ -252,7 +252,7 @@ function open_warp() {
   obj(17).SetPos(vec(3750, 0, 2750))       // 本来の位置 (マップのページのワープの位置) に戻す
   obj(17).RecoverCollision()
   camera(obj(17), 1)                       // カメラをワープへ
-  ScriptSound.Play(180, 0)                 // 出る音 (本家 content 107 と同じ)
+  ScriptSound.Play(717, 0)                 // ワープが出る音
   obj(17).ScaleTo(vec(1, 1, 1), 0.5, 0, 0, 0)   // 0.5 秒で元の大きさへ
   obj(17).WaitNodeAnimation()              // 広がり終わるまで待つ
   ScriptSystem.WaitTime(0.5)

@@ -15,6 +15,9 @@ import { LanaiMapView } from './mapview';
 import { previewReferencedRows, runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
+import { UNIT_LABEL } from '../game/sections';
+import { ScriptMovePanel } from './ScriptMovePanel';
+import { coordText } from './scriptMoves';
 import { soundPlayer } from '../sound/player';
 import { requireAudible } from '../sound/render';
 
@@ -327,15 +330,15 @@ export function StagePreviewScene({
   content,
   source,
   onMap,
-  onInsert,
+  onSource,
 }: {
   session: LanaiSession;
   content: LanaiContent;
   source: string;
   /** Told the map shown (its MapGroup is the one the editor's lines of talk are of). */
   onMap?: (info: LanaiMapInfo | undefined) => void;
-  /** Writes a text at the editor's cursor (obj(N) of a picked event). */
-  onInsert?: (text: string) => void;
+  /** Takes the text with a position written into it (a move() / SetPos point dragged or typed); absent: read only. */
+  onSource?: (source: string) => void;
 }): ReactNode {
   const [showIds, setShowIds] = useState(true);
   const [picked, setPicked] = useState<number | null>(null);
@@ -348,6 +351,10 @@ export function StagePreviewScene({
   const info = options.find((m) => m.name === name) ?? options[0];
   const latestOnMap = useRef(onMap);
   latestOnMap.current = onMap;
+  const latestOnSource = useRef(onSource);
+  latestOnSource.current = onSource;
+  const latestSource = useRef(source);
+  latestSource.current = source;
   useEffect(() => latestOnMap.current?.(info), [info]);
   useEffect(() => {
     if (!maps || !info || !host.current) return;
@@ -366,8 +373,12 @@ export function StagePreviewScene({
     next.scene.pointer = null;
     next.scene.controls.mouseButtons.LEFT = MOUSE.ROTATE;
     next.scene.pixelRatioLimit = 1;
-    next.showMoves = false;
+    next.showMoves = !!latestOnSource.current;
     next.showLinks = false;
+    if (latestOnSource.current) {
+      next.moveText = { source: latestSource.current, write: (text) => latestOnSource.current?.(text) };
+      next.scene.pointer = next.movePointer;
+    }
     next.scene.canvas.addEventListener('pointerdown', preventMiddleDrag, { capture: true });
     next.scene.canvas.addEventListener('mousedown', preventMiddleDrag, { capture: true });
     next.scene.canvas.addEventListener('auxclick', preventMiddleDrag);
@@ -405,6 +416,14 @@ export function StagePreviewScene({
     };
   }, [maps, info]);
   useEffect(() => view?.setIds(showIds), [view, showIds]);
+  // the move() points follow the editor's text
+  useEffect(() => {
+    if (!view?.moveText) return;
+    view.moveText.source = source;
+    view.drawMoves();
+    view.signal.emit();
+  }, [view, source]);
+  const position = view && picked !== null ? view.eventPosition(picked) : null;
   return (
     <section className="stage-preview" aria-label="演出プレビュー">
       <div className="row">
@@ -430,25 +449,36 @@ export function StagePreviewScene({
             イベント番号 (#N) を表示
           </label>
           <span className="muted">
-            黄色は選んだ関数が使うイベント、白は再生中に動かしているもの。番号をクリックすると obj(番号) を書けます。
+            黄色は選んだ関数が使うイベント、白は再生中に動かしているもの。番号をクリックすると、その位置 (マス・ROM
+            の値・スクリプトの座標) が出ます。
           </span>
         </div>
       )}
       {view && picked !== null && (
-        <div className="row small">
-          <span>{view.eventLabel(picked)}</span>
-          {onInsert && (
-            <button className="small" onClick={() => onInsert(`obj(${picked})`)}>
-              {`obj(${picked}) をカーソルの位置に書く`}
+        <div className="stage-preview-picked small">
+          <div className="row">
+            <span>{view.eventLabel(picked)}</span>
+            <button className="small" onClick={() => setPicked(null)}>
+              閉じる
             </button>
+          </div>
+          {position ? (
+            <dl className="stage-preview-position">
+              <dt>マス</dt>
+              <dd className="mono">{`横 ${position.cell[0]}・縦 ${position.cell[1]}`}</dd>
+              <dt>ROM の値</dt>
+              <dd className="mono">{`x ${position.raw[0]}・y ${position.raw[1]} (${UNIT_LABEL[position.unit]})`}</dd>
+              <dt>スクリプト</dt>
+              <dd className="mono">{`vec(${coordText(position.world[0])}, 0, ${coordText(position.world[1])})`}</dd>
+            </dl>
+          ) : (
+            <p className="muted">このマップにレコードがありません。</p>
           )}
-          <button className="small" onClick={() => setPicked(null)}>
-            閉じる
-          </button>
         </div>
       )}
       {view && <p className="muted small">ドラッグで回転、ホイールで拡大・縮小できます。</p>}
       {view && <ScriptPreviewControls key={info?.hash} view={view} source={source} />}
+      {view && onSource && <ScriptMovePanel view={view} />}
     </section>
   );
 }

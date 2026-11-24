@@ -2,7 +2,14 @@
 // writing a new position back into it.
 import { describe, expect, test } from 'bun:test';
 import { scriptDocFromSource, type ScriptDoc } from '../src/lanai/eventScript';
-import { coordText, mapScriptMoves, scriptMoves, withScriptMove } from '../src/lanai/scriptMoves';
+import {
+  coordText,
+  mapScriptMoves,
+  scriptMoves,
+  sourceScriptMoves,
+  withMoveAt,
+  withScriptMove,
+} from '../src/lanai/scriptMoves';
 
 describe('scriptMoves', () => {
   test('reads whom and where, skipping comments', () => {
@@ -41,6 +48,17 @@ describe('scriptMoves', () => {
 
   test('a position written as a variable or vec() is not a point', () => {
     expect(scriptMoves('move(hero, A, 0, 0)\nhero.MoveTo(vec(1, 2, 3), 0, 0, 0, 0, 0)')).toEqual([]);
+  });
+
+  test('reads who.SetPos(vec(x, y, z)) as a point', () => {
+    const got = scriptMoves('obj(17).SetPos(vec(20000, 0, 20000))\nobj(17).SetPos(vec(3750, 0, 2750))');
+    expect(got.map((m) => [m.who, m.x, m.y, m.z, m.line])).toEqual([
+      [{ kind: 'chara', row: 17 }, 20000, 0, 20000, 1],
+      [{ kind: 'chara', row: 17 }, 3750, 0, 2750, 2],
+    ]);
+    expect(withScriptMove('obj(17).SetPos(vec(3750, 0, 2750))', 0, 1250, 0, 250)).toBe(
+      'obj(17).SetPos(vec(1250, 0, 250))',
+    );
   });
 
   test('writes a new position into the k-th move() only', () => {
@@ -98,5 +116,36 @@ describe('mapScriptMoves', () => {
       ['opening', [], [[250, 250]]],
     ]);
     expect(mapScriptMoves(doc, 3, new Set([7]))).toEqual([]);
+  });
+});
+
+describe('sourceScriptMoves', () => {
+  const source = [
+    'var OPEN: bit',
+    '',
+    'function open_warp() {',
+    '  OPEN = 1',
+    '  obj(17).SetPos(vec(3750, 0, 2750))   // back',
+    '}',
+    '',
+    'function unbound() {',
+    '  move(hero, 1, 1, 1)',
+    '}',
+    '',
+  ].join('\n');
+  const bindings = [{ trigger: 'talk' as const, group: 2, row: 9, fn: 'open_warp' }];
+
+  test('reads the bound functions of the editor text, with the lines and spans of the whole text', () => {
+    const got = sourceScriptMoves(source, bindings, 2, new Set([9]));
+    expect(got.map((f) => [f.fn, f.rows, f.moves.map((m) => [m.x, m.z, m.line])])).toEqual([
+      ['open_warp', [9], [[3750, 2750, 5]]],
+    ]);
+    const written = withMoveAt(source, got[0]!.moves[0]!, 1250, 0, 750);
+    expect(written.split('\n')[4]).toBe('  obj(17).SetPos(vec(1250, 0, 750))   // back');
+    expect(written.split('\n').length).toBe(source.split('\n').length);
+  });
+
+  test('a text that does not read has no points', () => {
+    expect(sourceScriptMoves('function f( {', bindings, 2, new Set([9]))).toEqual([]);
   });
 });

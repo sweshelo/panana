@@ -1,6 +1,7 @@
-// The move() statements of the stage's event script that run on the open map (scriptMoves.ts), on the map's page: where
-// each sends whom, in the script's world units and in the map's cells, with the numbers to edit. The points are drawn
-// and dragged in the 2D / 3D views (mapview.ts).
+// The positions the stage's event script writes (move() / walk() / SetPos(vec(…)), scriptMoves.ts) that run on the map
+// of the script page's preview: where each sends whom, in the script's world units and in the map's cells, with the
+// numbers to edit. They are written into the editor's text (not saved yet); the points are drawn and dragged in the
+// preview's 3D view (mapview.ts moveText / movePointer).
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSignal } from '../ui/useEditorState';
 import type { LanaiMapView, LanaiMovePoint } from './mapview';
@@ -46,7 +47,7 @@ function MoveRow({ view, p }: { view: LanaiMapView; p: LanaiMovePoint }): ReactN
   };
   return (
     <li className={active ? 'move-row active' : 'move-row'}>
-      <button type="button" className="link" title="2D・3D の画面の中心に移す" onClick={pick}>
+      <button type="button" className="link" title="プレビューの中心に移す" onClick={pick}>
         {p.label}
       </button>
       <span className="muted small">{` ${p.move.line} 行目`}</span>
@@ -60,16 +61,16 @@ function MoveRow({ view, p }: { view: LanaiMapView; p: LanaiMovePoint }): ReactN
   );
 }
 
-export function ScriptMovePanel({ view, stageHref }: { view: LanaiMapView; stageHref: string }): ReactNode {
+export function ScriptMovePanel({ view }: { view: LanaiMapView }): ReactNode {
   useSignal(view.signal);
   const points = view.movePoints();
   return (
     <>
-      <h3>スクリプトの移動 (move)</h3>
+      <h3>スクリプトの座標 (move・SetPos)</h3>
       {!points.length ? (
         <p className="muted small">
-          このマップで実行される関数に move() はありません (関数をこのマップのレコード・スタートに割り当てると、 その
-          move() の行き先がここと 2D・3D の画面に出ます)。
+          このマップで実行される関数に、数で書いた move() / walk() / SetPos(vec(…)) はありません
+          (関数をこのマップのレコード・スタートに割り当てると、その位置がこことプレビューに出ます)。
         </p>
       ) : (
         <ul className="move-list">
@@ -79,20 +80,19 @@ export function ScriptMovePanel({ view, stageHref }: { view: LanaiMapView; stage
         </ul>
       )}
       <details>
-        <summary className="small">move(だれに, x, y, z) の座標</summary>
+        <summary className="small">move(だれに, x, y, z)・SetPos(vec(x, y, z)) の座標</summary>
         <p className="muted small">
           ワールド座標で、1 セル = 500。x がマップの横 (2D の右へ増える)、z が縦 (2D の下へ増える)、y が高さ (床 =
           0)。セル (c) の中心は 250 + 500 × c です。例: 横 3・縦 5 のセルの中心は move(hero, 1750, 0, 2750)。
         </p>
         <p className="muted small">
-          2D・3D の画面の◆ (3D では下向きの円錐) をドラッグすると、x と z がスクリプトに書き込まれます (50
-          単位にそろう。Alt を押しながらだと 1 単位)。y はそのままです。点線は、動く前にいた場所
-          (キャラのレコード・同じ関数の前の move()) からの道筋です。数字は関数の中の move() の順番です。
+          プレビューの下向きの円錐をドラッグすると、x と z がエディタの本文に書き込まれます (50 単位にそろう。Alt
+          を押しながらだと 1 単位)。y はそのままです。点線は、動く前にいた場所 (キャラのレコード・同じ関数の前の位置)
+          からの道筋です。数字は関数の中の順番です。
         </p>
         <p className="muted small">
-          保存済みのスクリプトを表示・編集します。スクリプトのエディタ (<a href={stageHref}>ステージのページ</a>
-          の「スクリプトを編集」)
-          で書きかけの本文は、保存するまでここに出ません。エディタはフォーカスが外れると保存します。
+          エディタの本文 (保存前) を読み書きします。本文が読めない間 (書きかけの文法の誤り)
+          は出ません。割り当ては保存済みのものを使います。
         </p>
       </details>
     </>

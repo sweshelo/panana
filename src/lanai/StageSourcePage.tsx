@@ -1,7 +1,7 @@
 // The script editor of an added stage: the only place its variables and functions are written. What the functions are
 // given to is set on the map's page (the record's "スクリプトの関数") and on the stage's page, so it is not in this
-// text. The text is saved when the editor loses the focus (or with the button); a move() dragged on the map's page
-// comes in function by function. The lines of talk the editor shows and adds (ScriptLineDialog.tsx) are of the MapGroup
+// text. The text is saved when the editor loses the focus (or with the button); a position (move() / SetPos) dragged
+// or typed in the preview is written into the text (ScriptMovePanel.tsx). The lines of talk the editor shows and adds (ScriptLineDialog.tsx) are of the MapGroup
 // of the map the preview shows.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useAsync } from '../ui/useAsync';
@@ -291,13 +291,7 @@ export function LanaiStageSourcePage({
           </div>
         </section>
         <aside className="stage-source-docs" aria-label="関数ドキュメント">
-          <StagePreviewScene
-            session={session}
-            content={content}
-            source={source}
-            onMap={setMap}
-            onInsert={(text) => insertRef.current?.insert(text)}
-          />
+          <StagePreviewScene session={session} content={content} source={source} onMap={setMap} onSource={setSource} />
           <StageScriptDocs
             session={session}
             content={content}

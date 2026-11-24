@@ -14,14 +14,14 @@ import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
 import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from '../editor/draw2d';
-import { GridCanvas } from '../editor/gridcanvas';
+import { GridCanvas, type GridPointer } from '../editor/gridcanvas';
 import { partOf, type AutoProfile } from '../editor/autotile';
 import { drawTerrainMinimap } from '../editor/minimap';
 import { kindColor, SECTION_COLORS } from '../editor/legend';
 import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
-import { CELL, letterIndex, recCellPos, WORLD_SNAP, type MapDoc } from '../game/sections';
+import { CELL, letterIndex, recCellPos, WORLD_SNAP, type MapDoc, type Unit } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, lanaiRecEventRow, sourceChanged, type LanaiEditState } from './mapedit';
 import { lanaiMapLinks, type LanaiMapLink } from './mapLinks';
@@ -52,6 +52,8 @@ import {
   cellToWorld,
   mapScriptMoves,
   moveWhoText,
+  sourceScriptMoves,
+  withMoveAt,
   withScriptMove,
   worldToCell,
   type MapScriptMoves,
@@ -127,8 +129,16 @@ export class LanaiMapView {
   showModels = true;
   /** Draw the connections of the records in 2D (mapLinks.ts: a button and its door, a warp and where it leads). */
   showLinks = true;
-  /** Draw the destinations of the script's move() statements (scriptMoves.ts), which can be dragged. */
-  showMoves = true;
+  /**
+   * Draw the positions the script writes (move() / SetPos, scriptMoves.ts), which can be dragged: on in the script
+   * page's preview (StagePreviewScene), off on the map's page.
+   */
+  showMoves = false;
+  /**
+   * The script editor's text the move() points are read from and written into (the script page's preview), instead
+   * of the saved script; null: the saved one.
+   */
+  moveText: { source: string; write: (source: string) => void } | null = null;
   /** Whether the event numbers (#N) are shown above the records in 3D. */
   showIds = false;
   /** Events marked among the numbers (the ones the previewed function names). */
@@ -258,6 +268,21 @@ export class LanaiMapView {
         if (!p3.grab(cx, cy, e)) this.ctl.down(cx, cy, e);
       },
     };
+    // a view without the editor's tools (the script page's preview): the camera keeps the drag unless it took a point
+    this.movePointer = {
+      down: (cx, cy, e) => {
+        if (p3.grab(cx, cy, e)) this.scene.controls.enabled = false;
+      },
+      move: (cx, cy, e) => {
+        if (this.moveDrag) p3.move(cx, cy, e);
+        else this.scene.canvas.style.cursor = this.moveAt(cx, cy, 0.3) ? 'grab' : '';
+      },
+      up: () => {
+        if (this.moveDrag) this.endMoveDrag();
+        this.scene.controls.enabled = true;
+      },
+      leave: () => {},
+    };
     // the script is changed on the stage's page too
     this.unsubscribeSession = this.maps.session.onEdit(() => {
       if (this.disposed) return;
@@ -272,6 +297,9 @@ export class LanaiMapView {
     this.unsubscribe = st.on((what) => this.changed(what));
     void this.loadTiles();
   }
+
+  /** The 3D view's pointer that drags the move() points alone (for a view whose records are not edited). */
+  readonly movePointer: GridPointer;
 
   get doc(): MapDoc {
     return this.st.current!;
@@ -850,6 +878,27 @@ export class LanaiMapView {
     return out;
   }
 
+  /**
+   * Where an event's (first) record stands: the cell it is on (column, row), the record's own two numbers as the ROM
+   * keeps them (in its section's unit) and the world position a script writes (vec(x, 0, z)); null: no record.
+   */
+  eventPosition(
+    row: number,
+  ): { section: number; unit: Unit; raw: [number, number]; cell: [number, number]; world: [number, number] } | null {
+    const at = this.eventRecords().get(row);
+    const rec = at && this.st.current?.recs[at.section]?.[at.index];
+    if (!at || !rec) return null;
+    const L = LANAI_LAYOUTS[at.section]!;
+    const [cx, cy] = recCellPos(rec, L);
+    return {
+      section: at.section,
+      unit: L.unit,
+      raw: [rec.x, rec.y],
+      cell: [Math.floor(cx), Math.floor(cy)],
+      world: [Math.round(cellToWorld(cx) * 100) / 100, Math.round(cellToWorld(cy) * 100) / 100],
+    };
+  }
+
   /** What an event is, as the preview names it: its section's record and model. */
   eventLabel(row: number): string {
     const rec = this.eventRecords().get(row);
@@ -965,8 +1014,11 @@ export class LanaiMapView {
   scriptMoves(): MapScriptMoves[] {
     const doc = this.st.current;
     const script = this.maps.session.stageScripts.get(this.maps.content.archive.toUpperCase())?.doc;
-    if (!doc || doc.hash !== this.info.hash || !script) return [];
-    return mapScriptMoves(script, this.info.dungeon, new Set(this.eventCells().keys()));
+    if (!doc || doc.hash !== this.info.hash) return [];
+    const rows = new Set(this.eventCells().keys());
+    if (this.moveText) return sourceScriptMoves(this.moveText.source, script?.bindings ?? [], this.info.dungeon, rows);
+    if (!script) return [];
+    return mapScriptMoves(script, this.info.dungeon, rows);
   }
 
   /** Where the records of each event row of this map stand (cells; the first record of a row). */
@@ -1022,6 +1074,13 @@ export class LanaiMapView {
 
   /** Write a move()'s position into its function's text. */
   setMove(ref: LanaiMoveRef, x: number, y: number, z: number): void {
+    if (this.moveText) {
+      const m = this.scriptMoves().find((f) => f.fn === ref.fn)?.moves[ref.k];
+      if (!m) return;
+      const text = withMoveAt(this.moveText.source, m, x, y, z);
+      if (text !== this.moveText.source) this.moveText.write(text);
+      return;
+    }
     const session = this.maps.session;
     const archive = this.maps.content.archive.toUpperCase();
     const script = session.stageScripts.get(archive)?.doc;
