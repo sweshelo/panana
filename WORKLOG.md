@@ -395,7 +395,7 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - `table.ts removeRow`、`stageEdit.ts retargetContentTables` (複製・取り込み・削除で共通) と `removeLanaiContent` の書き直し、`maps.ts forgetLanaiMaps`、削除ボタンの確認文 (後ろのステージの番号がずれる)。詳細は notes/lanai-stage-authoring.md。
 - テスト: 全体 885 pass / 25 skip / 0 fail。画面・ゲーム内は未確認。
 
-## 書き出しダイアログを 3DS / Azahar / Uwapo に整理 (2026-11-25、HASH)
+## 書き出しダイアログを 3DS / Azahar / Uwapo に整理 (2026-11-25、ccf1320)
 
 - `src/lanai/ExportDialog.tsx`: 変更一覧を隠し、遊ぶ環境の大ボタン3つ (3DS / Azahar / Uwapo、選択は localStorage `lanai/export-target`) と、選んだ環境のパネルにした。取り消しボタンは下段。
 - 3DS: `modZip({ target: '3ds' })` で code.ips をタイトルフォルダ直下に置く (Luma3DS の luma/titles/)。カスタムステージは読めない旨を案内。Azahar: 従来どおり exefs/code.ips。
