@@ -186,6 +186,36 @@ export const SCRIPT_LIBRARY: ScriptLibraryFunction[] = [
   ScriptMap.SetPartyPosition(vec(x, 0, z), dir, 1, 100)
 }`,
   },
+  {
+    name: 'clearStage',
+    about:
+      'ステージをクリアにする。電波人間をみな正面に向けて 0.5 秒待ち、clearTelop() で「クリア」の演出・結果の画面を出して島へ戻る。イベントのあとで、このステージがクリア済みになる。本家 CRO 23 D0100XF01Npc0562・CRO 28 D01001B01Npc0712 が「はい」のあとにする形 (その前に台詞と SystemMessageYesNo で確かめる)',
+    source: `function clearStage() {
+  for p in party {
+    p.RotateTo(0.0, ScriptMath.GetRotateTime(p.GetRotateY(), 0, 0.5), 0, 0, 0, 1)   // 正面を向く
+  }
+  ScriptSystem.WaitTime(0.5)
+  clearTelop()                                     // クリアの演出・結果の画面・島へ戻る
+}`,
+  },
+  {
+    name: 'warp',
+    about:
+      '別のマップの地点へ移る (map はマップのハッシュ、point は行き先の地点 ID。マップのページの出入口の「到着地点 ID」)。暗転して移る。行き先を変えるには、出入口のレコードに「出入口に入ったとき」の関数を割り当て、ScriptMath.RandRange(100) の値などで warp を呼び分ける (本家 CRO 22 のランダムな落とし穴は 100 のうち 45 などで 2 地点を選ぶ)。本家 CRO 93 S01001F01Collision002 の形',
+    source: `function warp(map: num, point: num) {
+  ScriptMap.ChangeMap(map, point)
+  ScriptSystem.FadeOutWait(0.3, 2)                 // 暗転して移る
+}`,
+  },
+  {
+    name: 'switchOff',
+    about:
+      'ボタン (区画 5 の種類 4〜6) をすぐ上げて、そのイベントの状態を 0 に戻す。もう一度乗れば押せる。本家 CRO 5 D01002B02GimmickCommon が、4 つのボタンを違う順で踏まれたときにみな戻す形 (状態は後処理で戻す)。押されたボタン自身のイベントで自分を戻すときは、state = 0 と書くとゲームが状態を進めない',
+    source: `function switchOff(row: num) {
+  buttonOff(row)                                   // ボタンを上げる
+  ScriptFlag.SetScriptState(row, 0)                // 押されていない状態に戻す
+}`,
+  },
 ];
 
 /** `name(params)` of a library function, from its text. */

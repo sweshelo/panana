@@ -147,6 +147,16 @@ export const SCRIPT_WORDS: ScriptWord[] = [
     'rareItem(アイテム, 数, 前置き, 後片付け, 仲間を消す, 隊列に戻す)',
     '本体のレアアイテムの演出 (RareItemDirection::StartItem / StartItemNum): 先頭の電波人間の頭上にアイテムを光らせて出し、持ち物に加えて「手に入れた」と言い、しまうまで待つ。数は 1〜9999。あとの 4 つは 0 / 1: 前置き = カメラを保存して寄せ、先頭を正面に向ける。後片付け = カメラ・表情・モーション・カメラの追従を戻す。仲間を消す = ほかの電波人間を消し、後片付けで戻す。隊列に戻す = 後片付けの最後に隊列の追従を再開する。演出はイベントが持ち、イベントの終わりに消える。ライブラリの giveItem / chestItem が使う。本家の CRO 3・12 は自分で先頭を構えさせてから (0, 0, 1, 1) で呼ぶ',
   ),
+  w(
+    'statement',
+    'clearTelop()',
+    'ステージをクリアにする: 本体の「クリア」の演出 (ClearTelop::ShowClearTelop)、ステージの結果の画面 (ScriptMenu::CallMenu(0x3E))、島へ戻る (ScriptMap::ChangeMapIsland(0))。イベントが終わったあと、このステージがクリア済みになる (ScriptFlag::ClearMapGroup。本家 CRO 23・28 の NPC と同じく、イベントの後処理で書く)。演出はイベントが持つ。入場の演出のイベントでは使えない。ライブラリの clearStage が、電波人間を正面に向けてから呼ぶ',
+  ),
+  w(
+    'statement',
+    'buttonOff(イベント)',
+    'そのイベントのボタン (区画 5 の種類 4〜6) をすぐ上げる (ChrGimmick::ButtonOff と、押されている印を 0 に)。もう一度乗れば押せる。イベントの状態は変えない (ライブラリの switchOff が ScriptFlag.SetScriptState(イベント, 0) も書く)。マップにいなければ何もしない。本家 CRO 5 が違う順で踏まれたボタンを戻すのに使う。押す (オンにする) 関数はゲームが外に出していないので書けない',
+  ),
 ];
 
 export interface ScriptSample {

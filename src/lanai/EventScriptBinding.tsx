@@ -8,7 +8,7 @@ import type { LanaiEditState } from './mapedit';
 import { LANAI_EVENT_ACTIONS } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import { docBound, docUnbound, rowBinding } from './scriptDoc';
-import { recordTrigger } from './stageScript';
+import { eventRecordKind, recordTrigger } from './stageScript';
 
 const u32 = (b: Uint8Array, o: number): number =>
   (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0;
@@ -17,7 +17,7 @@ const u32 = (b: Uint8Array, o: number): number =>
 export function recordTriggers(section: number, raw: Uint8Array): ScriptTrigger[] {
   const kind = u32(raw, 0);
   if (section === 8 && kind >= 100) return [];
-  const t = recordTrigger({ section, kind: section === 5 ? kind : 0 });
+  const t = recordTrigger({ section, kind: eventRecordKind(section, raw) });
   return t === 'area' ? ['area', 'defeat'] : t === 'button' ? ['button', 'switch'] : t ? [t] : [];
 }
 

@@ -121,11 +121,16 @@ export function groupOpening(maps: LanaiMaps, group: number): GroupOpening | nul
   };
 }
 
-/** What a map's record is to the game's events: its section and (section 5) its kind. */
+/** What a map's record is to the game's events: its section and its kind (section 5 +0x00, section 3 +0x15). */
 export interface EventRecord {
   section: number;
   kind: number;
 }
+/** The kind of a record as EventRecord takes it: section 5's +0x00, section 3's exit kind (+0x15), else 0. */
+export const eventRecordKind = (section: number, raw: Uint8Array): number =>
+  section === 5 ? u32at(raw, 0) : section === 3 ? (raw[0x15] ?? 0) : 0;
+/** Exit kinds (section 3) with no event: the arrival points (lanai/maps.ts LANAI_EXIT_KIND 8 / 11). */
+const NO_EVENT_EXITS = [8, 11];
 /** The gimmick kinds of section 5 whose event is a GimmickEvent (event-actions.md §3); 4〜6 are the buttons. */
 const GIMMICK_KINDS = [4, 5, 6, 11, 14, 15];
 const BUTTON_KINDS = [4, 5, 6];
@@ -144,7 +149,7 @@ export function eventRecords(maps: LanaiMaps, group: number): Map<number, EventR
         const kind = u32at(r.raw, 0);
         if (section === 8 && kind >= 100) continue;
         const row = lanaiRecEventRow(section, r.raw);
-        out.set(row, [...(out.get(row) ?? []), { section, kind: section === 5 ? kind : 0 }]);
+        out.set(row, [...(out.get(row) ?? []), { section, kind: eventRecordKind(section, r.raw) }]);
       }
   }
   return out;
@@ -153,6 +158,8 @@ export function eventRecords(maps: LanaiMaps, group: number): Map<number, EventR
 /** What starts the event of a record (the game makes the event's object by section and kind), or null: none here. */
 export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
   if (rec.section === 8) return 'area';
+  // an exit, a door, a hole …: MoveEvent makes the event of its row (the CRO's export 6; CRO 22's random holes)
+  if (rec.section === 3) return NO_EVENT_EXITS.includes(rec.kind) ? null : 'exit';
   if (rec.section !== 5 || NO_EVENT_KINDS.includes(rec.kind)) return null;
   if (BUTTON_KINDS.includes(rec.kind)) return 'button';
   return GIMMICK_KINDS.includes(rec.kind) ? null : 'talk';
@@ -346,7 +353,7 @@ export async function buildStageScripts(s: LanaiSession, files: Map<string, Uint
     const name = c.stages[0]?.name || `コンテンツ ${c.index}`;
     const check = await checkStageScript(s, c, source);
     if (check.problems.length) throw new Error(`「${name}」のイベントのスクリプト: ${check.problems[0]}`);
-    const cro = buildCro(compileStageScript(base, check.script, check.resets, check.intros).cro);
+    const cro = buildCro(compileStageScript(base, check.script, check.resets, check.intros, c.index).cro);
     const bytes = files.get(c.archive) ?? s.createdFiles.get(c.archive);
     if (!bytes) throw new Error(`「${name}」のアーカイブ ${c.archive} が MOD にありません`);
     const arc = parseArchive(bytes);

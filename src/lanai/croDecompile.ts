@@ -217,6 +217,11 @@ export interface CroBinding {
   cls: string;
   /** What the factory read to make it, besides the group and the row: `bit_0xB1 == 0` …; empty when always. */
   when: string[];
+  /**
+   * Made for any row of the group (the factory did not compare the row; `row` is 0): CRO 23's D0100XF01Npc0562 is
+   * the event of every NPC of MapGroup 1 whose action is a script.
+   */
+  anyRow?: boolean;
 }
 /** The objects the factories made, by class: what their constructors put in the members (ID of a monster …). */
 const members = new Map<string, Uint8Array[]>();
@@ -246,6 +251,7 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
     [3, 'start'],
     [4, 'button'],
     [8, 'talk'],
+    [6, 'exit'],
   ];
   for (const [slot, trigger] of slots) {
     const entry = img.entry(slot);
@@ -375,11 +381,22 @@ function runFactories(v: CroView, img: Image, classAt: (r: Ref) => CroClass): Cr
   // a class made for any row of a group (the factory did not compare the row) is not a binding of a row; one made at
   // group 0, which no map has, is made at the start of any group's map (CRO 71's TimerStartCommon, CRO 73's
   // ScriptColosseumMenu): kept once, as group 0
-  return out.filter((b, _, all) =>
+  const wide = (b: CroBinding, all: CroBinding[]): boolean =>
+    all.filter((x) => x.trigger === b.trigger && x.group === b.group && x.cls === b.cls).length >= 40;
+  const kept = out.filter((b, _, all) =>
     b.trigger === 'start'
       ? b.group === ANY_GROUP || !all.some((x) => x.trigger === 'start' && x.cls === b.cls && x.group === ANY_GROUP)
-      : all.filter((x) => x.trigger === b.trigger && x.group === b.group && x.cls === b.cls).length < 40,
+      : !wide(b, all),
   );
+  // the classes made for any row: one binding of the group
+  for (const b of out)
+    if (
+      b.trigger !== 'start' &&
+      wide(b, out) &&
+      !kept.some((x) => x.anyRow && x.trigger === b.trigger && x.group === b.group && x.cls === b.cls)
+    )
+      kept.push({ ...b, row: 0, when: [], anyRow: true });
+  return kept;
 }
 
 // ------------------------------------------------------------------------------------------------ 2. the bodies
@@ -1332,6 +1349,23 @@ class FunctionDecompiler {
         }
       }
     }
+    // the clear of a stage (CRO 23 / 28's NPCs): ShowClearTelop, CallMenu(0x3E) and ChangeMapIsland(false) after it are
+    // clearTelop(); the content the CtrlFlag clears is the stage's own
+    if (sym === A.clearShow) {
+      out.push({ k: 'text', text: 'clearTelop()' });
+      return;
+    }
+    // a button put back (CRO 5 D01002B02GimmickCommon): ButtonOff on GetMapChara(N), then its +0x90 = 0
+    if (sym === A.buttonOff) {
+      const who = r[0]!;
+      const row = who.k === 'chr' ? /^obj\((.+)\)$/u.exec(who.who)?.[1] : undefined;
+      if (row !== undefined) out.push({ k: 'text', text: `buttonOff(${row})` });
+      else this.note('buttonOff(?) (ボタンが決まらない)', out);
+      return;
+    }
+    const last = out.length ? stmtText(out[out.length - 1]!) : null;
+    if (sym === A.callMenu && last === 'clearTelop()' && r[0]!.k === 'n' && r[0]!.v === 0x3e) return;
+    if (sym === A.island && last === 'clearTelop()') return;
     const row = API_BY_SYM.get(sym);
     if (!row) {
       this.note(`言語で呼べない関数 ${demangle(sym)}`, out);
@@ -2009,9 +2043,10 @@ export function decompileContentCro(bytes: Uint8Array): CroDecompiled {
     const lines = [...fxLines, ...prepLines, ...render(body, 1)];
     const head = [
       ...(notes.filter((n) => !/^CtrlFlag を本体/u.test(n)).length ? [] : []),
-      ...own.map(
-        (b) =>
-          `// 元の割り当て: on ${b.trigger}(${b.group}${b.trigger === 'start' || b.trigger === 'intro' ? '' : `, ${hexText(b.row)}`}) ${name}${b.when.length ? `  (生成の条件: ${b.when.join(', ')})` : ''}`,
+      ...own.map((b) =>
+        b.anyRow
+          ? `// 元の割り当て: MapGroup ${b.group} の ${b.trigger} のどの行でも (行を比べずに作る。動作 1 が「スクリプト (CRO)」の行) ${name}`
+          : `// 元の割り当て: on ${b.trigger}(${b.group}${b.trigger === 'start' || b.trigger === 'intro' ? '' : `, ${hexText(b.row)}`}) ${name}${b.when.length ? `  (生成の条件: ${b.when.join(', ')})` : ''}`,
       ),
     ];
     if (!own.length) head.push('// 元の割り当て: ファクトリからは作られない (ほかのイベントが作るか、使われていない)');

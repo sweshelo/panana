@@ -115,6 +115,8 @@ describe('RPG FREE! stage script: the document of the editor', () => {
     const example: Record<string, string> = {
       vanishEffect: 'vanishEffect(obj(2))',
       rareItem: 'rareItem(0x800000D8, 1, 1, 1, 1, 1)',
+      clearTelop: 'clearTelop()',
+      buttonOff: 'buttonOff(37)',
       vec: 'ScriptMap.SetPartyPosition(vec(1, 0, -2 * 3), 4, 1, 100)',
       selfRow: 'ScriptMap.EnableEventCollision(selfRow, 0)',
       obj: 'obj(2).SetVisible(0)',
@@ -373,6 +375,9 @@ describe('functions with parameters: written out where they are called', () => {
       chestItem: 'chestItem(3, 0x800000D2)',
       partyLineUp: 'partyLineUp(3750, 4150, 4)',
       partyColumn: 'partyColumn(3750, 3030, 8)',
+      clearStage: 'clearStage()',
+      warp: 'warp(0x0A536F4E, 0xE997CA15)',
+      switchOff: 'switchOff(37)',
     };
     expect(SCRIPT_LIBRARY.map((f) => f.name).sort()).toEqual(Object.keys(library).sort());
     for (const [name, text] of Object.entries(library))

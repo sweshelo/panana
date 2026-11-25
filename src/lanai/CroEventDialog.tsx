@@ -16,7 +16,7 @@ const bindingText = (e: CroEventSource): string =>
         ...new Set(
           e.bindings.map(
             (b) =>
-              `${SCRIPT_TRIGGER_LABEL[b.trigger]} (${b.group === ANY_GROUP ? 'どの MapGroup でも' : `MapGroup ${b.group}`}${b.row ? `, 0x${b.row.toString(16)}` : ''})`,
+              `${SCRIPT_TRIGGER_LABEL[b.trigger]} (${b.group === ANY_GROUP ? 'どの MapGroup でも' : `MapGroup ${b.group}`}${b.anyRow ? '、どの行でも' : b.row ? `, 0x${b.row.toString(16)}` : ''})`,
           ),
         ),
       ].join('、')

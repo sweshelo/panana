@@ -292,6 +292,20 @@ export type ScriptNode =
       party: boolean;
       formation: boolean;
     }
+  /**
+   * `clearTelop()`: the stage is cleared, as the shipped NPCs that end a stage (CRO 23 D0100XF01Npc0562, CRO 28
+   * D01001B01Npc0712): the game's ClearTelop (kept by the event) shows 「クリア」, the stage's result is shown
+   * (ScriptMenu::CallMenu(0x3E)) and the party goes back to the island (ScriptMap::ChangeMapIsland(false)). After the
+   * event the game's CtrlFlag goes on and the stage's content is marked cleared (ScriptFlag::ClearMapGroup) unless it is.
+   */
+  | { op: 'clearTelop' }
+  /**
+   * `buttonOff(row)`: the button of a row (section 5 kinds 4〜6) goes up again at once, as CRO 5's
+   * D01002B02GimmickCommon puts the four buttons back when they are stepped on in the wrong order: ChrGimmick::ButtonOff
+   * (its animation 0x80000074, +0x92 = 2) on ScriptMap::GetMapChara(row), then "pressed" (+0x90) 0, so that it is pushed
+   * again when stood on. The row's state is not written (ScriptFlag.SetScriptState(row, 0): the library's switchOff).
+   */
+  | { op: 'buttonOff'; row: number }
   | { op: 'break' }
   | { op: 'return' }
   /**
@@ -304,13 +318,14 @@ export type ScriptNode =
   /** `effect NAME`: the event keeps a ScriptEffect (made with the event, destroyed with it); nothing when it runs. */
   | { op: 'effect'; id: string };
 
-export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'start', 'intro', 'defeat'] as const;
+export const SCRIPT_TRIGGERS = ['talk', 'area', 'button', 'switch', 'exit', 'start', 'intro', 'defeat'] as const;
 export type ScriptTrigger = (typeof SCRIPT_TRIGGERS)[number];
 export const SCRIPT_TRIGGER_LABEL: Record<ScriptTrigger, string> = {
   talk: '話しかけたとき',
   area: '範囲に入ったとき',
   button: 'ボタンを踏んだとき (降りると戻る)',
   switch: 'ボタンを踏んだとき (押したままになる)',
+  exit: '出入口に入ったとき',
   start: 'マップが始まるとき',
   intro: 'ステージに入ったとき (入場の演出)',
   defeat: 'モンスターを倒しきったとき',
@@ -488,6 +503,12 @@ export function eventProblem(trigger: ScriptTrigger, body: ScriptNode[]): string
       case 'vanishEffect':
         p = who(n.who);
         break;
+      case 'clearTelop':
+        p =
+          trigger === 'intro'
+            ? `clearTelop() は「${SCRIPT_TRIGGER_LABEL.intro}」のイベントでは使えません (入場の演出は自分の後処理を持ちます)`
+            : null;
+        break;
       case 'party':
         p = eventProblem(trigger, n.body);
         break;
@@ -553,12 +574,13 @@ interface FnDef {
   library: boolean;
 }
 /**
- * The words of the language's own statements, which a function cannot be named: vanishEffect and rareItem (what the
- * Script API cannot say: the event keeps the effect, the item's direction, until it is destroyed) and vec(…) of the
+ * The words of the language's own statements, which a function cannot be named: vanishEffect, rareItem and clearTelop
+ * (what the Script API cannot say: the event keeps the effect, the item's direction, the clear's telop, until it is
+ * destroyed) and vec(…) of the
  * arguments. All else is
  * a Script API function called by name, or a function of the script or of the library (scriptLibrary.ts).
  */
-export const SCRIPT_STATEMENTS: readonly string[] = ['vanishEffect', 'rareItem', 'vec'];
+export const SCRIPT_STATEMENTS: readonly string[] = ['vanishEffect', 'rareItem', 'clearTelop', 'buttonOff', 'vec'];
 /** The functions written in tokens (at the top, outside any braces), found before the bodies are read. */
 function fnDefs(ts: Token[], library: boolean): FnDef[] {
   const out: FnDef[] = [];
@@ -1263,6 +1285,11 @@ export function parseStageScript(src: string): StageScript {
         );
         return { op: 'rareItem', item, num, intro, restore, party, formation };
       }
+      case 'clearTelop':
+        call(t.s);
+        return { op: 'clearTelop' };
+      case 'buttonOff':
+        return { op: 'buttonOff', row: call<[number]>(t.s, () => int('ボタンのイベント番号', 0, 0xffff))[0] };
       case 'for': {
         // for p in party { … }: p is each member of the party in turn (an object, as hero is)
         const n = name('for の変数');
@@ -1804,12 +1831,13 @@ export const CRO_TEXT = 1,
   CRO_RODATA = 2;
 /**
  * The CRO's indexed exports the game calls (event-dispatch.md §1.2): the event of a range's row, of the map's start, of
- * a button's row, of a character's row; every frame of the field (where "all monsters beaten" is seen); and when the
+ * a button's row, of an exit's row (MoveEvent), of a character's row; every frame of the field (where "all monsters beaten" is seen); and when the
  * stage is left.
  */
 export const SLOT_AREA = 0,
   SLOT_START = 3,
   SLOT_BUTTON = 4,
+  SLOT_EXIT = 6,
   SLOT_TALK = 8,
   SLOT_DEFEAT = 24,
   SLOT_LEAVE = 27;
@@ -1919,6 +1947,16 @@ export const SCRIPT_API = {
   rareDtor: '_ZN17RareItemDirectionD1Ev',
   rareStart: '_ZN17RareItemDirection9StartItemEjbbbb',
   rareStartNum: '_ZN17RareItemDirection12StartItemNumEjibbbb',
+  // the clear of a stage (CRO 23 D0100XF01Npc0562 / CRO 28 D01001B01Npc0712; roms/tmpmap/random-clear/findings.md B)
+  // a button put back (CRO 5 D01002B02GimmickCommon; roms/tmpmap/random-clear/findings2.md D)
+  buttonOff: '_ZN10ChrGimmick9ButtonOffEv',
+  clearCtor: '_ZN10ClearTelopC1E9GSLayerID',
+  clearDtor: '_ZN10ClearTelopD1Ev',
+  clearShow: '_ZN10ClearTelop14ShowClearTelopERK5GSvecS2_',
+  callMenu: '_ZN10ScriptMenu8CallMenuEjRK15ScriptMenuParam',
+  island: '_ZN9ScriptMap15ChangeMapIslandEb',
+  isCleared: '_ZN10ScriptFlag15IsClearMapGroupEt',
+  setCleared: '_ZN10ScriptFlag13ClearMapGroupEt',
   gsvecZero: 'GSVEC_ZERO',
   play: '_ZN11ScriptSound4PlayEtf',
   pauseBgm: '_ZN11ScriptSound8PauseBGMEf',
@@ -1961,7 +1999,7 @@ const A = SCRIPT_API;
  *   talk    NpcCommonTurn (0x74), its ScriptChara at +0xC
  *   button  GimmickPushButtonCommon (0x68, its ScriptChara at +0xC) and a byte at +0x68: "pressed in this run";
  *           switch: GimmickKeepPushButtonCommon (the same object; it is not lifted when stepped off)
- *   area / defeat / start   EventScript (0xC); start has the ID 0x1000000, the event of a floor's start
+ *   area / exit / defeat / start   EventScript (0xC); start has the ID 0x1000000, the event of a floor's start
  *   intro   IntroCommon (0x78: CommonHeroMsg with the ID 0x1000000, +0x74 the map it plays in); vt+0x18 is the event
  */
 type Shape = 'npc' | 'button' | 'plain' | 'intro';
@@ -1970,12 +2008,15 @@ const SHAPE: Record<ScriptTrigger, Shape> = {
   button: 'button',
   switch: 'button',
   area: 'plain',
+  exit: 'plain',
   defeat: 'plain',
   start: 'plain',
   intro: 'intro',
 };
 const NEW_SIZE: Record<Shape, number> = { npc: 0x74, button: 0x6c, plain: 0xc, intro: 0x78 };
 const BUTTON_PRESSED = 0x68;
+/** ChrGimmick +0x90: the button is down (findings2.md D: 0 again, and it is pushed when stood on). */
+const GIMMICK_PRESSED = 0x90;
 const START_EVENT_ID = 0x1000000;
 
 /**
@@ -2199,6 +2240,8 @@ interface Ctx {
   effects: Map<string, number>;
   /** Where the event's RareItemDirection is in its object (rareItem), or null when it has none. */
   rare: number | null;
+  /** Where the event's ClearTelop is in its object (clearTelop), or null when it has none. */
+  clear: number | null;
   /** The frame offset of each local of the event. */
   locals: Map<string, number>;
   /** The scratch: the next free byte and the end (taken as a stack: what is taken is given back after its use). */
@@ -2704,11 +2747,34 @@ const EFFECT_SIZE = 0x4c;
  */
 const RARE_SIZE = 0x378;
 const usesRare = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'rareItem');
-/** The bytes of an event's object: the game's class, its effects, then its RareItemDirection (rareItem). */
-const objectSize = (e: { shape: Shape; effects: string[]; rare: boolean }): number =>
-  NEW_SIZE[e.shape] + EFFECT_SIZE * e.effects.length + (e.rare ? RARE_SIZE : 0);
+/**
+ * The bytes of a ClearTelop (its constructor 0x17BBE4 is given +0x74 of the shipped NPCs' 0x11C objects, whose +0x118
+ * is their own) and of the byte after it, "the stage was cleared in this run", which the event's CtrlFlag reads.
+ */
+const CLEAR_SIZE = 0xa8;
+const CLEAR_DONE = 0xa4;
+/** The layer the shipped NPCs give ClearTelop (GSLayerID 3). */
+const CLEAR_LAYER = 3;
+/** ScriptMenu::CallMenu's menu of the stage's result (0x2E2358: it reads +4 of its parameter alone, NULL = 1). */
+const MENU_STAGE_RESULT = 0x3e;
+export const usesClear = (nodes: ScriptNode[]): boolean => has(nodes, (n) => n.op === 'clearTelop');
+/** The bytes of an event's object: the game's class, its effects, its RareItemDirection (rareItem), its ClearTelop. */
+const objectSize = (e: { shape: Shape; effects: string[]; rare: boolean; clear: boolean }): number =>
+  NEW_SIZE[e.shape] + EFFECT_SIZE * e.effects.length + (e.rare ? RARE_SIZE : 0) + (e.clear ? CLEAR_SIZE : 0);
 /** Where an event's RareItemDirection is: after its effects. */
 const rareAt = (e: { shape: Shape; effects: string[] }): number => NEW_SIZE[e.shape] + EFFECT_SIZE * e.effects.length;
+/** Where an event's ClearTelop is: after its RareItemDirection. */
+const clearAt = (e: { shape: Shape; effects: string[]; rare: boolean }): number => rareAt(e) + (e.rare ? RARE_SIZE : 0);
+
+/** In a factory, r0 = the new event: its ClearTelop made at `at`, "cleared" 0 (r0 kept; r4 is the event after). */
+function makeClear(f: Fn, at: number): void {
+  f.op('mov r4, r0');
+  memberAddr(f, 'r0', at);
+  f.load('r1', CLEAR_LAYER);
+  f.call(A.clearCtor);
+  memberAddr(f, 'r0', at + CLEAR_DONE);
+  f.op('mov r1, #0', 'strb r1, [r0]', 'mov r0, r4');
+}
 const fadesIn = (nodes: ScriptNode[]): boolean => has(nodes, (n) => calls(n, A.fadeIn, A.fadeInNow));
 
 /** In a factory, r0 = the new event: its RareItemDirection made at `at` (r0 kept; r4 is the event after). */
@@ -2921,6 +2987,34 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         }
         break;
       }
+      case 'buttonOff': {
+        // ChrGimmick* g = GetMapChara(row); if (g) { g->ButtonOff(); g->+0x90 = 0 } (CRO 5's wrong order)
+        const none = c.g.uniq(`${fn.name}_nobutton`);
+        fn.load('r0', n.row);
+        fn.call(A.mapChara);
+        fn.op('cmp r0, #0', `beq ${none}`, `str r0, [sp, #${hx(FRAME.tmp)}]`);
+        fn.call(A.buttonOff);
+        fn.op(`ldr r0, [sp, #${hx(FRAME.tmp)}]`, `strb r5, [r0, #${hx(GIMMICK_PRESSED)}]`);
+        fn.at(none);
+        break;
+      }
+      case 'clearTelop': {
+        // as the shipped NPCs' "yes": cleared in this run (CtrlFlag marks the content), ShowClearTelop(zero, zero),
+        // CallMenu(0x3E, {0 …}), ChangeMapIsland(false)
+        memberAddr(fn, 'r0', c.clear! + CLEAR_DONE);
+        fn.op('mov r1, #1', 'strb r1, [r0]');
+        memberAddr(fn, 'r0', c.clear!);
+        fn.op(`ldr r1, ${fn.lit({ kind: 'imp', name: A.gsvecZero, addend: 0 })}`, 'mov r2, r1');
+        fn.call(A.clearShow);
+        // the ScriptMenuParam (5 words of 0) where a statement's character goes, which this one has none of
+        fn.op(`add r1, sp, #${hx(FRAME.obj)}`, 'mov r0, #0');
+        for (let k = 0; k < 5; k++) fn.op(`str r0, [r1, #${hx(k * 4)}]`);
+        fn.load('r0', MENU_STAGE_RESULT);
+        fn.call(A.callMenu);
+        fn.op('mov r0, #0');
+        fn.call(A.island);
+        break;
+      }
       case 'call':
         compileCall(c, n.call);
         break;
@@ -3120,6 +3214,8 @@ export function compileStageScript(
   script: StageScript,
   resets: LeaveReset[] = [],
   intros: Record<number, IntroSpec> = {},
+  /** The stage's content number: what clearTelop() marks cleared. */
+  content?: number,
 ): StageScriptBuild {
   const g = new Gen();
   const vars = new Map(script.vars.map((v) => [v.name, v]));
@@ -3129,11 +3225,14 @@ export function compileStageScript(
     shape: SHAPE[e.trigger],
     effects: effectsOf(e.body),
     rare: usesRare(e.body),
+    clear: usesClear(e.body),
     intro: e.trigger === 'intro' ? intros[e.group] : undefined,
   }));
   for (const e of events) {
     const p = eventProblem(e.trigger, e.body);
     if (p) throw new ScriptError(p, e.line);
+    if (e.clear && content === undefined)
+      throw new ScriptError('clearTelop(): クリアにするステージ (コンテンツの番号) が分かりません', e.line);
     if (e.trigger === 'intro' && (!e.intro || !e.intro.map))
       throw new ScriptError(`MapGroup ${e.group} の入場の演出: 最初のマップが分かりません`, e.line);
   }
@@ -3157,6 +3256,14 @@ export function compileStageScript(
     nameAt.push(put({ kind: 'value', value: 0 }));
     put({ kind: 'imp', name: e.trigger === 'switch' ? A.tiKeep : TI_BASE[e.shape], addend: 0 });
   }
+  /** CtrlFlag of an event (vt+0x10), but an intro's. */
+  function ctrlOf(e: (typeof events)[number]): RoWord {
+    if (e.trigger === 'start') return { kind: 'text', label: 'pn_prepare' };
+    // an event that writes its own state keeps what it wrote: the game's CtrlFlag would move it on after Execute
+    if (writesOwnState(e.body)) return { kind: 'text', label: 'pn_prepare' };
+    if (e.trigger === 'defeat') return { kind: 'text', label: 'pn_done' };
+    return { kind: 'imp', name: e.shape === 'button' ? A.buttonCtrl : A.ctrl, addend: 0 };
+  }
   // vtable: [offset to top 0][type info] then where the object points: [D1][D0][+8][+C Execute][+10 CtrlFlag][+14] …
   for (const e of events) {
     put({ kind: 'value', value: 0 });
@@ -3171,12 +3278,9 @@ export function compileStageScript(
     // after Execute: the game's (the row's state goes on), the button's, "done" for the event of the beaten monsters
     // (it must not start again), nothing for the map's start (it has no row; S01Intro of content 4 has its own too),
     // "played in this visit" for the intro (D01Intro's CtrlFlag: SetScriptBitFlag(0xB1, 1))
-    if (e.shape === 'intro') put({ kind: 'text', label: `${e.cls}_ctrl` });
-    else if (e.trigger === 'start') put({ kind: 'text', label: 'pn_prepare' });
-    // an event that writes its own state keeps what it wrote: the game's CtrlFlag would move it on after Execute
-    else if (writesOwnState(e.body)) put({ kind: 'text', label: 'pn_prepare' });
-    else if (e.trigger === 'defeat') put({ kind: 'text', label: 'pn_done' });
-    else put({ kind: 'imp', name: e.shape === 'button' ? A.buttonCtrl : A.ctrl, addend: 0 });
+    // an event that clears the stage has its own, which runs that one first (the `_ctrl` of the functions below)
+    if (e.shape === 'intro' || e.clear) put({ kind: 'text', label: `${e.cls}_ctrl` });
+    else put(ctrlOf(e));
     if (e.trigger === 'switch') put({ kind: 'imp', name: A.keepMenu, addend: 0 });
     else put({ kind: 'text', label: e.shape === 'button' ? 'pn_button_menu' : 'pn_hides_menu' });
     if (e.shape === 'npc') {
@@ -3314,6 +3418,7 @@ export function compileStageScript(
       }
       makeEffects(f, NEW_SIZE[shape], e.effects.length);
       if (e.rare) makeRare(f, rareAt(e));
+      if (e.clear) makeClear(f, clearAt(e));
       f.op(`ldr r1, ${f.lit({ kind: 'ro', off: ro[`${e.cls}_vt`]! })}`, 'str r1, [r0]', `b ${ret}`);
     }
     fns.push(f);
@@ -3322,6 +3427,7 @@ export function compileStageScript(
   makers(SLOT_START, ['start', 'intro']);
   makers(SLOT_BUTTON, ['button', 'switch']);
   makers(SLOT_TALK, ['talk']);
+  makers(SLOT_EXIT, ['exit']);
 
   // every frame of the field, (EventScriptCtrl*): the map's monsters are all beaten and the event has not run → start
   // it and return 1 (CRO 28's export 24)
@@ -3381,6 +3487,11 @@ export function compileStageScript(
       'mov r8, #0',
     );
     x.op(`vldr s16, ${x.flit(F0)}`, `vldr s17, ${x.flit(F1)}`);
+    if (e.clear) {
+      // not cleared in this run until clearTelop() (the shipped NPCs' Execute: +0x118 = 0)
+      memberAddr(x, 'r0', clearAt(e) + CLEAR_DONE);
+      x.op('strb r5, [r0]');
+    }
     if (e.trigger === 'talk') {
       x.op('mov r0, r4');
       x.call(A.turnNpc);
@@ -3420,6 +3531,7 @@ export function compileStageScript(
         breakTo: null,
         effects: new Map(e.effects.map((id, k) => [id, NEW_SIZE[e.shape] + EFFECT_SIZE * k])),
         rare: e.rare ? rareAt(e) : null,
+        clear: e.clear ? clearAt(e) : null,
         locals,
         scr: { top: localsEnd, end: frame },
       },
@@ -3440,11 +3552,15 @@ export function compileStageScript(
 
     const d1 = new Fn(g, `${e.cls}_d1`),
       d0 = new Fn(g, `${e.cls}_d0`);
-    if (e.effects.length || e.rare) {
-      // the RareItemDirection (made last), then the effects, last made first (ScriptEffect has no destructor of its
-      // own: ~ScriptChara, as the CROs')
+    if (e.effects.length || e.rare || e.clear) {
+      // the ClearTelop and the RareItemDirection (made last), then the effects, last made first (ScriptEffect has no
+      // destructor of its own: ~ScriptChara, as the CROs')
       for (const d of [d1, d0]) {
         d.op('push {r4, lr}', 'mov r4, r0');
+        if (e.clear) {
+          memberAddr(d, 'r0', clearAt(e));
+          d.call(A.clearDtor);
+        }
         if (e.rare) {
           memberAddr(d, 'r0', rareAt(e));
           d.call(A.rareDtor);
@@ -3512,6 +3628,26 @@ export function compileStageScript(
       d1.op('bx lr'); // EventScript's destructor is empty
       d0.tail(A.del);
     }
+    if (e.clear) {
+      // CtrlFlag of the shipped NPCs that clear a stage (CRO 23 1:10C8): the event's own CtrlFlag, then the content
+      // is cleared when clearTelop() ran in this run and it is not cleared yet
+      const ctrl = new Fn(g, `${e.cls}_ctrl`);
+      const done = g.uniq(`${e.cls}_ctrl_done`);
+      const own = ctrlOf(e);
+      ctrl.op('push {r4, lr}', 'mov r4, r0');
+      if (own.kind === 'imp') ctrl.call(own.name);
+      else if (own.kind === 'text') ctrl.op(`bl ${own.label}`);
+      memberAddr(ctrl, 'r0', clearAt(e) + CLEAR_DONE);
+      ctrl.op('ldrb r0, [r0]', 'cmp r0, #1', `bne ${done}`);
+      ctrl.load('r0', content!);
+      ctrl.call(A.isCleared);
+      ctrl.op('cmp r0, #0', `bne ${done}`);
+      ctrl.load('r0', content!);
+      ctrl.call(A.setCleared);
+      ctrl.at(done);
+      ctrl.op('pop {r4, pc}');
+      fns.push(ctrl);
+    }
     fns.push(d1, d0);
   }
 
@@ -3563,7 +3699,7 @@ export function compileStageScript(
         : s,
   );
   const indexedExports = base.indexedExports.map((t) => ({ ...t }));
-  for (const slot of [SLOT_AREA, SLOT_START, SLOT_BUTTON, SLOT_TALK, SLOT_DEFEAT, SLOT_LEAVE])
+  for (const slot of [SLOT_AREA, SLOT_START, SLOT_BUTTON, SLOT_EXIT, SLOT_TALK, SLOT_DEFEAT, SLOT_LEAVE])
     if (labels.has(`slot_${slot}`)) indexedExports[slot] = T(label(`slot_${slot}`));
   return {
     cro: { ...base, segments, namedImports, indexedExports, internalRelocs: [...base.internalRelocs, ...relocs] },

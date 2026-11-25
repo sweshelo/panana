@@ -432,3 +432,19 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - 領域が足りず、ヘルパーを Thumb (-mtp=soft、-Wl,--use-blx) にして収めた: D 7172/7216、E 632/636、C 1692/1696。ARM↔Thumb の呼び出しが BLX になっていることを逆アセンブルで確認。
 - build.ts は URL の引数をなくした。IPS の全バイトが計画した書き込み (ROM のデータを含まない) であることを確かめ、`server/assets/lanai-cs.ips` に同梱 (fead346)。
 - **未検証**: Azahar での動作 (上下キーでのフォーカス移動の順 = 最大のリスク、ラベルの幅、キーボード、保存、港のダウンロード)。lanai-custom-stages の 3ds テストの失敗 (stage script → CRO) は HEAD でも失敗しており、今回の変更とは無関係。
+
+## ステージのクリア・出入口のイベント・ボタンを戻す (2026-11-25、コミット: 下記)
+
+- 調査 (Codex、roms/tmpmap/random-clear/findings.md・findings2.md、静的解析)。
+  - 22.D01001B01@3.0 (区画 3 種類 7 落とし穴、行 6、動作 0x2D): CRO の枠 6 (MoveEvent) が `D01B01Hole` (基底は本体の HoleFallCommon、new 0x98) を作る。行き先は vt+0x18 の抽選 `RandRange(100)` で 2 地点のどちらか。確率は表 DoubleupProbability (0x5E7F0000 / 0x3A18A800) の 5 件: 45 / 35 / 28 / 23 / 10%。成功で bit 0xE3。Panana の逆コンパイラは枠 6 を読んでいなかった。
+  - 23.D01001F01@5.2 (NPC、行 5): 枠 8 が MapGroup 1 だけを照合して `D0100XF01Npc0562` を作る (行を比べない。逆コンパイラは 40 件超の絞り込みで落としていた)。`ClearTelop(this+0x74, 3)`、「はい」で +0x118 = 1 → ShowClearTelop(GSVEC_ZERO ×2) → `CallMenu(0x3E, {0…})` (結果の画面。+4 だけ読む) → `ChangeMapIsland(false)`。CtrlFlag が基底のあと +0x118 == 1 かつ未クリアなら `ClearMapGroup(23)`。CRO 28 も同じ (28)。
+  - 5.D01002B02@5.6 (区画 5 種類 14 の炎台、行 43、動作なし): 炎はスイッチ行 37 のクラス `D01002B02GimmickCommon` のエフェクト (EffectData 35)。vt+8 が炎台の位置に置き、Execute が SetVisible / StartAnimation / StopAnimation で点け消し。byte 1〜4 が順、byte 5 が進み。
+  - 5.D01002B02@5.3 (スイッチ行 37): 違う順なら 4 つを `GetMapChara(行) → ChrGimmick::ButtonOff → +0x90 = 0`、CtrlFlag で SetScriptState(37〜40, 0) と byte 5 = 0。ButtonOn にあたる本体の関数 (0x2A0EDC) は export がない。
+- 実装 (`eventScript.ts` / `croDecompile.ts` / `scriptLibrary.ts` / `stageScript.ts`)。
+  - 文 `clearTelop()` とライブラリ `clearStage()`: 上の NPC の形。ClearTelop と「この実行でクリア」の 1 バイトをイベントのオブジェクトの末尾に持ち、イベント独自の CtrlFlag (元の CtrlFlag → ClearMapGroup(ステージのコンテンツ番号)) を vtable に入れる。番号は `compileStageScript` の第 5 引数 (buildStageScripts が c.index を渡す)。入場の演出では不可。
+  - きっかけ `exit` (「出入口に入ったとき」、枠 6、EventScript): 区画 3 のレコード (到着点 8 / 11 を除く) に関数を割り当てられる。ライブラリ `warp(map, point)` (ChangeMap → FadeOutWait(0.3, 2)、CRO 93 の形) と `ScriptMath.RandRange(100)` でランダムな行き先を書く。本体の穴の演出 (HoleFallCommon) は使わない。
+  - 文 `buttonOff(row)` とライブラリ `switchOff(row)` (+ SetScriptState(row, 0))。
+  - 逆コンパイラ: 枠 6 を `exit` で読み、ShowClearTelop (+ 続く CallMenu(0x3E)・ChangeMapIsland) を `clearTelop()`、ButtonOff を `buttonOff(N)` に。行を比べずに作るクラスは「どの行でも」の割り当て 1 つにする (CroEventDialog も表示)。
+- テスト: `test/lanai-clearexit.test.ts` (コンパイル → 逆コンパイルの往復、CRO 22 / 23 の読み戻し)、scriptdoc・scriptbinding の一覧を更新。ローカル ROM で関連テスト通過、全テスト通過 (quiet-check)。
+- **未検証**: Azahar での動作すべて (クリアの演出と結果の画面・島へ戻ってクリア済みになるか、出入口に触れたときに枠 6 のイベントが走って移るか、buttonOff 後にもう一度押せるか)。カスタムステージのクリアが配布用パッチでセーブに残るか。
+- 研究用スクリプト: `scripts/research/dump-recs.ts` (レコードと EventObject の動作)、`decompile-content.ts`、`dump-cro.ts`。
