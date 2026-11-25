@@ -121,6 +121,9 @@ export interface LanaiDistributionDiscard {
 }
 
 /** Why a table or a feature is locked in the custom-stage distribution mode. */
+/** Where a MOD zip is read: Luma3DS on a 3DS (code.ips in the title folder) or Azahar (exefs/code.ips). */
+export type LanaiModTarget = '3ds' | 'azahar';
+
 export const LANAI_DISTRIBUTION_LOCK = '配信用の編集モードでは変えられません (カスタムステージの配信で欠落するため)';
 
 /**
@@ -935,9 +938,17 @@ export class LanaiSession {
     return appendIps(base, patchRecords(built), code);
   }
 
-  /** The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and exefs/code.ips. */
-  async modZip(): Promise<Uint8Array> {
+  /**
+   * The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and the code patch, at exefs/code.ips
+   * for Azahar (load/mods/) or at code.ips in the title folder for Luma3DS on a 3DS (luma/titles/).
+   */
+  async modZip({ target = 'azahar' }: { target?: LanaiModTarget } = {}): Promise<Uint8Array> {
     const pkg = packageOn(this.baseMod, await this.allModFiles(), this.codeIps());
+    const ips = pkg.get('exefs/code.ips');
+    if (target === '3ds' && ips) {
+      pkg.delete('exefs/code.ips');
+      pkg.set('code.ips', ips);
+    }
     // read by the distribution server (lanai-custom-stages): the key and the flags each scripted stage owns
     const stages = await stageScriptManifest(this);
     if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);

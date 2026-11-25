@@ -429,6 +429,43 @@ aside.right {
   color: var(--muted);
   font-size: 11px;
 }
+/* the MOD export's choice of where it is played (lanai/ExportDialog.tsx): three large buttons side by side */
+.export-targets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 6px 0;
+}
+.export-target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+}
+.export-target.selected {
+  border-color: var(--accent);
+  background: #2d4a7a;
+}
+.export-target-title {
+  font-size: 18px;
+  font-weight: bold;
+}
+.export-target-sub {
+  color: var(--muted);
+  font-size: 11px;
+}
+.export-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin: 6px 0;
+}
+.export-maintenance {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 6px;
+}
 /* a flag number: the script's variables by name, then 手動 with its box in the same frame (FlagSelect) */
 .flag-select {
   display: flex;

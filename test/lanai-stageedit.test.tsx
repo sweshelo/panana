@@ -290,7 +290,8 @@ describe.skipIf(!hasLanai)('Lanai stage authoring, native condition scripts and 
     expect(s.changed).toBe(true);
     expect(s.changedTables()).toHaveLength(0); // image alone still enables export
     const exported = renderToString(createElement(LanaiExportDialog, { session: s, onClose() {} }));
-    expect(exported).toContain('MOD の zip をダウンロード');
+    expect(exported).toContain('Azahar');
+    expect(exported).toContain('すべての変更を元に戻す');
     expect(exported).not.toContain('まだ何も変更していません');
     const files = s.modFiles(),
       arc = parseArchive(files.get(c.archive)!);

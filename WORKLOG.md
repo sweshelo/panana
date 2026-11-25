@@ -389,8 +389,15 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - `stageImport.ts` + `StageImportDialog.tsx` (ステージのページの「インポート」)。振り直し・取り込まないものは notes/lanai-stage-authoring.md に。
 - テスト: 全体 884 pass / 25 skip / 0 fail。`lanai-stageimport.test.ts` (ROM 3 件)、コメントの往復 (lanai-stagescript)。画面とゲーム内は未確認。
 
-## 追加したステージをどの順でも削除 (2026-11-25)
+## 追加したステージをどの順でも削除 (2026-11-25、92e4434)
 
 - 依頼: ID をずらす処理を使い、「最後に追加したステージから順に削除できます」の制約を外す。
 - `table.ts removeRow`、`stageEdit.ts retargetContentTables` (複製・取り込み・削除で共通) と `removeLanaiContent` の書き直し、`maps.ts forgetLanaiMaps`、削除ボタンの確認文 (後ろのステージの番号がずれる)。詳細は notes/lanai-stage-authoring.md。
 - テスト: 全体 885 pass / 25 skip / 0 fail。画面・ゲーム内は未確認。
+
+## 書き出しダイアログを 3DS / Azahar / Uwapo に整理 (2026-11-25、HASH)
+
+- `src/lanai/ExportDialog.tsx`: 変更一覧を隠し、遊ぶ環境の大ボタン3つ (3DS / Azahar / Uwapo、選択は localStorage `lanai/export-target`) と、選んだ環境のパネルにした。取り消しボタンは下段。
+- 3DS: `modZip({ target: '3ds' })` で code.ips をタイトルフォルダ直下に置く (Luma3DS の luma/titles/)。カスタムステージは読めない旨を案内。Azahar: 従来どおり exefs/code.ips。
+- コードの MOD は 3DS / Azahar のパネルだけ、Uwapo 用の編集モードと「Uwapo で欠落する変更だけを取り消す」は Uwapo のときだけ表示。Uwapo はセルフホスト、パッチも Uwapo から入手と案内。編集用・リリース用 zip は Uwapo パネルの「zip で保存する」に畳んだ。
+- テスト: `test/lanai-distribution.test.ts` に 3DS / Azahar の code.ips 配置を追加 (ローカル ROM で実行)。画面での目視確認は未実施。

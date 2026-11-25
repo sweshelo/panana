@@ -1,6 +1,8 @@
-// RPG FREE!'s MOD export: the root archives holding changed tables or a changed map database (a content's C9F79000),
-// rebuilt with the other entries as they are, and exefs/code.ips of Panana's code MODs that are on (game/dropcap.ts), in a
-// LayeredFS zip (0004000000125D00/…). Needs the Update like RPG3's: the edits go on its archives and code.bin.
+// RPG FREE!'s MOD export, by where it is played: a LayeredFS zip (0004000000125D00/…) for Luma3DS on a 3DS (code.ips in
+// the title folder) or for Azahar (exefs/code.ips), or the custom-stage distribution sent to a self-hosted uwapo. The
+// zips hold the root archives with changed tables or a changed map database (a content's C9F79000), rebuilt with the
+// other entries as they are, and the code patch of Panana's code MODs that are on (game/dropcap.ts). Needs the Update
+// like RPG3's: the edits go on its archives and code.bin.
 import { useState, type ReactNode } from 'react';
 import { LANAI } from '../rom/titles';
 import { PortStore } from '../port/store';
@@ -9,32 +11,61 @@ import { CodeModOption } from '../ui/CodeModOption';
 import { Dialog } from '../ui/Dialog';
 import { useAsync } from '../ui/useAsync';
 import { download } from '../ui/download';
-import { LANAI_DELIVERABLE_TABLES, LANAI_DISTRIBUTION_LOCK, type LanaiSession } from './session';
+import {
+  LANAI_DELIVERABLE_TABLES,
+  LANAI_DISTRIBUTION_LOCK,
+  type LanaiDistributionDiscard,
+  type LanaiModTarget,
+  type LanaiSession,
+} from './session';
 import { pushToUwapo, setUwapoUrl, uwapoUrl, UwapoPushError, type UwapoPushResult } from './uwapoPush';
 
+type ExportTarget = LanaiModTarget | 'uwapo';
+
+const TARGET_KEY = 'lanai/export-target';
+
+const TARGETS: { id: ExportTarget; title: string; sub: string }[] = [
+  { id: '3ds', title: '3DS', sub: 'Luma3DS の標準機能で読み込む' },
+  { id: 'azahar', title: 'Azahar', sub: 'エミュレータの MOD として読み込む' },
+  { id: 'uwapo', title: 'Uwapo', sub: 'カスタムステージ MOD で配信する' },
+];
+
+function savedTarget(): ExportTarget | null {
+  try {
+    const t = globalThis.localStorage?.getItem(TARGET_KEY);
+    return TARGETS.some((x) => x.id === t) ? (t as ExportTarget) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveTarget(t: ExportTarget): void {
+  try {
+    globalThis.localStorage?.setItem(TARGET_KEY, t);
+  } catch {
+    // the choice is only a convenience
+  }
+}
+
 export function LanaiExportDialog({ session, onClose }: { session: LanaiSession; onClose: () => void }): ReactNode {
-  const [error, setError] = useState('');
   const [tick, redraw] = useState(0);
-  const changed = session.changedTables();
-  const maps = session.changedMapDbs();
-  const mapTables = session.changedMapTables();
-  const layouts = session.changedLayouts();
-  const created = [...session.createdFiles.keys()];
-  const scripts = session.conditionScripts.size;
-  const fieldStartGuard = session.needsFieldStartGuard;
+  const [target, setTarget] = useState<ExportTarget | null>(savedTarget);
   const loaded = useAsync(() => PortStore.of('lanai').then((p) => p.summary()), []);
   const ported = Array.isArray(loaded) ? loaded : [];
-  const archives = [
-    ...new Set([
-      ...changed.map((t) => t.archive),
-      ...maps.map((m) => m.archive),
-      ...mapTables.map((m) => m.archive),
-      ...layouts.map((l) => l.archive),
-      ...ported.map((p) => p.split(':')[0]!),
-      ...(session.baseMod?.romfs.keys() ?? []),
-    ]),
-  ];
-  const ips = scripts > 0 || session.dropCap || fieldStartGuard || !!session.baseMod?.ips;
+  const discardsLoaded = useAsync(() => session.distributionDiscards(), [session, tick]);
+  const discards = Array.isArray(discardsLoaded) ? discardsLoaded : [];
+  const scripts = session.conditionScripts.size;
+  const changed =
+    session.changedTables().length > 0 ||
+    session.changedMapDbs().length > 0 ||
+    session.changedMapTables().length > 0 ||
+    session.changedLayouts().length > 0 ||
+    ported.length > 0 ||
+    session.createdFiles.size > 0 ||
+    scripts > 0 ||
+    session.needsFieldStartGuard ||
+    session.dropCap;
+  const refresh = () => redraw((x) => x + 1);
   return (
     <Dialog title="MOD の書き出し (RPG FREE!)" onClose={onClose}>
       {!session.canExport ? (
@@ -45,122 +76,160 @@ export function LanaiExportDialog({ session, onClose }: { session: LanaiSession;
         </p>
       ) : (
         <>
-          <CodeModOption
-            title="lanai"
-            on={session.dropCap}
-            problem={session.distributionMode && !session.dropCap ? LANAI_DISTRIBUTION_LOCK : session.dropCapProblem()}
-            onChange={(on) => {
-              session.dropCap = on;
-              session.edited();
-              redraw((x) => x + 1);
-            }}
-          />
-          {!changed.length &&
-          !maps.length &&
-          !mapTables.length &&
-          !layouts.length &&
-          !ported.length &&
-          !created.length &&
-          !scripts &&
-          !fieldStartGuard &&
-          !session.dropCap ? (
-            <p className="muted">まだ何も変更していません。</p>
-          ) : (
-            <>
-              <ul>
-                {created.map((n) => (
-                  <li key={n}>{`${n}: 新しいファイル`}</li>
-                ))}
-                {scripts > 0 && <li>{`条件スクリプト ${scripts} 件 (exefs/code.ips)`}</li>}
-                {fieldStartGuard && <li>追加マップの開始イベント保護 (exefs/code.ips)</li>}
-                {layouts.map((l) => (
-                  <li key={`layout/${l.archive}/${l.hash}`}>{`${l.archive} のステージ画像`}</li>
-                ))}
-                {changed.map((t) => {
-                  const rows = t.table.changedRows();
-                  const added = t.table.rows - t.table.originalRows;
-                  const strings = t.table.changedStrings().length;
-                  const more = [added > 0 ? `うち追加 ${added} 行` : '', strings > 0 ? `文字列 ${strings} 欄` : '']
-                    .filter(Boolean)
-                    .join('、');
-                  return (
-                    <li
-                      key={`${t.archive}/${t.entry}`}
-                    >{`${t.archive} の ${t.table.name}: ${rows.length} 行${more ? ` (${more})` : ''}`}</li>
-                  );
-                })}
-                {maps.map((m) => (
-                  <li key={`map/${m.archive}`}>{`${m.archive} のマップ DB (C9F79000): ${m.sections} 区画`}</li>
-                ))}
-                {mapTables.map((m) => (
-                  <li key={`map-table/${m.archive}`}>{`${m.archive} のマップ表`}</li>
-                ))}
-                {ported.map((p) => (
-                  <li key={`port/${p}`}>{p}</li>
-                ))}
-                {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (exefs/code.ips)</li>}
-              </ul>
-              <BaseModNote mod={session.baseMod} />
-              <p className="muted small">{`zip の中身: ${[archives.length ? `${LANAI.titleId}/romfs/${archives.join('、')}` : '', ips ? `${LANAI.titleId}/exefs/code.ips` : ''].filter(Boolean).join('、')}。Luma3DS は SD の luma/titles/、Azahar は load/mods/ に置きます (Base と Update の両方を入れた状態で使います)。${session.dropCap ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。' : ''}行を足した表や、区画の大きさを変えたマップ (タイル・レコードの増減) は、ゲームが受け付けるか確かめていません。`}</p>
-              {error && <div className="error">{error}</div>}
-              <div className="row">
-                <button
-                  className="primary"
-                  onClick={async () => {
-                    try {
-                      download(await session.modZip(), 'denpa-free-mod.zip');
-                    } catch (e) {
-                      setError((e as Error).message);
-                    }
-                  }}
-                >
-                  MOD の zip をダウンロード
-                </button>
-                <button
-                  onClick={() => {
-                    if (!confirm('すべての変更を元に戻しますか?')) return;
-                    session.revertAll();
-                    redraw((x) => x + 1);
-                  }}
-                >
-                  すべての変更を元に戻す
-                </button>
-              </div>
-            </>
+          <p className="muted small">遊ぶ環境を選んでください。</p>
+          <div className="export-targets" role="tablist">
+            {TARGETS.map((t) => (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={target === t.id}
+                className={target === t.id ? 'export-target selected' : 'export-target'}
+                onClick={() => {
+                  setTarget(t.id);
+                  saveTarget(t.id);
+                }}
+              >
+                <span className="export-target-title">{t.title}</span>
+                <span className="export-target-sub">{t.sub}</span>
+              </button>
+            ))}
+          </div>
+          {target && (
+            <div className="export-panel" role="tabpanel">
+              {target === 'uwapo' ? (
+                <UwapoPanel
+                  session={session}
+                  scripts={scripts}
+                  discards={discards}
+                  error={discardsLoaded}
+                  onChange={refresh}
+                />
+              ) : (
+                <ModZipPanel session={session} target={target} changed={changed} onChange={refresh} />
+              )}
+            </div>
           )}
-          <DistributionBox session={session} scripts={scripts} tick={tick} onChange={() => redraw((x) => x + 1)} />
+          <Maintenance
+            session={session}
+            uwapo={target === 'uwapo'}
+            changed={changed}
+            discards={discards}
+            onChange={refresh}
+          />
         </>
       )}
     </Dialog>
   );
 }
 
+/** The LayeredFS zip for Luma3DS on a 3DS or for Azahar: where it goes, and its download. */
+function ModZipPanel({
+  session,
+  target,
+  changed,
+  onChange,
+}: {
+  session: LanaiSession;
+  target: LanaiModTarget;
+  changed: boolean;
+  onChange: () => void;
+}): ReactNode {
+  const [error, setError] = useState('');
+  const is3ds = target === '3ds';
+  return (
+    <>
+      <CodeModOption
+        title="lanai"
+        on={session.dropCap}
+        problem={session.distributionMode && !session.dropCap ? LANAI_DISTRIBUTION_LOCK : session.dropCapProblem()}
+        onChange={(on) => {
+          session.dropCap = on;
+          session.edited();
+          onChange();
+        }}
+      />
+      {is3ds ? (
+        <p className="small">
+          zip を展開して、SD の <code>luma/titles/</code> に <code>{LANAI.titleId}</code> フォルダごと置きます。Luma3DS
+          の設定で「Enable game patching」を有効にしてください。コードのパッチは <code>{LANAI.titleId}/code.ips</code>{' '}
+          に入ります。カスタムステージ (lanai-cs) はこの方法では読み込めません。
+        </p>
+      ) : (
+        <p className="small">
+          zip を展開して、Azahar の <code>load/mods/</code> に <code>{LANAI.titleId}</code> フォルダごと置きます
+          (ゲームを右クリック →「Open Mods Location」)。コードのパッチは <code>{LANAI.titleId}/exefs/code.ips</code>{' '}
+          に入ります。
+        </p>
+      )}
+      <p className="muted small">
+        Base と Update の両方を入れた状態で使います。
+        {session.dropCap
+          ? 'code.ips は Update の code.bin に合わせて作るので、Update を入れずに Base だけで動かすと落ちます。'
+          : ''}
+      </p>
+      <BaseModNote mod={session.baseMod} />
+      {!changed && <p className="muted">まだ何も変更していません。</p>}
+      {error && <div className="error">{error}</div>}
+      <div className="row">
+        <button
+          className="primary"
+          disabled={!changed}
+          onClick={async () => {
+            setError('');
+            try {
+              download(await session.modZip({ target }), is3ds ? 'denpa-free-3ds.zip' : 'denpa-free-azahar.zip');
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        >
+          {is3ds ? '3DS 用の zip をダウンロード' : 'Azahar 用の zip をダウンロード'}
+        </button>
+      </div>
+    </>
+  );
+}
+
 /**
- * The custom-stage distribution: what its zip leaves out (master tables the game cannot take, exefs/code.ips), its
- * download, and a button that undoes only the edits it would leave out.
+ * The custom-stage distribution through a self-hosted uwapo: sending the release zip to it, the zips themselves, and
+ * the changes the distribution leaves out (master tables the game cannot take, exefs/code.ips).
  */
-function DistributionBox({
+function UwapoPanel({
   session,
   scripts,
-  tick,
+  discards,
+  error: loadError,
   onChange,
 }: {
   session: LanaiSession;
   scripts: number;
-  tick: number;
+  discards: LanaiDistributionDiscard[];
+  error: unknown;
   onChange: () => void;
 }): ReactNode {
   const [error, setError] = useState('');
-  const loaded = useAsync(() => session.distributionDiscards(), [session, tick]);
-  const discards = Array.isArray(loaded) ? loaded : [];
   // without a base MOD every difference from the ROM is an edit of this session
   const fromBase = session.baseMod ? discards.filter((d) => d.edited === false) : [];
   const edited = discards.filter((d) => !fromBase.includes(d));
-  const undoable = edited.length > 0 || session.dropCap;
+  const save = async (release: boolean) => {
+    setError('');
+    try {
+      download(
+        await session.distributionZip({ release }),
+        release ? 'denpa-free-stage-release.zip' : 'denpa-free-stage.zip',
+      );
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
   return (
-    <fieldset className="field">
-      <legend>カスタムステージ配信 (uwapo)</legend>
-      <label>
+    <>
+      <p className="small">
+        Luma3DS のパッチ機能でカスタムステージ用の MOD を有効にしている場合に使います。Uwapo サーバ (lanai-custom-stages
+        の web/) は自分で起動し、カスタムステージ用の MOD のパッチも Uwapo から入手します。ゲームは SD の{' '}
+        <code>lanai-cs</code> フォルダからステージを読み込みます。コードの MOD は Uwapo では使えません。
+      </p>
+      <label className="small">
         <input
           type="checkbox"
           checked={session.distributionMode}
@@ -170,81 +239,100 @@ function DistributionBox({
             onChange();
           }}
         />
-        配信用の編集モード (配信で欠落する変更を加えられなくする: master の {LANAI_DELIVERABLE_TABLES.length}{' '}
+        Uwapo 用の編集モード (Uwapo で欠落する変更を加えられなくする: master の {LANAI_DELIVERABLE_TABLES.length}{' '}
         表以外・条件スクリプトの追加・コードの MOD)
       </label>
-      <p className="muted small">
-        配信用の zip には、配信がゲームに届けられる変更だけを入れます。master の表は{' '}
-        {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけを残し、ほかの表は ROM のままに戻します
-        (ゲームはほかの表の行を含むステージを丸ごと読み込まないため)。exefs/code.ips は入れません。
-      </p>
-      <p className="muted small">
-        配信用の zip にはイベントのスクリプト (コメントを含む)
-        を入れるので、ステージのページの「インポート」で取り込み直して編集を続けられます。公開するときは、スクリプトを入れない「リリース用の
-        zip」を使います (取り込むとスクリプトは編集できません)。
-      </p>
-      {scripts > 0 && <p className="error">条件スクリプトがあるので、配信用には書き出せません。</p>}
-      {loaded instanceof Error && <div className="error">{loaded.message}</div>}
-      {discards.length > 0 || session.dropCap ? (
+      {scripts > 0 && <p className="error">条件スクリプトがあるので、Uwapo には書き出せません。</p>}
+      <UwapoPush session={session} disabled={scripts > 0} />
+      {loadError instanceof Error && <div className="error">{loadError.message}</div>}
+      {(discards.length > 0 || session.dropCap) && (
         <>
-          <p>配信では次の変更が欠落します:</p>
-          <ul>
+          <p className="small">Uwapo では次の変更が欠落します:</p>
+          <ul className="small">
             {edited.map((d) => (
               <li key={d.table}>{`master の ${d.table}: ${d.rows} 行`}</li>
             ))}
             {fromBase.map((d) => (
               <li key={d.table}>{`master の ${d.table}: ${d.rows} 行 (ベース MOD の変更。ここでは取り消せません)`}</li>
             ))}
-            {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (exefs/code.ips)</li>}
+            {session.dropCap && <li>コードの MOD「ドロップ率の天井を撤廃」 (code.ips)</li>}
           </ul>
+          <p className="muted small">
+            master の表は {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけが届きます
+            (ゲームはほかの表の行を含むステージを丸ごと読み込まないため)。
+          </p>
         </>
-      ) : (
-        loaded !== undefined && <p className="muted small">配信で欠落する変更はありません。</p>
       )}
-      {error && <div className="error">{error}</div>}
+      <details className="small">
+        <summary>zip で保存する</summary>
+        <p className="muted small">
+          編集用の zip にはイベントのスクリプト (コメントを含む)
+          を入れるので、ステージのページの「インポート」で取り込み直して編集を続けられます。公開するときは、スクリプトを入れない「リリース用の
+          zip」を使います (取り込むとスクリプトは編集できません)。
+        </p>
+        {error && <div className="error">{error}</div>}
+        <div className="row">
+          <button disabled={scripts > 0} onClick={() => save(true)}>
+            リリース用の zip をダウンロード
+          </button>
+          <button disabled={scripts > 0} onClick={() => save(false)}>
+            編集用の zip をダウンロード
+          </button>
+        </div>
+      </details>
+    </>
+  );
+}
+
+/** The undo buttons, below the export: all the changes, and (for Uwapo) only those the distribution leaves out. */
+function Maintenance({
+  session,
+  uwapo,
+  changed,
+  discards,
+  onChange,
+}: {
+  session: LanaiSession;
+  uwapo: boolean;
+  changed: boolean;
+  discards: LanaiDistributionDiscard[];
+  onChange: () => void;
+}): ReactNode {
+  const undoable = discards.some((d) => d.edited !== false || !session.baseMod) || session.dropCap;
+  return (
+    <div className="export-maintenance">
       <div className="row">
+        {uwapo && (
+          <button
+            disabled={!undoable}
+            onClick={() => {
+              if (!confirm('Uwapo で欠落する変更だけを元に戻しますか? (ほかの変更は残ります)')) return;
+              session.revertUndeliverable();
+              onChange();
+            }}
+          >
+            Uwapo で欠落する変更だけを取り消す
+          </button>
+        )}
         <button
-          className="primary"
-          onClick={async () => {
-            try {
-              download(await session.distributionZip(), 'denpa-free-stage.zip');
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        >
-          配信用の zip をダウンロード
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              download(await session.distributionZip({ release: true }), 'denpa-free-stage-release.zip');
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        >
-          リリース用の zip をダウンロード
-        </button>
-        <button
-          disabled={!undoable}
+          className="danger"
+          disabled={!changed}
           onClick={() => {
-            if (!confirm('配信で欠落する変更だけを元に戻しますか? (ほかの変更は残ります)')) return;
-            session.revertUndeliverable();
+            if (!confirm('すべての変更を元に戻しますか?')) return;
+            session.revertAll();
             onChange();
           }}
         >
-          配信で欠落する変更だけを取り消す
+          すべての変更を元に戻す
         </button>
       </div>
-      <UwapoPush session={session} disabled={scripts > 0} />
-    </fieldset>
+    </div>
   );
 }
 
 /**
- * Sends the distribution zip to a uwapo server on this PC, which publishes it and writes it into Azahar's SD: reopening
- * the stage select in the game shows it (no harbor download).
+ * Sends the release zip to a uwapo server, which publishes it in place of the same stage and writes it into the SD it
+ * mirrors (lanai-cs): reopening the stage select in the game shows it (no harbor download).
  */
 function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boolean }): ReactNode {
   const [url, setUrl] = useState(uwapoUrl);
@@ -265,14 +353,9 @@ function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boo
   };
   return (
     <div>
-      <p className="muted small">
-        uwapo (lanai-custom-stages の web/) をこの PC で起動しておくと、リリース用の zip を直接送れます。uwapo
-        は同じステージを入れ替えて公開し、Azahar の SD (sdmc/lanai-cs)
-        に書き込みます。ゲームではステージ選択を開き直すと反映されます (ステージの中にいるときは島に戻ってから)。
-      </p>
       <div className="row">
         <label>
-          uwapo の URL{' '}
+          Uwapo の URL{' '}
           <input
             value={url}
             onChange={(e) => {
@@ -283,9 +366,13 @@ function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boo
           />
         </label>
         <button className="primary" disabled={disabled || busy || !url.trim()} onClick={send}>
-          {busy ? '送信中…' : 'Azahar に送る'}
+          {busy ? '送信中…' : 'Uwapo に送る'}
         </button>
       </div>
+      <p className="muted small">
+        Uwapo は同じステージを入れ替えて公開し、SD の lanai-cs
+        に書き込みます。ゲームではステージ選択を開き直すと反映されます (ステージの中にいるときは島に戻ってから)。
+      </p>
       {error && (
         <div className="error">
           {error.message}
