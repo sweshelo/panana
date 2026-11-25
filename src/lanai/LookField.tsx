@@ -278,16 +278,15 @@ export function LookField({
       <div className="row">
         {photo(view, charaModel(st, mc, look, events.u16(row, LANAI_EO_CHARA_SELECT)))}
         <select aria-label="キャラの見た目" value={look} onChange={(e) => setLook(Number(e.target.value))}>
-          {look === 0 && <option value={0}>0 (なし)</option>}
-          {Array.from({ length: Math.max(0, (mc?.rows ?? 0) - 1) }, (_, i) => i + 1).map((r) => (
+          {Array.from({ length: mc?.rows ?? 0 }, (_, i) => i).map((r) => (
             <option key={r} value={r}>
               {charaLabel(st, mc, r)}
             </option>
           ))}
-          {look > 0 && look >= (mc?.rows ?? 0) && <option value={look}>{`#${look} (表にない行)`}</option>}
+          {look >= (mc?.rows ?? 0) && <option value={look}>{`#${look} (表にない行)`}</option>}
         </select>
       </div>
-      {mc && look > 0 && look < mc.rows && (
+      {mc && look < mc.rows && (
         <WanderField st={st} mc={mc} chara={look} select={events.u16(row, LANAI_EO_CHARA_SELECT)} />
       )}
       <div className="row">

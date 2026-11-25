@@ -108,8 +108,8 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     // every prop names a model (12200 props, map.md §4)
     expect(rows.get('s2')!.size).toBeGreaterThan(100);
     expect(charas).toBeGreaterThan(900);
-    // about 1 in 10 characters has no MapChara row (EventObject +0x5A = 0): 89% of them have a model
-    expect(charaModels / charas).toBeGreaterThan(0.85);
+    // every character has a model: EventObject +0x5A = 0 is MapChara row 0, as the game reads it (FUN_0023CFAC)
+    expect(charaModels).toBe(charas);
     // the Denpa people (MapChara kind 3: DenpaCustom rows; 141 placements, Codex 2026-11-21)
     expect(denpas).toBeGreaterThan(130);
     const names = async (key: string): Promise<string[]> => Promise.all([...rows.get(key)!].map(modelName));
@@ -127,6 +127,23 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect([...(effects.get('s3') ?? [])]).toEqual([LANAI_EFFECT_CLEAR_WARP]);
     expect(effects.get('s5')?.has(LANAI_EFFECT_REPAIR_POINT)).toBe(true);
   }, 300000);
+
+  test('a character whose EventObject +0x5A is 0 takes MapChara row 0 (an NPC and a boss)', () => {
+    const look = (content: number, name: string, rec: number) => {
+      const maps = all.find((m) => m.content.index === content)!;
+      const info = maps.maps.find((m) => m.name === name)!;
+      const doc = maps.doc(info);
+      const raw = doc.recs[5]![rec]!.raw;
+      return lanaiRecordLook(5, raw, {
+        ...lanaiCharaTables(s),
+        mapChara: maps.contentTable('MapChara'),
+        events: maps.eventTable(info.dungeon),
+        indoor: isIndoor(doc),
+      });
+    };
+    expect(look(1, 'D01001B01', 3)).toMatchObject({ chara: 0, model: { type: 'object', row: 418 } });
+    expect(look(48, 'D01001F01', 0)).toMatchObject({ chara: 0, model: { type: 'monster', design: 377 } });
+  });
 
   // the defaults the code picks (FUN_0044F9EC, FUN_0021D744, FUN_0021C844; naauao lanai/key-objects.md)
   test('every goal chest, clear warp and recovery point takes its model or effect; heals gimk_04_heal', async () => {

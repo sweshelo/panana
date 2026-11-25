@@ -157,7 +157,7 @@ async function readRomParts(session: LanaiSession): Promise<LanaiRomCatalog> {
                 lines.push({ stage, arg, text, speaker: talk.u8(v, TALK_SPEAKER) });
               }
             });
-          const charaKind = section === 5 && kind <= 2 && look ? lanaiCharaKind(mapChara, look) : -1;
+          const charaKind = section === 5 && kind <= 2 ? lanaiCharaKind(mapChara, look) : -1;
           const model = charaKind >= 0 ? lanaiCharaObject(mapChara, look) : 0;
           out.set(key, {
             section,

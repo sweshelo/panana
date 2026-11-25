@@ -243,25 +243,31 @@ export function lanaiObjectScale(mapObject: LanaiTable | undefined, row: number)
   return f32(mapObject.row(row), 0x1c) || 1;
 }
 
-/** The MapObject row of a character (MapChara row; 0 = none), or its MonsterDesign row for a monster. */
+/**
+ * The MapObject row of a character (MapChara row; row 0 is a character too, see lanaiCharaModel), or its MonsterDesign
+ * row for a monster.
+ */
 export function lanaiCharaObject(mapChara: LanaiTable | undefined, chara: number): number {
-  return mapChara && chara > 0 && chara < mapChara.rows ? u16(mapChara.row(chara), LANAI_CHARA_OBJECT) : 0;
+  return mapChara && chara >= 0 && chara < mapChara.rows ? u16(mapChara.row(chara), LANAI_CHARA_OBJECT) : 0;
 }
 
 /** The kind of a character (MapChara +0x00 & 7; LANAI_CHARA_KIND), -1 when the row is not there. */
 export function lanaiCharaKind(mapChara: LanaiTable | undefined, chara: number): number {
-  return mapChara && chara > 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
+  return mapChara && chara >= 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
 }
 
 /**
  * The model of a character (MapChara row `chara`) as FUN_0023CFAC picks it: `select` (EventObject +0x5C) names the
  * field (0 → +0x2C u16, 1 → +0x10 u32, 2 → +0x2E u16, else 0) and the row's kind what it is. The value is looked up as
  * the game's tables are (FUN_0031C038): a row number below 0x80000000, else a row ID (the +0x10 of the data are IDs:
- * 8 NPCs and 8 bosses take them). Null when the row is not there or names no model.
+ * 8 NPCs and 8 bosses take them). EventObject +0x5A = 0 is not "none": the game looks it up as the others and takes
+ * row 0 (FUN_0023CFAC @0x23CFE0〜 passes it to FUN_0031C038 unchecked, which takes values below 0x80000000 as row
+ * numbers @0x31C04C; 105 characters of 65 contents, e.g. content 1 D01001B01 → MapObject 418, content 48 D01001F01
+ * → MonsterDesign 377). Null when the row is not there or names no model.
  */
 export function lanaiCharaModel(ctx: LanaiCharaContext, chara: number, select = 0): LanaiRecordModel | null {
   const mc = ctx.mapChara;
-  if (!mc || chara <= 0 || chara >= mc.rows) return null;
+  if (!mc || chara < 0 || chara >= mc.rows) return null;
   const c = mc.row(chara);
   const v = select === 0 ? u16(c, 0x2c) : select === 1 ? u32(c, 0x10) : select === 2 ? u16(c, 0x2e) : 0;
   const rowOf = (t: LanaiTable | undefined): number => (t && v ? t.find(v) : -1);
