@@ -299,7 +299,8 @@ h3 {
 .shell[data-page='flags'] .page-flags,
 .shell[data-page='stages'] .page-stages,
 .shell[data-page='talks'] .page-talks,
-.shell[data-page='codes'] .page-codes {
+.shell[data-page='codes'] .page-codes,
+.shell[data-page='distribution'] .page-distribution {
   display: block;
 }
 .page-code {
@@ -307,6 +308,34 @@ h3 {
 }
 .code-page {
   max-width: 960px;
+}
+/* #/distribution (the executable's custom-stage distribution) */
+.distribution-page {
+  max-width: 960px;
+}
+.distribution-page section + section {
+  margin-top: 24px;
+}
+.distribution-page a.button,
+.distribution-page label.button {
+  display: inline-block;
+  padding: 4px 9px;
+  color: var(--text);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.distribution-page a.button:hover,
+.distribution-page label.button:hover {
+  border-color: var(--accent);
+}
+.distribution-package {
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 .code-page h3 {
   margin: 18px 0 6px;

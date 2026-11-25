@@ -24,6 +24,8 @@ import type { RomfsProfile } from '../romfs/profile';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
+import { LanaiDistributionPage } from '../lanai/DistributionPage';
+import { useLocalStatus } from '../lanai/localServer';
 
 export const LANAI_PAGES = [
   ['stages', 'ステージ'],
@@ -40,6 +42,7 @@ export const LANAI_PAGES = [
   ['sounds', 'BGM・効果音'],
   ['codes', 'コード・配信'],
   ['romfs', 'RomFS'],
+  ['distribution', '配信'],
 ] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const TITLES: Record<LanaiPage, string> = {
@@ -57,7 +60,10 @@ const TITLES: Record<LanaiPage, string> = {
   sounds: 'BGM・効果音',
   codes: 'コード入力・チェックイン',
   romfs: 'RomFS',
+  distribution: 'カスタムステージの配信',
 };
+/** The pages on the web: the distribution is the executable's (localServer.ts). */
+const LANAI_WEB_PAGES = LANAI_PAGES.filter(([id]) => id !== 'distribution');
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -112,9 +118,10 @@ export function LanaiShell({
     return { ...lanaiRomfsProfile, files };
   }, [session, revision]);
   const u = dump.update;
+  const [local] = useLocalStatus();
   return (
     <PageShell
-      pages={LANAI_PAGES}
+      pages={local ? LANAI_PAGES : LANAI_WEB_PAGES}
       titles={TITLES}
       fallback="maps"
       brand="電波人間のRPG FREE! エディタ"
@@ -175,6 +182,8 @@ export function LanaiShell({
           <LanaiSoundPage session={session} arg={a} />
         ) : id === 'codes' ? (
           <LanaiCodePage session={session} arg={a} />
+        ) : id === 'distribution' ? (
+          <LanaiDistributionPage />
         ) : (
           <RomfsPage dump={viewerDump} profile={profile} arg={a} />
         )

@@ -19,6 +19,8 @@ import {
   type LanaiSession,
 } from './session';
 import { pushToUwapo, setUwapoUrl, uwapoUrl, UwapoPushError, type UwapoPushResult } from './uwapoPush';
+import { pushToLocal, useLocalStatus } from './localServer';
+import type { PushResult } from '../../server/uwapo/push';
 
 type ExportTarget = LanaiModTarget | 'uwapo';
 
@@ -208,6 +210,7 @@ function UwapoPanel({
   onChange: () => void;
 }): ReactNode {
   const [error, setError] = useState('');
+  const [local] = useLocalStatus();
   // without a base MOD every difference from the ROM is an edit of this session
   const fromBase = session.baseMod ? discards.filter((d) => d.edited === false) : [];
   const edited = discards.filter((d) => !fromBase.includes(d));
@@ -224,11 +227,20 @@ function UwapoPanel({
   };
   return (
     <>
-      <p className="small">
-        Luma3DS のパッチ機能でカスタムステージ用の MOD を有効にしている場合に使います。Uwapo サーバ (lanai-custom-stages
-        の web/) は自分で起動し、カスタムステージ用の MOD のパッチも Uwapo から入手します。ゲームは SD の{' '}
-        <code>lanai-cs</code> フォルダからステージを読み込みます。コードの MOD は Uwapo では使えません。
-      </p>
+      {local ? (
+        <p className="small">
+          このアプリが 3DS
+          へステージを配信します。配信の切り替え、ゲームに入力するアドレス、カスタムステージ用のパッチは{' '}
+          <a href="#/distribution">配信</a> のページにあります。コードの MOD は配信では使えません。
+        </p>
+      ) : (
+        <p className="small">
+          Luma3DS のパッチ機能でカスタムステージ用の MOD を有効にしている場合に使います。Uwapo サーバ
+          (lanai-custom-stages の web/) は自分で起動し、カスタムステージ用の MOD のパッチも Uwapo
+          から入手します。ゲームは SD の <code>lanai-cs</code> フォルダからステージを読み込みます。コードの MOD は Uwapo
+          では使えません。
+        </p>
+      )}
       <label className="small">
         <input
           type="checkbox"
@@ -243,7 +255,11 @@ function UwapoPanel({
         表以外・条件スクリプトの追加・コードの MOD)
       </label>
       {scripts > 0 && <p className="error">条件スクリプトがあるので、Uwapo には書き出せません。</p>}
-      <UwapoPush session={session} disabled={scripts > 0} />
+      {local ? (
+        <LocalPush session={session} disabled={scripts > 0} />
+      ) : (
+        <UwapoPush session={session} disabled={scripts > 0} />
+      )}
       {loadError instanceof Error && <div className="error">{loadError.message}</div>}
       {(discards.length > 0 || session.dropCap) && (
         <>
@@ -334,6 +350,57 @@ function Maintenance({
  * Sends the release zip to a uwapo server, which publishes it in place of the same stage and writes it into the SD it
  * mirrors (lanai-cs): reopening the stage select in the game shows it (no harbor download).
  */
+/** The executable's own distribution: the release ZIP registered in place of the same stage (localServer.ts). */
+function LocalPush({ session, disabled }: { session: LanaiSession; disabled: boolean }): ReactNode {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<PushResult | null>(null);
+  const [error, setError] = useState('');
+  const send = async () => {
+    setBusy(true);
+    setError('');
+    setResult(null);
+    try {
+      setResult(await pushToLocal(await session.distributionZip({ release: true })));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div>
+      <div className="row">
+        <button className="primary" disabled={disabled || busy} onClick={send}>
+          {busy ? '登録中…' : '配信に登録'}
+        </button>
+      </div>
+      <p className="muted small">
+        同じステージを入れ替えて公開します。ゲームでは港の「カスタム」でダウンロードし直すと反映されます。
+      </p>
+      {error && <div className="error">{error}</div>}
+      {result && (
+        <div className="small">
+          <p>{`版 ${result.revision} として公開しました。`}</p>
+          <ul>
+            {result.stages.map((s) => (
+              <li
+                key={s.id}
+              >{`${s.name || '(名前なし)'} (コンテンツ ${s.content}, ${s.id})${s.pushed ? ' ← 今回' : ''}`}</li>
+            ))}
+          </ul>
+          {result.warnings.length > 0 && (
+            <ul className="muted">
+              {result.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boolean }): ReactNode {
   const [url, setUrl] = useState(uwapoUrl);
   const [busy, setBusy] = useState(false);
