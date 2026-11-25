@@ -460,7 +460,7 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - テスト `test/lanai-autoruby.test.ts`: 偽のトークナイザと devDependency の実辞書 (8 件通過)。
 - **未検証**: ブラウザでの操作 (jsDelivr からの読み込み・ボタン・反映・undo)。
 
-## 階層ごとの「マップが始まるとき」と /maps インスペクタの整理 (2026-11-26、コミット: 次)
+## 階層ごとの「マップが始まるとき」と /maps インスペクタの整理 (2026-11-26、e7f241f)
 
 - 発端: グループの start に入れた初期化が、対象のオブジェクトがない階層でも動いてクラッシュした。start はグループだけで振り分けており (`slot_start` は GetCurrentMapGroupID だけ)、`obj(N)` の GetMapChara(N) を null の確認なしで使っていた。
 - 調査 (Codex): `ScriptMap::GetCurrentMapID()` は今の階層のマップの `LanaiMapInfo.hash` を返す (0x2DDF6C → 0x31EB24 → 0x314550、ScriptMap の保存項目 0x2A)。`IntroCommon::Execute` 0x1A05CC–D4 が +0x74 (ctor 第 2 引数、0x1A0634) と比べる。コンテンツ 73 の比較定数 0xDEF07D44 = S01002F01 の hash。
