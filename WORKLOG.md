@@ -415,3 +415,20 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - ROM: 見た目 0 / 1 の 210 件はすべて 0xFF、見た目 2 の 1186 件はほぼ 0 (5 件 0xFE)。
 - `treasure.ts` に `LANAI_EO_REFILL` と値・`lanaiChestRefillFor`。配置時 (`mapedit.ts`) に見た目から +0x5E を入れる (以前は行 0 の写しで 0 = 茶の箱でも中身が戻っていた)。パーツに「中身が戻る宝箱 (緑)」を追加。宝箱の編集に「ステージに入り直したとき」の選択と、枠が保存範囲外の警告。
 - テスト: ROM 全体の見た目と +0x5E の対応、配置時の値 (ローカル ROM で実行)。Lefthook 全テスト通過。Azahar での動作は未確認。
+
+## Panana 単一実行ファイル (Uwapo 内蔵) (2026-11-25、9126a0f / 0ab7bbb / fead346)
+
+- 方針 (ユーザー): Bun の単一実行ファイル。Uwapo の HTTP 配信と管理ページだけを移植し、設定で On/Off。Panana から直接配信に登録。Azahar の SD へのコピーは除外。Uwapo の web/ は並行して残す。
+- `server/uwapo/`: lanai-custom-stages web/ (99304a5) の packages / publish / panana-zip / merge / renumber / stage-files / stage-events / table-write とテストを写した。dev-push は「同じステージの入れ替え」だけを `push.ts` に (SD ミラーなし)。メッセージ API のテストは除いた (uwapo でも廃止済み)。uwapo の実サンプルを使う 3 件はスキップのまま。
+- `server/app.ts`: UI は 127.0.0.1 (エディタ、/api/packages・/api/publish・/api/stages、/api/local/{status,config,push,patch})。配信は 0.0.0.0 で、設定が On のときだけ起動し、ゲームの取得 (/api/stages.bin、/api/stages/<id>/<file>、/health) だけに答える。API は他の origin とホスト名を拒否 (CSRF・DNS rebinding)。設定は `<データ>/config.json` (Windows は %APPDATA%\Panana)。`server/main.ts` は二重起動ならブラウザを開くだけ。UI のポートは 8786 固定 (IndexedDB が origin ごと)。
+- `scripts/build-exe.ts` (`bun run build:exe`): vite build → dist と `server/assets/*` を `with { type: 'file' }` で埋め込む生成エントリ → `bun build --compile`。Windows x64 で 120 MB。起動・配信の On/Off・LAN 側の stages.bin・パッチのダウンロードを実行ファイルで確認した。
+- 画面: `#/distribution` (実行ファイルのときだけタブが出る)、書き出しの Uwapo パネルは実行ファイルでは「配信に登録」。画面の目視は未実施。
+- テスト: server/ 27 件 + `test/lanai-localserver.test.ts` 2 件。Lefthook 全テスト通過。
+
+## ゲーム内のサーバ URL (lanai-custom-stages 3dd3168)
+
+- タイトルの「せってい」: ペイン名の数字 4 バイトで「いつの間に通信」の obj を P_Menu04 へ、ほかを 1 つずつ上へ。巡回リンクの最後の付け替え、ラベル (0x3D31A0) と説明 (0x3D3628) のフック、灰色判定を外す、状態 2 の入口 0x3D386C → `ui_config_state2`。解析は roms/tmpmap/inv1125/result-settings.md (サブエージェント)。
+- 状態 2 の本体 0x3D38C4〜0x3D3B40 を領域 E (636 B) とし、build.ts で到達不能を検査。`ui_config_server` はキーボード (最大 128 文字、検査なし、初期文字列 = 今の URL) → `http://` で始まり `/` を含まない ASCII を SD `lanai-cs/server.txt` に保存。港のダウンロードはその URL を使い、未設定なら失敗の台詞で「せってい」を案内。
+- 領域が足りず、ヘルパーを Thumb (-mtp=soft、-Wl,--use-blx) にして収めた: D 7172/7216、E 632/636、C 1692/1696。ARM↔Thumb の呼び出しが BLX になっていることを逆アセンブルで確認。
+- build.ts は URL の引数をなくした。IPS の全バイトが計画した書き込み (ROM のデータを含まない) であることを確かめ、`server/assets/lanai-cs.ips` に同梱 (fead346)。
+- **未検証**: Azahar での動作 (上下キーでのフォーカス移動の順 = 最大のリスク、ラベルの幅、キーボード、保存、港のダウンロード)。lanai-custom-stages の 3ds テストの失敗 (stage script → CRO) は HEAD でも失敗しており、今回の変更とは無関係。

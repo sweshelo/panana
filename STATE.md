@@ -10,16 +10,14 @@
 - [ ] Azahar: 緑の宝箱が入り直すと戻り、茶の箱が空のままか。
 - [ ] docs/lanai/map.md §7.1 の +0x5E と key-objects の訂正 (submodule、了承を得てから)。
 
-## Panana 単一実行ファイル (Uwapo 内蔵) とゲーム内のサーバ URL
+## Panana 単一実行ファイル (Uwapo 内蔵) とゲーム内のサーバ URL (9126a0f / 0ab7bbb / fead346、lanai-custom-stages 3dd3168)
 
-計画: ~/.claude/plans/1-2-3-bun-uwapo-http-on-off-3d-magical-moonbeam-of-6a29e422-7f26-44cd-be3b-eec963b6e248.md
-
-- [ ] 4.1 せってい (MenuConfigImpl) のペインの付け替え・いつの間に通信のコード領域・キーボードの解析。
-- [ ] 3.1 Uwapo の配信と管理を server/uwapo/ へ移植 (dev-push の SD ミラーは除く)。
-- [ ] 3.2 server/main.ts (UI 127.0.0.1、配信 0.0.0.0 を設定で On/Off、/api/local/*)。
-- [ ] 3.3 bun build --compile のビルドスクリプト。
-- [ ] 3.4 管理ページ #/distribution と書き出しダイアログの「配信に登録」。
-- [ ] 4.2 せっていに「カスタムステージサーバ」、URL を SD の lanai-cs/server.txt から読む。汎用 IPS を同梱。
+- [x] 3.1〜3.4 server/ の移植、配信の On/Off、bun build --compile、#/distribution と「配信に登録」。
+- [x] 4.1〜4.2 せってい「カスタムステージサーバ」(いつの間に通信を詰める)、URL を SD の lanai-cs/server.txt から読む、汎用 IPS を同梱。
+- [ ] Azahar で確かめる: せっていの並び (すれちがい通信・チェックイン・サポート番号・コード入力・カスタムステージサーバ) と上下キーの移動順、ラベルが枠に収まるか、URL の入力と保存、説明文、港の「カスタム」で実行ファイルの配信から受信。移動順が崩れたら result-settings.md の案 Y。
+- [ ] 実行ファイルの画面を確かめる: #/distribution、書き出しの「配信に登録」、Windows のファイアウォールの許可。
+- [ ] 配布の形 (GitHub Releases など)、mac / linux 版のビルド、署名 (SmartScreen)。
+- [ ] lanai-custom-stages の README (ルート) の `bun run build http://…` を直す (ユーザーの未コミットの変更があるため触っていない)。
 
 ## ステージのインポート (2026-11-25、2f2e0bd)
 
