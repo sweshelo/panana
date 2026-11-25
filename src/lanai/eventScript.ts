@@ -332,6 +332,8 @@ export const SCRIPT_TRIGGER_LABEL: Record<ScriptTrigger, string> = {
 };
 /** Whether the trigger is of a row of the EventObject table (start and intro are of the map group alone). */
 export const triggerHasRow = (t: ScriptTrigger): boolean => t !== 'start' && t !== 'intro';
+/** A map's ID as the script writes it: 0x and 8 hex digits (`on start(1, 0xDEF07D44)`). */
+export const hexId = (v: number): string => `0x${(v >>> 0).toString(16).toUpperCase().padStart(8, '0')}`;
 
 export interface ScriptFunction {
   name: string;
@@ -348,6 +350,11 @@ export interface ScriptEvent {
   /** The MapGroup row (what ScriptMap::GetCurrentMapGroupID() returns) and the EventObject row ID (0 for start). */
   group: number;
   row: number;
+  /**
+   * A start of one floor of the group: the map's ID (what ScriptMap::GetCurrentMapID() returns, LanaiMapInfo.hash;
+   * IntroCommon::Execute 0x1A05CC compares it with the map it is made with). Absent: every map of the group.
+   */
+  map?: number;
   body: ScriptNode[];
   line: number;
   /** The function the event runs; null when its statements are written in place. */
@@ -1475,22 +1482,48 @@ export function parseStageScript(src: string): StageScript {
       if (trig.t !== 'id' || !(SCRIPT_TRIGGERS as readonly string[]).includes(trig.s))
         fail(`きっかけは ${SCRIPT_TRIGGERS.join(' / ')} です`, trig);
       const trigger = trig.s as ScriptTrigger;
-      const [group, r] = triggerHasRow(trigger)
-        ? call(
-            `on ${trigger}`,
-            () => u32('MapGroup の番号'),
-            () => row(),
-          )
-        : [...call(`on ${trigger}`, () => u32('MapGroup の番号')), 0];
+      // a start may name the map (a floor of the group): on start(group, map)
+      let map: number | undefined;
+      let group: number, r: number;
+      if (triggerHasRow(trigger))
+        [group, r] = call(
+          `on ${trigger}`,
+          () => u32('MapGroup の番号'),
+          () => row(),
+        );
+      else if (trigger === 'start') {
+        need('(');
+        group = u32('MapGroup の番号');
+        r = 0;
+        if (eat(',')) map = u32('マップの ID');
+        if (!eat(')')) fail('on start の引数は MapGroup の番号と、階層だけのときのマップの ID です');
+      } else [group, r] = [...call(`on ${trigger}`, () => u32('MapGroup の番号')), 0];
       if (triggerHasRow(trigger) && events.some((e) => triggerHasRow(e.trigger) && e.group === group && e.row === r))
         fail(`MapGroup ${group} のイベント ${r} には、もうイベントが割り当てられています`, trig);
       if (
         events.some(
-          (e) => e.trigger === trigger && e.group === group && (!triggerHasRow(trigger) || trigger === 'defeat'),
+          (e) =>
+            e.trigger === trigger &&
+            e.group === group &&
+            e.map === map &&
+            (!triggerHasRow(trigger) || trigger === 'defeat'),
         )
       )
-        fail(`MapGroup ${group} の「${SCRIPT_TRIGGER_LABEL[trigger]}」は 1 つだけです`, trig);
-      const event: ScriptEvent = { trigger, group, row: r, body: [], line: t.line, fn: null, from: 0, to: 0 };
+        fail(
+          `MapGroup ${group}${map === undefined ? '' : ` のマップ ${hexId(map)}`} の「${SCRIPT_TRIGGER_LABEL[trigger]}」は 1 つだけです`,
+          trig,
+        );
+      const event: ScriptEvent = {
+        trigger,
+        group,
+        row: r,
+        ...(map === undefined ? {} : { map }),
+        body: [],
+        line: t.line,
+        fn: null,
+        from: 0,
+        to: 0,
+      };
       locals = new Map();
       if (is('{')) {
         Object.assign(event, block({ inSwitch: false }));
@@ -1543,6 +1576,8 @@ export interface ScriptBinding {
   group: number;
   /** The EventObject row (0 for start and intro). */
   row: number;
+  /** A start of one floor: the map's ID (ScriptEvent.map); absent for the whole group. */
+  map?: number;
   /** The function; '' for nothing after the game's part (intro alone: the opening without statements of its own). */
   fn: string;
 }
@@ -1550,7 +1585,7 @@ export const emptyScriptDoc = (): ScriptDoc => ({ vars: [], functions: [], bindi
 export const scriptDocIsEmpty = (d: ScriptDoc): boolean => !d.vars.length && !d.functions.length && !d.bindings.length;
 
 const bindingText = (b: ScriptBinding): string =>
-  `on ${b.trigger}(${triggerHasRow(b.trigger) ? `${b.group}, ${b.row}` : b.group}) ${b.fn || '{}'}`;
+  `on ${b.trigger}(${triggerHasRow(b.trigger) ? `${b.group}, ${b.row}` : b.map !== undefined ? `${b.group}, ${hexId(b.map)}` : b.group}) ${b.fn || '{}'}`;
 
 /** The script's text of a document, and the line each function's body begins at. */
 export function scriptDocSource(doc: ScriptDoc): {
@@ -1729,13 +1764,23 @@ export function scriptDocFromSource(src: string): ScriptDoc {
     // an intro with nothing of its own stays without a function (the game's opening alone)
     if (!fn && e.trigger === 'intro' && !e.body.length && !src.slice(e.from, e.to).trim()) fn = '';
     else if (!fn) {
-      const stem = triggerHasRow(e.trigger) ? `${e.trigger}_${e.group}_${e.row}` : `${e.trigger}_${e.group}`;
+      const stem = triggerHasRow(e.trigger)
+        ? `${e.trigger}_${e.group}_${e.row}`
+        : e.map !== undefined
+          ? `${e.trigger}_${e.group}_${hexId(e.map).slice(2)}`
+          : `${e.trigger}_${e.group}`;
       fn = stem;
       for (let k = 2; names.has(fn); k++) fn = `${stem}_${k}`;
       names.add(fn);
       doc.functions.push({ name: fn, body: dedent(src.slice(e.from, e.to)), ...onNotes[k] });
     }
-    doc.bindings.push({ trigger: e.trigger, group: e.group, row: e.row, fn });
+    doc.bindings.push({
+      trigger: e.trigger,
+      group: e.group,
+      row: e.row,
+      ...(e.map === undefined ? {} : { map: e.map }),
+      fn,
+    });
   }
   return doc;
 }
@@ -1864,6 +1909,8 @@ const MONSTER_OWNED = ['CreateChara', 'CreateMonster', 'CreateMonsterParameter',
 /** Names of lanai.crs the code imports (script-abi.md, out/script-abi/signatures.tsv). */
 export const SCRIPT_API = {
   group: '_ZN9ScriptMap20GetCurrentMapGroupIDEv',
+  // the floor's map (LanaiMapInfo.hash): ScriptMap+0x2A of the map now (0x2DDF6C → 0x31EB24 → 0x314550)
+  mapId: '_ZN9ScriptMap15GetCurrentMapIDEv',
   new: '_ZnwjRKSt9nothrow_t',
   del: '_ZdlPv',
   npcCtor: '_ZN13NpcCommonTurnC1EjP9ChrObjectj18ScriptMessageParamS2_b',
@@ -2835,6 +2882,14 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
   const { fn, g } = c;
   for (const n of nodes) {
     fn.flushIfFar();
+    // an object not on this map: the statement is skipped (GetMapChara(N) is null; see nodeCharaRows)
+    const rows = nodeCharaRows(n);
+    const absent = rows.length ? g.uniq(`${fn.name}_absent`) : null;
+    for (const r of rows) {
+      fn.load('r0', r);
+      fn.call(A.mapChara);
+      fn.op('cmp r0, #0', `beq ${absent!}`);
+    }
     switch (n.op) {
       case 'if': {
         const yes = g.uniq(`${fn.name}_then`),
@@ -3025,7 +3080,26 @@ function compileNodes(c: Ctx, nodes: ScriptNode[]): void {
         fn.op(`b ${c.exit}`);
         break;
     }
+    if (absent) fn.at(absent);
   }
+}
+
+/**
+ * The objects of the map (obj(N)) a statement acts on outside its branches' bodies. The game's
+ * ScriptMap::GetMapChara(N) is null on a map without the row (another floor of the group), and the statement would
+ * use it: the statement is not run there.
+ */
+export function nodeCharaRows(n: ScriptNode): number[] {
+  const rows = new Set<number>();
+  const add = (w: ScriptWho | null | undefined): void => {
+    if (w?.kind === 'chara') rows.add(w.row);
+  };
+  for (const call of nodeCalls(n)) {
+    add(call.self);
+    for (const a of call.args) if (a.k === 'c' || a.k === 'p') add(a.who);
+  }
+  if (n.op === 'vanishEffect') add(n.who);
+  return [...rows];
 }
 
 // ------------------------------------------------------------------------------------------------ the CRO
@@ -3219,15 +3293,25 @@ export function compileStageScript(
 ): StageScriptBuild {
   const g = new Gen();
   const vars = new Map(script.vars.map((v) => [v.name, v]));
-  const events = script.events.map((e, k) => ({
-    ...e,
-    cls: `PnEvent${k}`,
-    shape: SHAPE[e.trigger],
-    effects: effectsOf(e.body),
-    rare: usesRare(e.body),
-    clear: usesClear(e.body),
-    intro: e.trigger === 'intro' ? intros[e.group] : undefined,
-  }));
+  // a floor's start runs the group's start first (its own part: its return ends that part alone), then its own
+  const events = script.events.map((e, k) => {
+    const prefix =
+      e.trigger === 'start' && e.map !== undefined
+        ? (script.events.find((x) => x.trigger === 'start' && x.group === e.group && x.map === undefined)?.body ?? [])
+        : [];
+    const whole = [...prefix, ...e.body];
+    return {
+      ...e,
+      prefix,
+      whole,
+      cls: `PnEvent${k}`,
+      shape: SHAPE[e.trigger],
+      effects: effectsOf(whole),
+      rare: usesRare(whole),
+      clear: usesClear(whole),
+      intro: e.trigger === 'intro' ? intros[e.group] : undefined,
+    };
+  });
   for (const e of events) {
     const p = eventProblem(e.trigger, e.body);
     if (p) throw new ScriptError(p, e.line);
@@ -3357,25 +3441,51 @@ export function compileStageScript(
     else if (shape === 'button') f.op('push {r4, r5, r6, lr}', 'mov r5, r0', 'mov r4, r1');
     else f.op('push {r4, lr}', 'mov r4, r0');
     f.call(A.group);
-    for (const e of own) {
-      f.cmp('r0', e.group);
-      if (!byGroup) f.cmp(id, e.row, 'eq');
-      f.op(`beq ${e.cls}_make`);
-    }
+    const groups = [...new Set(own.map((e) => e.group))];
+    const dispatch = new Map(groups.map((x) => [x, g.uniq(`slot_${slot}_group${x}`)]));
+    if (byGroup)
+      for (const x of groups) {
+        f.cmp('r0', x);
+        f.op(`beq ${dispatch.get(x)!}`);
+      }
+    else
+      for (const e of own) {
+        f.cmp('r0', e.group);
+        f.cmp(id, e.row, 'eq');
+        f.op(`beq ${e.cls}_make`);
+      }
     f.op('mov r0, #0');
     f.at(ret);
     if (shape === 'npc') f.op('add sp, sp, #0x14', 'pop {r4, r5, pc}');
     else if (shape === 'button') f.op('pop {r4, r5, r6, pc}');
     else f.op('pop {r4, pc}');
+    if (byGroup)
+      for (const x of groups) {
+        // a group's map: its opening while it has not played in this visit, else the start of the floor (the map now;
+        // it runs the group's start first), else the group's start, else nothing
+        f.flush(false);
+        f.at(dispatch.get(x)!);
+        const intro = own.find((e) => e.intro && e.group === x);
+        const floors = own.filter((e) => e.trigger === 'start' && e.group === x && e.map !== undefined);
+        const whole = own.find((e) => e.trigger === 'start' && e.group === x && e.map === undefined);
+        if (intro) {
+          f.load('r0', intro.intro!.flag);
+          f.call(A.getBit);
+          f.op('tst r0, #0xff', `beq ${intro.cls}_make`);
+        }
+        if (floors.length) {
+          f.call(A.mapId);
+          for (const e of floors) {
+            f.cmp('r0', e.map!);
+            f.op(`beq ${e.cls}_make`);
+          }
+        }
+        f.op(whole ? `b ${whole.cls}_make` : 'mov r0, #0', ...(whole ? [] : [`b ${ret}`]));
+      }
     for (const e of own) {
       f.flush(false);
       f.at(`${e.cls}_make`);
       if (e.intro) {
-        // played in this visit: the group's start (if it has one) or nothing
-        const after = own.find((x) => x.trigger === 'start' && x.group === e.group);
-        f.load('r0', e.intro.flag);
-        f.call(A.getBit);
-        f.op('tst r0, #0xff', 'movne r0, #0', `bne ${after ? `${after.cls}_make` : ret}`);
         f.load('r0', objectSize(e));
         f.call(A.new);
         f.op('cmp r0, #0', `beq ${ret}`);
@@ -3462,12 +3572,12 @@ export function compileStageScript(
   for (const e of events) {
     const x = new Fn(g, `${e.cls}_exec`);
     const exit = g.uniq(`${e.cls}_exit`);
-    const camera = usesCamera(e.body);
+    const camera = usesCamera(e.whole);
     const base = e.intro ? INTRO_FRAME.size : FRAME.size;
     // the event's locals above the frame, then the scratch; the whole a size `sub sp` can take
     const locals = new Map<string, number>();
     let localsEnd = base;
-    for (const [name, kind] of localsOf(e.body)) {
+    for (const [name, kind] of localsOf(e.whole)) {
       locals.set(name, localsEnd);
       localsEnd += kind === 'vec' ? VEC_SIZE : 4;
     }
@@ -3515,28 +3625,32 @@ export function compileStageScript(
       x.call(A.waitAnimation);
       x.op('mov r0, r4');
       x.call(A.buttonUp);
-    } else if (e.trigger === 'start' && !fadesIn(e.body)) {
+    } else if (e.trigger === 'start' && !fadesIn(e.whole)) {
       // the screen is black when a map's start event runs: FadeInWait(0.3, 2), as S01Intro of content 4
       fmov(x, 's0', 0.3);
       x.load('r0', FADE_DISPLAY);
       x.call(A.fadeIn);
     } else if (e.intro) introBefore(x, g, e.cls, e.intro);
-    compileNodes(
-      {
-        fn: x,
-        g,
-        trigger: e.trigger,
-        vars,
-        exit,
-        breakTo: null,
-        effects: new Map(e.effects.map((id, k) => [id, NEW_SIZE[e.shape] + EFFECT_SIZE * k])),
-        rare: e.rare ? rareAt(e) : null,
-        clear: e.clear ? clearAt(e) : null,
-        locals,
-        scr: { top: localsEnd, end: frame },
-      },
-      e.body,
-    );
+    const ctx: Ctx = {
+      fn: x,
+      g,
+      trigger: e.trigger,
+      vars,
+      exit,
+      breakTo: null,
+      effects: new Map(e.effects.map((id, k) => [id, NEW_SIZE[e.shape] + EFFECT_SIZE * k])),
+      rare: e.rare ? rareAt(e) : null,
+      clear: e.clear ? clearAt(e) : null,
+      locals,
+      scr: { top: localsEnd, end: frame },
+    };
+    if (e.prefix.length) {
+      // the group's start: its return goes on to the floor's own part
+      const part = g.uniq(`${e.cls}_group_end`);
+      compileNodes({ ...ctx, exit: part }, e.prefix);
+      x.at(part);
+    }
+    compileNodes(ctx, e.body);
     x.at(exit);
     if (camera) {
       // an event that ends with the camera held gives it back at once

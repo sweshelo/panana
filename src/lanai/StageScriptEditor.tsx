@@ -26,7 +26,7 @@ import { talkGroups } from './talk';
 import { PopupIconList } from './PopupIconList';
 import { docBound, docUnbound, SCRIPT_WORDS, introBinding, startBinding } from './scriptDoc';
 import type { LanaiSession } from './session';
-import { checkStageScript, groupOpening, type StageScriptCheck } from './stageScript';
+import { checkStageScript, groupFloors, groupOpening, type StageScriptCheck } from './stageScript';
 
 export { STAGE_SCRIPT_EXAMPLE } from './scriptDoc';
 
@@ -530,32 +530,45 @@ export function LanaiStageScriptEditor({
       {stored && groups.length > 0 && (
         <>
           <h4>マップが始まるとき (戦闘のあとも)</h4>
-          {groups.map((g) => (
-            <label key={g} className="field">
-              <span>{`MapGroup ${g}`}</span>
-              <select
-                aria-label={`MapGroup ${g} が始まるときの関数`}
-                value={startBinding(stored.doc, g)?.fn ?? ''}
-                onChange={(e) =>
-                  setDoc(
-                    e.target.value
-                      ? docBound(stored.doc, { trigger: 'start', group: g, row: 0, fn: e.target.value })
-                      : docUnbound(stored.doc, { trigger: 'start', group: g, row: 0 }),
-                  )
-                }
-              >
-                <option value="">なし (ゲームの既定)</option>
-                {appliedFns.map((f) => (
-                  <option key={f.name} value={f.name}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          {groups.flatMap((g) =>
+            [
+              { key: `${g}`, label: `MapGroup ${g} (どの階層でも)`, map: undefined as number | undefined },
+              ...groupFloors(maps!, g).map((m) => ({ key: `${g}/${m.hash}`, label: `└ ${m.name}`, map: m.hash })),
+            ].map((r) => (
+              <label key={r.key} className="field">
+                <span>{r.label}</span>
+                <select
+                  aria-label={`${r.label} が始まるときの関数`}
+                  value={startBinding(stored.doc, g, r.map)?.fn ?? ''}
+                  onChange={(e) => {
+                    const target = {
+                      trigger: 'start' as const,
+                      group: g,
+                      row: 0,
+                      ...(r.map === undefined ? {} : { map: r.map }),
+                    };
+                    setDoc(
+                      e.target.value
+                        ? docBound(stored.doc, { ...target, fn: e.target.value })
+                        : docUnbound(stored.doc, target),
+                    );
+                  }}
+                >
+                  <option value="">なし (ゲームの既定)</option>
+                  {appliedFns.map((f) => (
+                    <option key={f.name} value={f.name}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )),
+          )}
           <p className="muted small">
-            そのマップに入るたび (戦闘から戻ったときも) に実行されます。画面は暗い状態で始まり、本文に fadeIn
-            が無ければ先頭で自動的に明るくします。1 回だけにする処理は、変数を if で見て書きます。
+            そのマップに入るたび (戦闘から戻ったときも)
+            に実行されます。グループの関数はどの階層でも、階層の関数はその階層でだけ実行され、両方あるときはグループの関数が先です。画面は暗い状態で始まり、本文に
+            fadeIn が無ければ先頭で自動的に明るくします。1 回だけにする処理は、変数を if
+            で見て書きます。ほかの階層にしかないオブジェクト (obj) を使う文は、その階層では飛ばされます。
           </p>
         </>
       )}

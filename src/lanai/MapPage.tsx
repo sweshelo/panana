@@ -39,7 +39,8 @@ import { Signal, useEditorState, useSignal } from '../ui/useEditorState';
 import { hex8, u32, w32 } from '../util/bytes';
 import { contentTitle, lanaiContents, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
-import { EventScriptBinding } from './EventScriptBinding';
+import { EventScriptBinding, MapStartBinding } from './EventScriptBinding';
+import { rowBinding } from './scriptDoc';
 import { LANAI_ACTION_SHOP, LANAI_SPEAKER_NPC } from './eventParts';
 import { lanaiCenterOnAnchor, lanaiMapHref, lanaiShopHref, setLanaiCenterOnAnchor } from './hrefs';
 import { lanaiArrivals } from './mapLinks';
@@ -528,18 +529,14 @@ function MapDetail({
         open && (
           <>
             <Inspector st={st} view={view} content={content} />
-            {session.createdFiles.has(content.archive.toUpperCase()) && (
-              <>
-                <h3>演出プレビュー</h3>
-                <ScriptPreviewControls
-                  view={view}
-                  source={session.stageScripts.get(content.archive.toUpperCase())?.source ?? ''}
-                  onStart={() => setMode('split')}
-                />
-              </>
-            )}
-            <h3>検証</h3>
-            <MapChecks st={st} hash={info.hash} validate={(doc) => lanaiValidate(maps, info, doc)} />
+            <SelectionPreview st={st} view={view} content={content} onStart={() => setMode('split')} />
+            <MapChecks
+              st={st}
+              hash={info.hash}
+              validate={(doc) => lanaiValidate(maps, info, doc)}
+              title={<h3>検証</h3>}
+              bySelection
+            />
           </>
         )
       }
@@ -1237,6 +1234,52 @@ const REC_FIELDS: Record<number, FieldDef[]> = {
   ],
 };
 
+/**
+ * The preview of the stage's script (made stages only): with nothing selected, or a record whose event is given a
+ * function (that function picked at first); the inspector shows nothing of it for anything else.
+ */
+function SelectionPreview({
+  st,
+  view,
+  content,
+  onStart,
+}: {
+  st: LanaiEditState;
+  view: LanaiMapView;
+  content: LanaiContent;
+  onStart: () => void;
+}): ReactNode {
+  useEditorState(st);
+  const session = st.maps.session;
+  useLanaiRevision(session);
+  const archive = content.archive.toUpperCase();
+  if (!session.createdFiles.has(archive)) return null;
+  const stored = session.stageScripts.get(archive);
+  const sel = st.selection;
+  let initial: string | undefined;
+  if (sel.type === 'rec') {
+    const raw = st.current?.recs[sel.section]?.[sel.index]?.raw;
+    const group = st.info?.dungeon;
+    initial =
+      raw && stored && group !== undefined
+        ? rowBinding(stored.doc, group, lanaiRecEventRow(sel.section, raw))?.fn || undefined
+        : undefined;
+    if (!initial) return null;
+  } else if (sel.type !== 'none') return null;
+  return (
+    <>
+      <h3>演出プレビュー</h3>
+      <ScriptPreviewControls
+        key={initial ?? ''}
+        view={view}
+        source={stored?.source ?? ''}
+        onStart={onStart}
+        initial={initial}
+      />
+    </>
+  );
+}
+
 function Inspector({
   st,
   view,
@@ -1270,6 +1313,7 @@ function Inspector({
   return (
     <>
       <p className="muted small">タイルかレコードを選んでください。</p>
+      <MapStartBinding st={st} />
       {st.info && <PlacedEventIndex st={st} />}
       {st.info && <Facts maps={st.maps} info={st.info} view={view} />}
       {st.info && <LanaiTilesetField maps={st.maps} info={st.info} />}

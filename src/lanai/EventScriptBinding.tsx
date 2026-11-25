@@ -3,12 +3,18 @@
 // record's section and kind (stageScript.ts recordTrigger); giving a function makes the row's first action "a script".
 import { useState, type ReactNode } from 'react';
 import { LANAI_ACTION_SCRIPT } from './actions';
-import { SCRIPT_TRIGGER_LABEL, ScriptDocError, type ScriptTrigger } from './eventScript';
+import {
+  parseStageScript,
+  SCRIPT_TRIGGER_LABEL,
+  ScriptDocError,
+  type ScriptEvent,
+  type ScriptTrigger,
+} from './eventScript';
 import type { LanaiEditState } from './mapedit';
 import { LANAI_EVENT_ACTIONS } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
-import { docBound, docUnbound, rowBinding } from './scriptDoc';
-import { eventRecordKind, recordTrigger } from './stageScript';
+import { docBound, docUnbound, rowBinding, startBinding } from './scriptDoc';
+import { eventRecordKind, recordTrigger, startMissingRows } from './stageScript';
 
 const u32 = (b: Uint8Array, o: number): number =>
   (b[o]! | (b[o + 1]! << 8) | (b[o + 2]! << 16) | (b[o + 3]! << 24)) >>> 0;
@@ -108,6 +114,92 @@ export function EventScriptBinding({
         {bound?.trigger === 'defeat'
           ? ' この範囲はイベントの置き場です。プレイヤーが入れる場所に置くと、入ったときにも同じ関数が実行されます。'
           : ''}
+      </p>
+    </>
+  );
+}
+
+/**
+ * The start of the open map (nothing selected): the function run when this floor begins and the one run when any
+ * floor of the group begins. Both run on this floor, the group's first (eventScript.ts compileStageScript). An object
+ * a start names that is not on a floor it runs on is noted: the statements that use it are skipped there.
+ */
+export function MapStartBinding({ st }: { st: LanaiEditState }): ReactNode {
+  const session = st.maps.session;
+  useLanaiRevision(session);
+  const [error, setError] = useState('');
+  const archive = st.maps.content.archive.toUpperCase();
+  const info = st.info;
+  const group = info?.dungeon;
+  if (!info || info.world || group === undefined || !session.createdFiles.has(archive)) return null;
+  const stored = session.stageScripts.get(archive);
+  const functions = (stored?.doc.functions ?? []).filter((f) => !f.params);
+  if (!stored || !functions.length)
+    return (
+      <>
+        <h3>マップが始まるとき</h3>
+        <p className="muted small">
+          スクリプトの関数:
+          まだありません。ステージのページの「スクリプトを編集」で関数を書いて保存すると、ここで割り当てられます。
+        </p>
+      </>
+    );
+  let events: ScriptEvent[] = [];
+  try {
+    events = parseStageScript(stored.source).events;
+  } catch {
+    // the stage's page shows what keeps the script from reading
+  }
+  const give = (fn: string, map?: number): void => {
+    try {
+      const target = { trigger: 'start' as const, group, row: 0, ...(map === undefined ? {} : { map }) };
+      session.setStageScriptDoc(archive, fn ? docBound(stored.doc, { ...target, fn }) : docUnbound(stored.doc, target));
+      session.edited();
+      setError('');
+    } catch (e) {
+      setError(e instanceof ScriptDocError ? e.message : (e as Error).message);
+    }
+  };
+  const rows: { label: string; map?: number }[] = [
+    { label: `この階層 (${info.name}) が始まるとき`, map: info.hash },
+    { label: `MapGroup ${group} のどの階層でも始まるとき` },
+  ];
+  const missing = rows.flatMap((r) => {
+    const e = events.find((x) => x.trigger === 'start' && x.group === group && x.map === r.map);
+    return e
+      ? startMissingRows(st.maps, group, e.body, info.hash).map(
+          (x) => `関数「${e.fn ?? '(その場の文)'}」の obj(${x.row}) はこの階層にないので、使う文を飛ばします`,
+        )
+      : [];
+  });
+  return (
+    <>
+      <h3>マップが始まるとき</h3>
+      {rows.map((r) => (
+        <label key={r.map ?? 'group'} className="field">
+          <span>{r.label}</span>
+          <select
+            aria-label={r.label}
+            value={startBinding(stored.doc, group, r.map)?.fn ?? ''}
+            onChange={(e) => give(e.target.value, r.map)}
+          >
+            <option value="">なし</option>
+            {functions.map((f) => (
+              <option key={f.name} value={f.name}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ))}
+      {error && <div className="error">{error}</div>}
+      {missing.map((m) => (
+        <div key={m} className="issue warn">{`⚠ ${m}`}</div>
+      ))}
+      <p className="muted small">
+        マップに入るたび (戦闘から戻ったときも)
+        に実行されます。両方あるときは、グループの関数のあとにこの階層の関数を実行します (グループの関数の return
+        はグループの分だけを終えます)。ほかの階層にしかないオブジェクトは、この階層の関数で扱います。
       </p>
     </>
   );

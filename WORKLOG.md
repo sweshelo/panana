@@ -433,7 +433,7 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - build.ts は URL の引数をなくした。IPS の全バイトが計画した書き込み (ROM のデータを含まない) であることを確かめ、`server/assets/lanai-cs.ips` に同梱 (fead346)。
 - **未検証**: Azahar での動作 (上下キーでのフォーカス移動の順 = 最大のリスク、ラベルの幅、キーボード、保存、港のダウンロード)。lanai-custom-stages の 3ds テストの失敗 (stage script → CRO) は HEAD でも失敗しており、今回の変更とは無関係。
 
-## ステージのクリア・出入口のイベント・ボタンを戻す (2026-11-25、コミット: 下記)
+## ステージのクリア・出入口のイベント・ボタンを戻す (2026-11-25、ae091e1)
 
 - 調査 (Codex、roms/tmpmap/random-clear/findings.md・findings2.md、静的解析)。
   - 22.D01001B01@3.0 (区画 3 種類 7 落とし穴、行 6、動作 0x2D): CRO の枠 6 (MoveEvent) が `D01B01Hole` (基底は本体の HoleFallCommon、new 0x98) を作る。行き先は vt+0x18 の抽選 `RandRange(100)` で 2 地点のどちらか。確率は表 DoubleupProbability (0x5E7F0000 / 0x3A18A800) の 5 件: 45 / 35 / 28 / 23 / 10%。成功で bit 0xE3。Panana の逆コンパイラは枠 6 を読んでいなかった。
@@ -448,3 +448,26 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - テスト: `test/lanai-clearexit.test.ts` (コンパイル → 逆コンパイルの往復、CRO 22 / 23 の読み戻し)、scriptdoc・scriptbinding の一覧を更新。ローカル ROM で関連テスト通過、全テスト通過 (quiet-check)。
 - **未検証**: Azahar での動作すべて (クリアの演出と結果の画面・島へ戻ってクリア済みになるか、出入口に触れたときに枠 6 のイベントが走って移るか、buttonOff 後にもう一度押せるか)。カスタムステージのクリアが配布用パッチでセーブに残るか。
 - 研究用スクリプト: `scripts/research/dump-recs.ts` (レコードと EventObject の動作)、`decompile-content.ts`、`dump-cro.ts`。
+
+## Lanai のセリフにルビを自動で振る (2026-11-25、49161d0)
+
+- 共通エディタ (MessageEditor) の挿入ボタンの横に「ルビを自動で振る」。下書きの地の文の漢字すべてに `{ruby:親字|よみ}` を付け、反映で確定。既存のルビ・`{ins}`・`{tag}`・`{page}`・改行はそのまま。MessagePage / TalkPage / MapPage のインスペクタ / Description に付く。
+- 形態素解析: `lindera-wasm-web-ipadic@2.0.0` (lindera-wasm の web ビルド、IPADIC を wasm に埋め込み、13 MB)。初回クリックで jsDelivr から読む (`src/lanai/rubyTokenizer.ts`)。辞書の配置を検討した結果:
+  - 本家 lindera-wasm 7.0.0 の辞書 zip (GitHub Releases、10.5 MB / 展開 47.5 MB) は CORS ヘッダがなくブラウザから取れない。展開すると dict.words が 32.7 MB で Pages の 25 MiB 上限を超える。
+  - jsDelivr は CORS 付き。`dist/` と実行ファイルは大きくならない (ビルドで確認)。ネット接続が必要。
+- 送り仮名の切り分け (`src/lanai/autoRuby.ts`): 表層形のかなを読みに当て、漢字の並びごとにルビ。当たらなければ語全体に 1 つ (今日→きょう)。読みは token の `reading` (カタカナ→ひらがな)。
+- `MessageSource.tools` の第 2 引数 `DraftEdit` (下書き全体の書き換え)。
+- テスト `test/lanai-autoruby.test.ts`: 偽のトークナイザと devDependency の実辞書 (8 件通過)。
+- **未検証**: ブラウザでの操作 (jsDelivr からの読み込み・ボタン・反映・undo)。
+
+## 階層ごとの「マップが始まるとき」と /maps インスペクタの整理 (2026-11-26、コミット: 次)
+
+- 発端: グループの start に入れた初期化が、対象のオブジェクトがない階層でも動いてクラッシュした。start はグループだけで振り分けており (`slot_start` は GetCurrentMapGroupID だけ)、`obj(N)` の GetMapChara(N) を null の確認なしで使っていた。
+- 調査 (Codex): `ScriptMap::GetCurrentMapID()` は今の階層のマップの `LanaiMapInfo.hash` を返す (0x2DDF6C → 0x31EB24 → 0x314550、ScriptMap の保存項目 0x2A)。`IntroCommon::Execute` 0x1A05CC–D4 が +0x74 (ctor 第 2 引数、0x1A0634) と比べる。コンテンツ 73 の比較定数 0xDEF07D44 = S01002F01 の hash。
+- 言語: `on start(group, 0xMAPID)` (その階層だけ)。`ScriptEvent.map` / `ScriptBinding.map`、`hexId`、関数名の幹 `start_<g>_<MAPID>`。scriptDoc の `sameTarget` / `startBinding(doc, g, map?)` / `docBound` が map を区別。
+- 生成: 階層の start は「グループの start の本文 (専用の終了ラベル: return はその部分だけを終える) → 階層の本文」の 1 クラス。`slot_start` はグループ → (入場の演出のビットが未設定なら intro) → GetCurrentMapID で階層 → グループの start → 0。効果・rare・clear・camera・let・自動 fadeIn は合成した本文で決める。
+- 安全策: 文ごと (if は条件だけ) に、使う `obj(N)` を先に GetMapChara(N) で探し、null ならその文を飛ばす (`nodeCharaRows`)。全イベントに効く。
+- 検証: `checkStageScript` が start の参照するオブジェクトのうち、動く階層にないものを notes に出す (`startMissingRows`、`mapEventRows`、`groupFloors`)。階層の ID がグループの階層でなければ problems。
+- UI: /maps は何も選んでいないインスペクタに「マップが始まるとき」(この階層 / どの階層でも) の選択と、この階層にない obj の警告 (`MapStartBinding`)。演出プレビューは未選択か、関数を割り当てたレコードの選択時だけ (その関数を初期選択)。検証は未選択なら全件、選択中は対象に関係するものだけ (`issueTouches`、`MapChecks` の `title` / `bySelection`。oahu は従来どおり)。/stages の開始処理にグループごとの階層の行。
+- テスト: `test/lanai-floorstart.test.ts` (5 件、ROM あり)。全体の lint・型・テストは quiet-check で通過。
+- **未検証**: ブラウザでの /maps・/stages の操作。Azahar でグループと階層の start の両方を割り当て、各階層に入ってクラッシュしないこと・対象の階層でだけ初期化されること。逆コンパイラは GetCurrentMapID の振り分けを読まない (Panana の出力を読み戻すと階層の start は出ない)。

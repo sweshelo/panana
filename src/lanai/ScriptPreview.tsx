@@ -66,14 +66,17 @@ interface PreviewLogLine {
   skipped: boolean;
 }
 
+/** `initial`: the function picked at first (the one given to the selected record); the parent keys on it. */
 export function ScriptPreviewControls({
   view,
   source,
   onStart,
+  initial,
 }: {
   view: LanaiMapView;
   source: string;
   onStart?: () => void;
+  initial?: string;
 }): ReactNode {
   const script = useMemo(() => {
     try {
@@ -82,7 +85,7 @@ export function ScriptPreviewControls({
       return { value: null, error: (e as Error).message };
     }
   }, [source]);
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(initial ?? '');
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [fade, setFade] = useState(0);

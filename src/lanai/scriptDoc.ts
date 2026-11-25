@@ -2,23 +2,29 @@
 // taking them back, the words of the language as the editor lists them (help now, completion later), and the samples.
 import { triggerHasRow, type ScriptBinding, type ScriptDoc, type ScriptTrigger } from './eventScript';
 
-/** What a binding is of: a row of a map group's EventObject table, or the group's start. */
+/** What a binding is of: a row of a map group's EventObject table, or the group's start (`map`: of one floor). */
 export interface BindingTarget {
   trigger: ScriptTrigger;
   group: number;
   row: number;
+  map?: number;
 }
-/** Whether two bindings are of the same thing: a row has one event whatever starts it, a group has one start. */
+/**
+ * Whether two bindings are of the same thing: a row has one event whatever starts it, a group has one start and one
+ * of each floor.
+ */
 export const sameTarget = (a: BindingTarget, b: BindingTarget): boolean =>
   a.group === b.group &&
-  (triggerHasRow(a.trigger) ? triggerHasRow(b.trigger) && a.row === b.row : a.trigger === b.trigger);
+  (triggerHasRow(a.trigger)
+    ? triggerHasRow(b.trigger) && a.row === b.row
+    : a.trigger === b.trigger && (a.trigger !== 'start' || a.map === b.map));
 
 /** The function given to a row (whatever starts it), if any. */
 export const rowBinding = (doc: ScriptDoc, group: number, row: number): ScriptBinding | undefined =>
   doc.bindings.find((b) => triggerHasRow(b.trigger) && b.group === group && b.row === row);
-/** The function given to a group's start, if any. */
-export const startBinding = (doc: ScriptDoc, group: number): ScriptBinding | undefined =>
-  doc.bindings.find((b) => b.trigger === 'start' && b.group === group);
+/** The function given to a group's start (`map`: to the start of that floor alone), if any. */
+export const startBinding = (doc: ScriptDoc, group: number, map?: number): ScriptBinding | undefined =>
+  doc.bindings.find((b) => b.trigger === 'start' && b.group === group && b.map === map);
 /** A group's opening (intro), if it has one: its function, or '' for the game's part alone. */
 export const introBinding = (doc: ScriptDoc, group: number): ScriptBinding | undefined =>
   doc.bindings.find((b) => b.trigger === 'intro' && b.group === group);
@@ -26,7 +32,9 @@ export const introBinding = (doc: ScriptDoc, group: number): ScriptBinding | und
 /** The document with a function given to a target (in place of what the target had). */
 export function docBound(doc: ScriptDoc, b: ScriptBinding): ScriptDoc {
   const row = triggerHasRow(b.trigger) ? b.row : 0;
-  return { ...doc, bindings: [...doc.bindings.filter((x) => !sameTarget(x, b)), { ...b, row }] };
+  const { map, ...rest } = b;
+  const kept = b.trigger === 'start' && map !== undefined ? { ...rest, row, map } : { ...rest, row };
+  return { ...doc, bindings: [...doc.bindings.filter((x) => !sameTarget(x, b)), kept] };
 }
 /** The document with nothing given to a target. */
 export const docUnbound = (doc: ScriptDoc, t: BindingTarget): ScriptDoc => ({

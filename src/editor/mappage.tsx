@@ -9,7 +9,7 @@ import type { Controller } from './controller';
 import type { GridCanvas } from './gridcanvas';
 import { SECTION_COLORS } from './legend';
 import type { MapScene } from './mapscene';
-import type { Issue, MapEditState } from './model';
+import type { Issue, MapEditState, Selection } from './model';
 import { IssueList } from './tools';
 
 export type MapViewMode = 'split' | '2d' | '3d';
@@ -226,17 +226,48 @@ export function MapLayers({
   );
 }
 
-/** The checks of the open map, run a moment after the last edit (`deps`: what else they read, e.g. the event tables). */
+/**
+ * Whether a problem is of what is selected: the record itself, one of the cells, or (a range) a cell or a record
+ * inside it. A problem without a target is of the map alone, so of no selection.
+ */
+export function issueTouches(issue: Issue, sel: Selection, doc: MapDoc | null): boolean {
+  const t = issue.target;
+  if (!t || sel.type === 'none') return false;
+  if (sel.type === 'rec') return t.type === 'rec' && t.section === sel.section && t.index === sel.index;
+  const cells = t.type === 'tiles' ? t.cells : [];
+  if (sel.type === 'tiles') return cells.some(([x, y]) => sel.cells.some(([a, b]) => a === x && b === y));
+  if (sel.type !== 'rect') return false;
+  const inside = (x: number, y: number): boolean =>
+    x >= Math.min(sel.x0, sel.x1) &&
+    x <= Math.max(sel.x0, sel.x1) &&
+    y >= Math.min(sel.y0, sel.y1) &&
+    y <= Math.max(sel.y0, sel.y1);
+  if (t.type === 'rec') {
+    const r = doc?.recs[t.section]?.[t.index];
+    return !!r && inside(r.x, r.y);
+  }
+  return cells.some(([x, y]) => inside(x, y));
+}
+
+/**
+ * The checks of the open map, run a moment after the last edit (`deps`: what else they read, e.g. the event tables).
+ * `title` with `bySelection`: nothing selected shows every problem under the title; with a selection, only the
+ * problems of it, and nothing at all (not the title) when it has none.
+ */
 export function MapChecks({
   st,
   hash,
   validate,
   deps,
+  title,
+  bySelection,
 }: {
   st: MapEditState;
   hash: number;
   validate: (doc: MapDoc) => Issue[];
   deps?: unknown;
+  title?: ReactNode;
+  bySelection?: boolean;
 }): ReactNode {
   const revision = useEditorState(st);
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -248,5 +279,21 @@ export function MapChecks({
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `validate` is made on every render
   }, [st, hash, revision, deps]);
-  return <IssueList st={st} issues={issues} />;
+  const sel = st.selection;
+  if (bySelection && sel.type !== 'none') {
+    const own = issues.filter((i) => issueTouches(i, sel, st.current));
+    if (!own.length) return null;
+    return (
+      <>
+        {title}
+        <IssueList st={st} issues={own} />
+      </>
+    );
+  }
+  return (
+    <>
+      {title}
+      <IssueList st={st} issues={issues} />
+    </>
+  );
 }
