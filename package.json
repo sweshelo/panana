@@ -46,6 +46,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "golden": "python test/golden/export_golden.py",
-    "deploy": "bun run build && wrangler deploy"
+    "deploy": "bun run build && wrangler deploy",
+    "app": "bun server/main.ts",
+    "build:exe": "bun scripts/build-exe.ts"
   }
 }
