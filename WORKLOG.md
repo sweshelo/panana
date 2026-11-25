@@ -379,3 +379,12 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - ミニマップの解析 (サブエージェント。Codex は上限、agy は auto mode が拒否): `roms/tmpmap/minimap-analysis.md`。アイコンはマップ読込み時 (0x21D744) に出る条件を通った実体をリストに登録し、ミニマップがその現在位置のセルに 1 度だけ作る (0x1F7668 / 0x1F841C)。SetPos で動かない。種類 2/3 は毎フレーム IsVisible か IsEnabled が真なら表示 (0x1F6338) → SetVisible(0) と SetViewActive(0) の両方で消える。種類 4 は連動しない。探索済みのセルだけ。出る条件を後から立てても読み直すまで実体もアイコンも生まれない。いずれもコード上の確定、実機は未確認。
 - `c6640de` ワープのサンプル: 隠す間は SetVisible(0)・SetViewActive(0) (+ 従来どおり外へ移して踏めなくする)、ボタンで 1 に戻す。lanai-scriptdoc 20 pass (サンプルを CRO までビルド)。
 - `9bfbb60` 追加の指示: move の点に関数名とオブジェクト ID を、右側の「スクリプトの座標」欄は不要。→ `mapview.moveLabel` で 3D の円錐の上にスプライトのラベル (`関数 #順番 obj(N)`、self は `self = obj(割り当ての行)`、選んだ点は座標付き)。`ScriptMovePanel.tsx` と `.move-*` の CSS を削除。プレビューの説明文に円錐の操作を書いた。
+
+## ステージのインポート・スクリプト入りの配信 zip・リリース用 zip (2026-11-25、2f2e0bd)
+
+- 依頼: Lanai の配信用 zip を取り込む「インポート」。ID の衝突はずらす。配信 zip にスクリプトのソース (コメントも) を入れる。ソースなしの「リリース」も作る。ROM の行の衝突は既定でスキップ。
+- 調査: Panana の `cloneLanaiContent` と uwapo の `web/renumber.ts` が同じ規則で番号を振り直している。それを外部の zip に当てた。
+- `eventScript.ts`: ScriptDoc に `note` / `trail` / `tail` を足し、関数の外のコメントをコード欄の保存・マージで保つ (`scriptNotesOf`)。
+- `stageScript.ts` / `session.ts`: 配信 zip に `panana-stage-source.json` (ScriptDoc)。`distributionZip({ release: true })` はそれを入れない。uwapo への送信はリリース用。`importedStages` (ソースなしで取り込んだステージの鍵・所有範囲) を保存・復元し、`lanai-stage.json` に書く。
+- `stageImport.ts` + `StageImportDialog.tsx` (ステージのページの「インポート」)。振り直し・取り込まないものは notes/lanai-stage-authoring.md に。
+- テスト: 全体 884 pass / 25 skip / 0 fail。`lanai-stageimport.test.ts` (ROM 3 件)、コメントの往復 (lanai-stagescript)。画面とゲーム内は未確認。
