@@ -2,6 +2,25 @@
 
 各項目は調査→実装→検証の順に進める。`[x]` は確認済み、`[ ]` は未着手または進行中。元の依頼は `TASK.md` を参照する。
 
+## キャラの行 0・宝箱の補充 (2026-11-25、9fc998c / 7037de5)
+
+- [x] EO +0x5A = 0 のキャラを MapChara 行 0 で描画。
+- [x] 宝箱の +0x5E (中身が戻る / 空のまま / ゴール) の配置時の既定・編集・緑の宝箱のパーツ。
+- [ ] 画面で確かめる: 2 つの URL のキャラ、宝箱の「ステージに入り直したとき」。
+- [ ] Azahar: 緑の宝箱が入り直すと戻り、茶の箱が空のままか。
+- [ ] docs/lanai/map.md §7.1 の +0x5E と key-objects の訂正 (submodule、了承を得てから)。
+
+## Panana 単一実行ファイル (Uwapo 内蔵) とゲーム内のサーバ URL
+
+計画: ~/.claude/plans/1-2-3-bun-uwapo-http-on-off-3d-magical-moonbeam-of-6a29e422-7f26-44cd-be3b-eec963b6e248.md
+
+- [ ] 4.1 せってい (MenuConfigImpl) のペインの付け替え・いつの間に通信のコード領域・キーボードの解析。
+- [ ] 3.1 Uwapo の配信と管理を server/uwapo/ へ移植 (dev-push の SD ミラーは除く)。
+- [ ] 3.2 server/main.ts (UI 127.0.0.1、配信 0.0.0.0 を設定で On/Off、/api/local/*)。
+- [ ] 3.3 bun build --compile のビルドスクリプト。
+- [ ] 3.4 管理ページ #/distribution と書き出しダイアログの「配信に登録」。
+- [ ] 4.2 せっていに「カスタムステージサーバ」、URL を SD の lanai-cs/server.txt から読む。汎用 IPS を同梱。
+
 ## ステージのインポート (2026-11-25、2f2e0bd)
 
 - [x] 配信 zip にスクリプト (コメント込み)、リリース用 zip、インポート (番号の振り直し、ROM の行の衝突は既定スキップ)。

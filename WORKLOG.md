@@ -401,3 +401,17 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - 3DS: `modZip({ target: '3ds' })` で code.ips をタイトルフォルダ直下に置く (Luma3DS の luma/titles/)。カスタムステージは読めない旨を案内。Azahar: 従来どおり exefs/code.ips。
 - コードの MOD は 3DS / Azahar のパネルだけ、Uwapo 用の編集モードと「Uwapo で欠落する変更だけを取り消す」は Uwapo のときだけ表示。Uwapo はセルフホスト、パッチも Uwapo から入手と案内。編集用・リリース用 zip は Uwapo パネルの「zip で保存する」に畳んだ。
 - テスト: `test/lanai-distribution.test.ts` に 3DS / Azahar の code.ips 配置を追加 (ローカル ROM で実行)。画面での目視確認は未実施。
+
+## キャラの MapChara 行 0 (2026-11-25、9fc998c)
+
+- 依頼: `#/maps/1.D01001B01@5.3` と `#/maps/48.D01001F01@5.0` の NPC・ボスが描画されない。
+- 原因: EO +0x5A = 0 を「モデルなし」としていた。ゲームは 0 も MapChara の行番号として引き、行 0 を使う (`FUN_0023CFAC` @0x23CFE0〜 → `FUN_0031C038` @0x31C04C、確定: コード。解析はサブエージェント、roms/tmpmap/inv1125/result-A.md)。全 105 件 / 65 コンテンツ。例: c1 → MapObject 418、c48 → MonsterDesign 377 (データで照合)。
+- `mapObjects.ts` の `lanaiCharaModel` / `lanaiCharaKind` / `lanaiCharaObject` で行 0 を受け付けるようにした。`romParts.ts`、`LookField.tsx` (行 0 も選べる) も対応。
+- テスト: `lanai-mapobjects.test.ts` で全キャラにモデルがあること、上の 2 例を確認 (ローカル ROM で実行)。画面での目視は未実施。
+
+## 宝箱の補充 (EO +0x5E) (2026-11-25、7037de5)
+
+- 補充されるかは EO +0x5E だけで決まる (`FUN_0042D844` @0x42DA78〜、確定: コード、roms/tmpmap/inv1125/result-B.md)。0 = ステージを出ると状態 0 に戻る (中身が戻る)、0xFF = 保存した状態に戻す (空のまま)、0xFE = ゴールの宝箱 (段を戻す)。緑の箱は見た目 2 (テクスチャ trebox_03)。0 茶、1 赤金、3 紫。出る条件の種類 3 = スイッチ 0x51 (幻帝のどうくつ 810 件のみ、補充とは無関係)。
+- ROM: 見た目 0 / 1 の 210 件はすべて 0xFF、見た目 2 の 1186 件はほぼ 0 (5 件 0xFE)。
+- `treasure.ts` に `LANAI_EO_REFILL` と値・`lanaiChestRefillFor`。配置時 (`mapedit.ts`) に見た目から +0x5E を入れる (以前は行 0 の写しで 0 = 茶の箱でも中身が戻っていた)。パーツに「中身が戻る宝箱 (緑)」を追加。宝箱の編集に「ステージに入り直したとき」の選択と、枠が保存範囲外の警告。
+- テスト: ROM 全体の見た目と +0x5E の対応、配置時の値 (ローカル ROM で実行)。Lefthook 全テスト通過。Azahar での動作は未確認。
