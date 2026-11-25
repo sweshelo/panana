@@ -19,6 +19,7 @@ import {
   ScriptDocError,
   scriptDocFromSource,
   scriptDocSource,
+  scriptOfDoc,
   SCRIPT_API,
   type ScriptArg,
   type ScriptNode,
@@ -63,6 +64,42 @@ describe('RPG FREE! stage script: the editor text', () => {
     // the game's opening alone names no function and stays
     expect(renamed.doc.bindings.map((b) => b.fn)).toEqual(['a', '']);
     expect(docWithCode(doc, 'function a(n: num) {}\nfunction b() {}').dropped.map((b) => b.fn)).toEqual(['a']);
+  });
+  test('the comments outside the functions stay with what they are written by', () => {
+    const text = [
+      '// the stage of the cave',
+      '',
+      '/* counts the visits */',
+      'var A: byte reset // reset on leaving',
+      'var B: bit',
+      '// the guard at the gate',
+      '// talks twice',
+      'function a() {',
+      '  // in the body',
+      '  A = 1',
+      '} // end of a',
+      'function b() {',
+      '  A = 2',
+      '}',
+      '// what is left to do',
+      '',
+    ].join('\n');
+    const d = docWithCode(doc, text).doc;
+    expect(d.vars[0]).toMatchObject({
+      note: '// the stage of the cave\n\n/* counts the visits */',
+      trail: '// reset on leaving',
+    });
+    expect(d.vars[1]!.note).toBeUndefined();
+    expect(d.functions[0]).toMatchObject({ note: '// the guard at the gate\n// talks twice', trail: '// end of a' });
+    expect(d.functions[0]!.body).toBe('// in the body\nA = 1');
+    expect(d.tail).toBe('// what is left to do');
+    expect(scriptDocCode(d)).toBe(text);
+    // the text read again is the same document, and it still builds
+    expect(docWithCode(d, scriptDocCode(d)).doc).toEqual(d);
+    expect(() => scriptOfDoc(d)).not.toThrow();
+    // an event written in place keeps the comment before it on its function
+    const inPlace = scriptDocFromSource('var A: byte\n// greets\non talk(1, 2) {\n  A = 1\n}\n');
+    expect(inPlace.functions[0]).toMatchObject({ name: 'talk_1_2', note: '// greets' });
   });
   test('the text cannot give a function to an event', () => {
     expect(() => docWithCode(doc, 'function a() {}\non talk(1, 5) a')).toThrow(ScriptDocError);

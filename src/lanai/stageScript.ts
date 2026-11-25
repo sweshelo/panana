@@ -23,6 +23,7 @@ import {
   type LeaveReset,
   type ScriptNode,
   type ScriptTrigger,
+  type ScriptDoc,
   type ScriptWho,
   type StageScript,
 } from './eventScript';
@@ -34,6 +35,20 @@ import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT, lanaiCrrName } from './stage
 
 /** The file of the MOD zip (beside romfs/) that carries the keys and the owned flags of the scripted stages. */
 export const LANAI_STAGE_MANIFEST = 'lanai-stage.json';
+/**
+ * The file of the distribution zip (beside romfs/) that carries the scripts as they are edited (the editor's documents,
+ * comments and all), so that the stages can be imported and edited again (stageImport.ts). The release zip leaves it
+ * out.
+ */
+export const LANAI_STAGE_SOURCE = 'panana-stage-source.json';
+
+/** What LANAI_STAGE_SOURCE holds for a stage, by its content number. */
+export interface LanaiStageSource {
+  /** The content's root archive. */
+  archive: string;
+  stageKey: string;
+  doc: ScriptDoc;
+}
 /** The boss battle of a range: its second argument is the byte flag that becomes 2 (actions.ts). */
 const ACTION_BOSS = 0x8000000c;
 /** How many ranges a stage can own (lanai-custom-stages web/stage-events.ts MAX_OWNED). */
@@ -344,12 +359,32 @@ export async function buildStageScripts(s: LanaiSession, files: Map<string, Uint
   }
 }
 
+/** LANAI_STAGE_SOURCE for the scripted stages, or null when there is none. */
+export function stageScriptSources(s: LanaiSession): Uint8Array | null {
+  const list = scripted(s);
+  if (!list.length) return null;
+  const stages: Record<string, LanaiStageSource> = {};
+  for (const { c, key } of list)
+    stages[String(c.index)] = {
+      archive: c.archive,
+      stageKey: key,
+      doc: s.stageScripts.get(c.archive.toUpperCase())!.doc,
+    };
+  return new TextEncoder().encode(`${JSON.stringify({ format: 1, stages }, null, 2)}
+`);
+}
+
 /** lanai-stage.json for the scripted stages, or null when there is none. */
 export async function stageScriptManifest(s: LanaiSession): Promise<Uint8Array | null> {
   const list = scripted(s);
-  if (!list.length) return null;
   const stages: Record<string, { stageKey: string; owned: OwnedRange[] }> = {};
+  // the stages imported with their built CRO alone (a release zip): what came with them
+  for (const c of lanaiContents(s)) {
+    const x = c && s.importedStages.get(c.archive.toUpperCase());
+    if (c && x) stages[String(c.index)] = { stageKey: x.key, owned: x.owned };
+  }
   for (const { c, key, source } of list)
     stages[String(c.index)] = { stageKey: key, owned: (await checkStageScript(s, c, source)).owned };
+  if (!Object.keys(stages).length) return null;
   return new TextEncoder().encode(`${JSON.stringify({ format: 1, stages }, null, 2)}\n`);
 }

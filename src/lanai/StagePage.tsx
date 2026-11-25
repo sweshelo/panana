@@ -26,6 +26,7 @@ import { lanaiChangedContents, lanaiContentRemoveBlock, removeLanaiContent, reve
 import { CroScriptSection } from './CroScriptView';
 import { LanaiStageContents } from './StageContents';
 import { LanaiStageSourcePage } from './StageSourcePage';
+import { LanaiStageImportDialog } from './StageImportDialog';
 
 type Filter = 'all' | 'stages' | 'none';
 
@@ -66,6 +67,7 @@ function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: stri
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [creatingEmpty, setCreatingEmpty] = useState(false);
+  const [importing, setImporting] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   const detail = useRef<HTMLDivElement>(null);
   useActiveRow(list, index);
@@ -88,6 +90,9 @@ function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: stri
         <div className="row new-record">
           <button className="primary" disabled={!session.canExport} onClick={() => setCreatingEmpty(true)}>
             ＋ 新しいステージ
+          </button>
+          <button disabled={!session.canExport} onClick={() => setImporting(true)}>
+            インポート
           </button>
         </div>
         <ListFilter
@@ -143,6 +148,7 @@ function LanaiStageOverview({ session, arg }: { session: LanaiSession; arg: stri
         )}
       </div>
       {creatingEmpty && <LanaiEmptyStageCreator session={session} onClose={() => setCreatingEmpty(false)} />}
+      {importing && <LanaiStageImportDialog session={session} onClose={() => setImporting(false)} />}
     </div>
   );
 }

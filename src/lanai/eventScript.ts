@@ -1496,10 +1496,20 @@ export function parseStageScript(src: string): StageScript {
 // ------------------------------------------------------------------------------------------------ the editor's form
 /** What the editor keeps of a stage's script: the variables as a table, one text per function, and what runs which. */
 export interface ScriptDoc {
-  vars: { name: string; kind: 'byte' | 'bit'; reset: boolean }[];
+  vars: ({ name: string; kind: 'byte' | 'bit'; reset: boolean } & ScriptNotes)[];
   /** `params`: the text between the parentheses (absent: none); `body`: the statements, without the braces. */
-  functions: { name: string; params?: string; body: string }[];
+  functions: ({ name: string; params?: string; body: string } & ScriptNotes)[];
   bindings: ScriptBinding[];
+  /** The comments after the last variable or function. */
+  tail?: string;
+}
+/**
+ * The comments written around a variable or a function outside the functions' bodies (the bodies keep their own):
+ * `note` on the lines before it, `trail` on its last line after it.
+ */
+export interface ScriptNotes {
+  note?: string;
+  trail?: string;
 }
 export interface ScriptBinding {
   trigger: ScriptTrigger;
@@ -1522,14 +1532,23 @@ export function scriptDocSource(doc: ScriptDoc): {
 } {
   const out: string[] = [];
   const bodies: { name: string; first: number; lines: number }[] = [];
-  for (const v of doc.vars) out.push(`var ${v.name}: ${v.kind}${v.reset ? ' reset' : ''}`);
+  const note = (x: ScriptNotes): void => {
+    if (x.note) out.push(...x.note.split('\n'));
+  };
+  const trail = (x: ScriptNotes): string => (x.trail ? ` ${x.trail}` : '');
+  for (const v of doc.vars) {
+    note(v);
+    out.push(`var ${v.name}: ${v.kind}${v.reset ? ' reset' : ''}${trail(v)}`);
+  }
   for (const f of doc.functions) {
+    note(f);
     out.push(`function ${f.name}(${f.params?.trim() ?? ''}) {`);
     const lines = f.body.replace(/\r\n?/gu, '\n').split('\n');
     bodies.push({ name: f.name, first: out.length + 1, lines: lines.length });
     // a line comment on the last line must not take the closing brace with it
-    out.push(...lines.map((line) => (line.trim() ? `  ${line}` : line)), '}');
+    out.push(...lines.map((line) => (line.trim() ? `  ${line}` : line)), `}${trail(f)}`);
   }
+  if (doc.tail) out.push(...doc.tail.split('\n'));
   for (const b of doc.bindings) out.push(bindingText(b));
   return { text: `${out.join('\n')}\n`, bodies };
 }
@@ -1591,20 +1610,94 @@ function dedent(text: string): string {
   return lines.map((l) => l.slice(Number.isFinite(indent) ? indent : 0).trimEnd()).join('\n');
 }
 
+/** A declaration outside the bodies (`var`, `function` or `on`) with the comments around it (scriptNotesOf). */
+interface NotedItem {
+  kind: 'var' | 'function' | 'on';
+  /** The name declared (`on`: the first token after it). */
+  name: string;
+  notes: ScriptNotes;
+}
+
+/**
+ * The comments outside the functions' bodies, by the declaration they go with: those on the lines before a declaration
+ * are its `note`, one on the line a declaration ends on is its `trail`, those after the last one the `tail`.
+ */
+function scriptNotesOf(src: string): { items: NotedItem[]; tail?: string } {
+  const items: (NotedItem & { start: number })[] = [];
+  /** The end of the last token of code (not a comment) before each declaration. */
+  const ends: number[] = [];
+  let depth = 0;
+  let last = 0;
+  let pendingName: NotedItem | null = null;
+  for (const m of src.matchAll(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|([A-Za-z_]\w*|[^\sA-Za-z_])/gu)) {
+    if (m[1]) continue;
+    const t = m[2]!;
+    if (pendingName && /^[A-Za-z_]/u.test(t)) {
+      pendingName.name = t;
+      pendingName = null;
+    } else pendingName = null;
+    if (depth === 0 && (t === 'var' || t === 'function' || t === 'on')) {
+      ends.push(last);
+      const item = { kind: t, name: '', notes: {}, start: m.index } as NotedItem & { start: number };
+      items.push(item);
+      pendingName = item;
+    }
+    if (t === '{') depth++;
+    else if (t === '}') depth = Math.max(0, depth - 1);
+    last = m.index + t.length;
+  }
+  /** The comment lines of a stretch between declarations, without the empty lines around them and the indentation. */
+  const lines = (text: string): string | undefined => {
+    if (!/\/\/|\/\*/u.test(text)) return undefined;
+    const out = dedent(text.replace(/;/gu, ''));
+    return out || undefined;
+  };
+  /** The comment on the line a declaration ends on (a block comment only when it ends there too) and the rest. */
+  const split = (gap: string): { trail?: string; rest: string } => {
+    const m = /^[ \t;]*(\/\/[^\n]*|\/\*[^\n]*?\*\/[ \t]*(?:\/\/[^\n]*)?)/u.exec(gap);
+    if (!m || /\n/u.test(gap.slice(0, m.index))) return { rest: gap };
+    return { trail: m[1]!.trim(), rest: gap.slice(m[0].length) };
+  };
+  ends.push(last);
+  for (let k = 0; k < items.length; k++) {
+    const before = k === 0 ? src.slice(0, items[0]!.start) : split(src.slice(ends[k]!, items[k]!.start)).rest;
+    const note = lines(before);
+    if (note) items[k]!.notes.note = note;
+    if (k > 0) {
+      const trail = split(src.slice(ends[k]!, items[k]!.start)).trail;
+      if (trail) items[k - 1]!.notes.trail = trail;
+    }
+  }
+  let tail: string | undefined;
+  if (items.length) {
+    const end = split(src.slice(ends[items.length]!));
+    if (end.trail) items[items.length - 1]!.notes.trail = end.trail;
+    tail = lines(end.rest);
+  } else tail = lines(src);
+  return { items: items.map(({ kind, name, notes }) => ({ kind, name, notes })), ...(tail ? { tail } : {}) };
+}
+
 /** The document of a script's text: an event written in place becomes a function named after what starts it. */
 export function scriptDocFromSource(src: string): ScriptDoc {
   const s = parseStageScript(src);
+  const noted = scriptNotesOf(src);
+  const notesOf = (kind: NotedItem['kind'], name: string): ScriptNotes =>
+    noted.items.find((x) => x.kind === kind && x.name === name)?.notes ?? {};
   const doc: ScriptDoc = {
-    vars: s.vars.map((v) => ({ name: v.name, kind: v.kind, reset: v.reset })),
+    vars: s.vars.map((v) => ({ name: v.name, kind: v.kind, reset: v.reset, ...notesOf('var', v.name) })),
     functions: s.functions.map((f) => ({
       name: f.name,
       ...(f.params.length ? { params: f.params.map((p) => `${p.name}: ${p.kind}`).join(', ') } : {}),
       body: dedent(src.slice(f.from, f.to)),
+      ...notesOf('function', f.name),
     })),
     bindings: [],
+    ...(noted.tail ? { tail: noted.tail } : {}),
   };
+  // the events in the order they are written, as the `on` declarations
+  const onNotes = noted.items.filter((x) => x.kind === 'on').map((x) => x.notes);
   const names = new Set([...s.vars.map((v) => v.name), ...s.functions.map((f) => f.name)]);
-  for (const e of s.events) {
+  for (const [k, e] of s.events.entries()) {
     let fn = e.fn;
     // an intro with nothing of its own stays without a function (the game's opening alone)
     if (!fn && e.trigger === 'intro' && !e.body.length && !src.slice(e.from, e.to).trim()) fn = '';
@@ -1613,7 +1706,7 @@ export function scriptDocFromSource(src: string): ScriptDoc {
       fn = stem;
       for (let k = 2; names.has(fn); k++) fn = `${stem}_${k}`;
       names.add(fn);
-      doc.functions.push({ name: fn, body: dedent(src.slice(e.from, e.to)) });
+      doc.functions.push({ name: fn, body: dedent(src.slice(e.from, e.to)), ...onNotes[k] });
     }
     doc.bindings.push({ trigger: e.trigger, group: e.group, row: e.row, fn });
   }
@@ -1643,7 +1736,10 @@ export function docWithCode(doc: ScriptDoc | undefined, text: string): { doc: Sc
     if (!keep) dropped.push(b);
     return keep;
   });
-  return { doc: { vars: code.vars, functions: code.functions, bindings }, dropped };
+  return {
+    doc: { vars: code.vars, functions: code.functions, bindings, ...(code.tail ? { tail: code.tail } : {}) },
+    dropped,
+  };
 }
 
 /**
@@ -1669,6 +1765,11 @@ export function mergeScriptCode(
   let taken = false;
   const same = (x: unknown, y: unknown): boolean => JSON.stringify(x) === JSON.stringify(y);
   let vars = m.vars;
+  let tail = m.tail;
+  if (t.tail !== b.tail) {
+    if (m.tail === b.tail) [tail, taken] = [t.tail, true];
+    else if (m.tail !== t.tail) conflicts.push('末尾のコメント');
+  }
   if (!same(t.vars, b.vars)) {
     if (same(m.vars, b.vars)) [vars, taken] = [t.vars, true];
     else if (!same(m.vars, t.vars)) conflicts.push('変数');
@@ -1691,7 +1792,11 @@ export function mergeScriptCode(
       taken = true;
     }
   if (!taken) return { text: mine, conflicts, readable: true };
-  return { text: scriptDocSource({ vars, functions, bindings: m.bindings }).text, conflicts, readable: true };
+  return {
+    text: scriptDocSource({ vars, functions, bindings: m.bindings, ...(tail ? { tail } : {}) }).text,
+    conflicts,
+    readable: true,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------ the code

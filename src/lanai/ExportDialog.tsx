@@ -178,6 +178,11 @@ function DistributionBox({
         {LANAI_DELIVERABLE_TABLES.join('・')} の変更だけを残し、ほかの表は ROM のままに戻します
         (ゲームはほかの表の行を含むステージを丸ごと読み込まないため)。exefs/code.ips は入れません。
       </p>
+      <p className="muted small">
+        配信用の zip にはイベントのスクリプト (コメントを含む)
+        を入れるので、ステージのページの「インポート」で取り込み直して編集を続けられます。公開するときは、スクリプトを入れない「リリース用の
+        zip」を使います (取り込むとスクリプトは編集できません)。
+      </p>
       {scripts > 0 && <p className="error">条件スクリプトがあるので、配信用には書き出せません。</p>}
       {loaded instanceof Error && <div className="error">{loaded.message}</div>}
       {discards.length > 0 || session.dropCap ? (
@@ -211,6 +216,17 @@ function DistributionBox({
           配信用の zip をダウンロード
         </button>
         <button
+          onClick={async () => {
+            try {
+              download(await session.distributionZip({ release: true }), 'denpa-free-stage-release.zip');
+            } catch (e) {
+              setError((e as Error).message);
+            }
+          }}
+        >
+          リリース用の zip をダウンロード
+        </button>
+        <button
           disabled={!undoable}
           onClick={() => {
             if (!confirm('配信で欠落する変更だけを元に戻しますか? (ほかの変更は残ります)')) return;
@@ -240,7 +256,7 @@ function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boo
     setError(null);
     setResult(null);
     try {
-      setResult(await pushToUwapo(await session.distributionZip(), { url }));
+      setResult(await pushToUwapo(await session.distributionZip({ release: true }), { url }));
     } catch (e) {
       setError({ message: (e as Error).message, conflicts: e instanceof UwapoPushError ? e.conflicts : undefined });
     } finally {
@@ -250,7 +266,7 @@ function UwapoPush({ session, disabled }: { session: LanaiSession; disabled: boo
   return (
     <div>
       <p className="muted small">
-        uwapo (lanai-custom-stages の web/) をこの PC で起動しておくと、配信用の zip を直接送れます。uwapo
+        uwapo (lanai-custom-stages の web/) をこの PC で起動しておくと、リリース用の zip を直接送れます。uwapo
         は同じステージを入れ替えて公開し、Azahar の SD (sdmc/lanai-cs)
         に書き込みます。ゲームではステージ選択を開き直すと反映されます (ステージの中にいるときは島に戻ってから)。
       </p>

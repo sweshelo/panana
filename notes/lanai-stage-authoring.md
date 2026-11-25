@@ -170,3 +170,14 @@ bun run build
 - 本家: 開始地点の門は 84 件が種類 12・動作 0x17 で、`D01Intro` の CtrlFlag (CRO 28 0x1260) が `SetScriptBitFlag(0xB1, 1)` の後に `SetDoorCloseFlag(1)` を呼んで閉め直す。
 - Panana: 入場演出の CtrlFlag に `SetDoorCloseFlag(門の行)` を足した。到着地点になる 0x17 の扉はマップの検査で警告する (戻れる扉にするなら 0x16、閉じた扉なら行き先を別の地点に)。
 - 調査メモ (ローカル、コミットしない): roms/tmp-door/ (collision.md / stage.md / hook.md / arrival.md / args.md)。
+
+## ステージのインポートとリリース用 zip (2026-11-25)
+
+- **配信用 zip にスクリプトを入れる**: `panana-stage-source.json` (`romfs/` と同じ階層) に、スクリプトのあるステージごとに `{ archive, stageKey, doc }` (エディタの ScriptDoc) をコンテンツ番号で入れる。uwapo は `romfs/` の外のこのファイルを「other」として扱うだけ。
+- **リリース用 zip**: `distributionZip({ release: true })`。スクリプトのソースを入れない (CRO はビルド済み、`lanai-stage.json` はある)。uwapo への送信もこちら。
+- **コメント**: 関数の本文の中のコメントは以前から本文の文字列に残る。関数の外のコメント (変数・関数の前の行、行末、最後の変数・関数の後) は、ScriptDoc の `note` / `trail` / `tail` として持ち、コード欄に書き戻す (`scriptNotesOf`)。`on` の行の前のコメントは、その場で書いたイベントの関数に付く。
+- **インポート** (`stageImport.ts`、ステージのページの「インポート」): zip の master を ROM (Base + Update、ベース MOD なし) の master と比べ、Contents の追加行をステージとして取り込む。振り直すもの: コンテンツ番号・アーカイブ名・ステージ枠・MessageMapStage の ID (cloneLanaiContent と同じ書き換え先)、ほかの追加行 (MessageMapName・ItemData・ItemDataCore) の ID と行番号、その参照 (MapGroup +0x00、TreasureGroup の種類 1、ShopItem +0x00、ItemData +0x0C、文字列の差し込みタグ、スクリプトの関数の本文の 16 進数。コメントの中は変えない)。
+- ROM の既存の行の変更はそのまま書く。このセッションでも別の内容に変えた行は、既定で取り込まない (ダイアログでチェックした行だけ上書き)。
+- 取り込まないもの: 配信対象外の master の表、既存のアーカイブの変更、既存コンテンツに足したステージの行、exefs/code.ips。
+- リリース用 zip から取り込んだステージは CRO のまま (イベントは編集できない)。`LanaiSession.importedStages` が鍵と所有範囲を持ち、`lanai-stage.json` に書き戻す。アイテムの番号を振り直したときに CRO にその u32 があれば警告する (書き換えない)。stageKey がこのセッションのものと同じなら新しい鍵にする。
+- 検証: `test/lanai-stageimport.test.ts` (ROM) で、ステージとアイテムを持つセッションへの取り込み (番号・名前・ContentsDef・MapStage・アイテム ID とスクリプト・コメント・衝突の既定スキップ・書き出し)、上書き、リリース用 zip、保存と復元を確認。ゲーム内と画面は未確認。取り込んだステージを消しても、一緒に足した MessageMapName・ItemData の行は残る。
