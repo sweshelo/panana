@@ -295,6 +295,12 @@ const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
 const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
 
 /** The maps of a content, read once per session (the pages share the documents). */
+/** Forgets the maps read of the contents from `first` on (their numbers now name other contents). */
+export function forgetLanaiMaps(session: LanaiSession, first: number): void {
+  for (const m of [loaded.get(session), ready.get(session)])
+    if (m) for (const k of [...m.keys()]) if (k >= first) m.delete(k);
+}
+
 export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise<LanaiMaps> {
   const m = loaded.get(session) ?? new Map<number, Promise<LanaiMaps>>();
   loaded.set(session, m);

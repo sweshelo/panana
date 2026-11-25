@@ -203,7 +203,7 @@ function RevertContentButton({
   );
 }
 
-/** Remove an added content (stageEdit.ts removeLanaiContent), after asking: the newest first. */
+/** Remove an added content (stageEdit.ts removeLanaiContent), after asking: the ones added after it move down one number. */
 function RemoveContentButton({ session, c }: { session: LanaiSession; c: LanaiContent }): ReactNode {
   const [error, setError] = useState<string | null>(null);
   const block = lanaiContentRemoveBlock(session, c);
@@ -213,12 +213,14 @@ function RemoveContentButton({ session, c }: { session: LanaiSession; c: LanaiCo
         className="danger"
         disabled={!!block}
         title={block ?? '追加したステージを、マップ・イベントのスクリプトごと削除します'}
-        onClick={() => {
+        onClick={async () => {
           const what = `「${contentTitle(c)}」(コンテンツ ${c.index})`;
-          if (!confirm(`${what} を削除します。マップやイベントのスクリプトも消え、元に戻せません。`)) return;
+          const last = c.index === session.need('Contents').rows - 1;
+          const shift = last ? '' : 'あとから追加したステージは、コンテンツ番号が 1 つずつ前にずれます。';
+          if (!confirm(`${what} を削除します。マップやイベントのスクリプトも消え、元に戻せません。${shift}`)) return;
           try {
-            removeLanaiContent(session, c);
-            location.hash = `#/stages/${c.index - 1}`;
+            await removeLanaiContent(session, c);
+            location.hash = `#/stages/${last ? c.index - 1 : c.index}`;
           } catch (e) {
             setError((e as Error).message);
           }

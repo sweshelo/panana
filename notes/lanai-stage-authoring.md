@@ -181,3 +181,9 @@ bun run build
 - 取り込まないもの: 配信対象外の master の表、既存のアーカイブの変更、既存コンテンツに足したステージの行、exefs/code.ips。
 - リリース用 zip から取り込んだステージは CRO のまま (イベントは編集できない)。`LanaiSession.importedStages` が鍵と所有範囲を持ち、`lanai-stage.json` に書き戻す。アイテムの番号を振り直したときに CRO にその u32 があれば警告する (書き換えない)。stageKey がこのセッションのものと同じなら新しい鍵にする。
 - 検証: `test/lanai-stageimport.test.ts` (ROM) で、ステージとアイテムを持つセッションへの取り込み (番号・名前・ContentsDef・MapStage・アイテム ID とスクリプト・コメント・衝突の既定スキップ・書き出し)、上書き、リリース用 zip、保存と復元を確認。ゲーム内と画面は未確認。取り込んだステージを消しても、一緒に足した MessageMapName・ItemData の行は残る。
+
+## 追加したステージをどの順でも削除する (2026-11-25)
+
+- 以前は表の末尾からしか行を消せず、「最後に追加したステージから順に」だけ削除できた。`LanaiTable.removeRow(i)` (追加した行だけ) で途中の行を消し、後ろの行を文字列ごと 1 つ前に詰める。行 ID は位置に付いたまま (後ろの行は 1 つ前の ID になる)。保存した編集を戻すときに addRow が ID を max + 1 で振り直すので、ID に穴を空けない。
+- `removeLanaiContent` (非同期): 消すステージの MapStageIntegration の行と、ほかのステージが使わない MessageMapStage の行を消し、後ろのコンテンツの番号を 1 つずつ下げる。書き換え先は取り込みと同じ `retargetContentTables` (ContentsDef 行 0・1、MapStage +0x38 / +0x0C、EventObject の自コンテンツ参照) と、MapStageIntegration +0x34 / +0x44 / +0x0C、CRR のパス。ステージの枠 (+0x40) とアーカイブ名は変えない。マップのキャッシュ (`forgetLanaiMaps`) は消したステージの番号から先を忘れる。消したステージを指す参照はそのまま残る。
+- 検証: `lanai-stageimport.test.ts` (ROM) で 3 ステージの先頭を消し、後ろ 2 つの番号・名前・ContentsDef・MapStage・CRR・スクリプトと、保存→復元後の同じ状態、配信用 zip を確認。ゲーム内は未確認。

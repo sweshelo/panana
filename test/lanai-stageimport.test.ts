@@ -8,6 +8,7 @@ import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
 import { scriptDocCode, scriptDocFromSource } from '../src/lanai/eventScript';
 import { LanaiSession } from '../src/lanai/session';
 import { applyLanaiImport, readLanaiImport } from '../src/lanai/stageImport';
+import { lanaiContentRemoveBlock, lanaiCrrName, removeLanaiContent } from '../src/lanai/stageEdit';
 import { LANAI_STAGE_MANIFEST, LANAI_STAGE_SOURCE } from '../src/lanai/stageScript';
 import { openImages } from '../src/rom/dump';
 import { LANAI } from '../src/rom/titles';
@@ -132,5 +133,55 @@ describe.skipIf(!hasLanai)('RPG FREE! stage import (ROM)', () => {
     const again = await LanaiSession.open(dump, { fresh: true });
     await again.restore(b.saved());
     expect(again.importedStages.get(c.archive)?.key).toBe(key);
+  }, 300_000);
+  test('a stage added before others is removed: the ones after it move down, and are put back so after a reload', async () => {
+    const b = await LanaiSession.open(dump, { fresh: true });
+    const x = await addLanaiEmptyStage(b, 'X');
+    const [y] = (await applyLanaiImport(b, await readLanaiImport(b, zip))).contents;
+    const z = await addLanaiEmptyStage(b, 'Z');
+    expect([x, y, z]).toEqual([127, 128, 129]);
+    const yc = lanaiContents(b)[y!]!;
+    const zc = lanaiContents(b)[z]!;
+    const slots = [yc, zc].map((c) => b.need('MapStageIntegration').u16(c.stages[0]!.row, 0x40));
+    const docY = b.stageScripts.get(yc.archive)!.doc;
+    const crrZ = b.createdFiles.get(lanaiCrrName(z))!;
+    expect(lanaiContentRemoveBlock(b, lanaiContents(b)[x]!)).toBeNull();
+    await removeLanaiContent(b, lanaiContents(b)[x]!);
+
+    const check = async (s: LanaiSession) => {
+      const list = lanaiContents(s);
+      expect(list.length).toBe(129);
+      expect(list.slice(127).map((c) => [c.archive, c.stages.map((st) => st.name)])).toEqual([
+        [yc.archive, ['Aのステージ']],
+        [zc.archive, ['Z']],
+      ]);
+      const msi = s.need('MapStageIntegration');
+      const msg = s.need('MessageMapStage');
+      expect(msg.rows).toBe(msg.originalRows + 2);
+      for (const [k, c] of list.slice(127).entries()) {
+        const row = c.stages[0]!.row;
+        expect([msi.u32(row, 0x34), msi.u16(row, 0x44)]).toEqual([127 + k, 127 + k]);
+        expect(msi.u16(row, 0x40)).toBe(slots[k]!);
+        const tables = await s.tablesIn(c.archive);
+        const def = tables.find((t) => t.table.name === 'ContentsDef')!.table;
+        expect([def.u32(0, 0), def.u32(1, 0)]).toEqual([127 + k, 127 + k]);
+        const stage = tables.find((t) => t.table.name === 'MapStage')!.table;
+        const local = Array.from({ length: stage.rows }, (_, r) => r).filter(
+          (r) => stage.u32(r, 0x0c) === c.stages[0]!.messageId,
+        );
+        expect(local.length).toBe(1);
+        expect(stage.u16(local[0]!, 0x38)).toBe(127 + k);
+      }
+      expect(s.createdFiles.has(lanaiCrrName(129))).toBe(false);
+      expect(s.createdFiles.get(lanaiCrrName(128))).toEqual(crrZ);
+      expect(s.stageScripts.get(yc.archive)!.doc).toEqual(docY);
+    };
+    await check(b);
+    const again = await LanaiSession.open(dump, { fresh: true });
+    await again.restore(b.saved());
+    await check(again);
+    const files = unzipSync(await again.distributionZip());
+    const manifest = JSON.parse(new TextDecoder().decode(files[`${LANAI.titleId}/${LANAI_STAGE_MANIFEST}`]!));
+    expect(Object.keys(manifest.stages)).toEqual(['127', '128']);
   }, 300_000);
 });

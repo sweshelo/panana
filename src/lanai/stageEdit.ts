@@ -5,7 +5,7 @@ import { hex8, u32, w32, equalBytes } from '../util/bytes';
 import { readSarc } from '../layout/sarc';
 import { readBflim, replaceBflimImage } from '../layout/bflim';
 import { CRO_COMMON_HOOKS, croHooks, lanaiContents, type LanaiContent, type LanaiStage } from './contents';
-import { lanaiMaps } from './maps';
+import { forgetLanaiMaps, lanaiMaps } from './maps';
 import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 import type { LanaiCondition } from './conditions';
@@ -248,19 +248,10 @@ export async function cloneLanaiContent(
   copyStage.setBits(local.r, 0x34, 0, 16, stageSlot);
   if (options.resetStage) await resetNewStage(s, archive, row, local.r, srcStage.thumbnail, messageRow);
   // Known data-driven clear actions and self-clear predicates follow the new content. Native code is preserved.
-  for (const { table: t } of copied.filter((t) => t.table.name.endsWith('_EventObject')))
-    for (let r = 0; r < t.rows; r++) {
-      for (const offset of [0x10, 0x28, 0x40]) {
-        const type = t.u32(r, offset);
-        const argOffset = type === 0x8000002e ? offset + 8 : type === 0x80000031 ? offset + 4 : -1;
-        if (argOffset >= 0 && t.u32(r, argOffset) === source.index) t.setU32(r, argOffset, index);
-      }
-      for (const [kind, arg] of [
-        [0x5f, 0],
-        [0x60, 8],
-      ])
-        if ([1, 2].includes(t.u8(r, kind!)) && t.u32(r, arg!) === source.index) t.setU32(r, arg!, index);
-    }
+  retargetContentTables(
+    copied.filter((t) => t.table.name.endsWith('_EventObject')),
+    new Map([[source.index, index]]),
+  );
   const cr = contents.addRow(source.index);
   contents.setU32(cr, 0, hash);
   // the game's opening on the start group (an event script with `on intro(group) {}`), as the shipped stages have
@@ -272,25 +263,64 @@ export async function cloneLanaiContent(
 }
 
 /**
- * Why an added content cannot be removed, or null when it can. Rows can only be taken off the end of a table, so the
- * content must be the last of Contents and its stage rows the last of MapStageIntegration (the last added stage: the
- * stages are removed newest first).
+ * Points the content numbers and MessageMapStage row IDs a content's tables hold at their new values (`contents`,
+ * `messages`: old → new): ContentsDef rows 0 / 1, MapStage +0x38 (content) and +0x0C (its MessageMapStage row), and
+ * the content references of the EventObject tables (the clear of the goal chest 0x8000002E +8, 0x80000031 +4, the
+ * conditions 0x5F / 0x60 of kinds 1 and 2). The CRO is native code and keeps what it holds.
+ */
+export function retargetContentTables(
+  tables: { table: LanaiTable }[],
+  contents: ReadonlyMap<number, number>,
+  messages: ReadonlyMap<number, number> = new Map(),
+): void {
+  const to = (m: ReadonlyMap<number, number>, v: number): number | undefined => {
+    const n = m.get(v);
+    return n === undefined || n === v ? undefined : n;
+  };
+  for (const { table: t } of tables) {
+    if (t.name === 'ContentsDef')
+      for (const r of [0, 1]) {
+        const n = r < t.rows ? to(contents, t.u32(r, 0)) : undefined;
+        if (n !== undefined) t.setU32(r, 0, n);
+      }
+    else if (t.name === 'MapStage')
+      for (let r = 0; r < t.rows; r++) {
+        const n = to(contents, t.u16(r, 0x38));
+        if (n !== undefined) t.setBits(r, 0x38, 0, 16, n);
+        const m = to(messages, t.u32(r, 0x0c));
+        if (m !== undefined) t.setU32(r, 0x0c, m);
+      }
+    else if (t.name.endsWith('_EventObject'))
+      for (let r = 0; r < t.rows; r++) {
+        for (const offset of [0x10, 0x28, 0x40]) {
+          const type = t.u32(r, offset);
+          const arg = type === 0x8000002e ? offset + 8 : type === 0x80000031 ? offset + 4 : -1;
+          const n = arg >= 0 ? to(contents, t.u32(r, arg)) : undefined;
+          if (n !== undefined) t.setU32(r, arg, n);
+        }
+        for (const [kind, arg] of [
+          [0x5f, 0],
+          [0x60, 8],
+        ] as const) {
+          const n = [1, 2].includes(t.u8(r, kind)) ? to(contents, t.u32(r, arg)) : undefined;
+          if (n !== undefined) t.setU32(r, arg, n);
+        }
+      }
+  }
+}
+
+/**
+ * Why an added content cannot be removed, or null when it can: only an added content can (its stage rows too must be
+ * rows an edit added). The contents added after it move down one number (removeLanaiContent).
  */
 export function lanaiContentRemoveBlock(s: LanaiSession, c: LanaiContent): string | null {
   const contents = s.need('Contents'),
     integration = s.need('MapStageIntegration');
   if (c.index < contents.originalRows || !s.createdFiles.has(c.archive)) return '元からあるステージは削除できません';
-  if (c.index !== contents.rows - 1) return '最後に追加したステージから順に削除できます';
-  const rows = c.stages.map((st) => st.row).sort((a, b) => a - b);
-  if (rows.some((r, i) => r !== integration.rows - rows.length + i || r < integration.originalRows))
-    return 'ステージの行が MapStageIntegration の最後にないので削除できません';
+  if (c.stages.some((st) => st.row < integration.originalRows)) return 'ステージの行が元からある行なので削除できません';
   return null;
 }
 
-/**
- * Remove an added content (the undo of cloneLanaiContent): its stage rows (and their name rows of MessageMapStage when
- * they are the last and no other stage uses them), its Contents row, its archive and CRR, and its event script.
- */
 /** Whether row `r` of a table differs from what was read (its bytes or a string written into it). */
 const rowEdited = (t: LanaiTable, r: number): boolean =>
   t.rowChanged(r) || t.changedStrings().some(([row]) => row === r);
@@ -337,22 +367,66 @@ export function revertLanaiContent(s: LanaiSession, c: LanaiContent): void {
   s.edited();
 }
 
-export function removeLanaiContent(s: LanaiSession, c: LanaiContent): void {
+/**
+ * Removes an added content (the undo of cloneLanaiContent and of an import), wherever it is: its stage rows and their
+ * MessageMapStage rows no other stage uses, its Contents row, its archive and CRR, and its event script. The contents
+ * added after it move down one number (Contents, MapStageIntegration +0x34 / +0x44, their ContentsDef, MapStage and
+ * EventObject tables, their CRR paths) and the MessageMapStage rows after the removed ones one ID (the IDs stay without
+ * a gap, as the edits put back give them). The stage slots stay. A reference to the removed content stays as it is.
+ */
+export async function removeLanaiContent(s: LanaiSession, c: LanaiContent): Promise<void> {
   const block = lanaiContentRemoveBlock(s, c);
   if (block) throw new Error(block);
   const contents = s.need('Contents'),
     integration = s.need('MapStageIntegration'),
     messages = s.need('MessageMapStage');
-  const names = c.stages.map((st) => st.messageId);
-  for (let k = 0; k < c.stages.length; k++) integration.removeLastRow();
-  const used = new Set(Array.from({ length: integration.rows }, (_, r) => integration.u32(r, 0xc)));
-  for (const id of [...names].reverse()) {
-    const m = messages.find(id);
-    if (m === messages.rows - 1 && m >= messages.originalRows && !used.has(id)) messages.removeLastRow();
+  const all = lanaiContents(s);
+  // the contents after it move down one number; the other added contents may name them (a goal that clears another
+  // stage). Their tables are read first: nothing is changed before all of them are there.
+  const later = all.filter((x): x is LanaiContent => !!x && x.index > c.index);
+  const others = all.filter(
+    (x): x is LanaiContent => !!x && x.index !== c.index && s.createdFiles.has(x.archive.toUpperCase()),
+  );
+  const tables = new Map<number, Awaited<ReturnType<LanaiSession['tablesIn']>>>();
+  for (const x of others) tables.set(x.index, await s.tablesIn(x.archive));
+
+  // the stage rows, then their names that no other stage uses
+  for (const r of c.stages.map((st) => st.row).sort((a, b) => b - a)) integration.removeRow(r);
+  const used = new Set(Array.from({ length: integration.rows }, (_, r) => integration.u32(r, 0x0c)));
+  const names = [...new Set(c.stages.map((st) => st.messageId))]
+    .map((id) => messages.find(id))
+    .filter((m) => m >= messages.originalRows && !used.has(messages.rowId(m)))
+    .sort((a, b) => b - a);
+  const renamed = new Map<number, number>(); // MessageMapStage ID: old → new
+  for (const m of names)
+    for (const [from, to] of messages.removeRow(m)) {
+      const first = [...renamed].find(([, now]) => now === from)?.[0];
+      renamed.set(first ?? from, to);
+    }
+  for (let r = 0; r < integration.rows; r++) {
+    const m = renamed.get(integration.u32(r, 0x0c));
+    if (m !== undefined) integration.setU32(r, 0x0c, m);
   }
-  contents.removeLastRow();
+
+  // the contents after it move down one number
+  contents.removeRow(c.index);
+  const moved = new Map(later.map((x) => [x.index, x.index - 1]));
+  for (let r = 0; r < integration.rows; r++) {
+    const n = moved.get(integration.u32(r, 0x34));
+    if (n === undefined) continue;
+    integration.setU32(r, 0x34, n);
+    integration.setBits(r, 0x44, 0, 16, n);
+  }
+  for (const t of tables.values()) retargetContentTables(t, moved, renamed);
   s.removeFile(c.archive);
   if (s.createdFiles.has(lanaiCrrName(c.index))) s.removeFile(lanaiCrrName(c.index));
+  for (const x of later) {
+    const crr = s.createdFiles.get(lanaiCrrName(x.index));
+    if (!crr) continue;
+    s.removeFile(lanaiCrrName(x.index));
+    s.addFile(lanaiCrrName(x.index - 1), crr);
+  }
+  forgetLanaiMaps(s, c.index);
   s.edited();
 }
 

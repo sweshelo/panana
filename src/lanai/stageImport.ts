@@ -22,7 +22,7 @@ import { encodeLanaiMessage, lanaiMessageBytes, lanaiText, parseLanaiMessage } f
 import { LANAI_TREASURE_TABLE } from './maps';
 import { archiveTables, LANAI_DELIVERABLE_TABLES, type LanaiSession } from './session';
 import { LANAI_SHOP_ITEM_TABLE } from './shops';
-import { lanaiCrrName } from './stageEdit';
+import { lanaiCrrName, retargetContentTables } from './stageEdit';
 import { LANAI_STAGE_MANIFEST, LANAI_STAGE_SOURCE, type LanaiStageSource, type OwnedRange } from './stageScript';
 import type { LanaiTable } from './table';
 import { LANAI_TREASURE_SLOTS } from './treasure';
@@ -392,30 +392,16 @@ export async function applyLanaiImport(
     const tables = await s.tablesIn(p.archive);
     const named = (n: string): LanaiTable | undefined => tables.find((t) => t.table.name === n)?.table;
     const def = named('ContentsDef');
-    if (def) for (const r of [0, 1]) if (r < def.rows && def.u32(r, 0) === p.st.content) def.setU32(r, 0, p.index);
+    // the stage slots by the MapStage rows (their MessageMapStage IDs as in the zip), then the numbers
     const stage = named('MapStage');
+    const at = new Map<number, number>();
     if (stage)
       for (let r = 0; r < stage.rows; r++) {
-        const at = slots.get(`${p.archive}/${hex8(stage.u32(r, 0x0c))}`);
-        if (at === undefined) continue;
-        stage.setU32(r, 0x0c, mapped(msgIds, stage.u32(r, 0x0c)));
-        stage.setBits(r, 0x34, 0, 16, at);
-        stage.setBits(r, 0x38, 0, 16, p.index);
+        const slot = slots.get(`${p.archive}/${hex8(stage.u32(r, 0x0c))}`);
+        if (slot !== undefined) at.set(r, slot);
       }
-    for (const { table: t } of tables.filter((x) => x.table.name.endsWith('_EventObject')))
-      for (let r = 0; r < t.rows; r++) {
-        for (const offset of [0x10, 0x28, 0x40]) {
-          const type = t.u32(r, offset);
-          const arg = type === 0x8000002e ? offset + 8 : type === 0x80000031 ? offset + 4 : -1;
-          if (arg >= 0 && contentMap.has(t.u32(r, arg))) t.setU32(r, arg, contentMap.get(t.u32(r, arg))!);
-        }
-        for (const [kind, arg] of [
-          [0x5f, 0],
-          [0x60, 8],
-        ] as const)
-          if ([1, 2].includes(t.u8(r, kind)) && contentMap.has(t.u32(r, arg)))
-            t.setU32(r, arg, contentMap.get(t.u32(r, arg))!);
-      }
+    retargetContentTables(tables, contentMap, msgIds);
+    for (const [r, slot] of at) stage!.setBits(r, 0x34, 0, 16, slot);
     const groups = named('MapGroup');
     if (groups && nameIds.size)
       for (let r = 0; r < groups.rows; r++)

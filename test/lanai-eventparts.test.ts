@@ -552,17 +552,17 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and EncountBoss', () => 
     expect(bad.problems.join()).toContain(`ScriptMap.EncountBoss(${mg.rows}, …) の群れがありません`);
   });
 
-  test('an added stage is removed, the newest first: its rows, archive, CRR and script', async () => {
+  test('an added stage is removed: its rows, archive, CRR and script', async () => {
     const rows = (n: string): number => s.need(n).rows;
     const before = { contents: rows('Contents'), msi: rows('MapStageIntegration'), msg: rows('MessageMapStage') };
     const index = await cloneLanaiContent(s, lanaiContents(s)[1]!, '消す島', { script: 'empty' });
     const added = lanaiContents(s)[index]!;
     s.setStageScript(added.archive, 'function f() { ScriptSystem.WaitTime(1) }\non start(1) f');
-    // the stage added before it is not the last any more
-    expect(lanaiContentRemoveBlock(s, c)).toContain('最後に追加した');
+    // the stage added before it can be removed too (the ones after it move down: lanai-stageimport.test.ts)
+    expect(lanaiContentRemoveBlock(s, c)).toBeNull();
     expect(lanaiContentRemoveBlock(s, lanaiContents(s)[1]!)).toContain('元からある');
     expect(lanaiContentRemoveBlock(s, added)).toBeNull();
-    removeLanaiContent(s, added);
+    await removeLanaiContent(s, added);
     expect({ contents: rows('Contents'), msi: rows('MapStageIntegration'), msg: rows('MessageMapStage') }).toEqual(
       before,
     );

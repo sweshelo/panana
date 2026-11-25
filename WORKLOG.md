@@ -388,3 +388,9 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - `stageScript.ts` / `session.ts`: 配信 zip に `panana-stage-source.json` (ScriptDoc)。`distributionZip({ release: true })` はそれを入れない。uwapo への送信はリリース用。`importedStages` (ソースなしで取り込んだステージの鍵・所有範囲) を保存・復元し、`lanai-stage.json` に書く。
 - `stageImport.ts` + `StageImportDialog.tsx` (ステージのページの「インポート」)。振り直し・取り込まないものは notes/lanai-stage-authoring.md に。
 - テスト: 全体 884 pass / 25 skip / 0 fail。`lanai-stageimport.test.ts` (ROM 3 件)、コメントの往復 (lanai-stagescript)。画面とゲーム内は未確認。
+
+## 追加したステージをどの順でも削除 (2026-11-25)
+
+- 依頼: ID をずらす処理を使い、「最後に追加したステージから順に削除できます」の制約を外す。
+- `table.ts removeRow`、`stageEdit.ts retargetContentTables` (複製・取り込み・削除で共通) と `removeLanaiContent` の書き直し、`maps.ts forgetLanaiMaps`、削除ボタンの確認文 (後ろのステージの番号がずれる)。詳細は notes/lanai-stage-authoring.md。
+- テスト: 全体 885 pass / 25 skip / 0 fail。画面・ゲーム内は未確認。

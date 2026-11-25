@@ -422,6 +422,38 @@ export class LanaiTable {
     this.rebuild([], this.rowIds.slice(0, -1), [], 1);
   }
 
+  /**
+   * Drops row `i`, a row an edit added: the rows after it move up one place with their strings, and the row IDs stay
+   * with the places (the IDs stay in order without a gap, as addRow gives them when the edits are put back), so a row
+   * after it gets the ID the row before it had. Returns old → new ID of the rows that moved (empty without IDs).
+   */
+  removeRow(i: number): Map<number, number> {
+    if (i < this.origRows || i >= this.rows) throw new Error(`${this.name}: 行 ${i} は追加した行ではありません`);
+    const moved = new Map<number, number>();
+    for (let k = i + 1; k < this.rows && this.rowIds.length; k++) moved.set(this.rowIds[k]!, this.rowIds[k - 1]!);
+    if (i === this.rows - 1) {
+      this.removeLastRow();
+      return moved;
+    }
+    this.writable();
+    const d = this.data;
+    const size = this.rowSize;
+    const start = this.dataOffset + i * size;
+    const end = this.dataOffset + this.rows * size;
+    d.copyWithin(start, start + size, end);
+    // the relocations (string fields) of the dropped row go, those of the rows after it move up with them
+    const relocAt = u32(d, 0x28);
+    const list = Array.from({ length: u32(d, 0x2c) }, (_, k) => u32(d, relocAt + k * 4))
+      .filter((p) => p < start || p >= start + size)
+      .map((p) => (p >= start + size && p < end ? p - size : p));
+    list.forEach((p, k) => w32(d, relocAt + k * 4, p));
+    w32(d, 0x2c, list.length);
+    const written = [...this.written].filter(([k]) => Math.floor(k / size) !== i);
+    this.written = new Map(written.map(([k, b]) => [Math.floor(k / size) > i ? k - size : k, b]));
+    this.rebuild([], this.rowIds.slice(0, -1), [], 1);
+    return moved;
+  }
+
   /** Offsets in row `i` of its relocated fields. */
   private stringOffsetsOf(i: number): number[] {
     const base = this.at(i, 0);
