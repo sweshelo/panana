@@ -30,7 +30,7 @@ import {
 import { LANAI_GLASSES, lanaiDenpaEquipment, lanaiDenpaGlasses } from '../src/lanai/denpaEquipment';
 import { lanaiItems } from '../src/lanai/items';
 import { lanaiMonsterDesign } from '../src/lanai/monsters';
-import { lanaiChestFields } from '../src/lanai/treasure';
+import { LANAI_EO_REFILL, lanaiChestFields, lanaiChestRefillFor } from '../src/lanai/treasure';
 import { LanaiSession } from '../src/lanai/session';
 import { openImages } from '../src/rom/dump';
 import { hex8, u32 } from '../src/util/bytes';
@@ -127,6 +127,35 @@ describe.skipIf(!hasLanai)('RPG FREE! map records', () => {
     expect([...(effects.get('s3') ?? [])]).toEqual([LANAI_EFFECT_CLEAR_WARP]);
     expect(effects.get('s5')?.has(LANAI_EFFECT_REPAIR_POINT)).toBe(true);
   }, 300000);
+
+  test('chests: looks 0 / 1 stay empty once opened (+0x5E 0xFF), the green look 2 is full again (0)', () => {
+    const counts = { keep: 0, keepOk: 0, green: 0, greenOk: 0 };
+    for (const maps of all)
+      for (const info of maps.maps) {
+        const ev = info.world ? undefined : maps.eventTable(info.dungeon);
+        if (!ev) continue;
+        for (const r of maps.doc(info).recs[4] ?? []) {
+          const row = u32(r.raw, 4);
+          if (!row || row >= ev.rows || !lanaiChestFields(ev, row).length) continue;
+          const look = u32(r.raw, 0);
+          if (ev.u32(row, 0x10) === LANAI_ACTION_GOAL_CHEST) continue;
+          const want = lanaiChestRefillFor(look, false);
+          const ok = ev.u8(row, LANAI_EO_REFILL) === want;
+          if (look === 2) {
+            counts.green++;
+            if (ok) counts.greenOk++;
+          } else if (look <= 1) {
+            counts.keep++;
+            if (ok) counts.keepOk++;
+          }
+        }
+      }
+    // ROM survey 2026-11-25: 210 brown / red chests all 0xFF; 1186 green ones 0, 5 of them 0xFE (contents 64 / 69)
+    expect(counts.keep).toBeGreaterThan(200);
+    expect(counts.keepOk).toBe(counts.keep);
+    expect(counts.green).toBeGreaterThan(1000);
+    expect(counts.greenOk / counts.green).toBeGreaterThan(0.99);
+  });
 
   test('a character whose EventObject +0x5A is 0 takes MapChara row 0 (an NPC and a boss)', () => {
     const look = (content: number, name: string, rec: number) => {

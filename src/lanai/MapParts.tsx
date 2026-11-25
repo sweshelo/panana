@@ -15,7 +15,7 @@ import { useAsync } from '../ui/useAsync';
 import { useLanaiRevision } from './MonsterEditor';
 import { useLanaiContents } from './useContents';
 import type { LanaiEditState } from './mapedit';
-import type { LanaiMaps, LanaiMonsterGroupRow, LanaiMonsterGroupUse } from './maps';
+import { lanaiEventSlot, type LanaiMaps, type LanaiMonsterGroupRow, type LanaiMonsterGroupUse } from './maps';
 import { lanaiItemName } from './monsterBook';
 import { lanaiMonsters } from './monsters';
 import { lanaiItemEntry, LanaiItemPicker, lanaiMonsterIcon } from './pickers';
@@ -23,6 +23,9 @@ import { lanaiItems } from './items';
 import { SoundButton } from '../ui/SoundPicker';
 import {
   LANAI_CHEST_ACTIONS,
+  LANAI_CHEST_KEEP,
+  LANAI_CHEST_REFILL_NAMES,
+  LANAI_EO_REFILL,
   LANAI_TREASURE_BATTLE,
   LANAI_TREASURE_GOLD,
   LANAI_TREASURE_ITEM,
@@ -475,7 +478,13 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
   const stages = events ? lanaiChestFields(events, event) : [];
   if (!events || !stages.length) return null;
   const goal = events.u32(event, stages[0]!.field - 4) === LANAI_ACTION_GOAL_CHEST;
-  if (!goal) return <TreasureStage st={st} event={event} field={stages[0]!.field} />;
+  if (!goal)
+    return (
+      <>
+        <ChestRefillSelect st={st} event={event} />
+        <TreasureStage st={st} event={event} field={stages[0]!.field} />
+      </>
+    );
   // the content it clears: argument 2 of the first state's action (the others have 0)
   const clearField = stages[0]!.field + 4;
   const clears = events.u32(event, clearField);
@@ -499,10 +508,46 @@ export function TreasureEditor({ st, event }: { st: LanaiEditState; event: numbe
           {'開けた後の台詞は下の動作の「台詞 (引数 3)」で選びます。'}
         </p>
       </div>
+      <ChestRefillSelect st={st} event={event} />
       {stages.map((x) => (
         <TreasureStage key={x.field} st={st} event={event} field={x.field} heading={STAGE_HEADINGS[x.stage]} />
       ))}
     </>
+  );
+}
+
+/**
+ * What leaving the stage does to a chest (EventObject +0x5E, treasure.ts LANAI_EO_REFILL): full again on the next visit,
+ * empty for good, or the goal chest's retries. An opened chest stays empty only when its state is saved (slot +0x58 below
+ * the group's count).
+ */
+function ChestRefillSelect({ st, event }: { st: LanaiEditState; event: number }): ReactNode {
+  const info = st.info;
+  const events = info ? st.maps.eventTable(info.dungeon) : undefined;
+  if (!info || !events) return null;
+  const value = events.u8(event, LANAI_EO_REFILL);
+  const group = st.maps.group(info);
+  const unsaved = value === LANAI_CHEST_KEEP && !!group && lanaiEventSlot(events, event) >= group.stateCount;
+  return (
+    <div className="treasure">
+      <label className="field">
+        <span>ステージに入り直したとき (+0x5E)</span>
+        <select
+          value={value}
+          onChange={(e) => st.setEventField(event, (x) => x.setU8(event, LANAI_EO_REFILL, Number(e.target.value)))}
+        >
+          {Object.entries(LANAI_CHEST_REFILL_NAMES).map(([v, name]) => (
+            <option key={v} value={v}>
+              {name}
+            </option>
+          ))}
+          {!(value in LANAI_CHEST_REFILL_NAMES) && <option value={value}>{`${hex8(value)} (未知の値)`}</option>}
+        </select>
+      </label>
+      {unsaved && (
+        <p className="error small">状態の枠が MapGroup の枠の数以上なので、開けた状態が保存されず中身が戻ります。</p>
+      )}
+    </div>
   );
 }
 

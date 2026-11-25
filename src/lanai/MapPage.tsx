@@ -2203,7 +2203,7 @@ function EventFields({
               ? '+0x5C (bit 15 = 歩いて入る。0 = 範囲内で A。下位 15 bit は未解析)'
               : '+0x5C (レベルの扉では必要レベル。ほかは未解析)',
         )}
-        {u8f(0x5e, '+0x5E (未解析)')}
+        {u8f(0x5e, '+0x5E (宝箱: 0 = 入り直すと中身が戻る、0xFF = 空のまま、0xFE = ゴール)')}
         <details>
           <summary className="small">{`イベントのバイト (${t.rowSize})`}</summary>
           <RawBytes bytes={t.row(row)} rows={4} onChange={(b) => st.setEventField(row, (x) => x.setRow(row, b))} />

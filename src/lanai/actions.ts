@@ -72,9 +72,9 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
     pick: { 0: 'monsterGroupRow', 1: 'byteFlag' },
     note: '区画 8 の範囲。入ると引数 1 の群れと戦い、勝つと引数 2 の番号の数値フラグ (ScriptByteFlag、0x52) に 2 が入る (ビットのフラグではない。CollisionEncountCommon)',
   },
-  0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の番号' } },
+  0x8000000e: { name: '宝箱 (見た目 0 茶 / 2 緑)', args: { 0: 'TreasureGroup の番号' } },
   0x80000010: {
-    name: '宝箱 (見た目 1)',
+    name: '宝箱 (見た目 1 赤金)',
     args: { 0: 'TreasureGroup の番号' },
     note: '開けるとレアアイテムの演出が入る (ItemRareCommon)',
   },

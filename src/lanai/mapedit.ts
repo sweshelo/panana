@@ -67,7 +67,13 @@ import {
   lanaiRecordLook,
   type LanaiRecordModel,
 } from './mapObjects';
-import { lanaiChestFields, lanaiTreasureSlots, lanaiWriteTreasure } from './treasure';
+import {
+  LANAI_EO_REFILL,
+  lanaiChestFields,
+  lanaiChestRefillFor,
+  lanaiTreasureSlots,
+  lanaiWriteTreasure,
+} from './treasure';
 import type { ScriptDoc } from './eventScript';
 import { docBound } from './scriptDoc';
 
@@ -536,6 +542,8 @@ export class LanaiEditState extends MapEditState<LanaiStamp, LanaiTables> {
             events.setU32(row, offset + 4, reward);
           }
           if (ev.chest === 'goal') events.setU32(row, LANAI_EVENT_ACTIONS[0] + 8, ev.clears ?? this.maps.content.index);
+          // whether it is full again on the next visit, as the ROM's chests of the look (treasure.ts LANAI_EO_REFILL)
+          events.setU8(row, LANAI_EO_REFILL, lanaiChestRefillFor(u32(raw, 0), ev.chest === 'goal'));
         }
         // the clerk opens the Shop row chosen when placed (its second argument)
         if (typeof ev.shop === 'number')

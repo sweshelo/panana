@@ -174,6 +174,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
       [5, 0],
       [5, 0],
       [4, 0],
+      [4, 2],
       [4, 3],
       [8, 1],
       [8, 0],

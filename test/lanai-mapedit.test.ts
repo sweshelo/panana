@@ -333,6 +333,8 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       expect(row).toBe(events.rows - 1);
       expect(events.u32(row, 0x10)).toBe(count === 3 ? LANAI_ACTION_GOAL_CHEST : 0x8000000e);
       if (count === 3) expect(events.u32(row, 0x18)).toBe(content.index);
+      // a brown chest stays empty once opened, the goal chest moves on to its retries (EventObject +0x5E)
+      expect(events.u8(row, 0x5e)).toBe(count === 3 ? 0xfe : 0xff);
       for (let i = 0; i < count; i++) {
         const field = [0x14, 0x2c, 0x44][i]!;
         expect(events.u32(row, field)).toBe(rewardRows + i + (source === '新規クリア宝箱' ? 1 : 0));

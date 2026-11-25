@@ -39,7 +39,7 @@ import {
   type LanaiRecordModel,
 } from './mapObjects';
 import type { LanaiTable } from './table';
-import type { LanaiTreasureSlot } from './treasure';
+import { LANAI_CHEST_GREEN, type LanaiTreasureSlot } from './treasure';
 
 /** EventObject +0x5A: the look (a MapObject row, a MapChara row, the radius of a circle range). */
 export const EO_LOOK = 0x5a;
@@ -344,14 +344,21 @@ export function lanaiEventParts(
           model: { type: 'object', row: model },
         });
   }
-  for (const goal of [false, true]) {
-    const raw = record(4, goal ? 3 : 0);
+  // the chests (section 4 +0x00 = the look): a brown one stays empty once opened, a green one is full again on the next
+  // visit (EventObject +0x5E, set when placed: treasure.ts lanaiChestRefillFor), the goal chest clears the stage
+  for (const kind of ['normal', 'green', 'goal'] as const) {
+    const goal = kind === 'goal';
+    const raw = record(4, goal ? 3 : kind === 'green' ? LANAI_CHEST_GREEN : 0);
     part({
       section: 4,
       raw,
-      label: goal ? 'クリア宝箱' : '通常の宝箱',
-      description: goal ? '初回と再挑戦の報酬を配置時に設定します。' : '報酬を配置時に設定します。',
-      source: goal ? '新規クリア宝箱' : '新規宝箱',
+      label: goal ? 'クリア宝箱' : kind === 'green' ? '中身が戻る宝箱 (緑)' : '通常の宝箱',
+      description: goal
+        ? '初回と再挑戦の報酬を配置時に設定します。'
+        : kind === 'green'
+          ? 'ステージに入り直すと中身が戻ります。報酬を配置時に設定します。'
+          : '一度開けると空のままです。報酬を配置時に設定します。',
+      source: goal ? '新規クリア宝箱' : kind === 'green' ? '新規緑の宝箱' : '新規宝箱',
       category: '宝箱・ゴール',
       event: { action: goal ? LANAI_ACTION_GOAL_CHEST : 0x8000000e, look: 0, chest: goal ? 'goal' : 'normal' },
       model: null,
