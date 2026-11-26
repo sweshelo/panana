@@ -47,3 +47,8 @@ roms/
 test/golden/golden.json
 # the generated entry of the executable (scripts/build-exe.ts)
 server/.exe-entry.gen.ts
+
+# For LLM Local Tasks
+STATE.md
+WORKLOG.md
+notes/*
