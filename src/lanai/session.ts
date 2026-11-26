@@ -32,7 +32,14 @@ import { loadSoundNames, openSoundRenderer } from '../sound/source';
 import { LANAI_LAYOUT, lanaiCode } from './code';
 import { conditionScriptPatch, parseConditionScript } from './conditionScript';
 import { scriptDocFromSource, scriptDocIsEmpty, scriptDocSource, scriptOfDoc, type ScriptDoc } from './eventScript';
-import { buildStageScripts, LANAI_STAGE_MANIFEST, stageScriptManifest } from './stageScript';
+import {
+  buildStageScripts,
+  LANAI_STAGE_MANIFEST,
+  LANAI_STAGE_SOURCE,
+  stageScriptManifest,
+  stageScriptSources,
+  type OwnedRange,
+} from './stageScript';
 import { CRO_HOOK_START_EVENT, croHooks } from './contents';
 import { fieldStartPatch, hasMarkedLanaiFloors, markAddedLanaiFloors } from './fieldStart';
 import { LANAI_MAPDB_ENTRY, LANAI_MAP_TABLE_ENTRY, restoreMissingLanaiSections } from './maps';
@@ -114,6 +121,9 @@ export interface LanaiDistributionDiscard {
 }
 
 /** Why a table or a feature is locked in the custom-stage distribution mode. */
+/** Where a MOD zip is read: Luma3DS on a 3DS (code.ips in the title folder) or Azahar (exefs/code.ips). */
+export type LanaiModTarget = '3ds' | 'azahar';
+
 export const LANAI_DISTRIBUTION_LOCK = '配信用の編集モードでは変えられません (カスタムステージの配信で欠落するため)';
 
 /**
@@ -185,6 +195,8 @@ export interface LanaiSaved {
   dropCap?: boolean;
   /** The custom-stage distribution mode is on (LanaiSession.distributionMode). */
   distributionMode?: boolean;
+  /** The stages imported without their script: archive, key, owned flags (LanaiSession.importedStages). */
+  importedStages?: [string, string, OwnedRange[]][];
 }
 
 /** The map database of a content's root archive (entry C9F79000, maps.ts), shared by the pages and the MOD export. */
@@ -248,6 +260,11 @@ export class LanaiSession {
    * written. The key names the stage on the 3DS (the file of its flags) and stays the same while the stage is edited.
    */
   readonly stageScripts = new Map<string, { key: string; doc: ScriptDoc; source: string }>();
+  /**
+   * The added stages imported from a zip without their script (a release zip, stageImport.ts), by archive: the built
+   * CRO stays as it came, and lanai-stage.json keeps the stage's key and the flags it owns.
+   */
+  readonly importedStages = new Map<string, { key: string; owned: OwnedRange[] }>();
   private readonly layouts = new Map<string, { archive: string; arc: Archive; entry: ArcEntry; body: Uint8Array }>();
 
   /** A layout's current body, including a thumbnail replacement. */
@@ -287,6 +304,7 @@ export class LanaiSession {
     this.dropArchive(name);
     for (const [k, l] of this.layouts) if (l.archive === name) this.layouts.delete(k);
     this.stageScripts.delete(name);
+    this.importedStages.delete(name);
   }
 
   /** Forget what was read of a root archive (the next read reads it anew). */
@@ -321,18 +339,20 @@ export class LanaiSession {
 
   /**
    * Sets (or with null / an empty document removes) the event script of an added stage: its variables, functions and
-   * what the functions are given to. Throws a ScriptDocError when it does not read.
+   * what the functions are given to. Throws a ScriptDocError when it does not read, unless `check` is false (a saved
+   * script, kept as it was when the language has changed since: the editor tells its mistakes and the MOD is not
+   * written until they are put right).
    */
-  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string): void {
+  setStageScriptDoc(archive: string, doc: ScriptDoc | null, key?: string, check = true): void {
     const name = archive.toUpperCase();
     if (!doc || scriptDocIsEmpty(doc)) {
       this.stageScripts.delete(name);
       return;
     }
     if (!this.createdFiles.has(name)) throw new Error('イベントのスクリプトは追加したステージにだけ書けます');
-    scriptOfDoc(doc);
+    if (check) scriptOfDoc(doc);
     this.stageScripts.set(name, {
-      key: key ?? this.stageScripts.get(name)?.key ?? crypto.randomUUID(),
+      key: key ?? this.stageScripts.get(name)?.key ?? this.importedStages.get(name)?.key ?? crypto.randomUUID(),
       doc: structuredClone(doc),
       source: scriptDocSource(doc).text,
     });
@@ -582,6 +602,44 @@ export class LanaiSession {
     );
   }
 
+  /**
+   * The root archives (besides the master and the language archives) whose tables, map database, map table or stage
+   * images differ from what was read. An archive is only read when it is edited or its saved edits are put back, so
+   * one not read has none.
+   */
+  changedArchives(): Set<string> {
+    const out = new Set<string>();
+    for (const t of this.others) if (t.added || t.table.changed) out.add(t.archive);
+    for (const r of this.mapDbsRead.values())
+      if (
+        r.db.changedHashes().length ||
+        r.db.addedHashes().length ||
+        (r.table && !equalBytes(r.table.data, r.table.original))
+      )
+        out.add(r.archive);
+    for (const l of this.layouts.values()) out.add(l.archive);
+    return out;
+  }
+
+  /**
+   * Puts one root archive back as it was read: its tables (added rows dropped, added tables taken out), its map
+   * database and map table, and its stage images. Not for an added stage's archive (removeFile takes it out whole).
+   * Call edited() after.
+   */
+  revertArchive(archive: string): void {
+    const key = archive.toUpperCase();
+    for (const t of this.addedTables().filter((t) => t.archive === key)) this.removeTable(t);
+    for (const t of this.others) if (t.archive === key) t.table.revert();
+    const r = this.mapDbsRead.get(key);
+    if (r) {
+      for (const h of r.db.addedHashes()) r.db.remove(h);
+      for (const h of r.db.changedHashes()) r.db.revert(h);
+      if (r.table) r.table.data = r.table.original;
+      this.mapsReset(key);
+    }
+    for (const [k, l] of this.layouts) if (l.archive === key) this.layouts.delete(k);
+  }
+
   /** Puts every table and every map back as it was read. */
   revertAll(): void {
     for (const t of this.addedTables()) this.removeTable(t);
@@ -599,6 +657,7 @@ export class LanaiSession {
     this.soundsChanged();
     this.conditionScripts.clear();
     this.stageScripts.clear();
+    this.importedStages.clear();
     this.layouts.clear();
     this.dropCap = false;
     this.edited();
@@ -632,6 +691,13 @@ export class LanaiSession {
       ...(this.stageScripts.size
         ? { stageScripts: [...this.stageScripts].map(([a, x]) => [a, x.key, x.doc] as [string, string, ScriptDoc]) }
         : {}),
+      ...(this.importedStages.size
+        ? {
+            importedStages: [...this.importedStages].map(
+              ([a, x]) => [a, x.key, x.owned] as [string, string, OwnedRange[]],
+            ),
+          }
+        : {}),
       ...(this.layouts.size
         ? {
             layouts: [...this.layouts.values()].map(
@@ -662,8 +728,10 @@ export class LanaiSession {
     for (const [id, source] of saved.conditionScripts ?? []) this.setConditionScript(id, source);
     for (const [archive, key, script] of saved.stageScripts ?? []) {
       if (typeof script === 'string') this.setStageScript(archive, script, key);
-      else this.setStageScriptDoc(archive, script, key);
+      else this.setStageScriptDoc(archive, script, key, false);
     }
+    for (const [archive, key, owned] of saved.importedStages ?? [])
+      if (this.createdFiles.has(archive)) this.importedStages.set(archive, { key, owned });
     for (const [archive, hash, body] of saved.layouts ?? []) await this.setLayout(archive, hash, body);
     this.dropCap = !!saved.dropCap;
     this.restoreRows(saved);
@@ -870,9 +938,17 @@ export class LanaiSession {
     return appendIps(base, patchRecords(built), code);
   }
 
-  /** The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and exefs/code.ips. */
-  async modZip(): Promise<Uint8Array> {
+  /**
+   * The LayeredFS zip: 0004000000125D00/romfs/<archive> (with the base MOD's files) and the code patch, at exefs/code.ips
+   * for Azahar (load/mods/) or at code.ips in the title folder for Luma3DS on a 3DS (luma/titles/).
+   */
+  async modZip({ target = 'azahar' }: { target?: LanaiModTarget } = {}): Promise<Uint8Array> {
     const pkg = packageOn(this.baseMod, await this.allModFiles(), this.codeIps());
+    const ips = pkg.get('exefs/code.ips');
+    if (target === '3ds' && ips) {
+      pkg.delete('exefs/code.ips');
+      pkg.set('code.ips', ips);
+    }
     // read by the distribution server (lanai-custom-stages): the key and the flags each scripted stage owns
     const stages = await stageScriptManifest(this);
     if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
@@ -936,9 +1012,11 @@ export class LanaiSession {
   /**
    * The zip for the custom-stage distribution (lanai-custom-stages): like modZip, but the master carries only the
    * changes of LANAI_DELIVERABLE_TABLES (the other tables as in the ROM) and there is no exefs/code.ips (the
-   * distribution does not deliver it). Throws on condition scripts, which the distribution refuses.
+   * distribution does not deliver it). It carries the event scripts as they are edited (LANAI_STAGE_SOURCE), so that
+   * the stages can be imported again; the release zip (`release`) leaves them out. Throws on condition scripts, which
+   * the distribution refuses.
    */
-  async distributionZip(): Promise<Uint8Array> {
+  async distributionZip({ release = false }: { release?: boolean } = {}): Promise<Uint8Array> {
     if (this.conditionScripts.size)
       throw new Error('条件スクリプト (code.ips) を使うステージは、カスタムステージとして配信できません');
     const files = await this.allModFiles();
@@ -947,6 +1025,8 @@ export class LanaiSession {
     const pkg = packageOn(this.baseMod, files, null);
     const stages = await stageScriptManifest(this);
     if (stages) pkg.set(LANAI_STAGE_MANIFEST, stages);
+    const sources = release ? null : stageScriptSources(this);
+    if (sources) pkg.set(LANAI_STAGE_SOURCE, sources);
     return buildModZip(pkg, LANAI.titleId);
   }
 

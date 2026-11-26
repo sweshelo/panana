@@ -9,10 +9,18 @@ import { lanaiButtonDoor, lanaiEditState, lanaiValidateAll } from '../src/lanai/
 import { lanaiMaps, type LanaiMaps } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
 import { buildStageScripts, checkStageScript } from '../src/lanai/stageScript';
-import { lanaiTilesets, mapDataTileset, setLanaiTileset, tilesetGaps, tilesetTable } from '../src/lanai/tilesets';
+import {
+  lanaiTilesets,
+  mapDataTileset,
+  setLanaiTileset,
+  tilesetGaps,
+  tilesetTable,
+  tilesetTextureDiffers,
+} from '../src/lanai/tilesets';
+import { lanaiTileModels } from '../src/lanai/mapModels';
 import { addLanaiMapData } from '../src/lanai/mapadd';
 import { openImages } from '../src/rom/dump';
-import { u32 } from '../src/util/bytes';
+import { hex8, u32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
@@ -47,6 +55,8 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect(stage.visible).toEqual({ kind: 0, v1: 0, v2: 0 });
     expect(stage.hidden).toEqual({ kind: 0, v1: 0, v2: 0 });
     const image = await lanaiStageThumbnail(s, c.archive, stage.thumbnail);
+    // the template (content 99) has a 144x200 one; a new stage takes the shipped stages' size
+    expect([image.width, image.height]).toEqual([144, 132]);
     expect(image.rgba.every((value, i) => value === (i % 4 === 3 ? 255 : 0))).toBe(true);
     const local = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')!.table;
     expect(local.u8(0, 0x3d)).toBe(0);
@@ -88,17 +98,22 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect([...files.keys()].sort()).toEqual([`.crr/contents${String(c.index).padStart(4, '0')}.crr`, c.archive]);
   });
 
-  test('a persistent switch binds to its door and undo restores the stage script', async () => {
+  test('a persistent switch is given a function of the script (none is made) and undo restores the stage script', async () => {
     const { info } = start();
     const st = lanaiEditState(maps);
     st.open(info);
     const template = st.templates().find((t) => t.source === '新規保持スイッチ')!;
+    const had = s.stageScripts.get(c.archive.toUpperCase())!.doc;
+    s.setStageScriptDoc(c.archive, {
+      ...had,
+      functions: [...had.functions, { name: 'openGate', body: 'openDoor(1)' }],
+    });
     const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
     const count = st.current!.recs[5]?.length ?? 0;
     st.edit((doc) =>
       st.placeStamp(
         doc,
-        { type: 'template', t: { ...template, event: { ...template.event!, buttonDoor: 1 } } },
+        { type: 'template', t: { ...template, event: { ...template.event!, scriptFn: 'openGate' } } },
         5.5,
         5.5,
       ),
@@ -110,8 +125,9 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
       trigger: 'switch',
       group: info.dungeon,
       row,
-      fn: `openDoor${info.dungeon}_${row}`,
+      fn: 'openGate',
     });
+    expect(stored.doc.functions).toEqual(before.functions);
     expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
     const files = new Map<string, Uint8Array>();
     await buildStageScripts(s, files);
@@ -124,24 +140,22 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     st.undo();
   });
 
-  test('both switch types can be placed without a door and receive editable script functions', async () => {
+  test('both switch types can be placed without a function: the script is left as it is', async () => {
     const { info } = start();
     const st = lanaiEditState(maps);
     st.open(info);
     const before = structuredClone(s.stageScripts.get(c.archive.toUpperCase())!.doc);
-    for (const [source, trigger, x] of [
-      ['新規保持スイッチ', 'switch', 4],
-      ['新規プッシュスイッチ', 'button', 5],
+    for (const [source, x] of [
+      ['新規保持スイッチ', 4],
+      ['新規プッシュスイッチ', 5],
     ] as const) {
       const template = st.templates().find((t) => t.source === source)!;
       st.edit((doc) => st.placeStamp(doc, { type: 'template', t: template }, x, 5));
       const row = u32(st.current!.recs[5]!.at(-1)!.raw, 4);
       const stored = s.stageScripts.get(c.archive.toUpperCase())!;
-      const binding = stored.doc.bindings.find((b) => b.group === info.dungeon && b.row === row);
-      expect(binding?.trigger).toBe(trigger);
-      expect(stored.doc.functions.find((f) => f.name === binding?.fn)?.body).toBe('');
+      expect(stored.doc.bindings.find((b) => b.group === info.dungeon && b.row === row)).toBeUndefined();
+      expect(stored.doc).toEqual(before);
       expect(lanaiButtonDoor(maps, info.dungeon, row)).toBeNull();
-      expect((await checkStageScript(s, c, stored.source)).problems).toEqual([]);
     }
     st.undo();
     st.undo();
@@ -258,6 +272,50 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect(m2.tileSource(i2, m2.doc(i2)).partsName).toBe('MapPartsRelic');
   });
 
+  test("a tileset's texture is the one its models name (Relic: 6D3A9800, not 2B84B000's stone walls)", async () => {
+    const all = await lanaiTilesets(s);
+    expect(u32(all.find((t) => t.name === 'Relic')!.resource, 4)).toBe(0x6d3a9800);
+    for (const ts of all) {
+      const set = await lanaiTileModels(
+        s,
+        {
+          mapData: -1,
+          tileset: 0,
+          partsName: '',
+          resource: 0,
+          textureArchive: u32(ts.resource, 0),
+          textureEntry: u32(ts.resource, 4),
+        },
+        [ts.floor!],
+      );
+      const names = set.models.get(ts.floor!.entry)!.materials.flatMap((m) => m.textures.filter((t) => t !== null));
+      // Boutique's only texture (content 97) lacks its floor's bg_floor_01 in the ROM too
+      const missing = names.filter((n) => !set.textures.has(n) && !(ts.name === 'Boutique' && n === 'bg_floor_01'));
+      expect({ ts: ts.name, missing }).toEqual({ ts: ts.name, missing: [] });
+    }
+  });
+
+  test('a new texture row keeps the battle field of the map; a wrong texture is fixed by picking the tileset again', async () => {
+    const { info, doc } = start();
+    const row = maps.mapDataRow(info, doc);
+    const md = maps.contentTable('MapData')!,
+      mr = maps.contentTable('MapResource')!;
+    const all = await lanaiTilesets(s);
+    const relic = all.find((t) => t.name === 'Relic')!;
+    const field = mr.u32(md.row(row)[0x0b]!, 0x10);
+    await setLanaiTileset(s, maps, row, relic);
+    expect(mr.u32(md.row(row)[0x0b]!, 0x10)).toBe(field);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(false);
+    // a stage saved with the stone-wall texture
+    const wrong = mr.addRow(md.row(row)[0x0b]!);
+    mr.setU32(wrong, 4, 0x2b84b000);
+    md.setBits(row, 0x08, 24, 8, wrong);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(true);
+    await setLanaiTileset(s, maps, row, relic);
+    expect(mr.u32(md.row(row)[0x0b]!, 4)).toBe(0x6d3a9800);
+    expect(tilesetTextureDiffers(maps, row, relic)).toBe(false);
+  });
+
   test('the open map hears of another tileset: its source is read again and the views are told', async () => {
     const { info } = start();
     const st = lanaiEditState(maps);
@@ -286,5 +344,20 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     await restored.restore(s.saved());
     const romAgain = await lanaiMaps(restored, lanaiContents(restored)[28]!);
     expect(mapDataTileset(romAgain, row)).toBe(next.entry);
+  });
+
+  test('a door opened only from outside that an exit leads to is flagged (it stands open on arrival)', () => {
+    const { info, doc, rec } = start();
+    const key = `arrivaldoor/${hex8(u32(rec.raw, 0))}`;
+    expect(lanaiValidateAll(maps, info, doc).some((i) => i.key === key)).toBe(false);
+    // another exit of the map leading to the gate's point
+    const row = maps.addNewEventRow(1, 0x80000016, 0);
+    const events = maps.eventTable(1)!;
+    events.setU32(row, 0x14, info.hash);
+    events.setU32(row, 0x18, u32(rec.raw, 0));
+    const raw = rec.raw.slice();
+    raw.set([0x78, 0x56, 0x34, 0x12, row & 0xff, row >> 8, 0, 0], 0);
+    const withExit = { ...doc, recs: { ...doc.recs, 3: [...doc.recs[3]!, { ...rec, raw }] } };
+    expect(lanaiValidateAll(maps, info, withExit).some((i) => i.key === key)).toBe(true);
   });
 });

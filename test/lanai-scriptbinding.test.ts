@@ -16,8 +16,12 @@ test('RPG FREE! stage script: the triggers of a record by its section and kind',
   expect(recordTriggers(5, rec(1))).toEqual(['talk']);
   for (const k of [4, 5, 6]) expect(recordTriggers(5, rec(k))).toEqual(['button', 'switch']);
   for (const k of [7, 10, 11, 14, 15]) expect(recordTriggers(5, rec(k))).toEqual([]);
-  // doors and chests: not yet
-  expect(recordTriggers(3, rec(0))).toEqual([]);
+  // section 3: exits, doors and holes (kind +0x15) take the exit's event, the arrival points (8 / 11) none
+  expect(recordTriggers(3, rec(0))).toEqual(['exit']);
+  const arrival = new Uint8Array(0x18);
+  arrival[0x15] = 11;
+  expect(recordTriggers(3, arrival)).toEqual([]);
+  // chests: not yet
   expect(recordTriggers(4, rec(0))).toEqual([]);
   expect(triggerFitsRecord('defeat', { section: 8, kind: 0 })).toBe(true);
   expect(triggerFitsRecord('defeat', { section: 5, kind: 0 })).toBe(false);

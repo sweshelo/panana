@@ -4,8 +4,11 @@
 // Read from the data of every map (naauao lanai/map.md §5, §7.1), not from the code:
 // - EventObject +0x5A is the model of a record (RPG3's +0x4E): a MapObject row number for exits, chests and objects,
 //   a MapChara row of the content for the characters of section 5 (kinds 0 / 1 / 2).
-// - MapChara (0x30 bytes a row) +0x2C (u16) is the MapObject row of the character's model (npc_NN, …), but a MonsterDesign
-//   row for a monster (kind 1, +0x00 & 7): the figures of the bosses that fight after a talk (lanai/key-objects.md §1).
+// - A character's model (FUN_0023CFAC, Update v17408; analysed by Codex 2026-11-21): EventObject +0x5C (0 / 1 / 2) picks
+//   MapChara +0x2C (u16) / +0x10 (u32) / +0x2E (u16), and the MapChara kind (+0x00 & 7) says what it is: 0 a MapObject
+//   row (npc_NN, …), 1 a MonsterDesign row (the bosses that fight after a talk; lanai/key-objects.md §1), 2 a
+//   MonsterParameter row ID (its +0x00 bits 20..29 are the MonsterDesign row), 3 a DenpaCustom row (a Denpa person;
+//   no save is read, an invalid row is row 0).
 // - The clear warp (section 3 kind 3) and the recovery points (section 5 kinds 12 / 13) place no model: the code puts an
 //   effect of EffectData (master +0x1E4) there and does not read EventObject +0x5A (key-objects.md §3.2, §3.3).
 // - The goal chest (section 4 look 3) is MapObject 0x80000274 gimk_05_trebox_goal outside and inside (FUN_0044F9EC).
@@ -29,6 +32,8 @@ export type LanaiRecordModel =
     }
   /** A monster's model: a MonsterDesign row (monsterModels.ts). */
   | { type: 'monster'; design: number }
+  /** A Denpa person: a DenpaCustom row of the master (animationModels.ts lanaiDenpaCustomModel). */
+  | { type: 'denpa'; custom: number }
   /** An effect the game puts there instead of a model (EffectData row; the viewer draws a marker). */
   | { type: 'effect'; row: number };
 
@@ -44,14 +49,20 @@ export interface LanaiRecordLook {
 
 /** EventObject +0x5A: the record's model (RPG3's +0x4E). */
 export const LANAI_EO_MODEL = 0x5a;
+/** EventObject +0x5C of a character (section 5 kinds 0〜2): which MapChara field names the model (lanaiCharaModel). */
+export const LANAI_EO_CHARA_SELECT = 0x5c;
 /** MapChara +0x2C: the MapObject row of the character's model (a MonsterDesign row for a monster). */
 export const LANAI_CHARA_OBJECT = 0x2c;
-/** MapChara +0x00 (low 3 bits; RPG3's mapChara kinds): 0 NPC, 1 monster, 2 / 3 Denpa person (assumed, as RPG3's). */
-export const LANAI_CHARA_KIND: Record<number, string> = { 0: 'NPC', 1: 'モンスター', 2: '電波人間', 3: '電波人間' };
+/** MapChara +0x00 (low 3 bits): 0 NPC, 1 monster (MonsterDesign), 2 monster (MonsterParameter), 3 Denpa person (DenpaCustom). */
+export const LANAI_CHARA_KIND: Record<number, string> = { 0: 'NPC', 1: 'モンスター', 2: 'モンスター', 3: '電波人間' };
 /** The MapChara kind of a monster: +0x2C is a MonsterDesign row. */
 export const LANAI_CHARA_MONSTER = 1;
 /** The MapChara kind of an NPC: +0x2C is a MapObject row. */
 export const LANAI_CHARA_NPC = 0;
+/** The MapChara kind of a monster named by a MonsterParameter row ID. */
+export const LANAI_CHARA_MONSTER_PARAM = 2;
+/** The MapChara kind of a Denpa person: the model is a DenpaCustom row. */
+export const LANAI_CHARA_DENPA = 3;
 
 /**
  * A new MapChara row (0x30 bytes) of a kind and model, as the rows of the 127 contents are (counted 2026-11-14): +0x00
@@ -232,14 +243,106 @@ export function lanaiObjectScale(mapObject: LanaiTable | undefined, row: number)
   return f32(mapObject.row(row), 0x1c) || 1;
 }
 
-/** The MapObject row of a character (MapChara row; 0 = none), or its MonsterDesign row for a monster. */
+/** An effect a MapObject row puts with its model: an EffectData row and where it is from the model. */
+export interface LanaiObjectEffect {
+  effect: number;
+  /** MapObject +0x28 / +0x2A / +0x2C (s16): x, y (up), z in world units, added to the model's place, not turned. */
+  offset: [number, number, number];
+  /** MapObject +0x2F (s8): added to y too. */
+  lift: number;
+}
+
+/**
+ * The effect a MapObject row puts with its model: +0x24 low u16 is an EffectData row, 0 none (the props of section 2,
+ * FUN_0021C0F4 @0x21C224〜0x21C25C → FUN_002DC4DC; Codex 2026-11-26). The lit torches are rows of the same models as
+ * the unlit ones with an effect: gimk_09_lamp_02〜07 / 09 at 513〜518 / 520 (fx_bg_f_torch) and 523〜528 / 530 without,
+ * obj_torch_1 at 521 (fx_bg_bonfire) and 531 without.
+ */
+export function lanaiObjectEffect(mapObject: LanaiTable | undefined, row: number): LanaiObjectEffect | null {
+  if (!mapObject || row <= 0 || row >= mapObject.rows) return null;
+  const r = mapObject.row(row);
+  const effect = u16(r, 0x24);
+  if (!effect) return null;
+  const s16 = (o: number): number => (u16(r, o) << 16) >> 16;
+  return { effect, offset: [s16(0x28), s16(0x2a), s16(0x2c)], lift: (r[0x2f]! << 24) >> 24 };
+}
+
+/**
+ * The MapObject row of a character (MapChara row; row 0 is a character too, see lanaiCharaModel), or its MonsterDesign
+ * row for a monster.
+ */
 export function lanaiCharaObject(mapChara: LanaiTable | undefined, chara: number): number {
-  return mapChara && chara > 0 && chara < mapChara.rows ? u16(mapChara.row(chara), LANAI_CHARA_OBJECT) : 0;
+  return mapChara && chara >= 0 && chara < mapChara.rows ? u16(mapChara.row(chara), LANAI_CHARA_OBJECT) : 0;
 }
 
 /** The kind of a character (MapChara +0x00 & 7; LANAI_CHARA_KIND), -1 when the row is not there. */
 export function lanaiCharaKind(mapChara: LanaiTable | undefined, chara: number): number {
-  return mapChara && chara > 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
+  return mapChara && chara >= 0 && chara < mapChara.rows ? mapChara.u32(chara, 0) & 7 : -1;
+}
+
+/**
+ * The model of a character (MapChara row `chara`) as FUN_0023CFAC picks it: `select` (EventObject +0x5C) names the
+ * field (0 → +0x2C u16, 1 → +0x10 u32, 2 → +0x2E u16, else 0) and the row's kind what it is. The value is looked up as
+ * the game's tables are (FUN_0031C038): a row number below 0x80000000, else a row ID (the +0x10 of the data are IDs:
+ * 8 NPCs and 8 bosses take them). EventObject +0x5A = 0 is not "none": the game looks it up as the others and takes
+ * row 0 (FUN_0023CFAC @0x23CFE0〜 passes it to FUN_0031C038 unchecked, which takes values below 0x80000000 as row
+ * numbers @0x31C04C; 105 characters of 65 contents, e.g. content 1 D01001B01 → MapObject 418, content 48 D01001F01
+ * → MonsterDesign 377). Null when the row is not there or names no model.
+ */
+export function lanaiCharaModel(ctx: LanaiCharaContext, chara: number, select = 0): LanaiRecordModel | null {
+  const mc = ctx.mapChara;
+  if (!mc || chara < 0 || chara >= mc.rows) return null;
+  const c = mc.row(chara);
+  const v = select === 0 ? u16(c, 0x2c) : select === 1 ? u32(c, 0x10) : select === 2 ? u16(c, 0x2e) : 0;
+  const rowOf = (t: LanaiTable | undefined): number => (t && v ? t.find(v) : -1);
+  switch (u32(c, 0) & 7) {
+    case LANAI_CHARA_NPC: {
+      const row = rowOf(ctx.mapObject);
+      return row > 0 && lanaiObjectRef(ctx.mapObject, row) ? { type: 'object', row } : null;
+    }
+    case LANAI_CHARA_MONSTER: {
+      // without the table a row number is taken as it is (the +0x2C of the data)
+      const row = ctx.monsterDesign ? rowOf(ctx.monsterDesign) : v < ROW_ID ? v : -1;
+      return row > 0 ? { type: 'monster', design: row } : null;
+    }
+    case LANAI_CHARA_MONSTER_PARAM: {
+      const t = ctx.monsterParameter;
+      const row = rowOf(t);
+      return row > 0 ? { type: 'monster', design: (t!.u32(row, 0) >>> 20) & 0x3ff } : null;
+    }
+    case LANAI_CHARA_DENPA: {
+      // an invalid row is row 0 (マネキン), as FUN_0031C038 gives it
+      const row = ctx.denpaCustom ? rowOf(ctx.denpaCustom) : v < ROW_ID ? v : 0;
+      return { type: 'denpa', custom: Math.max(0, row) };
+    }
+  }
+  return null;
+}
+
+/** The tables a character's model is looked up in. */
+export interface LanaiCharaContext {
+  /** The master's MapObject. */
+  mapObject: LanaiTable | undefined;
+  /** The content's MapChara. */
+  mapChara: LanaiTable | undefined;
+  /** The master's MonsterDesign (MapChara kind 1; row IDs need it). */
+  monsterDesign?: LanaiTable | undefined;
+  /** The master's MonsterParameter (MapChara kind 2); without it those characters have no model. */
+  monsterParameter?: LanaiTable | undefined;
+  /** The master's DenpaCustom (MapChara kind 3; row IDs need it). */
+  denpaCustom?: LanaiTable | undefined;
+}
+
+/** The master's tables of LanaiCharaContext. */
+export function lanaiCharaTables(session: {
+  table(name: string): LanaiTable | undefined;
+}): Omit<LanaiCharaContext, 'mapChara'> {
+  return {
+    mapObject: session.table('MapObject'),
+    monsterDesign: session.table('MonsterDesign'),
+    monsterParameter: session.table('MonsterParameter'),
+    denpaCustom: session.table('DenpaCustom'),
+  };
 }
 
 /**
@@ -252,11 +355,7 @@ export const LANAI_EFFECT_NAMES: Record<number, string> = {
   [LANAI_EFFECT_REPAIR_POINT]: 'fx_bg_repair_point.ptcl',
 };
 
-export interface LanaiLookContext {
-  /** The master's MapObject. */
-  mapObject: LanaiTable | undefined;
-  /** The content's MapChara. */
-  mapChara: LanaiTable | undefined;
+export interface LanaiLookContext extends LanaiCharaContext {
   /** The EventObject table of the map's group. */
   events: LanaiTable | undefined;
   /** The map has indoor tiles (chests take the indoor models, stairs turn by their direction). */
@@ -332,10 +431,7 @@ export function lanaiRecordLook(section: number, raw: Uint8Array, ctx: LanaiLook
       const angle = QUARTER[dirOf(raw[0x1c]!)]!;
       if (kind <= 2) {
         if (!ev) return null;
-        const design = lanaiCharaObject(ctx.mapChara, evModel);
-        if (lanaiCharaKind(ctx.mapChara, evModel) === LANAI_CHARA_MONSTER)
-          return { model: design ? { type: 'monster', design } : null, angle, chara: evModel };
-        return { ...object(valid(design), angle), chara: evModel };
+        return { model: lanaiCharaModel(ctx, evModel, u16(ev, LANAI_EO_CHARA_SELECT)), angle, chara: evModel };
       }
       // the recovery points (FUN_0021C844): an effect; only the field takes EventObject +0x5A when it has one
       if (kind === LANAI_REPAIR_POINT) return { model: { type: 'effect', row: LANAI_EFFECT_REPAIR_POINT }, angle };

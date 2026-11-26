@@ -8,7 +8,23 @@ import { lanaiMessageSource } from '../src/lanai/MessageSource';
 import { lanaiContents } from '../src/lanai/contents';
 import { LanaiSession, type LanaiTableRef } from '../src/lanai/session';
 import { LanaiTable } from '../src/lanai/table';
-import { isTalkTable, marksDiffer, talkGroups, talkPlain, toneLabel, voiceStale } from '../src/lanai/talk';
+import { lanaiAppendTalkRow, lanaiAppendTalkSet, type LanaiMaps } from '../src/lanai/maps';
+import { addScriptLine, scriptLineCall } from '../src/lanai/ScriptLineDialog';
+import {
+  encodeTalkVoice,
+  isTalkTable,
+  marksDiffer,
+  setTalkVoice,
+  talkGroups,
+  talkPlain,
+  talkSpeaker,
+  talkVoice,
+  toneLabel,
+  toVoiceKana,
+  voiceDraft,
+  voiceProblem,
+  voiceStale,
+} from '../src/lanai/talk';
 import { MessageEditor } from '../src/ui/message';
 import { openImages, type Dump } from '../src/rom/dump';
 import { align, w32 } from '../src/util/bytes';
@@ -98,7 +114,8 @@ describe('talks by line', () => {
     expect(talkPlain(session, gs[1]!)[7]).toBe('こんにちは8またね');
     expect(marksDiffer(session, gs[1]!)).toBe(false);
     expect(toneLabel(1)).toBe('口調 1 (主人公専用)');
-    expect(toneLabel(4)).toBe('口調 4 (性格 2)');
+    expect(toneLabel(4)).toBe('口調 4 (あらくれ)');
+    expect(toneLabel(8)).toBe('口調 8 (やさぐれ)');
   });
 
   test('a tone that moves {page} is warned about; a written row warns that its voice reads the old text', () => {
@@ -129,6 +146,87 @@ describe('talks by line', () => {
     expect(html).toContain('やあ');
     expect(html).toContain('変更あり');
     expect(html).toContain('元の文に戻す');
+  });
+});
+
+describe('voices and new lines', () => {
+  test('a voice is written as half-width katakana bytes and read back', () => {
+    expect([...encodeTalkVoice("ﾏ'ｯﾃ.")]).toEqual([0xcf, 0x27, 0xaf, 0xc3, 0x2e, 0]);
+    // an odd length gets one more 0 (the strings of the pool start on an even byte)
+    expect([...encodeTalkVoice('ﾏ')]).toEqual([0xcf, 0]);
+    expect(() => encodeTalkVoice('漢字')).toThrow('「漢」');
+    const { ref } = setup(TONES);
+    expect(talkVoice(ref, 0)).toBe('ﾀﾞyomi');
+    setTalkVoice(ref, 0, "ﾖﾛｼ>ｸ/ｵﾈｶﾞｲｼﾏ'ｽ>.$page$");
+    expect(talkVoice(ref, 0)).toBe("ﾖﾛｼ>ｸ/ｵﾈｶﾞｲｼﾏ'ｽ>.$page$");
+    setTalkVoice(ref, 0, '');
+    expect(talkVoice(ref, 0)).toBe('');
+  });
+
+  test('kana and a text become a draft of the voice', () => {
+    expect(toVoiceKana('がっこう、パーティー！')).toBe('ｶﾞｯｺｳ/ﾊﾟｰﾃｨｰ.');
+    expect(toVoiceKana('ヴァ漢')).toBe('ｳﾞｧ漢');
+    expect(
+      voiceDraft('よろしくお{ruby:願|ねが}いします。{page}{ins:MonsterParameter:0x80000093:name}？{tag:10C}'),
+    ).toBe('ﾖﾛｼｸｵﾈｶﾞｲｼﾏｽ.$page$$message:MonsterParameter:2147483795:voice$?$hero$');
+    expect(voiceProblem('あ{page}い', 'ｱ$page$ｲ')).toBe('');
+    expect(voiceProblem('あ{page}い', 'ｱｲ')).toContain('$page$');
+    expect(voiceProblem('あ', '')).toBe('');
+  });
+
+  test('a set of 8 tones is appended in a row: the first row is the line, StartMessageAuto picks from it', () => {
+    const { table, ref } = setup([['ナレーション', 0]]);
+    const hero = lanaiAppendTalkRow(table, encodeLanaiMessage(parseLanaiText('ボクだけ')), 1);
+    const first = lanaiAppendTalkSet(
+      table,
+      Array.from({ length: 8 }, (_, k) => `口調${k + 1}`),
+    );
+    expect(first).toBe(hero + 1);
+    expect(Array.from({ length: 8 }, (_, k) => talkSpeaker(ref, first + k))).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(talkGroups(ref).map((g) => [g.kind, g.rows[0]])).toEqual([
+      ['none', 0],
+      ['single', hero],
+      ['set', first],
+    ]);
+    // the new rows are silent until a voice is written
+    expect(talkVoice(ref, first)).toBe('');
+    expect(() => lanaiAppendTalkSet(table, ['1つだけ'])).toThrow();
+  });
+});
+
+describe('a line added from the script editor', () => {
+  const stub = () => {
+    const { table, ref } = setup([['ナレーション', 0]]);
+    const maps = {
+      talkTable: () => table,
+      addTalkRow: (_: number, text: string, speaker: number) =>
+        lanaiAppendTalkRow(table, encodeLanaiMessage(parseLanaiText(text)), speaker),
+      addTalkSet: (_: number, texts: string[]) => lanaiAppendTalkSet(table, texts),
+    } as unknown as LanaiMaps;
+    return { table, ref, maps };
+  };
+  test('each kind is shown by its call', () => {
+    expect(scriptLineCall('talk', 0x80000012)).toBe('talk(0x80000012)');
+    expect(scriptLineCall('tones', 0x80000013)).toBe('ScriptMenu.StartMessageAuto(0x80000013, 0, 0, 0.2)');
+    expect(scriptLineCall('hero', 0x80000014)).toBe('ScriptMenu.StartMessage(0x80000014, 0, 0, 0.2)');
+    expect(scriptLineCall('system', 0x80000015)).toBe('ScriptMenu.StartMessage(0x80000015, 2, 0, 0.2)');
+  });
+  test('the row is added with its speaker and voice, and the call names its ID', () => {
+    const { ref, maps } = stub();
+    expect(addScriptLine(maps, 0, 'talk', ['やあ'], 0x0a, "ﾔ'ｱ.")).toBe('talk(0x80000001)');
+    expect(talkSpeaker(ref, 1)).toBe(0x0a);
+    expect(talkVoice(ref, 1)).toBe("ﾔ'ｱ.");
+    expect(addScriptLine(maps, 0, 'hero', ['ボク'], 0x12, '')).toBe('ScriptMenu.StartMessage(0x80000002, 0, 0, 0.2)');
+    expect(talkSpeaker(ref, 2)).toBe(1);
+    const tones = Array.from({ length: 8 }, (_, k) => `口調${k + 1}`);
+    expect(addScriptLine(maps, 0, 'tones', tones, 0, '')).toBe('ScriptMenu.StartMessageAuto(0x80000003, 0, 0, 0.2)');
+    expect(talkGroups(ref).at(-1)).toMatchObject({ kind: 'set', rows: [3, 4, 5, 6, 7, 8, 9, 10] });
+  });
+  test('a text or voice that cannot be written adds no row', () => {
+    const { table, maps } = stub();
+    expect(() => addScriptLine(maps, 0, 'talk', ['{tag:02,?3}'], 0x12, '')).toThrow();
+    expect(() => addScriptLine(maps, 0, 'talk', ['やあ'], 0x12, 'やあ')).toThrow('「や」');
+    expect(table.rows).toBe(1);
   });
 });
 

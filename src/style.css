@@ -283,7 +283,7 @@ h3 {
 }
 .shell[data-page='map'] .page-map,
 .shell[data-page='monsters'] .page-monsters,
-.shell[data-page='animations'] .page-animations,
+.shell[data-page='models'] .page-models,
 .shell[data-page='items'] .page-items,
 .shell[data-page='groups'] .page-groups,
 .shell[data-page='actions'] .page-actions,
@@ -299,7 +299,8 @@ h3 {
 .shell[data-page='flags'] .page-flags,
 .shell[data-page='stages'] .page-stages,
 .shell[data-page='talks'] .page-talks,
-.shell[data-page='codes'] .page-codes {
+.shell[data-page='codes'] .page-codes,
+.shell[data-page='distribution'] .page-distribution {
   display: block;
 }
 .page-code {
@@ -307,6 +308,34 @@ h3 {
 }
 .code-page {
   max-width: 960px;
+}
+/* #/distribution (the executable's custom-stage distribution) */
+.distribution-page {
+  max-width: 960px;
+}
+.distribution-page section + section {
+  margin-top: 24px;
+}
+.distribution-page a.button,
+.distribution-page label.button {
+  display: inline-block;
+  padding: 4px 9px;
+  color: var(--text);
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.distribution-page a.button:hover,
+.distribution-page label.button:hover {
+  border-color: var(--accent);
+}
+.distribution-package {
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 .code-page h3 {
   margin: 18px 0 6px;
@@ -428,6 +457,56 @@ aside.right {
 .field > span {
   color: var(--muted);
   font-size: 11px;
+}
+/* the MOD export's choice of where it is played (lanai/ExportDialog.tsx): three large buttons side by side */
+.export-targets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 6px 0;
+}
+.export-target {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 8px;
+}
+.export-target.selected {
+  border-color: var(--accent);
+  background: #2d4a7a;
+}
+.export-target-title {
+  font-size: 18px;
+  font-weight: bold;
+}
+.export-target-sub {
+  color: var(--muted);
+  font-size: 11px;
+}
+.export-panel {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  margin: 6px 0;
+}
+.export-maintenance {
+  border-top: 1px solid var(--border);
+  margin-top: 12px;
+  padding-top: 6px;
+}
+/* a flag number: the script's variables by name, then 手動 with its box in the same frame (FlagSelect) */
+.flag-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.flag-select > select {
+  flex: 1;
+  min-width: 0;
+}
+.flag-select > input {
+  width: 80px;
 }
 .field input.hex {
   width: 110px;
@@ -3163,6 +3242,46 @@ label.edited-label {
   font-weight: 600;
 }
 
+.part-places-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-width: 300px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.part-places-menu > div {
+  padding: 2px 12px 6px;
+}
+.part-places-menu > a {
+  padding: 4px 12px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+}
+.part-places-menu > a:hover,
+.part-places-menu > a:focus {
+  background: var(--accent);
+  color: #fff;
+}
+.action-choices {
+  max-height: 60vh;
+  overflow: auto;
+}
+.action-choice > details {
+  margin: 0 0 6px 24px;
+}
+.action-choice > details > a {
+  display: block;
+  padding: 2px 0;
+}
 .part-number-picker {
   margin: 0 0 8px;
   font-size: 12px;
@@ -3381,6 +3500,22 @@ dialog.stage-editor > .picker-head h2 {
 .stage-source-code textarea {
   min-height: 65vh;
 }
+/* 閲覧: the editor takes the rest of the page's height and scrolls inside */
+.stage-source-view {
+  flex: 1;
+  min-height: 0;
+}
+.stage-source-view .script-code,
+.stage-source-view .script-code > div,
+.stage-source-view .cm-editor {
+  height: 100%;
+}
+.stage-source-view .cm-scroller {
+  max-height: none;
+}
+.stage-source-view textarea {
+  height: 100%;
+}
 .stage-source-docs h3 {
   margin-top: 0;
 }
@@ -3395,6 +3530,22 @@ dialog.stage-editor > .picker-head h2 {
 }
 .stage-preview > .row h3 {
   margin: 0;
+}
+.stage-preview-picked {
+  margin: 6px 0;
+}
+.stage-preview-position {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+  margin: 4px 0 0;
+}
+.stage-preview-position dt {
+  color: var(--muted, inherit);
+}
+.stage-preview-position dd {
+  margin: 0;
+  user-select: all;
 }
 .stage-preview-canvas {
   height: clamp(180px, 28vh, 250px);
@@ -3448,30 +3599,65 @@ dialog.stage-editor > .picker-head h2 {
   }
 }
 
-/* lanai map page: the move() statements of the stage's script (ScriptMovePanel.tsx) */
-.move-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.move-row {
-  padding: 4px 6px;
-  margin: 2px 0;
-  border-left: 3px solid #ffb347;
-}
-.move-row.active {
-  background: rgba(255, 179, 71, 0.15);
-}
-.move-coords {
+/* The picker of things stacked at one point (double click with the select tool, src/editor/stackpick.ts). */
+.stack-picker {
+  position: fixed;
+  z-index: 1000;
   display: flex;
-  gap: 6px;
+  gap: 4px;
+  padding: 4px;
+  max-width: min(480px, calc(100vw - 8px));
   flex-wrap: wrap;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
-.move-coord {
-  display: inline-flex;
+.stack-picker button {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+  width: 72px;
+  padding: 4px 2px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
 }
-.move-coord input {
-  width: 5.5em;
+.stack-picker button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stack-picker button:hover,
+.stack-picker button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+/* the script editor's tabs: the script, and the samples to read (StageSourcePage) */
+.stage-source-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.stage-source-tabs > button {
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  margin-bottom: -1px;
+}
+.stage-source-tabs > button[aria-selected='true'] {
+  border-color: var(--border);
+  background: var(--bg);
+  font-weight: 600;
+}
+.stage-source-samples > select {
+  max-width: 100%;
+  margin-bottom: 4px;
 }

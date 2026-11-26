@@ -1,7 +1,8 @@
 // RPG FREE!'s shops (#/shops/<content>[.<Shop row>]): the shops of one content (its Shop and ShopItem tables, shops.ts)
 // in the shop book shared with RPG2 / RPG3 (ui/ShopBook): the stock as item boards with their photos, reordered by
-// dragging, picked from the item photos, the most one can buy per row; and the clerks (EventObject rows of type 店の人)
-// with the maps that place them, linked to the map page with the record selected and to their lines.
+// dragging, picked from the item photos, the most one can buy per row; and the clerks (EventObject rows of type 店の人 /
+// 範囲に入ると店, whose second argument names the shop) with the maps that place them, linked to the map page with the
+// record selected and to their lines. A shop can be added to a content (a Shop row and an empty stock) and removed again.
 import { useMemo, useState, type ReactNode } from 'react';
 import { EditedMark, NumberInput, useSticky } from '../ui/book';
 import { GridPicker } from '../ui/GridPicker';
@@ -12,7 +13,7 @@ import { hex8, u32 } from '../util/bytes';
 import { contentTitle, type LanaiContent } from './contents';
 import { useLanaiContents } from './useContents';
 import { lanaiItemHref } from './ItemPage';
-import { lanaiShopHref } from './hrefs';
+import { lanaiShopHref, lanaiShopSharedHref } from './hrefs';
 import { LANAI_ITEM_KINDS, lanaiItems, type LanaiItem } from './items';
 import { lanaiMapHref } from './MapPage';
 import { lanaiMaps, type LanaiMaps } from './maps';
@@ -20,9 +21,13 @@ import { useLanaiRevision } from './MonsterEditor';
 import { lanaiItemIcon, LanaiItemPicker } from './pickers';
 import type { LanaiSession } from './session';
 import {
-  LANAI_CLERK_SHOP,
+  LANAI_SHARED_COUNTERS,
+  LANAI_SHOP_ARG,
+  LANAI_SHOP_SAVE_SHOPS,
   LANAI_SHOP_SLOTS,
   lanaiClerks,
+  lanaiFreeSharedCounter,
+  lanaiSharedCounterUses,
   lanaiInSlotPool,
   lanaiSetSlotPool,
   lanaiShopItemRow,
@@ -39,6 +44,7 @@ import {
   SHOP_SHARED_LIMIT,
   SHOP_SLOT,
   type LanaiContentShops,
+  type LanaiSharedCounterUse,
   type LanaiShopRow,
 } from './shops';
 
@@ -54,9 +60,11 @@ const POOL_HELP =
 const SLOT_HELP =
   'ランダム枠 (ShopItem +0x00 が種別、+0x25 が枠の番号)。店を開くと、その種別のアイテムから 1 つが選ばれます。選び直すのは日付が変わったとき。選ばれたアイテムはセーブに枠の番号ごとに残ります。枠の番号は 1〜99 (セーブの 0x97 は 100 個)。同じ番号の枠は、ほかの店にあっても種別が違っても同じアイテムになります (naauao lanai/shops.md §2.1)。';
 const SHARED_HELP =
-  '共通の上限 (ShopItem +0x27)。0 でなければ「買える数」(+0x26) より優先されます。買った数は右の番号 (+0x28) ごとに数え、同じ番号の行どうし (ほかの店も) で合算します。0 にすると上限は「買える数」に戻ります。買った数はセーブに 99 までしか記録されないので、100 以上の上限は 99 個買ったあとも残りが減らず、実質無制限になります。1 回に買える数は所持の上限 (ItemDataCore +0x34、ほぼ 99。所持数はコードで 99 に頭打ち) でも止まります。';
+  '共通の上限 (ShopItem +0x27)。0 でなければ「買える数」(+0x26) より優先されます。買った数は右の番号 (+0x28) ごとにセーブ全体で 1 つ数え、同じ番号の行どうしで合算します (ほかの店も、ほかのステージの店も)。消えるのは新しいセーブのとき (推定) と、ゲームの配信で店の品が変わったときだけです。0 にすると上限は「買える数」に戻ります。買った数はセーブに 99 までしか記録されないので、100 以上の上限は 99 個買ったあとも残りが減らず、実質無制限になります。1 回に買える数は所持の上限 (ItemDataCore +0x34、ほぼ 99。所持数はコードで 99 に頭打ち) でも止まります。';
 const COUNTER_HELP =
-  '共通の上限の番号 (ShopItem +0x28)。買った数をセーブのこの番号に記録します (0〜199)。200 以上にすると記録されず、店に入るたびに上限まで買えます。';
+  '共通の上限の番号 (ShopItem +0x28)。買った数をセーブのこの番号に記録します (0〜199。セーブの 0x9A はゲーム全体で 1 つ)。ほかのステージの店と同じ番号にすると、買った数を共有します。ROM で使われているのはコンテンツ 0 の 1〜6・13〜19・24 と、コンテンツ 97 の 101〜156 の一部。「空き」で、どの店も使っていない番号を入れます。200 以上にすると記録されず、店に入るたびに上限まで買えます。';
+/** The contents whose ROM shops use shared limits (the others are read when asked). */
+const SHARED_CONTENTS = [0, 97];
 const COND_HELP =
   '陳列の条件 (ShopItem +0x10 が種類、+0x08 が番号、+0x0C が比べる値)。条件を満たさないと品物は並びません。';
 
@@ -92,11 +100,16 @@ function conditionText(b: Uint8Array): string {
   }
 }
 const CLERK_HELP =
-  '動作の型 0x80000032 (店の人) の EventObject の行。台詞のあと店を開きます。どの店を開くかは引数になく、このコンテンツの Shop の行 0 と推定しています (店の人がいるコンテンツは、どれも店が 1 つだけ。naauao lanai/shops.md §4)。';
+  '動作の型 0x80000032 (店の人) と 0x80000033 (範囲に入ると店) の EventObject の行。台詞のあと、引数 2 が名指す店 (このコンテンツの Shop の行番号か行 ID。ない行は行 0) を開きます。マップのページの「動作・報酬」の引数 2 で店を選べます。';
+const ADD_HELP =
+  'このステージに店を足します (Shop の行 0 を写した行と、品のない品揃え)。開くには、マップに店の人を置き、その引数 2 でこの店を選びます。足した店は最後のものから消せます (ROM にある店は消せません)。';
 
 export function LanaiShopPage({ session, arg }: { session: LanaiSession; arg: string | undefined }): ReactNode {
   const slot = /^slot\.([0-9a-f]+)$/i.exec(arg ?? '');
-  return slot ? (
+  const shared = /^shared(?:\.(\d+))?$/.exec(arg ?? '');
+  return shared ? (
+    <SharedLimitPage session={session} counter={shared[1] === undefined ? undefined : Number(shared[1])} />
+  ) : slot ? (
     <SlotKindPage session={session} kind={parseInt(slot[1]!, 16)} />
   ) : (
     <ShopsPage session={session} arg={arg} />
@@ -144,6 +157,9 @@ function ContentSelect({ contents, content }: { contents: LanaiContent[]; conten
           <option key={c.index} value={c.index}>{`${c.index}. ${contentTitle(c)}`}</option>
         ))}
       </select>
+      <a className="small" href={lanaiShopSharedHref()}>
+        共通の上限の番号
+      </a>
     </div>
   );
 }
@@ -160,11 +176,42 @@ function ShopList({
   arg: string | undefined;
 }): ReactNode {
   const revision = useLanaiRevision(session);
+  const contents = useLanaiContents(session);
   const { content } = shops;
   const items = useMemo(() => new Map(lanaiItems(session).map((it) => [it.id, it])), [session, revision]);
   const data = session.need('ItemData');
   const maps = useAsync(() => lanaiMaps(session, content), [session, content]);
-  const clerks = useMemo(() => (maps && !(maps instanceof Error) ? lanaiClerks(maps) : null), [maps]);
+  const clerks = useMemo(
+    () => (maps && !(maps instanceof Error) ? lanaiClerks(maps, shops) : null),
+    [maps, shops, revision],
+  );
+  // the rows of the ROM's shared limits in other contents (their numbers are shared with this content's)
+  const sharedElsewhere = useAsync(
+    () =>
+      lanaiSharedCounterUses(
+        session,
+        SHARED_CONTENTS.filter((i) => i !== content.index && i < contents.length).map((i) => contents[i]!),
+      ),
+    [session, content, contents, revision],
+  );
+  const freeCounter = async (shop: number, i: number): Promise<void> => {
+    const n = lanaiFreeSharedCounter(await lanaiSharedCounterUses(session, contents));
+    if (n > 0) setRow(shop, i, (b) => (b[SHOP_SHARED_COUNTER] = n));
+  };
+  const addShop = (): void => {
+    const row = shops.addShop(0);
+    session.edited();
+    location.hash = lanaiShopHref(content.index, row);
+  };
+  const removeShop = (shop: number): void => {
+    // the clerks that opened it open shop 0 again
+    if (maps && !(maps instanceof Error))
+      for (const c of clerks ?? [])
+        if (c.shop === shop) maps.eventTable(c.group)!.setU32(c.event, c.action + LANAI_SHOP_ARG, 0);
+    shops.removeShop(shop);
+    session.edited();
+    location.hash = lanaiShopHref(content.index, Math.max(0, shop - 1));
+  };
   // the random slots offered in the item picker (a kind; the pick is its negative)
   // (kinds with no candidate are left out: a slot of one draws nothing; the search also finds a slot by its items' names)
   const slotChoices = useMemo(
@@ -186,7 +233,10 @@ function ShopList({
       }),
     [session, revision],
   );
-  const book: ShopBookShop[] = shops.shops.map((s) => ({ id: s.row, label: `店 ${s.row}` }));
+  const book: ShopBookShop[] = shops.shops.map((s) => ({
+    id: s.row,
+    label: `店 ${s.row}${shops.added(s.row) ? ' (追加)' : ''}`,
+  }));
   const setRow = (shop: number, i: number, f: (b: Uint8Array) => void): void => {
     const rows = shops.rows(shop).map((r, j) => {
       if (j !== i) return r;
@@ -255,6 +305,20 @@ function ShopList({
                       title={COUNTER_HELP}
                       onCommit={(v) => setRow(s.id, i, (b) => (b[SHOP_SHARED_COUNTER] = v))}
                     />
+                    <button
+                      className="small"
+                      title="どの店も使っていない番号を入れる (すべてのコンテンツの店を調べます)"
+                      onClick={() => void freeCounter(s.id, i)}
+                    >
+                      空き
+                    </button>
+                    <a
+                      className="small"
+                      href={lanaiShopSharedHref(r.bytes[SHOP_SHARED_COUNTER]!)}
+                      title="この番号を使う行"
+                    >
+                      →
+                    </a>
                   </span>
                 ) : r.bytes[SHOP_SHARED_LIMIT] ? (
                   <span title={SHARED_HELP}>{`${r.bytes[SHOP_SHARED_LIMIT]} (#${r.bytes[SHOP_SHARED_COUNTER]})`}</span>
@@ -313,7 +377,15 @@ function ShopList({
       shops={book}
       arg={arg}
       href={(id) => lanaiShopHref(content.index, id)}
-      side={side}
+      side={
+        <>
+          {side}
+          <div className="row">
+            <button onClick={addShop}>＋ 店を追加</button>
+            <InfoTip text={ADD_HELP} />
+          </div>
+        </>
+      }
       rows={(s) => shops.rows(s.id)}
       original={(s) => shops.originalRows(s.id)}
       same={(a, b) => a.item === b.item && a.bytes.every((x, i) => x === b.bytes[i])}
@@ -377,7 +449,7 @@ function ShopList({
         />
       )}
       sub={(s) => {
-        const n = s.id === LANAI_CLERK_SHOP ? (clerks?.length ?? 0) : 0;
+        const n = clerks?.filter((c) => c.shop === s.id).length ?? 0;
         return `${shops.rows(s.id).length} 品${n ? `・店の人 ${n}` : ''}`;
       }}
       warnings={(s, rows) => {
@@ -405,10 +477,28 @@ function ShopList({
           w.push(
             `同じ番号の枠があります (${dup.map((n) => `#${n}`).join('、')})。同じ番号の枠には同じアイテムが並びます。`,
           );
+        if (sharedElsewhere && !(sharedElsewhere instanceof Error)) {
+          const mine = new Set(
+            rows.filter((r) => r.bytes[SHOP_SHARED_LIMIT]).map((r) => r.bytes[SHOP_SHARED_COUNTER]!),
+          );
+          const hits = sharedElsewhere.filter((u) => mine.has(u.counter));
+          const nums = [...new Set(hits.map((u) => u.counter))];
+          const where = [...new Set(hits.map((u) => `コンテンツ ${u.content} の店 ${u.shop}`))];
+          if (nums.length)
+            w.push(
+              `共通の上限の番号 ${nums.map((n) => `#${n}`).join('、')} は、ほかのステージの店 (${where.slice(0, 3).join('、')}${where.length > 3 ? ' ほか' : ''}) も使っています。買った数を共有するので、別の番号 (「空き」) にしてください。`,
+            );
+        }
         if (rows.some((r) => r.bytes[SHOP_SHARED_LIMIT]! > 99))
           w.push('共通の上限が 99 を超えています (99 個買ったあとは残りが減らず、実質無制限です)。');
         if (rows.some((r) => r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_SHARED_COUNTER]! >= 200))
           w.push('共通の上限の番号が 200 以上の行は、買った数が記録されません (店に入るたびに上限まで買えます)。');
+        if (s.id >= LANAI_SHOP_SAVE_SHOPS && rows.some((r) => !r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_LIMIT]))
+          w.push(
+            s.id === LANAI_SHOP_SAVE_SHOPS
+              ? `店 ${s.id} の「買える数」は買った数がセーブに記録されません (記録は店 0〜${LANAI_SHOP_SAVE_SHOPS - 1} だけ)。共通の上限を使ってください。`
+              : `店 ${s.id} の「買える数」は、買った数を店 ${s.id % LANAI_SHOP_SAVE_SHOPS} と同じ場所に記録します (セーブの記録は店 0〜${LANAI_SHOP_SAVE_SHOPS - 1} だけ)。共通の上限を使ってください。`,
+          );
         if (rows.some((r, i) => i >= 50 && !r.bytes[SHOP_SHARED_LIMIT] && r.bytes[SHOP_LIMIT]))
           w.push(
             '51 番目より後ろの品の「買える数」は数えられないので、買えなくなります (共通の上限を使ってください)。',
@@ -429,7 +519,7 @@ function ShopList({
         <Clerks
           session={session}
           maps={maps}
-          clerks={s.id === LANAI_CLERK_SHOP ? clerks : []}
+          clerks={clerks && clerks.filter((c) => c.shop === s.id)}
           content={content}
           multi={shops.shops.length > 1}
         />
@@ -447,6 +537,14 @@ function ShopList({
         return (
           <>
             {kinds.length > 0 && <SlotPools session={session} kinds={kinds} rows={shops.rows(s.id)} />}
+            {shops.added(s.id) && s.id === shops.shops.length - 1 && (
+              <div className="row">
+                <button className="danger" onClick={() => removeShop(s.id)}>
+                  {`店 ${s.id} を消す`}
+                </button>
+                <span className="muted small">この店を開く店の人は店 0 を開くようになります。</span>
+              </div>
+            )}
             <div className="muted small mono">{`部屋 ${hex8(t.u32(s.id, 4)).toUpperCase()} / カメラ ${hex8(t.u32(s.id, 8)).toUpperCase()}・+0x0C ${t.u32(s.id, 0x0c)}・+0x10 ${hex8(t.u32(s.id, 0x10)).toUpperCase()}・+0x18 ${t.u8(s.id, 0x18)}・高さ ${t.u8(s.id, 0x19)} (未解析の欄は naauao lanai/shops.md §3)`}</div>
           </>
         );
@@ -494,15 +592,10 @@ function Clerks({
       <>
         {head}
         <p className="muted small">
-          {multi
-            ? 'このコンテンツには店が複数あり、店の人 (型 0x32) はいません。島の店などは CRO のスクリプトやメニューから開くと推定しています。'
-            : 'この店を開く店の人 (型 0x32) は、このコンテンツのマップにいません。'}{' '}
-          {!multi && (
-            <>
-              <a href={lanaiMapHref(content.index)}>マップのページ</a>
-              のパーツ「店の人（話しかけるとショップ）」で置けます。
-            </>
-          )}
+          この店を開く店の人 (型 0x32 / 0x33) は、このコンテンツのマップにいません。
+          {multi && ' 島の店・釣り具の店などは CRO のスクリプトやメニューから開きます。'}{' '}
+          <a href={lanaiMapHref(content.index)}>マップのページ</a>
+          のパーツ「店の人」を置き、開く店にこの店を選ぶと開けます。
         </p>
       </>
     );
@@ -688,6 +781,113 @@ function SlotPools({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/** Numbers as ranges (6〜12、20). */
+function rangesText(ns: number[]): string {
+  const out: string[] = [];
+  for (let i = 0; i < ns.length;) {
+    let j = i;
+    while (j + 1 < ns.length && ns[j + 1] === ns[j]! + 1) j++;
+    out.push(i === j ? `${ns[i]}` : `${ns[i]}〜${ns[j]}`);
+    i = j + 1;
+  }
+  return out.join('、');
+}
+
+/**
+ * The numbers of the shared limits (#/shops/shared[.<number>]): the rows of each number (ShopItem +0x28) in the shops of
+ * the contents that use them in the ROM (0 and 97), or of every content when asked, and the numbers no row uses.
+ */
+function SharedLimitPage({ session, counter }: { session: LanaiSession; counter: number | undefined }): ReactNode {
+  const revision = useLanaiRevision(session);
+  const contents = useLanaiContents(session);
+  const [all, setAll] = useState(false);
+  const uses = useAsync(
+    () =>
+      lanaiSharedCounterUses(
+        session,
+        all ? contents : SHARED_CONTENTS.filter((i) => i < contents.length).map((i) => contents[i]!),
+      ),
+    [session, contents, all, revision],
+  );
+  const items = useMemo(() => new Map(lanaiItems(session).map((it) => [it.id, it])), [session, revision]);
+  const groups = useMemo(() => {
+    const m = new Map<number, LanaiSharedCounterUse[]>();
+    if (uses && !(uses instanceof Error)) for (const u of uses) m.set(u.counter, [...(m.get(u.counter) ?? []), u]);
+    return m;
+  }, [uses]);
+  const free = [...Array(LANAI_SHARED_COUNTERS).keys()].filter((n) => n > 0 && !groups.has(n));
+  return (
+    <div className="book">
+      <div className="book-side">
+        <div className="row">
+          <a href={lanaiShopHref(0)}>← ショップ</a>
+        </div>
+        <p className="muted small">{COUNTER_HELP}</p>
+      </div>
+      <div className="book-detail">
+        <div className="book-head">
+          <h2>共通の上限の番号</h2>
+          <span className="muted">ShopItem +0x27 (上限) / +0x28 (番号)・セーブの 0x9A</span>
+        </div>
+        <p className="muted small">{SHARED_HELP}</p>
+        {uses === undefined ? (
+          <p className="muted">読み込み中…</p>
+        ) : uses instanceof Error ? (
+          <p className="error">{uses.message}</p>
+        ) : (
+          <>
+            <p>
+              <strong>どの店も使っていない番号: </strong>
+              {free.length ? rangesText(free) : 'なし'}
+              <span className="muted small">
+                {all ? ' (すべてのコンテンツ)' : ` (コンテンツ ${SHARED_CONTENTS.join('・')} の店を調べた範囲)`}
+              </span>
+            </p>
+            <table className="enc-table">
+              <thead>
+                <tr>
+                  <th>番号</th>
+                  <th>店</th>
+                  <th>品</th>
+                  <th>上限</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...groups].flatMap(([n, list]) =>
+                  list.map((u, k) => {
+                    const it = items.get(u.item);
+                    return (
+                      <tr key={`${n}.${u.content}.${u.shop}.${u.index}`} className={n === counter ? 'active' : ''}>
+                        {k === 0 && (
+                          <td className="num" rowSpan={list.length}>
+                            {n >= LANAI_SHARED_COUNTERS ? `${n} (記録されない)` : n}
+                          </td>
+                        )}
+                        <td>
+                          <a href={lanaiShopHref(u.content, u.shop)}>
+                            {`${u.content}. ${contentTitle(contents[u.content]!)} の店 ${u.shop}`}
+                          </a>
+                          <span className="muted small">{` ${u.index + 1} 番目`}</span>
+                        </td>
+                        <td>{it ? it.name : hex8(u.item).toUpperCase()}</td>
+                        <td className="num">{u.limit || <span className="muted">0 (番号だけ)</span>}</td>
+                      </tr>
+                    );
+                  }),
+                )}
+              </tbody>
+            </table>
+            {counter !== undefined && !groups.has(counter) && (
+              <p className="muted">{`番号 ${counter} を使う行はありません${all ? '' : ' (調べた範囲)'}。`}</p>
+            )}
+          </>
+        )}
+        {!all && <button onClick={() => setAll(true)}>すべてのコンテンツの店を調べる</button>}
+      </div>
     </div>
   );
 }

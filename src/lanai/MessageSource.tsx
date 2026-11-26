@@ -43,7 +43,7 @@ export function lanaiMessageSource(
       encodeLanaiMessage(tokens); // throws on an argument that cannot be written
       return <LanaiMessage session={session} tokens={tokens} />;
     },
-    tools: (insert) => <LanaiMessageInsert session={session} onInsert={insert} />,
+    tools: (insert, edit) => <LanaiMessageInsert session={session} onInsert={insert} edit={edit} />,
     missing: () => '(なし)',
   };
   m.set(offset, s);

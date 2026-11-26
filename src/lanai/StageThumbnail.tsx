@@ -4,6 +4,7 @@ import { readSarc } from '../layout/sarc';
 import { imageUrl } from '../ui/ScreenMap';
 import { useAsync } from '../ui/useAsync';
 import { useLanaiRevision } from './MonsterEditor';
+import { lanaiThumbnailLayout } from './stageEdit';
 import type { LanaiSession } from './session';
 
 /** The thumbnail selected by MapStage +0x04; the layout and its texture travel together when copied. */
@@ -33,7 +34,7 @@ export function LanaiStageThumbnail({
 }
 
 export async function uploadedStageThumbnail(session: LanaiSession, archive: string, hash: number, file: File) {
-  const body = (await session.readLayout(archive, hash)).slice();
+  const body = await lanaiThumbnailLayout(session, archive, hash);
   const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))?.[1];
   if (!texture) throw new Error('サムネイル画像がありません');
   const image = readBflim(texture);
@@ -44,7 +45,11 @@ export async function uploadedStageThumbnail(session: LanaiSession, archive: str
     canvas.height = image.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('画像を変換できません');
-    ctx.drawImage(bitmap, 0, 0, image.width, image.height);
+    // fill the thumbnail and crop the overflow at the center, keeping the picture's aspect ratio
+    const scale = Math.max(image.width / bitmap.width, image.height / bitmap.height);
+    const w = bitmap.width * scale,
+      h = bitmap.height * scale;
+    ctx.drawImage(bitmap, (image.width - w) / 2, (image.height - h) / 2, w, h);
     body.set(
       replaceBflimImage(texture, new Uint8Array(ctx.getImageData(0, 0, image.width, image.height).data)),
       texture.byteOffset - body.byteOffset,

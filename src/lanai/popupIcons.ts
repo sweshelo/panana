@@ -1,5 +1,6 @@
-// The icons popup(だれに, アイコン) shows over a character: ScriptChara::SetPopup(2, icon, …) (code.bin 0x2BD800). Kind 2
-// of the popup object (0x2040C0) loads the 13 entries a table of code.bin names (0x49AFCC) from the root archive
+// The icons だれに.SetPopup(2, icon, 1, 1, 0, vec(0, 0, 0)) shows over a character: ScriptChara::SetPopup (code.bin
+// 0x2BD800). Kind 2 of the popup object (0x2040C0) loads the 13 entries a table of code.bin names (0x49AFCC) from
+// the root archive
 // D9010000 (type 4: a BCH with the model "status", one texture and a 60-frame animation of its own); ShowPopup
 // (0x1A53E8 → 0x2B4474) shows the icon-th, and an icon past the 13th as the first. The names are what the textures
 // look like (the animation moves and repeats them: two drops, three notes …), not the game's.

@@ -3,7 +3,8 @@
 // (ui/message.tsx MessageEditor through lanai/MessageSource.tsx); the other rows are entries of their own. The list
 // is a content's talk tables (or the master's and the language archives'), narrowed by speaker and searched in every
 // row of a line. A set whose tones put {ins:…} / {page} in different places, and a written row whose voice still reads
-// the old text, are warned about.
+// the old text, are warned about. Each row's voice (the reading the speech synthesis speaks, talk.ts) is written below
+// its text; a new line is a row of one speaker, a set of the eight tones, or the hero's own row.
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { romfsHref } from '../romfs/RomfsPage';
 import { Count, ListFilter, useActiveRow, useScrollTop, useSticky } from '../ui/book';
@@ -14,18 +15,25 @@ import { contentTitle } from './contents';
 import { useLanaiContents } from './useContents';
 import { useLanaiRevision } from './MonsterEditor';
 import { lanaiMessageSource } from './MessageSource';
-import { lanaiAppendTalkRow } from './maps';
+import { lanaiAppendTalkRow, lanaiAppendTalkSet } from './maps';
 import { encodeLanaiMessage, parseLanaiText } from './message';
 import type { LanaiSession, LanaiTableRef } from './session';
 import {
   isTalkTable,
   marksDiffer,
+  setTalkVoice,
+  SPEAKERS,
   TALK_KIND_LABEL,
+  TALK_SPEAKER,
+  TALK_TONES,
   talkColumns,
   talkGroups,
   talkPlain,
   talkSpeaker,
+  talkVoice,
   toneLabel,
+  voiceDraft,
+  voiceProblem,
   voiceStale,
   type TalkGroup,
 } from './talk';
@@ -147,12 +155,16 @@ function TalkList({
   const counts = { set: all.filter((g) => g.kind === 'set').length };
   /** The table a new line goes to: the selected line's, else the first. */
   const target = sel?.ref ?? tables[0];
-  const addLine = (): void => {
+  const addLine = (what: 'row' | 'set' | 'hero'): void => {
     if (!target) return;
     try {
+      const text = '新しいメッセージ';
       // the speaker kind of the selected line when it is a single row (an NPC's), else the ROM's usual NPC kind 18
       const speaker = sel && sel.kind !== 'set' ? talkSpeaker(sel.ref, sel.rows[0]!) : 18;
-      const row = lanaiAppendTalkRow(target.table, encodeLanaiMessage(parseLanaiText('新しいメッセージ')), speaker);
+      const row =
+        what === 'set'
+          ? lanaiAppendTalkSet(target.table, Array<string>(TALK_TONES).fill(text))
+          : lanaiAppendTalkRow(target.table, encodeLanaiMessage(parseLanaiText(text)), what === 'hero' ? 1 : speaker);
       session.edited();
       const g = talkGroups(target).find((x) => x.rows.includes(row));
       if (g) location.hash = talksHref(scope, g);
@@ -188,9 +200,21 @@ function TalkList({
             <div className="row">
               <button
                 title={`${target.table.name} の末尾に新しい行を足します。マップの NPC や看板の「台詞」欄から選べます`}
-                onClick={addLine}
+                onClick={() => addLine('row')}
               >
                 ＋ 新しいメッセージ
+              </button>
+              <button
+                title="先頭の電波人間の台詞: 性格ごとの 8 口調 (1 主人公、2〜8 性格 0〜6) の 8 行を足します。スクリプトでは 1 行目の ID を ScriptMenu.StartMessageAuto に渡します"
+                onClick={() => addLine('set')}
+              >
+                ＋ 性格違いの組
+              </button>
+              <button
+                title="主人公 (口調 1) だけの 1 行を足します。スクリプトでは ScriptMenu.StartMessage で出します (StartMessageAuto は性格で後ろの行を選んでしまいます)"
+                onClick={() => addLine('hero')}
+              >
+                ＋ 主人公専用
               </button>
             </div>
           )}
@@ -242,8 +266,9 @@ function TalkList({
 
 const HELP =
   'ルビは {ruby:親字|よみ}、改ページは {page}、ほかの表の文字列の差し込みは {ins:表:行 ID:欄}、ほかのタグは {tag:XX,引数…} で表しています。' +
-  '話者の値 (+0x08) が 1〜8 と続く 8 行を、同じセリフの 8 つの口調として組にしています (口調 = 性格 + 2 と推定、1 は主人公専用)。' +
-  'ゲームが組のどの行を選ぶか、口調と性格の値の対応、話者 0x09〜0x16 の意味は未確認です。';
+  '話者の値 (+0x08) が 1〜8 と続く 8 行が、同じセリフの 8 つの口調の組です。ScriptMenu.StartMessageAuto に 1 行目の ID を渡すと、先頭の電波人間の性格 0〜6 で口調 2〜8 の行が選ばれます (ほかの性格は口調 1)。' +
+  "読み (voice) は音声合成 (RubyTalk) が読む半角カナで、空なら喋りません。' はアクセント、/ は句の切れ目、| は間、. は文の終わり、? は疑問、> は無声化、$page$ は改ページ (本文の {page} と同じ数)、$message:表:十進 ID:voice$ は差し込みの読み、$hero$ は主人公の名前です。" +
+  '話者 1〜0x0E は種類ごとの声で喋ります。話者 0x0A〜0x16 の名前は ROM の使われ方からの推定です。';
 
 function TalkDetail({ session, g }: { session: LanaiSession; g: TalkGroup }): ReactNode {
   useLanaiRevision(session);
@@ -272,20 +297,116 @@ function TalkDetail({ session, g }: { session: LanaiSession; g: TalkGroup }): Re
         </div>
       )}
       {stale.length > 0 && (
-        <div className="error small">{`本文を変えた行 (${stale.map((r) => toneLabel(talkSpeaker(g.ref, r))).join('、')}) の voice の欄は元の本文の読みのままです (音声合成用と推定。書き換えには対応していません)。`}</div>
+        <div className="error small">{`本文を変えた行 (${stale.map((r) => toneLabel(talkSpeaker(g.ref, r))).join('、')}) の読み (voice) は元の本文の読みのままです。下の「読み」を直してください。`}</div>
       )}
       <div className={g.rows.length > 1 ? 'talk-tones' : undefined}>
         {g.rows.map((r) => (
-          <MessageEditor
-            key={r}
-            texts={src}
-            id={r}
-            apply={apply}
-            title={<div className="msg-slot-head">{toneLabel(talkSpeaker(g.ref, r))}</div>}
-          />
+          <div key={r}>
+            <MessageEditor
+              texts={src}
+              id={r}
+              apply={apply}
+              title={
+                <div className="msg-slot-head row">
+                  {g.kind === 'set' ? (
+                    <span>{toneLabel(talkSpeaker(g.ref, r))}</span>
+                  ) : (
+                    <select
+                      aria-label="話者"
+                      value={talkSpeaker(g.ref, r)}
+                      onChange={(e) => apply(() => t.setU8(r, TALK_SPEAKER, Number(e.target.value)))}
+                    >
+                      {!SPEAKERS.some(([v]) => v === talkSpeaker(g.ref, r)) && (
+                        <option value={talkSpeaker(g.ref, r)}>{toneLabel(talkSpeaker(g.ref, r))}</option>
+                      )}
+                      {SPEAKERS.map(([v, label]) => (
+                        <option key={v} value={v}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {g.kind === 'set' && (
+                    <button
+                      className="small"
+                      title="この口調の本文を、組のほかの 7 口調にも写します"
+                      onClick={() => {
+                        const text = src.text(r);
+                        if (text !== undefined) apply(() => g.rows.forEach((x) => x !== r && src.setText(x, text)));
+                      }}
+                    >
+                      全口調へ写す
+                    </button>
+                  )}
+                </div>
+              }
+            />
+            {cols.voice >= 0 && <VoiceField session={session} g={g} row={r} text={src.text(r) ?? ''} />}
+          </div>
         ))}
       </div>
       <p className="muted small">{HELP}</p>
     </>
+  );
+}
+
+/** The voice of a row: what the speech synthesis reads (talk.ts), written as half-width katakana. */
+export function VoiceField({
+  session,
+  g,
+  row,
+  text,
+}: {
+  session: LanaiSession;
+  g: Pick<TalkGroup, 'ref'>;
+  row: number;
+  /** The row's text (the text form of message.ts): the draft is made from it and its pages checked against it. */
+  text: string;
+}): ReactNode {
+  const stored = talkVoice(g.ref, row);
+  const [draft, setDraft] = useState(stored);
+  const [seen, setSeen] = useState(stored);
+  if (seen !== stored) {
+    setSeen(stored);
+    setDraft(stored);
+  }
+  const [error, setError] = useState('');
+  const write = (value: string): void => {
+    try {
+      setTalkVoice(g.ref, row, value);
+      session.edited();
+      setError('');
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const problem = voiceProblem(text, draft);
+  return (
+    <div className="talk-voice">
+      <label className="small">
+        {'読み (voice) '}
+        <input
+          className="mono"
+          style={{ width: '100%' }}
+          placeholder="(空: 喋らない)"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => draft !== stored && write(draft)}
+        />
+      </label>
+      <div className="row">
+        <button
+          className="small"
+          title="本文のルビとかなを半角カナにした下書きを入れます (欄から離れると書き込みます)。ルビのない漢字の読み、アクセント (') と区切り (/ |) は手で直します"
+          onClick={() => setDraft(voiceDraft(text))}
+        >
+          本文から下書き
+        </button>
+        <button className="small" disabled={!stored} onClick={() => write('')}>
+          読みを空にする
+        </button>
+      </div>
+      {(error || problem) && <div className="error small">{error || problem}</div>}
+    </div>
   );
 }

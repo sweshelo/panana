@@ -1,8 +1,8 @@
 // The pages of a 電波人間のRPG FREE! (lanai) dump: the stages (contents), the maps, the talks, the strings of the tables, the
 // monsters, the items, the actions, the shops, the BGM and sound effects, the codes and the check-in tables, and the RomFS viewer. The Update is added like RPG3's.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { LanaiActionPage } from '../lanai/ActionPage';
-import { LanaiAnimationPage } from '../lanai/AnimationPage';
+import { LanaiModelPage } from '../lanai/ModelPage';
 import { LanaiCodePage } from '../lanai/CodePage';
 import { LanaiExportDialog } from '../lanai/ExportDialog';
 import { contentTitle, lanaiContents } from '../lanai/contents';
@@ -24,6 +24,8 @@ import type { RomfsProfile } from '../romfs/profile';
 import { RomfsPage } from '../romfs/RomfsPage';
 import { BaseModButton } from './BaseModButton';
 import { PageShell } from './PageShell';
+import { LanaiDistributionPage } from '../lanai/DistributionPage';
+import { useLocalStatus } from '../lanai/localServer';
 
 export const LANAI_PAGES = [
   ['stages', 'ステージ'],
@@ -32,7 +34,7 @@ export const LANAI_PAGES = [
   ['talks', 'セリフ'],
   ['messages', 'メッセージ'],
   ['monsters', 'モンスター'],
-  ['animations', 'キャラのアニメ'],
+  ['models', 'モデル・アニメ'],
   ['groups', '群れ'],
   ['items', 'アイテム'],
   ['actions', 'アクション'],
@@ -40,6 +42,7 @@ export const LANAI_PAGES = [
   ['sounds', 'BGM・効果音'],
   ['codes', 'コード・配信'],
   ['romfs', 'RomFS'],
+  ['distribution', '配信'],
 ] as const;
 type LanaiPage = (typeof LANAI_PAGES)[number][0];
 const TITLES: Record<LanaiPage, string> = {
@@ -49,7 +52,7 @@ const TITLES: Record<LanaiPage, string> = {
   talks: 'セリフ',
   messages: 'メッセージ',
   monsters: 'モンスター',
-  animations: 'キャラクターのアニメーション',
+  models: 'モデルとアニメーション',
   groups: '群れ',
   items: 'アイテム',
   actions: 'アクション',
@@ -57,7 +60,10 @@ const TITLES: Record<LanaiPage, string> = {
   sounds: 'BGM・効果音',
   codes: 'コード入力・チェックイン',
   romfs: 'RomFS',
+  distribution: 'カスタムステージの配信',
 };
+/** The pages on the web: the distribution is the executable's (localServer.ts). */
+const LANAI_WEB_PAGES = LANAI_PAGES.filter(([id]) => id !== 'distribution');
 
 /** Asks for the Update's CIA and opens the dump again with it. */
 function pickUpdate(session: LanaiSession, done: (s: LanaiSession) => void): void {
@@ -90,6 +96,15 @@ export function LanaiShell({
 }): ReactNode {
   const { dump } = session;
   const revision = useLanaiRevision(session);
+  useEffect(() => {
+    // the models page was #/animations: old links open it
+    const renamed = (): void => {
+      if (location.hash.startsWith('#/animations')) location.replace(location.hash.replace('#/animations', '#/models'));
+    };
+    renamed();
+    window.addEventListener('hashchange', renamed);
+    return () => window.removeEventListener('hashchange', renamed);
+  }, []);
   const viewerDump = useMemo(
     () =>
       session.createdFiles.size ? overlayDump(dump, { label: '編集中', romfs: session.modFiles(), ips: null }) : dump,
@@ -103,9 +118,10 @@ export function LanaiShell({
     return { ...lanaiRomfsProfile, files };
   }, [session, revision]);
   const u = dump.update;
+  const [local] = useLocalStatus();
   return (
     <PageShell
-      pages={LANAI_PAGES}
+      pages={local ? LANAI_PAGES : LANAI_WEB_PAGES}
       titles={TITLES}
       fallback="maps"
       brand="電波人間のRPG FREE! エディタ"
@@ -152,8 +168,8 @@ export function LanaiShell({
           <LanaiMessagePage session={session} arg={a} />
         ) : id === 'monsters' ? (
           <LanaiMonsterPage session={session} arg={a} />
-        ) : id === 'animations' ? (
-          <LanaiAnimationPage session={session} arg={a} />
+        ) : id === 'models' ? (
+          <LanaiModelPage session={session} arg={a} />
         ) : id === 'groups' ? (
           <LanaiGroupPage session={session} arg={a} />
         ) : id === 'items' ? (
@@ -166,6 +182,8 @@ export function LanaiShell({
           <LanaiSoundPage session={session} arg={a} />
         ) : id === 'codes' ? (
           <LanaiCodePage session={session} arg={a} />
+        ) : id === 'distribution' ? (
+          <LanaiDistributionPage />
         ) : (
           <RomfsPage dump={viewerDump} profile={profile} arg={a} />
         )

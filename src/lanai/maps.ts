@@ -16,7 +16,7 @@ import { cstr, equalBytes, s32, u32 } from '../util/bytes';
 import type { LanaiContent } from './contents';
 import { lanaiCharaRowBytes } from './mapObjects';
 import { encodeLanaiMessage, lanaiMessageBytes, parseLanaiText } from './message';
-import { talkColumns, TALK_SPEAKER } from './talk';
+import { setTalkVoice, talkColumns, talkVoice, TALK_SPEAKER, TALK_TONES } from './talk';
 import type { LanaiMapDb, LanaiSession } from './session';
 import type { LanaiTable } from './table';
 
@@ -102,7 +102,12 @@ export function lanaiRecFacing(section: number, raw: Uint8Array): number {
 
 /** Sections whose records name an EventObject row (+0x04), and the kinds of section 3 (+0x15; §5.1). */
 export const LANAI_EVENT_SECTIONS = [3, 4, 5, 8] as const;
+// Kinds 0 / 1 / 8 / 10 / 11 / 13〜15 / 19 / 28〜69: ROM survey of Issue #219 (2,258 records of 553 maps) and the
+// Update code.bin (0x21D970〜 placement by kind, 0x1F841C bottom-screen icon by kind). 9 (no record in the ROM) and
+// 17 / 18 (no action; how they open is unknown) keep their numbers.
 export const LANAI_EXIT_KIND: Record<number, string> = {
+  0: 'マップの門',
+  1: 'ワールドへの門',
   2: 'ワープホール',
   3: 'クリアのワープ',
   4: 'ワープゲート',
@@ -110,10 +115,38 @@ export const LANAI_EXIT_KIND: Record<number, string> = {
   6: '下り階段',
   // 40 of the ROM's 54 have the action 0x1D (穴、HoleFallCommon), the rest a script
   7: '落とし穴',
+  8: '落下の到着点',
+  10: '見えない出入口',
+  11: '到着点',
   12: '扉',
+  13: '鍵つき扉',
+  14: '移動扉',
+  15: '像をはめる扉',
   16: 'レベルの扉',
+  19: '裏口',
+  68: '崖の降下点',
   100: '壁の扉',
 };
+/** Kinds 28〜69 (but 68): a building's door, each kind with its own default model (twn_bill*). */
+export const lanaiIsBuildingExit = (k: number): boolean => k >= 28 && k <= 69 && k !== 68;
+/** What the ROM tells of a kind (the add panel's tooltip); the certainty is said where it is a guess. */
+export const LANAI_EXIT_NOTE: Record<number, string> = {
+  0: '同じステージの別のマップへ移る門。',
+  1: 'ワールドマップへ出る門。',
+  8: '落とし穴や崖から落ちた先の地点。見た目も動作もなく、落とし穴・崖の行き先に選ぶ。',
+  9: 'ROM のステージに配置例がなく、用途がわかっていない。',
+  10: '見た目のない出入口。別のマップへ移る。',
+  11: '見た目も動作もない地点。ワープや門の行き先に選ぶ。下画面には表示されない。',
+  13: '鍵となるアイテムを持っていると開く扉。',
+  14: '別のマップへ移る扉。移る前に確認するものとしないものがある。',
+  15: '像をはめると開く扉。',
+  17: '動作を持たない扉。開け方がわかっていない。',
+  18: '動作を持たない扉。開け方がわかっていない。',
+  19: '見た目のない裏口。別のマップへ移る。',
+  68: '崖を降りる地点。降りた先は「落下の到着点」。',
+};
+export const lanaiExitNote = (k: number): string =>
+  LANAI_EXIT_NOTE[k] ?? (lanaiIsBuildingExit(k) ? '建物の扉。種類ごとに建物の見た目が違う。' : '');
 export const lanaiExitKind = (raw: Uint8Array): number => raw[0x15] ?? 0;
 /** The exit kind (+0x15) of the level door (MapObject #49 gimk_03_gate_06 when the row has no look). */
 export const LANAI_LEVEL_DOOR_KIND = 16;
@@ -125,17 +158,26 @@ export const LANAI_LEVEL_DOOR_KIND = 16;
 export const LANAI_EVENT_LEVEL = 0x5c;
 /**
  * Section 1 +0x0D: the kind of a floor gimmick (0〜3 in the ROM). Kind 1 is the poison floor and kind 3 the frozen
- * (slippery) floor, both seen in the game by the user; 0 and 2 are not known yet.
+ * (slippery) floor, both seen in the game by the user. Update FUN_0021C534 @0x21C588 picks the model: 0 MapObject #90
+ * gimk_08_damg5_01, 1 #89 gimk_07_damg3_01, 2 / 3 #113 gimk_16_frozen_3; 0 and 1 both set the hazard flag (+0x5476,
+ * @0x21C738), so 0 is a damage floor of another model (how much it takes is not known); only 3 sets the cell's
+ * slippery bit (+0x0A bit 1, @0x21C784), so 2 is a frozen floor that does not slide (roms/tmpmap/kinds-gaps-findings.md).
  */
 export const LANAI_FLOOR_KIND = 0x0d;
 export const LANAI_FLOOR_POISON = 1;
 export const LANAI_FLOOR_ICE = 3;
 export const LANAI_FLOOR_KINDS: Record<number, string> = {
+  0: 'ダメージ床',
   [LANAI_FLOOR_POISON]: '毒床',
+  2: '凍った床 (すべらない)',
   [LANAI_FLOOR_ICE]: '凍った床',
 };
 export const lanaiFloorKindLabel = (kind: number): string => LANAI_FLOOR_KINDS[kind] ?? `床のギミック ${kind}`;
-export const lanaiExitLabel = (k: number): string => LANAI_EXIT_KIND[k] ?? `種類 ${k}`;
+export const lanaiExitLabel = (k: number): string =>
+  LANAI_EXIT_KIND[k] ?? (lanaiIsBuildingExit(k) ? `建物の入口 ${k}` : `種類 ${k}`);
+/** The add panel's group of an exit kind: a building's door, a door, or a way out (arrival points too). */
+export const lanaiExitCategory = (k: number): '建物' | '扉' | '出入口・移動' =>
+  lanaiIsBuildingExit(k) ? '建物' : (k >= 12 && k <= 19) || k === 100 ? '扉' : '出入口・移動';
 export const lanaiFloorLabel = (floor: number): string => (floor < 0 ? `B${-floor}F` : floor ? `${floor}F` : '');
 
 /**
@@ -253,6 +295,12 @@ const loaded = new WeakMap<LanaiSession, Map<number, Promise<LanaiMaps>>>();
 const ready = new WeakMap<LanaiSession, Map<number, LanaiMaps>>();
 
 /** The maps of a content, read once per session (the pages share the documents). */
+/** Forgets the maps read of the contents from `first` on (their numbers now name other contents). */
+export function forgetLanaiMaps(session: LanaiSession, first: number): void {
+  for (const m of [loaded.get(session), ready.get(session)])
+    if (m) for (const k of [...m.keys()]) if (k >= first) m.delete(k);
+}
+
 export function lanaiMaps(session: LanaiSession, content: LanaiContent): Promise<LanaiMaps> {
   const m = loaded.get(session) ?? new Map<number, Promise<LanaiMaps>>();
   loaded.set(session, m);
@@ -553,6 +601,16 @@ export class LanaiMaps {
     return lanaiAppendTalkRow(t, encodeLanaiMessage(parseLanaiText(text)), speaker);
   }
 
+  /**
+   * Append the eight tones of a line of the lead 電波人間 to a group's talk table (speaker kinds 1〜8 in a row, what
+   * StartMessageAuto picks from) and return the first row, whose ID the script names. `texts` are the tones 1〜8.
+   */
+  addTalkSet(group: number, texts: string[]): number {
+    const t = this.talkTable(group);
+    if (!t) throw new Error(`MapGroup ${group} の台詞の表がありません`);
+    return lanaiAppendTalkSet(t, texts);
+  }
+
   /** The lines an edit added to a group's talk table (an undo point of the map page; the ROM's rows are not in it). */
   talkRows(group: number): LanaiTalkRows | null {
     const t = this.talkTable(group);
@@ -563,6 +621,7 @@ export class LanaiMaps {
       added.push({
         speaker: t.u8(r, TALK_SPEAKER),
         message: t.isString(r, cols.message) ? lanaiMessageBytes(t.data, t.u32(r, cols.message)).slice() : null,
+        voice: talkVoice({ table: t }, r),
       });
     return { group, rows: t.rows, added };
   }
@@ -579,7 +638,8 @@ export class LanaiMaps {
     for (let r = t.rows; r < saved.rows; r++) {
       const row = saved.added[r - t.originalRows];
       if (!row?.message) break;
-      lanaiAppendTalkRow(t, row.message, row.speaker);
+      const added = lanaiAppendTalkRow(t, row.message, row.speaker);
+      if (row.voice) setTalkVoice({ table: t }, added, row.voice);
     }
   }
 
@@ -852,7 +912,7 @@ export interface LanaiTalkRows {
   /** Rows of the table then. */
   rows: number;
   /** The rows after the ROM's: the speaker kind and the message's bytes (null: the field is not a string). */
-  added: { speaker: number; message: Uint8Array | null }[];
+  added: { speaker: number; message: Uint8Array | null; voice?: string }[];
 }
 
 /** Appends a row with the message `bytes` (encoded, with its terminator) to a talk table; returns its row. */
@@ -867,6 +927,18 @@ export function lanaiAppendTalkRow(t: LanaiTable, bytes: Uint8Array, speaker: nu
   t.setString(row, cols.message, bytes);
   if (cols.voice >= 0 && t.isString(row, cols.voice)) t.setString(row, cols.voice, new Uint8Array(2));
   return row;
+}
+
+/**
+ * Appends the eight tones of a line (speaker kinds 1〜8 in a row: StartMessageAuto adds the lead's personality to the
+ * first row's place) with the texts `texts` (the text form of message.ts, tones 1〜8); returns the first row.
+ */
+export function lanaiAppendTalkSet(t: LanaiTable, texts: string[]): number {
+  if (texts.length !== TALK_TONES) throw new Error(`性格違いの組は ${TALK_TONES} 行です`);
+  const bytes = texts.map((x) => encodeLanaiMessage(parseLanaiText(x)));
+  const first = lanaiAppendTalkRow(t, bytes[0]!, 1);
+  for (let k = 1; k < TALK_TONES; k++) lanaiAppendTalkRow(t, bytes[k]!, k + 1);
+  return first;
 }
 
 /** A copy of a table's rows (an undo point). */

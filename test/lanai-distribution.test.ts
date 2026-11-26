@@ -86,4 +86,19 @@ describe.skipIf(!hasLanai)('RPG FREE! custom-stage distribution zip (ROM)', () =
     expect(field.u32(0, 8)).toBe(romField ^ 4);
     s.revertAll();
   }, 300_000);
+
+  test('the 3DS MOD zip puts code.ips in the title folder, the Azahar one in exefs/', async () => {
+    s.revertAll();
+    s.dropCap = true;
+    s.edited();
+    expect(s.dropCapProblem()).toBeNull();
+    const azahar = unzipSync(await s.modZip());
+    expect(azahar[`${LANAI.titleId}/exefs/code.ips`]).toBeDefined();
+    expect(azahar[`${LANAI.titleId}/code.ips`]).toBeUndefined();
+    const luma = unzipSync(await s.modZip({ target: '3ds' }));
+    expect(luma[`${LANAI.titleId}/code.ips`]).toEqual(azahar[`${LANAI.titleId}/exefs/code.ips`]!);
+    expect(luma[`${LANAI.titleId}/exefs/code.ips`]).toBeUndefined();
+    s.dropCap = false;
+    s.revertAll();
+  }, 300_000);
 });

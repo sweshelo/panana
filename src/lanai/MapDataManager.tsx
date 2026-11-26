@@ -25,6 +25,7 @@ import {
   setLanaiTileset,
   tilesetGaps,
   tilesetTable,
+  tilesetTextureDiffers,
   type LanaiTileset,
 } from './tilesets';
 
@@ -65,7 +66,7 @@ function MapDataRow({ maps, row, sounds }: { maps: LanaiMaps; row: number; sound
   const users = maps.maps.filter((m) => !m.world && maps.mapDataRow(m, maps.doc(m)) === row);
   const pick = async (ts: LanaiTileset): Promise<void> => {
     setOpen(false);
-    if (ts.entry === current) return;
+    if (ts.entry === current && !tilesetTextureDiffers(maps, row, ts)) return;
     setBusy(true);
     try {
       const gaps = tilesetGaps(maps, row, await tilesetTable(maps.session, maps, ts));

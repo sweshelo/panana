@@ -25,10 +25,17 @@ export interface LanaiActionInfo {
   args?: Record<number, string>;
   note?: string;
   /** Arguments picked from a list instead of typed: a MonsterGroup row number of the content, or a content number. */
-  pick?: Record<number, 'monsterGroupRow' | 'content'>;
+  pick?: Record<number, 'monsterGroupRow' | 'content' | 'shop' | 'key' | 'idol' | 'consume' | 'doorSound' | 'byteFlag'>;
   /** Whether a record can be given this type to say lines from data (no script needed). */
   talking?: boolean;
 }
+
+/** A door opened from outside (by a script or a switch): ExternalOpenCommon. */
+export const LANAI_ACTION_OUTSIDE_DOOR = 0x80000017;
+
+/** The key, its use and the opening sound of a door (OpenCommon 0x18F6A8; the 0x16 kind after a destination: 0x2AA0B0). */
+const DOOR_FRONT: LanaiActionInfo['pick'] = { 0: 'key', 1: 'consume', 2: 'doorSound' };
+const DOOR_BACK: LanaiActionInfo['pick'] = { 2: 'key', 3: 'consume', 4: 'doorSound' };
 
 export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   [LANAI_ACTION_NONE]: { name: '動作なし' },
@@ -62,12 +69,12 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '敵の見た目を置くキャラ 2 (イベント番号、推定)',
       4: '敵の見た目を置くキャラ 3 (イベント番号、推定)',
     },
-    pick: { 0: 'monsterGroupRow' },
+    pick: { 0: 'monsterGroupRow', 1: 'byteFlag' },
     note: '区画 8 の範囲。入ると引数 1 の群れと戦い、勝つと引数 2 の番号の数値フラグ (ScriptByteFlag、0x52) に 2 が入る (ビットのフラグではない。CollisionEncountCommon)',
   },
-  0x8000000e: { name: '宝箱 (見た目 0 / 2)', args: { 0: 'TreasureGroup の番号' } },
+  0x8000000e: { name: '宝箱 (見た目 0 茶 / 2 緑)', args: { 0: 'TreasureGroup の番号' } },
   0x80000010: {
-    name: '宝箱 (見た目 1)',
+    name: '宝箱 (見た目 1 赤金)',
     args: { 0: 'TreasureGroup の番号' },
     note: '開けるとレアアイテムの演出が入る (ItemRareCommon)',
   },
@@ -103,6 +110,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   0x80000015: {
     name: '鍵つきの扉',
     args: { 0: '鍵のアイテム (0 = 鍵なし)', 1: '鍵を使うと減る (1 = 減る)', 2: '開く音 (SoundData の行。0x7A / 0x8C)' },
+    pick: DOOR_FRONT,
     note: '触れると開く。鍵 (引数 1) が 0 なら鍵なしで開き、鍵があるのに持っていなければ開かない。開くと状態が最後の段まで一気に進む (OpenCommon)',
   },
   0x80000016: {
@@ -114,6 +122,7 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '鍵を使うと減る (1 = 減る)',
       4: '開く音 (SoundData の行。0x7A / 0x8C)',
     },
+    pick: DOOR_BACK,
     note: '0x15 の扉を開けて行き先へ移る (OpenMoveCommon)',
   },
   0x80000017: {
@@ -136,7 +145,8 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '鍵を使うと減る (1 = 減る)',
       4: '開く音 (SoundData の行。0x7A / 0x8C)',
     },
-    note: '歩いて入り、フェードして移る。引数の並びは 0x16 と同じ (FacilityMoveCommon)',
+    pick: DOOR_BACK,
+    note: '歩いて入り、フェードして移る。引数の並びは 0x16 と同じ。開く音を 0 にすると最初から開いている (FacilityMoveCommon)',
   },
   0x8000001c: {
     name: '裏口',
@@ -147,7 +157,8 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '鍵を使うと減る (1 = 減る)',
       4: '開く音 (SoundData の行。0x7A / 0x8C)',
     },
-    note: '引数の並びは 0x16 と同じ。鍵を使う処理がある (BackdoorMoveCommon。ROM に 1 件)',
+    pick: DOOR_BACK,
+    note: '引数の並びは 0x16 と同じ。鍵を使う処理がある。開く音 0 は鳴らさない (BackdoorMoveCommon。ROM に 1 件)',
   },
   0x8000001d: {
     name: '穴 (落ちる)',
@@ -205,22 +216,24 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
     name: '店の人',
     talk: [0],
     args: {
-      1: '店の番号 (推定)',
+      1: '店 (このステージの Shop の行。行 ID も可。ない行は行 0)',
       2: '未解析 (0 以外で真。店を開く処理に渡る)',
       3: '店の後にフェードして位置を戻す (0 以外で真、推定)',
     },
-    note: '引数 1 の台詞のあと店を開く。引数 2 が店の番号と推定 (店を開く処理に渡る。ShopCommon)',
+    pick: { 1: 'shop' },
+    note: '引数 1 の台詞のあと、引数 2 の店 (このステージの Shop の行) を開く (ShopCommon。FUN_0031C038 が行番号か行 ID で探し、ないときは行 0)',
   },
   0x80000033: {
     name: '範囲に入ると店',
     talk: [0],
     args: {
-      1: '店の番号 (推定)',
+      1: '店 (このステージの Shop の行。行 ID も可。ない行は行 0)',
       2: '未解析 (0 以外で真)',
       3: '店の後にフェードして位置を戻す (0 以外で真、推定)',
       4: '店の人のキャラ (区画 5 のイベント番号)',
     },
-    note: '区画 8 の範囲。入ると引数 5 のキャラが引数 1 の台詞を言い、店を開く (CollisionShopCommon)',
+    pick: { 1: 'shop' },
+    note: '区画 8 の範囲。入ると引数 5 のキャラが引数 1 の台詞を言い、引数 2 の店を開く (CollisionShopCommon。コンテンツ 97 は 36 店をこれで開く)',
   },
   0x80000034: {
     name: '崖 (降りる)',
@@ -267,7 +280,8 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
       3: '鍵を使うと減る (1 = 減る)',
       4: '開く音 (SoundData の行。0x7A / 0x8C)',
     },
-    note: '開ける前に確かめてから、0x16 と同じく扉を開けて行き先へ移る (OpenMoveCommonConfirm)。ワープではない',
+    pick: DOOR_BACK,
+    note: '開ける前に確かめてから、0x16 と同じく扉を開けて行き先へ移る (OpenMoveCommonConfirm)。ワープではない。鍵なし (0) だと開かない',
   },
   0x8000003a: {
     name: '黒い妖精',
@@ -275,7 +289,12 @@ export const LANAI_ACTIONS: Record<number, LanaiActionInfo> = {
   },
   0x8000003b: {
     name: '像をはめる扉',
-    args: { 0: 'はめる像のアイテム (0xB1〜0xB6)', 1: '像を使うと減る (1 = 減る)', 2: '開く音 (SoundData の行。0x7A)' },
+    args: {
+      0: 'はめる像のアイテム (0xB1〜0xB8 のあかし)',
+      1: '像を使うと減る (1 = 減る)',
+      2: '開く音 (SoundData の行。0x7A)',
+    },
+    pick: { 0: 'idol', 1: 'consume', 2: 'doorSound' },
     note: '引数の並びは 0x15 と同じ。像を減らし、置く演出のあと開く (OpenCommonIdol)',
   },
 };

@@ -10,7 +10,9 @@ import { lanaiContents } from './contents';
 import type { LanaiMaps, LanaiPartRef } from './maps';
 import type { LanaiSession } from './session';
 import { LanaiTable } from './table';
-import { equalBytes } from '../util/bytes';
+import { equalBytes, u32, w32 } from '../util/bytes';
+import { LANAI_RESOURCE_BATTLE_FIELD } from './battleField';
+import { lanaiTileModels } from './mapModels';
 
 export interface LanaiTileset {
   /** Entry hash of its MapParts table (the same in every content). */
@@ -44,8 +46,8 @@ export function lanaiTilesets(s: LanaiSession): Promise<LanaiTileset[]> {
 
 async function readTilesets(s: LanaiSession): Promise<LanaiTileset[]> {
   const out = new Map<number, LanaiTileset>();
-  // the textures seen with each tileset: bytes (hex) -> count
-  const seen = new Map<number, Map<string, { bytes: Uint8Array; n: number }>>();
+  // the textures seen with each tileset: texture (MapResource +0x00 / +0x04, hex) -> its rows (bytes, hex) -> count
+  const seen = new Map<number, Map<string, Map<string, { bytes: Uint8Array; n: number }>>>();
   for (const c of lanaiContents(s)) {
     if (!c || c.index === 0 || s.createdFiles.has(c.archive.toUpperCase())) continue;
     let tables;
@@ -66,11 +68,14 @@ async function readTilesets(s: LanaiSession): Promise<LanaiTileset[]> {
       const entry = pt.u32(ts, 0);
       const parts = tables.find((t) => t.entry === entry)?.table;
       if (!parts || !parts.name.startsWith(PARTS)) continue;
-      const key = Array.from(mr.row(res), (b) => b.toString(16).padStart(2, '0')).join('');
-      const counts = seen.get(entry) ?? seen.set(entry, new Map()).get(entry)!;
-      const k = counts.get(key);
+      const bytes = mr.row(res);
+      const texture = hexOf(bytes.subarray(0, 8));
+      const textures = seen.get(entry) ?? seen.set(entry, new Map()).get(entry)!;
+      const rows = textures.get(texture) ?? textures.set(texture, new Map()).get(texture)!;
+      const key = hexOf(bytes);
+      const k = rows.get(key);
       if (k) k.n++;
-      else counts.set(key, { bytes: mr.row(res).slice(), n: 1 });
+      else rows.set(key, { bytes: bytes.slice(), n: 1 });
       const have = out.get(entry);
       if (have) {
         if (!have.contents.includes(c.index)) have.contents.push(c.index);
@@ -80,19 +85,51 @@ async function readTilesets(s: LanaiSession): Promise<LanaiTileset[]> {
         entry,
         name: parts.name.slice(PARTS.length),
         contents: [c.index],
-        resource: mr.row(res).slice(),
+        resource: bytes.slice(),
         floor: floorOf(parts),
       });
     }
   }
   for (const [entry, ts] of out) {
-    const list = [...seen.get(entry)!.values()].sort((a, b) => b.n - a.n);
-    const textured = list.find(
-      (x) => x.bytes.length >= 8 && (x.bytes[0]! | x.bytes[1]! | x.bytes[2]! | x.bytes[3]!) !== 0,
-    );
-    ts.resource = (textured ?? list[0]!).bytes;
+    // A tileset can be seen with textures its models don't name (Relic: 2B84B000's bg_wall_stone_* in some
+    // contents, 6D3A9800's bg_kabrickfloor in others): the texture that names the most of the floor's textures, then
+    // the most rows (a texture's rows differ in +0x10, the content's battle field, so the rows are counted by texture).
+    let best: { bytes: Uint8Array; hits: number; n: number } | null = null;
+    for (const rows of seen.get(entry)!.values()) {
+      const list = [...rows.values()].sort((a, b) => b.n - a.n);
+      const bytes = list[0]!.bytes;
+      const n = list.reduce((sum, x) => sum + x.n, 0);
+      const textured = bytes.length >= 8 && u32(bytes, 0) !== 0 && u32(bytes, 4) !== 0;
+      const hits = textured ? await floorHits(s, ts.floor, bytes) : -1;
+      if (!best || hits > best.hits || (hits === best.hits && n > best.n)) best = { bytes, hits, n };
+    }
+    ts.resource = best!.bytes;
   }
   return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const hexOf = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+
+/** How many texture names of the floor model's materials the texture of a MapResource row has (-1: none read). */
+async function floorHits(s: LanaiSession, floor: LanaiPartRef | null, resource: Uint8Array): Promise<number> {
+  if (!floor) return 0;
+  const set = await lanaiTileModels(
+    s,
+    {
+      mapData: -1,
+      tileset: 0,
+      partsName: '',
+      resource: 0,
+      textureArchive: u32(resource, 0),
+      textureEntry: u32(resource, 4),
+    },
+    [floor],
+  );
+  const model = set.models.get(floor.entry);
+  if (!model) return 0;
+  const names = new Set<string>();
+  for (const m of model.materials) for (const t of m.textures) if (t) names.add(t);
+  return [...names].filter((n) => set.textures.has(n)).length;
 }
 
 function floorOf(parts: LanaiTable): LanaiPartRef | null {
@@ -113,6 +150,15 @@ export function mapDataTileset(maps: LanaiMaps, mapDataRow: number): number {
   if (!md || !pt || mapDataRow < 0 || mapDataRow >= md.rows) return 0;
   const ts = md.row(mapDataRow)[0x0a]!;
   return ts < pt.rows ? pt.u32(ts, 0) : 0;
+}
+
+/** The MapData row uses the tileset but not its texture (a stage given Relic with another texture): picking it again fixes it. */
+export function tilesetTextureDiffers(maps: LanaiMaps, mapDataRow: number, ts: LanaiTileset): boolean {
+  const md = maps.contentTable('MapData'),
+    mr = maps.contentTable('MapResource');
+  if (!md || !mr || mapDataTileset(maps, mapDataRow) !== ts.entry) return false;
+  const res = md.row(mapDataRow)[0x0b]!;
+  return res >= mr.rows || !equalBytes(mr.row(res).subarray(0, 8), ts.resource.subarray(0, 8));
 }
 
 /** The tile kinds the content's maps of a MapData row use that the tileset has no model for (they would show nothing). */
@@ -172,10 +218,15 @@ export async function setLanaiTileset(
     typeRow = pt.addRow(0);
     pt.setU32(typeRow, 0, ts.entry);
   }
-  let resRow = Array.from({ length: mr.rows }, (_, r) => r).find((r) => equalBytes(mr.row(r), ts.resource));
+  // the texture row, with the battle field (+0x10, a row ID of the content's BattleFieldContents) the map had
+  const current = md.row(mapDataRow)[0x0b]!;
+  const resource = ts.resource.slice();
+  const field = current < mr.rows ? mr.u32(current, LANAI_RESOURCE_BATTLE_FIELD) : 0;
+  w32(resource, LANAI_RESOURCE_BATTLE_FIELD, field);
+  let resRow = Array.from({ length: mr.rows }, (_, r) => r).find((r) => equalBytes(mr.row(r), resource));
   if (resRow === undefined) {
     resRow = mr.addRow(mr.rows - 1);
-    mr.setRow(resRow, ts.resource);
+    mr.setRow(resRow, resource);
   }
   if (typeRow > 0xff || resRow > 0xff) throw new Error('MapPartsType / MapResource の行が 255 を超えます');
   md.setBits(mapDataRow, 0x08, 16, 8, typeRow);

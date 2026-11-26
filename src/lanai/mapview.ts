@@ -8,20 +8,20 @@
 import * as THREE from 'three';
 import { lanaiRange, type LanaiRange, type LanaiRangeShape } from './rangeShape';
 import { AnimatedModel, animationKey } from '../cgfx/player';
-import { lanaiAnimationIds, lanaiAnimationName, lanaiDenpaModel } from './animationModels';
+import { lanaiAnimationIds, lanaiAnimationName, lanaiDenpaCustomModel, lanaiDenpaModel } from './animationModels';
 import { scriptRowId, type ScriptWho } from './eventScript';
 import { ModelFactory } from '../cgfx/three';
 import type { TilesetModels } from '../cgfx/tileset';
 import { Controller } from '../editor/controller';
 import { drawHover, drawRoomCells, drawSelection, drawSnap, drawTiles } from '../editor/draw2d';
-import { GridCanvas } from '../editor/gridcanvas';
+import { GridCanvas, type GridPointer } from '../editor/gridcanvas';
 import { partOf, type AutoProfile } from '../editor/autotile';
 import { drawTerrainMinimap } from '../editor/minimap';
 import { kindColor, SECTION_COLORS } from '../editor/legend';
 import { CellOverlay, MapScene, MarkerMaterials, TileFallback, TileLayer } from '../editor/mapscene';
 import { GRID, type EditEvent } from '../editor/model';
 import { isIndoor } from '../game/objects';
-import { CELL, letterIndex, recCellPos, WORLD_SNAP, type MapDoc } from '../game/sections';
+import { CELL, letterIndex, recCellPos, WORLD_SNAP, type MapDoc, type Unit } from '../game/sections';
 import { Signal } from '../ui/useEditorState';
 import { LANAI_EMPTY_KIND, lanaiRecEventRow, sourceChanged, type LanaiEditState } from './mapedit';
 import { lanaiMapLinks, type LanaiMapLink } from './mapLinks';
@@ -39,18 +39,24 @@ import { lanaiObjectModels, lanaiTileModels } from './mapModels';
 import { PartThumbnails } from '../editor/part-thumbnails';
 import {
   LANAI_EFFECT_NAMES,
+  lanaiCharaTables,
+  lanaiObjectEffect,
   lanaiObjectRef,
   lanaiObjectScale,
   lanaiRecordLook,
+  type LanaiObjectEffect,
   type LanaiRecordLook,
   type LanaiRecordModel,
 } from './mapObjects';
+import { lanaiEffect, type PtclTexture } from './effects';
 import { lanaiMonsterModel } from './monsterModels';
 import { lanaiMonsterDesign } from './monsters';
 import {
   cellToWorld,
   mapScriptMoves,
   moveWhoText,
+  sourceScriptMoves,
+  withMoveAt,
   withScriptMove,
   worldToCell,
   type MapScriptMoves,
@@ -76,6 +82,16 @@ interface LoadedModel {
   hash: number;
   name: string;
   pose: THREE.Object3D | null;
+}
+
+/** The label of an event's number above it (the preview's #N): a sprite of a canvas, kept by its look. */
+/** How near (world units) the event numbers of two records must be to go one above the other, and the gap. */
+const ID_STACK_REACH = 150;
+const ID_STACK_GAP = 16;
+
+interface IdLabel {
+  sprite: THREE.Sprite;
+  key: string;
 }
 
 interface PreviewActor {
@@ -116,8 +132,25 @@ export class LanaiMapView {
   showModels = true;
   /** Draw the connections of the records in 2D (mapLinks.ts: a button and its door, a warp and where it leads). */
   showLinks = true;
-  /** Draw the destinations of the script's move() statements (scriptMoves.ts), which can be dragged. */
-  showMoves = true;
+  /**
+   * Draw the positions the script writes (move() / SetPos, scriptMoves.ts), which can be dragged: on in the script
+   * page's preview (StagePreviewScene), off on the map's page.
+   */
+  showMoves = false;
+  /**
+   * The script editor's text the move() points are read from and written into (the script page's preview), instead
+   * of the saved script; null: the saved one.
+   */
+  moveText: { source: string; write: (source: string) => void } | null = null;
+  /** Whether the event numbers (#N) are shown above the records in 3D. */
+  showIds = false;
+  /** Events marked among the numbers (the ones the previewed function names). */
+  private idMarks = new Set<number>();
+  /** The event the preview is acting on now (null: none). */
+  private idActive: number | null = null;
+  private readonly idGroup = new THREE.Group();
+  private readonly idLabels = new Map<number, IdLabel>();
+  private readonly idTextures = new Map<string, THREE.CanvasTexture>();
   /** The move() picked on the map (its numbers are shown on the page); null: none. */
   activeMove: LanaiMoveRef | null = null;
   /** The move() being dragged and where it is now, in world units (written to the script when the button is let go). */
@@ -161,6 +194,8 @@ export class LanaiMapView {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  /** The textures of the effects the models put (EffectData row → a sprite's material); null while loading or none. */
+  private readonly effectSprites = new Map<number, THREE.SpriteMaterial | null>();
   /** The walls of the ranges (section 8): their hit shape standing on the ground, translucent (rangeShape.ts). */
   private readonly rangeMats = rangeMaterials();
   /** Geometries made for the ranges of the last sync (disposed at the next). */
@@ -177,7 +212,14 @@ export class LanaiMapView {
     this.ctl = new Controller(st);
     this.grid = new GridCanvas('view2d', (g, s) => this.paint(g, s), GRID);
     this.scene = new MapScene('view3d', 30, hostWindow);
-    this.scene.scene.add(this.tileLayer.group, this.markers, this.overlay.group, this.moveGroup, this.previewGroup);
+    this.scene.scene.add(
+      this.tileLayer.group,
+      this.markers,
+      this.overlay.group,
+      this.moveGroup,
+      this.previewGroup,
+      this.idGroup,
+    );
     // a move() point under the pointer is dragged instead of what the editor's tools do there
     const pointer = (tol: () => number, canvas: HTMLCanvasElement) => ({
       /** Whether the press picked a move() point (the editor's tools then get nothing). */
@@ -231,6 +273,21 @@ export class LanaiMapView {
         if (!p3.grab(cx, cy, e)) this.ctl.down(cx, cy, e);
       },
     };
+    // a view without the editor's tools (the script page's preview): the camera keeps the drag unless it took a point
+    this.movePointer = {
+      down: (cx, cy, e) => {
+        if (p3.grab(cx, cy, e)) this.scene.controls.enabled = false;
+      },
+      move: (cx, cy, e) => {
+        if (this.moveDrag) p3.move(cx, cy, e);
+        else this.scene.canvas.style.cursor = this.moveAt(cx, cy, 0.3) ? 'grab' : '';
+      },
+      up: () => {
+        if (this.moveDrag) this.endMoveDrag();
+        this.scene.controls.enabled = true;
+      },
+      leave: () => {},
+    };
     // the script is changed on the stage's page too
     this.unsubscribeSession = this.maps.session.onEdit(() => {
       if (this.disposed) return;
@@ -245,6 +302,9 @@ export class LanaiMapView {
     this.unsubscribe = st.on((what) => this.changed(what));
     void this.loadTiles();
   }
+
+  /** The 3D view's pointer that drags the move() points alone (for a view whose records are not edited). */
+  readonly movePointer: GridPointer;
 
   get doc(): MapDoc {
     return this.st.current!;
@@ -261,6 +321,9 @@ export class LanaiMapView {
 
   dispose(): void {
     this.clearPreview();
+    this.clearIds();
+    for (const t of this.idTextures.values()) t.dispose();
+    this.idTextures.clear();
     this.partImages.dispose();
     this.disposed = true;
     this.unsubscribe();
@@ -270,10 +333,15 @@ export class LanaiMapView {
     this.moveMat.dispose();
     this.moveMatActive.dispose();
     this.moveLineMat.dispose();
+    this.scene.setTicker(null);
     this.factory?.dispose();
     for (const f of this.objects.values()) f?.factory.dispose();
     this.effectGeo.dispose();
     this.effectMat.dispose();
+    for (const m of this.effectSprites.values()) {
+      m?.map?.dispose();
+      m?.dispose();
+    }
     for (const g of this.rangeGeos) g.dispose();
     for (const m of Object.values(this.rangeMats)) {
       m.fill.dispose();
@@ -315,14 +383,16 @@ export class LanaiMapView {
   }
 
   private previewKey(who: ScriptWho): string {
-    if (who.kind === 'hero') return 'hero';
+    // a member of the party (a for … in party loop) is shown as the leader
+    if (who.kind === 'hero' || who.kind === 'party') return 'hero';
+    if (who.kind === 'effect') throw new Error('エフェクトはプレビューに出ません。');
     const row = who.kind === 'self' ? this.previewSelf : who.row;
     if (row === null) throw new Error('self の対象イベントがありません。関数をマップのイベントに割り当ててください。');
     return `chara:${row}`;
   }
 
   private previewRecord(row: number): { section: number; index: number; x: number; z: number } | null {
-    // An EventObject row can have several records. For chara(), prefer the character over a linked door or range.
+    // An EventObject row can have several records. For obj(), prefer the character over a linked door or range.
     for (const section of [5, 3, 4, 8] as const)
       for (let index = 0; index < (this.doc.recs[section]?.length ?? 0); index++) {
         const rec = this.doc.recs[section]![index]!;
@@ -387,6 +457,7 @@ export class LanaiMapView {
       this.previewGroup.add(group);
       this.previewActors.set(key, { group, motion, factory, started: 0, frames: 0, fallback });
       if (row !== null) for (const visual of this.recordVisuals.get(row) ?? []) visual.visible = false;
+      this.syncIds();
       this.scene.draw();
     } catch (e) {
       factory?.dispose();
@@ -403,6 +474,7 @@ export class LanaiMapView {
   previewSetPosition(who: ScriptWho, x: number, y: number, z: number): void {
     const actor = this.previewActors.get(this.previewKey(who))!;
     actor.group.position.set(x, y, z);
+    this.syncIds();
     this.scene.draw();
   }
 
@@ -491,6 +563,8 @@ export class LanaiMapView {
     this.previewActors.clear();
     for (const visuals of this.recordVisuals.values()) for (const visual of visuals) visual.visible = true;
     this.previewSelf = null;
+    this.idActive = null;
+    this.syncIds();
     if (this.previewCamera) {
       this.scene.camera.position.copy(this.previewCamera.position);
       this.scene.controls.target.copy(this.previewCamera.target);
@@ -615,6 +689,16 @@ export class LanaiMapView {
       this.factory?.dispose();
       this.factory = new ModelFactory(set);
       this.factory.setCeilingVisible(false);
+      const factory = this.factory;
+      let start = -1;
+      this.scene.setTicker(
+        set.proctex
+          ? (seconds) => {
+              if (start < 0) start = seconds;
+              factory.tick(seconds - start);
+            }
+          : null,
+      );
       this.tileLayer.clear();
       this.status = set.errors.length ? `モデルの一部を読めませんでした: ${set.errors.slice(0, 3).join(' / ')}` : '';
     } catch (err) {
@@ -634,7 +718,7 @@ export class LanaiMapView {
   partLook(section: number, raw: Uint8Array): LanaiRecordLook | null {
     const maps = this.maps;
     return lanaiRecordLook(section, raw, {
-      mapObject: maps.session.table('MapObject'),
+      ...lanaiCharaTables(maps.session),
       mapChara: maps.contentTable('MapChara'),
       events: maps.eventTable(this.info.dungeon),
       indoor: isIndoor(this.doc),
@@ -655,7 +739,9 @@ export class LanaiMapView {
   private modelKey(m: LanaiRecordModel): string {
     return m.type === 'monster'
       ? `m${m.design}`
-      : `o${m.row}${m.type === 'object' && m.material ? `/${m.material}` : ''}`;
+      : m.type === 'denpa'
+        ? `d${m.custom}`
+        : `o${m.row}${m.type === 'object' && m.material ? `/${m.material}` : ''}`;
   }
 
   /** An instance of a record's model; starts loading it the first time (the view is redrawn when it is there). */
@@ -680,6 +766,31 @@ export class LanaiMapView {
     return o.pose ? o.pose.clone() : o.factory.instance(o.hash);
   }
 
+  /**
+   * A sprite of an effect (EffectData row): the brightest frame of its .ptcl's first texture, added (the particles'
+   * motion is not read: it only shows that the game puts the effect there). Starts loading it the first time.
+   */
+  private effectSprite(row: number): THREE.Sprite | null {
+    if (!this.effectSprites.has(row)) {
+      this.effectSprites.set(row, null);
+      void lanaiEffect(this.maps.session, row).then(
+        (fx) => {
+          const tex = fx?.texture;
+          if (this.disposed || !tex) return;
+          this.effectSprites.set(row, effectMaterial(tex));
+          this.sync3d();
+        },
+        () => {},
+      );
+      return null;
+    }
+    const mat = this.effectSprites.get(row);
+    if (!mat) return null;
+    const s = new THREE.Sprite(mat);
+    s.scale.setScalar(EFFECT_SPRITE_SIZE);
+    return s;
+  }
+
   private async loadModel(m: LanaiRecordModel): Promise<LoadedModel | null> {
     const session = this.maps.session;
     let got: { set: TilesetModels; hash: number } | null = null;
@@ -688,6 +799,8 @@ export class LanaiMapView {
       if (!ref) return null;
       const set = await lanaiObjectModels(session, ref);
       got = set.models.size ? { set, hash: ref.entry } : null;
+    } else if (m.type === 'denpa') {
+      got = await lanaiDenpaCustomModel(session, m.custom).load();
     } else if (m.type === 'monster') {
       const d = lanaiMonsterDesign(session, m.design);
       const ref = d && lanaiMonsterModel(session, d);
@@ -722,6 +835,7 @@ export class LanaiMapView {
           if (!m)
             return t.kind === LANAI_EMPTY_KIND && f ? new THREE.Group() : this.fallback.make(kindColor(t.kind), t.rot);
           m.rotation.y = (-t.rot * Math.PI) / 2;
+          f!.placeOnGrid(m, t.x, t.y, t.rot);
           return m;
         },
       })),
@@ -755,8 +869,17 @@ export class LanaiMapView {
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = look!.angle;
           // monsters keep their own size (not checked against the game yet)
-          if (look!.model!.type === 'object')
-            model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
+          if (look!.model!.type === 'object') {
+            const mo = this.maps.session.table('MapObject');
+            model.scale.setScalar(lanaiObjectScale(mo, look!.model!.row));
+            // the effect the row puts with the model (a lit torch's flame)
+            const fx = lanaiObjectEffect(mo, look!.model!.row);
+            const sprite = fx && this.effectSprite(fx.effect);
+            if (sprite) {
+              sprite.position.copy(effectPosition(fx!, model));
+              this.addRecordVisual(k, r.raw, sprite);
+            }
+          }
           this.addRecordVisual(k, r.raw, model);
           if (!selected) return;
         }
@@ -768,7 +891,164 @@ export class LanaiMapView {
     }
     this.overlay.sync(doc, sel, layers.room);
     this.syncMoves();
+    this.syncIds();
     this.scene.draw();
+  }
+
+  // ---- the event numbers (#N) above the records
+
+  /** Shows or hides the numbers, and which are marked (the events a function names) and acted on now. */
+  setIds(show: boolean, marks: Set<number> = this.idMarks, active: number | null = this.idActive): void {
+    this.showIds = show;
+    this.idMarks = marks;
+    this.idActive = active;
+    this.syncIds();
+    if (!this.disposed) this.scene.draw();
+  }
+
+  /** The events of this map by number: their first record (point sections) and where it stands. */
+  eventRecords(): Map<number, { section: number; index: number; x: number; z: number }> {
+    const out = new Map<number, { section: number; index: number; x: number; z: number }>();
+    const doc = this.st.current;
+    if (!doc || doc.hash !== this.info.hash) return out;
+    for (const section of [5, 3, 4, 8] as const)
+      (doc.recs[section] ?? []).forEach((rec, index) => {
+        const row = lanaiRecEventRow(section, rec.raw);
+        if (out.has(row)) return;
+        const [x, z] = recCellPos(rec, LANAI_LAYOUTS[section]!);
+        out.set(row, { section, index, x: cellToWorld(x), z: cellToWorld(z) });
+      });
+    return out;
+  }
+
+  /**
+   * Where an event's (first) record stands: the cell it is on (column, row), the record's own two numbers as the ROM
+   * keeps them (in its section's unit) and the world position a script writes (vec(x, 0, z)); null: no record.
+   */
+  eventPosition(
+    row: number,
+  ): { section: number; unit: Unit; raw: [number, number]; cell: [number, number]; world: [number, number] } | null {
+    const at = this.eventRecords().get(row);
+    const rec = at && this.st.current?.recs[at.section]?.[at.index];
+    if (!at || !rec) return null;
+    const L = LANAI_LAYOUTS[at.section]!;
+    const [cx, cy] = recCellPos(rec, L);
+    return {
+      section: at.section,
+      unit: L.unit,
+      raw: [rec.x, rec.y],
+      cell: [Math.floor(cx), Math.floor(cy)],
+      world: [Math.round(cellToWorld(cx) * 100) / 100, Math.round(cellToWorld(cy) * 100) / 100],
+    };
+  }
+
+  /** What an event is, as the preview names it: its section's record and model. */
+  eventLabel(row: number): string {
+    const rec = this.eventRecords().get(row);
+    if (!rec) return `イベント ${row}`;
+    const look = this.look(rec.section, rec.index);
+    const name = look?.model ? this.modelName(look.model) : '';
+    return `イベント ${row} (区画 ${rec.section}${name ? ` · ${name}` : ''})`;
+  }
+
+  /** The event whose number is under a point of the canvas (client coordinates), or null. */
+  pickId(clientX: number, clientY: number): number | null {
+    if (!this.showIds || !this.idLabels.size) return null;
+    const box = this.scene.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(
+      ((clientX - box.left) / box.width) * 2 - 1,
+      -((clientY - box.top) / box.height) * 2 + 1,
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.scene.camera);
+    const hits = ray.intersectObjects([...this.idLabels.values()].map((l) => l.sprite));
+    const hit = hits[0]?.object;
+    if (!hit) return null;
+    for (const [row, l] of this.idLabels) if (l.sprite === hit) return row;
+    return null;
+  }
+
+  private clearIds(): void {
+    for (const l of this.idLabels.values()) {
+      this.idGroup.remove(l.sprite);
+      l.sprite.material.dispose();
+    }
+    this.idLabels.clear();
+  }
+
+  private idTexture(text: string, color: string, style: 'normal' | 'mark' | 'active'): THREE.CanvasTexture {
+    const key = `${text}/${color}/${style}`;
+    let t = this.idTextures.get(key);
+    if (t) return t;
+    const c = this.scene.canvas.ownerDocument.createElement('canvas');
+    c.width = 128;
+    c.height = 64;
+    const g = c.getContext('2d')!;
+    g.font = 'bold 34px ui-monospace, Menlo, Consolas, monospace';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const w = Math.min(124, g.measureText(text).width + 22);
+    g.fillStyle = style === 'active' ? '#fff1d6' : style === 'mark' ? '#ffd23f' : 'rgba(10, 14, 22, 0.78)';
+    g.strokeStyle = color;
+    g.lineWidth = 5;
+    g.beginPath();
+    g.roundRect((128 - w) / 2, 6, w, 52, 12);
+    g.fill();
+    g.stroke();
+    g.fillStyle = style === 'normal' ? '#ffffff' : '#111111';
+    g.fillText(text, 64, 33);
+    t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this.idTextures.set(key, t);
+    return t;
+  }
+
+  /** The numbers above the records (and the preview's actors standing in for them). */
+  private syncIds(): void {
+    if (!this.showIds) {
+      if (this.idLabels.size) this.clearIds();
+      return;
+    }
+    const records = this.eventRecords();
+    for (const [row, l] of this.idLabels)
+      if (!records.has(row)) {
+        this.idGroup.remove(l.sprite);
+        l.sprite.material.dispose();
+        this.idLabels.delete(row);
+      }
+    // labels of events standing at one point go up one above another (the smaller number lowest)
+    const placed: { x: number; z: number; top: number }[] = [];
+    for (const [row, rec] of [...records].sort((a, b) => a[0] - b[0])) {
+      const style = row === this.idActive ? 'active' : this.idMarks.has(row) ? 'mark' : 'normal';
+      const color = SECTION_COLORS[rec.section] ?? '#ffffff';
+      const key = `${row}/${color}/${style}`;
+      let l = this.idLabels.get(row);
+      if (!l || l.key !== key) {
+        if (l) {
+          this.idGroup.remove(l.sprite);
+          l.sprite.material.dispose();
+        }
+        const material = new THREE.SpriteMaterial({
+          map: this.idTexture(`#${row}`, color, style),
+          depthTest: false,
+          transparent: true,
+        });
+        const sprite = new THREE.Sprite(material);
+        sprite.renderOrder = 10;
+        l = { sprite, key };
+        this.idGroup.add(sprite);
+        this.idLabels.set(row, l);
+      }
+      const actor = this.previewActors.get(`chara:${row}`);
+      const at = actor ? actor.group.position : new THREE.Vector3(rec.x, 0, rec.z);
+      const scale = style === 'normal' ? 1 : 1.3;
+      l.sprite.scale.set(260 * scale, 130 * scale, 1);
+      const h = 130 * scale;
+      const below = placed.filter((p) => Math.hypot(p.x - at.x, p.z - at.z) < ID_STACK_REACH);
+      const bottom = below.length ? Math.max(...below.map((p) => p.top)) + ID_STACK_GAP : 420 - h / 2;
+      l.sprite.position.set(at.x, bottom + h / 2, at.z);
+      placed.push({ x: at.x, z: at.z, top: bottom + h });
+    }
   }
 
   // ---- move() of the script
@@ -777,8 +1057,11 @@ export class LanaiMapView {
   scriptMoves(): MapScriptMoves[] {
     const doc = this.st.current;
     const script = this.maps.session.stageScripts.get(this.maps.content.archive.toUpperCase())?.doc;
-    if (!doc || doc.hash !== this.info.hash || !script) return [];
-    return mapScriptMoves(script, this.info.dungeon, new Set(this.eventCells().keys()));
+    if (!doc || doc.hash !== this.info.hash) return [];
+    const rows = new Set(this.eventCells().keys());
+    if (this.moveText) return sourceScriptMoves(this.moveText.source, script?.bindings ?? [], this.info.dungeon, rows);
+    if (!script) return [];
+    return mapScriptMoves(script, this.info.dungeon, rows);
   }
 
   /** Where the records of each event row of this map stand (cells; the first record of a row). */
@@ -813,7 +1096,9 @@ export class LanaiMapView {
               ? cells.get(f.rows[0]!)
               : undefined;
         const at: [number, number] = [worldToCell(move.x), worldToCell(move.z)];
-        out.push({ fn: f.fn, k, move, from: last.get(who) ?? start ?? null, label: `${f.fn} #${k + 1} ${who}` });
+        // the object's event number: obj(N) names it, self is the event the function is given to
+        const whoLabel = move.who.kind === 'self' && f.rows.length ? `self = obj(${f.rows.join(', ')})` : who;
+        out.push({ fn: f.fn, k, move, from: last.get(who) ?? start ?? null, label: `${f.fn} #${k + 1} ${whoLabel}` });
         last.set(who, at);
       });
     }
@@ -834,6 +1119,13 @@ export class LanaiMapView {
 
   /** Write a move()'s position into its function's text. */
   setMove(ref: LanaiMoveRef, x: number, y: number, z: number): void {
+    if (this.moveText) {
+      const m = this.scriptMoves().find((f) => f.fn === ref.fn)?.moves[ref.k];
+      if (!m) return;
+      const text = withMoveAt(this.moveText.source, m, x, y, z);
+      if (text !== this.moveText.source) this.moveText.write(text);
+      return;
+    }
     const session = this.maps.session;
     const archive = this.maps.content.archive.toUpperCase();
     const script = session.stageScripts.get(archive)?.doc;
@@ -914,8 +1206,42 @@ export class LanaiMapView {
   }
 
   private clearMoveGroup(): void {
-    for (const o of this.moveGroup.children) if (o instanceof THREE.Line) o.geometry.dispose();
+    for (const o of this.moveGroup.children)
+      if (o instanceof THREE.Line) o.geometry.dispose();
+      else if (o instanceof THREE.Sprite) {
+        o.material.map?.dispose();
+        o.material.dispose();
+      }
     this.moveGroup.clear();
+  }
+
+  /** A move() point's label in 3D: the function, its number in it and whom it moves (with the event number). */
+  private moveLabel(text: string, active: boolean): THREE.Sprite {
+    const c = this.scene.canvas.ownerDocument.createElement('canvas');
+    const font = 'bold 30px ui-monospace, Menlo, Consolas, monospace';
+    let g = c.getContext('2d')!;
+    g.font = font;
+    c.width = Math.ceil(g.measureText(text).width) + 28;
+    c.height = 52;
+    g = c.getContext('2d')!;
+    g.font = font;
+    g.fillStyle = active ? '#fff1d6' : 'rgba(10, 14, 22, 0.8)';
+    g.strokeStyle = MOVE_COLOR;
+    g.lineWidth = 4;
+    g.beginPath();
+    g.roundRect(2, 2, c.width - 4, c.height - 4, 10);
+    g.fill();
+    g.stroke();
+    g.fillStyle = active ? '#111111' : '#ffe0b3';
+    g.textBaseline = 'middle';
+    g.fillText(text, 14, c.height / 2 + 1);
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, depthTest: false, transparent: true }));
+    sprite.renderOrder = 11;
+    const h = active ? 120 : 100;
+    sprite.scale.set((h * c.width) / c.height, h, 1);
+    return sprite;
   }
 
   private syncMoves(): void {
@@ -928,6 +1254,9 @@ export class LanaiMapView {
       m.position.set(p.move.x, p.move.y, p.move.z);
       if (active) m.scale.setScalar(1.3);
       this.moveGroup.add(m);
+      const label = this.moveLabel(active ? `${p.label} (${p.move.x}, ${p.move.y}, ${p.move.z})` : p.label, active);
+      label.position.set(p.move.x, p.move.y + (active ? 260 : 220), p.move.z);
+      this.moveGroup.add(label);
       if (!p.from) continue;
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([
@@ -1048,6 +1377,61 @@ function drawRange(g: CanvasRenderingContext2D, s: number, range: LanaiRange, se
   g.globalAlpha = selected ? 1 : 0.7;
   g.stroke();
   g.restore();
+}
+
+/** How large an effect's sprite is (world units; a guess, the particles' sizes are not read). */
+const EFFECT_SPRITE_SIZE = 60;
+
+/**
+ * Where the sprite of a model's effect is (world units). The game puts the effect at the model's place plus MapObject
+ * +0x28 / +0x2A / +0x2C and +0x2F (s8, up), neither turned with the model nor scaled by +0x1C (FUN_0021C0F4
+ * @0x21C260〜0x21C2F8; Codex 2026-11-26, roms/tmpmap/ptcl/position.md). A row that lifts it by nothing (the lamps
+ * gimk_09_lamp_*) has the flame raised by the .ptcl itself, which is not read: the sprite then stands on the model's top.
+ * The sprite's centre is raised by a third of its size so that the flame rises from that point.
+ */
+function effectPosition(fx: LanaiObjectEffect, model: THREE.Object3D): THREE.Vector3 {
+  const [x, y, z] = fx.offset;
+  const up = y + fx.lift;
+  const top = up ? 0 : new THREE.Box3().setFromObject(model).max.y - model.position.y;
+  const base = up || (Number.isFinite(top) ? top : 0);
+  return model.position.clone().add(new THREE.Vector3(x, base + EFFECT_SPRITE_SIZE / 3, z));
+}
+
+/**
+ * The material of an effect's sprite: the brightest frame of the texture (a 64 × 64 texture is taken as 4 × 4 frames
+ * of the particles' animation, as the flames' are; others are shown whole), drawn added and without writing depth.
+ */
+function effectMaterial(tex: PtclTexture): THREE.SpriteMaterial {
+  const { width: w, height: h, rgba } = tex;
+  // the rows bottom first (WebGL's)
+  const data = new Uint8Array(rgba.length);
+  for (let y = 0; y < h; y++) data.set(rgba.subarray(y * w * 4, (y + 1) * w * 4), (h - 1 - y) * w * 4);
+  const map = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.magFilter = THREE.LinearFilter;
+  map.needsUpdate = true;
+  const n = w === 64 && h === 64 ? 4 : 1;
+  if (n > 1) {
+    const cw = w / n,
+      ch = h / n;
+    let best = 0,
+      bestSum = -1;
+    for (let k = 0; k < n * n; k++) {
+      const cx = k % n,
+        cy = Math.floor(k / n);
+      let sum = 0;
+      for (let y = cy * ch; y < (cy + 1) * ch; y++)
+        for (let x = cx * cw; x < (cx + 1) * cw; x++) {
+          const i = (y * w + x) * 4;
+          sum += (rgba[i]! + rgba[i + 1]! + rgba[i + 2]!) * (rgba[i + 3]! / 255);
+        }
+      if (sum > bestSum) [best, bestSum] = [k, sum];
+    }
+    map.repeat.set(1 / n, 1 / n);
+    // the frame's column, and its row counted from the bottom
+    map.offset.set((best % n) / n, (n - 1 - Math.floor(best / n)) / n);
+  }
+  return new THREE.SpriteMaterial({ map, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
 }
 
 /** How tall the walls of a range stand (world units; a cell is 500, the party about 200). */

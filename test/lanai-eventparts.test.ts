@@ -1,5 +1,5 @@
 // Placing records that start an event on an RPG FREE! map (src/lanai/eventParts.ts), the hit shape of a range
-// (rangeShape.ts), and the MonsterGroup value of battle() (stageScript.ts battleRow): with the ROM, a stage added from
+// (rangeShape.ts), and the MonsterGroup value of ScriptMap.EncountBoss (stageScript.ts battleRow): with the ROM, a stage added from
 // content 1, whose MonsterGroup row IDs are not its row numbers.
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { unzipSync } from 'fflate';
@@ -27,13 +27,16 @@ import {
 import { LANAI_FLOOR_ROWS, lanaiCharaRowBytes, lanaiLevelDoorNumber, lanaiRecordLook } from '../src/lanai/mapObjects';
 import { lanaiMapHref } from '../src/lanai/hrefs';
 import { lanaiArrivals, lanaiDestinationPlace } from '../src/lanai/mapLinks';
-import { LANAI_EXISTING_CATEGORY, lanaiEditState, lanaiRecEventRow, lanaiRecLabel } from '../src/lanai/mapedit';
+import { lanaiEditState, lanaiKindParts, lanaiRecEventRow, lanaiRecLabel } from '../src/lanai/mapedit';
+import { lanaiRecKind } from '../src/lanai/romParts';
 import {
   LANAI_EVENT_LEVEL,
   LANAI_FLOOR_POISON,
   LANAI_LEVEL_DOOR_KIND,
   lanaiEventSlot,
+  lanaiExitCategory,
   lanaiExitLabel,
+  lanaiExitNote,
   lanaiFloorKindLabel,
   LANAI_LAYOUTS,
   lanaiMaps,
@@ -171,6 +174,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
       [5, 0],
       [5, 0],
       [4, 0],
+      [4, 2],
       [4, 3],
       [8, 1],
       [8, 0],
@@ -197,7 +201,9 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     expect(poison!.section).toBe(1);
     expect([...poison!.raw]).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, LANAI_FLOOR_POISON, 0, 0]);
     expect(lanaiRecLabel(1, poison!.raw)).toBe('毒床');
-    expect(lanaiFloorKindLabel(2)).toBe('床のギミック 2');
+    expect(lanaiFloorKindLabel(0)).toBe('ダメージ床');
+    expect(lanaiFloorKindLabel(2)).toBe('凍った床 (すべらない)');
+    expect(lanaiFloorKindLabel(4)).toBe('床のギミック 4');
     expect(lanaiFloorKindLabel(3)).toBe('凍った床');
     expect(lanaiFloorParts().map((p) => p.raw[0x0d])).toEqual([1, 3]);
     // the models the game places for the floors (FUN_0021C534), shown as their thumbnails
@@ -240,6 +246,22 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
     expect(lanaiExitLabel(LANAI_LEVEL_DOOR_KIND)).toBe('レベルの扉');
   });
 
+  test('the exit kinds the ROM survey names and groups (Issue #219)', () => {
+    expect(lanaiExitLabel(0)).toBe('マップの門');
+    expect(lanaiExitLabel(11)).toBe('到着点');
+    expect(lanaiExitLabel(40)).toBe('建物の入口 40');
+    expect(lanaiExitLabel(68)).toBe('崖の降下点');
+    // not settled: keep the number
+    expect(lanaiExitLabel(17)).toBe('種類 17');
+    expect(lanaiExitLabel(9)).toBe('種類 9');
+    expect(lanaiExitNote(17)).toContain('わかっていない');
+    expect(lanaiExitCategory(8)).toBe('出入口・移動');
+    expect(lanaiExitCategory(40)).toBe('建物');
+    expect(lanaiExitCategory(13)).toBe('扉');
+    expect(lanaiExitCategory(2)).toBe('出入口・移動');
+    expect(lanaiRecLabel(3, Object.assign(new Uint8Array(0x18), { [0x15]: 18 }))).toBe('出入口 #18');
+  });
+
   test('the anchor of a record in the link to a map', () => {
     expect(lanaiMapHref(3)).toBe('#/maps/3');
     expect(lanaiMapHref(3, 'D01001B01')).toBe('#/maps/3.D01001B01');
@@ -264,7 +286,7 @@ describe('RPG FREE! new event parts: by what starts them, the look picked afterw
   });
 });
 
-describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
+describe.skipIf(!hasLanai)('RPG FREE! new event records and EncountBoss', () => {
   let s: LanaiSession;
   let c: LanaiContent;
   let maps: LanaiMaps;
@@ -279,16 +301,28 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     maps = await lanaiMaps(s, c);
   }, 300000);
 
-  test('the records copied from the stage are one category; the warps show their models', () => {
+  test('the picker has one part per section and kind; what a kind does is chosen when placed', () => {
     const st = lanaiEditState(maps);
     st.open(maps.mapByName('D01001B01')!);
     const all = st.templates();
-    const copied = all.filter((t) => !t.event && !t.source.startsWith('新規'));
-    expect(copied.length).toBeGreaterThan(0);
-    expect(copied.every((t) => t.category === LANAI_EXISTING_CATEGORY)).toBe(true);
+    // only records made from nothing: the stage's own records are not copied
+    expect(all.every((t) => t.source.startsWith('新規'))).toBe(true);
     // no badge in place of the model: the picker draws the 3D model of the look
     expect(all.filter((t) => t.section === 3 && [2, 4].includes(t.raw[0x15]!)).every((t) => !t.iconLabel)).toBe(true);
-    expect(all.find((t) => t.source === '新規毒床')?.category).toBe('新規・設定付き');
+    const parts = lanaiKindParts(all, []);
+    const kinds = parts.map((t) => `${t.section}/${lanaiRecKind(t.section, t.raw)}`);
+    expect(new Set(kinds).size).toBe(kinds.length);
+    expect(
+      parts.every(
+        (t) => t.category === `区画 ${t.section}` && t.pickerName === `種別 ${lanaiRecKind(t.section, t.raw)}`,
+      ),
+    ).toBe(true);
+    const npc = parts.find((t) => t.section === 5 && lanaiRecKind(5, t.raw) === 0)!;
+    expect(npc.actions!.map((c) => c.label)).toEqual(['スクリプト', '話す NPC', '店の人']);
+    const switches = parts.find((t) => t.section === 5 && lanaiRecKind(5, t.raw) === 4)!;
+    expect(switches.actions!.map((c) => c.label)).toEqual(['保持スイッチ', 'プッシュスイッチ']);
+    // a kind with one thing to do places it at once
+    expect(parts.find((t) => t.section === 1 && lanaiRecKind(1, t.raw) === 1)!.actions).toBeUndefined();
   });
 
   test('a sign, a talking NPC and a clerk add a line to the talk table; undo and redo keep it', () => {
@@ -484,7 +518,7 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
         rows.push(lanaiRecEventRow(k, st.current!.recs[k]![i]!.raw));
       });
     const g = info.dungeon;
-    const src = `function a() { se(0x8D) }\nfunction b() { se(0x8E) }\non switch(${g}, ${rows[0]}) a\non button(${g}, ${rows[1]}) b`;
+    const src = `function a() { ScriptSound.Play(0x8D, 0) }\nfunction b() { ScriptSound.Play(0x8E, 0) }\non switch(${g}, ${rows[0]}) a\non button(${g}, ${rows[1]}) b`;
     expect((await checkStageScript(s, c, src)).problems).toEqual([]);
     s.setStageScript(c.archive, src);
     const zip = unzipSync(await s.modZip());
@@ -505,31 +539,31 @@ describe.skipIf(!hasLanai)('RPG FREE! new event records and battle()', () => {
     st.undo();
   });
 
-  test('battle() takes a MonsterGroup row number: content 1 has row IDs 0x80000000, 0x80000010 …', async () => {
+  test('EncountBoss takes a MonsterGroup row number: content 1 has row IDs 0x80000000, 0x80000010 …', async () => {
     const mg = maps.monsterGroup!;
     expect(mg.rowId(1)).not.toBe(0x80000001);
     expect(battleRow(mg, 5)).toBe(5);
     expect(battleRow(mg, mg.rowId(1))).toBe(1);
-    // the value the old build gave the game for battle(5): a row ID the table does not have → the empty row 0
+    // the value the old build gave the game for battle(5) (EncountBoss(0x80000005, 0)): a row ID the table does not have → the empty row 0
     expect(battleRow(mg, 0x80000005)).toBe(-1);
     expect(battleRow(mg, mg.rows)).toBe(-1);
-    const ok = await checkStageScript(s, c, `function f() { battle(5) }\non start(1) f`);
+    const ok = await checkStageScript(s, c, `function f() { ScriptMap.EncountBoss(5, 0) }\non start(1) f`);
     expect(ok.problems).toEqual([]);
-    const bad = await checkStageScript(s, c, `function f() { battle(${mg.rows}) }\non start(1) f`);
-    expect(bad.problems.join()).toContain(`battle(${mg.rows}) の群れがありません`);
+    const bad = await checkStageScript(s, c, `function f() { ScriptMap.EncountBoss(${mg.rows}, 0) }\non start(1) f`);
+    expect(bad.problems.join()).toContain(`ScriptMap.EncountBoss(${mg.rows}, …) の群れがありません`);
   });
 
-  test('an added stage is removed, the newest first: its rows, archive, CRR and script', async () => {
+  test('an added stage is removed: its rows, archive, CRR and script', async () => {
     const rows = (n: string): number => s.need(n).rows;
     const before = { contents: rows('Contents'), msi: rows('MapStageIntegration'), msg: rows('MessageMapStage') };
     const index = await cloneLanaiContent(s, lanaiContents(s)[1]!, '消す島', { script: 'empty' });
     const added = lanaiContents(s)[index]!;
-    s.setStageScript(added.archive, 'function f() { wait(1) }\non start(1) f');
-    // the stage added before it is not the last any more
-    expect(lanaiContentRemoveBlock(s, c)).toContain('最後に追加した');
+    s.setStageScript(added.archive, 'function f() { ScriptSystem.WaitTime(1) }\non start(1) f');
+    // the stage added before it can be removed too (the ones after it move down: lanai-stageimport.test.ts)
+    expect(lanaiContentRemoveBlock(s, c)).toBeNull();
     expect(lanaiContentRemoveBlock(s, lanaiContents(s)[1]!)).toContain('元からある');
     expect(lanaiContentRemoveBlock(s, added)).toBeNull();
-    removeLanaiContent(s, added);
+    await removeLanaiContent(s, added);
     expect({ contents: rows('Contents'), msi: rows('MapStageIntegration'), msg: rows('MessageMapStage') }).toEqual(
       before,
     );

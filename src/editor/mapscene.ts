@@ -149,10 +149,20 @@ export class MapScene {
 
   draw(): void {
     if (this.raf) return;
-    this.raf = this.hostWindow.requestAnimationFrame(() => {
+    this.raf = this.hostWindow.requestAnimationFrame((now) => {
       this.raf = 0;
+      this.ticker?.(now / 1000);
       this.renderer.render(this.scene, this.camera);
+      if (this.ticker) this.draw();
     });
+  }
+
+  private ticker: ((seconds: number) => void) | null = null;
+
+  /** Something on the map moves (a procedural texture): `tick` runs before every frame and the view keeps drawing. */
+  setTicker(tick: ((seconds: number) => void) | null): void {
+    this.ticker = tick;
+    if (tick) this.draw();
   }
 
   dispose(): void {

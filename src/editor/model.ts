@@ -146,7 +146,9 @@ export abstract class MapEditState<S = unknown, T = unknown> {
     if (!this.brush.auto) return this.brush;
     const profile = this.autoProfile;
     if (!this.current || !profile) return undefined;
-    const tile = autoTiles(this.current.tiles, new Set([cellKey(x, y)]), profile).find((t) => t.x === x && t.y === y);
+    const tile = autoTiles(this.current.tiles, { cells: new Set([cellKey(x, y)]), steps: new Set() }, profile).find(
+      (t) => t.x === x && t.y === y,
+    );
     return tile && { ...tile, letter: this.autoLetter(tile.kind, LETTER_DEFAULT) };
   }
 
@@ -161,6 +163,10 @@ export abstract class MapEditState<S = unknown, T = unknown> {
   abstract placeStamp(doc: MapDoc, stamp: S, cx: number, cy: number): [number, number];
   /** A copy of a record (with its own EventObject row when it has one). */
   abstract duplicateRecord(doc: MapDoc, section: number, rec: Rec): Rec;
+  /** A record's short name (the picker of stacked records); games name their kinds. */
+  recordLabel(section: number, _rec: Rec): string {
+    return this.layouts[section]?.label ?? `区画 ${section}`;
+  }
   /** Whether the records of a section have a facing that `R` turns. */
   canRotate(_section: number): boolean {
     return false;

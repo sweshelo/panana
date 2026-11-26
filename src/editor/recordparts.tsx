@@ -3,11 +3,21 @@ import { useState, type ReactNode } from 'react';
 import type { MapEditState } from './model';
 import { NumberInput } from '../ui/book';
 import { useEditorState } from '../ui/useEditorState';
-import { PartPhoto, PartPicker, PartSelection, type PartChoice, type PartThumbnailSource } from './partpalette';
+import {
+  PartPhoto,
+  PartPicker,
+  PartSelection,
+  type PartChoice,
+  type PartPlace,
+  type PartThumbnailSource,
+} from './partpalette';
+const PLACES_HINT = '右クリックで使用例のマップを開けます。';
 export interface PartTemplate {
   section: number;
   raw: Uint8Array;
   label: string;
+  /** The name shown in the picker in place of `label` ('' shows the picture alone). */
+  pickerName?: string;
   source: string;
   /** The picker's category in place of the section's (templateCategory). */
   category?: string;
@@ -18,6 +28,9 @@ export interface PartTemplate {
   keywords?: string;
   subtitle?: string;
   choiceKey?: string;
+  /** Maps that use a record like it (the picker's right-click menu) and how many there are. */
+  places?: readonly PartPlace[];
+  placesTotal?: number;
 }
 export type RecordPartStamp<T> = { type: 'prop'; row: number; dir: number } | { type: 'template'; t: T };
 export const partTemplateKey = (t: PartTemplate): string =>
@@ -46,6 +59,9 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   help,
   status,
   prepareTemplate,
+  propPlaces,
+  propInfo,
+  modelLink,
 }: {
   st: MapEditState<RecordPartStamp<T>>;
   source: PartThumbnailSource<M | null>;
@@ -60,6 +76,12 @@ export function RecordPartPanel<T extends PartTemplate, M>({
   help: string;
   status?: string;
   prepareTemplate?: (template: T, choose: (ready: T) => void) => void;
+  /** The maps that place a prop row (the picker's right-click menu); undefined when not known. */
+  propPlaces?: (row: number) => readonly PartPlace[] | undefined;
+  /** A prop row's category in place of 装飾, what its picture does not show (半透明, a flame) and its file name. */
+  propInfo?: (row: number) => { category: string; marks: readonly string[]; file: string } | undefined;
+  /** A page that shows the model and its animations (the right-click menu's first link). */
+  modelLink?: (model: M | null) => PartPlace | undefined;
 }): ReactNode {
   useEditorState(st);
   const [open, setOpen] = useState(false);
@@ -90,6 +112,10 @@ export function RecordPartPanel<T extends PartTemplate, M>({
     ) : (
       photo(modelForTemplate(template))
     );
+  const linkOf = (model: M | null): { links?: PartPlace[] } => {
+    const link = modelLink?.(model);
+    return link ? { links: [link] } : {};
+  };
   const choices: PartChoice[] = [];
   const stamps = new Map<string, RecordPartStamp<T>>();
   if (open) {
@@ -98,13 +124,28 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       if (!validRow(prop)) continue;
       const key = `prop/${prop}`;
       stamps.set(key, { type: 'prop', row: prop, dir });
+      const places = propPlaces?.(prop);
+      const info = propInfo?.(prop);
+      const marks = info?.marks.join('・') ?? '';
       choices.push({
         key,
-        name: `置物 #${prop}`,
-        category: '装飾',
-        sub: used.has(prop) ? '使用中' : '動作なし',
-        tooltip: `置物 #${prop}\nゲーム中の動作はありません。${used.has(prop) ? '\nこのステージで使用中。' : ''}`,
-        keywords: `装飾 MapObject ${prop}`,
+        name: `置物 #${prop}${marks ? ` (${marks})` : ''}`,
+        category: info?.category ?? '装飾',
+        sub:
+          [used.has(prop) ? '使用中' : '', info?.file.replace(/\.bch$/u, '') ?? ''].filter(Boolean).join(' · ') ||
+          '動作なし',
+        tooltip: [
+          `置物 #${prop}${marks ? ` (${marks})` : ''}`,
+          info?.file ? `モデル: ${info.file}` : '',
+          'ゲーム中の動作はありません。',
+          used.has(prop) ? 'このステージで使用中。' : '',
+          places ? PLACES_HINT : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        ...(places ? { places } : {}),
+        ...linkOf(modelForProp(prop)),
+        keywords: `装飾 MapObject ${prop} ${info?.file ?? ''} ${marks}`,
         icon: (
           <span className="part-decorative-photo">
             {photo(modelForProp(prop))}
@@ -118,7 +159,7 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       stamps.set(key, { type: 'template', t: template });
       choices.push({
         key,
-        name: template.label,
+        name: template.pickerName ?? template.label,
         category: template.category ?? templateCategory(template.section),
         sub: template.subtitle ?? template.description?.split('。')[0] ?? template.source,
         tooltip: [
@@ -126,17 +167,21 @@ export function RecordPartPanel<T extends PartTemplate, M>({
           template.description,
           `出典: ${template.source}`,
           template.iconLabel ? 'エフェクトの図示です。' : modelForTemplate(template) ? '' : '見た目は未設定です。',
+          template.places ? PLACES_HINT : '',
         ]
           .filter(Boolean)
           .join('\n'),
         keywords: `${template.source} ${template.description ?? ''} ${template.keywords ?? ''}`,
         icon: templateIcon(template),
+        ...(template.places ? { places: template.places, placesTotal: template.placesTotal } : {}),
+        ...linkOf(modelForTemplate(template)),
       });
     }
     const order = [
-      '新規・設定付き',
       '出入口・移動',
       '扉・移動',
+      '扉',
+      '建物',
       'スイッチ',
       '宝箱・ゴール',
       '回復',
@@ -148,18 +193,33 @@ export function RecordPartPanel<T extends PartTemplate, M>({
       '地点',
       '既存ギミック',
       '装飾',
+      // the props by what they are for (an adapter's propInfo)
+      '置物・移動',
+      '置物・ドア',
+      '置物・インテリア',
+      '置物・エクステリア',
+      '置物・人物',
+      '置物・妖精',
+      '置物・スイッチ',
+      '置物・宝箱',
+      '置物・植物',
+      '置物・ギミック',
+      '置物・ワールドマップ',
+      '置物・その他',
       '宝箱',
       '出入口・扉',
       'ギミック',
       '地点',
       'その他',
     ];
-    // a category not in the list (an adapter's own) goes first
-    choices.sort(
-      (a, b) =>
-        (order.indexOf(a.category) < 0 ? order.length : order.indexOf(a.category)) -
-        (order.indexOf(b.category) < 0 ? order.length : order.indexOf(b.category)),
-    );
+    // the parts with a gimmick (「区画 n」, by section) first, then the list's; a category not in it goes last
+    const rank = (category: string): number => {
+      const section = /^区画 (\d+)$/u.exec(category);
+      if (section) return -1000 + Number(section[1]);
+      const i = order.indexOf(category);
+      return i < 0 ? order.length : i;
+    };
+    choices.sort((a, b) => rank(a.category) - rank(b.category));
     if (status) choices.push({ key: 'status', name: status, category: '読み込み状況', unavailable: status });
   }
   return (

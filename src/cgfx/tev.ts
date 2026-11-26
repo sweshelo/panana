@@ -3,6 +3,7 @@
 // e.g. the crack decals that multiply the framebuffer (white = unchanged) look as in the game.
 import * as THREE from 'three';
 import type { CgfxMaterial, TevStage } from './cgfx';
+import { procTexGlsl, type ProcTex } from './proctex';
 
 const BLEND_FACTOR: THREE.BlendingDstFactor[] = [
   THREE.ZeroFactor,
@@ -43,6 +44,8 @@ function source(s: number, k: number): string {
       return 't1';
     case 5:
       return 't2';
+    case 6:
+      return 't3'; // procedural texture (unit 3)
     case 0x0d:
       return 'buf';
     case 0x0e:
@@ -186,10 +189,30 @@ export function uvMatrix(
 export interface TevTextures {
   /** Texture of unit 0..2 (null = unused). */
   maps: (THREE.Texture | null)[];
+  /**
+   * A procedural texture the field puts on the model (CaveC: proctex_mud03): its LUTs (procTexLut), and stage 0 becomes
+   * vertex colour × texture 3 (as the draw callback 0x234040 sets it). Uniforms ptPhase (noise phase) and ptTile
+   * (column, row, tile angle) are set per draw.
+   */
+  proctex?: { p: ProcTex; lut: THREE.Texture };
 }
 
+/** Stage 0 as the field's proctex callback writes it (0x2342BC..0x2342EC): Modulate(primary colour, texture 3). */
+const PROCTEX_STAGE: Omit<TevStage, 'color'> = {
+  srcRgb: [0, 6, 0],
+  srcA: [0, 6, 0],
+  opRgb: [0, 0, 0],
+  opA: [0, 0, 0],
+  combRgb: 1,
+  combA: 1,
+  scaleRgb: 0,
+  scaleA: 0,
+};
+
 export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Plane[]): THREE.ShaderMaterial {
-  const tev = m.tev!;
+  const pt = t.proctex;
+  const tev = pt ? m.tev!.map((st, k) => (k === 0 ? { ...st, ...PROCTEX_STAGE } : st)) : m.tev!;
+  const glsl = pt ? procTexGlsl(pt.p) : null;
   const used = new Set<number>();
   for (const st of tev) for (const x of [...st.srcRgb, ...st.srcA]) if (x >= 3 && x <= 5) used.add(x - 3);
   const units = m.units;
@@ -197,6 +220,11 @@ export function tevMaterial(m: CgfxMaterial, t: TevTextures, clipping: THREE.Pla
     konst: { value: tev.map((st) => new THREE.Vector4(...(st.color as [number, number, number, number]))) },
     bufColor: { value: new THREE.Vector4(...(m.tevBuffer.color as [number, number, number, number])) },
   };
+  if (pt) {
+    uniforms.ptLut = { value: pt.lut };
+    uniforms.ptPhase = { value: new THREE.Vector2(pt.p.phase[0], pt.p.phase[1]) };
+    uniforms.ptTile = { value: new THREE.Vector3() };
+  }
   let sampling = '';
   for (let i = 0; i < 3; i++) {
     const map = t.maps[i];
@@ -237,9 +265,10 @@ varying vec2 vUv0;
 varying vec2 vUv1;
 varying vec2 vUv2;
 varying vec4 vColor;
+${glsl?.vertexDecl ?? ''}
 #include <clipping_planes_pars_vertex>
 void main() {
-  vUv0 = uv;
+  vUv0 = uv;${glsl?.vertex ?? ''}
   vUv1 = aUv1;
   vUv2 = aUv2;
   vColor = aColor;
@@ -258,10 +287,11 @@ varying vec2 vUv0;
 varying vec2 vUv1;
 varying vec2 vUv2;
 varying vec4 vColor;
+${glsl?.fragmentDecl ?? ''}
 #include <clipping_planes_pars_fragment>
 void main() {
   #include <clipping_planes_fragment>
-${sampling}
+${sampling}${glsl?.fragment ?? ''}
   vec4 prev = vec4(0.0);
   // Combiner buffer: a stage reads what the stages before the previous one wrote (as the PICA does).
   vec4 buf = vec4(0.0);

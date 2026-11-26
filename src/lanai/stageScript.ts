@@ -3,35 +3,61 @@
 // content's archive becomes content 99's (no events) with the script's events, its CRR registers the new CRO, and
 // lanai-stage.json tells the distribution server (lanai-custom-stages web/stage-events.ts) the stage's key and the
 // flags it owns: the 3DS patch keeps those in a file of the stage instead of the save.
-import { findEntry, parseArchive, rebuildArchive } from '../archive/gsarc';
+import { findEntry, parseArchive, rebuildArchive, unpackEntry } from '../archive/gsarc';
 import { LANAI_ACTION_SCRIPT } from './actions';
 import { lanaiContents, type LanaiContent } from './contents';
 import { buildCro, parseCro } from './cro';
 import {
   compileStageScript,
+  hexId,
   INTRO_DIR,
+  nodeCharaRows,
+  scriptBodies,
   parseStageScript,
   STAGE_BIT_FLAGS,
   STAGE_BYTE_FLAGS,
   SCRIPT_TRIGGER_LABEL,
   stageScriptCrr,
   triggerHasRow,
+  usesOwnState,
   type IntroSpec,
   type LeaveReset,
   type ScriptNode,
   type ScriptTrigger,
-  type ScriptValue,
-  type ScriptWho,
+  type ScriptDoc,
   type StageScript,
 } from './eventScript';
+import { unmarkLanaiFloors } from './fieldStart';
 import { lanaiRecEventRow } from './mapedit';
-import { LANAI_EVENT_ACTIONS, LANAI_EVENT_SECTIONS, lanaiMaps, type LanaiMaps } from './maps';
+import {
+  LANAI_EVENT_ACTIONS,
+  LANAI_EVENT_SECTIONS,
+  LANAI_MAP_TABLE_ENTRY,
+  lanaiEventSlot,
+  lanaiMaps,
+  type LanaiMapInfo,
+  type LanaiMaps,
+} from './maps';
 import type { LanaiTable } from './table';
 import type { LanaiSession } from './session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT, lanaiCrrName } from './stageEdit';
 
 /** The file of the MOD zip (beside romfs/) that carries the keys and the owned flags of the scripted stages. */
 export const LANAI_STAGE_MANIFEST = 'lanai-stage.json';
+/**
+ * The file of the distribution zip (beside romfs/) that carries the scripts as they are edited (the editor's documents,
+ * comments and all), so that the stages can be imported and edited again (stageImport.ts). The release zip leaves it
+ * out.
+ */
+export const LANAI_STAGE_SOURCE = 'panana-stage-source.json';
+
+/** What LANAI_STAGE_SOURCE holds for a stage, by its content number. */
+export interface LanaiStageSource {
+  /** The content's root archive. */
+  archive: string;
+  stageKey: string;
+  doc: ScriptDoc;
+}
 /** The boss battle of a range: its second argument is the byte flag that becomes 2 (actions.ts). */
 const ACTION_BOSS = 0x8000000c;
 /** How many ranges a stage can own (lanai-custom-stages web/stage-events.ts MAX_OWNED). */
@@ -104,11 +130,16 @@ export function groupOpening(maps: LanaiMaps, group: number): GroupOpening | nul
   };
 }
 
-/** What a map's record is to the game's events: its section and (section 5) its kind. */
+/** What a map's record is to the game's events: its section and its kind (section 5 +0x00, section 3 +0x15). */
 export interface EventRecord {
   section: number;
   kind: number;
 }
+/** The kind of a record as EventRecord takes it: section 5's +0x00, section 3's exit kind (+0x15), else 0. */
+export const eventRecordKind = (section: number, raw: Uint8Array): number =>
+  section === 5 ? u32at(raw, 0) : section === 3 ? (raw[0x15] ?? 0) : 0;
+/** Exit kinds (section 3) with no event: the arrival points (lanai/maps.ts LANAI_EXIT_KIND 8 / 11). */
+const NO_EVENT_EXITS = [8, 11];
 /** The gimmick kinds of section 5 whose event is a GimmickEvent (event-actions.md §3); 4〜6 are the buttons. */
 const GIMMICK_KINDS = [4, 5, 6, 11, 14, 15];
 const BUTTON_KINDS = [4, 5, 6];
@@ -127,7 +158,7 @@ export function eventRecords(maps: LanaiMaps, group: number): Map<number, EventR
         const kind = u32at(r.raw, 0);
         if (section === 8 && kind >= 100) continue;
         const row = lanaiRecEventRow(section, r.raw);
-        out.set(row, [...(out.get(row) ?? []), { section, kind: section === 5 ? kind : 0 }]);
+        out.set(row, [...(out.get(row) ?? []), { section, kind: eventRecordKind(section, r.raw) }]);
       }
   }
   return out;
@@ -136,6 +167,8 @@ export function eventRecords(maps: LanaiMaps, group: number): Map<number, EventR
 /** What starts the event of a record (the game makes the event's object by section and kind), or null: none here. */
 export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
   if (rec.section === 8) return 'area';
+  // an exit, a door, a hole …: MoveEvent makes the event of its row (the CRO's export 6; CRO 22's random holes)
+  if (rec.section === 3) return NO_EVENT_EXITS.includes(rec.kind) ? null : 'exit';
   if (rec.section !== 5 || NO_EVENT_KINDS.includes(rec.kind)) return null;
   if (BUTTON_KINDS.includes(rec.kind)) return 'button';
   return GIMMICK_KINDS.includes(rec.kind) ? null : 'talk';
@@ -144,51 +177,57 @@ export function recordTrigger(rec: EventRecord): ScriptTrigger | null {
 export const triggerFitsRecord = (t: ScriptTrigger, rec: EventRecord): boolean =>
   recordTrigger(rec) === (t === 'defeat' ? 'area' : t === 'switch' ? 'button' : t);
 
-/** The rows of the characters a body names with chara(row). */
-function charaRows(body: ScriptNode[]): number[] {
+/** The rows of the objects a body names with obj(row). */
+export function charaRows(body: ScriptNode[]): number[] {
   const out: number[] = [];
-  const who = (w: ScriptWho | null | undefined): void => void (w?.kind === 'chara' && out.push(w.row));
-  const value = (v: ScriptValue): void => {
-    if (v.kind !== 'call') return;
-    who(v.call.self);
-    for (const a of v.call.args) if (a.k === 'c' || a.k === 'p') who(a.who);
-  };
-  const condition = (c: Extract<ScriptNode, { op: 'if' }>['cond']): void => {
-    if ('op' in c) {
-      condition(c.left);
-      condition(c.right);
-    } else value(c.value);
-  };
   for (const n of body) {
-    if (n.op === 'if') {
-      condition(n.cond);
-      out.push(...charaRows(n.then), ...charaRows(n.else));
-    } else if (n.op === 'switch') {
-      value(n.value);
-      for (const c of n.cases) out.push(...charaRows(c.body));
-      out.push(...charaRows(n.default ?? []));
-    } else if (n.op === 'call') value({ kind: 'call', call: n.call });
-    else if (n.op === 'face') {
-      who(n.who);
-      who(n.to);
-    } else if ('who' in n) who(n.who);
+    out.push(...nodeCharaRows(n));
+    for (const b of scriptBodies(n)) out.push(...charaRows(b));
   }
   return out;
 }
 
-/** The MonsterGroup values battle() names in a body, each once. */
+/** The EventObject rows the records of one map name (GetMapChara(row) finds a character only there). */
+export function mapEventRows(maps: LanaiMaps, info: LanaiMapInfo): Set<number> {
+  const out = new Set<number>();
+  for (const section of LANAI_EVENT_SECTIONS)
+    for (const r of maps.doc(info).recs[section] ?? []) {
+      if (section === 8 && u32at(r.raw, 0) >= 100) continue;
+      out.add(lanaiRecEventRow(section, r.raw));
+    }
+  return out;
+}
+/** The maps (floors) of a map group. */
+export const groupFloors = (maps: LanaiMaps, group: number): LanaiMapInfo[] =>
+  maps.maps.filter((m) => m.dungeon === group && !m.world);
+
+/**
+ * The objects a start's body names that are not on a floor it runs on: (row, the floors without it). On those
+ * floors the statements that act on the object are skipped (nodeCharaRows).
+ */
+export function startMissingRows(
+  maps: LanaiMaps,
+  group: number,
+  body: ScriptNode[],
+  map?: number,
+): { row: number; floors: string[] }[] {
+  const floors = groupFloors(maps, group).filter((m) => map === undefined || m.hash === map);
+  const rows = floors.map((m) => ({ m, rows: mapEventRows(maps, m) }));
+  return [...new Set(charaRows(body))].flatMap((row) => {
+    const without = rows.filter((x) => !x.rows.has(row)).map((x) => x.m.name);
+    return without.length ? [{ row, floors: without }] : [];
+  });
+}
+
+/** The MonsterGroup values ScriptMap.EncountBoss names in a body (its first argument), each once. */
 export function battleGroups(body: ScriptNode[]): number[] {
   const out: number[] = [];
   const walk = (list: ScriptNode[]): void => {
     for (const n of list) {
-      if (n.op === 'battle' && !out.includes(n.group)) out.push(n.group);
-      else if (n.op === 'if') {
-        walk(n.then);
-        walk(n.else);
-      } else if (n.op === 'switch') {
-        for (const c of n.cases) walk(c.body);
-        walk(n.default ?? []);
-      }
+      const group = n.op === 'call' && n.call.name === 'ScriptMap::EncountBoss' ? n.call.args[0] : undefined;
+      if (group?.k === 'i') {
+        if (!out.includes(group.v)) out.push(group.v);
+      } else for (const b of scriptBodies(n)) walk(b);
     }
   };
   walk(body);
@@ -196,7 +235,7 @@ export function battleGroups(body: ScriptNode[]): number[] {
 }
 
 /**
- * The row of the content's MonsterGroup a battle() value names as the game looks it up (FUN_0031C038): a value below
+ * The row of the content's MonsterGroup an EncountBoss value names as the game looks it up (FUN_0031C038): a value below
  * 0x80000000 is a row number, else a row ID. -1 when there is no such row (the game would fight row 0, the empty one).
  */
 export function battleRow(t: LanaiTable | undefined, value: number): number {
@@ -214,29 +253,60 @@ export async function checkStageScript(s: LanaiSession, c: LanaiContent, source:
   const intros: Record<number, IntroSpec> = {};
   let introCount = 0;
   for (const e of script.events) {
+    const floor = e.map === undefined ? undefined : maps.maps.find((m) => m.hash === e.map);
+    const where = triggerHasRow(e.trigger)
+      ? ` のイベント ${e.row}`
+      : e.map !== undefined
+        ? ` の ${floor?.name ?? hexId(e.map)}`
+        : '';
     const what = e.fn
-      ? `関数「${e.fn}」(MapGroup ${e.group}${triggerHasRow(e.trigger) ? ` のイベント ${e.row}` : ''}、${SCRIPT_TRIGGER_LABEL[e.trigger]})`
-      : `${e.line} 行目 on ${e.trigger}(${e.group}, ${e.row})`;
+      ? `関数「${e.fn}」(MapGroup ${e.group}${where}、${SCRIPT_TRIGGER_LABEL[e.trigger]})`
+      : `${e.line} 行目 on ${e.trigger}(${e.group}, ${e.map !== undefined ? hexId(e.map) : e.row})`;
     const t = maps.eventTable(e.group);
     if (!maps.groups[e.group] || !t) {
       problems.push(`${what}: MapGroup ${e.group} がこのステージにありません`);
       continue;
     }
+    if (e.map !== undefined && (!floor || floor.dungeon !== e.group || floor.world)) {
+      problems.push(`${what}: マップ ${hexId(e.map)} は MapGroup ${e.group} の階層ではありません`);
+      continue;
+    }
+    if (e.trigger === 'start') {
+      // a start runs on every floor it is of: an object not on one of them is skipped there
+      for (const x of startMissingRows(maps, e.group, e.body, e.map))
+        if (x.floors.length < groupFloors(maps, e.group).length || e.map !== undefined)
+          notes.push(
+            `${what}: obj(${x.row}) は ${x.floors.join('・')} にないので、そこではこのオブジェクトを使う文を飛ばします${e.map === undefined ? ' (その階層だけの処理は「この階層が始まるとき」に割り当てられます)' : ''}`,
+          );
+    }
     const records = eventRecords(maps, e.group);
+    // the states the body reads or writes are kept in the rows' slots: a slot beyond the group's count is not kept
+    const stateRows = new Set(
+      [...JSON.stringify(e.body).matchAll(/"name":"state\((\d+)\)"/gu)].map((m) => Number(m[1])),
+    );
+    if (triggerHasRow(e.trigger) && usesOwnState(e.body)) stateRows.add(e.row);
+    for (const r of stateRows) {
+      const slot = r < t.rows ? lanaiEventSlot(t, r) : -1;
+      if (slot < 0) problems.push(`${what}: state のイベント ${r} がありません (${t.name} は ${t.rows} 行)`);
+      else if (slot >= maps.groups[e.group]!.stateCount)
+        problems.push(
+          `${what}: イベント ${r} の状態の枠 ${slot} が MapGroup ${e.group} の枠の数 ${maps.groups[e.group]!.stateCount} 以上なので、state を読み書きできません (いつも 0)`,
+        );
+    }
     // the characters the body names: a row no character's record has gives the game nothing to act on
     for (const r of new Set(charaRows(e.body)))
       if (!records.get(r)?.length)
         notes.push(
-          `${what}: chara(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
+          `${what}: obj(${r}) のイベント ${r} を使うレコード (キャラ・物・扉) が MapGroup ${e.group} のマップにありません`,
         );
     for (const g of battleGroups(e.body)) {
       const mg = maps.monsterGroup;
       if (battleRow(mg, g) < 0)
         problems.push(
-          `${what}: battle(${g}) の群れがありません。引数は MonsterGroup の行番号 (0〜${(mg?.rows ?? 1) - 1}) です (行 ID ではありません。ないと空の群れ (行 0) と戦います)`,
+          `${what}: ScriptMap.EncountBoss(${g}, …) の群れがありません。引数は MonsterGroup の行番号 (0〜${(mg?.rows ?? 1) - 1}) です (行 ID ではありません。ないと空の群れ (行 0) と戦います)`,
         );
       else if (g === 0 || battleRow(mg, g) === 0)
-        notes.push(`${what}: battle(${g}) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
+        notes.push(`${what}: ScriptMap.EncountBoss(${g}, …) は MonsterGroup の行 0 (空の群れのことが多い) と戦います`);
     }
     if (e.trigger === 'intro') {
       // one bit flag per intro after the script's bit variables: "played in this visit"
@@ -337,25 +407,53 @@ export async function buildStageScripts(s: LanaiSession, files: Map<string, Uint
     const name = c.stages[0]?.name || `コンテンツ ${c.index}`;
     const check = await checkStageScript(s, c, source);
     if (check.problems.length) throw new Error(`「${name}」のイベントのスクリプト: ${check.problems[0]}`);
-    const cro = buildCro(compileStageScript(base, check.script, check.resets, check.intros).cro);
+    const cro = buildCro(compileStageScript(base, check.script, check.resets, check.intros, c.index).cro);
     const bytes = files.get(c.archive) ?? s.createdFiles.get(c.archive);
     if (!bytes) throw new Error(`「${name}」のアーカイブ ${c.archive} が MOD にありません`);
     const arc = parseArchive(bytes);
     const def = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'ContentsDef')?.table;
     const entry = def && def.rows >= 3 ? findEntry(arc, def.u32(2, 0)) : undefined;
     if (!entry) throw new Error(`「${name}」の ContentsDef の CRO がありません`);
-    const rebuilt = rebuildArchive(arc, new Map([[entry.index, cro]]));
+    // the added floors' marks would hold back this CRO's start there (fieldStart.ts): it is ours, so they go
+    const replace = new Map([[entry.index, cro]]);
+    const tableEntry = findEntry(arc, LANAI_MAP_TABLE_ENTRY);
+    if (tableEntry) {
+      const table = unpackEntry(arc, tableEntry).body;
+      const unmarked = unmarkLanaiFloors(table);
+      if (unmarked !== table) replace.set(tableEntry.index, unmarked);
+    }
+    const rebuilt = rebuildArchive(arc, replace);
     files.set(c.archive, rebuilt);
     files.set(lanaiCrrName(c.index), stageScriptCrr(empty.crr, cro));
   }
 }
 
+/** LANAI_STAGE_SOURCE for the scripted stages, or null when there is none. */
+export function stageScriptSources(s: LanaiSession): Uint8Array | null {
+  const list = scripted(s);
+  if (!list.length) return null;
+  const stages: Record<string, LanaiStageSource> = {};
+  for (const { c, key } of list)
+    stages[String(c.index)] = {
+      archive: c.archive,
+      stageKey: key,
+      doc: s.stageScripts.get(c.archive.toUpperCase())!.doc,
+    };
+  return new TextEncoder().encode(`${JSON.stringify({ format: 1, stages }, null, 2)}
+`);
+}
+
 /** lanai-stage.json for the scripted stages, or null when there is none. */
 export async function stageScriptManifest(s: LanaiSession): Promise<Uint8Array | null> {
   const list = scripted(s);
-  if (!list.length) return null;
   const stages: Record<string, { stageKey: string; owned: OwnedRange[] }> = {};
+  // the stages imported with their built CRO alone (a release zip): what came with them
+  for (const c of lanaiContents(s)) {
+    const x = c && s.importedStages.get(c.archive.toUpperCase());
+    if (c && x) stages[String(c.index)] = { stageKey: x.key, owned: x.owned };
+  }
   for (const { c, key, source } of list)
     stages[String(c.index)] = { stageKey: key, owned: (await checkStageScript(s, c, source)).owned };
+  if (!Object.keys(stages).length) return null;
   return new TextEncoder().encode(`${JSON.stringify({ format: 1, stages }, null, 2)}\n`);
 }

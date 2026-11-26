@@ -1,44 +1,64 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MOUSE } from 'three';
 import type { LanaiContent } from './contents';
-import { parseStageScript, type ScriptNode, type ScriptWho } from './eventScript';
+import {
+  parseStageScript,
+  scriptExprText,
+  vecText,
+  type ScriptArg,
+  type ScriptNode,
+  type ScriptWho,
+} from './eventScript';
 import { LanaiEditState } from './mapedit';
 import type { LanaiMapInfo } from './maps';
 import { LanaiMapView } from './mapview';
-import { runPreviewNodes } from './previewSequence';
+import { previewReferencedRows, runPreviewNodes } from './previewSequence';
 import type { LanaiSession } from './session';
 import { useAsync } from '../ui/useAsync';
+import { UNIT_LABEL } from '../game/sections';
+import { coordText } from './scriptMoves';
 import { soundPlayer } from '../sound/player';
 import { requireAudible } from '../sound/render';
 
-const whoText = (who: ScriptWho): string => (who.kind === 'chara' ? `chara(${who.row})` : who.kind);
-const previewCommand = (node: ScriptNode): string => {
-  switch (node.op) {
-    case 'anim':
-      return `anim(${whoText(node.who)}, 0x${node.id.toString(16)}, ${node.type})`;
-    case 'waitAnim':
-      return `waitAnim(${whoText(node.who)})`;
-    case 'move':
-      return `move(${whoText(node.who)}, ${node.x}, ${node.y}, ${node.z})`;
-    case 'turn':
-      return `turn(${whoText(node.who)}, ${node.degrees})`;
-    case 'face':
-      return `face(${whoText(node.who)}, ${whoText(node.to)})`;
-    case 'show':
-      return `${node.on ? 'show' : 'hide'}(${whoText(node.who)})`;
-    case 'camera':
-      return `${node.who ? `camera(${whoText(node.who)}, ${node.seconds})` : `cameraBack(${node.seconds})`}`;
-    case 'fade':
-      return `fade${node.out ? 'Out' : 'In'}(${node.seconds})`;
-    case 'wait':
-      return `wait(${node.seconds})`;
-    case 'se':
-      return `se(0x${node.id.toString(16)})`;
-    case 'call':
-      return node.call.name;
-    default:
-      return node.op;
+const whoText = (who: ScriptWho): string =>
+  who.kind === 'chara'
+    ? `obj(${who.row})`
+    : who.kind === 'party'
+      ? 'party'
+      : who.kind === 'effect'
+        ? who.id.replace(/#.*/u, '')
+        : who.kind;
+const argText = (a: ScriptArg): string => {
+  switch (a.k) {
+    case 'i':
+      return Math.abs(a.v) >= 0x40 ? `0x${(a.v >>> 0).toString(16).toUpperCase()}` : String(a.v);
+    case 'f':
+      return String(Math.round(a.v * 1000) / 1000);
+    case 'v':
+      return `vec(${a.x}, ${a.y}, ${a.z})`;
+    case 'c':
+    case 'p':
+      return whoText(a.who);
+    case 'own':
+      return 'selfRow';
+    case 'm':
+      return '';
+    case 'x':
+      return scriptExprText(a.e);
+    case 'vx':
+      return vecText(a.e);
   }
+};
+/** A statement as the log shows it: the Script API call with its arguments. */
+const previewCommand = (node: ScriptNode): string => {
+  if (node.op !== 'call') return node.op;
+  const c = node.call;
+  const [cls, name] = c.name.split('::');
+  const args = c.args
+    .filter((a) => a.k !== 'm')
+    .map(argText)
+    .join(', ');
+  return `${c.self ? whoText(c.self) : cls}.${name}(${args})`;
 };
 
 interface PreviewLogLine {
@@ -46,14 +66,17 @@ interface PreviewLogLine {
   skipped: boolean;
 }
 
+/** `initial`: the function picked at first (the one given to the selected record); the parent keys on it. */
 export function ScriptPreviewControls({
   view,
   source,
   onStart,
+  initial,
 }: {
   view: LanaiMapView;
   source: string;
   onStart?: () => void;
+  initial?: string;
 }): ReactNode {
   const script = useMemo(() => {
     try {
@@ -62,7 +85,7 @@ export function ScriptPreviewControls({
       return { value: null, error: (e as Error).message };
     }
   }, [source]);
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(initial ?? '');
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState('');
   const [fade, setFade] = useState(0);
@@ -74,6 +97,18 @@ export function ScriptPreviewControls({
   const fn = script.value?.functions.find((f) => f.name === functionName);
   const binding = script.value?.events.find((e) => e.fn === functionName && e.group === view.info.dungeon);
   const self = binding && binding.trigger !== 'start' && binding.trigger !== 'intro' ? binding.row : null;
+  // the events the function names are marked among the numbers
+  useEffect(() => {
+    view.setIds(view.showIds, previewReferencedRows(fn?.body ?? [], self), null);
+    return () => view.setIds(view.showIds, new Set(), null);
+  }, [view, fn, self]);
+  /** The event the statement acts on (its number is lit while it runs). */
+  const rowOf = (who: ScriptWho | null | undefined): number | null =>
+    !who || who.kind === 'hero' || who.kind === 'party' || who.kind === 'effect'
+      ? null
+      : who.kind === 'self'
+        ? self
+        : who.row;
   useEffect(() => {
     view.scene.canvas.style.filter = `brightness(${1 - fade})`;
     return () => {
@@ -140,77 +175,80 @@ export function ScriptPreviewControls({
       await runPreviewNodes(
         fn.body,
         alive,
-        async (node, index) => {
-          setStatus(`${index + 1} / ${fn.body.length}: ${node.op}`);
-          switch (node.op) {
+        async (action, node, index) => {
+          setStatus(`${index + 1} / ${fn.body.length}: ${previewCommand(node)}`);
+          view.setIds(view.showIds, undefined, 'who' in action ? rowOf(action.who) : null);
+          switch (action.kind) {
             case 'anim': {
-              await ensure(node.who);
-              const seconds = view.previewMotion(node.who, node.id);
-              lastAnim.set(whoText(node.who), clock.performance.now() + seconds * 1000);
+              await ensure(action.who);
+              const seconds = view.previewMotion(action.who, action.id);
+              lastAnim.set(whoText(action.who), clock.performance.now() + seconds * 1000);
               break;
             }
             case 'waitAnim': {
-              const until = lastAnim.get(whoText(node.who));
-              if (until === undefined) throw new Error('対応する anim() を再生できなかったため省略しました。');
+              const until = lastAnim.get(whoText(action.who));
+              if (until === undefined) throw new Error('対応する StartAnimation を再生できなかったため省略しました。');
               const remaining = Math.max(0, until - clock.performance.now()) / 1000;
               await animate(remaining, () => {});
               break;
             }
             case 'move': {
-              await ensure(node.who);
-              const from = view.previewPosition(node.who);
-              const seconds = Math.min(10, Math.max(0.2, Math.hypot(node.x - from.x, node.z - from.z) / 500));
+              await ensure(action.who);
+              const from = view.previewPosition(action.who);
+              const seconds = Math.min(10, Math.max(0.2, Math.hypot(action.x - from.x, action.z - from.z) / 500));
               await animate(seconds, (t) =>
                 view.previewSetPosition(
-                  node.who,
-                  from.x + (node.x - from.x) * t,
-                  from.y + (node.y - from.y) * t,
-                  from.z + (node.z - from.z) * t,
+                  action.who,
+                  from.x + (action.x - from.x) * t,
+                  from.y + (action.y - from.y) * t,
+                  from.z + (action.z - from.z) * t,
                 ),
               );
               break;
             }
             case 'turn':
-              await ensure(node.who);
-              view.previewSetAngle(node.who, node.degrees);
+              await ensure(action.who);
+              view.previewSetAngle(action.who, action.degrees);
               await animate(0.4, () => {});
               break;
             case 'face': {
-              await ensure(node.who);
-              await ensure(node.to);
-              const a = view.previewPosition(node.who),
-                b = view.previewPosition(node.to);
-              view.previewSetAngle(node.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
+              await ensure(action.who);
+              await ensure(action.to);
+              const a = view.previewPosition(action.who),
+                b = view.previewPosition(action.to);
+              view.previewSetAngle(action.who, (Math.atan2(b.x - a.x, b.z - a.z) * 180) / Math.PI);
               break;
             }
             case 'show':
-              await ensure(node.who);
-              view.previewSetVisible(node.who, node.on);
+              await ensure(action.who);
+              view.previewSetVisible(action.who, action.on);
+              break;
+            case 'none':
               break;
             case 'camera':
-              if (node.who) {
-                await ensure(node.who);
-                view.previewFocus(node.who);
+              if (action.who) {
+                await ensure(action.who);
+                view.previewFocus(action.who);
               } else view.fit();
-              await animate(node.seconds, () => {});
+              await animate(action.seconds, () => {});
               break;
             case 'fade': {
-              const from = node.out ? 0 : 1,
-                to = node.out ? 1 : 0;
-              await animate(node.seconds, (t) => setFade(from + (to - from) * t));
+              const from = action.out ? 0 : 1,
+                to = action.out ? 1 : 0;
+              await animate(action.seconds, (t) => setFade(from + (to - from) * t));
               break;
             }
             case 'wait':
-              await animate(node.seconds, () => {});
+              await animate(action.seconds, () => {});
               break;
             case 'se': {
               const session = view.st.maps.session;
               const sounds = await session.sounds();
-              const index = sounds.index(node.id);
-              if (index === null) throw new Error(`SoundData 行 ${node.id} に音がありません。`);
+              const index = sounds.index(action.id);
+              if (index === null) throw new Error(`SoundData 行 ${action.id} に音がありません。`);
               await soundPlayer.play(
                 `preview:lanai:${index}`,
-                async () => requireAudible(await (await session.soundRendererFor(node.id)).render(index, 8, false)),
+                async () => requireAudible(await (await session.soundRendererFor(action.id)).render(index, 8, false)),
                 false,
               );
               if (soundPlayer.state.error) throw new Error(soundPlayer.state.error.message);
@@ -230,7 +268,7 @@ export function ScriptPreviewControls({
             ...previous,
             { text: `${index + 1}. ${previewCommand(node)} — ${reason}`, skipped: true },
           ]);
-          setStatus(`${index + 1} / ${fn.body.length}: ${node.op} を省略`);
+          setStatus(`${index + 1} / ${fn.body.length}: ${previewCommand(node)} を省略`);
         },
       );
       if (alive() && !returned)
@@ -293,11 +331,19 @@ export function StagePreviewScene({
   session,
   content,
   source,
+  onMap,
+  onSource,
 }: {
   session: LanaiSession;
   content: LanaiContent;
   source: string;
+  /** Told the map shown (its MapGroup is the one the editor's lines of talk are of). */
+  onMap?: (info: LanaiMapInfo | undefined) => void;
+  /** Takes the text with a position written into it (a move() / SetPos point dragged or typed); absent: read only. */
+  onSource?: (source: string) => void;
 }): ReactNode {
+  const [showIds, setShowIds] = useState(true);
+  const [picked, setPicked] = useState<number | null>(null);
   const loaded = useAsync(() => import('./maps').then((m) => m.lanaiMaps(session, content)), [session, content]);
   const maps = loaded && !(loaded instanceof Error) ? loaded : null;
   const [name, setName] = useState('');
@@ -305,6 +351,13 @@ export function StagePreviewScene({
   const host = useRef<HTMLDivElement>(null);
   const options = maps?.maps.filter((m) => !m.world) ?? [];
   const info = options.find((m) => m.name === name) ?? options[0];
+  const latestOnMap = useRef(onMap);
+  latestOnMap.current = onMap;
+  const latestOnSource = useRef(onSource);
+  latestOnSource.current = onSource;
+  const latestSource = useRef(source);
+  latestSource.current = source;
+  useEffect(() => latestOnMap.current?.(info), [info]);
   useEffect(() => {
     if (!maps || !info || !host.current) return;
     const container = host.current;
@@ -322,13 +375,30 @@ export function StagePreviewScene({
     next.scene.pointer = null;
     next.scene.controls.mouseButtons.LEFT = MOUSE.ROTATE;
     next.scene.pixelRatioLimit = 1;
-    next.showMoves = false;
+    next.showMoves = !!latestOnSource.current;
     next.showLinks = false;
+    if (latestOnSource.current) {
+      next.moveText = { source: latestSource.current, write: (text) => latestOnSource.current?.(text) };
+      next.scene.pointer = next.movePointer;
+    }
     next.scene.canvas.addEventListener('pointerdown', preventMiddleDrag, { capture: true });
     next.scene.canvas.addEventListener('mousedown', preventMiddleDrag, { capture: true });
     next.scene.canvas.addEventListener('auxclick', preventMiddleDrag);
     container.append(next.scene.canvas);
+    // a click (not a drag) on a number picks its event
+    let down: [number, number] | null = null;
+    const press = (event: PointerEvent): void => {
+      down = [event.clientX, event.clientY];
+    };
+    const release = (event: PointerEvent): void => {
+      if (!down || Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 4) return;
+      const row = next.pickId(event.clientX, event.clientY);
+      if (row !== null) setPicked(row);
+    };
+    next.scene.canvas.addEventListener('pointerdown', press);
+    next.scene.canvas.addEventListener('pointerup', release);
     setView(next);
+    setPicked(null);
     const frame = hostWindow.requestAnimationFrame(() => {
       next.scene.resizeToCanvas();
       next.fit();
@@ -339,12 +409,23 @@ export function StagePreviewScene({
       next.scene.canvas.removeEventListener('pointerdown', preventMiddleDrag, true);
       next.scene.canvas.removeEventListener('mousedown', preventMiddleDrag, true);
       next.scene.canvas.removeEventListener('auxclick', preventMiddleDrag);
+      next.scene.canvas.removeEventListener('pointerdown', press);
+      next.scene.canvas.removeEventListener('pointerup', release);
       next.scene.canvas.remove();
       next.dispose();
       state.dispose();
       setView(null);
     };
   }, [maps, info]);
+  useEffect(() => view?.setIds(showIds), [view, showIds]);
+  // the move() points follow the editor's text
+  useEffect(() => {
+    if (!view?.moveText) return;
+    view.moveText.source = source;
+    view.drawMoves();
+    view.signal.emit();
+  }, [view, source]);
+  const position = view && picked !== null ? view.eventPosition(picked) : null;
   return (
     <section className="stage-preview" aria-label="演出プレビュー">
       <div className="row">
@@ -363,7 +444,47 @@ export function StagePreviewScene({
       {loaded instanceof Error && <p className="error small">{loaded.message}</p>}
       {!loaded && <p className="muted small">マップを読み込み中…</p>}
       <div className="stage-preview-canvas" ref={host} />
-      {view && <p className="muted small">ドラッグで回転、ホイールで拡大・縮小できます。</p>}
+      {view && (
+        <div className="row small">
+          <label>
+            <input type="checkbox" checked={showIds} onChange={(e) => setShowIds(e.target.checked)} />
+            イベント番号 (#N) を表示
+          </label>
+          <span className="muted">
+            黄色は選んだ関数が使うイベント、白は再生中に動かしているもの。番号をクリックすると、その位置 (マス・ROM
+            の値・スクリプトの座標) が出ます。
+          </span>
+        </div>
+      )}
+      {view && picked !== null && (
+        <div className="stage-preview-picked small">
+          <div className="row">
+            <span>{view.eventLabel(picked)}</span>
+            <button className="small" onClick={() => setPicked(null)}>
+              閉じる
+            </button>
+          </div>
+          {position ? (
+            <dl className="stage-preview-position">
+              <dt>マス</dt>
+              <dd className="mono">{`横 ${position.cell[0]}・縦 ${position.cell[1]}`}</dd>
+              <dt>ROM の値</dt>
+              <dd className="mono">{`x ${position.raw[0]}・y ${position.raw[1]} (${UNIT_LABEL[position.unit]})`}</dd>
+              <dt>スクリプト</dt>
+              <dd className="mono">{`vec(${coordText(position.world[0])}, 0, ${coordText(position.world[1])})`}</dd>
+            </dl>
+          ) : (
+            <p className="muted">このマップにレコードがありません。</p>
+          )}
+        </div>
+      )}
+      {view && (
+        <p className="muted small">
+          ドラッグで回転、ホイールで拡大・縮小できます。
+          {onSource &&
+            ' 橙の円錐はこのマップで実行される関数の move() / walk() / SetPos(vec(…)) の位置 (関数名・順番・対象のイベント番号)。ドラッグするとエディタの本文の x・z を書き換えます (50 単位。Alt で 1 単位)。'}
+        </p>
+      )}
       {view && <ScriptPreviewControls key={info?.hash} view={view} source={source} />}
     </section>
   );

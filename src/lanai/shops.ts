@@ -1,8 +1,9 @@
 // RPG FREE!'s shops (naauao lanai/shops.md): every content's archive has a Shop table (0x1C a row: +0x00 the ShopItem
 // row ID of the shop's head row, +0x04 / +0x08 the room's model and camera …) and a ShopItem table (0x2C a row) where a
 // head row (+0x00 = 0, +0x24 = 1) is followed by the shop's items (+0x00 item ID, +0x26 how many can be bought, …) up
-// to the next head row. The EventObject rows of type 0x80000032 (店の人: a line, then the shop) open the content's
-// shop: all such rows are in contents with one Shop row (assumed: row 0; the code is not found yet).
+// to the next head row. The EventObject rows of type 0x80000032 (店の人: a line, then the shop) and 0x80000033 (a range
+// that opens the shop) open the Shop row their second argument names (a row number, or a row ID; one not found is row 0:
+// FUN_0031C038, FUN_00474734 / FUN_0045B4B0). A content can have many shops, each opened by its own clerks (content 97).
 //
 // The stock of a shop is edited by laying the ShopItem rows out again in their order: the rows keep their places and
 // row IDs, so a shop that grows or shrinks moves the shops after it (their Shop +0x00 is pointed at their head rows'
@@ -16,6 +17,15 @@ import { isRowId, type LanaiTable } from './table';
 
 /** The action type of the clerks (actions.ts 店の人). */
 export const LANAI_SHOP_ACTION = 0x80000032;
+/** The action type of a range (section 8) whose clerk opens the shop when entered (actions.ts 範囲に入ると店). */
+export const LANAI_SHOP_RANGE_ACTION = 0x80000033;
+/** The offset in an action of the argument that names the shop (its second: the first is the line). */
+export const LANAI_SHOP_ARG = 8;
+/**
+ * The shops whose bought counts (+0x26) are kept one by one: the save keeps 10 shops × 50 places (FlagData 0x99) by the
+ * Shop row (FUN_001325DC); row 10 is not kept and a row above it is kept as the row modulo 10 (with that shop's counts).
+ */
+export const LANAI_SHOP_SAVE_SHOPS = 10;
 export const LANAI_SHOP_TABLE = 'Shop';
 export const LANAI_SHOP_ITEM_TABLE = 'ShopItem';
 
@@ -120,15 +130,56 @@ function findIn(t: LanaiTable, ref: number, count: number): number {
 
 /** The shops of one content (its Shop and ShopItem tables). */
 export class LanaiContentShops {
-  readonly shops: LanaiShop[];
-
   constructor(
     readonly session: LanaiSession,
     readonly content: LanaiContent,
     readonly shopTable: LanaiTable,
     readonly items: LanaiTable,
-  ) {
-    this.shops = Array.from({ length: shopTable.rows }, (_, row) => ({ row, id: shopTable.rowId(row) }));
+  ) {}
+
+  /** The Shop rows (with the ones an edit added). */
+  get shops(): LanaiShop[] {
+    return Array.from({ length: this.shopTable.rows }, (_, row) => ({ row, id: this.shopTable.rowId(row) }));
+  }
+
+  /** The Shop row a clerk's argument names (a row number or a row ID; the game opens row 0 for one not found). */
+  shopOf(selector: number): number {
+    const at = this.shopTable.find(selector >>> 0);
+    return at < 0 ? 0 : at;
+  }
+
+  /** Whether a Shop row was added by an edit (it can be removed again while it is the last). */
+  added(shop: number): boolean {
+    return shop >= this.shopTable.originalRows;
+  }
+
+  /**
+   * Adds a shop with no stock: a copy of Shop row `from` (its room, camera …) whose +0x00 names a new head row at the
+   * end of ShopItem. Returns its row.
+   */
+  addShop(from = 0): number {
+    const t = this.items;
+    const heads = Array.from({ length: t.rows }, (_, i) => i).filter((i) => isHead(t.row(i)));
+    const at = t.addRow(heads[0]);
+    if (heads[0] === undefined) {
+      const b = defaultItemRow();
+      b[SHOP_HEAD] = 1;
+      t.setRow(at, b);
+    }
+    const row = this.shopTable.addRow(from);
+    const id = t.rowId(at);
+    this.shopTable.setU32(row, 0, isRowId(id) && t.rowIds.filter((x) => x === id).length === 1 ? id : at);
+    return row;
+  }
+
+  /** Removes the last Shop row when an edit added it, with its head row and stock (the table is laid out again). */
+  removeShop(shop: number): void {
+    if (shop !== this.shopTable.rows - 1 || !this.added(shop)) throw new Error(`Shop の行 ${shop} は消せません`);
+    if (this.editable(shop)) this.set(shop, []);
+    this.shopTable.removeLastRow();
+    // lay the table out again: the head row of no shop at the end goes
+    const first = this.shops.find((s) => this.editable(s.row));
+    if (first) this.set(first.row, this.rows(first.row));
   }
 
   /** The content's shop tables (null when its archive has none). */
@@ -263,29 +314,39 @@ export function lanaiShops(session: LanaiSession, content: LanaiContent): Promis
   return p;
 }
 
-/** A clerk: an EventObject row with the 店の人 action, and the records of the maps that place it. */
+/** A clerk: an EventObject row with the 店の人 (or 範囲に入ると店) action, and the records of the maps that place it. */
 export interface LanaiClerk {
   group: number;
   /** EventObject row. */
   event: number;
   /** Offset of the action's type (0x10 / 0x28 / 0x40). */
   action: number;
+  /** The action's type (LANAI_SHOP_ACTION or LANAI_SHOP_RANGE_ACTION). */
+  type: number;
   /** The talk table row of its line (the action's first argument). */
   talk: number;
+  /** The action's second argument: the Shop row (or its row ID) it opens. */
+  selector: number;
+  /** The Shop row it opens (`shopOf`; the selector as a row number when the shops are not given). */
+  shop: number;
   /** The records that place it: map name, section, index in the section. */
   places: { map: string; section: number; index: number }[];
 }
 
-/** The clerks of a content's maps (every MapGroup's EventObject rows with the 店の人 action). */
-export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
+/** The clerks of a content's maps (every MapGroup's EventObject rows with the 店の人 / 範囲に入ると店 action). */
+export function lanaiClerks(maps: LanaiMaps, shops?: LanaiContentShops | null): LanaiClerk[] {
   const out: LanaiClerk[] = [];
   for (let group = 0; group < maps.groups.length; group++) {
     const t = maps.eventTable(group);
     if (!t) continue;
     for (let event = 1; event < t.rows; event++)
-      for (const action of LANAI_EVENT_ACTIONS)
-        if (t.u32(event, action) === LANAI_SHOP_ACTION)
-          out.push({ group, event, action, talk: t.u32(event, action + 4), places: [] });
+      for (const action of LANAI_EVENT_ACTIONS) {
+        const type = t.u32(event, action);
+        if (type !== LANAI_SHOP_ACTION && type !== LANAI_SHOP_RANGE_ACTION) continue;
+        const selector = t.u32(event, action + LANAI_SHOP_ARG);
+        const shop = shops ? shops.shopOf(selector) : isRowId(selector) ? 0 : selector;
+        out.push({ group, event, action, type, talk: t.u32(event, action + 4), selector, shop, places: [] });
+      }
   }
   if (!out.length) return out;
   for (const m of maps.maps) {
@@ -301,8 +362,48 @@ export function lanaiClerks(maps: LanaiMaps): LanaiClerk[] {
   return out;
 }
 
-/** The Shop row a content's clerks open: row 0 (assumed; naauao lanai/shops.md §4). */
-export const LANAI_CLERK_SHOP = 0;
+/**
+ * The numbers of the shared limits (ShopItem +0x28): the save keeps one count per number for the whole game (FlagData
+ * 0x9A, 200 values, indexed by +0x28 alone: FUN_002AEED4 reads it at 0x002AEF18, the purchase writes it at 0x0045F0A8),
+ * so the rows of one number share it across shops and contents. A number of 200 or more is not kept.
+ */
+export const LANAI_SHARED_COUNTERS = 200;
+
+/** A row of a shop that has a shared limit (+0x27) or a number of one (+0x28). */
+export interface LanaiSharedCounterUse {
+  counter: number;
+  limit: number;
+  content: number;
+  shop: number;
+  /** Place in the shop's stock. */
+  index: number;
+  item: number;
+}
+
+/** The rows of the contents' shops with a shared limit or its number (by number, then content, shop and place). */
+export async function lanaiSharedCounterUses(
+  session: LanaiSession,
+  contents: LanaiContent[],
+): Promise<LanaiSharedCounterUse[]> {
+  const out: LanaiSharedCounterUse[] = [];
+  for (const c of contents) {
+    const s = await lanaiShops(session, c);
+    for (const sh of s?.shops ?? [])
+      s!.rows(sh.row).forEach((r, index) => {
+        const counter = r.bytes[SHOP_SHARED_COUNTER]!;
+        const limit = r.bytes[SHOP_SHARED_LIMIT]!;
+        if (counter || limit) out.push({ counter, limit, content: c.index, shop: sh.row, index, item: r.item });
+      });
+  }
+  return out.sort((a, b) => a.counter - b.counter || a.content - b.content || a.shop - b.shop || a.index - b.index);
+}
+
+/** The lowest number (1〜199) no row of `uses` has (-1: none left). */
+export function lanaiFreeSharedCounter(uses: LanaiSharedCounterUse[]): number {
+  const used = new Set(uses.map((u) => u.counter));
+  for (let n = 1; n < LANAI_SHARED_COUNTERS; n++) if (!used.has(n)) return n;
+  return -1;
+}
 
 /** The random slots the save keeps (FlagData 0x97: 100 values; number 0 is no slot). */
 export const LANAI_SHOP_SLOTS = 99;

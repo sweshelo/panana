@@ -8,7 +8,7 @@ import { MapDb } from '../src/game/mapdb';
 import { buildTiles, LANAI_ROT_CODEC, type Rec } from '../src/game/sections';
 import { lanaiContents, type LanaiContent } from '../src/lanai/contents';
 import { LANAI_ACTION_GOAL_CHEST, LANAI_ACTION_SCRIPT } from '../src/lanai/actions';
-import { LanaiEditState, lanaiEditState, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
+import { LanaiEditState, lanaiEditState, lanaiKindParts, lanaiValidate, lanaiValidateAll } from '../src/lanai/mapedit';
 import {
   LANAI_EVENT_SLOT,
   LANAI_LAYOUTS,
@@ -19,7 +19,7 @@ import {
   type LanaiMaps,
 } from '../src/lanai/maps';
 import { LanaiSession } from '../src/lanai/session';
-import { lanaiRecKind, lanaiRomParts, romPartKey } from '../src/lanai/romParts';
+import { lanaiRecKind, lanaiRomCatalog, lanaiRomParts, romPartKey } from '../src/lanai/romParts';
 import {
   lanaiChestField,
   lanaiChestUsers,
@@ -333,6 +333,8 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       expect(row).toBe(events.rows - 1);
       expect(events.u32(row, 0x10)).toBe(count === 3 ? LANAI_ACTION_GOAL_CHEST : 0x8000000e);
       if (count === 3) expect(events.u32(row, 0x18)).toBe(content.index);
+      // a brown chest stays empty once opened, the goal chest moves on to its retries (EventObject +0x5E)
+      expect(events.u8(row, 0x5e)).toBe(count === 3 ? 0xfe : 0xff);
       for (let i = 0; i < count; i++) {
         const field = [0x14, 0x2c, 0x44][i]!;
         expect(events.u32(row, field)).toBe(rewardRows + i + (source === '新規クリア宝箱' ? 1 : 0));
@@ -374,6 +376,14 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
       romPartKey(1, 0, -1),
     ])
       expect(keys.has(k)).toBe(true);
+    // every part names where it is placed (the picker's right-click menu): the sample first, at most 30
+    for (const p of parts) {
+      expect(p.places.length).toBe(Math.min(p.count, 30));
+      expect(`${p.places[0]!.content}: ${p.places[0]!.map}`).toBe(p.source);
+    }
+    const { props } = await lanaiRomCatalog(s);
+    expect(props.size).toBeGreaterThan(0);
+    for (const list of props.values()) expect(list.every((place) => place.section === 2)).toBe(true);
     // the scripts (the sample's CRO) and the chests (rows of the content's TreasureGroup) are not in it
     expect(parts.some((p) => p.action === LANAI_ACTION_SCRIPT || p.section === 4)).toBe(false);
 
@@ -384,11 +394,27 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const talk = maps.talkTable(info.dungeon)!;
     const [eventRows, talkRows] = [events.rows, talk.rows];
     const templates = st.romTemplates(parts);
-    expect(
-      templates
-        .filter((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.action === 0x80000012)
-        .map((t) => t.subtitle),
-    ).toEqual(['外観 #44', '外観 #735']);
+    // the looks of one kind and action are one part (the look is chosen after placing): the most placed look's sample
+    const gates = templates.filter((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.action === 0x80000012);
+    expect(gates.length).toBe(1);
+    expect(gates[0]!.subtitle).toMatch(/^外観 #(44|735)/u);
+    expect(gates[0]!.description).toContain('外観 2 種類をまとめました');
+    // a building's entrance is a part per kind (each kind is a building's model)
+    const buildings = templates.filter((t) => t.label === '建物の入口');
+    expect(new Set(buildings.map((t) => t.raw[0x15])).size).toBeGreaterThan(1);
+    expect(new Set(buildings.map((t) => `${t.raw[0x15]}/${t.event?.action}`)).size).toBe(buildings.length);
+    // the picker: one part per section and kind, the new records' choices first, the ROM's other actions after
+    const picker = lanaiKindParts(st.templates(), templates);
+    const kinds = picker.map((t) => `${t.section}/${lanaiRecKind(t.section, t.raw)}`);
+    expect(new Set(kinds).size).toBe(kinds.length);
+    const npc = picker.find((t) => t.section === 5 && lanaiRecKind(5, t.raw) === 0)!;
+    const labels = npc.actions!.map((c) => c.label);
+    expect(labels.slice(0, 3)).toEqual(['スクリプト', '話す NPC', '店の人']);
+    expect(labels.length).toBeGreaterThan(3);
+    expect(new Set(labels).size).toBe(labels.length);
+    // the new talking NPC takes the ROM's examples of its action (0x02)
+    expect(npc.actions![1]!.count).toBeGreaterThan(0);
+    expect(npc.actions!.slice(3).every((c) => c.count > 0 && c.places.length > 0)).toBe(true);
     const of = (section: number, kind: number, action: number) =>
       templates.find(
         (t) => t.section === section && lanaiRecKind(section, t.raw) === kind && t.event?.action === action >>> 0,
@@ -400,10 +426,10 @@ describe.skipIf(!hasLanai)('RPG FREE! map editor', () => {
     const sign = of(5, 11, 0x8000002f);
     expect(sign.event!.talk!.text.length).toBeGreaterThan(0);
     const tile = st.current!.tiles[0]!;
-    const alternateGate = templates.find((t) => t.section === 3 && t.raw[0x15] === 4 && t.event?.look === 735)!;
-    expect(alternateGate.model).toEqual({ type: 'object', row: 735 });
-    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: alternateGate }, tile.x + 0.5, tile.y + 0.5));
-    expect(events.u16(eventRows, 0x5a)).toBe(735);
+    // the gate's looks are one part placed with the default look (#44); #735 is chosen after placing
+    const gate = gates[0]!;
+    st.edit((doc) => st.placeStamp(doc, { type: 'template', t: gate }, tile.x + 0.5, tile.y + 0.5));
+    expect(events.u16(eventRows, 0x5a)).toBe(gate.event!.look);
     st.undo();
     expect(events.rows).toBe(eventRows);
     for (const t of [pit, of(5, 13, 0x80000030), sign])

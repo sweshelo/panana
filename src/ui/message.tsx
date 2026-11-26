@@ -125,9 +125,15 @@ export interface MessageSource {
   };
   /** The line for an ID that is not there. */
   missing?(id: number): string;
-  /** Optional insertion picker; inserts into the current selection of the draft. */
-  tools?(insert: (text: string) => void): ReactNode;
+  /**
+   * Optional insertion picker; inserts into the current selection of the draft. `edit` rewrites the whole draft
+   * (e.g. ruby added); the draft is written with 反映 as when typed.
+   */
+  tools?(insert: (text: string) => void, edit: DraftEdit): ReactNode;
 }
+
+/** Rewrites the whole draft of MessageEditor's box (from the draft as it is when applied). */
+export type DraftEdit = (f: (draft: string) => string) => void;
 
 const gmsgSources = new WeakMap<MessageStore, MessageSource>();
 
@@ -372,15 +378,23 @@ function MessageText({
             usingTools.current = true;
           }}
         >
-          {src.tools((text) => {
-            const [start, end] = selection.current;
-            setDraft(draft.slice(0, start) + text + draft.slice(end));
-            selection.current = [start + text.length, start + text.length];
-            requestAnimationFrame(() => {
-              textarea.current?.focus();
-              textarea.current?.setSelectionRange(...selection.current);
-            });
-          })}
+          {src.tools(
+            (text) => {
+              const [start, end] = selection.current;
+              setDraft(draft.slice(0, start) + text + draft.slice(end));
+              selection.current = [start + text.length, start + text.length];
+              requestAnimationFrame(() => {
+                textarea.current?.focus();
+                textarea.current?.setSelectionRange(...selection.current);
+              });
+            },
+            (f) =>
+              setDraft((d) => {
+                const text = f(d);
+                selection.current = [text.length, text.length];
+                return text;
+              }),
+          )}
           <button onMouseDown={(e) => e.preventDefault()} onClick={commit} disabled={!!error || draft === stored}>
             反映
           </button>

@@ -87,6 +87,22 @@ export class AnimatedModel {
     return this.model.animations.filter((a) => a.kind === 'skeletal' && a.skeletal.length);
   }
 
+  /**
+   * The motions and the material animations no motion plays with (a door's or a lamp's texture moving on its own),
+   * each selectable by its name (select plays the material animations of its key).
+   */
+  get allMotions(): CgfxAnimation[] {
+    const keys = new Set(this.motions.map((a) => animationKey(a.name)));
+    const own = new Set<string>();
+    const material = this.model.animations.filter((a) => {
+      const key = animationKey(a.name);
+      if (a.kind !== 'material' || !a.material.length || keys.has(key) || own.has(key)) return false;
+      own.add(key);
+      return true;
+    });
+    return [...this.motions, ...material];
+  }
+
   /** Length of the current motion in frames (0 when none). */
   get frames(): number {
     return this.skeletal?.frames ?? Math.max(0, ...this.material.map((a) => a.frames));

@@ -17,8 +17,8 @@ export const LANAI_TREASURE_EMPTY = 0x80000000;
 
 /** Action types of chests (map.md §5.2): their first argument is the TreasureGroup row. */
 export const LANAI_CHEST_ACTIONS: Record<number, string> = {
-  0x8000000e: '宝箱 (見た目 0 / 2)',
-  0x80000010: '宝箱 (見た目 1)',
+  0x8000000e: '宝箱 (見た目 0 茶 / 2 緑)',
+  0x80000010: '宝箱 (見た目 1 赤金)',
   [LANAI_ACTION_GOAL_CHEST]: 'ゴールの宝箱',
 };
 
@@ -42,6 +42,30 @@ export interface LanaiTreasureSlot {
   value: number;
   weight: number;
   kind: number;
+}
+
+/**
+ * EventObject +0x5E of a chest: what leaving the stage does to its state (FUN_0042D844 @0x42DA78〜, confirmed by the
+ * code): REFILL puts it back to 0 (closed: the chest is full again on the next visit), KEEP back to the saved state (an
+ * opened chest stays empty; its slot +0x58 must be below the group's count to be saved), GOAL moves it back one state
+ * (the goal chest's retries). The ROM's look-2 (green) chests are REFILL, looks 0 / 1 KEEP, the goal chests GOAL.
+ */
+export const LANAI_EO_REFILL = 0x5e;
+export const LANAI_CHEST_REFILL = 0;
+export const LANAI_CHEST_KEEP = 0xff;
+export const LANAI_CHEST_GOAL = 0xfe;
+export const LANAI_CHEST_REFILL_NAMES: Record<number, string> = {
+  [LANAI_CHEST_REFILL]: '中身が戻る (入り直すと閉じた宝箱に戻る)',
+  [LANAI_CHEST_KEEP]: '空のまま (一度開けたら開いたまま)',
+  [LANAI_CHEST_GOAL]: 'ゴールの宝箱 (再挑戦の段へ進む)',
+};
+
+/** The green chest's look (section 4 +0x00; by the textures: 0 brown, 1 red and gold, 2 green, 3 the goal's purple). */
+export const LANAI_CHEST_GREEN = 2;
+
+/** The +0x5E the ROM's chests of a look have: green ones refill, the goal chest is GOAL, the others keep. */
+export function lanaiChestRefillFor(look: number, goal: boolean): number {
+  return goal ? LANAI_CHEST_GOAL : look === LANAI_CHEST_GREEN ? LANAI_CHEST_REFILL : LANAI_CHEST_KEEP;
 }
 
 /** A chest action of an EventObject row: which of the three (0〜2, the state) and the offset of its TreasureGroup row. */

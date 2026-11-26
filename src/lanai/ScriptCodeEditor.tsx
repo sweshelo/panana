@@ -1,11 +1,17 @@
 // The editor of a function's text: colours, completion, the mistakes under their lines, what the lines of talk say,
 // folding (scriptCodeMirror.ts). CodeMirror is loaded when the editor is first shown; until then, and where there is
 // no document (the tests render to a string), the text is a plain textarea that works the same.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
 import { NO_ASSIST, type ScriptAssist } from './scriptAssist';
 import type { ScriptEditorHandle, ScriptProblem } from './scriptCodeMirror';
 
 const NO_PROBLEMS: ScriptProblem[] = [];
+
+/** What the page around the editor can do with it. */
+export interface ScriptCodeInsert {
+  /** Writes `text` at the cursor (at the end of the text before the editor is loaded). */
+  insert(text: string): void;
+}
 
 export function ScriptCodeEditor({
   value,
@@ -15,6 +21,7 @@ export function ScriptCodeEditor({
   readOnly = false,
   assist = NO_ASSIST,
   problems = NO_PROBLEMS,
+  insertRef,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -23,6 +30,8 @@ export function ScriptCodeEditor({
   readOnly?: boolean;
   assist?: ScriptAssist;
   problems?: ScriptProblem[];
+  /** Set to what writes at the cursor. */
+  insertRef?: MutableRefObject<ScriptCodeInsert | null>;
 }): ReactNode {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<ScriptEditorHandle | null>(null);
@@ -56,6 +65,13 @@ export function ScriptCodeEditor({
       handle.current = null;
     };
   }, []);
+  if (insertRef)
+    insertRef.current = {
+      insert: (text) => {
+        if (handle.current) handle.current.insertAtCursor(text);
+        else latest.current.onChange(`${latest.current.value}${text}`);
+      },
+    };
   useEffect(() => handle.current?.setValue(value), [value, ready]);
   useEffect(() => handle.current?.setAssist(assist), [assist, ready]);
   useEffect(() => handle.current?.setProblems(problems), [problems, ready]);

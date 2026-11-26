@@ -25,5 +25,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // the ROM data and the analysis scripts kept beside it (ignored by git) are not the app's code
+  "exclude": ["node_modules", "roms", "docs"]
 }

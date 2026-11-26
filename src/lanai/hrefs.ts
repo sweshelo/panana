@@ -17,6 +17,10 @@ export const lanaiMapHref = (content: number, name?: string, rec?: { section: nu
 export const lanaiShopHref = (content: number, shop?: number): string =>
   `#/shops/${content}${shop === undefined ? '' : `.${shop}`}`;
 
+/** The numbers of the shops' shared limits (ShopItem +0x28) and the rows that use them (#/shops/shared[.<number>]). */
+export const lanaiShopSharedHref = (counter?: number): string =>
+  `#/shops/shared${counter === undefined ? '' : `.${counter}`}`;
+
 /** A row of the sound book (#/sounds/<SoundData row>). */
 export const lanaiSoundHref = (row: number): string => `#/sounds/${row}`;
 

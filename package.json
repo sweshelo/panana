@@ -10,6 +10,7 @@
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "lefthook": "^2.2.2",
+    "lindera-wasm-web-ipadic": "2.0.0",
     "oxfmt": "^0.78.0",
     "oxlint": "^1.93.0",
     "typescript": "^5",
@@ -46,6 +47,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "golden": "python test/golden/export_golden.py",
-    "deploy": "bun run build && wrangler deploy"
+    "deploy": "bun run build && wrangler deploy",
+    "app": "bun server/main.ts",
+    "build:exe": "bun scripts/build-exe.ts"
   }
 }

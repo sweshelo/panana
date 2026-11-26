@@ -39,7 +39,7 @@ import {
   type LanaiRecordModel,
 } from './mapObjects';
 import type { LanaiTable } from './table';
-import type { LanaiTreasureSlot } from './treasure';
+import { LANAI_CHEST_GREEN, type LanaiTreasureSlot } from './treasure';
 
 /** EventObject +0x5A: the look (a MapObject row, a MapChara row, the radius of a circle range). */
 export const EO_LOOK = 0x5a;
@@ -73,8 +73,8 @@ export interface NewEventRow {
   clears?: number;
   /** Which CRO button class and trigger to create when this part is placed. */
   switchTrigger?: 'switch' | 'button';
-  /** Optionally open this door's EventObject row from the generated switch function. */
-  buttonDoor?: number;
+  /** The script's function (without parameters) to give the switch when it is placed; none: given later. */
+  scriptFn?: string;
   destination?: { map: number; point: number };
   /**
    * Add a line to the group's talk table when placed and name it in the action's first argument: its text (the text
@@ -85,8 +85,8 @@ export interface NewEventRow {
   lines?: { stage: number; arg: number; text: string; speaker: number }[];
   /** Start from these bytes of an EventObject row (romParts.ts romEventRow) instead of row 0; `action` is its first. */
   from?: Uint8Array;
-  /** The part opens the content's shop (the dialog and the inspector link to its stock). */
-  shop?: boolean;
+  /** The part opens a shop of the content: the Shop row it opens (0 when only marked; the dialog chooses it). */
+  shop?: number | true;
   /** Make this MapChara row when placed and take it as the look (in place of `look`). */
   chara?: NewChara;
 }
@@ -102,6 +102,8 @@ export interface LanaiEventPart {
   category: string;
   iconLabel?: string;
   description?: string;
+  /** What it does, when the label names the thing (the placing dialog's choice). */
+  actionLabel?: string;
 }
 
 /** A new record that has no EventObject row (a floor gimmick). */
@@ -263,6 +265,7 @@ export function lanaiEventParts(
       label: monster ? 'モンスター' : 'NPC',
       description: '話しかけるとスクリプトを実行します。見た目は配置後に選べます。',
       source: `新規キャラ ${kind}`,
+      actionLabel: 'スクリプト',
       category: '人物・敵',
       event: { action: LANAI_ACTION_SCRIPT, look: row, chara: row ? undefined : { kind, model } },
       model: monster ? { type: 'monster', design: model } : { type: 'object', row: model },
@@ -341,14 +344,21 @@ export function lanaiEventParts(
           model: { type: 'object', row: model },
         });
   }
-  for (const goal of [false, true]) {
-    const raw = record(4, goal ? 3 : 0);
+  // the chests (section 4 +0x00 = the look): a brown one stays empty once opened, a green one is full again on the next
+  // visit (EventObject +0x5E, set when placed: treasure.ts lanaiChestRefillFor), the goal chest clears the stage
+  for (const kind of ['normal', 'green', 'goal'] as const) {
+    const goal = kind === 'goal';
+    const raw = record(4, goal ? 3 : kind === 'green' ? LANAI_CHEST_GREEN : 0);
     part({
       section: 4,
       raw,
-      label: goal ? 'クリア宝箱' : '通常の宝箱',
-      description: goal ? '初回と再挑戦の報酬を配置時に設定します。' : '報酬を配置時に設定します。',
-      source: goal ? '新規クリア宝箱' : '新規宝箱',
+      label: goal ? 'クリア宝箱' : kind === 'green' ? '中身が戻る宝箱 (緑)' : '通常の宝箱',
+      description: goal
+        ? '初回と再挑戦の報酬を配置時に設定します。'
+        : kind === 'green'
+          ? 'ステージに入り直すと中身が戻ります。報酬を配置時に設定します。'
+          : '一度開けると空のままです。報酬を配置時に設定します。',
+      source: goal ? '新規クリア宝箱' : kind === 'green' ? '新規緑の宝箱' : '新規宝箱',
       category: '宝箱・ゴール',
       event: { action: goal ? LANAI_ACTION_GOAL_CHEST : 0x8000000e, look: 0, chest: goal ? 'goal' : 'normal' },
       model: null,

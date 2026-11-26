@@ -20,7 +20,6 @@ import { lanaiMapHref } from './MapPage';
 import { lanaiFloorLabel, lanaiMaps } from './maps';
 import { useLanaiRevision } from './MonsterEditor';
 import type { LanaiSession } from './session';
-import type { LanaiCondition } from './conditions';
 import { LanaiStageThumbnail, uploadedStageThumbnail } from './StageThumbnail';
 import { addLanaiEmptyStage } from './emptyStage';
 import {
@@ -130,12 +129,6 @@ export function LanaiStageEditor({
   const selectedThumbnail = thumbnails.find((t) => t.key === thumbnail);
   const [visible, setVisible] = useState(stage.visible);
   const [hidden, setHidden] = useState(stage.hidden);
-  const pendingScripts = useRef(new Map<number, string>());
-  const script = (source: string, change: (value: LanaiCondition) => void): void => {
-    const id = Math.max(0, ...session.conditionScripts.keys(), ...pendingScripts.current.keys()) + 1;
-    pendingScripts.current.set(id, source);
-    change({ kind: 0x72, v1: id, v2: 0 });
-  };
   const [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   return (
@@ -323,22 +316,12 @@ export function LanaiStageEditor({
       )}
       <h3>表示・解放条件</h3>
       <p className="small muted">条件が成立すると表示されます。条件なし (0) はいつも表示します。</p>
-      <LanaiConditionEditor
-        session={session}
-        value={visible}
-        onChange={setVisible}
-        onScript={(source) => script(source, setVisible)}
-      />
+      <LanaiConditionEditor value={visible} onChange={setVisible} />
       <h3>表示しない条件</h3>
       <p className="small muted">
         この条件が成立すると非表示になります。条件なし (0) は非表示にしません。配信・期限などによる制限は別にあります。
       </p>
-      <LanaiConditionEditor
-        session={session}
-        value={hidden}
-        onChange={setHidden}
-        onScript={(source) => script(source, setHidden)}
-      />
+      <LanaiConditionEditor value={hidden} onChange={setHidden} />
       {error && (
         <p className="error" role="alert">
           {error}
@@ -350,9 +333,6 @@ export function LanaiStageEditor({
         onClick={async () => {
           setBusy(true);
           try {
-            for (const c of [visible, hidden])
-              if (c.kind === 0x72 && pendingScripts.current.has(c.v1))
-                session.setConditionScript(c.v1, pendingScripts.current.get(c.v1)!);
             session.codeIps(); // validate version, conflicts and available code space before committing table edits
             await editLanaiStage(session, content, stage, {
               order,
@@ -368,7 +348,6 @@ export function LanaiStageEditor({
             });
             onClose();
           } catch (e) {
-            for (const id of pendingScripts.current.keys()) session.conditionScripts.delete(id);
             setError((e as Error).message);
             setBusy(false);
           }

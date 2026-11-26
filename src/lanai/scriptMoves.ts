@@ -1,14 +1,14 @@
-// The move() statements of the stage's event script (eventScript.ts) as points on a map: where each sends whom, read
-// from the functions' text and written back into it when a point is dragged on the map's page (mapview.ts). The game
-// takes the position as a GSvec in world units: x and z are the ground (the map's columns and rows, a cell = 500, the
+// The move() / walk() calls (library functions) of the stage's event script (eventScript.ts) as points on a map:
+// where each sends whom, read from the functions' text and written back into it when a point is dragged on the map's
+// page (mapview.ts). The game takes the position as a GSvec in world units: x and z are the ground (the map's columns and rows, a cell = 500, the
 // middle of cell c = 250 + 500 × c), y is the height (0 = the floor). The ground is x / z as the game's own readers
 // use it (IntroCommon::GetActionBeforePos takes x, z; RPG3 FUN_004C7048(x, z) looks up the cell under a position).
 import { CELL } from '../game/sections';
-import { triggerHasRow, type ScriptDoc } from './eventScript';
+import { parseStageScript, triggerHasRow, type ScriptBinding, type ScriptDoc } from './eventScript';
 
 export type ScriptMoveWho = { kind: 'hero' } | { kind: 'self' } | { kind: 'chara'; row: number };
 
-/** A move() in a function's text: whom it moves, where, and where its three numbers are written. */
+/** A move() or walk() (or a SetPos(vec(…))) in a function's text: whom it moves, where, and where its three numbers are written. */
 export interface ScriptMove {
   who: ScriptMoveWho;
   x: number;
@@ -20,15 +20,25 @@ export interface ScriptMove {
 }
 
 const NUM = String.raw`-?(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)`;
-const WHO = String.raw`hero|self|chara\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)`;
-const MOVE_RE = new RegExp(String.raw`\bmove\s*\(\s*(${WHO})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)`, 'gu');
+const WHO = String.raw`hero|self|obj\s*\(\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)`;
+const XYZ = String.raw`(${NUM})\s*,\s*(${NUM})\s*,\s*(${NUM})\s*\)`;
+/** move(who, x, y, z) and who.move(x, y, z), or walk: the object, then its row (obj), then x, y and z. */
+const MOVE_RE = new RegExp(String.raw`\b(?:move|walk)\s*\(\s*(${WHO})\s*,\s*${XYZ}`, 'gu');
+const METHOD_MOVE_RE = new RegExp(String.raw`(?<![\w.])(${WHO})\s*\.\s*(?:move|walk)\s*\(\s*${XYZ}`, 'gu');
+/** who.SetPos(vec(x, y, z)): the Script API call that puts a character (or an event's object) at a position at once. */
+const SET_POS_RE = new RegExp(String.raw`(?<![\w.])(${WHO})\s*\.\s*SetPos\s*\(\s*vec\s*\(\s*${XYZ}`, 'gu');
 const num = (s: string): number => (s.startsWith('-') ? -Number(s.slice(1)) : Number(s));
 
-/** The move() statements of a function's text whose position is written as three numbers (not in comments). */
+/** The moves (either form) of a function's text whose position is written as three numbers (not in comments). */
 export function scriptMoves(body: string): ScriptMove[] {
   // comments become spaces, so the offsets stay those of the text
   const code = body.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//gu, (c) => c.replace(/[^\n]/gu, ' '));
-  return [...code.matchAll(MOVE_RE)].map((m) => {
+  const found = [
+    ...[...code.matchAll(MOVE_RE)].map((m) => ({ m, after: ',' })),
+    ...[...code.matchAll(METHOD_MOVE_RE)].map((m) => ({ m, after: '(' })),
+    ...[...code.matchAll(SET_POS_RE)].map((m) => ({ m, after: '(' })),
+  ].sort((a, b) => a.m.index - b.m.index);
+  return found.map(({ m, after }) => {
     const whoText = m[1]!;
     const who: ScriptMoveWho =
       whoText === 'hero'
@@ -37,7 +47,7 @@ export function scriptMoves(body: string): ScriptMove[] {
           ? { kind: 'self' }
           : { kind: 'chara', row: num(m[2]!) };
     // the numbers are the last three groups: find each after the one before it
-    let at = m.index + m[0].indexOf(',', m[0].indexOf(whoText) + whoText.length);
+    let at = m.index + m[0].indexOf(after, m[0].indexOf(whoText) + whoText.length);
     const spans = [m[3]!, m[4]!, m[5]!].map((s) => {
       const from = code.indexOf(s, at);
       at = from + s.length;
@@ -60,15 +70,19 @@ export const coordText = (v: number): string => {
   return Object.is(r, -0) ? '0' : String(r);
 };
 
-/** The text with the k-th move() sent to (x, y, z); the text unchanged when it has no such move(). */
-export function withScriptMove(body: string, k: number, x: number, y: number, z: number): string {
-  const m = scriptMoves(body)[k];
-  if (!m) return body;
+/** The text with a move()'s three numbers (its spans in this text) written as (x, y, z). */
+export function withMoveAt(text: string, m: ScriptMove, x: number, y: number, z: number): string {
   const values = [x, y, z].map(coordText);
-  let out = body;
+  let out = text;
   // from the last number, so the earlier offsets still hold
   for (let i = 2; i >= 0; i--) out = out.slice(0, m.spans[i]![0]) + values[i] + out.slice(m.spans[i]![1]);
   return out;
+}
+
+/** The text with the k-th move() sent to (x, y, z); the text unchanged when it has no such move(). */
+export function withScriptMove(body: string, k: number, x: number, y: number, z: number): string {
+  const m = scriptMoves(body)[k];
+  return m ? withMoveAt(body, m, x, y, z) : body;
 }
 
 /** World units <-> the map's cells (x -> column, z -> row). */
@@ -105,6 +119,44 @@ export function mapScriptMoves(doc: ScriptDoc, group: number, rows: ReadonlySet<
   return out;
 }
 
+/**
+ * The same as mapScriptMoves, read from the whole text of the script editor (not saved yet): the moves' lines and
+ * spans are those of the whole text, so withMoveAt writes into it. [] while the text does not read.
+ */
+export function sourceScriptMoves(
+  source: string,
+  bindings: readonly ScriptBinding[],
+  group: number,
+  rows: ReadonlySet<number>,
+): MapScriptMoves[] {
+  let parsed: ReturnType<typeof parseStageScript>;
+  try {
+    parsed = parseStageScript(source);
+  } catch {
+    return [];
+  }
+  const out: MapScriptMoves[] = [];
+  for (const f of parsed.functions) {
+    const bound = bindings.filter(
+      (b) => b.fn === f.name && b.group === group && (!triggerHasRow(b.trigger) || rows.has(b.row)),
+    );
+    if (!bound.length) continue;
+    const before = source.slice(0, f.from).split('\n').length - 1;
+    const moves = scriptMoves(source.slice(f.from, f.to)).map((m) => ({
+      ...m,
+      line: m.line + before,
+      spans: m.spans.map(([a, b]) => [a + f.from, b + f.from]) as ScriptMove['spans'],
+    }));
+    if (!moves.length) continue;
+    out.push({
+      fn: f.name,
+      rows: [...new Set(bound.filter((b) => triggerHasRow(b.trigger)).map((b) => b.row))],
+      moves,
+    });
+  }
+  return out;
+}
+
 /** The text of whom a move() moves. */
 export const moveWhoText = (w: ScriptMoveWho): string =>
-  w.kind === 'chara' ? `chara(${w.row})` : w.kind === 'hero' ? 'hero' : 'self';
+  w.kind === 'chara' ? `obj(${w.row})` : w.kind === 'hero' ? 'hero' : 'self';
