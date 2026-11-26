@@ -1,5 +1,5 @@
 // Starts Panana as a local app: `bun server/main.ts` (the built editor from dist/) or the executable that
-// scripts/build-exe.ts makes (the editor, the baseline and the patch built in). Options:
+// scripts/build-exe.ts makes (the editor, the baseline and the patch with its version built in). Options:
 //   --data <dir>   where the packages, publications and config.json are kept (default %APPDATA%\Panana / ~/.panana)
 //   --port <n>     the editor's port on 127.0.0.1 (default 8786; the browser keeps the loaded ROM per address)
 //   --no-open      do not open the browser
@@ -14,6 +14,7 @@ export interface RunOptions {
   assets: AssetSource;
   baselinePath: string | null;
   patchPath: string | null;
+  patchInfoPath: string | null;
 }
 
 /** The default data folder: %APPDATA%\Panana on Windows, ~/.panana elsewhere. */
@@ -67,6 +68,7 @@ export async function run(options: RunOptions): Promise<void> {
     uiPort: port,
     baselinePath: options.baselinePath,
     patchPath: options.patchPath,
+    patchInfoPath: options.patchInfoPath,
   });
   const s = server.status();
   console.log(`Panana: ${url}`);
@@ -95,5 +97,6 @@ if (import.meta.main) {
     },
     baselinePath: await existing(join(assetsDir, 'master-baseline.json')),
     patchPath: await existing(join(assetsDir, 'lanai-cs.ips')),
+    patchInfoPath: await existing(join(assetsDir, 'lanai-cs.json')),
   });
 }

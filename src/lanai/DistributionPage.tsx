@@ -124,6 +124,16 @@ function PatchSection({ status }: { status: LocalStatus }): ReactNode {
             <code> exefs/code.ips</code> に置きます。サーバのアドレスはゲームの「せってい」で入力するので、 パッチは PC
             が変わっても同じものを使えます。
           </p>
+          {status.patchBuildId ? (
+            <p className="muted small">
+              版: <code>{status.patchBuildId}</code>。配信中は、ゲームの「カスタム」がこの版と比べ、違えば Luma3DS の
+              code.ips を書き換えてゲームを再起動します (Azahar では書き換わらないので、ここから置き直してください)。
+            </p>
+          ) : (
+            <p className="error small">
+              {status.patchError ?? 'パッチの版がわからないため、ゲームは自動で更新されません。'}
+            </p>
+          )}
         </>
       ) : (
         <p className="muted">このビルドにはパッチが入っていません。</p>

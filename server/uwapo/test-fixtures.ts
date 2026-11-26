@@ -276,16 +276,22 @@ afterEach(async () => {
 });
 
 /** Panana's server on a temporary data folder (its packages/ and published/ are the uwapo folders of the tests). */
-export async function setup() {
+export async function setup(options: { patch?: Uint8Array; patchInfo?: unknown } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'lanai-packages-'));
   const packagesDir = join(directory, 'packages');
   const baselinePath = join(directory, 'master-baseline.json');
   const publishedDir = join(directory, 'published');
+  const patchPath = options.patch ? join(directory, 'lanai-cs.ips') : null;
+  if (patchPath) await Bun.write(patchPath, options.patch!);
+  const patchInfoPath = options.patchInfo !== undefined ? join(directory, 'lanai-cs.json') : null;
+  if (patchInfoPath) await Bun.write(patchInfoPath, JSON.stringify(options.patchInfo));
   const server = await createPananaServer({
     dataDir: directory,
     assets: () => null,
     uiPort: 0,
     baselinePath,
+    patchPath,
+    patchInfoPath,
     distributionHostname: '127.0.0.1',
   });
   resources.push({ server, directory });

@@ -1,4 +1,5 @@
-// Builds Panana as one executable (server/main.ts with the editor, the ROM baseline and the game's patch built in):
+// Builds Panana as one executable (server/main.ts with the editor, the ROM baseline and the game's patch and its
+// version built in):
 //   bun scripts/build-exe.ts [--target bun-windows-x64|bun-darwin-arm64|bun-linux-x64 …] [--skip-web]
 // The editor is built with Vite into dist/ first (--skip-web reuses it). The executables go to out/exe/.
 // Every built file is embedded with `import … with { type: 'file' }` from a generated entry (server/.exe-entry.gen.ts,
@@ -38,6 +39,7 @@ const web = (await files(dist))
   .filter((p) => p !== 'wrangler.json' && !p.startsWith('.'));
 const baseline = join(root, 'server', 'assets', 'master-baseline.json');
 const patch = join(root, 'server', 'assets', 'lanai-cs.ips');
+const patchInfo = join(root, 'server', 'assets', 'lanai-cs.json');
 const rel = (p: string): string => `../${relative(root, p).replaceAll('\\', '/')}`;
 
 const entry = join(root, 'server', '.exe-entry.gen.ts');
@@ -47,12 +49,14 @@ const lines = [
   ...web.map((p, i) => `import f${i} from ${JSON.stringify(rel(join(dist, p)))} with { type: 'file' };`),
   existsSync(baseline) ? `import baseline from ${JSON.stringify(rel(baseline))} with { type: 'file' };` : '',
   existsSync(patch) ? `import patch from ${JSON.stringify(rel(patch))} with { type: 'file' };` : '',
+  existsSync(patchInfo) ? `import patchInfo from ${JSON.stringify(rel(patchInfo))} with { type: 'file' };` : '',
   `const files: Record<string, string> = { ${web.map((p, i) => `${JSON.stringify(p)}: f${i}`).join(', ')} };`,
   'await run({',
   '  argv: process.argv.slice(2),',
   '  assets: (path) => (path in files ? Bun.file(files[path]!) : null),',
   `  baselinePath: ${existsSync(baseline) ? 'baseline' : 'null'},`,
   `  patchPath: ${existsSync(patch) ? 'patch' : 'null'},`,
+  `  patchInfoPath: ${existsSync(patchInfo) ? 'patchInfo' : 'null'},`,
   '});',
 ];
 await Bun.write(entry, lines.filter(Boolean).join('\n') + '\n');

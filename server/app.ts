@@ -4,10 +4,11 @@
 // - The UI listener (127.0.0.1:<uiPort>) serves the built editor, the management APIs (/api/packages, /api/publish,
 //   /api/stages) and /api/local/* (status, the setting, registering a stage from the editor, the game's patch).
 // - The distribution listener (0.0.0.0:<port>) answers only what the game fetches (/api/stages.bin and the stages'
-//   files) and /health. It runs while the setting is on; the management APIs never leave the loopback.
+//   files, /api/patch.bin and /api/patch/code.ips to update the game's patch: server/patch.ts) and /health. It runs while the setting is on; the management APIs never leave the loopback.
 import { mkdir } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
+import { loadPatch, patchManifest } from './patch';
 import { createPackageStore } from './uwapo/packages';
 import { createPublisher } from './uwapo/publish';
 import { pushPackage, PushError } from './uwapo/push';
@@ -36,6 +37,8 @@ export interface PananaServerOptions {
   baselinePath: string | null;
   /** The game's patch (code.ips with the custom stages), null when not built in. */
   patchPath?: string | null;
+  /** The patch's version (lanai-cs.json: build ID and sha256), null when not built in. */
+  patchInfoPath?: string | null;
   /** The address the distribution listens on (tests: 127.0.0.1). */
   distributionHostname?: string;
 }
@@ -50,6 +53,10 @@ export interface LocalStatus {
     urls: string[];
   };
   patch: boolean;
+  /** The build ID the game is told (8 hex digits), null when the version is not known: then it is not updated. */
+  patchBuildId: string | null;
+  /** Why the version is not known although the patch is built in. */
+  patchError: string | null;
 }
 
 const MIME: Record<string, string> = {
@@ -74,7 +81,11 @@ export function lanUrls(port: number): string[] {
 
 /** What the distribution listener answers: the game's fetches only. */
 export const isDistributionPath = (path: string): boolean =>
-  path === '/health' || path === '/api/stages.bin' || /^\/api\/stages\/[0-9A-Fa-f]{8}\/(archive|crr|rows)$/u.test(path);
+  path === '/health' ||
+  path === '/api/stages.bin' ||
+  path === '/api/patch.bin' ||
+  path === '/api/patch/code.ips' ||
+  /^\/api\/stages\/[0-9A-Fa-f]{8}\/(archive|crr|rows)$/u.test(path);
 
 const validPort = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v > 0 && v < 65536;
 
@@ -102,6 +113,28 @@ export async function createPananaServer(options: PananaServerOptions) {
   const packages = createPackageStore(join(options.dataDir, 'packages'), options.baselinePath ?? undefined);
   const publisher = createPublisher(join(options.dataDir, 'published'), packages);
 
+  const patch = await loadPatch(options.patchPath, options.patchInfoPath);
+  if (patch?.error) console.error(`Panana: ${patch.error} (ゲームのパッチは自動で更新されません)`);
+
+  /** The patch for the game (attachment: the editor's download button). */
+  function patchFile(attachment: boolean): Response | null {
+    if (!patch) return null;
+    return new Response(patch.bytes as Uint8Array<ArrayBuffer>, {
+      headers: {
+        'content-type': 'application/octet-stream',
+        ...(attachment ? { 'content-disposition': 'attachment; filename="code.ips"' } : {}),
+        'cache-control': 'no-store',
+      },
+    });
+  }
+  /** The game's update check: answered only when the version is known. */
+  function patchVersion(): Response | null {
+    if (!patch?.info) return null;
+    return new Response(patchManifest(patch.info) as Uint8Array<ArrayBuffer>, {
+      headers: { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' },
+    });
+  }
+
   const json = (value: unknown, status = 200): Response =>
     Response.json(value, { status, headers: { 'cache-control': 'no-store' } });
 
@@ -125,6 +158,15 @@ export async function createPananaServer(options: PananaServerOptions) {
           if (!isDistributionPath(url.pathname)) return new Response('Not found', { status: 404 });
           if (url.pathname === '/health')
             return new Response('OK', { headers: { 'content-type': 'text/plain; charset=utf-8' } });
+          if (request.method !== 'GET' && request.method !== 'HEAD') {
+            if (url.pathname.startsWith('/api/patch'))
+              return new Response('Method not allowed', { status: 405, headers: { allow: 'GET' } });
+          } else if (url.pathname === '/api/patch.bin') {
+            return patchVersion() ?? new Response('Not found', { status: 404 });
+          } else if (url.pathname === '/api/patch/code.ips') {
+            // only with a known version: the game checks the download against /api/patch.bin
+            return (patch?.info && patchFile(false)) || new Response('Not found', { status: 404 });
+          }
           return (await publisher.handle(request, url)) ?? new Response('Not found', { status: 404 });
         },
       });
@@ -143,7 +185,9 @@ export async function createPananaServer(options: PananaServerOptions) {
         error: distributionError,
         urls: lanUrls(port),
       },
-      patch: !!options.patchPath,
+      patch: !!patch,
+      patchBuildId: patch?.info?.buildId ?? null,
+      patchError: patch?.error ?? null,
     };
   }
 
@@ -195,17 +239,8 @@ export async function createPananaServer(options: PananaServerOptions) {
         return setConfig(request);
       case 'POST /api/local/push':
         return push(request, url);
-      case 'GET /api/local/patch': {
-        const file = options.patchPath ? Bun.file(options.patchPath) : null;
-        if (!file || !(await file.exists())) return json({ error: 'パッチは同梱されていません。' }, 404);
-        return new Response(file, {
-          headers: {
-            'content-type': 'application/octet-stream',
-            'content-disposition': 'attachment; filename="code.ips"',
-            'cache-control': 'no-store',
-          },
-        });
-      }
+      case 'GET /api/local/patch':
+        return patchFile(true) ?? json({ error: 'パッチは同梱されていません。' }, 404);
     }
     return json({ error: 'Not found' }, 404);
   }
