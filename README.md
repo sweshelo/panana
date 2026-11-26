@@ -4,6 +4,11 @@ Pananaとは、ハワイ語で羅針盤の意。
 
 電波人間のRPG シリーズのデータを、ブラウザの中で読んで調べ・編集する静的サイトです。サーバーは要りません。
 
+## Screenshots
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/d8def2ec-9e44-4803-83cb-4ed5957fd4a4" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/f1d025f7-f5ac-4d72-8834-dc5b472b159a" />
+
+
 ## 対応タイトル
 
 | タイトル                | 内部名   | 対応                                                                                                              |
