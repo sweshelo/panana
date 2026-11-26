@@ -3,7 +3,7 @@
 // content's archive becomes content 99's (no events) with the script's events, its CRR registers the new CRO, and
 // lanai-stage.json tells the distribution server (lanai-custom-stages web/stage-events.ts) the stage's key and the
 // flags it owns: the 3DS patch keeps those in a file of the stage instead of the save.
-import { findEntry, parseArchive, rebuildArchive } from '../archive/gsarc';
+import { findEntry, parseArchive, rebuildArchive, unpackEntry } from '../archive/gsarc';
 import { LANAI_ACTION_SCRIPT } from './actions';
 import { lanaiContents, type LanaiContent } from './contents';
 import { buildCro, parseCro } from './cro';
@@ -27,10 +27,12 @@ import {
   type ScriptDoc,
   type StageScript,
 } from './eventScript';
+import { unmarkLanaiFloors } from './fieldStart';
 import { lanaiRecEventRow } from './mapedit';
 import {
   LANAI_EVENT_ACTIONS,
   LANAI_EVENT_SECTIONS,
+  LANAI_MAP_TABLE_ENTRY,
   lanaiEventSlot,
   lanaiMaps,
   type LanaiMapInfo,
@@ -412,7 +414,15 @@ export async function buildStageScripts(s: LanaiSession, files: Map<string, Uint
     const def = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'ContentsDef')?.table;
     const entry = def && def.rows >= 3 ? findEntry(arc, def.u32(2, 0)) : undefined;
     if (!entry) throw new Error(`「${name}」の ContentsDef の CRO がありません`);
-    const rebuilt = rebuildArchive(arc, new Map([[entry.index, cro]]));
+    // the added floors' marks would hold back this CRO's start there (fieldStart.ts): it is ours, so they go
+    const replace = new Map([[entry.index, cro]]);
+    const tableEntry = findEntry(arc, LANAI_MAP_TABLE_ENTRY);
+    if (tableEntry) {
+      const table = unpackEntry(arc, tableEntry).body;
+      const unmarked = unmarkLanaiFloors(table);
+      if (unmarked !== table) replace.set(tableEntry.index, unmarked);
+    }
+    const rebuilt = rebuildArchive(arc, replace);
     files.set(c.archive, rebuilt);
     files.set(lanaiCrrName(c.index), stageScriptCrr(empty.crr, cro));
   }

@@ -26,6 +26,21 @@ export function markAddedLanaiFloors(table: Uint8Array, template: Uint8Array): U
   return marked;
 }
 
+/**
+ * The map table without the marks (slot 9 back to 0), or the table itself when no row has one. A stage whose CRO
+ * Panana builds from its script runs its own start on every floor (a floor's own start, and a statement on an object
+ * the floor lacks is skipped: eventScript.ts), so the guard must not hold back that CRO's hook 3 on the added floors.
+ */
+export function unmarkLanaiFloors(table: Uint8Array): Uint8Array {
+  let out = table;
+  for (let row = 0; row + LANAI_MAP_ROW <= table.length; row += LANAI_MAP_ROW) {
+    if (table[row + LANAI_MAP_NAME_OFFSET] === 0x57 || u32(table, row + SLOT_9) !== LANAI_NO_FIELD_START) continue;
+    if (out === table) out = table.slice();
+    w32(out, row + SLOT_9, 0);
+  }
+  return out;
+}
+
 export function hasMarkedLanaiFloors(table: Uint8Array): boolean {
   for (let row = 0; row + LANAI_MAP_ROW <= table.length; row += LANAI_MAP_ROW)
     if (table[row + LANAI_MAP_NAME_OFFSET] !== 0x57 && u32(table, row + SLOT_9) === LANAI_NO_FIELD_START) return true;

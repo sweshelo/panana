@@ -2,10 +2,16 @@
 // after the group's start; the objects of other floors skipped (GetMapChara null); the map inspector's checks of what
 // is selected (src/editor/mappage.tsx issueTouches).
 import { describe, expect, test } from 'bun:test';
+import { findEntry, parseArchive, unpackEntry } from '../src/archive/gsarc';
 import { issueTouches } from '../src/editor/mappage';
 import type { Issue } from '../src/editor/model';
 import type { MapDoc } from '../src/game/sections';
 import { lanaiContents } from '../src/lanai/contents';
+import { addLanaiEmptyStage } from '../src/lanai/emptyStage';
+import { hasMarkedLanaiFloors, LANAI_NO_FIELD_START, unmarkLanaiFloors } from '../src/lanai/fieldStart';
+import { addLanaiMap } from '../src/lanai/mapadd';
+import { LANAI_MAP_ROW, LANAI_MAP_TABLE_ENTRY, lanaiMaps } from '../src/lanai/maps';
+import { buildStageScripts } from '../src/lanai/stageScript';
 import { buildCro, parseCro } from '../src/lanai/cro';
 import {
   compileStageScript,
@@ -20,6 +26,7 @@ import { docBound, docUnbound, startBinding } from '../src/lanai/scriptDoc';
 import { LanaiSession } from '../src/lanai/session';
 import { contentScript, LANAI_EMPTY_SCRIPT_CONTENT } from '../src/lanai/stageEdit';
 import { openImages } from '../src/rom/dump';
+import { u32, w32 } from '../src/util/bytes';
 import { hasLanai, LANAI_BASE, LANAI_UPDATE } from './env';
 
 const FLOOR = 0xdef07d44;
@@ -79,7 +86,58 @@ describe("the map inspector's checks of the selection", () => {
   });
 });
 
+describe('RPG FREE! the added floors of a scripted stage', () => {
+  test('the marks that hold back the start (slot 9) come off, the world map rows kept', () => {
+    const table = new Uint8Array(LANAI_MAP_ROW * 3);
+    w32(table, 9 * 4, 0x12345678); // a ROM floor: kept
+    w32(table, LANAI_MAP_ROW + 9 * 4, LANAI_NO_FIELD_START); // an added floor
+    table[LANAI_MAP_ROW * 2 + 0x40] = 0x57; // a world map ("W…"): its slot 9 is terrain
+    w32(table, LANAI_MAP_ROW * 2 + 9 * 4, LANAI_NO_FIELD_START);
+    const out = unmarkLanaiFloors(table);
+    expect(u32(out, 9 * 4)).toBe(0x12345678);
+    expect(u32(out, LANAI_MAP_ROW + 9 * 4)).toBe(0);
+    expect(u32(out, LANAI_MAP_ROW * 2 + 9 * 4)).toBe(LANAI_NO_FIELD_START);
+    expect(u32(table, LANAI_MAP_ROW + 9 * 4)).toBe(LANAI_NO_FIELD_START); // a copy
+    expect(unmarkLanaiFloors(out)).toBe(out);
+  });
+});
+
 describe.skipIf(!hasLanai)('RPG FREE! stage script: the start of a floor (ROM)', () => {
+  test("a floor added to a scripted stage runs the stage's start (its mark comes off in the export)", async () => {
+    const s = await LanaiSession.open(
+      await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name),
+      { fresh: true },
+    );
+    const index = await addLanaiEmptyStage(s, '階のあるステージ');
+    const c = lanaiContents(s)[index]!;
+    const maps = await lanaiMaps(s, c);
+    const first = maps.map(maps.groups[1]!.firstMap)!;
+    let hash = 0x22000;
+    const floor = addLanaiMap(
+      maps,
+      { template: first, floor: 1, name: 'D01001F01', copy: 'tiles' },
+      () => hash++ / 0x100000000,
+    );
+    const table = (files: Map<string, Uint8Array>) => {
+      const arc = parseArchive(files.get(c.archive)!);
+      return unpackEntry(arc, findEntry(arc, LANAI_MAP_TABLE_ENTRY)!).body;
+    };
+    const files = s.modFiles();
+    // the new floor is marked (a ROM CRO's start must not run on it) …
+    expect(hasMarkedLanaiFloors(table(files))).toBe(true);
+    const doc = s.stageScripts.get(c.archive.toUpperCase())!.doc;
+    s.setStageScriptDoc(c.archive, {
+      ...doc,
+      functions: [...doc.functions, { name: 'floorStart', body: 'ScriptSound.Play(717, 0)' }],
+      bindings: [...doc.bindings, { trigger: 'start', group: 1, row: 0, map: floor.hash, fn: 'floorStart' }],
+    });
+    // … but the stage's own CRO starts it
+    await buildStageScripts(s, files);
+    const built = table(files);
+    expect(hasMarkedLanaiFloors(built)).toBe(false);
+    expect(u32(built, floor.index * LANAI_MAP_ROW)).toBe(floor.hash);
+  }, 300000);
+
   test("a floor's start builds after the group's, and an object is looked for before it is used", async () => {
     const s = await LanaiSession.open(
       await openImages([Bun.file(LANAI_BASE), Bun.file(LANAI_UPDATE)], (f) => (f as unknown as { name: string }).name),
