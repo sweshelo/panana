@@ -471,3 +471,12 @@ ROM 解析 (Codex、Update v17408 code.bin、読み取りのみ)。docs/lanai/sh
 - UI: /maps は何も選んでいないインスペクタに「マップが始まるとき」(この階層 / どの階層でも) の選択と、この階層にない obj の警告 (`MapStartBinding`)。演出プレビューは未選択か、関数を割り当てたレコードの選択時だけ (その関数を初期選択)。検証は未選択なら全件、選択中は対象に関係するものだけ (`issueTouches`、`MapChecks` の `title` / `bySelection`。oahu は従来どおり)。/stages の開始処理にグループごとの階層の行。
 - テスト: `test/lanai-floorstart.test.ts` (5 件、ROM あり)。全体の lint・型・テストは quiet-check で通過。
 - **未検証**: ブラウザでの /maps・/stages の操作。Azahar でグループと階層の start の両方を割り当て、各階層に入ってクラッシュしないこと・対象の階層でだけ初期化されること。逆コンパイラは GetCurrentMapID の振り分けを読まない (Panana の出力を読み戻すと階層の start は出ない)。
+
+## Lanai の 3D ビューに置物のエフェクト (灯った松明の炎) を出す (2026-11-26、60ed13c)
+
+- 調査 (Codex、`roms/tmpmap/ptcl/report.md` / `position.md` / `effectdata.tsv`、コミットしない): EffectData (1578 × 0x2C) の +0x00 が .ptcl の hash、+0x26 bit 0 でアーカイブ 90ED0000 (1097 行) / F0F40000 (477 行) (`FUN_002DC4DC`)。.ptcl は SPBD v0x33。+0x14 / +0x18 がテクスチャ、+0x40 の MATC のレジスタ 0x81 (幅・高さ) / 0x85 (形式。12 ETC1、9 LA4)。エミッターの寿命・放出・速度・ブレンドは未解読。
+- 松明: MapObject +0x24 の下位 u16 が EffectData 行 (区画 2 の `FUN_0021C0F4` @0x21C224〜)。同じモデルで灯る行と灯らない行がある (gimk_09_lamp_02〜07 / 09 が 513〜518 / 520 と 523〜528 / 530、obj_torch_1 が 521 / 531)。位置はモデルの位置 + +0x28 / +0x2A / +0x2C (s16、x / 上 / z) + +0x2F (s8、上)。向きで回らず +0x1C のスケールも掛からない。この経路は EffectData の他の欄を読まない。
+- 実装: `src/lanai/effects.ts` (`lanaiEffectRef`、`ptclTexture`、`lanaiEffect`)、`mapObjects.ts` の `lanaiObjectEffect`、`mapview.ts` が最初のテクスチャのいちばん明るいコマ (64×64 は 4×4 コマと仮定) を加算のスプライトで描く。+0x2A / +0x2F が 0 の行 (ランプ) は .ptcl 側で持ち上げているとみて、モデルの上端に置く (推定)。
+- テスト: `test/lanai-effects.test.ts` (3 件、ROM あり) が通過。コミット時の lint・型・テストも通過。
+- 確認: Codex がヘッドレスブラウザでコンテンツ 5 `D01001B01` を開き、4 本の柱の上に炎が見えた (`roms/tmpmap/ptcl/shots/`、コンソールのエラーなし)。
+- **未対応**: 粒子の動き、プレビュー (ScriptPreview) と、区画 3 / 5 のエフェクト (クリアのワープ・回復ポイント) はまだ光る柱の印のまま。
