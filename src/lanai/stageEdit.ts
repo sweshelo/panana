@@ -10,6 +10,34 @@ import type { LanaiSession } from './session';
 import type { LanaiTable } from './table';
 import type { LanaiCondition } from './conditions';
 
+/** The size of a shipped stage's thumbnail. The unused contents (99, 125) carry a 144x200 one instead. */
+export const LANAI_THUMBNAIL_SIZE = { width: 144, height: 132 } as const;
+
+function thumbnailTexture(body: Uint8Array) {
+  const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))?.[1];
+  if (!texture) throw new Error('サムネイル画像がありません');
+  return texture;
+}
+
+/**
+ * A copy of the thumbnail layout at (archive, hash), or, when its size is not the shipped one (a stage copied from
+ * unused data), of the first shipped stage's, so that a new image is not stretched to the unused data's shape.
+ */
+export async function lanaiThumbnailLayout(s: LanaiSession, archive: string, hash: number): Promise<Uint8Array> {
+  const standard = (body: Uint8Array) => {
+    const { width, height } = readBflim(thumbnailTexture(body));
+    return width === LANAI_THUMBNAIL_SIZE.width && height === LANAI_THUMBNAIL_SIZE.height;
+  };
+  const own = await s.readLayout(archive, hash);
+  if (standard(own)) return own.slice();
+  for (const c of lanaiContents(s))
+    for (const stage of c.stages) {
+      const body = await s.readLayout(c.archive, stage.thumbnail).catch(() => null);
+      if (body && standard(body)) return body.slice();
+    }
+  throw new Error('通常のサムネイルがありません');
+}
+
 /** Corresponding local MapStage row, matched by message ID; integration has 12 inserted bytes at +0x34. */
 async function localStage(s: LanaiSession, c: LanaiContent, stage: LanaiStage) {
   const t = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')?.table;
@@ -163,9 +191,8 @@ async function resetNewStage(
       table.setBits(row, offset + 8, 0, 8, 0);
     }
   }
-  const body = (await s.readLayout(archive, thumbnail)).slice();
-  const texture = [...readSarc(body)].find(([name]) => /^timg\/.*\.bflim$/i.test(name))?.[1];
-  if (!texture) throw new Error('サムネイル画像がありません');
+  const body = await lanaiThumbnailLayout(s, archive, thumbnail);
+  const texture = thumbnailTexture(body);
   const image = readBflim(texture);
   const pixels = new Uint8Array(image.width * image.height * 4);
   body.set(replaceBflimImage(texture, pixels), texture.byteOffset - body.byteOffset);

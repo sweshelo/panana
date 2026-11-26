@@ -55,6 +55,8 @@ describe.skipIf(!hasLanai)('RPG FREE! empty stage and tilesets', () => {
     expect(stage.visible).toEqual({ kind: 0, v1: 0, v2: 0 });
     expect(stage.hidden).toEqual({ kind: 0, v1: 0, v2: 0 });
     const image = await lanaiStageThumbnail(s, c.archive, stage.thumbnail);
+    // the template (content 99) has a 144x200 one; a new stage takes the shipped stages' size
+    expect([image.width, image.height]).toEqual([144, 132]);
     expect(image.rgba.every((value, i) => value === (i % 4 === 3 ? 255 : 0))).toBe(true);
     const local = (await s.tablesIn(c.archive)).find((t) => t.table.name === 'MapStage')!.table;
     expect(local.u8(0, 0x3d)).toBe(0);
