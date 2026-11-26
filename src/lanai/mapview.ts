@@ -40,12 +40,15 @@ import { PartThumbnails } from '../editor/part-thumbnails';
 import {
   LANAI_EFFECT_NAMES,
   lanaiCharaTables,
+  lanaiObjectEffect,
   lanaiObjectRef,
   lanaiObjectScale,
   lanaiRecordLook,
+  type LanaiObjectEffect,
   type LanaiRecordLook,
   type LanaiRecordModel,
 } from './mapObjects';
+import { lanaiEffect, type PtclTexture } from './effects';
 import { lanaiMonsterModel } from './monsterModels';
 import { lanaiMonsterDesign } from './monsters';
 import {
@@ -191,6 +194,8 @@ export class LanaiMapView {
     side: THREE.DoubleSide,
     depthWrite: false,
   });
+  /** The textures of the effects the models put (EffectData row → a sprite's material); null while loading or none. */
+  private readonly effectSprites = new Map<number, THREE.SpriteMaterial | null>();
   /** The walls of the ranges (section 8): their hit shape standing on the ground, translucent (rangeShape.ts). */
   private readonly rangeMats = rangeMaterials();
   /** Geometries made for the ranges of the last sync (disposed at the next). */
@@ -333,6 +338,10 @@ export class LanaiMapView {
     for (const f of this.objects.values()) f?.factory.dispose();
     this.effectGeo.dispose();
     this.effectMat.dispose();
+    for (const m of this.effectSprites.values()) {
+      m?.map?.dispose();
+      m?.dispose();
+    }
     for (const g of this.rangeGeos) g.dispose();
     for (const m of Object.values(this.rangeMats)) {
       m.fill.dispose();
@@ -757,6 +766,31 @@ export class LanaiMapView {
     return o.pose ? o.pose.clone() : o.factory.instance(o.hash);
   }
 
+  /**
+   * A sprite of an effect (EffectData row): the brightest frame of its .ptcl's first texture, added (the particles'
+   * motion is not read: it only shows that the game puts the effect there). Starts loading it the first time.
+   */
+  private effectSprite(row: number): THREE.Sprite | null {
+    if (!this.effectSprites.has(row)) {
+      this.effectSprites.set(row, null);
+      void lanaiEffect(this.maps.session, row).then(
+        (fx) => {
+          const tex = fx?.texture;
+          if (this.disposed || !tex) return;
+          this.effectSprites.set(row, effectMaterial(tex));
+          this.sync3d();
+        },
+        () => {},
+      );
+      return null;
+    }
+    const mat = this.effectSprites.get(row);
+    if (!mat) return null;
+    const s = new THREE.Sprite(mat);
+    s.scale.setScalar(EFFECT_SPRITE_SIZE);
+    return s;
+  }
+
   private async loadModel(m: LanaiRecordModel): Promise<LoadedModel | null> {
     const session = this.maps.session;
     let got: { set: TilesetModels; hash: number } | null = null;
@@ -835,8 +869,17 @@ export class LanaiMapView {
           model.position.set(px * CELL + ox, 0, py * CELL + oz);
           model.rotation.y = look!.angle;
           // monsters keep their own size (not checked against the game yet)
-          if (look!.model!.type === 'object')
-            model.scale.setScalar(lanaiObjectScale(this.maps.session.table('MapObject'), look!.model!.row));
+          if (look!.model!.type === 'object') {
+            const mo = this.maps.session.table('MapObject');
+            model.scale.setScalar(lanaiObjectScale(mo, look!.model!.row));
+            // the effect the row puts with the model (a lit torch's flame)
+            const fx = lanaiObjectEffect(mo, look!.model!.row);
+            const sprite = fx && this.effectSprite(fx.effect);
+            if (sprite) {
+              sprite.position.copy(effectPosition(fx!, model));
+              this.addRecordVisual(k, r.raw, sprite);
+            }
+          }
           this.addRecordVisual(k, r.raw, model);
           if (!selected) return;
         }
@@ -1334,6 +1377,61 @@ function drawRange(g: CanvasRenderingContext2D, s: number, range: LanaiRange, se
   g.globalAlpha = selected ? 1 : 0.7;
   g.stroke();
   g.restore();
+}
+
+/** How large an effect's sprite is (world units; a guess, the particles' sizes are not read). */
+const EFFECT_SPRITE_SIZE = 60;
+
+/**
+ * Where the sprite of a model's effect is (world units). The game puts the effect at the model's place plus MapObject
+ * +0x28 / +0x2A / +0x2C and +0x2F (s8, up), neither turned with the model nor scaled by +0x1C (FUN_0021C0F4
+ * @0x21C260〜0x21C2F8; Codex 2026-11-26, roms/tmpmap/ptcl/position.md). A row that lifts it by nothing (the lamps
+ * gimk_09_lamp_*) has the flame raised by the .ptcl itself, which is not read: the sprite then stands on the model's top.
+ * The sprite's centre is raised by a third of its size so that the flame rises from that point.
+ */
+function effectPosition(fx: LanaiObjectEffect, model: THREE.Object3D): THREE.Vector3 {
+  const [x, y, z] = fx.offset;
+  const up = y + fx.lift;
+  const top = up ? 0 : new THREE.Box3().setFromObject(model).max.y - model.position.y;
+  const base = up || (Number.isFinite(top) ? top : 0);
+  return model.position.clone().add(new THREE.Vector3(x, base + EFFECT_SPRITE_SIZE / 3, z));
+}
+
+/**
+ * The material of an effect's sprite: the brightest frame of the texture (a 64 × 64 texture is taken as 4 × 4 frames
+ * of the particles' animation, as the flames' are; others are shown whole), drawn added and without writing depth.
+ */
+function effectMaterial(tex: PtclTexture): THREE.SpriteMaterial {
+  const { width: w, height: h, rgba } = tex;
+  // the rows bottom first (WebGL's)
+  const data = new Uint8Array(rgba.length);
+  for (let y = 0; y < h; y++) data.set(rgba.subarray(y * w * 4, (y + 1) * w * 4), (h - 1 - y) * w * 4);
+  const map = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.magFilter = THREE.LinearFilter;
+  map.needsUpdate = true;
+  const n = w === 64 && h === 64 ? 4 : 1;
+  if (n > 1) {
+    const cw = w / n,
+      ch = h / n;
+    let best = 0,
+      bestSum = -1;
+    for (let k = 0; k < n * n; k++) {
+      const cx = k % n,
+        cy = Math.floor(k / n);
+      let sum = 0;
+      for (let y = cy * ch; y < (cy + 1) * ch; y++)
+        for (let x = cx * cw; x < (cx + 1) * cw; x++) {
+          const i = (y * w + x) * 4;
+          sum += (rgba[i]! + rgba[i + 1]! + rgba[i + 2]!) * (rgba[i + 3]! / 255);
+        }
+      if (sum > bestSum) [best, bestSum] = [k, sum];
+    }
+    map.repeat.set(1 / n, 1 / n);
+    // the frame's column, and its row counted from the bottom
+    map.offset.set((best % n) / n, (n - 1 - Math.floor(best / n)) / n);
+  }
+  return new THREE.SpriteMaterial({ map, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
 }
 
 /** How tall the walls of a range stand (world units; a cell is 500, the party about 200). */

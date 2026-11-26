@@ -243,6 +243,30 @@ export function lanaiObjectScale(mapObject: LanaiTable | undefined, row: number)
   return f32(mapObject.row(row), 0x1c) || 1;
 }
 
+/** An effect a MapObject row puts with its model: an EffectData row and where it is from the model. */
+export interface LanaiObjectEffect {
+  effect: number;
+  /** MapObject +0x28 / +0x2A / +0x2C (s16): x, y (up), z in world units, added to the model's place, not turned. */
+  offset: [number, number, number];
+  /** MapObject +0x2F (s8): added to y too. */
+  lift: number;
+}
+
+/**
+ * The effect a MapObject row puts with its model: +0x24 low u16 is an EffectData row, 0 none (the props of section 2,
+ * FUN_0021C0F4 @0x21C224〜0x21C25C → FUN_002DC4DC; Codex 2026-11-26). The lit torches are rows of the same models as
+ * the unlit ones with an effect: gimk_09_lamp_02〜07 / 09 at 513〜518 / 520 (fx_bg_f_torch) and 523〜528 / 530 without,
+ * obj_torch_1 at 521 (fx_bg_bonfire) and 531 without.
+ */
+export function lanaiObjectEffect(mapObject: LanaiTable | undefined, row: number): LanaiObjectEffect | null {
+  if (!mapObject || row <= 0 || row >= mapObject.rows) return null;
+  const r = mapObject.row(row);
+  const effect = u16(r, 0x24);
+  if (!effect) return null;
+  const s16 = (o: number): number => (u16(r, o) << 16) >> 16;
+  return { effect, offset: [s16(0x28), s16(0x2a), s16(0x2c)], lift: (r[0x2f]! << 24) >> 24 };
+}
+
 /**
  * The MapObject row of a character (MapChara row; row 0 is a character too, see lanaiCharaModel), or its MonsterDesign
  * row for a monster.
